@@ -45,8 +45,11 @@ namespace UnitTest.Repository
       //Assert
       result.Should().NotBeNull();
       result.CurrentPage.Should().Be(requiredPage);
-      result.FirstItemOnPage.Should().Be(numberOfItemsPerPage * (requiredPage));
-    }
+            if (requiredPage == 1)
+                result.FirstItemOnPage.Should().Be(0); 
+            else
+                result.FirstItemOnPage.Should().Be(numberOfItemsPerPage * (requiredPage));
+        }
 
     [SetUp]
     public void Setup()

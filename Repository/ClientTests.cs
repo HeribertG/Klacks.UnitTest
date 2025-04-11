@@ -6,7 +6,10 @@ using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Queries.Clients;
 using Klacks.Api.Repositories;
+using Klacks.Api.Resources.Associations;
 using Klacks.Api.Resources.Filter;
+using Klacks.Api.Resources.Settings;
+using Klacks.Api.Resources.Staffs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using UnitTest.FakeData;
@@ -161,10 +164,134 @@ internal class ClientTests
         result.FirstItemOnPage.Should().Be(numberOfItemsPerPage * (requiredPage));
     }
 
+    [Test]
+    public async Task FilterBySearchStringStandard_ShouldFilterCorrectly()
+    {
+        // Arrange
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+
+        dbContext = new DataBaseContext(options, _httpContextAccessor);
+        dbContext.Database.EnsureCreated();
+
+        // Aktuelles Datum für die required ValidFrom-Eigenschaft
+        var now = DateTime.Now;
+
+        // Testdaten mit spezifischen Eigenschaften erstellen
+        var clients = new List<Client>
+    {
+        new Client
+        {
+            Id = Guid.NewGuid(),
+            Name = "Müller",
+            FirstName = "Hans",
+            Company = "ABC GmbH",
+            Addresses = new List<Address>
+            {
+                new Address {
+                    Street = "Hauptstraße 1",
+                    City = "Berlin",
+                    ValidFrom = now  // Wichtig: ValidFrom setzen
+                }
+            }
+        },
+        new Client
+        {
+            Id = Guid.NewGuid(),
+            Name = "Schmidt",
+            FirstName = "Peter",
+            Company = "XYZ AG",
+            Addresses = new List<Address>
+            {
+                new Address {
+                    Street = "Nebenstraße 2",
+                    City = "München",
+                    ValidFrom = now  // Wichtig: ValidFrom setzen
+                }
+            }
+        },
+        new Client
+        {
+            Id = Guid.NewGuid(),
+            Name = "Schneider",
+            FirstName = "Maria",
+            Company = "DEF GmbH",
+            Addresses = new List<Address>
+            {
+                new Address {
+                    Street = "Bergstraße 3",
+                    City = "Hamburg",
+                    ValidFrom = now  // Wichtig: ValidFrom setzen
+                }
+            }
+        }
+    };
+
+        dbContext.Client.AddRange(clients);
+        dbContext.SaveChanges();
+
+        var repository = new ClientRepository(dbContext, new MacroEngine());
+
+        // Zugriff auf die private Methode über Reflection
+        var method = typeof(ClientRepository).GetMethod("FilterBySearchStringStandard",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        // Act
+        // Base Query
+        var baseQuery = dbContext.Client
+            .Include(c => c.Addresses)
+            .AsNoTracking()
+            .AsQueryable();
+
+        // Test 1: Suche nach "müller hans"
+        var result1 = method.Invoke(repository, new object[] {
+        new string[] { "müller", "hans" },
+        false,
+        baseQuery
+    }) as IQueryable<Client>;
+
+        // Test 2: Suche nach "xyz ag"
+        var result2 = method.Invoke(repository, new object[] {
+        new string[] { "xyz", "ag" },
+        false,
+        baseQuery
+    }) as IQueryable<Client>;
+
+        // Test 3: Suche nach "berg" mit Adresseinbeziehung
+        var result3 = method.Invoke(repository, new object[] {
+        new string[] { "berg" },
+        true,
+        baseQuery
+    }) as IQueryable<Client>;
+
+        // Assert
+        result1.Should().NotBeNull();
+        result1.Count().Should().Be(1);
+        result1.First().Name.Should().Be("Müller");
+
+        result2.Should().NotBeNull();
+        result2.Count().Should().Be(1);
+        result2.First().Name.Should().Be("Schmidt");
+
+        result3.Should().NotBeNull();
+        result3.Count().Should().Be(1);
+        result3.First().Name.Should().Be("Schneider");
+    }
+
     [SetUp]
     public void Setup()
     {
-        _mapper = Substitute.For<IMapper>();
+        var config = new MapperConfiguration(cfg =>
+        {
+            cfg.CreateMap<TruncatedClient, TruncatedClientResource>();
+            cfg.CreateMap<Client, ClientResource>();
+            cfg.CreateMap<Address, AddressResource>();
+            cfg.CreateMap<Communication, CommunicationResource>();
+            cfg.CreateMap<Annotation, AnnotationResource>();
+            cfg.CreateMap<Membership, MembershipResource>();
+        });
+
+        _mapper = config.CreateMapper();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
     }
@@ -191,7 +318,8 @@ internal class ClientTests
                 foreach (var address in item.Addresses)
                 {
                     addresses.Add(address);
-                };
+                }
+                ;
             }
             if (item.Communications.Any())
             {
@@ -209,8 +337,15 @@ internal class ClientTests
             }
             if (item.Membership != null)
             {
+                item.Membership.ClientId = item.Id;
                 memberships.Add(item.Membership);
             }
+            else
+            {
+                var ms = new Membership { ClientId = item.Id, ValidFrom = DateTime.Now.AddMonths(-3) };
+                memberships.Add(ms);
+            }
+
             item.Addresses.Clear();
             item.Annotations.Clear();
             item.Communications.Clear();

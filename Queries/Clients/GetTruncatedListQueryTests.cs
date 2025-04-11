@@ -1,4 +1,5 @@
 using AutoMapper;
+using Klacks.Api.AutoMappers;
 using Klacks.Api.Handlers.Clients;
 using Klacks.Api.Interfaces;
 using Klacks.Api.Queries.Clients;
@@ -8,32 +9,37 @@ namespace UnitTest.Queries.Clients;
 
 internal class GetTruncatedListQueryTests
 {
-  private IMapper _mapper = null!;
-  private IMediator _mediator = null!;
+    private IMapper _mapper = null!;
+    private IMediator _mediator = null!;
 
-  [Test]
-  public async Task GetTruncatedListQueryHandler_Ok()
-  {
-    //Arrange
-    var returns = FakeData.Clients.TruncatedClient();
-    var filter = FakeData.Clients.Filter();
+    [Test]
+    public async Task GetTruncatedListQueryHandler_Ok()
+    {
+        //Arrange
+        var returns = FakeData.Clients.TruncatedClient();
+        var filter = FakeData.Clients.Filter();
 
-    var clientRepositoryMock = Substitute.For<IClientRepository>();
-    clientRepositoryMock.Truncated(filter).Returns(returns);
-    var query = new GetTruncatedListQuery(filter);
-    var handler = new GetTruncatedListQueryHandler(clientRepositoryMock, _mapper);
+        var clientRepositoryMock = Substitute.For<IClientRepository>();
+        clientRepositoryMock.Truncated(filter).Returns(returns);
+        var query = new GetTruncatedListQuery(filter);
+        var handler = new GetTruncatedListQueryHandler(clientRepositoryMock, _mapper);
 
-    //Act
-    var result = await handler.Handle(query, default);
-    //Assert
-    result.Should().NotBeNull();
-    //Assert.Pass();
-  }
+        //Act
+        var result = await handler.Handle(query, default);
+        //Assert
+        result.Should().NotBeNull();
+        //Assert.Pass();
+    }
 
-  [SetUp]
-  public void Setup()
-  {
-    _mapper = Substitute.For<IMapper>();
-    _mediator = Substitute.For<IMediator>();
-  }
+    [SetUp]
+    public void Setup()
+    {
+        var config = new MapperConfiguration(cfg =>
+        {
+            cfg.AddProfile<MappingProfile>();
+        });
+
+        _mapper = config.CreateMapper();
+        _mediator = Substitute.For<IMediator>();
+    }
 }
