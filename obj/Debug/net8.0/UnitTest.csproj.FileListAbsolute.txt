@@ -1,5 +1,11 @@
 C:\SourceCode\UnitTest\bin\Debug\net8.0\.msCoverageSourceRootsMapping_UnitTest
 C:\SourceCode\UnitTest\bin\Debug\net8.0\CoverletSourceRootsMapping_UnitTest
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.csproj.AssemblyReference.cache
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.GeneratedMSBuildEditorConfig.editorconfig
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.AssemblyInfoInputs.cache
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.AssemblyInfo.cs
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.csproj.CoreCompileInputs.cache
+C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.sourcelink.json
 C:\SourceCode\UnitTest\bin\Debug\net8.0\testhost.dll
 C:\SourceCode\UnitTest\bin\Debug\net8.0\Klacks.Api.deps.json
 C:\SourceCode\UnitTest\bin\Debug\net8.0\Klacks.Api.runtimeconfig.json
@@ -259,12 +265,6 @@ C:\SourceCode\UnitTest\bin\Debug\net8.0\runtimes\win\lib\netcoreapp2.0\System.Dr
 C:\SourceCode\UnitTest\bin\Debug\net8.0\runtimes\win\lib\netstandard2.0\System.Security.Cryptography.ProtectedData.dll
 C:\SourceCode\UnitTest\bin\Debug\net8.0\Klacks.Api.dll
 C:\SourceCode\UnitTest\bin\Debug\net8.0\Klacks.Api.pdb
-C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.csproj.AssemblyReference.cache
-C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.GeneratedMSBuildEditorConfig.editorconfig
-C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.AssemblyInfoInputs.cache
-C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.AssemblyInfo.cs
-C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.csproj.CoreCompileInputs.cache
-C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.sourcelink.json
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.csproj.Up2Date
 C:\SourceCode\UnitTest\obj\Debug\net8.0\UnitTest.dll
 C:\SourceCode\UnitTest\obj\Debug\net8.0\refint\UnitTest.dll
