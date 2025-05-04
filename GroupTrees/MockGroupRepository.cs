@@ -45,20 +45,12 @@ namespace UnitTest.Mocks
                 throw new KeyNotFoundException($"Eltern-Gruppe mit ID {parentId} nicht gefunden");
             }
 
-            // Manuelle Aktualisierung der Lft/Rgt-Werte für alle betroffenen Knoten
-            // Wichtig: erst die Lft-Werte aktualisieren für Knoten mit Lft > parent.rgt
-            var nodesNeedLftUpdate = await context.Group
-                .Where(g => g.Root == parent.Root && g.Lft > parent.rgt && !g.IsDeleted)
-                .ToListAsync();
+            // Speichere den originalen rgt-Wert des Parents
+            var parentRgt = parent.rgt;
 
-            foreach (var node in nodesNeedLftUpdate)
-            {
-                node.Lft += 2;
-            }
-
-            // Dann die Rgt-Werte für alle Knoten mit Rgt >= parent.rgt
+            // Aktualisiere alle rgt-Werte im Baum
             var nodesNeedRgtUpdate = await context.Group
-                .Where(g => g.Root == parent.Root && g.rgt >= parent.rgt && !g.IsDeleted)
+                .Where(g => g.Root == parent.Root && g.rgt >= parentRgt && !g.IsDeleted)
                 .ToListAsync();
 
             foreach (var node in nodesNeedRgtUpdate)
@@ -66,11 +58,21 @@ namespace UnitTest.Mocks
                 node.rgt += 2;
             }
 
+            // Aktualisiere alle Lft-Werte, die größer als der rgt-Wert des Elternteils sind
+            var nodesNeedLftUpdate = await context.Group
+                .Where(g => g.Root == parent.Root && g.Lft > parentRgt && !g.IsDeleted)
+                .ToListAsync();
+
+            foreach (var node in nodesNeedLftUpdate)
+            {
+                node.Lft += 2;
+            }
+
             await context.SaveChangesAsync();
 
             // Neuen Knoten einfügen
-            newGroup.Lft = parent.rgt; // Der Lft-Wert ist der alte Rgt-Wert des Parents
-            newGroup.rgt = parent.rgt + 1; // Der Rgt-Wert ist der Lft-Wert + 1
+            newGroup.Lft = parentRgt; // Der Lft-Wert ist der alte Rgt-Wert des Parents
+            newGroup.rgt = parentRgt + 1; // Der Rgt-Wert ist der Lft-Wert + 1
             newGroup.Parent = parent.Id;
             newGroup.Root = parent.Root ?? parent.Id;
             newGroup.CreateTime = DateTime.UtcNow;
@@ -93,10 +95,15 @@ namespace UnitTest.Mocks
             newGroup.Lft = maxRgt + 1;
             newGroup.rgt = maxRgt + 2;
             newGroup.Parent = null;
-            newGroup.Root = null;
+            newGroup.Root = null; // Wird erst nach dem Speichern aktualisiert
             newGroup.CreateTime = DateTime.UtcNow;
 
             context.Group.Add(newGroup);
+            await context.SaveChangesAsync();
+
+            // WICHTIG: Nach dem Speichern muss der Root-Wert auf die eigene ID gesetzt werden
+            newGroup.Root = newGroup.Id;
+            context.Group.Update(newGroup);
             await context.SaveChangesAsync();
 
             return newGroup;
@@ -500,19 +507,19 @@ namespace UnitTest.Mocks
             return lst;
         }
 
-        public Task<bool> Exists(Guid id)
+        public async Task<bool> Exists(Guid id)
         {
-            throw new NotImplementedException();
+            return await context.Group.AnyAsync(g => g.Id == id && !g.IsDeleted);
         }
 
         public Task<List<Group>> List()
         {
-            throw new NotImplementedException();
+            return context.Group.Where(g => !g.IsDeleted).ToListAsync();
         }
 
         public void Remove(Group model)
         {
-            throw new NotImplementedException();
+            context.Group.Remove(model);
         }
     }
 }

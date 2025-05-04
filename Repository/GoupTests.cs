@@ -10,6 +10,7 @@ using Klacks.Api.Resources.Associations;
 using Klacks.Api.Resources.Filter;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics; // Für InMemoryEventId
 using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
 using UnitTest.Helper;
@@ -31,7 +32,10 @@ internal class GoupTests
     {
         //Arrange
         var options = new DbContextOptionsBuilder<DataBaseContext>()
-          .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+          .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+          .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)) // Ignoriere Transaktionswarnung
+          .Options;
+
         dbContext = new DataBaseContext(options, _httpContextAccessor);
 
         dbContext.Database.EnsureCreated();
@@ -42,8 +46,10 @@ internal class GoupTests
         var group = await CreateGroupAsync(1, clientRepository);
         var command = new PostCommand<GroupResource>(group);
         var handler = new PostCommandHandler(_mapper, groupRepository, unitOfWork, _logger);
+
         //Act
         var result = await handler.Handle(command, default);
+
         //Assert
         result.Should().NotBeNull();
         result!.GroupItems.Count.Should().Be(7);
@@ -86,13 +92,14 @@ internal class GoupTests
         group.Name = $"FakeName{index}";
         group.ValidFrom = DateTime.Now.AddMonths(index * -1);
         group.Description = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.";
+        group.GroupItems = new List<GroupItemResource>();
 
         foreach (var id in idNumberList)
         {
             filter.SearchString = id.ToString();
             var command = new Klacks.Api.Queries.Clients.GetTruncatedListQuery(filter);
             var result = await handler.Handle(command, default);
-            if (result != null && result.Clients != null)
+            if (result != null && result.Clients != null && result.Clients.Any())
             {
                 var item = new GroupItemResource() { ClientId = result.Clients.First().Id };
                 group.GroupItems.Add(item);
@@ -121,14 +128,14 @@ internal class GoupTests
             }
             if (item.Communications.Any())
             {
-                foreach (var communication in communications)
+                foreach (var communication in item.Communications) 
                 {
                     communications.Add(communication);
                 }
             }
             if (item.Annotations.Any())
             {
-                foreach (var annotation in annotations)
+                foreach (var annotation in item.Annotations)
                 {
                     annotations.Add(annotation);
                 }
