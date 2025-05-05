@@ -210,7 +210,7 @@ public class GroupTreeTests
 
         // Überprüfe, dass der Root-Knoten aktualisiert wurde
         var rootInDb = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == rootGroup.Id);
-        Assert.That(rootInDb!.rgt > 2);
+        Assert.That(rootInDb!.Rgt > 2);
     }
 
     [Test]
@@ -556,13 +556,13 @@ public class GroupTreeTests
         Assert.That(grandChild1Node.Root, Is.EqualTo(rootNode.Id));
 
         // Überprüfe nur die Beziehungen der Lft/Rgt-Werte, nicht die exakten Werte
-        Assert.That(rootNode.Lft < rootNode.rgt);
+        Assert.That(rootNode.Lft < rootNode.Rgt);
         Assert.That(child1Node.Lft > rootNode.Lft);
-        Assert.That(child1Node.rgt < rootNode.rgt);
+        Assert.That(child1Node.Rgt < rootNode.Rgt);
         Assert.That(child2Node.Lft > rootNode.Lft);
-        Assert.That(child2Node.rgt < rootNode.rgt);
+        Assert.That(child2Node.Rgt < rootNode.Rgt);
         Assert.That(grandChild1Node.Lft > child1Node.Lft);
-        Assert.That(grandChild1Node.rgt < child1Node.rgt);
+        Assert.That(grandChild1Node.Rgt < child1Node.Rgt);
     }
 
     [Test]
@@ -575,7 +575,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 1,
-            rgt = 8,
+            Rgt = 8,
             Parent = null,
             CurrentUserCreated = "TestUser"
         };
@@ -593,7 +593,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 2,
-            rgt = 5,
+            Rgt = 5,
             Parent = rootGroup.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser"
@@ -608,7 +608,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 3,
-            rgt = 4,
+            Rgt = 4,
             Parent = child1.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser"
@@ -623,7 +623,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 6,
-            rgt = 7,
+            Rgt = 7,
             Parent = rootGroup.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser"
