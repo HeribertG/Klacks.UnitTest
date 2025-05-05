@@ -46,16 +46,16 @@ namespace UnitTest.Mocks
             }
 
             // Speichere den originalen rgt-Wert des Parents
-            var parentRgt = parent.rgt;
+            var parentRgt = parent.Rgt;
 
             // Aktualisiere alle rgt-Werte im Baum
             var nodesNeedRgtUpdate = await context.Group
-                .Where(g => g.Root == parent.Root && g.rgt >= parentRgt && !g.IsDeleted)
+                .Where(g => g.Root == parent.Root && g.Rgt >= parentRgt && !g.IsDeleted)
                 .ToListAsync();
 
             foreach (var node in nodesNeedRgtUpdate)
             {
-                node.rgt += 2;
+                node.Rgt += 2;
             }
 
             // Aktualisiere alle Lft-Werte, die größer als der rgt-Wert des Elternteils sind
@@ -72,7 +72,7 @@ namespace UnitTest.Mocks
 
             // Neuen Knoten einfügen
             newGroup.Lft = parentRgt; // Der Lft-Wert ist der alte Rgt-Wert des Parents
-            newGroup.rgt = parentRgt + 1; // Der Rgt-Wert ist der Lft-Wert + 1
+            newGroup.Rgt = parentRgt + 1; // Der Rgt-Wert ist der Lft-Wert + 1
             newGroup.Parent = parent.Id;
             newGroup.Root = parent.Root ?? parent.Id;
             newGroup.CreateTime = DateTime.UtcNow;
@@ -88,12 +88,12 @@ namespace UnitTest.Mocks
             // Höchsten Rgt-Wert finden
             var maxRgt = await context.Group
                 .Where(g => !g.IsDeleted && g.Root == null)
-                .OrderByDescending(g => g.rgt)
-                .Select(g => (int?)g.rgt)
+                .OrderByDescending(g => g.Rgt)
+                .Select(g => (int?)g.Rgt)
                 .FirstOrDefaultAsync() ?? 0;
 
             newGroup.Lft = maxRgt + 1;
-            newGroup.rgt = maxRgt + 2;
+            newGroup.Rgt = maxRgt + 2;
             newGroup.Parent = null;
             newGroup.Root = null; // Wird erst nach dem Speichern aktualisiert
             newGroup.CreateTime = DateTime.UtcNow;
@@ -120,11 +120,11 @@ namespace UnitTest.Mocks
                 throw new KeyNotFoundException($"Gruppe mit ID {id} nicht gefunden");
             }
 
-            var width = node.rgt - node.Lft + 1;
+            var width = node.Rgt - node.Lft + 1;
 
             // Alle Knoten in diesem Teilbaum als gelöscht markieren
             var nodesToDelete = await context.Group
-                .Where(g => g.Lft >= node.Lft && g.rgt <= node.rgt && g.Root == node.Root)
+                .Where(g => g.Lft >= node.Lft && g.Rgt <= node.Rgt && g.Root == node.Root)
                 .ToListAsync();
 
             foreach (var nodeToDelete in nodesToDelete)
@@ -138,7 +138,7 @@ namespace UnitTest.Mocks
 
             // Lft und Rgt-Werte nach diesem Knoten anpassen
             var nodesRightOfDeleted = await context.Group
-                .Where(g => g.Lft > node.rgt && g.Root == node.Root && !g.IsDeleted)
+                .Where(g => g.Lft > node.Rgt && g.Root == node.Root && !g.IsDeleted)
                 .ToListAsync();
 
             foreach (var rightNode in nodesRightOfDeleted)
@@ -147,12 +147,12 @@ namespace UnitTest.Mocks
             }
 
             var nodesWithRgtGreaterThanDeleted = await context.Group
-                .Where(g => g.rgt > node.rgt && g.Root == node.Root && !g.IsDeleted)
+                .Where(g => g.Rgt > node.Rgt && g.Root == node.Root && !g.IsDeleted)
                 .ToListAsync();
 
             foreach (var rightNode in nodesWithRgtGreaterThanDeleted)
             {
-                rightNode.rgt -= width;
+                rightNode.Rgt -= width;
             }
 
             await context.SaveChangesAsync();
@@ -204,7 +204,7 @@ namespace UnitTest.Mocks
             }
 
             var depth = await context.Group
-                .CountAsync(g => g.Lft < node.Lft && g.rgt > node.rgt && g.Root == node.Root && !g.IsDeleted);
+                .CountAsync(g => g.Lft < node.Lft && g.Rgt > node.Rgt && g.Root == node.Root && !g.IsDeleted);
 
             return depth;
         }
@@ -221,7 +221,7 @@ namespace UnitTest.Mocks
             }
 
             return await context.Group
-                .Where(g => g.Lft <= node.Lft && g.rgt >= node.rgt && g.Root == node.Root)
+                .Where(g => g.Lft <= node.Lft && g.Rgt >= node.Rgt && g.Root == node.Root)
                 .OrderBy(g => g.Lft)
                 .ToListAsync();
         }
@@ -282,30 +282,30 @@ namespace UnitTest.Mocks
             }
 
             // Prüfen, ob der neue Elternteil nicht ein Nachkomme des zu verschiebenden Knotens ist
-            if (newParent.Lft > node.Lft && newParent.rgt < node.rgt)
+            if (newParent.Lft > node.Lft && newParent.Rgt < node.Rgt)
             {
                 throw new InvalidOperationException("Der neue Elternteil kann nicht ein Nachkomme des zu verschiebenden Knotens sein");
             }
 
             // 1. Finde alle Knoten im Teilbaum
             var subtreeNodes = await context.Group
-                .Where(g => g.Lft >= node.Lft && g.rgt <= node.rgt && g.Root == node.Root)
+                .Where(g => g.Lft >= node.Lft && g.Rgt <= node.Rgt && g.Root == node.Root)
                 .ToListAsync();
 
-            var nodeWidth = node.rgt - node.Lft + 1;
+            var nodeWidth = node.Rgt - node.Lft + 1;
 
             // 2. Temporär alle Werte im Teilbaum auf negative Werte setzen
             foreach (var subtreeNode in subtreeNodes)
             {
                 subtreeNode.Lft = -subtreeNode.Lft;
-                subtreeNode.rgt = -subtreeNode.rgt;
+                subtreeNode.Rgt = -subtreeNode.Rgt;
             }
 
             await context.SaveChangesAsync();
 
             // 3. Lücke in der ursprünglichen Position schließen
             var nodesAfterSource = await context.Group
-                .Where(g => g.Lft > node.rgt && g.Root == node.Root && !g.IsDeleted)
+                .Where(g => g.Lft > node.Rgt && g.Root == node.Root && !g.IsDeleted)
                 .ToListAsync();
 
             foreach (var afterNode in nodesAfterSource)
@@ -314,34 +314,34 @@ namespace UnitTest.Mocks
             }
 
             var nodesRgtGreaterThanSource = await context.Group
-                .Where(g => g.rgt > node.rgt && g.Root == node.Root && !g.IsDeleted)
+                .Where(g => g.Rgt > node.Rgt && g.Root == node.Root && !g.IsDeleted)
                 .ToListAsync();
 
             foreach (var rightNode in nodesRgtGreaterThanSource)
             {
-                rightNode.rgt -= nodeWidth;
+                rightNode.Rgt -= nodeWidth;
             }
 
             await context.SaveChangesAsync();
 
             // 4. Neue Position bestimmen - die Position ist der Rgt-Wert des neuen Elternteils
-            int newPos = newParent.rgt;
+            int newPos = newParent.Rgt;
 
             // Wenn die neue Position nach der alten Position liegt und 
             // bereits durch die Lückenschließung verändert wurde, muss sie angepasst werden
-            if (newPos > node.rgt)
+            if (newPos > node.Rgt)
             {
                 newPos -= nodeWidth;
             }
 
             // 5. Platz an der neuen Position schaffen
             var nodesNeedingRgtUpdate = await context.Group
-                .Where(g => g.rgt >= newPos && g.Root == newParent.Root && g.Lft >= 0) // g.Lft >= 0 schließt temporär negative Knoten aus
+                .Where(g => g.Rgt >= newPos && g.Root == newParent.Root && g.Lft >= 0) // g.Lft >= 0 schließt temporär negative Knoten aus
                 .ToListAsync();
 
             foreach (var updateNode in nodesNeedingRgtUpdate)
             {
-                updateNode.rgt += nodeWidth;
+                updateNode.Rgt += nodeWidth;
             }
 
             var nodesNeedingLftUpdate = await context.Group
@@ -361,7 +361,7 @@ namespace UnitTest.Mocks
             foreach (var subtreeNode in subtreeNodes)
             {
                 subtreeNode.Lft = -subtreeNode.Lft + offset;
-                subtreeNode.rgt = -subtreeNode.rgt + offset;
+                subtreeNode.Rgt = -subtreeNode.Rgt + offset;
                 subtreeNode.Root = newParent.Root;
             }
 

@@ -76,13 +76,7 @@ public class GroupTreeTests
             cfg.CreateMap<Group, GroupResource>().ReverseMap();
             cfg.CreateMap<GroupResource, Group>();
             cfg.CreateMap<GroupItemResource, GroupItem>().ReverseMap();
-            cfg.CreateMap<Group, GroupTreeNodeResource>()
-                .ForMember(dest => dest.ParentId, opt => opt.MapFrom(src => src.Parent))
-                .ForMember(dest => dest.Rgt, opt => opt.MapFrom(src => src.rgt))
-                .ForMember(dest => dest.Children, opt => opt.Ignore())
-                .ForMember(dest => dest.Depth, opt => opt.Ignore())
-                .ForMember(dest => dest.ClientsCount, opt => opt.Ignore())
-                .ForMember(dest => dest.Clients, opt => opt.Ignore());
+            
             cfg.CreateMap<TruncatedGroup, TruncatedGroupResource>();
         });
         _mapper = mapperConfig.CreateMapper();
@@ -160,7 +154,7 @@ public class GroupTreeTests
         Assert.That(groupInDb, Is.Not.Null);
         Assert.That(groupInDb!.Name, Is.EqualTo("Root Group"));
         Assert.That(groupInDb.Description, Is.EqualTo("Root Group Description"));
-        Assert.That(groupInDb.Lft < groupInDb.rgt);
+        Assert.That(groupInDb.Lft < groupInDb.Rgt);
     }
 
     [Test]
@@ -174,7 +168,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 1,
-            rgt = 2,
+            Rgt = 2,
             Parent = null,
             CurrentUserCreated = "TestUser"
         };
@@ -230,7 +224,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 1,
-            rgt = 2,
+            Rgt = 2,
             Parent = null,
             CurrentUserCreated = "TestUser"
         };
@@ -282,7 +276,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 1,
-            rgt = 6,
+            Rgt = 6,
             Parent = null,
             CurrentUserCreated = "TestUser"
         };
@@ -300,7 +294,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 2,
-            rgt = 3,
+            Rgt = 3,
             Parent = rootGroup.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser"
@@ -312,7 +306,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 4,
-            rgt = 5,
+            Rgt = 5,
             Parent = rootGroup.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser"
@@ -344,7 +338,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 1,
-            rgt = 4,
+            Rgt = 4,
             Parent = null,
             CurrentUserCreated = "TestUser"
         };
@@ -362,7 +356,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 2,
-            rgt = 3,
+            Rgt = 3,
             Parent = rootGroup.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser",
@@ -400,7 +394,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 1,
-            rgt = 2,
+            Rgt = 2,
             Parent = null,
             CurrentUserCreated = "TestUser"
         };
@@ -434,7 +428,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 1,
-            rgt = 6,
+            Rgt = 6,
             Parent = null,
             CurrentUserCreated = "TestUser"
         };
@@ -452,7 +446,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 2,
-            rgt = 5,
+            Rgt = 5,
             Parent = rootGroup.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser"
@@ -467,7 +461,7 @@ public class GroupTreeTests
             ValidFrom = DateTime.Now,
             GroupItems = new List<GroupItem>(),
             Lft = 3,
-            rgt = 4,
+            Rgt = 4,
             Parent = childGroup.Id,
             Root = rootGroup.Id,
             CurrentUserCreated = "TestUser"
