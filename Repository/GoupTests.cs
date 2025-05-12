@@ -3,6 +3,7 @@ using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Commands;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.Groups;
+using Klacks.Api.Interfaces;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Repositories;
@@ -26,6 +27,7 @@ internal class GoupTests
     private ILogger<PostCommandHandler> _logger = null!;
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
     private IMapper _mapper = null!;
+    private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
 
     [Test]
     public async Task PostGroup_Ok()
@@ -40,7 +42,7 @@ internal class GoupTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var clientRepository = new ClientRepository(dbContext, new MacroEngine());
+        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
         var groupRepository = new GroupRepository(dbContext);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
@@ -63,6 +65,10 @@ internal class GoupTests
         _unitOfWorkLogger = Substitute.For<ILogger<UnitOfWork>>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
         _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
+        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
+
+        _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
+                   .Returns(Task.FromResult(new List<Guid>()));
     }
 
     [TearDown]

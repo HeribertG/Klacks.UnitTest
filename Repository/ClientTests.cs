@@ -2,6 +2,7 @@ using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.Clients;
+using Klacks.Api.Interfaces;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Queries.Clients;
@@ -24,6 +25,7 @@ internal class ClientTests
     public TruncatedClient _truncatedClient = null!;
     public DataBaseContext dbContext = null!;
     private IMapper _mapper = null!;
+    private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
 
     [TestCase("ag", "", "", 12)]
     [TestCase("gmbh", "", "", 0)]
@@ -87,7 +89,7 @@ internal class ClientTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var repository = new ClientRepository(dbContext, new MacroEngine());
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -116,7 +118,7 @@ internal class ClientTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var repository = new ClientRepository(dbContext, new MacroEngine());
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -151,7 +153,7 @@ internal class ClientTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var repository = new ClientRepository(dbContext, new MacroEngine());
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -230,7 +232,7 @@ internal class ClientTests
         dbContext.Client.AddRange(clients);
         dbContext.SaveChanges();
 
-        var repository = new ClientRepository(dbContext, new MacroEngine());
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
 
         // Zugriff auf die private Methode über Reflection
         var method = typeof(ClientRepository).GetMethod("FilterBySearchStringStandard",
@@ -294,6 +296,10 @@ internal class ClientTests
         _mapper = config.CreateMapper();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
+        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
+
+        _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
+                   .Returns(Task.FromResult(new List<Guid>()));
     }
 
     [TearDown]

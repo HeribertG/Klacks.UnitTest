@@ -521,5 +521,20 @@ namespace UnitTest.Mocks
         {
             context.Group.Remove(model);
         }
+
+        public Task RepairNestedSetValues()
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task FixRootValues()
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<IEnumerable<Group>> GetRoots()
+        {
+            throw new NotImplementedException();
+        }
     }
 }
