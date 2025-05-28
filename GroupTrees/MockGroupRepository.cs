@@ -373,8 +373,8 @@ namespace UnitTest.Mocks
 
         public async Task<Group?> Put(Group model)
         {
-            var existingIds = context.GroupItem.Where(x => x.GroupId == model.Id).Select(x => x.ClientId).ToList();
-            var modelListIds = model.GroupItems.Select(x => x.ClientId).ToList();
+            var existingIds = context.GroupItem.Where(x => x.GroupId == model.Id && x.ClientId.HasValue).Select(x => (Guid)x.ClientId!).ToList();
+            var modelListIds = model.GroupItems.Where(x => x.ClientId.HasValue).Select(x => (Guid)x.ClientId!).ToList();
 
             var newIds = modelListIds.Where(x => !existingIds.Contains(x)).ToList();
             var deleteItems = existingIds.Where(x => !modelListIds.Contains(x)).ToList();
