@@ -76,7 +76,7 @@ public class GroupTreeTests
             cfg.CreateMap<Group, GroupResource>().ReverseMap();
             cfg.CreateMap<GroupResource, Group>();
             cfg.CreateMap<GroupItemResource, GroupItem>().ReverseMap();
-            
+
             cfg.CreateMap<TruncatedGroup, TruncatedGroupResource>();
         });
         _mapper = mapperConfig.CreateMapper();

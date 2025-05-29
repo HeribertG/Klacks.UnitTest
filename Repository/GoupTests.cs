@@ -134,7 +134,7 @@ internal class GoupTests
             }
             if (item.Communications.Any())
             {
-                foreach (var communication in item.Communications) 
+                foreach (var communication in item.Communications)
                 {
                     communications.Add(communication);
                 }

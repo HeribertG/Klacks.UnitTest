@@ -8,41 +8,41 @@ namespace UnitTest.Validation.Groups;
 [TestFixture]
 public class PostCommandValidatorTests
 {
-  private PostCommandValidator _validator;
+    private PostCommandValidator _validator;
 
-  [SetUp]
-  public void Setup()
-  {
-    _validator = new PostCommandValidator();
-  }
+    [SetUp]
+    public void Setup()
+    {
+        _validator = new PostCommandValidator();
+    }
 
-  [Test]
-  public async Task Validate_ShouldBeInvalid_WhenNameIsEmpty()
-  {
-    // Arrange
-    var groupResource = new GroupResource { Name = string.Empty, ValidFrom = DateTime.Now };
-    var command = new PostCommand<GroupResource>(groupResource);
+    [Test]
+    public async Task Validate_ShouldBeInvalid_WhenNameIsEmpty()
+    {
+        // Arrange
+        var groupResource = new GroupResource { Name = string.Empty, ValidFrom = DateTime.Now };
+        var command = new PostCommand<GroupResource>(groupResource);
 
-    // Act
-    var result = await _validator.ValidateAsync(command);
+        // Act
+        var result = await _validator.ValidateAsync(command);
 
-    // Assert
-    Assert.That(result.IsValid, Is.False);
-    Assert.That(result.Errors, Has.Some.Matches<ValidationFailure>(f => f.ErrorMessage == "Name is required"));
-  }
+        // Assert
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<ValidationFailure>(f => f.ErrorMessage == "Name is required"));
+    }
 
-  [Test]
-  public async Task Validate_ShouldBeInvalid_WhenValidFromIsDefault()
-  {
-    // Arrange
-    var groupResource = new GroupResource { Name = "Valid Name", ValidFrom = default };
-    var command = new PostCommand<GroupResource>(groupResource);
+    [Test]
+    public async Task Validate_ShouldBeInvalid_WhenValidFromIsDefault()
+    {
+        // Arrange
+        var groupResource = new GroupResource { Name = "Valid Name", ValidFrom = default };
+        var command = new PostCommand<GroupResource>(groupResource);
 
-    // Act
-    var result = await _validator.ValidateAsync(command);
+        // Act
+        var result = await _validator.ValidateAsync(command);
 
-    // Assert
-    Assert.That(result.IsValid, Is.False);
-    Assert.That(result.Errors, Has.Some.Matches<ValidationFailure>(f => f.ErrorMessage == "ValidFrom: Valid date is required"));
-  }
+        // Assert
+        Assert.That(result.IsValid, Is.False);
+        Assert.That(result.Errors, Has.Some.Matches<ValidationFailure>(f => f.ErrorMessage == "ValidFrom: Valid date is required"));
+    }
 }
