@@ -22,7 +22,7 @@
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
-          "net8.0"
+          "net9.0"
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
@@ -30,8 +30,8 @@
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
-          "net8.0": {
-            "targetAlias": "net8.0",
+          "net9.0": {
+            "targetAlias": "net9.0",
             "projectReferences": {}
           }
         },
@@ -48,20 +48,12 @@
         "SdkAnalysisLevel": "9.0.300"
       },
       "frameworks": {
-        "net8.0": {
-          "targetAlias": "net8.0",
+        "net9.0": {
+          "targetAlias": "net9.0",
           "dependencies": {
             "AutoMapper": {
               "target": "Package",
-              "version": "[13.0.1, )"
-            },
-            "ClosedXML": {
-              "target": "Package",
-              "version": "[0.102.3, )"
-            },
-            "DocumentFormat.OpenXml": {
-              "target": "Package",
-              "version": "[3.1.0, )"
+              "version": "[14.0.0, )"
             },
             "EFCore.NamingConventions": {
               "target": "Package",
@@ -69,27 +61,23 @@
             },
             "FluentValidation": {
               "target": "Package",
-              "version": "[11.10.0, )"
-            },
-            "FluentValidation.AspNetCore": {
-              "target": "Package",
-              "version": "[11.3.0, )"
+              "version": "[12.0.0, )"
             },
             "FluentValidation.DependencyInjectionExtensions": {
               "target": "Package",
-              "version": "[11.10.0, )"
+              "version": "[12.0.0, )"
             },
             "MediatR": {
               "target": "Package",
-              "version": "[12.4.1, )"
+              "version": "[12.5.0, )"
             },
             "Microsoft.AspNetCore.Authentication.JwtBearer": {
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.AspNetCore.Identity.EntityFrameworkCore": {
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.EntityFrameworkCore": {
               "target": "Package",
@@ -115,11 +103,15 @@
               "target": "Package",
               "version": "[9.0.5, )"
             },
+            "Microsoft.OpenApi": {
+              "target": "Package",
+              "version": "[1.6.23, )"
+            },
             "Microsoft.VSSDK.BuildTools": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
               "target": "Package",
-              "version": "[17.11.435, )"
+              "version": "[17.14.2094, )"
             },
             "Newtonsoft.Json": {
               "target": "Package",
@@ -127,11 +119,11 @@
             },
             "Npgsql.EntityFrameworkCore.PostgreSQL": {
               "target": "Package",
-              "version": "[9.0.0, )"
+              "version": "[9.0.4, )"
             },
             "Npgsql.Json.NET": {
               "target": "Package",
-              "version": "[8.0.4, )"
+              "version": "[9.0.3, )"
             },
             "StyleCop.Analyzers": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
@@ -141,19 +133,27 @@
             },
             "Swashbuckle.AspNetCore": {
               "target": "Package",
-              "version": "[6.7.3, )"
+              "version": "[8.1.2, )"
             },
             "Swashbuckle.AspNetCore.SwaggerGen": {
               "target": "Package",
-              "version": "[6.7.3, )"
+              "version": "[8.1.2, )"
             },
             "Swashbuckle.AspNetCore.SwaggerUI": {
               "target": "Package",
-              "version": "[6.7.3, )"
+              "version": "[8.1.2, )"
+            },
+            "System.IO.Packaging": {
+              "target": "Package",
+              "version": "[9.0.5, )"
+            },
+            "System.Text.Json": {
+              "target": "Package",
+              "version": "[9.0.5, )"
             },
             "iTextSharp.LGPLv2.Core": {
               "target": "Package",
-              "version": "[3.4.21, )"
+              "version": "[3.7.4, )"
             }
           },
           "imports": [
@@ -197,7 +197,7 @@
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
-          "net8.0"
+          "net9.0"
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
@@ -205,8 +205,8 @@
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
-          "net8.0": {
-            "targetAlias": "net8.0",
+          "net9.0": {
+            "targetAlias": "net9.0",
             "projectReferences": {
               "C:\\SourceCode\\Klacks.Api\\Klacks.Api.csproj": {
                 "projectPath": "C:\\SourceCode\\Klacks.Api\\Klacks.Api.csproj"
@@ -227,16 +227,16 @@
         "SdkAnalysisLevel": "9.0.300"
       },
       "frameworks": {
-        "net8.0": {
-          "targetAlias": "net8.0",
+        "net9.0": {
+          "targetAlias": "net9.0",
           "dependencies": {
             "AutoMapper": {
               "target": "Package",
-              "version": "[13.0.1, )"
+              "version": "[14.0.0, )"
             },
             "AutoMapper.Collection": {
               "target": "Package",
-              "version": "[10.0.0, )"
+              "version": "[11.0.0, )"
             },
             "EFCore.NamingConventions": {
               "target": "Package",
@@ -244,47 +244,35 @@
             },
             "FluentAssertions": {
               "target": "Package",
-              "version": "[6.12.1, )"
-            },
-            "Lucene.Net": {
-              "target": "Package",
-              "version": "[4.8.0-beta00016, )"
-            },
-            "Lucene.Net.Facet": {
-              "target": "Package",
-              "version": "[4.8.0-beta00016, )"
-            },
-            "Lucene.Net.QueryParser": {
-              "target": "Package",
-              "version": "[4.8.0-beta00016, )"
+              "version": "[8.3.0, )"
             },
             "MediatR": {
               "target": "Package",
-              "version": "[12.4.1, )"
+              "version": "[12.5.0, )"
             },
             "MediatR.Extensions.FluentValidation.AspNetCore": {
               "target": "Package",
-              "version": "[5.1.0, )"
+              "version": "[6.0.0, )"
             },
             "Microsoft.AspNetCore.Authentication.JwtBearer": {
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.AspNetCore.Cryptography.Internal": {
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.AspNetCore.Cryptography.KeyDerivation": {
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.AspNetCore.Identity.EntityFrameworkCore": {
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.AspNetCore.Mvc.NewtonsoftJson": {
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.EntityFrameworkCore": {
               "target": "Package",
@@ -294,7 +282,7 @@
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.8, )"
+              "version": "[9.0.5, )"
             },
             "Microsoft.EntityFrameworkCore.InMemory": {
               "target": "Package",
@@ -302,31 +290,31 @@
             },
             "Microsoft.NET.Test.Sdk": {
               "target": "Package",
-              "version": "[17.11.1, )"
+              "version": "[17.14.0, )"
             },
             "Microsoft.VSSDK.BuildTools": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
               "target": "Package",
-              "version": "[17.11.435, )"
+              "version": "[17.14.2094, )"
             },
             "NSubstitute": {
               "target": "Package",
-              "version": "[5.1.0, )"
+              "version": "[5.3.0, )"
             },
             "NUnit": {
               "target": "Package",
-              "version": "[4.2.2, )"
+              "version": "[4.3.2, )"
             },
             "NUnit.Analyzers": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
               "target": "Package",
-              "version": "[4.3.0, )"
+              "version": "[4.8.1, )"
             },
             "NUnit3TestAdapter": {
               "target": "Package",
-              "version": "[4.6.0, )"
+              "version": "[5.0.0, )"
             },
             "Npgsql.EntityFrameworkCore.PostgreSQL": {
               "target": "Package",
@@ -338,6 +326,26 @@
               "target": "Package",
               "version": "[1.1.118, )"
             },
+            "System.Drawing.Common": {
+              "target": "Package",
+              "version": "[9.0.5, )"
+            },
+            "System.IO.Packaging": {
+              "target": "Package",
+              "version": "[9.0.5, )"
+            },
+            "System.Net.Http": {
+              "target": "Package",
+              "version": "[4.3.4, )"
+            },
+            "System.Text.Json": {
+              "target": "Package",
+              "version": "[9.0.5, )"
+            },
+            "System.Text.RegularExpressions": {
+              "target": "Package",
+              "version": "[4.3.1, )"
+            },
             "ThomSoft.itext7.pdfimage": {
               "target": "Package",
               "version": "[1.0.2, )"
@@ -346,31 +354,7 @@
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "suppressParent": "All",
               "target": "Package",
-              "version": "[6.0.2, )"
-            },
-            "itext7": {
-              "target": "Package",
-              "version": "[8.0.5, )"
-            },
-            "itext7.commons": {
-              "target": "Package",
-              "version": "[8.0.5, )"
-            },
-            "itext7.licensekey": {
-              "target": "Package",
-              "version": "[3.1.5, )"
-            },
-            "itext7.licensekey.volume": {
-              "target": "Package",
-              "version": "[3.1.5, )"
-            },
-            "itext7.pdfcalligraph": {
-              "target": "Package",
-              "version": "[4.0.2, )"
-            },
-            "itext7.pdfhtml": {
-              "target": "Package",
-              "version": "[5.0.5, )"
+              "version": "[6.0.4, )"
             }
           },
           "imports": [
