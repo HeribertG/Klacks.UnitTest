@@ -105,7 +105,11 @@
             },
             "Microsoft.OpenApi": {
               "target": "Package",
-              "version": "[1.6.23, )"
+              "version": "[1.6.24, )"
+            },
+            "Microsoft.Playwright": {
+              "target": "Package",
+              "version": "[1.52.0, )"
             },
             "Microsoft.VSSDK.BuildTools": {
               "include": "Runtime, Build, Native, ContentFiles, Analyzers, BuildTransitive",

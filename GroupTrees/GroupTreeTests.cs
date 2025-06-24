@@ -23,7 +23,7 @@ namespace UnitTest.GroupTrees;
 public class GroupTreeTests
 {
     private DataBaseContext _dbContext = null!;
-    private MockGroupRepository _groupRepository = null!; // Geändert auf den konkreten Typ für bessere Performance
+    private MockGroupRepository _groupRepository = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IMapper _mapper = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -41,38 +41,31 @@ public class GroupTreeTests
     [SetUp]
     public void Setup()
     {
-        // In-Memory-Datenbank konfigurieren
         var options = new DbContextOptionsBuilder<DataBaseContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
-        // Mock für HttpContextAccessor
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         var httpContext = Substitute.For<HttpContext>();
         var claimsPrincipal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "TestUser") }));
         httpContext.User.Returns(claimsPrincipal);
         _httpContextAccessor.HttpContext.Returns(httpContext);
 
-        // Datenbank initialisieren
         _dbContext = new DataBaseContext(options, _httpContextAccessor);
         _dbContext.Database.EnsureCreated();
 
-        // Logger initialisieren
         _unitOfWorkLogger = Substitute.For<ILogger<MockUnitOfWork>>();
         var deleteHandlerLogger = Substitute.For<ILogger<DeleteCommandHandler>>();
         var postHandlerLogger = Substitute.For<ILogger<PostCommandHandler>>();
         var putHandlerLogger = Substitute.For<ILogger<PutCommandHandler>>();
         var moveHandlerLogger = Substitute.For<ILogger<MoveGroupNodeCommandHandler>>();
 
-        // Repository und UnitOfWork initialisieren
         _groupRepository = new MockGroupRepository(_dbContext);
         _unitOfWork = new MockUnitOfWork(_dbContext, _unitOfWorkLogger);
 
-        // AutoMapper konfigurieren
         var mapperConfig = new MapperConfiguration(cfg =>
         {
-            // Mappings für Group und GroupResource
             cfg.CreateMap<Group, GroupResource>().ReverseMap();
             cfg.CreateMap<GroupResource, Group>();
             cfg.CreateMap<GroupItemResource, GroupItem>().ReverseMap();
@@ -81,10 +74,8 @@ public class GroupTreeTests
         });
         _mapper = mapperConfig.CreateMapper();
 
-        // Mediator Mock für Abhängigkeiten
         _mediator = Substitute.For<IMediator>();
 
-        // Handler initialisieren
         _postHandler = new PostCommandHandler(
             _mapper,
             _groupRepository,
@@ -149,7 +140,6 @@ public class GroupTreeTests
         Assert.That(result.Name, Is.EqualTo("Root Group"));
         Assert.That(result.Description, Is.EqualTo("Root Group Description"));
 
-        // Überprüfe in der Datenbank
         var groupInDb = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == result.Id);
         Assert.That(groupInDb, Is.Not.Null);
         Assert.That(groupInDb!.Name, Is.EqualTo("Root Group"));
@@ -160,7 +150,7 @@ public class GroupTreeTests
     [Test]
     public async Task CreateChildNode_ShouldCreateGroupWithParentRelationship()
     {
-        // Arrange - Erstelle zuerst einen Root-Knoten
+        // Arrange 
         var rootGroup = new Group
         {
             Name = "Root Group",
@@ -176,12 +166,11 @@ public class GroupTreeTests
         _dbContext.Group.Add(rootGroup);
         await _dbContext.SaveChangesAsync();
 
-        // Aktualisiere Root-Wert
+
         rootGroup.Root = rootGroup.Id;
         _dbContext.Group.Update(rootGroup);
         await _dbContext.SaveChangesAsync();
 
-        // Arrangiere den Child-Knoten
         var childGroupResource = new GroupResource
         {
             Name = "Child Group",
@@ -202,13 +191,11 @@ public class GroupTreeTests
         Assert.That(result.Description, Is.EqualTo("Child Group Description"));
         Assert.That(result.Parent, Is.EqualTo(rootGroup.Id));
 
-        // Überprüfe in der Datenbank
         var childInDb = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == result.Id);
         Assert.That(childInDb, Is.Not.Null);
         Assert.That(childInDb!.Parent, Is.EqualTo(rootGroup.Id));
         Assert.That(childInDb.Root, Is.EqualTo(rootGroup.Id));
 
-        // Überprüfe, dass der Root-Knoten aktualisiert wurde
         var rootInDb = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == rootGroup.Id);
         Assert.That(rootInDb!.Rgt > 2);
     }
@@ -216,7 +203,7 @@ public class GroupTreeTests
     [Test]
     public async Task UpdateGroup_ShouldUpdateGroupProperties()
     {
-        // Arrange - Erstelle einen Knoten
+        // Arrange 
         var group = new Group
         {
             Name = "Original Name",
@@ -236,7 +223,6 @@ public class GroupTreeTests
         _dbContext.Group.Update(group);
         await _dbContext.SaveChangesAsync();
 
-        // Update-Ressource erstellen
         var updateResource = new GroupResource
         {
             Id = group.Id,
@@ -258,7 +244,6 @@ public class GroupTreeTests
         Assert.That(result.Description, Is.EqualTo("Updated Description"));
         Assert.That(result.ValidUntil, Is.Not.Null);
 
-        // Überprüfe in der Datenbank
         var updatedInDb = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == group.Id);
         Assert.That(updatedInDb, Is.Not.Null);
         Assert.That(updatedInDb!.Name, Is.EqualTo("Updated Name"));
@@ -269,7 +254,7 @@ public class GroupTreeTests
     [Test]
     public async Task MoveNode_ShouldUpdateParentRelationship()
     {
-        // Arrange - Erstelle Root, Child1, Child2
+        // Arrange 
         var rootGroup = new Group
         {
             Name = "Root Group",
@@ -315,14 +300,13 @@ public class GroupTreeTests
         _dbContext.Group.AddRange(child1Group, child2Group);
         await _dbContext.SaveChangesAsync();
 
-        // Act - Verschiebe Child1 unter Child2
+        // Act 
         var command = new MoveGroupNodeCommand(child1Group.Id, child2Group.Id);
         var result = await _moveHandler.Handle(command, CancellationToken.None);
 
         // Assert
         Assert.That(result, Is.Not.Null);
 
-        // Überprüfe Child1 (verschobener Knoten)
         var child1InDb = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == child1Group.Id);
         Assert.That(child1InDb, Is.Not.Null);
         Assert.That(child1InDb!.Parent, Is.EqualTo(child2Group.Id));
