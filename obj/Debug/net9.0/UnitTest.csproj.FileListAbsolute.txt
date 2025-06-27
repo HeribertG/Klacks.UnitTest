@@ -665,3 +665,4 @@ C:\SourceCode\UnitTest\bin\Debug\net9.0\.playwright\package\types\structs.d.ts
 C:\SourceCode\UnitTest\bin\Debug\net9.0\.playwright\package\types\types.d.ts
 C:\SourceCode\UnitTest\bin\Debug\net9.0\playwright.ps1
 C:\SourceCode\UnitTest\bin\Debug\net9.0\Microsoft.Playwright.dll
+C:\SourceCode\UnitTest\bin\Debug\net9.0\stylecop.json
