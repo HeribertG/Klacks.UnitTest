@@ -21,9 +21,9 @@ namespace UnitTest.Repository;
 [TestFixture]
 internal class GoupTests
 {
-    public IHttpContextAccessor _httpContextAccessor = null!;
-    public TruncatedClient _truncatedClient = null!;
-    public DataBaseContext dbContext = null!;
+    private IHttpContextAccessor _httpContextAccessor = null!;
+    private TruncatedClient _truncatedClient = null!;
+    private DataBaseContext dbContext = null!;
     private ILogger<PostCommandHandler> _logger = null!;
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
     private IMapper _mapper = null!;
@@ -80,14 +80,14 @@ internal class GoupTests
 
     private async Task<GroupResource> CreateGroupAsync(int index, ClientRepository clientRepository)
     {
-        var idNumberList = new List<int>() { 15205,
+        var idNumberList = new List<int>() 
+                                       { 15205,
                                          15215,
                                          15216,
                                          15217,
                                          15220,
                                          15229,
-                                         15403};
-
+                                         15403 };
         var filter = Clients.Filter();
         filter.Male = true;
         filter.Female = false;
@@ -111,6 +111,7 @@ internal class GoupTests
                 group.GroupItems.Add(item);
             }
         }
+
         return group;
     }
 
@@ -130,8 +131,8 @@ internal class GoupTests
                 {
                     addresses.Add(address);
                 }
-                ;
             }
+
             if (item.Communications.Any())
             {
                 foreach (var communication in item.Communications)
@@ -139,6 +140,7 @@ internal class GoupTests
                     communications.Add(communication);
                 }
             }
+
             if (item.Annotations.Any())
             {
                 foreach (var annotation in item.Annotations)
@@ -146,10 +148,12 @@ internal class GoupTests
                     annotations.Add(annotation);
                 }
             }
+
             if (item.Membership != null)
             {
                 memberships.Add(item.Membership);
             }
+
             item.Addresses.Clear();
             item.Annotations.Clear();
             item.Communications.Clear();
