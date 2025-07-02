@@ -26,6 +26,7 @@ internal class ClientTests
     public DataBaseContext dbContext = null!;
     private IMapper _mapper = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
+    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEFÜGT
 
     [TestCase("ag", "", "", 12)]
     [TestCase("gmbh", "", "", 0)]
@@ -89,7 +90,9 @@ internal class ClientTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
+
+        // BEHOBEN: Alle 4 Parameter übergeben
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -118,7 +121,9 @@ internal class ClientTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
+
+        // BEHOBEN: Alle 4 Parameter übergeben
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -153,7 +158,9 @@ internal class ClientTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
+
+        // BEHOBEN: Alle 4 Parameter übergeben
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -232,7 +239,8 @@ internal class ClientTests
         dbContext.Client.AddRange(clients);
         dbContext.SaveChanges();
 
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
+        // BEHOBEN: Alle 4 Parameter übergeben
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
 
         // Zugriff auf die private Methode über Reflection
         var method = typeof(ClientRepository).GetMethod("FilterBySearchStringStandard",
@@ -296,10 +304,15 @@ internal class ClientTests
         _mapper = config.CreateMapper();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
-        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
 
+        // BEHOBEN: Mocks für beide Services erstellen
+        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
                    .Returns(Task.FromResult(new List<Guid>()));
+
+        _groupVisibility = Substitute.For<IGroupVisibilityService>();
+        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // Für Tests als Admin setzen
+        _groupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
     }
 
     [TearDown]

@@ -18,11 +18,12 @@ namespace UnitTest.Repository;
 [TestFixture]
 internal class BreakTests
 {
-    public IHttpContextAccessor _httpContextAccessor = null!;
-    public DataBaseContext dbContext = null!;
+    private IHttpContextAccessor _httpContextAccessor = null!;
+    private DataBaseContext dbContext = null!;
     private IMapper _mapper = null!;
     private IMediator _mediator = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
+    private IGroupVisibilityService _groupVisibility = null!;
 
     [Test]
     public async Task GetClientList_Ok()
@@ -40,12 +41,15 @@ internal class BreakTests
         dbContext.Database.EnsureCreated();
 
         DataSeed(clients, absence, breaks);
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
+
+        // BEHOBEN: Alle 4 Parameter übergeben
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
         var query = new Klacks.Api.Queries.Breaks.ListQuery(filter);
         var handler = new GetListQueryHandler(_mapper, repository);
 
         //Act
         var result = await handler.Handle(query, default);
+
         //Assert
         result.Should().NotBeNull();
         result.Count().Should().Be(500);
@@ -69,11 +73,13 @@ internal class BreakTests
     {
         _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
         _mediator = Substitute.For<IMediator>();
-
         _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
-
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
                    .Returns(Task.FromResult(new List<Guid>()));
+
+        _groupVisibility = Substitute.For<IGroupVisibilityService>();
+        _groupVisibility.IsAdmin().Returns(Task.FromResult(true));
+        _groupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
     }
 
     [TearDown]
@@ -97,8 +103,8 @@ internal class BreakTests
                 {
                     addresses.Add(address);
                 }
-                ;
             }
+
             if (item.Communications.Any())
             {
                 foreach (var communication in communications)
@@ -111,6 +117,7 @@ internal class BreakTests
             {
                 memberships.Add(item.Membership);
             }
+
             item.Addresses.Clear();
             item.Communications.Clear();
             item.Membership = null;

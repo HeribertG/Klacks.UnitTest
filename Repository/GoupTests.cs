@@ -28,6 +28,7 @@ internal class GoupTests
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
     private IMapper _mapper = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
+    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEFÜGT
 
     [Test]
     public async Task PostGroup_Ok()
@@ -42,8 +43,9 @@ internal class GoupTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient);
-        var groupRepository = new GroupRepository(dbContext);
+
+        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
+        var groupRepository = new GroupRepository(dbContext, _groupVisibility);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
         var command = new PostCommand<GroupResource>(group);
@@ -65,10 +67,14 @@ internal class GoupTests
         _unitOfWorkLogger = Substitute.For<ILogger<UnitOfWork>>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
         _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
-        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
 
+        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
                    .Returns(Task.FromResult(new List<Guid>()));
+
+        _groupVisibility = Substitute.For<IGroupVisibilityService>();
+        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // Für Tests als Admin setzen
+        _groupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
     }
 
     [TearDown]
@@ -80,7 +86,7 @@ internal class GoupTests
 
     private async Task<GroupResource> CreateGroupAsync(int index, ClientRepository clientRepository)
     {
-        var idNumberList = new List<int>() 
+        var idNumberList = new List<int>()
                                        { 15205,
                                          15215,
                                          15216,
