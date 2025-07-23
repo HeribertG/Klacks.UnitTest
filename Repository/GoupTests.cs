@@ -26,6 +26,7 @@ internal class GoupTests
     private DataBaseContext dbContext = null!;
     private ILogger<PostCommandHandler> _logger = null!;
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
+    private ILogger<Group> _groupLogger = null!;
     private IMapper _mapper = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
     private IGroupVisibilityService _groupVisibility = null!; // HINZUGEFÜGT
@@ -45,7 +46,7 @@ internal class GoupTests
         DataSeed(_truncatedClient);
 
         var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
-        var groupRepository = new GroupRepository(dbContext, _groupVisibility);
+        var groupRepository = new GroupRepository(dbContext, _groupVisibility, _groupLogger);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
         var command = new PostCommand<GroupResource>(group);
@@ -65,6 +66,7 @@ internal class GoupTests
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _logger = Substitute.For<ILogger<PostCommandHandler>>();
         _unitOfWorkLogger = Substitute.For<ILogger<UnitOfWork>>();
+        _groupLogger = Substitute.For<ILogger<Group>>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
         _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
 

@@ -2,6 +2,7 @@ using AutoMapper;
 using Klacks.Api.Commands;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.CalendarSelections;
+using Klacks.Api.Models.CalendarSelections;
 using Klacks.Api.Queries;
 using Klacks.Api.Repositories;
 using Klacks.Api.Resources.Schedules;
@@ -20,6 +21,9 @@ internal class CalendarSelectionTest
     private ILogger<PutCommandHandler> _logger2 = null!;
     private ILogger<DeleteCommandHandler> _logger3 = null!;
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
+    private ILogger<CalendarSelection> _calendarSelectionLogger = null!;
+    private ILogger<SelectedCalendar> _selectedCalendarLogger = null!;
+    
     private IMapper _mapper = null!;
 
     [Test]
@@ -35,7 +39,7 @@ internal class CalendarSelectionTest
         dbContext.Database.EnsureCreated();
 
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
-        var repository = new CalendarSelectionRepository(dbContext);
+        var repository = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger);
         var queryPost = new PostCommand<CalendarSelectionResource>(fakeCalendarSelection);
         var handlerPost = new PostCommandHandler(_mapper, repository, unitOfWork, _logger);
 
@@ -90,7 +94,7 @@ internal class CalendarSelectionTest
         //Assert Delete
         resultDelete.Should().NotBeNull();
 
-        var repositorySelectedCalendar = new SelectedCalendarRepository(dbContext);
+        var repositorySelectedCalendar = new SelectedCalendarRepository(dbContext, _selectedCalendarLogger);
 
         foreach (var item in resultDelete!.SelectedCalendars)
         {
@@ -107,6 +111,8 @@ internal class CalendarSelectionTest
         _logger2 = Substitute.For<ILogger<PutCommandHandler>>();
         _logger3 = Substitute.For<ILogger<DeleteCommandHandler>>();
         _unitOfWorkLogger = Substitute.For<ILogger<UnitOfWork>>();
+        _calendarSelectionLogger = Substitute.For<ILogger<CalendarSelection>>();
+        _selectedCalendarLogger = Substitute.For<ILogger<SelectedCalendar>>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
     }
 
