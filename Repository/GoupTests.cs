@@ -4,14 +4,18 @@ using Klacks.Api.Commands;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.Groups;
 using Klacks.Api.Interfaces;
+using Klacks.Api.Interfaces.Domains;
+using NSubstitute;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Repositories;
 using Klacks.Api.Resources.Associations;
 using Klacks.Api.Resources.Filter;
+using Klacks.Api.Resources.Settings;
+using Klacks.Api.Resources.Filter;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics; // Für InMemoryEventId
+using Microsoft.EntityFrameworkCore.Diagnostics; // Fï¿½r InMemoryEventId
 using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
 using UnitTest.Helper;
@@ -29,7 +33,7 @@ internal class GoupTests
     private ILogger<Group> _groupLogger = null!;
     private IMapper _mapper = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
-    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEFÜGT
+    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEFï¿½GT
 
     [Test]
     public async Task PostGroup_Ok()
@@ -45,7 +49,14 @@ internal class GoupTests
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
 
-        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
+        // Use real domain services for proper filtering behavior in integration tests
+        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        
+        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+            clientFilterService, membershipFilterService, searchService, sortingService);
         var groupRepository = new GroupRepository(dbContext, _groupVisibility, _groupLogger);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
@@ -73,9 +84,11 @@ internal class GoupTests
         _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
                    .Returns(Task.FromResult(new List<Guid>()));
+        _groupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
+                   .Returns(Task.FromResult(new List<Guid>()));
 
         _groupVisibility = Substitute.For<IGroupVisibilityService>();
-        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // Für Tests als Admin setzen
+        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // Fï¿½r Tests als Admin setzen
         _groupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
     }
 

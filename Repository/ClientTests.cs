@@ -3,6 +3,8 @@ using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.Clients;
 using Klacks.Api.Interfaces;
+using Klacks.Api.Interfaces.Domains;
+using NSubstitute;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Queries.Clients;
@@ -26,7 +28,7 @@ internal class ClientTests
     public DataBaseContext dbContext = null!;
     private IMapper _mapper = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
-    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEFÜGT
+    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEFï¿½GT
 
     [TestCase("ag", "", "", 12)]
     [TestCase("gmbh", "", "", 0)]
@@ -91,8 +93,14 @@ internal class ClientTests
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
 
-        // BEHOBEN: Alle 4 Parameter übergeben
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
+        // Use real domain services for proper filtering behavior in integration tests
+        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+            clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -122,8 +130,14 @@ internal class ClientTests
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
 
-        // BEHOBEN: Alle 4 Parameter übergeben
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
+        // Use real domain services for proper filtering behavior in integration tests
+        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+            clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -159,8 +173,14 @@ internal class ClientTests
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
 
-        // BEHOBEN: Alle 4 Parameter übergeben
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
+        // Use real domain services for proper filtering behavior in integration tests
+        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+            clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
@@ -183,7 +203,7 @@ internal class ClientTests
         dbContext = new DataBaseContext(options, _httpContextAccessor);
         dbContext.Database.EnsureCreated();
 
-        // Aktuelles Datum für die required ValidFrom-Eigenschaft
+        // Aktuelles Datum fï¿½r die required ValidFrom-Eigenschaft
         var now = DateTime.Now;
 
         // Testdaten mit spezifischen Eigenschaften erstellen
@@ -192,13 +212,13 @@ internal class ClientTests
         new Client
         {
             Id = Guid.NewGuid(),
-            Name = "Müller",
+            Name = "Mï¿½ller",
             FirstName = "Hans",
             Company = "ABC GmbH",
             Addresses = new List<Address>
             {
                 new Address {
-                    Street = "Hauptstraße 1",
+                    Street = "Hauptstraï¿½e 1",
                     City = "Berlin",
                     ValidFrom = now  // Wichtig: ValidFrom setzen
                 }
@@ -213,8 +233,8 @@ internal class ClientTests
             Addresses = new List<Address>
             {
                 new Address {
-                    Street = "Nebenstraße 2",
-                    City = "München",
+                    Street = "Nebenstraï¿½e 2",
+                    City = "Mï¿½nchen",
                     ValidFrom = now  // Wichtig: ValidFrom setzen
                 }
             }
@@ -228,7 +248,7 @@ internal class ClientTests
             Addresses = new List<Address>
             {
                 new Address {
-                    Street = "Bergstraße 3",
+                    Street = "Bergstraï¿½e 3",
                     City = "Hamburg",
                     ValidFrom = now  // Wichtig: ValidFrom setzen
                 }
@@ -239,10 +259,16 @@ internal class ClientTests
         dbContext.Client.AddRange(clients);
         dbContext.SaveChanges();
 
-        // BEHOBEN: Alle 4 Parameter übergeben
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
+        // Use real domain services for proper filtering behavior in integration tests
+        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+            clientFilterService, membershipFilterService, searchService, sortingService);
 
-        // Zugriff auf die private Methode über Reflection
+        // Zugriff auf die private Methode ï¿½ber Reflection
         var method = typeof(ClientRepository).GetMethod("FilterBySearchStringStandard",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
@@ -253,9 +279,9 @@ internal class ClientTests
             .AsNoTracking()
             .AsQueryable();
 
-        // Test 1: Suche nach "müller hans"
+        // Test 1: Suche nach "mï¿½ller hans"
         var result1 = method.Invoke(repository, new object[] {
-        new string[] { "müller", "hans" },
+        new string[] { "mï¿½ller", "hans" },
         false,
         baseQuery
     }) as IQueryable<Client>;
@@ -277,7 +303,7 @@ internal class ClientTests
         // Assert
         result1.Should().NotBeNull();
         result1.Count().Should().Be(1);
-        result1.First().Name.Should().Be("Müller");
+        result1.First().Name.Should().Be("Mï¿½ller");
 
         result2.Should().NotBeNull();
         result2.Count().Should().Be(1);
@@ -305,13 +331,15 @@ internal class ClientTests
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
 
-        // BEHOBEN: Mocks für beide Services erstellen
+        // BEHOBEN: Mocks fï¿½r beide Services erstellen
         _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
                    .Returns(Task.FromResult(new List<Guid>()));
+        _groupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
+                   .Returns(Task.FromResult(new List<Guid>()));
 
         _groupVisibility = Substitute.For<IGroupVisibilityService>();
-        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // Für Tests als Admin setzen
+        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // Fï¿½r Tests als Admin setzen
         _groupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
     }
 

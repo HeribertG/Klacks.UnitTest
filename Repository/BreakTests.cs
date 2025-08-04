@@ -3,10 +3,14 @@ using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.Breaks;
 using Klacks.Api.Interfaces;
+using Klacks.Api.Interfaces.Domains;
+using NSubstitute;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Schedules;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Repositories;
+using Klacks.Api.Resources.Filter;
+using Klacks.Api.Resources.Settings;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -42,8 +46,14 @@ internal class BreakTests
 
         DataSeed(clients, absence, breaks);
 
-        // BEHOBEN: Alle 4 Parameter übergeben
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility);
+        // Use real domain services for proper filtering behavior in integration tests
+        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+            clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new Klacks.Api.Queries.Breaks.ListQuery(filter);
         var handler = new GetListQueryHandler(_mapper, repository);
 
@@ -75,6 +85,8 @@ internal class BreakTests
         _mediator = Substitute.For<IMediator>();
         _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
+                   .Returns(Task.FromResult(new List<Guid>()));
+        _groupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
                    .Returns(Task.FromResult(new List<Guid>()));
 
         _groupVisibility = Substitute.For<IGroupVisibilityService>();
