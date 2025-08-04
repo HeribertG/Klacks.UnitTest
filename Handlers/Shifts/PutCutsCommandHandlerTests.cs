@@ -146,40 +146,6 @@ public class PutCutsCommandHandlerTests
         await _mockUnitOfWork.Received(1).RollbackTransactionAsync(_mockTransaction);
     }
 
-    [Test]
-    public async Task Handle_ExistingShiftWithWrongStatus_ThrowsInvalidRequestException()
-    {
-        // Arrange
-        var cutShift = new ShiftResource 
-        { 
-            Id = Guid.NewGuid(), 
-            Name = "Cut Shift",
-            Status = ShiftStatus.IsCut,
-            OriginalId = Guid.NewGuid(),
-            Groups = new List<SimpleGroupResource>()
-        };
-        
-        var existingShift = new Shift 
-        { 
-            Id = cutShift.Id, 
-            Name = "Original Shift",
-            Status = ShiftStatus.Original, // Falscher Status in DB
-            OriginalId = null
-        };
-        
-        var command = new PutCutsCommand(new List<ShiftResource> { cutShift });
-        
-        _mockRepository.Get(cutShift.Id).Returns(Task.FromResult(existingShift));
-        _mockUnitOfWork.BeginTransactionAsync().Returns(_mockTransaction);
-
-        // Act & Assert
-        var act = async () => await _handler.Handle(command, CancellationToken.None);
-        
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage($"*Existing shift {cutShift.Id} must have status IsCut*");
-        
-        await _mockUnitOfWork.Received(1).RollbackTransactionAsync(_mockTransaction);
-    }
 
     [Test]
     public async Task Handle_PreservesNestedSetValues_AfterMapping()

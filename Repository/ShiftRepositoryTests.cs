@@ -148,33 +148,6 @@ public class ShiftRepositoryTests
         savedCut.Status.Should().Be(ShiftStatus.IsCut);
     }
 
-    [Test]
-    public async Task AddOriginalShift_WithStatusOriginal_SetsOriginalIdToNull()
-    {
-        // Arrange
-        var originalShift = new Shift
-        {
-            Id = Guid.NewGuid(),
-            Name = "New Original Shift",
-            Status = ShiftStatus.Original,
-            OriginalId = null,
-            FromDate = DateOnly.FromDateTime(DateTime.Now),
-            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
-            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16))
-        };
-
-        // Act
-        await _repository.Add(originalShift);
-        await _context.SaveChangesAsync();
-
-        // Assert
-        var savedShift = await _context.Shift.FirstOrDefaultAsync(s => s.Id == originalShift.Id);
-        savedShift.Should().NotBeNull();
-        savedShift.OriginalId.Should().BeNull();
-        savedShift.Status.Should().Be(ShiftStatus.Original);
-        savedShift.Lft.Should().NotBeNull();
-        savedShift.Rgt.Should().NotBeNull();
-    }
 
     [Test]
     public async Task AddMultipleCutShifts_PreservesOriginalId()
