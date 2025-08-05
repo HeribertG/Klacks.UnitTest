@@ -160,8 +160,9 @@ namespace UnitTest.Mocks
 
         public IQueryable<Group> FilterGroup(GroupFilter filter)
         {
-            var tmp = context.Group.Include(gr => gr.GroupItems)
-                               .ThenInclude(gi => gi.Client)
+            var tmp = context.Group
+                               .Include(gr => gr.GroupItems.Where(gi => !gi.ShiftId.HasValue && gi.ClientId.HasValue))
+                                   .ThenInclude(gi => gi.Client)
                                .AsNoTracking()
                                .OrderBy(g => g.Root)
                                .AsQueryable();

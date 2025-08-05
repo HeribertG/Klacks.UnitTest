@@ -34,6 +34,7 @@ internal class GoupTests
     private IMapper _mapper = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
     private IGroupVisibilityService _groupVisibility = null!; // HINZUGEF�GT
+    private Guid _testShiftId;
 
     [Test]
     public async Task PostGroup_Ok()
@@ -48,6 +49,7 @@ internal class GoupTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
+        CreateTestShift();
 
         // Use real domain services for proper filtering behavior in integration tests
         var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
@@ -57,7 +59,72 @@ internal class GoupTests
         
         var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
-        var groupRepository = new GroupRepository(dbContext, _groupVisibility, _groupLogger);
+        // Create mock Domain Services for GroupRepository
+        var mockTreeService = Substitute.For<IGroupTreeService>();
+        var mockHierarchyService = Substitute.For<IGroupHierarchyService>();
+        var mockSearchService = Substitute.For<IGroupSearchService>();  
+        var mockValidityService = Substitute.For<IGroupValidityService>();
+        var mockMembershipService = Substitute.For<IGroupMembershipService>();
+        var mockIntegrityService = Substitute.For<IGroupIntegrityService>();
+        
+        // Configure tree service for integration tests
+        mockTreeService.AddChildNodeAsync(Arg.Any<Guid>(), Arg.Any<Group>()).Returns(info =>
+        {
+            var parentId = info.ArgAt<Guid>(0);
+            var newGroup = info.ArgAt<Group>(1);
+            
+            // Handle empty GUID as root node
+            if (parentId == Guid.Empty)
+            {
+                var maxRgt = dbContext.Group.Max(g => (int?)g.Rgt) ?? 0;
+                newGroup.Lft = maxRgt + 1;
+                newGroup.Rgt = maxRgt + 2;
+                newGroup.Parent = null;
+                newGroup.Root = null;
+                newGroup.CreateTime = DateTime.UtcNow;
+                
+                dbContext.Group.Add(newGroup);
+                return Task.FromResult(newGroup);
+            }
+            
+            var parent = dbContext.Group.FirstOrDefault(g => g.Id == parentId);
+            if (parent == null) throw new KeyNotFoundException($"Parent group with ID {parentId} not found");
+            
+            newGroup.Parent = parentId;
+            newGroup.Root = parent.Root ?? parent.Id;
+            newGroup.Lft = parent.Rgt;
+            newGroup.Rgt = parent.Rgt + 1;
+            newGroup.CreateTime = DateTime.UtcNow;
+            
+            dbContext.Group.Add(newGroup);
+            return Task.FromResult(newGroup);
+        });
+        
+        mockTreeService.AddRootNodeAsync(Arg.Any<Group>()).Returns(info =>
+        {
+            var newGroup = info.ArgAt<Group>(0);
+            var maxRgt = dbContext.Group.Max(g => (int?)g.Rgt) ?? 0;
+            newGroup.Lft = maxRgt + 1;
+            newGroup.Rgt = maxRgt + 2;
+            newGroup.Parent = null;
+            newGroup.Root = null;
+            newGroup.CreateTime = DateTime.UtcNow;
+            
+            dbContext.Group.Add(newGroup);
+            return Task.FromResult(newGroup);
+        });
+        
+        // Configure search service to pass through queries for integration tests
+        mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>())
+            .Returns(info => info.Arg<IQueryable<Group>>());
+            
+        // Configure validity service to pass through queries
+        mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(info => info.Arg<IQueryable<Group>>());
+        
+        var groupRepository = new GroupRepository(dbContext, _groupVisibility, mockTreeService, 
+            mockHierarchyService, mockSearchService, mockValidityService, mockMembershipService, 
+            mockIntegrityService, _groupLogger);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
         var command = new PostCommand<GroupResource>(group);
@@ -128,7 +195,11 @@ internal class GoupTests
             var result = await handler.Handle(command, default);
             if (result != null && result.Clients != null && result.Clients.Any())
             {
-                var item = new GroupItemResource() { ClientId = result.Clients.First().Id };
+                var item = new GroupItemResource() 
+                { 
+                    ClientId = result.Clients.First().Id,
+                    ShiftId = _testShiftId
+                };
                 group.GroupItems.Add(item);
             }
         }
@@ -187,6 +258,26 @@ internal class GoupTests
         dbContext.Communication.AddRange(communications);
         dbContext.Annotation.AddRange(annotations);
 
+        dbContext.SaveChanges();
+    }
+
+    private void CreateTestShift()
+    {
+        var testShift = new Klacks.Api.Models.Schedules.Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Shift",
+            Description = "Test shift for group items",
+            FromDate = DateOnly.FromDateTime(DateTime.Now.AddDays(-100)),
+            UntilDate = DateOnly.FromDateTime(DateTime.Now.AddDays(100)),
+            StartShift = new TimeOnly(8, 0),
+            EndShift = new TimeOnly(16, 0),
+            Lft = 1,
+            Rgt = 2
+        };
+
+        _testShiftId = testShift.Id;
+        dbContext.Shift.Add(testShift);
         dbContext.SaveChanges();
     }
 }
