@@ -206,7 +206,7 @@ public class ClientRepositoryRefactoredTests
         // Arrange
         var filter = new WorkFilter
         {
-            Search = "Anna",
+            SearchString = "Anna",
             CurrentYear = DateTime.Now.Year,
             CurrentMonth = DateTime.Now.Month,
             OrderBy = "firstname",

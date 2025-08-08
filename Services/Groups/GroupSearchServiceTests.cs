@@ -480,7 +480,7 @@ public class GroupSearchServiceTests
     {
         // Arrange
         var filter = new GroupFilter { 
-            SearchString = "development",  // Search only works on Name, not Description
+            SearchString = "development",  // SearchString only works on Name, not Description
             ActiveDateRange = true,
             FormerDateRange = true,
             FutureDateRange = true

@@ -1,14 +1,19 @@
 
 using Klacks.Api.Datas;
 using Klacks.Api.Interfaces;
+using Klacks.Api.Interfaces.Domains;
 using Klacks.Api.Models.Authentification;
 using Klacks.Api.Repositories;
+using Klacks.Api.Resources;
+using Klacks.Api.Resources.Registrations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework.Internal;
+using NSubstitute;
 
 namespace UnitTest.Repository;
 
@@ -22,6 +27,9 @@ public class AccountTests
     private JwtSettings _jwtSettings = null!;
     private ITokenService? _tokenService = null!;
     private UserManager<AppUser> _userManager;
+    private IAuthenticationService _authenticationService;
+    private IUserManagementService _userManagementService;
+    private IRefreshTokenService _refreshTokenService;
 
     [Test]
     public async Task ChangeRoleUser_ShouldChangeRole_WhenNewRoleIsValid()
@@ -49,7 +57,9 @@ public class AccountTests
         string email = "notfound@test.com";
         string password = "TestPassword123!";
 
-        _userManager.FindByEmailAsync(email)!.Returns(Task.FromResult<AppUser>(null!));
+        // Setup mock to return no user for this email
+        _authenticationService.ValidateCredentialsAsync(email, password)
+            .Returns(Task.FromResult((false, (AppUser)null)));
 
         // Act
         var result = await _accountRepository.LogInUser(email, password);
@@ -70,8 +80,9 @@ public class AccountTests
         };
         string wrongPassword = "WrongPassword!";
 
-        _userManager.FindByEmailAsync(Arg.Is<string>(email => email == wrongPassword))
-         .Returns(Task.FromResult(new AppUser { Email = wrongPassword, UserName = "knownUser" }));
+        // Setup mock to return validation failure
+        _authenticationService.ValidateCredentialsAsync(user.Email, wrongPassword)
+            .Returns(Task.FromResult((false, (AppUser)null)));
 
         // Act
         var result = await _accountRepository.LogInUser(user.Email, wrongPassword);
@@ -87,38 +98,47 @@ public class AccountTests
         // Arrange
         var user = new AppUser
         {
+            Id = "test-user-id",
             UserName = "MyUser",
-            Email = "admin@test.com"
+            Email = "admin@test.com",
+            FirstName = "Test",
+            LastName = "User"
         };
         string _email = "admin@test.com";
         string password = "P@ssw0rt1";
 
-        _userManager.FindByEmailAsync(Arg.Is<string>(email => email == _email))!
-        .Returns(Task.FromResult(user));
-
-        _userManager.CheckPasswordAsync(Arg.Any<AppUser>(), Arg.Is<string>(password => password == "P@ssw0rt1"))
-            .Returns(Task.FromResult(true));
+        // Setup mocks for successful login
+        _authenticationService.ValidateCredentialsAsync(_email, password)
+            .Returns(Task.FromResult((true, user)));
+            
+        _userManagementService.IsUserInRoleAsync(user, "Admin")
+            .Returns(Task.FromResult(false));
+            
+        _userManagementService.IsUserInRoleAsync(user, "Authorised")
+            .Returns(Task.FromResult(false));
+            
+        _refreshTokenService.CreateRefreshTokenAsync(user.Id)
+            .Returns(Task.FromResult("test-refresh-token"));
+            
+        _tokenService.CreateToken(user, Arg.Any<DateTime>())
+            .Returns(Task.FromResult("test-jwt-token"));
 
         // Act
         var result = await _accountRepository.LogInUser(_email, password);
 
         // Assert
         Assert.That(result.Success, Is.True, "User should be logged in successfully.");
-        // Weitere Überprüfungen können hinzugefügt werden, z. B. ob ein Token zurückgegeben wurde.
+        Assert.That(result.Token, Is.EqualTo("test-jwt-token"));
+        Assert.That(result.RefreshToken, Is.EqualTo("test-refresh-token"));
+        Assert.That(result.UserName, Is.EqualTo(user.UserName));
     }
 
     [Test]
     public async Task RegisterUser_ShouldRegisterSuccessfully()
     {
         // Arrange
-        _jwtSettings = new JwtSettings
-        {
-            Secret = "VerySecretKey",
-            ValidIssuer = "Issuer",
-            ValidAudience = "Audience"
-        };
-
-        var accountRepository = new AccountRepository(_dbContext, _userManager, _jwtSettings, _tokenService);
+        // Use the already initialized repository from SetUp
+        var accountRepository = _accountRepository;
         var user = new AppUser
         {
             UserName = "MyUser",
@@ -140,11 +160,17 @@ public class AccountTests
     {
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _tokenService = Substitute.For<ITokenService>();
+        _authenticationService = Substitute.For<IAuthenticationService>();
+        _userManagementService = Substitute.For<IUserManagementService>();
+        _refreshTokenService = Substitute.For<IRefreshTokenService>();
+        
         var options = new DbContextOptionsBuilder<DataBaseContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
 
         _dbContext = new DataBaseContext(options, _httpContextAccessor);
-        _userManager = MockUserManager();
+        
+        // Setup mocks
+        SetupMocks();
 
         _tokenService.CreateToken(Arg.Any<AppUser>(), Arg.Any<DateTime>()).Returns(Task.FromResult("1234567890"));
 
@@ -153,14 +179,9 @@ public class AccountTests
         // Seed the database with test data
         SeedDatabase();
 
-        _jwtSettings = new JwtSettings
-        {
-            Secret = "ThisIsASampleKeyForJwtToken",
-            ValidIssuer = "SampleIssuer",
-            ValidAudience = "SampleAudience",
-        };
+        // JwtSettings no longer needed with domain services
 
-        _accountRepository = new AccountRepository(_dbContext, _userManager, _jwtSettings, _tokenService);
+        _accountRepository = new AccountRepository(_dbContext, _tokenService, _authenticationService, _userManagementService, _refreshTokenService);
     }
 
     [TearDown]
@@ -171,7 +192,6 @@ public class AccountTests
             _dbContext.Database.EnsureDeleted();
             _dbContext.Dispose();
         }
-        _userManager.Dispose();
     }
 
     [Test]
@@ -188,58 +208,7 @@ public class AccountTests
         Assert.That(result, Is.True);
     }
 
-    private static UserManager<AppUser> MockUserManager()
-    {
-        var store = Substitute.For<IUserStore<AppUser>>();
-        var optionsAccessor = Substitute.For<IOptions<IdentityOptions>>();
-        var passwordHasher = Substitute.For<IPasswordHasher<AppUser>>();
-        var userValidators = new List<IUserValidator<AppUser>>();
-        var passwordValidators = new List<IPasswordValidator<AppUser>>();
-        var keyNormalizer = Substitute.For<ILookupNormalizer>();
-        var errors = Substitute.For<IdentityErrorDescriber>();
-        var services = Substitute.For<IServiceProvider>();
-        var logger = Substitute.For<ILogger<UserManager<AppUser>>>();
 
-        var userManager = Substitute.For<UserManager<AppUser>>(
-            store,
-            optionsAccessor,
-            passwordHasher,
-            userValidators,
-            passwordValidators,
-            keyNormalizer,
-            errors,
-            services,
-            logger);
-
-        userManager.FindByEmailAsync(Arg.Any<string>())!
-            .Returns(Task.FromResult<AppUser>(null!));
-
-        userManager.CreateAsync(Arg.Any<AppUser>(), Arg.Any<string>())
-            .Returns(Task.FromResult(IdentityResult.Success));
-
-        userManager.IsInRoleAsync(Arg.Is<AppUser>(user => user != null && user.UserName == "Admin"), "Admin")
-            .Returns(Task.FromResult(true));
-
-        userManager.IsInRoleAsync(Arg.Is<AppUser>(user => user != null && user.UserName == "Authorised"), "Authorised")
-            .Returns(Task.FromResult(true));
-
-        userManager.CheckPasswordAsync(Arg.Any<AppUser>(), Arg.Any<string>()).Returns(Task.FromResult(false));
-
-        userManager.FindByIdAsync("672f77e8-e479-4422-8781-84d218377fb3")!.Returns(Task.FromResult(new AppUser() { Id = "672f77e8-e479-4422-8781-84d218377fb3" }));
-
-        userManager.IsInRoleAsync(Arg.Any<AppUser>(), "User").Returns(Task.FromResult(false));
-
-        userManager.AddToRoleAsync(Arg.Any<AppUser>(), "User").Returns(Task.FromResult(IdentityResult.Success));
-
-        return userManager;
-    }
-
-    [TearDown]
-    public void Dispose()
-    {
-        _userManager.Dispose();
-        _tokenService = null;
-    }
 
     private void SeedDatabase()
     {
@@ -291,5 +260,85 @@ public class AccountTests
         _dbContext.RefreshToken.Add(refreshToken);
 
         _dbContext.SaveChanges();
+    }
+
+    private void SetupMocks()
+    {
+        // Setup default authentication service mocks - specific test cases will override these
+        _authenticationService.ValidateCredentialsAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Task.FromResult((false, (AppUser)null)));
+
+        _authenticationService.GetUserFromAccessTokenAsync(Arg.Any<string>())
+            .Returns(Task.FromResult<AppUser>(null));
+
+        _authenticationService.ChangePasswordAsync(Arg.Any<AppUser>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(callInfo => Task.FromResult((true, (IdentityResult?)null)));
+            
+        _authenticationService.AddErrorsToModelState(Arg.Any<IdentityResult>(), Arg.Any<ModelStateDictionary>())
+            .Returns(callInfo => new ModelStateDictionary());
+            
+        // SetModelError is a void method, so we just need to set it up without Returns
+        _authenticationService
+            .When(x => x.SetModelError(Arg.Any<AuthenticatedResult>(), Arg.Any<string>(), Arg.Any<string>()))
+            .Do(callInfo => 
+            {
+                var result = callInfo.ArgAt<AuthenticatedResult>(0);
+                var key = callInfo.ArgAt<string>(1);
+                var message = callInfo.ArgAt<string>(2);
+                
+                if (result.ModelState == null)
+                    result.ModelState = new ModelStateDictionary();
+                    
+                result.ModelState.AddModelError(key, message);
+            });
+
+        // Setup user management service mocks
+        _userManagementService.FindUserByEmailAsync(Arg.Any<string>())
+            .Returns(callInfo => {
+                var email = callInfo.ArgAt<string>(0);
+                if (email == "admin@test.com")
+                    return Task.FromResult(new AppUser { Email = email, UserName = "admin" });
+                return Task.FromResult<AppUser>(null);
+            });
+
+        _userManagementService.ChangeUserRoleAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(Task.FromResult((true, "Role changed successfully")));
+
+        _userManagementService.DeleteUserAsync(Arg.Any<Guid>())
+            .Returns(Task.FromResult((true, "User deleted successfully")));
+
+        _userManagementService.GetUserListAsync()
+            .Returns(callInfo => Task.FromResult(new List<UserResource>()));
+
+        _userManagementService.RegisterUserAsync(Arg.Any<AppUser>(), Arg.Any<string>())
+            .Returns(callInfo => Task.FromResult((true, IdentityResult.Success)));
+
+        _userManagementService.IsUserInRoleAsync(Arg.Any<AppUser>(), "Admin")
+            .Returns(callInfo => {
+                var user = callInfo.ArgAt<AppUser>(0);
+                return Task.FromResult(user?.UserName == "Admin");
+            });
+
+        _userManagementService.IsUserInRoleAsync(Arg.Any<AppUser>(), "Authorised")
+            .Returns(callInfo => {
+                var user = callInfo.ArgAt<AppUser>(0);
+                return Task.FromResult(user?.UserName == "Authorised");
+            });
+
+        // Setup refresh token service mocks
+        _refreshTokenService.CreateRefreshTokenAsync(Arg.Any<string>())
+            .Returns(Task.FromResult(Token));
+
+        _refreshTokenService.ValidateRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(callInfo => {
+                var refreshToken = callInfo.ArgAt<string>(1);
+                return Task.FromResult(refreshToken == Token);
+            });
+
+        _refreshTokenService.GetUserFromRefreshTokenAsync(Arg.Any<string>())
+            .Returns(Task.FromResult<AppUser>(null));
+
+        _refreshTokenService.CalculateTokenExpiryTime()
+            .Returns(DateTime.UtcNow.AddHours(1));
     }
 }

@@ -64,7 +64,7 @@ public class DomainServiceFunctionalTests
             new Shift 
             { 
                 Id = Guid.NewGuid(), 
-                Name = "Search Test Shift", 
+                Name = "SearchString Test Shift", 
                 Abbreviation = "STS",
                 FromDate = today.AddDays(-1), 
                 UntilDate = today.AddDays(1),
@@ -87,7 +87,7 @@ public class DomainServiceFunctionalTests
         // Assert
         shifts.Should().HaveCount(2, "Should return 2 active shifts");
         shifts.Should().Contain(s => s.Name == "Active Shift");
-        shifts.Should().Contain(s => s.Name == "Search Test Shift");
+        shifts.Should().Contain(s => s.Name == "SearchString Test Shift");
         shifts.Should().NotContain(s => s.Name == "Former Shift Test");
         shifts.Should().NotContain(s => s.Name == "Future Shift");
 
@@ -109,11 +109,11 @@ public class DomainServiceFunctionalTests
         // Assert
         shifts.Should().HaveCount(2, "Should return 2 shifts containing 'Test'");
         shifts.Should().Contain(s => s.Name == "Former Shift Test");
-        shifts.Should().Contain(s => s.Name == "Search Test Shift");
+        shifts.Should().Contain(s => s.Name == "SearchString Test Shift");
         shifts.Should().NotContain(s => s.Name == "Active Shift");
         shifts.Should().NotContain(s => s.Name == "Future Shift");
 
-        Console.WriteLine($"Search filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
+        Console.WriteLine($"SearchString filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
 
     [Test]
@@ -279,7 +279,7 @@ public class DomainServiceFunctionalTests
 
         // Use in-memory search logic instead of EF.Functions.Like
         var act2 = () => query.Where(s => s.Name.Contains("Test", StringComparison.OrdinalIgnoreCase)).ToList();
-        act2.Should().NotThrow("Search filter should execute successfully");
+        act2.Should().NotThrow("SearchString filter should execute successfully");
 
         var act3 = () => _statusFilterService.ApplyStatusFilter(query, true).ToList();
         act3.Should().NotThrow("Status filter should execute successfully");

@@ -37,16 +37,16 @@ public class ShiftPerformanceIntegrationTests
         _context = new DataBaseContext(options, mockHttpContextAccessor);
 
         var mockLogger = Substitute.For<ILogger<Shift>>();
-        _shiftRepository = new ShiftRepository(_context, mockLogger);
-
-        // Create domain services
+        
+        // Create domain services for ShiftRepository
         _dateRangeFilterService = new DateRangeFilterService();
         _searchService = new ShiftSearchService();
         _sortingService = new ShiftSortingService();
         _statusFilterService = new ShiftStatusFilterService();
         
+        _shiftRepository = new ShiftRepository(_context, mockLogger, _dateRangeFilterService, _searchService, _sortingService, _statusFilterService);
+        
         _shiftFilterService = new ShiftFilterService(
-            _shiftRepository,
             _dateRangeFilterService,
             _searchService,
             _sortingService,
@@ -144,7 +144,7 @@ public class ShiftPerformanceIntegrationTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        var result = await _shiftFilterService.GetFilteredAndPaginatedShifts(filter);
+        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
         stopwatch.Stop();
 
         // Assert
@@ -180,7 +180,7 @@ public class ShiftPerformanceIntegrationTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        var result = await _shiftFilterService.GetFilteredAndPaginatedShifts(filter);
+        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
         stopwatch.Stop();
 
         // Assert
@@ -218,7 +218,7 @@ public class ShiftPerformanceIntegrationTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        var result = await _shiftFilterService.GetFilteredAndPaginatedShifts(filter);
+        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
         stopwatch.Stop();
 
         // Assert
@@ -295,7 +295,7 @@ public class ShiftPerformanceIntegrationTests
         var sw1 = Stopwatch.StartNew();
         var memoryBefore1 = GC.GetTotalMemory(false);
         
-        var queryableResult = await _shiftFilterService.GetFilteredAndPaginatedShifts(filter);
+        var queryableResult = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
         
         sw1.Stop();
         var memoryAfter1 = GC.GetTotalMemory(false);

@@ -34,7 +34,6 @@ internal class GoupTests
     private IMapper _mapper = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
     private IGroupVisibilityService _groupVisibility = null!; // HINZUGEF�GT
-    private Guid _testShiftId;
 
     [Test]
     public async Task PostGroup_Ok()
@@ -49,7 +48,6 @@ internal class GoupTests
 
         dbContext.Database.EnsureCreated();
         DataSeed(_truncatedClient);
-        CreateTestShift();
 
         // Use real domain services for proper filtering behavior in integration tests
         var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
@@ -197,8 +195,8 @@ internal class GoupTests
             {
                 var item = new GroupItemResource() 
                 { 
-                    ClientId = result.Clients.First().Id,
-                    ShiftId = _testShiftId
+                    ClientId = result.Clients.First().Id
+                    // ShiftId should be null for GroupItems to be included in Get method
                 };
                 group.GroupItems.Add(item);
             }
@@ -261,23 +259,4 @@ internal class GoupTests
         dbContext.SaveChanges();
     }
 
-    private void CreateTestShift()
-    {
-        var testShift = new Klacks.Api.Models.Schedules.Shift
-        {
-            Id = Guid.NewGuid(),
-            Name = "Test Shift",
-            Description = "Test shift for group items",
-            FromDate = DateOnly.FromDateTime(DateTime.Now.AddDays(-100)),
-            UntilDate = DateOnly.FromDateTime(DateTime.Now.AddDays(100)),
-            StartShift = new TimeOnly(8, 0),
-            EndShift = new TimeOnly(16, 0),
-            Lft = 1,
-            Rgt = 2
-        };
-
-        _testShiftId = testShift.Id;
-        dbContext.Shift.Add(testShift);
-        dbContext.SaveChanges();
-    }
 }

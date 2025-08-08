@@ -5,6 +5,8 @@ using Klacks.Api.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
+using Klacks.Api.Interfaces.Domains;
+using NSubstitute;
 
 namespace UnitTest.Repository;
 
@@ -15,6 +17,10 @@ public class ShiftRepositoryTests
     private ShiftRepository _repository;
     private ILogger<Shift> _mockLogger;
     private IHttpContextAccessor _mockHttpContextAccessor;
+    private IDateRangeFilterService _mockDateRangeFilterService;
+    private IShiftSearchService _mockShiftSearchService;
+    private IShiftSortingService _mockShiftSortingService;
+    private IShiftStatusFilterService _mockShiftStatusFilterService;
 
     [SetUp]
     public void SetUp()
@@ -26,7 +32,11 @@ public class ShiftRepositoryTests
         _mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, _mockHttpContextAccessor);
         _mockLogger = Substitute.For<ILogger<Shift>>();
-        _repository = new ShiftRepository(_context, _mockLogger);
+        _mockDateRangeFilterService = Substitute.For<IDateRangeFilterService>();
+        _mockShiftSearchService = Substitute.For<IShiftSearchService>();
+        _mockShiftSortingService = Substitute.For<IShiftSortingService>();
+        _mockShiftStatusFilterService = Substitute.For<IShiftStatusFilterService>();
+        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService);
     }
 
     [Test]
