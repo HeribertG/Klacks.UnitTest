@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Datas;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
-using Klacks.Api.Repositories;
+using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Interfaces;
 using Klacks.Api.Interfaces.Domains;
 using Microsoft.Extensions.Logging;

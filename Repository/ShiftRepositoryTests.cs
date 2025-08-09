@@ -1,7 +1,7 @@
 using Klacks.Api.Datas;
 using Klacks.Api.Enums;
 using Klacks.Api.Models.Schedules;
-using Klacks.Api.Repositories;
+using Klacks.Api.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;

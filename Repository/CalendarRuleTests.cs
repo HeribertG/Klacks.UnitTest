@@ -2,7 +2,7 @@ using AutoMapper;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.Settings.CalendarRules;
 using Klacks.Api.Queries.Settings.CalendarRules;
-using Klacks.Api.Repositories;
+using Klacks.Api.Infrastructure.Repositories;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
