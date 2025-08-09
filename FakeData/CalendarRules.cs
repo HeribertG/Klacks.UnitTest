@@ -1,5 +1,5 @@
 using Klacks.Api.Models.Settings;
-using Klacks.Api.Presentation.Resources.Filter;
+using Klacks.Api.Presentation.DTOs.Filter;
 using Newtonsoft.Json;
 
 namespace UnitTest.FakeData

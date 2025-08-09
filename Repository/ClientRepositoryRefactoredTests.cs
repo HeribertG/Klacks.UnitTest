@@ -6,8 +6,8 @@ using Klacks.Api.Interfaces.Domains;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Repositories;
-using Klacks.Api.Presentation.Resources.Filter;
-using Klacks.Api.Presentation.Resources.Settings;
+using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Presentation.DTOs.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -278,7 +278,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients);
         _mockClientFilterService.ApplyAddressTypeFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<int[]>())
             .Returns(testClients);
-        _mockClientFilterService.ApplyStateOrCountryFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<List<StateCountryToken>>(), Arg.Any<List<Klacks.Api.Presentation.Resources.Settings.CountryResource>>())
+        _mockClientFilterService.ApplyStateOrCountryFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<List<StateCountryToken>>(), Arg.Any<List<Klacks.Api.Presentation.DTOs.Settings.CountryResource>>())
             .Returns(testClients);
         _mockMembershipFilterService.ApplyMembershipFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(testClients);

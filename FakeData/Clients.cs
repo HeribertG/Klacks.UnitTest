@@ -4,7 +4,7 @@ using Klacks.Api.Enums;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Schedules;
 using Klacks.Api.Models.Staffs;
-using Klacks.Api.Presentation.Resources.Filter;
+using Klacks.Api.Presentation.DTOs.Filter;
 using Newtonsoft.Json;
 
 namespace UnitTest.FakeData

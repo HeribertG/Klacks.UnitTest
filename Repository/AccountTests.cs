@@ -1,19 +1,14 @@
-
 using Klacks.Api.Datas;
 using Klacks.Api.Interfaces;
 using Klacks.Api.Interfaces.Domains;
 using Klacks.Api.Models.Authentification;
+using Klacks.Api.Presentation.DTOs.Registrations;
 using Klacks.Api.Repositories;
-using Klacks.Api.Resources;
-using Klacks.Api.Presentation.Resources.Registrations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NUnit.Framework.Internal;
-using NSubstitute;
 
 namespace UnitTest.Repository;
 
@@ -35,7 +30,6 @@ public class AccountTests
     public async Task ChangeRoleUser_ShouldChangeRole_WhenNewRoleIsValid()
     {
         // Arrange
-
         var changeRole = new ChangeRole
         {
             UserId = "672f77e8-e479-4422-8781-84d218377fb3",
