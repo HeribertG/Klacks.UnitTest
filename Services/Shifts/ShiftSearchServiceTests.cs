@@ -2,7 +2,6 @@ using FluentAssertions;
 using Klacks.Api.Services.Shifts;
 using Klacks.Api.Models.Schedules;
 using Klacks.Api.Models.Staffs;
-using Klacks.Api.Enums;
 using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Datas;
 using Microsoft.AspNetCore.Http;

@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Klacks.Api.Datas;
-using Klacks.Api.Enums;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Models.Schedules;

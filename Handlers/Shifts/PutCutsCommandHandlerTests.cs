@@ -1,6 +1,5 @@
 using AutoMapper;
 using Klacks.Api.Application.Commands.Shifts;
-using Klacks.Api.Enums;
 using Klacks.Api.Exceptions;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;

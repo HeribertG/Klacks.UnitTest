@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Klacks.Api.Services.Clients;
 using Klacks.Api.Models.Staffs;
-using Klacks.Api.Enums;
 using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Datas;
 using Microsoft.AspNetCore.Http;
