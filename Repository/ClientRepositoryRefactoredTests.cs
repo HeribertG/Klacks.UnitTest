@@ -112,7 +112,7 @@ public class ClientRepositoryRefactoredTests
         // Arrange
         var filter = new BreakFilter
         {
-            Search = "Hans",
+            SearchString = "Hans",
             CurrentYear = DateTime.Now.Year,
             OrderBy = "name",
             SortOrder = "asc",
@@ -160,7 +160,7 @@ public class ClientRepositoryRefactoredTests
         // Arrange
         var filter = new BreakFilter
         {
-            Search = "123",
+            SearchString = "123",
             CurrentYear = DateTime.Now.Year,
             OrderBy = "name",
             SortOrder = "asc",
@@ -309,7 +309,7 @@ public class ClientRepositoryRefactoredTests
         // Arrange
         var filter = new BreakFilter
         {
-            Search = "test",
+            SearchString = "test",
             CurrentYear = 2024,
             OrderBy = "name",
             SortOrder = "asc",
