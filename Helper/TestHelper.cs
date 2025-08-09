@@ -1,5 +1,5 @@
 using AutoMapper;
-using Klacks.Api.AutoMappers;
+using Klacks.Api.Application.AutoMapper;
 
 namespace UnitTest.Helper
 {

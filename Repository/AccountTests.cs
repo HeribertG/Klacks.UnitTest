@@ -1,6 +1,6 @@
 using Klacks.Api.Datas;
-using Klacks.Api.Interfaces;
-using Klacks.Api.Interfaces.Domains;
+using Klacks.Api.Infrastructure.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Models.Authentification;
 using Klacks.Api.Presentation.DTOs.Registrations;
 using Klacks.Api.Infrastructure.Repositories;

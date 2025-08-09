@@ -1,8 +1,9 @@
 using FluentAssertions;
 using Klacks.Api.Datas;
 using Klacks.Api.Enums;
-using Klacks.Api.Interfaces;
-using Klacks.Api.Interfaces.Domains;
+using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Infrastructure.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Infrastructure.Repositories;

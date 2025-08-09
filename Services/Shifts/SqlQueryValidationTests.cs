@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Klacks.Api.Interfaces.Domains;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Models.Schedules;
 using Klacks.Api.Services.Shifts;
 

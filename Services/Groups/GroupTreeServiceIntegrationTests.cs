@@ -7,7 +7,7 @@ using Klacks.Api.Datas;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Klacks.Api.Infrastructure.Repositories;
-using Klacks.Api.Interfaces;
+using Klacks.Api.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 using Klacks.Api.Exceptions;
 

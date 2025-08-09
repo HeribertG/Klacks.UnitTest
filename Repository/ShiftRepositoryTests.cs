@@ -5,7 +5,7 @@ using Klacks.Api.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
-using Klacks.Api.Interfaces.Domains;
+using Klacks.Api.Domain.Interfaces;
 using NSubstitute;
 
 namespace UnitTest.Repository;

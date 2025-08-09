@@ -1,6 +1,6 @@
 ﻿using Klacks.Api.Constants;
 using Klacks.Api.Datas;
-using Klacks.Api.Interfaces;
+using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Authentification;
 using Klacks.Api.Services.Groups;

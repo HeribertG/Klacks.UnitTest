@@ -8,8 +8,8 @@ using Klacks.Api.Datas;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Klacks.Api.Infrastructure.Repositories;
-using Klacks.Api.Interfaces;
-using Klacks.Api.Interfaces.Domains;
+using Klacks.Api.Infrastructure.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace UnitTest.Services.Groups;

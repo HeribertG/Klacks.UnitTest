@@ -1,5 +1,5 @@
 ﻿using Klacks.Api.Datas;
-using Klacks.Api.Interfaces;
+using Klacks.Api.Application.Interfaces;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
