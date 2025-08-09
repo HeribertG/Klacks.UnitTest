@@ -2,7 +2,7 @@ using AutoMapper;
 using Klacks.Api.AutoMappers;
 using Klacks.Api.Handlers.Clients;
 using Klacks.Api.Interfaces;
-using Klacks.Api.Queries.Clients;
+using Klacks.Api.Application.Queries.Clients;
 using MediatR;
 
 namespace UnitTest.Queries.Clients;

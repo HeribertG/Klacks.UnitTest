@@ -3,7 +3,7 @@ using Klacks.Api.Commands;
 using Klacks.Api.Datas;
 using Klacks.Api.Handlers.CalendarSelections;
 using Klacks.Api.Models.CalendarSelections;
-using Klacks.Api.Queries;
+using Klacks.Api.Application.Queries;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Schedules;
 using Microsoft.AspNetCore.Http;

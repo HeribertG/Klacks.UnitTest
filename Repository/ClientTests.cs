@@ -7,7 +7,7 @@ using Klacks.Api.Interfaces.Domains;
 using NSubstitute;
 using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
-using Klacks.Api.Queries.Clients;
+using Klacks.Api.Application.Queries.Clients;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Presentation.DTOs.Filter;

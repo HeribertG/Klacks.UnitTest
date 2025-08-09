@@ -1,5 +1,5 @@
 using Klacks.Api.Interfaces;
-using Klacks.Api.Queries.Clients;
+using Klacks.Api.Application.Queries.Clients;
 using Klacks.Api.Validation.Clients;
 
 namespace UnitTest.Validation.Clients

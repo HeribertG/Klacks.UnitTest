@@ -188,7 +188,7 @@ internal class GoupTests
         foreach (var id in idNumberList)
         {
             filter.SearchString = id.ToString();
-            var command = new Klacks.Api.Queries.Clients.GetTruncatedListQuery(filter);
+            var command = new Klacks.Api.Application.Queries.Clients.GetTruncatedListQuery(filter);
             var result = await handler.Handle(command, default);
             if (result != null && result.Clients != null && result.Clients.Any())
             {
