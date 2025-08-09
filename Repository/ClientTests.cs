@@ -1,7 +1,7 @@
 using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Datas;
-using Klacks.Api.Handlers.Clients;
+using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Interfaces;
 using Klacks.Api.Interfaces.Domains;
 using NSubstitute;

@@ -2,7 +2,7 @@ using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Datas;
-using Klacks.Api.Handlers.Groups;
+using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Interfaces;
 using Klacks.Api.Interfaces.Domains;
 using NSubstitute;
@@ -177,7 +177,7 @@ internal class GoupTests
         filter.Male = true;
         filter.Female = false;
         filter.LegalEntity = false;
-        var handler = new Klacks.Api.Handlers.Clients.GetTruncatedListQueryHandler(clientRepository, _mapper);
+        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientRepository, _mapper);
 
         var group = new GroupResource();
         group.Name = $"FakeName{index}";
