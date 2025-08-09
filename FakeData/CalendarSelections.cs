@@ -1,4 +1,4 @@
-using Klacks.Api.Resources.Schedules;
+using Klacks.Api.Presentation.Resources.Schedules;
 
 namespace UnitTest.FakeData
 {

@@ -5,7 +5,7 @@ using Klacks.Api.Interfaces.Domains;
 using Klacks.Api.Models.Authentification;
 using Klacks.Api.Repositories;
 using Klacks.Api.Resources;
-using Klacks.Api.Resources.Registrations;
+using Klacks.Api.Presentation.Resources.Registrations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.ModelBinding;

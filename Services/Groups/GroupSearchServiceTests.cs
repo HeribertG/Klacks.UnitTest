@@ -3,7 +3,7 @@ using Klacks.Api.Models.Associations;
 using Klacks.Api.Models.Staffs;
 using Klacks.Api.Models.Schedules;
 using Klacks.Api.Enums;
-using Klacks.Api.Resources.Filter;
+using Klacks.Api.Presentation.Resources.Filter;
 using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Datas;
 using Microsoft.AspNetCore.Http;

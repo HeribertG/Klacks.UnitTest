@@ -5,8 +5,8 @@ using Klacks.Api.Exceptions;
 using Klacks.Api.Handlers.Shifts;
 using Klacks.Api.Interfaces;
 using Klacks.Api.Models.Schedules;
-using Klacks.Api.Resources.Schedules;
-using Klacks.Api.Resources.Associations;
+using Klacks.Api.Presentation.Resources.Schedules;
+using Klacks.Api.Presentation.Resources.Associations;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore.Storage;
 
