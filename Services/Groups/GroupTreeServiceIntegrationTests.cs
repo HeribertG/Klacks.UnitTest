@@ -8,7 +8,7 @@ using NSubstitute;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
-using Klacks.Api.Exceptions;
+using Klacks.Api.Domain.Exceptions;
 
 namespace UnitTest.Services.Groups;
 
