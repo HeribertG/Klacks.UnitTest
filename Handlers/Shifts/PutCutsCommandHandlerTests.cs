@@ -1,5 +1,5 @@
 using AutoMapper;
-using Klacks.Api.Commands.Shifts;
+using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Enums;
 using Klacks.Api.Exceptions;
 using Klacks.Api.Handlers.Shifts;
