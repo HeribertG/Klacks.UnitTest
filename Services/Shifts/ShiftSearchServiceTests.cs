@@ -3,7 +3,7 @@ using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.EntityFrameworkCore;
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 

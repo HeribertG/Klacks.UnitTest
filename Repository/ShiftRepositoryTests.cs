@@ -1,4 +1,4 @@
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;

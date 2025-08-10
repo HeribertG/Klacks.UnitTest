@@ -1,4 +1,4 @@
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Holidays;
 

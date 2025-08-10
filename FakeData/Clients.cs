@@ -1,5 +1,5 @@
 
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;

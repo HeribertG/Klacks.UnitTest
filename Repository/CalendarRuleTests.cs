@@ -1,7 +1,7 @@
 using AutoMapper;
 using Klacks.Api.Application.Handlers.Settings.CalendarRules;
 using Klacks.Api.Application.Queries.Settings.CalendarRules;
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
 using MediatR;
 using Microsoft.AspNetCore.Http;

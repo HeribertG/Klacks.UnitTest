@@ -2,7 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces;
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using NSubstitute;
 using Microsoft.Extensions.Logging;
 

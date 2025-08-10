@@ -1,6 +1,6 @@
 using AutoMapper;
 using Klacks.Api.Application.Commands;
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.CalendarSelections;
 using Klacks.Api.Domain.Models.CalendarSelections;
 using Klacks.Api.Application.Queries;

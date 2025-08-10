@@ -4,7 +4,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Microsoft.EntityFrameworkCore;
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Klacks.Api.Infrastructure.Repositories;

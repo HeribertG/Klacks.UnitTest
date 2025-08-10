@@ -1,7 +1,7 @@
 ﻿using AutoMapper;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Commands.Groups;
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Models.Associations;

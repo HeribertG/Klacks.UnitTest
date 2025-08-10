@@ -1,6 +1,6 @@
 using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
-using Klacks.Api.Datas;
+using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
