@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Klacks.Api.Models.Associations;
-using Klacks.Api.Services.Groups;
+using Klacks.Api.Domain.Services.Groups;
 using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Datas;
 using Microsoft.AspNetCore.Http;

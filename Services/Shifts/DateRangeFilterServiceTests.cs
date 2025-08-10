@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Klacks.Api.Models.Schedules;
-using Klacks.Api.Services.Shifts;
+using Klacks.Api.Domain.Services.Shifts;
 
 namespace UnitTest.Services.Shifts;
 

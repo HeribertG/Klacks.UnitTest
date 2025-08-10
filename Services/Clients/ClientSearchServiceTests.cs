@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Klacks.Api.Services.Clients;
+using Klacks.Api.Domain.Services.Clients;
 using Klacks.Api.Models.Staffs;
 using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Datas;

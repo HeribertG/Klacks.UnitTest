@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Klacks.Api.Services.Shifts;
+using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Models.Schedules;
 using Klacks.Api.Models.Staffs;
 using Microsoft.EntityFrameworkCore;

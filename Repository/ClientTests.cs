@@ -94,10 +94,10 @@ internal class ClientTests
         DataSeed(_truncatedClient);
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
-        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
@@ -131,10 +131,10 @@ internal class ClientTests
         DataSeed(_truncatedClient);
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
-        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
@@ -174,10 +174,10 @@ internal class ClientTests
         DataSeed(_truncatedClient);
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
-        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
@@ -260,10 +260,10 @@ internal class ClientTests
         dbContext.SaveChanges();
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Services.Clients.ClientMembershipFilterService(dbContext);
-        var searchService = new Klacks.Api.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);

@@ -1,6 +1,6 @@
 using Klacks.Api.Datas;
 using Klacks.Api.Models.Settings;
-using Klacks.Api.Services.Holidays;
+using Klacks.Api.Domain.Services.Holidays;
 
 namespace UnitTest.Services;
 
