@@ -3,7 +3,7 @@ using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;
-using Klacks.Api.Models.Schedules;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Presentation.DTOs.Schedules;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Microsoft.Extensions.Logging;

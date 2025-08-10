@@ -1,8 +1,8 @@
 ﻿using Klacks.Api.Domain.Constants;
 using Klacks.Api.Datas;
 using Klacks.Api.Infrastructure.Interfaces;
-using Klacks.Api.Models.Associations;
-using Klacks.Api.Models.Authentification;
+using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Groups;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;

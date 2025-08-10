@@ -1,7 +1,7 @@
 using Klacks.Api.Datas;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
-using Klacks.Api.Models.Authentification;
+using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Presentation.DTOs.Registrations;
 using Klacks.Api.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Http;

@@ -2,7 +2,7 @@ using AutoMapper;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Datas;
 using Klacks.Api.Application.Handlers.CalendarSelections;
-using Klacks.Api.Models.CalendarSelections;
+using Klacks.Api.Domain.Models.CalendarSelections;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Schedules;

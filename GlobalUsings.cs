@@ -1,4 +1,11 @@
 // Global using statements for UnitTest project
 global using Klacks.Api.Domain.Enums;
+global using Klacks.Api.Domain.Models.Associations;
+global using Klacks.Api.Domain.Models.Authentification;
+global using Klacks.Api.Domain.Models.CalendarSelections;
+global using Klacks.Api.Domain.Models.Histories;
+global using Klacks.Api.Domain.Models.Schedules;
+global using Klacks.Api.Domain.Models.Settings;
+global using Klacks.Api.Domain.Models.Staffs;
 global using NUnit.Framework;
 global using NSubstitute;

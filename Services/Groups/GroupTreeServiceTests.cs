@@ -1,6 +1,6 @@
 using FluentAssertions;
-using Klacks.Api.Models.Associations;
-using Klacks.Api.Models.Staffs;
+using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Datas;

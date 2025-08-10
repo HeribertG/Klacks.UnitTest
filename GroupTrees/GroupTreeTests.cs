@@ -4,7 +4,7 @@ using Klacks.Api.Application.Commands.Groups;
 using Klacks.Api.Datas;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
-using Klacks.Api.Models.Associations;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Groups;
 using Klacks.Api.Presentation.DTOs.Associations;
