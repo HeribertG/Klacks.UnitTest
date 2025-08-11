@@ -1,0 +1,248 @@
+using FluentAssertions;
+using Klacks.Api.Application.Commands;
+using Klacks.Api.Application.Queries;
+using Klacks.Api.Presentation.Controllers.v1.UserBackend;
+using Klacks.Api.Presentation.DTOs.Associations;
+using Klacks.Api.Presentation.DTOs.Schedules;
+using MediatR;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using NUnit.Framework;
+
+namespace UnitTest.Controllers;
+
+[TestFixture]
+public class ContractsControllerTests
+{
+    private IMediator mockMediator;
+    private ILogger<ContractsController> mockLogger;
+    private ContractsController controller;
+
+    [SetUp]
+    public void Setup()
+    {
+        mockMediator = Substitute.For<IMediator>();
+        mockLogger = Substitute.For<ILogger<ContractsController>>();
+        controller = new ContractsController(mockMediator, mockLogger);
+    }
+
+    [Test]
+    public async Task GetContracts_ShouldReturnAllContracts()
+    {
+        // Arrange
+        var expectedContracts = new List<ContractResource>
+        {
+            new ContractResource
+            {
+                Id = Guid.NewGuid(),
+                Name = "Contract 1",
+                GuaranteedHoursPerMonth = 160,
+                MaximumHoursPerMonth = 200,
+                MinimumHoursPerMonth = 120,
+                ValidFrom = DateTime.UtcNow,
+                CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid(), Name = "Calendar 1" }
+            },
+            new ContractResource
+            {
+                Id = Guid.NewGuid(),
+                Name = "Contract 2",
+                GuaranteedHoursPerMonth = 100,
+                MaximumHoursPerMonth = 150,
+                MinimumHoursPerMonth = 80,
+                ValidFrom = DateTime.UtcNow,
+                CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid(), Name = "Calendar 2" }
+            }
+        };
+
+        mockMediator.Send(Arg.Any<ListQuery<ContractResource>>())
+            .Returns(expectedContracts);
+
+        // Act
+        var result = await controller.GetContracts();
+
+        // Assert
+        result.Should().BeOfType<ActionResult<IEnumerable<ContractResource>>>();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var contracts = okResult.Value.Should().BeAssignableTo<IEnumerable<ContractResource>>().Subject;
+        contracts.Should().HaveCount(2);
+        contracts.Should().BeEquivalentTo(expectedContracts);
+    }
+
+    [Test]
+    public async Task GetContracts_WhenExceptionOccurs_ShouldThrow()
+    {
+        // Arrange
+        var expectedException = new Exception("Database error");
+        mockMediator.Send(Arg.Any<ListQuery<ContractResource>>())
+            .Throws(expectedException);
+
+        // Act & Assert
+        var act = async () => await controller.GetContracts();
+        await act.Should().ThrowAsync<Exception>()
+            .WithMessage("Database error");
+    }
+
+    [Test]
+    public async Task Get_ShouldReturnContractById()
+    {
+        // Arrange
+        var contractId = Guid.NewGuid();
+        var expectedContract = new ContractResource
+        {
+            Id = contractId,
+            Name = "Test Contract",
+            GuaranteedHoursPerMonth = 160,
+            MaximumHoursPerMonth = 200,
+            MinimumHoursPerMonth = 120,
+            ValidFrom = DateTime.UtcNow,
+            CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid(), Name = "Test Calendar" }
+        };
+
+        mockMediator.Send(Arg.Any<GetQuery<ContractResource>>())
+            .Returns(expectedContract);
+
+        // Act
+        var result = await controller.Get(contractId);
+
+        // Assert
+        result.Should().BeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
+        contract.Should().BeEquivalentTo(expectedContract);
+    }
+
+    [Test]
+    public async Task Post_ShouldCreateNewContract()
+    {
+        // Arrange
+        var newContract = new ContractResource
+        {
+            Name = "New Contract",
+            GuaranteedHoursPerMonth = 160,
+            MaximumHoursPerMonth = 200,
+            MinimumHoursPerMonth = 120,
+            ValidFrom = DateTime.UtcNow,
+            CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid() }
+        };
+
+        var createdContract = new ContractResource
+        {
+            Id = Guid.NewGuid(),
+            Name = newContract.Name,
+            GuaranteedHoursPerMonth = newContract.GuaranteedHoursPerMonth,
+            MaximumHoursPerMonth = newContract.MaximumHoursPerMonth,
+            MinimumHoursPerMonth = newContract.MinimumHoursPerMonth,
+            ValidFrom = newContract.ValidFrom,
+            CalendarSelection = newContract.CalendarSelection
+        };
+
+        mockMediator.Send(Arg.Any<PostCommand<ContractResource>>())
+            .Returns(createdContract);
+
+        // Act
+        var result = await controller.Post(newContract);
+
+        // Assert
+        result.Should().BeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
+        contract.Should().BeEquivalentTo(createdContract);
+    }
+
+    [Test]
+    public async Task Put_ShouldUpdateExistingContract()
+    {
+        // Arrange
+        var updateContract = new ContractResource
+        {
+            Id = Guid.NewGuid(),
+            Name = "Updated Contract",
+            GuaranteedHoursPerMonth = 180,
+            MaximumHoursPerMonth = 220,
+            MinimumHoursPerMonth = 140,
+            ValidFrom = DateTime.UtcNow,
+            CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid() }
+        };
+
+        mockMediator.Send(Arg.Any<PutCommand<ContractResource>>())
+            .Returns(updateContract);
+
+        // Act
+        var result = await controller.Put(updateContract);
+
+        // Assert
+        result.Should().BeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
+        contract.Should().BeEquivalentTo(updateContract);
+    }
+
+    [Test]
+    public async Task Delete_ShouldDeleteContract()
+    {
+        // Arrange
+        var contractId = Guid.NewGuid();
+        var deletedContract = new ContractResource
+        {
+            Id = contractId,
+            Name = "Deleted Contract"
+        };
+
+        mockMediator.Send(Arg.Any<DeleteCommand<ContractResource>>())
+            .Returns(deletedContract);
+
+        // Act
+        var result = await controller.Delete(contractId);
+
+        // Assert
+        result.Should().BeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
+        contract.Id.Should().Be(contractId);
+    }
+
+    [Test]
+    public async Task GetContracts_ShouldLogInformation()
+    {
+        // Arrange
+        var contracts = new List<ContractResource>
+        {
+            new ContractResource { Id = Guid.NewGuid(), Name = "Contract 1" },
+            new ContractResource { Id = Guid.NewGuid(), Name = "Contract 2" }
+        };
+
+        mockMediator.Send(Arg.Any<ListQuery<ContractResource>>())
+            .Returns(contracts);
+
+        // Act
+        await controller.GetContracts();
+
+        // Assert
+        mockLogger.Received().LogInformation("Fetching all contracts.");
+        mockLogger.Received().LogInformation($"Retrieved {contracts.Count()} contracts.");
+    }
+
+    [Test]
+    public async Task GetContracts_WhenExceptionOccurs_ShouldLogError()
+    {
+        // Arrange
+        var exception = new Exception("Test error");
+        mockMediator.Send(Arg.Any<ListQuery<ContractResource>>())
+            .Throws(exception);
+
+        // Act
+        try
+        {
+            await controller.GetContracts();
+        }
+        catch
+        {
+            // Expected exception
+        }
+
+        // Assert
+        mockLogger.Received().LogError(exception, "Error occurred while fetching contracts.");
+    }
+}
