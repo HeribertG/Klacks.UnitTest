@@ -1,4 +1,3 @@
-using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Newtonsoft.Json;
 

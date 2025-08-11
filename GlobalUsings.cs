@@ -1,4 +1,3 @@
-// Global using statements for UnitTest project
 global using Klacks.Api.Domain.Common;
 global using Klacks.Api.Domain.Enums;
 global using Klacks.Api.Domain.Models.Associations;
