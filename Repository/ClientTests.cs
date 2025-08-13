@@ -16,6 +16,7 @@ using Klacks.Api.Presentation.DTOs.Staffs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using UnitTest.FakeData;
+using Klacks.Api.Application.Services;
 
 
 namespace UnitTest.Repository;
@@ -101,8 +102,9 @@ internal class ClientTests
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
+        var clientApplicationService = new ClientApplicationService(repository, _mapper);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        var handler = new GetTruncatedListQueryHandler(clientApplicationService);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -138,8 +140,9 @@ internal class ClientTests
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
+        var clientApplicationService = new ClientApplicationService(repository, _mapper);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        var handler = new GetTruncatedListQueryHandler(clientApplicationService);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -181,8 +184,9 @@ internal class ClientTests
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
+        var clientApplicationService = new ClientApplicationService(repository, _mapper);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        var handler = new GetTruncatedListQueryHandler(clientApplicationService);
         //Act
         var result = await handler.Handle(query, default);
         //Assert

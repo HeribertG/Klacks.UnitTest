@@ -125,7 +125,8 @@ internal class GoupTests
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
         var command = new PostCommand<GroupResource>(group);
-        var handler = new PostCommandHandler(_mapper, groupRepository, unitOfWork, _logger);
+        var groupApplicationService = new Klacks.Api.Application.Services.GroupApplicationService(groupRepository, _mapper);
+        var handler = new PostCommandHandler(groupApplicationService, unitOfWork, _logger);
 
         //Act
         var result = await handler.Handle(command, default);
@@ -177,7 +178,8 @@ internal class GoupTests
         filter.Male = true;
         filter.Female = false;
         filter.LegalEntity = false;
-        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientRepository, _mapper);
+        var clientApplicationService = new Klacks.Api.Application.Services.ClientApplicationService(clientRepository, _mapper);
+        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientApplicationService);
 
         var group = new GroupResource();
         group.Name = $"FakeName{index}";

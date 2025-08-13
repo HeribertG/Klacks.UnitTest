@@ -23,7 +23,7 @@ public class ContractTests
         contract.MinimumHoursPerMonth.Should().Be(0);
         contract.ValidFrom.Should().Be(default(DateTime));
         contract.ValidUntil.Should().BeNull();
-        contract.CalendarSelectionId.Should().Be(Guid.Empty);
+        contract.CalendarSelectionId.Should().BeNull();
         contract.CalendarSelection.Should().BeNull();
     }
 

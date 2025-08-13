@@ -4,6 +4,7 @@ using Klacks.Api.Application.Commands.Groups;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Services;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Groups;
@@ -15,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
+using NSubstitute;
 using UnitTest.Mocks;
 
 namespace UnitTest.GroupTrees;
@@ -76,9 +78,9 @@ public class GroupTreeTests
 
         _mediator = Substitute.For<IMediator>();
 
+        var postGroupAppService = new GroupApplicationService(_groupRepository, _mapper);
         _postHandler = new PostCommandHandler(
-            _mapper,
-            _groupRepository,
+            postGroupAppService,
             _unitOfWork,
             postHandlerLogger);
 
@@ -94,14 +96,11 @@ public class GroupTreeTests
             _unitOfWork,
             deleteHandlerLogger);
 
-        _getHandler = new GetQueryHandler(
-            _mapper,
-            _groupRepository);
+        var groupApplicationService = new GroupApplicationService(_groupRepository, _mapper);
+        _getHandler = new GetQueryHandler(groupApplicationService);
 
-        _getPathHandler = new GetPathToNodeQueryHandler(
-            _groupRepository,
-            _dbContext,
-            _mapper);
+        var pathAppService = new GroupApplicationService(_groupRepository, _mapper);
+        _getPathHandler = new GetPathToNodeQueryHandler(pathAppService);
 
         _moveHandler = new MoveGroupNodeCommandHandler(
             _groupRepository,
