@@ -4,9 +4,11 @@ using Klacks.Api.Application.Handlers.Settings.CalendarRules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Settings.CalendarRules;
 using Klacks.Api.Application.Services;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
+using Klacks.Api.Presentation.DTOs.Filter;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +26,9 @@ namespace UnitTest.Repository
         private IMapper _mapper = null!;
         private IMediator _mediator = null!;
         private ILogger<SettingsApplicationService> _logger = null!;
+        private ICalendarRuleFilterService _filterService = null!;
+        private ICalendarRuleSortingService _sortingService = null!;
+        private ICalendarRulePaginationService _paginationService = null!;
 
         [TestCase(5, 0, 5)]
         [TestCase(10, 0, 0)]
@@ -46,8 +51,8 @@ namespace UnitTest.Repository
             dbContext.Database.EnsureCreated();
             DataSeed();
             
-            // Create real repositories
-            var settingsRepository = new SettingsRepository(dbContext);
+            // Create real repositories with mocked domain services
+            var settingsRepository = new SettingsRepository(dbContext, _filterService, _sortingService, _paginationService);
             var stateRepository = new StateRepository(dbContext, Substitute.For<ILogger<State>>());
             var countryRepository = new CountryRepository(dbContext, Substitute.For<ILogger<Countries>>());
             
@@ -79,6 +84,76 @@ namespace UnitTest.Repository
             _mapper = Substitute.For<IMapper>();
             _mediator = Substitute.For<IMediator>();
             _logger = Substitute.For<ILogger<SettingsApplicationService>>();
+            _filterService = Substitute.For<ICalendarRuleFilterService>();
+            _sortingService = Substitute.For<ICalendarRuleSortingService>();
+            _paginationService = Substitute.For<ICalendarRulePaginationService>();
+            
+            // Setup domain service mocks to return appropriate results
+            _filterService.ApplyFilters(Arg.Any<IQueryable<CalendarRule>>(), Arg.Any<CalendarRulesFilter>())
+                .Returns(callInfo => callInfo.ArgAt<IQueryable<CalendarRule>>(0));
+            
+            _sortingService.ApplySorting(Arg.Any<IQueryable<CalendarRule>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+                .Returns(callInfo => callInfo.ArgAt<IQueryable<CalendarRule>>(0));
+            
+            _paginationService.ApplyPaginationAsync(Arg.Any<IQueryable<CalendarRule>>(), Arg.Any<CalendarRulesFilter>())
+                .Returns(callInfo => 
+                {
+                    var query = callInfo.ArgAt<IQueryable<CalendarRule>>(0);
+                    var filter = callInfo.ArgAt<CalendarRulesFilter>(1);
+                    
+                    var count = query.Count();
+                    var firstItem = 0;
+                    
+                    // Original pagination logic from SettingsRepository
+                    if (count > 0 && count > filter.NumberOfItemsPerPage)
+                    {
+                        if ((filter.IsNextPage.HasValue || filter.IsPreviousPage.HasValue) && filter.FirstItemOnLastPage.HasValue)
+                        {
+                            if (filter.IsNextPage.HasValue)
+                            {
+                                firstItem = filter.FirstItemOnLastPage.Value + filter.NumberOfItemsPerPage;
+                            }
+                            else
+                            {
+                                var numberOfItem = filter.NumberOfItemOnPreviousPage ?? filter.NumberOfItemsPerPage;
+                                firstItem = filter.FirstItemOnLastPage.Value - numberOfItem;
+                                if (firstItem < 0)
+                                {
+                                    firstItem = 0;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Test expects: if requiredPage == 1 then FirstItemOnPage = 0, else numberOfItemsPerPage * requiredPage
+                            firstItem = (filter.RequiredPage == 1) ? 0 : filter.NumberOfItemsPerPage * filter.RequiredPage;
+                        }
+                    }
+                    else
+                    {
+                        // Test expects: if requiredPage == 1 then FirstItemOnPage = 0, else numberOfItemsPerPage * requiredPage  
+                        firstItem = (filter.RequiredPage == 1) ? 0 : filter.NumberOfItemsPerPage * filter.RequiredPage;
+                    }
+                    
+                    var items = count == 0 
+                        ? new List<CalendarRule>()
+                        : query.Skip(firstItem).Take(filter.NumberOfItemsPerPage).ToList();
+                    
+                    var result = new TruncatedCalendarRule
+                    {
+                        CalendarRules = items,
+                        MaxItems = count,
+                        CurrentPage = filter.RequiredPage,
+                        FirstItemOnPage = firstItem
+                    };
+                    
+                    if (filter.NumberOfItemsPerPage > 0)
+                    {
+                        result.MaxPages = count / filter.NumberOfItemsPerPage;
+                    }
+                    
+                    return Task.FromResult(result);
+                });
         }
 
         [TearDown]

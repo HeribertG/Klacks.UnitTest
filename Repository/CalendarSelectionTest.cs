@@ -3,7 +3,9 @@ using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.CalendarSelections;
 using Klacks.Api.Application.Services;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.CalendarSelections;
+using Klacks.Api.Domain.Services.CalendarSelections;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Schedules;
@@ -25,6 +27,7 @@ internal class CalendarSelectionTest
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
     private ILogger<CalendarSelection> _calendarSelectionLogger = null!;
     private ILogger<SelectedCalendar> _selectedCalendarLogger = null!;
+    private ILogger<CalendarSelectionUpdateService> _updateServiceLogger = null!;
     
     private IMapper _mapper = null!;
 
@@ -41,7 +44,8 @@ internal class CalendarSelectionTest
         dbContext.Database.EnsureCreated();
 
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
-        var repository = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger);
+        var updateService = new CalendarSelectionUpdateService(dbContext, _updateServiceLogger);
+        var repository = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger, updateService);
         var queryPost = new PostCommand<CalendarSelectionResource>(fakeCalendarSelection);
         var calendarSelectionApplicationService = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
         var handlerPost = new PostCommandHandler(calendarSelectionApplicationService, unitOfWork, _logger);
@@ -57,7 +61,9 @@ internal class CalendarSelectionTest
         //Arrange Get
         var id = resultPost.Id;
         var queryGet = new GetQuery<CalendarSelectionResource>(id);
-        var calendarSelectionApplicationService2 = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
+        var updateService2 = new CalendarSelectionUpdateService(dbContext, _updateServiceLogger);
+        var repository2 = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger, updateService2);
+        var calendarSelectionApplicationService2 = new CalendarSelectionApplicationService(repository2, _mapper, _appServiceLogger);
         var handlerGet = new GetQueryHandler(calendarSelectionApplicationService2);
 
         //Act Get
@@ -78,7 +84,9 @@ internal class CalendarSelectionTest
         };
         fakeCalendarSelectionUpdate.SelectedCalendars.Add(fakeSelectedCalendar);
         var queryPut = new PutCommand<CalendarSelectionResource>(fakeCalendarSelectionUpdate);
-        var calendarSelectionApplicationService3 = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
+        var updateService3 = new CalendarSelectionUpdateService(dbContext, _updateServiceLogger);
+        var repository3 = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger, updateService3);
+        var calendarSelectionApplicationService3 = new CalendarSelectionApplicationService(repository3, _mapper, _appServiceLogger);
         var handlerPut = new PutCommandHandler(calendarSelectionApplicationService3, unitOfWork, _logger2);
 
         //Act Put
@@ -91,7 +99,9 @@ internal class CalendarSelectionTest
 
         //Arrange Delete
         var queryDelete = new DeleteCommand<CalendarSelectionResource>(resultPut.Id);
-        var calendarSelectionApplicationService4 = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
+        var updateService4 = new CalendarSelectionUpdateService(dbContext, _updateServiceLogger);
+        var repository4 = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger, updateService4);
+        var calendarSelectionApplicationService4 = new CalendarSelectionApplicationService(repository4, _mapper, _appServiceLogger);
         var handlerDelete = new DeleteCommandHandler(calendarSelectionApplicationService4, unitOfWork, _logger3);
 
         //Act Delete
@@ -119,6 +129,7 @@ internal class CalendarSelectionTest
         _unitOfWorkLogger = Substitute.For<ILogger<UnitOfWork>>();
         _calendarSelectionLogger = Substitute.For<ILogger<CalendarSelection>>();
         _selectedCalendarLogger = Substitute.For<ILogger<SelectedCalendar>>();
+        _updateServiceLogger = Substitute.For<ILogger<CalendarSelectionUpdateService>>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
     }
 
