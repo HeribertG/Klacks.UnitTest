@@ -2,6 +2,7 @@ using AutoMapper;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.CalendarSelections;
+using Klacks.Api.Application.Services;
 using Klacks.Api.Domain.Models.CalendarSelections;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Infrastructure.Repositories;
@@ -17,6 +18,7 @@ internal class CalendarSelectionTest
 {
     public IHttpContextAccessor _httpContextAccessor = null!;
     public DataBaseContext dbContext = null!;
+    private ILogger<CalendarSelectionApplicationService> _appServiceLogger = null!;
     private ILogger<PostCommandHandler> _logger = null!;
     private ILogger<PutCommandHandler> _logger2 = null!;
     private ILogger<DeleteCommandHandler> _logger3 = null!;
@@ -41,7 +43,8 @@ internal class CalendarSelectionTest
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var repository = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger);
         var queryPost = new PostCommand<CalendarSelectionResource>(fakeCalendarSelection);
-        var handlerPost = new PostCommandHandler(_mapper, repository, unitOfWork, _logger);
+        var calendarSelectionApplicationService = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
+        var handlerPost = new PostCommandHandler(calendarSelectionApplicationService, unitOfWork, _logger);
 
         //Act Post
         var resultPost = await handlerPost.Handle(queryPost, default);
@@ -54,7 +57,8 @@ internal class CalendarSelectionTest
         //Arrange Get
         var id = resultPost.Id;
         var queryGet = new GetQuery<CalendarSelectionResource>(id);
-        var handlerGet = new GetQueryHandler(_mapper, repository);
+        var calendarSelectionApplicationService2 = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
+        var handlerGet = new GetQueryHandler(calendarSelectionApplicationService2);
 
         //Act Get
         var resultGet = await handlerGet.Handle(queryGet, default);
@@ -74,7 +78,8 @@ internal class CalendarSelectionTest
         };
         fakeCalendarSelectionUpdate.SelectedCalendars.Add(fakeSelectedCalendar);
         var queryPut = new PutCommand<CalendarSelectionResource>(fakeCalendarSelectionUpdate);
-        var handlerPut = new PutCommandHandler(_mapper, repository, unitOfWork, _logger2);
+        var calendarSelectionApplicationService3 = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
+        var handlerPut = new PutCommandHandler(calendarSelectionApplicationService3, unitOfWork, _logger2);
 
         //Act Put
         var resultPut = await handlerPut.Handle(queryPut, default);
@@ -86,7 +91,8 @@ internal class CalendarSelectionTest
 
         //Arrange Delete
         var queryDelete = new DeleteCommand<CalendarSelectionResource>(resultPut.Id);
-        var handlerDelete = new DeleteCommandHandler(_mapper, repository, unitOfWork, _logger3);
+        var calendarSelectionApplicationService4 = new CalendarSelectionApplicationService(repository, _mapper, _appServiceLogger);
+        var handlerDelete = new DeleteCommandHandler(calendarSelectionApplicationService4, unitOfWork, _logger3);
 
         //Act Delete
         var resultDelete = await handlerDelete.Handle(queryDelete, default);
