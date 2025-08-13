@@ -78,36 +78,37 @@ public class GroupTreeTests
 
         _mediator = Substitute.For<IMediator>();
 
-        var postGroupAppService = new GroupApplicationService(_groupRepository, _mapper);
+        var mockLogger = Substitute.For<ILogger<GroupApplicationService>>();
+        
+        var postGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _postHandler = new PostCommandHandler(
             postGroupAppService,
             _unitOfWork,
             postHandlerLogger);
 
+        var putGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _putHandler = new PutCommandHandler(
-            _mapper,
-            _groupRepository,
+            putGroupAppService,
             _unitOfWork,
             putHandlerLogger);
 
+        var deleteGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _deleteHandler = new DeleteCommandHandler(
-            _mapper,
-            _groupRepository,
+            deleteGroupAppService,
             _unitOfWork,
             deleteHandlerLogger);
 
-        var groupApplicationService = new GroupApplicationService(_groupRepository, _mapper);
+        var groupApplicationService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _getHandler = new GetQueryHandler(groupApplicationService);
 
-        var pathAppService = new GroupApplicationService(_groupRepository, _mapper);
+        var pathAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _getPathHandler = new GetPathToNodeQueryHandler(pathAppService);
 
+        var moveGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _moveHandler = new MoveGroupNodeCommandHandler(
-            _groupRepository,
+            moveGroupAppService,
             _unitOfWork,
-            moveHandlerLogger,
-            _mapper,
-            _dbContext);
+            moveHandlerLogger);
     }
 
     [TearDown]

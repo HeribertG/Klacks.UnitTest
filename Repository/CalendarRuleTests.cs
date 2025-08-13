@@ -1,11 +1,18 @@
 using AutoMapper;
+using FluentAssertions;
 using Klacks.Api.Application.Handlers.Settings.CalendarRules;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Settings.CalendarRules;
+using Klacks.Api.Application.Services;
+using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+using NUnit.Framework;
 using UnitTest.FakeData;
 
 namespace UnitTest.Repository
@@ -16,6 +23,7 @@ namespace UnitTest.Repository
         public DataBaseContext dbContext = null!;
         private IMapper _mapper = null!;
         private IMediator _mediator = null!;
+        private ILogger<SettingsApplicationService> _logger = null!;
 
         [TestCase(5, 0, 5)]
         [TestCase(10, 0, 0)]
@@ -37,9 +45,23 @@ namespace UnitTest.Repository
 
             dbContext.Database.EnsureCreated();
             DataSeed();
-            var repository = new SettingsRepository(dbContext);
+            
+            // Create real repositories
+            var settingsRepository = new SettingsRepository(dbContext);
+            var stateRepository = new StateRepository(dbContext, Substitute.For<ILogger<State>>());
+            var countryRepository = new CountryRepository(dbContext, Substitute.For<ILogger<Countries>>());
+            
+            // Create SettingsApplicationService with real repositories and mocked dependencies
+            var settingsApplicationService = new SettingsApplicationService(
+                settingsRepository,
+                stateRepository, 
+                countryRepository,
+                _mapper,
+                _logger
+            );
+            
             var query = new TruncatedListQuery(filter);
-            var handler = new TruncatedListQueryHandler(repository);
+            var handler = new TruncatedListQueryHandler(settingsApplicationService);
             //Act
             var result = await handler.Handle(query, default);
             //Assert
@@ -56,6 +78,7 @@ namespace UnitTest.Repository
         {
             _mapper = Substitute.For<IMapper>();
             _mediator = Substitute.For<IMediator>();
+            _logger = Substitute.For<ILogger<SettingsApplicationService>>();
         }
 
         [TearDown]
