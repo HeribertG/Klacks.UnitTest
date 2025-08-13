@@ -4,6 +4,8 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Presentation.DTOs.Registrations;
 using Klacks.Api.Infrastructure.Repositories;
+using Klacks.Api.Domain.Services.Accounts;
+using Klacks.Api.Presentation.DTOs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -25,6 +27,11 @@ public class AccountTests
     private IAuthenticationService _authenticationService;
     private IUserManagementService _userManagementService;
     private IRefreshTokenService _refreshTokenService;
+    private IAccountAuthenticationService _accountAuthenticationService;
+    private IAccountPasswordService _accountPasswordService;
+    private IAccountRegistrationService _accountRegistrationService;
+    private IAccountManagementService _accountManagementService;
+    private IAccountNotificationService _accountNotificationService;
 
     [Test]
     public async Task ChangeRoleUser_ShouldChangeRole_WhenNewRoleIsValid()
@@ -51,9 +58,11 @@ public class AccountTests
         string email = "notfound@test.com";
         string password = "TestPassword123!";
 
-        // Setup mock to return no user for this email
-        _authenticationService.ValidateCredentialsAsync(email, password)
-            .Returns(Task.FromResult((false, (AppUser)null)));
+        // Setup mock to return unsuccessful login
+        var failedResult = new AuthenticatedResult { Success = false, ModelState = new ModelStateDictionary() };
+        failedResult.ModelState.AddModelError("Login failed", "User not found");
+        _accountAuthenticationService.LogInUserAsync(email, password)
+            .Returns(Task.FromResult(failedResult));
 
         // Act
         var result = await _accountRepository.LogInUser(email, password);
@@ -75,8 +84,10 @@ public class AccountTests
         string wrongPassword = "WrongPassword!";
 
         // Setup mock to return validation failure
-        _authenticationService.ValidateCredentialsAsync(user.Email, wrongPassword)
-            .Returns(Task.FromResult((false, (AppUser)null)));
+        var failedResult = new AuthenticatedResult { Success = false, ModelState = new ModelStateDictionary() };
+        failedResult.ModelState.AddModelError("Login failed", "Wrong password");
+        _accountAuthenticationService.LogInUserAsync(user.Email, wrongPassword)
+            .Returns(Task.FromResult(failedResult));
 
         // Act
         var result = await _accountRepository.LogInUser(user.Email, wrongPassword);
@@ -101,21 +112,17 @@ public class AccountTests
         string _email = "admin@test.com";
         string password = "P@ssw0rt1";
 
-        // Setup mocks for successful login
-        _authenticationService.ValidateCredentialsAsync(_email, password)
-            .Returns(Task.FromResult((true, user)));
-            
-        _userManagementService.IsUserInRoleAsync(user, "Admin")
-            .Returns(Task.FromResult(false));
-            
-        _userManagementService.IsUserInRoleAsync(user, "Authorised")
-            .Returns(Task.FromResult(false));
-            
-        _refreshTokenService.CreateRefreshTokenAsync(user.Id)
-            .Returns(Task.FromResult("test-refresh-token"));
-            
-        _tokenService.CreateToken(user, Arg.Any<DateTime>())
-            .Returns(Task.FromResult("test-jwt-token"));
+        // Setup mock for successful login
+        _accountAuthenticationService.LogInUserAsync(_email, password)
+            .Returns(Task.FromResult(new AuthenticatedResult 
+            {
+                Success = true,
+                Token = "test-jwt-token",
+                RefreshToken = "test-refresh-token",
+                UserName = user.UserName,
+                FirstName = user.FirstName,
+                Name = user.LastName
+            }));
 
         // Act
         var result = await _accountRepository.LogInUser(_email, password);
@@ -142,6 +149,10 @@ public class AccountTests
         };
         string password = "TestPassword123!";
 
+        // Setup mock for successful registration
+        _accountRegistrationService.RegisterUserAsync(user, password)
+            .Returns(Task.FromResult(new AuthenticatedResult { Success = true }));
+
         // Act
         var result = await accountRepository.RegisterUser(user, password);
 
@@ -157,6 +168,11 @@ public class AccountTests
         _authenticationService = Substitute.For<IAuthenticationService>();
         _userManagementService = Substitute.For<IUserManagementService>();
         _refreshTokenService = Substitute.For<IRefreshTokenService>();
+        _accountAuthenticationService = Substitute.For<IAccountAuthenticationService>();
+        _accountPasswordService = Substitute.For<IAccountPasswordService>();
+        _accountRegistrationService = Substitute.For<IAccountRegistrationService>();
+        _accountManagementService = Substitute.For<IAccountManagementService>();
+        _accountNotificationService = Substitute.For<IAccountNotificationService>();
         
         var options = new DbContextOptionsBuilder<DataBaseContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
@@ -173,9 +189,15 @@ public class AccountTests
         // Seed the database with test data
         SeedDatabase();
 
-        // JwtSettings no longer needed with domain services
+        // Setup Account Domain Service mocks
+        SetupAccountDomainServiceMocks();
 
-        _accountRepository = new AccountRepository(_dbContext, _tokenService, _authenticationService, _userManagementService, _refreshTokenService);
+        _accountRepository = new AccountRepository(
+            _accountAuthenticationService,
+            _accountPasswordService,
+            _accountRegistrationService,
+            _accountManagementService,
+            _accountNotificationService);
     }
 
     [TearDown]
@@ -334,5 +356,33 @@ public class AccountTests
 
         _refreshTokenService.CalculateTokenExpiryTime()
             .Returns(DateTime.UtcNow.AddHours(1));
+    }
+    
+    private void SetupAccountDomainServiceMocks()
+    {
+        // Setup Account Domain Services
+        _accountPasswordService.ChangePasswordAsync(Arg.Any<ChangePasswordResource>())
+            .Returns(Task.FromResult(new AuthenticatedResult { Success = true }));
+            
+        _accountManagementService.ChangeRoleUserAsync(Arg.Any<ChangeRole>())
+            .Returns(Task.FromResult(new HttpResultResource { Success = true }));
+            
+        _accountManagementService.DeleteAccountUserAsync(Arg.Any<Guid>())
+            .Returns(Task.FromResult(new HttpResultResource { Success = true }));
+            
+        _accountManagementService.GetUserListAsync()
+            .Returns(Task.FromResult(new List<UserResource>()));
+            
+        _accountRegistrationService.RegisterUserAsync(Arg.Any<AppUser>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new AuthenticatedResult { Success = true }));
+            
+        _accountNotificationService.SendEmailAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Task.FromResult("Email sent successfully"));
+            
+        _accountAuthenticationService.ValidateRefreshTokenAsync(Arg.Any<AppUser>(), Arg.Any<string>())
+            .Returns(callInfo => {
+                var refreshToken = callInfo.ArgAt<string>(1);
+                return Task.FromResult(refreshToken == Token);
+            });
     }
 }
