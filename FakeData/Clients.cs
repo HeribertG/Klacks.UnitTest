@@ -4,6 +4,8 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Presentation.DTOs.Staffs;
+using AutoMapper;
 using Newtonsoft.Json;
 
 namespace UnitTest.FakeData
@@ -145,6 +147,26 @@ namespace UnitTest.FakeData
         internal static TruncatedClient TruncatedClient()
         {
             return JsonConvert.DeserializeObject<TruncatedClient>(FakeDateSerializeString.Data.clientsSimpleList)!;
+        }
+
+        internal static TruncatedClientResource TruncatedClientResource()
+        {
+            var truncatedClient = TruncatedClient();
+            return new TruncatedClientResource
+            {
+                Clients = truncatedClient.Clients.Select(c => new ClientResource
+                {
+                    Id = c.Id,
+                    IdNumber = c.IdNumber,
+                    FirstName = c.FirstName,
+                    Company = c.Company,
+                    // Map other properties as needed
+                }).ToList(),
+                MaxItems = truncatedClient.MaxItems,
+                MaxPages = truncatedClient.MaxPages,
+                CurrentPage = truncatedClient.CurrentPage,
+                FirstItemOnPage = truncatedClient.FirstItemOnPage
+            };
         }
 
         private static List<AbsenceTokenFilter> ConvertAbsencesToTokenFilters(List<Absence> absences)

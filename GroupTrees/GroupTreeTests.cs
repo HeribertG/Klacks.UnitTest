@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
+using NSubstitute;
 using UnitTest.Mocks;
 
 namespace UnitTest.GroupTrees;
@@ -77,38 +78,32 @@ public class GroupTreeTests
         _mediator = Substitute.For<IMediator>();
 
         _postHandler = new PostCommandHandler(
-            _mapper,
             _groupRepository,
+            _mapper,
             _unitOfWork,
             postHandlerLogger);
 
         _putHandler = new PutCommandHandler(
-            _mapper,
             _groupRepository,
+            _mapper,
             _unitOfWork,
             putHandlerLogger);
 
         _deleteHandler = new DeleteCommandHandler(
-            _mapper,
             _groupRepository,
+            _mapper,
             _unitOfWork,
             deleteHandlerLogger);
 
-        _getHandler = new GetQueryHandler(
-            _mapper,
-            _groupRepository);
+        _getHandler = new GetQueryHandler(_groupRepository, _mapper);
 
-        _getPathHandler = new GetPathToNodeQueryHandler(
-            _groupRepository,
-            _dbContext,
-            _mapper);
+        _getPathHandler = new GetPathToNodeQueryHandler(_groupRepository, _mapper);
 
         _moveHandler = new MoveGroupNodeCommandHandler(
             _groupRepository,
-            _unitOfWork,
-            moveHandlerLogger,
             _mapper,
-            _dbContext);
+            _unitOfWork,
+            moveHandlerLogger);
     }
 
     [TearDown]

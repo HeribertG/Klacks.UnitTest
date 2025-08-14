@@ -14,7 +14,7 @@ using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Presentation.DTOs.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics; // F�r InMemoryEventId
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
 using UnitTest.Helper;
@@ -125,7 +125,7 @@ internal class GoupTests
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
         var command = new PostCommand<GroupResource>(group);
-        var handler = new PostCommandHandler(_mapper, groupRepository, unitOfWork, _logger);
+        var handler = new PostCommandHandler(groupRepository, _mapper, unitOfWork, _logger);
 
         //Act
         var result = await handler.Handle(command, default);

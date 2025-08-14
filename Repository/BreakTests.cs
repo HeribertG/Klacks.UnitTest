@@ -55,7 +55,7 @@ internal class BreakTests
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
-        var handler = new GetListQueryHandler(_mapper, repository);
+        var handler = new GetListQueryHandler(repository, _mapper);
 
         //Act
         var result = await handler.Handle(query, default);
