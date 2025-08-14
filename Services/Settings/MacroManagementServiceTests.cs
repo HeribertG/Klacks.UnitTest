@@ -103,8 +103,9 @@ public class MacroManagementServiceTests
         await _service.DeleteMacroAsync(macro.Id);
         await _context.SaveChangesAsync();
 
-        var result = await _context.Macro.FindAsync(macro.Id);
-        result.Should().BeNull();
+        var result = await _context.Macro.IgnoreQueryFilters().FirstOrDefaultAsync(m => m.Id == macro.Id);
+        result.Should().NotBeNull();
+        result.IsDeleted.Should().BeTrue();
     }
 
     [Test]
