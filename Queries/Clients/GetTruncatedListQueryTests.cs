@@ -3,7 +3,6 @@ using Klacks.Api.Application.AutoMapper;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Clients;
-using Klacks.Api.Application.Services;
 using NSubstitute;
 using MediatR;
 
@@ -23,9 +22,8 @@ internal class GetTruncatedListQueryTests
 
         var clientRepositoryMock = Substitute.For<IClientRepository>();
         clientRepositoryMock.Truncated(filter).Returns(Task.FromResult(FakeData.Clients.TruncatedClient()));
-        var clientApplicationService = new ClientApplicationService(clientRepositoryMock, _mapper);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(clientApplicationService);
+        var handler = new GetTruncatedListQueryHandler(clientRepositoryMock, _mapper);
 
         //Act
         var result = await handler.Handle(query, default);

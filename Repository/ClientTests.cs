@@ -102,9 +102,8 @@ internal class ClientTests
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
-        var clientApplicationService = new ClientApplicationService(repository, _mapper);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(clientApplicationService);
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -140,9 +139,8 @@ internal class ClientTests
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
-        var clientApplicationService = new ClientApplicationService(repository, _mapper);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(clientApplicationService);
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -184,9 +182,8 @@ internal class ClientTests
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService);
-        var clientApplicationService = new ClientApplicationService(repository, _mapper);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(clientApplicationService);
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
         //Act
         var result = await handler.Handle(query, default);
         //Assert

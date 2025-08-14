@@ -180,8 +180,7 @@ internal class GoupTests
         filter.Male = true;
         filter.Female = false;
         filter.LegalEntity = false;
-        var clientApplicationService = new Klacks.Api.Application.Services.ClientApplicationService(clientRepository, _mapper);
-        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientApplicationService);
+        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientRepository, _mapper);
 
         var group = new GroupResource();
         group.Name = $"FakeName{index}";
