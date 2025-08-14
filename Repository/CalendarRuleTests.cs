@@ -29,6 +29,9 @@ namespace UnitTest.Repository
         private ICalendarRuleFilterService _filterService = null!;
         private ICalendarRuleSortingService _sortingService = null!;
         private ICalendarRulePaginationService _paginationService = null!;
+        private IMacroManagementService _macroManagementService = null!;
+        private IMacroTypeManagementService _macroTypeManagementService = null!;
+        private IVatManagementService _vatManagementService = null!;
 
         [TestCase(5, 0, 5)]
         [TestCase(10, 0, 0)]
@@ -51,8 +54,10 @@ namespace UnitTest.Repository
             dbContext.Database.EnsureCreated();
             DataSeed();
             
+            // Use domain services configured in SetUp
+            
             // Create real repositories with mocked domain services
-            var settingsRepository = new SettingsRepository(dbContext, _filterService, _sortingService, _paginationService);
+            var settingsRepository = new SettingsRepository(dbContext, _filterService, _sortingService, _paginationService, _macroManagementService, _macroTypeManagementService, _vatManagementService);
             var stateRepository = new StateRepository(dbContext, Substitute.For<ILogger<State>>());
             var countryRepository = new CountryRepository(dbContext, Substitute.For<ILogger<Countries>>());
             
@@ -87,6 +92,9 @@ namespace UnitTest.Repository
             _filterService = Substitute.For<ICalendarRuleFilterService>();
             _sortingService = Substitute.For<ICalendarRuleSortingService>();
             _paginationService = Substitute.For<ICalendarRulePaginationService>();
+            _macroManagementService = Substitute.For<IMacroManagementService>();
+            _macroTypeManagementService = Substitute.For<IMacroTypeManagementService>();
+            _vatManagementService = Substitute.For<IVatManagementService>();
             
             // Setup domain service mocks to return appropriate results
             _filterService.ApplyFilters(Arg.Any<IQueryable<CalendarRule>>(), Arg.Any<CalendarRulesFilter>())

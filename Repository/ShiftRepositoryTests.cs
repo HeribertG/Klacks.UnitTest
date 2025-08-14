@@ -20,6 +20,8 @@ public class ShiftRepositoryTests
     private IShiftSearchService _mockShiftSearchService;
     private IShiftSortingService _mockShiftSortingService;
     private IShiftStatusFilterService _mockShiftStatusFilterService;
+    private IShiftPaginationService _mockShiftPaginationService;
+    private IShiftGroupManagementService _mockShiftGroupManagementService;
 
     [SetUp]
     public void SetUp()
@@ -35,7 +37,9 @@ public class ShiftRepositoryTests
         _mockShiftSearchService = Substitute.For<IShiftSearchService>();
         _mockShiftSortingService = Substitute.For<IShiftSortingService>();
         _mockShiftStatusFilterService = Substitute.For<IShiftStatusFilterService>();
-        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService);
+        _mockShiftPaginationService = Substitute.For<IShiftPaginationService>();
+        _mockShiftGroupManagementService = Substitute.For<IShiftGroupManagementService>();
+        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService, _mockShiftPaginationService, _mockShiftGroupManagementService);
     }
 
     [Test]

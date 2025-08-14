@@ -24,6 +24,8 @@ public class ShiftPerformanceIntegrationTests
     private IShiftSearchService _searchService;
     private IShiftSortingService _sortingService;
     private IShiftStatusFilterService _statusFilterService;
+    private IShiftPaginationService _paginationService;
+    private IShiftGroupManagementService _groupManagementService;
 
     [SetUp]
     public async Task SetUp()
@@ -42,8 +44,31 @@ public class ShiftPerformanceIntegrationTests
         _searchService = new ShiftSearchService();
         _sortingService = new ShiftSortingService();
         _statusFilterService = new ShiftStatusFilterService();
+        _paginationService = Substitute.For<IShiftPaginationService>();
+        _groupManagementService = Substitute.For<IShiftGroupManagementService>();
         
-        _shiftRepository = new ShiftRepository(_context, mockLogger, _dateRangeFilterService, _searchService, _sortingService, _statusFilterService);
+        // Configure pagination service mock to return realistic results
+        _paginationService.ApplyPaginationAsync(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilter>())
+            .Returns(callInfo =>
+            {
+                var query = callInfo.ArgAt<IQueryable<Shift>>(0);
+                var filter = callInfo.ArgAt<ShiftFilter>(1);
+                
+                var shifts = query.ToList();
+                var count = shifts.Count;
+                var firstItem = filter.RequiredPage * filter.NumberOfItemsPerPage;
+                var pagedShifts = shifts.Skip(firstItem).Take(filter.NumberOfItemsPerPage).ToList();
+                
+                return Task.FromResult(new TruncatedShift
+                {
+                    Shifts = pagedShifts,
+                    MaxItems = count,
+                    CurrentPage = filter.RequiredPage,
+                    FirstItemOnPage = firstItem
+                });
+            });
+        
+        _shiftRepository = new ShiftRepository(_context, mockLogger, _dateRangeFilterService, _searchService, _sortingService, _statusFilterService, _paginationService, _groupManagementService);
         
         _shiftFilterService = new ShiftFilterService(
             _dateRangeFilterService,
