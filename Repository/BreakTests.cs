@@ -2,7 +2,6 @@ using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Breaks;
-using Klacks.Api.Application.Services;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using NSubstitute;

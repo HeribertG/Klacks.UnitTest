@@ -3,7 +3,6 @@ using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
-using Klacks.Api.Application.Services;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using NSubstitute;
@@ -126,9 +125,7 @@ internal class GoupTests
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository);
         var command = new PostCommand<GroupResource>(group);
-        var mockLogger = Substitute.For<ILogger<Klacks.Api.Application.Services.GroupApplicationService>>();
-        var groupApplicationService = new GroupApplicationService(groupRepository, _mapper, mockLogger);
-        var handler = new PostCommandHandler(groupApplicationService, unitOfWork, _logger);
+        var handler = new PostCommandHandler(groupRepository, _mapper, unitOfWork, _logger);
 
         //Act
         var result = await handler.Handle(command, default);

@@ -1,18 +1,14 @@
-using AutoMapper;
 using FluentAssertions;
 using Klacks.Api.Application.Handlers.Settings.CalendarRules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Settings.CalendarRules;
-using Klacks.Api.Application.Services;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Filter;
-using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using UnitTest.FakeData;
@@ -23,9 +19,6 @@ namespace UnitTest.Repository
     {
         public IHttpContextAccessor _httpContextAccessor = null!;
         public DataBaseContext dbContext = null!;
-        private IMapper _mapper = null!;
-        private IMediator _mediator = null!;
-        private ILogger<SettingsApplicationService> _logger = null!;
         private ICalendarRuleFilterService _filterService = null!;
         private ICalendarRuleSortingService _sortingService = null!;
         private ICalendarRulePaginationService _paginationService = null!;
@@ -56,22 +49,11 @@ namespace UnitTest.Repository
             
             // Use domain services configured in SetUp
             
-            // Create real repositories with mocked domain services
+            // Create real SettingsRepository with mocked domain services
             var settingsRepository = new SettingsRepository(dbContext, _filterService, _sortingService, _paginationService, _macroManagementService, _macroTypeManagementService, _vatManagementService);
-            var stateRepository = new StateRepository(dbContext, Substitute.For<ILogger<State>>());
-            var countryRepository = new CountryRepository(dbContext, Substitute.For<ILogger<Countries>>());
-            
-            // Create SettingsApplicationService with real repositories and mocked dependencies
-            var settingsApplicationService = new SettingsApplicationService(
-                settingsRepository,
-                stateRepository, 
-                countryRepository,
-                _mapper,
-                _logger
-            );
             
             var query = new TruncatedListQuery(filter);
-            var handler = new TruncatedListQueryHandler(settingsApplicationService);
+            var handler = new TruncatedListQueryHandler(settingsRepository);
             //Act
             var result = await handler.Handle(query, default);
             //Assert
@@ -86,9 +68,6 @@ namespace UnitTest.Repository
         [SetUp]
         public void Setup()
         {
-            _mapper = Substitute.For<IMapper>();
-            _mediator = Substitute.For<IMediator>();
-            _logger = Substitute.For<ILogger<SettingsApplicationService>>();
             _filterService = Substitute.For<ICalendarRuleFilterService>();
             _sortingService = Substitute.For<ICalendarRuleSortingService>();
             _paginationService = Substitute.For<ICalendarRulePaginationService>();

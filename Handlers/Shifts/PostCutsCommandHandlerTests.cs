@@ -1,7 +1,9 @@
+using AutoMapper;
 using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Presentation.DTOs.Schedules;
 
@@ -11,63 +13,65 @@ namespace UnitTest.Handlers.Shifts;
 public class PostCutsCommandHandlerTests
 {
     private PostCutsCommandHandler _handler;
-    private IShiftApplicationService _mockShiftApplicationService;
+    private IShiftRepository _mockShiftRepository;
+    private IMapper _mockMapper;
 
     [SetUp]
     public void SetUp()
     {
-        _mockShiftApplicationService = Substitute.For<IShiftApplicationService>();
-        _handler = new PostCutsCommandHandler(_mockShiftApplicationService);
+        _mockShiftRepository = Substitute.For<IShiftRepository>();
+        _mockMapper = Substitute.For<IMapper>();
+        _handler = new PostCutsCommandHandler(_mockShiftRepository, _mockMapper);
     }
 
     [Test]
-    public async Task Handle_ValidRequest_CallsApplicationService()
+    public async Task Handle_ValidRequest_CallsRepositoryAndMapper()
     {
         // Arrange
-        var cutShifts = new List<ShiftResource>
-        {
-            new ShiftResource 
-            { 
-                Id = Guid.NewGuid(), 
-                Name = "Cut Shift 1",
-                Status = ShiftStatus.IsCut,
-                Groups = new List<SimpleGroupResource>()
-            }
+        var shiftResource = new ShiftResource 
+        { 
+            Id = Guid.NewGuid(), 
+            Name = "Cut Shift 1",
+            Status = ShiftStatus.IsCut,
+            Groups = new List<SimpleGroupResource>()
         };
-
+        var cutShifts = new List<ShiftResource> { shiftResource };
         var command = new PostCutsCommand(cutShifts);
-        var expectedResult = new List<ShiftResource> { cutShifts.First() };
-
-        _mockShiftApplicationService.CreateShiftCutsAsync(Arg.Any<List<ShiftResource>>(), Arg.Any<CancellationToken>())
-            .Returns(expectedResult);
+        
+        var shiftEntity = new Shift { Id = shiftResource.Id, Name = shiftResource.Name };
+        
+        _mockMapper.Map<Shift>(shiftResource).Returns(shiftEntity);
+        _mockShiftRepository.Add(shiftEntity).Returns(Task.CompletedTask);
+        _mockMapper.Map<ShiftResource>(shiftEntity).Returns(shiftResource);
 
         // Act
         var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.EqualTo(expectedResult));
-        await _mockShiftApplicationService.Received(1).CreateShiftCutsAsync(
-            Arg.Is<List<ShiftResource>>(x => x.Count == 1), 
-            Arg.Any<CancellationToken>());
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.Count, Is.EqualTo(1));
+        Assert.That(result.First(), Is.EqualTo(shiftResource));
+        
+        _mockMapper.Received(1).Map<Shift>(shiftResource);
+        await _mockShiftRepository.Received(1).Add(shiftEntity);
+        _mockMapper.Received(1).Map<ShiftResource>(shiftEntity);
     }
 
     [Test]
-    public async Task Handle_EmptyList_CallsApplicationService()
+    public async Task Handle_EmptyList_ReturnsEmptyList()
     {
         // Arrange
         var command = new PostCutsCommand(new List<ShiftResource>());
-        var expectedResult = new List<ShiftResource>();
-
-        _mockShiftApplicationService.CreateShiftCutsAsync(Arg.Any<List<ShiftResource>>(), Arg.Any<CancellationToken>())
-            .Returns(expectedResult);
 
         // Act
         var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        Assert.That(result, Is.EqualTo(expectedResult));
-        await _mockShiftApplicationService.Received(1).CreateShiftCutsAsync(
-            Arg.Is<List<ShiftResource>>(x => x.Count == 0), 
-            Arg.Any<CancellationToken>());
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.Count, Is.EqualTo(0));
+        
+        _mockMapper.DidNotReceive().Map<Shift>(Arg.Any<ShiftResource>());
+        await _mockShiftRepository.DidNotReceive().Add(Arg.Any<Shift>());
+        _mockMapper.DidNotReceive().Map<ShiftResource>(Arg.Any<Shift>());
     }
 }

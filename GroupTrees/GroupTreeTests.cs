@@ -4,7 +4,6 @@ using Klacks.Api.Application.Commands.Groups;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
-using Klacks.Api.Application.Services;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Groups;
@@ -78,35 +77,31 @@ public class GroupTreeTests
 
         _mediator = Substitute.For<IMediator>();
 
-        var mockLogger = Substitute.For<ILogger<GroupApplicationService>>();
-        
-        var postGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _postHandler = new PostCommandHandler(
-            postGroupAppService,
+            _groupRepository,
+            _mapper,
             _unitOfWork,
             postHandlerLogger);
 
-        var putGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _putHandler = new PutCommandHandler(
-            putGroupAppService,
+            _groupRepository,
+            _mapper,
             _unitOfWork,
             putHandlerLogger);
 
-        var deleteGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _deleteHandler = new DeleteCommandHandler(
-            deleteGroupAppService,
+            _groupRepository,
+            _mapper,
             _unitOfWork,
             deleteHandlerLogger);
 
-        var groupApplicationService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
-        _getHandler = new GetQueryHandler(groupApplicationService);
+        _getHandler = new GetQueryHandler(_groupRepository, _mapper);
 
-        var pathAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
-        _getPathHandler = new GetPathToNodeQueryHandler(pathAppService);
+        _getPathHandler = new GetPathToNodeQueryHandler(_groupRepository, _mapper);
 
-        var moveGroupAppService = new GroupApplicationService(_groupRepository, _mapper, mockLogger);
         _moveHandler = new MoveGroupNodeCommandHandler(
-            moveGroupAppService,
+            _groupRepository,
+            _mapper,
             _unitOfWork,
             moveHandlerLogger);
     }

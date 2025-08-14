@@ -16,7 +16,6 @@ using Klacks.Api.Presentation.DTOs.Staffs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using UnitTest.FakeData;
-using Klacks.Api.Application.Services;
 
 
 namespace UnitTest.Repository;
