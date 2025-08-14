@@ -1,6 +1,7 @@
 using FluentAssertions;
 using FluentAssertions.Specialized;
 using Klacks.Api.Domain.Models.Settings;
+using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Infrastructure.Persistence;
@@ -252,21 +253,21 @@ public class AccountNotificationServiceTests
 
     private async Task SeedEmailSettings()
     {
-        var settings = new List<Settings>
+        var settings = new List<SettingsModel>
         {
-            new Settings { Type = "APP_ADDRESS_MAIL", Value = "test@klacks.com" },
-            new Settings { Type = "subject", Value = "Test Subject" },
-            new Settings { Type = "mark", Value = "Test Mark" },
-            new Settings { Type = "replyTo", Value = "noreply@klacks.com" },
-            new Settings { Type = "outgoingserver", Value = "smtp.test.com" },
-            new Settings { Type = "outgoingserverPort", Value = "587" },
-            new Settings { Type = "outgoingserverUsername", Value = "testuser" },
-            new Settings { Type = "outgoingserverPassword", Value = "testpass" },
-            new Settings { Type = "enabledSSL", Value = "true" },
-            new Settings { Type = "authenticationType", Value = "Basic" },
-            new Settings { Type = "readReceipt", Value = "false" },
-            new Settings { Type = "dispositionNotification", Value = "false" },
-            new Settings { Type = "outgoingserverTimeout", Value = "30000" }
+            new SettingsModel() { Type = "APP_ADDRESS_MAIL", Value = "test@klacks.com" },
+            new SettingsModel() { Type = "subject", Value = "Test Subject" },
+            new SettingsModel() { Type = "mark", Value = "Test Mark" },
+            new SettingsModel() { Type = "replyTo", Value = "noreply@klacks.com" },
+            new SettingsModel() { Type = "outgoingserver", Value = "smtp.test.com" },
+            new SettingsModel() { Type = "outgoingserverPort", Value = "587" },
+            new SettingsModel() { Type = "outgoingserverUsername", Value = "testuser" },
+            new SettingsModel() { Type = "outgoingserverPassword", Value = "testpass" },
+            new SettingsModel() { Type = "enabledSSL", Value = "true" },
+            new SettingsModel() { Type = "authenticationType", Value = "Basic" },
+            new SettingsModel() { Type = "readReceipt", Value = "false" },
+            new SettingsModel() { Type = "dispositionNotification", Value = "false" },
+            new SettingsModel() { Type = "outgoingserverTimeout", Value = "30000" }
         };
 
         await _context.Settings.AddRangeAsync(settings);
@@ -275,10 +276,10 @@ public class AccountNotificationServiceTests
 
     private async Task SeedPartialEmailSettings()
     {
-        var settings = new List<Settings>
+        var settings = new List<SettingsModel>
         {
-            new Settings { Type = "APP_ADDRESS_MAIL", Value = "test@klacks.com" },
-            new Settings { Type = "subject", Value = "Test Subject" }
+            new SettingsModel() { Type = "APP_ADDRESS_MAIL", Value = "test@klacks.com" },
+            new SettingsModel() { Type = "subject", Value = "Test Subject" }
         };
 
         await _context.Settings.AddRangeAsync(settings);
