@@ -53,9 +53,13 @@ internal class GoupTests
         var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
+        var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
+        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
+        var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
         var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
-            clientFilterService, membershipFilterService, searchService, sortingService);
+            clientFilterService, membershipFilterService, searchService, sortingService,
+            changeTrackingService, entityManagementService, workFilterService);
         // Create mock Domain Services for GroupRepository
         var mockTreeService = Substitute.For<IGroupTreeService>();
         var mockHierarchyService = Substitute.For<IGroupHierarchyService>();

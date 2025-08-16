@@ -26,6 +26,9 @@ public class ClientRepositoryRefactoredTests
     private IClientMembershipFilterService _mockMembershipFilterService;
     private IClientSearchService _mockSearchService;
     private IClientSortingService _mockSortingService;
+    private IClientChangeTrackingService _mockChangeTrackingService;
+    private IClientEntityManagementService _mockEntityManagementService;
+    private IClientWorkFilterService _mockWorkFilterService;
 
     [SetUp]
     public async Task SetUp()
@@ -45,6 +48,9 @@ public class ClientRepositoryRefactoredTests
         _mockMembershipFilterService = Substitute.For<IClientMembershipFilterService>();
         _mockSearchService = Substitute.For<IClientSearchService>();
         _mockSortingService = Substitute.For<IClientSortingService>();
+        _mockChangeTrackingService = Substitute.For<IClientChangeTrackingService>();
+        _mockEntityManagementService = Substitute.For<IClientEntityManagementService>();
+        _mockWorkFilterService = Substitute.For<IClientWorkFilterService>();
 
         // Create repository with mocked domain services
         _clientRepository = new ClientRepository(
@@ -55,7 +61,10 @@ public class ClientRepositoryRefactoredTests
             _mockClientFilterService,
             _mockMembershipFilterService,
             _mockSearchService,
-            _mockSortingService);
+            _mockSortingService,
+            _mockChangeTrackingService,
+            _mockEntityManagementService,
+            _mockWorkFilterService);
 
         // Create test data
         await CreateTestData();

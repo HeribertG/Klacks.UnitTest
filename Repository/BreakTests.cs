@@ -51,9 +51,13 @@ internal class BreakTests
         var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
+        var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
+        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
+        var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
-            clientFilterService, membershipFilterService, searchService, sortingService);
+            clientFilterService, membershipFilterService, searchService, sortingService, 
+            changeTrackingService, entityManagementService, workFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var handler = new GetListQueryHandler(repository, _mapper);
 
