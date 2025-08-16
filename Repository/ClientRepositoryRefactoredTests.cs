@@ -144,8 +144,6 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients.Where(c => c.FirstName.Contains("Hans")));
         _mockMembershipFilterService.ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), filter)
             .Returns(testClients);
-        _mockMembershipFilterService.ApplyBreaksYearFilter(Arg.Any<IQueryable<Client>>(), filter)
-            .Returns(testClients);
         _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc")
             .Returns(testClients.OrderBy(c => c.Name));
 
@@ -159,7 +157,6 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.Received(1).IsNumericSearch("Hans");
         _mockSearchService.Received(1).ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Hans", false);
         _mockMembershipFilterService.Received(1).ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), filter);
-        _mockMembershipFilterService.Received(1).ApplyBreaksYearFilter(Arg.Any<IQueryable<Client>>(), filter);
         _mockSortingService.Received(1).ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc");
     }
 
@@ -191,8 +188,6 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.ApplyIdNumberSearch(Arg.Any<IQueryable<Client>>(), 123)
             .Returns(testClients.Where(c => c.IdNumber == 123));
         _mockMembershipFilterService.ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), filter)
-            .Returns(testClients);
-        _mockMembershipFilterService.ApplyBreaksYearFilter(Arg.Any<IQueryable<Client>>(), filter)
             .Returns(testClients);
         _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc")
             .Returns(testClients.OrderBy(c => c.Name));
@@ -341,8 +336,6 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients);
         _mockMembershipFilterService.ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<BreakFilter>())
             .Returns(testClients);
-        _mockMembershipFilterService.ApplyBreaksYearFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<BreakFilter>())
-            .Returns(testClients);
         _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(testClients);
 
@@ -353,7 +346,6 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.Received().IsNumericSearch(Arg.Any<string>());
         _mockSearchService.Received().ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>());
         _mockMembershipFilterService.Received().ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<BreakFilter>());
-        _mockMembershipFilterService.Received().ApplyBreaksYearFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<BreakFilter>());
         _mockSortingService.Received().ApplySorting(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<string>());
 
         Console.WriteLine("✅ ClientRepository successfully uses Domain Services instead of direct business logic");
