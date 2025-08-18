@@ -39,6 +39,7 @@ internal class ClientTests
     [TestCase("15215", "", "", 1)] // Id Number
     [TestCase("", "Male", "", 0)]
     [TestCase("", "Female", "", 0)]
+    [TestCase("", "Intersexuality", "", 0)]
     [TestCase("", "LegalEntity", "", 23)]
     [TestCase("", "", "SG", 3)]
     [TestCase("", "", "BE", 4)]
@@ -58,19 +59,28 @@ internal class ClientTests
                     filter.Male = true;
                     filter.Female = false;
                     filter.LegalEntity = false;
+                    filter.Intersexuality = false;
                     break;
 
                 case "Female":
                     filter.Male = false;
                     filter.Female = true;
                     filter.LegalEntity = false;
+                    filter.Intersexuality = false;
                     break;
 
                 case "LegalEntity":
-
                     filter.Male = false;
                     filter.Female = false;
                     filter.LegalEntity = true;
+                    filter.Intersexuality = false;
+                    break;
+
+                case "Intersexuality":
+                    filter.Male = false;
+                    filter.Female = false;
+                    filter.LegalEntity = false;
+                    filter.Intersexuality = true;
                     break;
             }
         }
