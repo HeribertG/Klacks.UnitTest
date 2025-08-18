@@ -219,7 +219,7 @@ public class GroupMembershipServiceTests
         var members = await _membershipService.GetGroupMembersAsync(groupId);
 
         // Assert
-        // The service uses Include(gi => gi.Client) but Client entities don't exist in test
+        // The service uses Include(gi => gi.Employee) but Employee entities don't exist in test
         // So we expect the service to return empty collection or handle null clients
         members.Should().NotBeNull();
         // We can't test for specific client objects since they don't exist in the test database

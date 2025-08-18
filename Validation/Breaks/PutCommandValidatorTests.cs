@@ -531,7 +531,7 @@ public class PutCommandValidatorTests
             Id = clientId,
             MembershipId = membership.Id,
             Membership = membership,
-            Name = "Test Client"
+            Name = "Test Employee"
         };
 
         _context.Membership.Add(membership);
@@ -544,7 +544,7 @@ public class PutCommandValidatorTests
         var client = new Client
         {
             Id = clientId,
-            Name = "Test Client"
+            Name = "Test Employee"
         };
 
         _context.Client.Add(client);
