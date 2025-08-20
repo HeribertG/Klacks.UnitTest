@@ -347,9 +347,9 @@ public class PutCommandValidatorTests
     }
 
     [Test]
-    public async Task Validate_ShouldBeInvalid_WhenBreakOverlapsWithExistingBreak()
+    public async Task Validate_ShouldBeValid_WhenBreakOverlapsWithExistingBreak()
     {
-        // Arrange
+        // Arrange - Überlappungen sind jetzt erlaubt
         var clientId = Guid.NewGuid();
         var breakId = Guid.NewGuid();
         var otherBreakId = Guid.NewGuid();
@@ -377,7 +377,7 @@ public class PutCommandValidatorTests
             Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
-            From = membershipValidFrom.AddDays(7), // Overlaps with other break
+            From = membershipValidFrom.AddDays(7), // Overlaps with other break - jetzt erlaubt
             Until = membershipValidFrom.AddDays(12)
         };
         var command = new PutCommand<BreakResource>(breakResource);
@@ -386,8 +386,8 @@ public class PutCommandValidatorTests
         var result = await _validator.ValidateAsync(command);
 
         // Assert
-        Assert.That(result.IsValid, Is.False);
-        Assert.That(result.Errors, Has.Some.Matches<ValidationFailure>(f => f.ErrorMessage == "Break overlaps with an existing break for this client"));
+        Assert.That(result.IsValid, Is.True);
+        Assert.That(result.Errors, Is.Empty);
     }
 
     [Test]
