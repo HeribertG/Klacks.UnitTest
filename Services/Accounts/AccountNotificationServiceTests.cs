@@ -203,8 +203,8 @@ public class AccountNotificationServiceTests
         // Act
         var result = await _notificationService.SendEmailAsync(title, email, message);
 
-        // Assert - Partial settings will cause bool.Parse() to fail, returning "Wrong Initialisation"
-        result.Should().Be("Wrong Initialisation of the Email Wrapper");
+        // Assert - Partial settings will result in missing ReplyTo, causing "No sender address available"
+        result.Should().Be("No sender address available");
     }
 
     [Test]
@@ -224,7 +224,7 @@ public class AccountNotificationServiceTests
         _mockLogger.Received(1).Log(
             Microsoft.Extensions.Logging.LogLevel.Information,
             Arg.Any<Microsoft.Extensions.Logging.EventId>(),
-            Arg.Is<object>(v => v.ToString().Contains("Sending email to")),
+            Arg.Is<object>(v => v.ToString().Contains("Attempting to send email to")),
             Arg.Any<Exception>(),
             Arg.Any<Func<object, Exception, string>>());
     }

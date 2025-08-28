@@ -4,6 +4,7 @@ using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Presentation.DTOs.Registrations;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace UnitTest.Services.Accounts;
@@ -14,6 +15,8 @@ public class AccountPasswordServiceTests
     private AccountPasswordService _passwordService;
     private IAuthenticationService _mockAuthService;
     private IUserManagementService _mockUserManagementService;
+    private IAccountNotificationService _mockNotificationService;
+    private IServiceProvider _mockServiceProvider;
     private ILogger<AccountPasswordService> _mockLogger;
 
     [SetUp]
@@ -21,9 +24,14 @@ public class AccountPasswordServiceTests
     {
         _mockAuthService = Substitute.For<IAuthenticationService>();
         _mockUserManagementService = Substitute.For<IUserManagementService>();
+        _mockNotificationService = Substitute.For<IAccountNotificationService>();
+        _mockServiceProvider = Substitute.For<IServiceProvider>();
         _mockLogger = Substitute.For<ILogger<AccountPasswordService>>();
 
-        _passwordService = new AccountPasswordService(_mockAuthService, _mockUserManagementService, _mockLogger);
+        // Setup service provider to return the notification service when requested
+        _mockServiceProvider.GetService<IAccountNotificationService>().Returns(_mockNotificationService);
+
+        _passwordService = new AccountPasswordService(_mockAuthService, _mockUserManagementService, _mockServiceProvider, _mockLogger);
     }
 
     [Test]
@@ -129,5 +137,106 @@ public class AccountPasswordServiceTests
 
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task GeneratePasswordResetTokenAsync_WithExistingEmail_ShouldReturnTrue()
+    {
+        var email = "test@example.com";
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = email,
+            UserName = email
+        };
+
+        _mockUserManagementService.FindUserByEmailAsync(email).Returns(testUser);
+        _mockUserManagementService.UpdateUserAsync(Arg.Any<AppUser>()).Returns((true, null));
+        _mockNotificationService.SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>()).Returns("true");
+
+        var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
+
+        result.Should().BeTrue();
+        await _mockNotificationService.Received(1).SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task GeneratePasswordResetTokenAsync_WithNonExistentEmail_ShouldReturnFalse()
+    {
+        var email = "nonexistent@example.com";
+
+        _mockUserManagementService.FindUserByEmailAsync(email).Returns((AppUser)null);
+
+        var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
+
+        result.Should().BeFalse();
+        await _mockNotificationService.DidNotReceive().SendEmailAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task ValidatePasswordResetTokenAsync_WithValidToken_ShouldReturnTrue()
+    {
+        var token = "validtoken";
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "test@example.com",
+            PasswordResetToken = token,
+            PasswordResetTokenExpires = DateTime.UtcNow.AddHours(1)
+        };
+
+        _mockUserManagementService.FindUserByTokenAsync(token).Returns(testUser);
+
+        var result = await _passwordService.ValidatePasswordResetTokenAsync(token);
+
+        result.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task ValidatePasswordResetTokenAsync_WithExpiredToken_ShouldReturnFalse()
+    {
+        var token = "expiredtoken";
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "test@example.com",
+            PasswordResetToken = token,
+            PasswordResetTokenExpires = DateTime.UtcNow.AddHours(-1) // Expired
+        };
+
+        _mockUserManagementService.FindUserByTokenAsync(token).Returns(testUser);
+
+        var result = await _passwordService.ValidatePasswordResetTokenAsync(token);
+
+        result.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task ResetPasswordAsync_WithValidToken_ShouldReturnSuccess()
+    {
+        var token = "validtoken";
+        var newPassword = "NewPassword123!";
+        var resetPasswordResource = new ResetPasswordResource
+        {
+            Token = token,
+            Password = newPassword
+        };
+
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "test@example.com",
+            PasswordResetToken = token,
+            PasswordResetTokenExpires = DateTime.UtcNow.AddHours(1)
+        };
+
+        _mockUserManagementService.FindUserByTokenAsync(token).Returns(testUser);
+        _mockAuthService.ResetPasswordAsync(testUser, token, newPassword).Returns((true, null));
+        _mockUserManagementService.UpdateUserAsync(Arg.Any<AppUser>()).Returns((true, null));
+
+        var result = await _passwordService.ResetPasswordAsync(resetPasswordResource);
+
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
     }
 }
