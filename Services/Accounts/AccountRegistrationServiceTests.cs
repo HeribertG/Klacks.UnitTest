@@ -20,6 +20,7 @@ public class AccountRegistrationServiceTests
     private IUserManagementService _mockUserManagementService;
     private IRefreshTokenService _mockRefreshTokenService;
     private IAccountAuthenticationService _mockAccountAuthService;
+    private IAccountPasswordService _mockAccountPasswordService;
     private ILogger<AccountRegistrationService> _mockLogger;
 
     [SetUp]
@@ -36,6 +37,7 @@ public class AccountRegistrationServiceTests
         _mockUserManagementService = Substitute.For<IUserManagementService>();
         _mockRefreshTokenService = Substitute.For<IRefreshTokenService>();
         _mockAccountAuthService = Substitute.For<IAccountAuthenticationService>();
+        _mockAccountPasswordService = Substitute.For<IAccountPasswordService>();
         _mockLogger = Substitute.For<ILogger<AccountRegistrationService>>();
 
         _registrationService = new AccountRegistrationService(
@@ -44,6 +46,7 @@ public class AccountRegistrationServiceTests
             _mockUserManagementService,
             _mockRefreshTokenService,
             _mockAccountAuthService,
+            _mockAccountPasswordService,
             _mockLogger);
     }
 

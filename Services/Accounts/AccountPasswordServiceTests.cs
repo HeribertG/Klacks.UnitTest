@@ -3,6 +3,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Presentation.DTOs.Registrations;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -17,6 +18,7 @@ public class AccountPasswordServiceTests
     private IUserManagementService _mockUserManagementService;
     private IAccountNotificationService _mockNotificationService;
     private IServiceProvider _mockServiceProvider;
+    private IConfiguration _mockConfiguration;
     private ILogger<AccountPasswordService> _mockLogger;
 
     [SetUp]
@@ -26,12 +28,13 @@ public class AccountPasswordServiceTests
         _mockUserManagementService = Substitute.For<IUserManagementService>();
         _mockNotificationService = Substitute.For<IAccountNotificationService>();
         _mockServiceProvider = Substitute.For<IServiceProvider>();
+        _mockConfiguration = Substitute.For<IConfiguration>();
         _mockLogger = Substitute.For<ILogger<AccountPasswordService>>();
 
         // Setup service provider to return the notification service when requested
         _mockServiceProvider.GetService<IAccountNotificationService>().Returns(_mockNotificationService);
 
-        _passwordService = new AccountPasswordService(_mockAuthService, _mockUserManagementService, _mockServiceProvider, _mockLogger);
+        _passwordService = new AccountPasswordService(_mockAuthService, _mockUserManagementService, _mockServiceProvider, _mockConfiguration, _mockLogger);
     }
 
     [Test]
