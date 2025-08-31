@@ -6,6 +6,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Presentation.DTOs.Schedules;
+using Microsoft.Extensions.Logging;
 
 namespace UnitTest.Handlers.Shifts;
 
@@ -15,13 +16,15 @@ public class PutCutsCommandHandlerTests
     private PutCutsCommandHandler _handler;
     private IShiftRepository _mockShiftRepository;
     private IMapper _mockMapper;
+    private ILogger<PutCutsCommandHandler> _mockLogger;
 
     [SetUp]
     public void SetUp()
     {
         _mockShiftRepository = Substitute.For<IShiftRepository>();
         _mockMapper = Substitute.For<IMapper>();
-        _handler = new PutCutsCommandHandler(_mockShiftRepository, _mockMapper);
+        _mockLogger = Substitute.For<ILogger<PutCutsCommandHandler>>();
+        _handler = new PutCutsCommandHandler(_mockShiftRepository, _mockMapper, _mockLogger);
     }
 
     [Test]
