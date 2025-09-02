@@ -276,7 +276,7 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.IsNumericSearch("Test").Returns(false);
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Test", Arg.Any<bool>())
             .Returns(testClients);
-        _mockClientFilterService.ApplyGenderFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<int[]>(), Arg.Any<bool?>())
+        _mockClientFilterService.ApplyGenderFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<int[]>())
             .Returns(testClients);
         _mockClientFilterService.ApplyAnnotationFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<bool?>())
             .Returns(testClients);
@@ -298,7 +298,7 @@ public class ClientRepositoryRefactoredTests
         
         // Verify that domain services were called
         _mockSearchService.Received(1).ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Test", Arg.Any<bool>());
-        _mockClientFilterService.Received(1).ApplyGenderFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<int[]>(), Arg.Any<bool?>());
+        _mockClientFilterService.Received(1).ApplyGenderFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<int[]>());
         _mockClientFilterService.Received(1).ApplyAnnotationFilter(Arg.Any<IQueryable<Client>>(), true);
         _mockMembershipFilterService.Received(1).ApplyMembershipFilter(Arg.Any<IQueryable<Client>>(), true, false, false);
         _mockSortingService.Received(1).ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc");

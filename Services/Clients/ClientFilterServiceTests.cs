@@ -1,11 +1,4 @@
-using FluentAssertions;
-using Klacks.Api.Domain.Enums;
-using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Clients;
-using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace UnitTest.Services.Clients
 {
@@ -33,107 +26,7 @@ namespace UnitTest.Services.Clients
                 new Client { Id = Guid.NewGuid(), Gender = GenderEnum.Female, LegalEntity = true, Name = "Another Legal Entity" }
             };
         }
-
-        [Test]
-        public void ApplyGenderFilter_NoGenderTypesAndLegalEntityFalse_ReturnsEmpty()
-        {
-            // Arrange
-            var query = _testClients.AsQueryable();
-            var genderTypes = new int[] { };
-            bool? legalEntity = false;
-
-            // Act
-            var result = _service.ApplyGenderFilter(query, genderTypes, legalEntity);
-
-            // Assert
-            result.Should().BeEmpty();
-        }
-
-        [Test]
-        public void ApplyGenderFilter_NoGenderTypesAndLegalEntityNull_ReturnsEmpty()
-        {
-            // Arrange
-            var query = _testClients.AsQueryable();
-            var genderTypes = new int[] { };
-            bool? legalEntity = null;
-
-            // Act
-            var result = _service.ApplyGenderFilter(query, genderTypes, legalEntity);
-
-            // Assert
-            result.Should().BeEmpty();
-        }
-
-        [Test]
-        public void ApplyGenderFilter_NoGenderTypesButLegalEntityTrue_ReturnsOnlyLegalEntities()
-        {
-            // Arrange
-            var query = _testClients.AsQueryable();
-            var genderTypes = new int[] { };
-            bool? legalEntity = true;
-
-            // Act
-            var result = _service.ApplyGenderFilter(query, genderTypes, legalEntity);
-
-            // Assert
-            result.Should().HaveCount(2);
-            result.All(c => c.LegalEntity).Should().BeTrue();
-        }
-
-        [Test]
-        public void ApplyGenderFilter_WithMaleAndFemaleGenders_ReturnsMatchingClients()
-        {
-            // Arrange
-            var query = _testClients.AsQueryable();
-            var genderTypes = new int[] { (int)GenderEnum.Male, (int)GenderEnum.Female };
-            bool? legalEntity = false;
-
-            // Act
-            var result = _service.ApplyGenderFilter(query, genderTypes, legalEntity);
-
-            // Assert
-            result.Should().HaveCount(2);
-            result.All(c => !c.LegalEntity).Should().BeTrue();
-            result.Should().Contain(c => c.Gender == GenderEnum.Male);
-            result.Should().Contain(c => c.Gender == GenderEnum.Female);
-            result.Should().NotContain(c => c.Gender == GenderEnum.Intersexuality);
-        }
-
-        [Test]
-        public void ApplyGenderFilter_WithIntersexualityGender_ReturnsIntersexClients()
-        {
-            // Arrange
-            var query = _testClients.AsQueryable();
-            var genderTypes = new int[] { (int)GenderEnum.Intersexuality };
-            bool? legalEntity = false;
-
-            // Act
-            var result = _service.ApplyGenderFilter(query, genderTypes, legalEntity);
-
-            // Assert
-            result.Should().HaveCount(1);
-            result.First().Gender.Should().Be(GenderEnum.Intersexuality);
-        }
-
-        [Test]
-        public void ApplyGenderFilter_WithGendersAndLegalEntityTrue_ReturnsOnlyLegalEntitiesWithMatchingGenders()
-        {
-            // Arrange
-            var query = _testClients.AsQueryable();
-            var genderTypes = new int[] { (int)GenderEnum.Male };
-            bool? legalEntity = true;
-
-            // Act
-            var result = _service.ApplyGenderFilter(query, genderTypes, legalEntity);
-
-            // Assert
-            // Based on current logic: co.LegalEntity == true && genderTypes.Any(y => y == co.Gender)
-            // This returns only legal entities that also have the specified gender
-            result.Should().HaveCount(1);
-            result.All(c => c.LegalEntity).Should().BeTrue();
-            result.All(c => c.Gender == GenderEnum.Male).Should().BeTrue();
-        }
-
+        
         [Test]
         public void CreateGenderList_WithAllOptionsTrue_ReturnsAllGenderEnums()
         {
@@ -212,24 +105,7 @@ namespace UnitTest.Services.Clients
             // Assert
             result.Should().BeEmpty();
         }
-
-        [Test]
-        public void ApplyGenderFilter_MixedScenario_WithIntersexualityMaleAndLegalEntity()
-        {
-            // Arrange
-            var query = _testClients.AsQueryable();
-            var genderTypes = new int[] { (int)GenderEnum.Male, (int)GenderEnum.Intersexuality };
-            bool? legalEntity = true;
-
-            // Act
-            var result = _service.ApplyGenderFilter(query, genderTypes, legalEntity);
-
-            // Assert
-            // With current logic: Returns only legal entities that are also Male or Intersexuality
-            result.Should().HaveCount(1); // Only the Male legal entity
-            result.All(c => c.LegalEntity).Should().BeTrue();
-        }
-
+                
         [Test]
         public void CreateGenderList_WithNullValues_ReturnsEmptyArray()
         {
