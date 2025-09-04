@@ -40,11 +40,11 @@ namespace UnitTest.Services.Clients
             var result = _service.CreateGenderList(male, female, legalEntity, intersexuality);
 
             // Assert
-            result.Should().HaveCount(3); // Only 3 genders, LegalEntity is not a gender
+            result.Should().HaveCount(4); // All 4 gender values: Male, Female, Intersexuality, LegalEntity
             result.Should().Contain((int)GenderEnum.Male);
             result.Should().Contain((int)GenderEnum.Female);
             result.Should().Contain((int)GenderEnum.Intersexuality);
-            // LegalEntity should not be in the gender list
+            result.Should().Contain((int)GenderEnum.LegalEntity);
         }
 
         [Test]
@@ -135,8 +135,9 @@ namespace UnitTest.Services.Clients
             var result = _service.CreateGenderList(male, female, legalEntity, intersexuality);
 
             // Assert
-            result.Should().HaveCount(1); // Only Male, LegalEntity is not a gender
+            result.Should().HaveCount(2); // Male and LegalEntity
             result.Should().Contain((int)GenderEnum.Male);
+            result.Should().Contain((int)GenderEnum.LegalEntity);
             result.Should().NotContain((int)GenderEnum.Female);
             result.Should().NotContain((int)GenderEnum.Intersexuality);
         }

@@ -39,8 +39,8 @@ internal class ClientTests
     [TestCase("15215", "", "", 1)] // Id Number
     [TestCase("", "Male", "", 0)]
     [TestCase("", "Female", "", 0)]
-    [TestCase("", "Intersexuality", "", 0)]
-    [TestCase("", "LegalEntity", "", 23)]
+    [TestCase("", "Intersexuality", "", 23)]
+    [TestCase("", "LegalEntity", "", 0)]
     [TestCase("", "", "SG", 3)]
     [TestCase("", "", "BE", 4)]
     [TestCase("", "", "ZH", 4)]
