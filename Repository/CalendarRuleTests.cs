@@ -9,6 +9,7 @@ using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using UnitTest.FakeData;
@@ -53,7 +54,8 @@ namespace UnitTest.Repository
             var settingsRepository = new SettingsRepository(dbContext, _filterService, _sortingService, _paginationService, _macroManagementService, _macroTypeManagementService, _vatManagementService);
             
             var query = new TruncatedListQuery(filter);
-            var handler = new TruncatedListQueryHandler(settingsRepository);
+            var logger = Substitute.For<ILogger<TruncatedListQueryHandler>>();
+            var handler = new TruncatedListQueryHandler(settingsRepository, logger);
             //Act
             var result = await handler.Handle(query, default);
             //Assert
