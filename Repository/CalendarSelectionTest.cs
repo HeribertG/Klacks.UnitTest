@@ -61,7 +61,8 @@ internal class CalendarSelectionTest
         var queryGet = new GetQuery<CalendarSelectionResource>(id);
         var updateService2 = new CalendarSelectionUpdateService(dbContext, _updateServiceLogger);
         var repository2 = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger, updateService2);
-        var handlerGet = new GetQueryHandler(repository2, _mapper);
+        var logger = Substitute.For<ILogger<GetQueryHandler>>();
+        var handlerGet = new GetQueryHandler(repository2, _mapper, logger);
 
         //Act Get
         var resultGet = await handlerGet.Handle(queryGet, default);
