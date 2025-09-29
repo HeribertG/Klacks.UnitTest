@@ -225,24 +225,17 @@ public class ContractsControllerTests
     }
 
     [Test]
-    public async Task GetContracts_WhenExceptionOccurs_ShouldLogError()
+    public async Task GetContracts_WhenExceptionOccurs_ShouldPropagateException()
     {
         // Arrange
         var exception = new Exception("Test error");
         mockMediator.Send(Arg.Any<ListQuery<ContractResource>>())
             .Throws(exception);
 
-        // Act
-        try
-        {
-            await controller.GetContracts();
-        }
-        catch
-        {
-            // Expected exception
-        }
-
-        // Assert
-        mockLogger.Received().LogError(exception, "Error occurred while fetching contracts.");
+        // Act & Assert
+        Assert.ThrowsAsync<Exception>(() => controller.GetContracts());
+        
+        // Verify that information logging still occurs before exception
+        mockLogger.Received().LogInformation("Fetching all contracts.");
     }
 }
