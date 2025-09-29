@@ -14,6 +14,7 @@ using Klacks.Api.Presentation.DTOs.Settings;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
 using UnitTest.Helper;
 
@@ -59,7 +60,8 @@ internal class BreakTests
             clientFilterService, membershipFilterService, searchService, sortingService, 
             changeTrackingService, entityManagementService, workFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
-        var handler = new GetListQueryHandler(repository, _mapper);
+        var logger = Substitute.For<ILogger<GetListQueryHandler>>();
+        var handler = new GetListQueryHandler(repository, _mapper, logger);
 
         //Act
         var result = await handler.Handle(query, default);

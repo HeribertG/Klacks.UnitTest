@@ -15,6 +15,7 @@ using Klacks.Api.Presentation.DTOs.Settings;
 using Klacks.Api.Presentation.DTOs.Staffs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
 
 
@@ -116,7 +117,8 @@ internal class ClientTests
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -157,7 +159,8 @@ internal class ClientTests
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -204,7 +207,8 @@ internal class ClientTests
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
         var query = new GetTruncatedListQuery(filter);
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper);
+        var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
+        var handler = new GetTruncatedListQueryHandler(repository, _mapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
