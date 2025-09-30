@@ -365,6 +365,8 @@ internal class ClientTests
         _truncatedClient = FakeData.Clients.TruncatedClient();
 
         _clientGroupFilterService = Substitute.For<IClientGroupFilterService>();
+        _clientGroupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+            .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
     }
 
     [TearDown]

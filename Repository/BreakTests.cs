@@ -59,6 +59,11 @@ internal class BreakTests
         var groupFilterService = Substitute.For<IClientGroupFilterService>();
         var searchFilterService = Substitute.For<IClientSearchFilterService>();
         
+        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+            .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
+        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Client>)args[0]);
+        
         var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();

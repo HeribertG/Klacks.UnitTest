@@ -151,6 +151,8 @@ internal class GoupTests
         _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
 
         _clientGroupFilterService = Substitute.For<IClientGroupFilterService>();
+        _clientGroupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+            .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
     }
 
     [TearDown]
