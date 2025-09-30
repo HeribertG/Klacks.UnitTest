@@ -102,7 +102,6 @@ namespace UnitTest.Mocks
             context.Group.Add(newGroup);
             await context.SaveChangesAsync();
 
-            // WICHTIG: Nach dem Speichern muss der Root-Wert auf die eigene ID gesetzt werden
             newGroup.Root = newGroup.Id;
             context.Group.Update(newGroup);
             await context.SaveChangesAsync();

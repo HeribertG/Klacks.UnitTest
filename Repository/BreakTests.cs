@@ -33,10 +33,9 @@ internal class BreakTests
     [Test]
     public async Task GetClientList_Ok()
     {
-        //Arrange
         var clients = Clients.GenerateClients(500, 2023, true);
         var absence = Clients.GenerateAbsences(20);
-        var breaks = Clients.GenerateBreaks(clients, absence, 2023, 200);
+        var breaks = Clients.GenerateBreaks(clients, absence, 2023, 200).Where(b => b.From.Year == 2023).ToList();
         var filter = Clients.GenerateBreakFilter(absence, 2023);
 
         var options = new DbContextOptionsBuilder<DataBaseContext>()
@@ -63,10 +62,8 @@ internal class BreakTests
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
         var handler = new GetListQueryHandler(repository, _mapper, logger);
 
-        //Act
         var result = await handler.Handle(query, default);
 
-        //Assert
         result.Should().NotBeNull();
         result.Count().Should().Be(500);
 

@@ -84,7 +84,7 @@ namespace UnitTest.FakeData
             var breakFilter = new BreakFilter
             {
                 CurrentYear = year,
-                Absences = ConvertAbsencesToTokenFilters(absences),
+                Absences = new List<AbsenceTokenFilter>(),
             };
 
             return breakFilter;

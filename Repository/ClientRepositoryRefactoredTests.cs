@@ -118,14 +118,17 @@ public class ClientRepositoryRefactoredTests
     [Test]
     public async Task BreakList_ShouldUseDomainServices()
     {
-        // Arrange
-        var filter = new BreakFilter
+        //Arrange
+        var filter = new Klacks.Api.Domain.Models.Filters.BreakFilter
         {
             SearchString = "Hans",
             CurrentYear = DateTime.Now.Year,
-            OrderBy = "name",
-            SortOrder = "asc",
-            Absences = new List<AbsenceTokenFilter>()
+            AbsenceIds = new List<Guid>()
+        };
+        var pagination = new Klacks.Api.Domain.Models.Filters.PaginationParams
+        {
+            PageIndex = 0,
+            PageSize = 100
         };
 
         var testClients = _context.Client.AsQueryable();
@@ -142,35 +145,32 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.IsNumericSearch("Hans").Returns(false);
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Hans", false)
             .Returns(testClients.Where(c => c.FirstName.Contains("Hans")));
-        _mockMembershipFilterService.ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), filter)
-            .Returns(testClients);
-        _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc")
-            .Returns(testClients.OrderBy(c => c.Name));
 
-        // Act
-        var result = await _clientRepository.BreakList(filter);
+        //Act
+        var result = await _clientRepository.BreakList(filter, pagination);
 
-        // Assert
+        //Assert
         result.Should().NotBeNull();
         
         // Verify that domain services were called
         _mockSearchService.Received(1).IsNumericSearch("Hans");
         _mockSearchService.Received(1).ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Hans", false);
-        _mockMembershipFilterService.Received(1).ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), filter);
-        _mockSortingService.Received(1).ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc");
     }
 
     [Test]
     public async Task BreakList_WithNumericSearch_ShouldUseIdNumberSearch()
     {
-        // Arrange
-        var filter = new BreakFilter
+        //Arrange
+        var filter = new Klacks.Api.Domain.Models.Filters.BreakFilter
         {
             SearchString = "123",
             CurrentYear = DateTime.Now.Year,
-            OrderBy = "name",
-            SortOrder = "asc",
-            Absences = new List<AbsenceTokenFilter>()
+            AbsenceIds = new List<Guid>()
+        };
+        var pagination = new Klacks.Api.Domain.Models.Filters.PaginationParams
+        {
+            PageIndex = 0,
+            PageSize = 100
         };
 
         var testClients = _context.Client.AsQueryable();
@@ -187,15 +187,11 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.IsNumericSearch("123").Returns(true);
         _mockSearchService.ApplyIdNumberSearch(Arg.Any<IQueryable<Client>>(), 123)
             .Returns(testClients.Where(c => c.IdNumber == 123));
-        _mockMembershipFilterService.ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), filter)
-            .Returns(testClients);
-        _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc")
-            .Returns(testClients.OrderBy(c => c.Name));
 
-        // Act
-        var result = await _clientRepository.BreakList(filter);
+        //Act
+        var result = await _clientRepository.BreakList(filter, pagination);
 
-        // Assert
+        //Assert
         result.Should().NotBeNull();
         
         // Verify that numeric search was used
@@ -207,18 +203,21 @@ public class ClientRepositoryRefactoredTests
     [Test]
     public async Task WorkList_ShouldUseDomainServices()
     {
-        // Arrange
-        var filter = new WorkFilter
+        //Arrange
+        var filter = new Klacks.Api.Domain.Models.Filters.WorkFilter
         {
             SearchString = "Anna",
             CurrentYear = DateTime.Now.Year,
             CurrentMonth = DateTime.Now.Month,
-            OrderBy = "firstname",
-            SortOrder = "desc"
+            DayVisibleBeforeMonth = 5,
+            DayVisibleAfterMonth = 5
+        };
+        var pagination = new Klacks.Api.Domain.Models.Filters.PaginationParams
+        {
+            PageIndex = 0,
+            PageSize = 100
         };
 
-        var testClients = _context.Client.AsQueryable();
-        
         // Setup mock responses for group services first
         _mockGroupVisibility.IsAdmin().Returns(Task.FromResult(true));
         _mockGroupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
@@ -227,30 +226,30 @@ public class ClientRepositoryRefactoredTests
         _mockGroupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
             .Returns(Task.FromResult(new List<Guid>()));
         
-        // Setup domain service mocks
+        // Setup domain service mocks to return EF queryables
         _mockSearchService.IsNumericSearch("Anna").Returns(false);
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Anna", false)
-            .Returns(testClients.Where(c => c.FirstName.Contains("Anna")));
-        _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), "firstname", "desc")
-            .Returns(testClients.OrderByDescending(c => c.FirstName));
+            .Returns(args => (IQueryable<Client>)args[0]);
+        
+        _mockWorkFilterService.FilterByWorkSchedule(Arg.Any<IQueryable<Client>>(), Arg.Any<WorkFilter>(), Arg.Any<DataBaseContext>())
+            .Returns(args => (IQueryable<Client>)args[0]);
 
-        // Act
-        var result = await _clientRepository.WorkList(filter);
+        //Act
+        var result = await _clientRepository.WorkList(filter, pagination);
 
-        // Assert
+        //Assert
         result.Should().NotBeNull();
         
         // Verify that domain services were called
         _mockSearchService.Received(1).IsNumericSearch("Anna");
         _mockSearchService.Received(1).ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Anna", false);
-        _mockSortingService.Received(1).ApplySorting(Arg.Any<IQueryable<Client>>(), "firstname", "desc");
     }
 
     [Test]
     public async Task FilterClients_WithComplexFilter_ShouldUseDomainServices()
     {
-        // Arrange
-        var filter = new FilterResource
+        //Arrange
+        var filter = new Klacks.Api.Domain.Models.Filters.ClientFilter
         {
             SearchString = "Test",
             Male = true,
@@ -259,7 +258,9 @@ public class ClientRepositoryRefactoredTests
             HasAnnotation = true,
             ActiveMembership = true,
             OrderBy = "name",
-            SortOrder = "asc"
+            SortOrder = "asc",
+            FilteredStateToken = new List<Klacks.Api.Domain.Models.Filters.StateCountryFilter>(),
+            Countries = new List<string>()
         };
 
         var testClients = _context.Client.AsQueryable();
@@ -282,18 +283,18 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients);
         _mockClientFilterService.ApplyAddressTypeFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<int[]>())
             .Returns(testClients);
-        _mockClientFilterService.ApplyStateOrCountryFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<List<StateCountryToken>>(), Arg.Any<List<Klacks.Api.Presentation.DTOs.Settings.CountryResource>>())
+        _mockClientFilterService.ApplyStateOrCountryFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<List<Klacks.Api.Domain.Models.Filters.StateCountryFilter>>(), Arg.Any<List<string>>())
             .Returns(testClients);
         _mockMembershipFilterService.ApplyMembershipFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(testClients);
         _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), "name", "asc")
             .Returns(testClients.OrderBy(c => c.Name));
 
-        // Act
+        //Act
         var result = await _clientRepository.FilterClients(filter);
-        var clients = await result.ToListAsync();
+        var clients = result.ToList();
 
-        // Assert
+        //Assert
         clients.Should().NotBeNull();
         
         // Verify that domain services were called
@@ -307,17 +308,17 @@ public class ClientRepositoryRefactoredTests
     [Test]
     public async Task Repository_ShouldPreferDomainServicesOverDirectQueries()
     {
-        // This test verifies that the refactored repository uses domain services
-        // instead of direct LINQ queries for business logic
-
-        // Arrange
-        var filter = new BreakFilter
+        //Arrange
+        var filter = new Klacks.Api.Domain.Models.Filters.BreakFilter
         {
             SearchString = "test",
             CurrentYear = 2024,
-            OrderBy = "name",
-            SortOrder = "asc",
-            Absences = new List<AbsenceTokenFilter>()
+            AbsenceIds = new List<Guid>()
+        };
+        var pagination = new Klacks.Api.Domain.Models.Filters.PaginationParams
+        {
+            PageIndex = 0,
+            PageSize = 100
         };
 
         var testClients = _context.Client.AsQueryable();
@@ -334,20 +335,13 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.IsNumericSearch(Arg.Any<string>()).Returns(false);
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(testClients);
-        _mockMembershipFilterService.ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<BreakFilter>())
-            .Returns(testClients);
-        _mockSortingService.ApplySorting(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<string>())
-            .Returns(testClients);
 
-        // Act
-        await _clientRepository.BreakList(filter);
+        //Act
+        await _clientRepository.BreakList(filter, pagination);
 
-        // Assert - Verify that all domain services were used
+        //Assert
         _mockSearchService.Received().IsNumericSearch(Arg.Any<string>());
         _mockSearchService.Received().ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>());
-        _mockMembershipFilterService.Received().ApplyMembershipYearFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<BreakFilter>());
-        _mockSortingService.Received().ApplySorting(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<string>());
 
-        Console.WriteLine("✅ ClientRepository successfully uses Domain Services instead of direct business logic");
     }
 }

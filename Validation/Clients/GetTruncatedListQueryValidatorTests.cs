@@ -15,7 +15,15 @@ namespace UnitTest.Validation.Clients
             var filter = FakeData.Clients.Filter();
 
             var clientRepositoryMock = Substitute.For<IClientRepository>();
-            clientRepositoryMock.Truncated(filter).Returns(returns);
+            var pagedResult = new Klacks.Api.Domain.Models.Results.PagedResult<Klacks.Api.Domain.Models.Staffs.Client>
+            {
+                Items = new List<Klacks.Api.Domain.Models.Staffs.Client>(),
+                TotalCount = 0,
+                PageNumber = 1,
+                PageSize = 10
+            };
+            clientRepositoryMock.GetFilteredClients(Arg.Any<Klacks.Api.Domain.Models.Filters.ClientFilter>(), Arg.Any<Klacks.Api.Domain.Models.Filters.PaginationParams>())
+                .Returns(Task.FromResult(pagedResult));
             var query = new GetTruncatedListQuery(filter);
             var validator = new GetTruncatedListQueryValidator(clientRepositoryMock);
 

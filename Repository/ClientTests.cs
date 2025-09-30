@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
+using Klacks.Api.Application.AutoMapper;
 
 
 namespace UnitTest.Repository;
@@ -51,6 +52,7 @@ internal class ClientTests
         var returns = Clients.TruncatedClient();
         var filter = Clients.Filter();
         filter.SearchString = searchString;
+        filter.SearchOnlyByName = false;
 
         if (!string.IsNullOrEmpty(gender))
         {
@@ -90,10 +92,11 @@ internal class ClientTests
         {
             foreach (var item in filter.FilteredStateToken)
             {
-                if (item.State != state)
-                {
-                    item.Select = false;
-                }
+                item.Select = item.State == state;
+            }
+            foreach (var item in filter.List)
+            {
+                item.Select = item.State == state;
             }
         }
 
@@ -116,6 +119,11 @@ internal class ClientTests
         var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
+            
+        var mappedFilter = _mapper.Map<Klacks.Api.Domain.Models.Filters.ClientFilter>(filter);
+        var selectedStates = mappedFilter.FilteredStateToken?.Where(x => x.Select).Select(x => x.State).ToList();
+        
+        
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
         var handler = new GetTruncatedListQueryHandler(repository, _mapper, logger);
@@ -349,19 +357,13 @@ internal class ClientTests
     {
         var config = new MapperConfiguration(cfg =>
         {
-            cfg.CreateMap<TruncatedClient, TruncatedClientResource>();
-            cfg.CreateMap<Client, ClientResource>();
-            cfg.CreateMap<Address, AddressResource>();
-            cfg.CreateMap<Communication, CommunicationResource>();
-            cfg.CreateMap<Annotation, AnnotationResource>();
-            cfg.CreateMap<Membership, MembershipResource>();
+            cfg.AddProfile<Klacks.Api.Application.AutoMapper.MappingProfile>();
         });
 
         _mapper = config.CreateMapper();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
 
-        // BEHOBEN: Mocks f�r beide Services erstellen
         _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
                    .Returns(Task.FromResult(new List<Guid>()));
