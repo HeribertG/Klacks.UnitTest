@@ -3,6 +3,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Repositories;
@@ -19,6 +20,8 @@ public class ClientRepositoryRefactoredTests
 {
     private DataBaseContext _context;
     private IClientRepository _clientRepository;
+    private IClientBreakRepository _clientBreakRepository;
+    private IClientWorkRepository _clientWorkRepository;
     private IMacroEngine _mockMacroEngine;
     private IGetAllClientIdsFromGroupAndSubgroups _mockGroupClient;
     private IGroupVisibilityService _mockGroupVisibility;
@@ -53,11 +56,13 @@ public class ClientRepositoryRefactoredTests
         _mockWorkFilterService = Substitute.For<IClientWorkFilterService>();
 
         // Create repository with mocked domain services
+        var mockGroupFilterService = Substitute.For<IClientGroupFilterService>();
+        var mockSearchFilterService = Substitute.For<IClientSearchFilterService>();
+        
         _clientRepository = new ClientRepository(
             _context,
             _mockMacroEngine,
-            _mockGroupClient,
-            _mockGroupVisibility,
+            mockGroupFilterService,
             _mockClientFilterService,
             _mockMembershipFilterService,
             _mockSearchService,
@@ -65,6 +70,16 @@ public class ClientRepositoryRefactoredTests
             _mockChangeTrackingService,
             _mockEntityManagementService,
             _mockWorkFilterService);
+            
+        _clientBreakRepository = new ClientBreakRepository(
+            _context,
+            mockGroupFilterService,
+            mockSearchFilterService);
+            
+        _clientWorkRepository = new ClientWorkRepository(
+            _context,
+            mockGroupFilterService,
+            mockSearchFilterService);
 
         // Create test data
         await CreateTestData();
@@ -147,7 +162,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients.Where(c => c.FirstName.Contains("Hans")));
 
         //Act
-        var result = await _clientRepository.BreakList(filter, pagination);
+        var result = await _clientBreakRepository.BreakList(filter);
 
         //Assert
         result.Should().NotBeNull();
@@ -189,7 +204,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients.Where(c => c.IdNumber == 123));
 
         //Act
-        var result = await _clientRepository.BreakList(filter, pagination);
+        var result = await _clientBreakRepository.BreakList(filter);
 
         //Assert
         result.Should().NotBeNull();
@@ -235,7 +250,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(args => (IQueryable<Client>)args[0]);
 
         //Act
-        var result = await _clientRepository.WorkList(filter, pagination);
+        var result = await _clientWorkRepository.WorkList(filter);
 
         //Assert
         result.Should().NotBeNull();
@@ -337,7 +352,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients);
 
         //Act
-        await _clientRepository.BreakList(filter, pagination);
+        await _clientBreakRepository.BreakList(filter);
 
         //Assert
         _mockSearchService.Received().IsNumericSearch(Arg.Any<string>());

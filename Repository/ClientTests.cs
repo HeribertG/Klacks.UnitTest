@@ -4,6 +4,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Services.Common;
 using NSubstitute;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
@@ -29,8 +30,7 @@ internal class ClientTests
     public TruncatedClient _truncatedClient = null!;
     public DataBaseContext dbContext = null!;
     private IMapper _mapper = null!;
-    private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
-    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEF�GT
+    private IClientGroupFilterService _clientGroupFilterService = null!;
 
     [TestCase("ag", "", "", 12)]
     [TestCase("gmbh", "", "", 0)]
@@ -116,7 +116,7 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
             
@@ -163,7 +163,7 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
         var query = new GetTruncatedListQuery(filter);
@@ -211,7 +211,7 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
         var query = new GetTruncatedListQuery(filter);
@@ -302,7 +302,7 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
 
@@ -357,22 +357,14 @@ internal class ClientTests
     {
         var config = new MapperConfiguration(cfg =>
         {
-            cfg.AddProfile<Klacks.Api.Application.AutoMapper.MappingProfile>();
+            cfg.AddMaps(typeof(Klacks.Api.Application.AutoMapper.ClientMappingProfile).Assembly);
         });
 
         _mapper = config.CreateMapper();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
 
-        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
-        _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
-                   .Returns(Task.FromResult(new List<Guid>()));
-        _groupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
-                   .Returns(Task.FromResult(new List<Guid>()));
-
-        _groupVisibility = Substitute.For<IGroupVisibilityService>();
-        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // F�r Tests als Admin setzen
-        _groupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
+        _clientGroupFilterService = Substitute.For<IClientGroupFilterService>();
     }
 
     [TearDown]

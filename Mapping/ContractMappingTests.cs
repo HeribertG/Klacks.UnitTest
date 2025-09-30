@@ -19,7 +19,7 @@ public class ContractMappingTests
     {
         var config = new MapperConfiguration(cfg =>
         {
-            cfg.AddProfile<MappingProfile>();
+            cfg.AddMaps(typeof(ClientMappingProfile).Assembly);
         });
         mapper = config.CreateMapper();
     }
@@ -28,7 +28,7 @@ public class ContractMappingTests
     public void MappingProfile_ShouldBeValid()
     {
         // Act & Assert
-        var configuration = new MapperConfiguration(cfg => cfg.AddProfile<MappingProfile>());
+        var configuration = new MapperConfiguration(cfg => cfg.AddMaps(typeof(ClientMappingProfile).Assembly));
         configuration.AssertConfigurationIsValid();
     }
 

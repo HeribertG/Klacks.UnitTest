@@ -55,7 +55,7 @@ internal class GetTruncatedListQueryTests
     {
         var config = new MapperConfiguration(cfg =>
         {
-            cfg.AddProfile<MappingProfile>();
+            cfg.AddMaps(typeof(ClientMappingProfile).Assembly);
         });
 
         _mapper = config.CreateMapper();

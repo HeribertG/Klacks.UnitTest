@@ -4,6 +4,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Breaks;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Services.Common;
 using NSubstitute;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -55,12 +56,13 @@ internal class BreakTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
-            clientFilterService, membershipFilterService, searchService, sortingService, 
-            changeTrackingService, entityManagementService, workFilterService);
+        var groupFilterService = Substitute.For<IClientGroupFilterService>();
+        var searchFilterService = Substitute.For<IClientSearchFilterService>();
+        
+        var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
-        var handler = new GetListQueryHandler(repository, _mapper, logger);
+        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
 
         var result = await handler.Handle(query, default);
 

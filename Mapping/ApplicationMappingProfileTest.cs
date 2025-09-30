@@ -8,7 +8,7 @@ namespace UnitTest.Mapping
         [Test]
         public void Automapper_Configuration_IsValid()
         {
-            var _config = new MapperConfiguration(configure => configure.AddProfile<MappingProfile>());
+            var _config = new MapperConfiguration(configure => configure.AddMaps(typeof(ClientMappingProfile).Assembly));
             _config.AssertConfigurationIsValid();
         }
     }

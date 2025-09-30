@@ -5,6 +5,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Services.Common;
 using NSubstitute;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
@@ -31,8 +32,7 @@ internal class GoupTests
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
     private ILogger<Group> _groupLogger = null!;
     private IMapper _mapper = null!;
-    private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
-    private IGroupVisibilityService _groupVisibility = null!; // HINZUGEF�GT
+    private IClientGroupFilterService _clientGroupFilterService = null!;
 
     [Test]
     public async Task PostGroup_Ok()
@@ -57,7 +57,7 @@ internal class GoupTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _groupClient, _groupVisibility,
+        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService,
             changeTrackingService, entityManagementService, workFilterService);
         // Create mock Domain Services for GroupRepository
@@ -123,7 +123,8 @@ internal class GoupTests
         mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(info => info.Arg<IQueryable<Group>>());
         
-        var groupRepository = new GroupRepository(dbContext, _groupVisibility, mockTreeService, 
+        var mockGroupVisibilityService = Substitute.For<IGroupVisibilityService>();
+        var groupRepository = new GroupRepository(dbContext, mockGroupVisibilityService, mockTreeService, 
             mockHierarchyService, mockSearchService, mockValidityService, mockMembershipService, 
             mockIntegrityService, _groupLogger);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
@@ -149,15 +150,7 @@ internal class GoupTests
         _truncatedClient = FakeData.Clients.TruncatedClient();
         _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
 
-        _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
-        _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())
-                   .Returns(Task.FromResult(new List<Guid>()));
-        _groupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
-                   .Returns(Task.FromResult(new List<Guid>()));
-
-        _groupVisibility = Substitute.For<IGroupVisibilityService>();
-        _groupVisibility.IsAdmin().Returns(Task.FromResult(true)); // F�r Tests als Admin setzen
-        _groupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
+        _clientGroupFilterService = Substitute.For<IClientGroupFilterService>();
     }
 
     [TearDown]
