@@ -57,24 +57,24 @@ internal class GoupTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var clientRepository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService,
-            changeTrackingService, entityManagementService, workFilterService);
-        // Create mock Domain Services for GroupRepository
+        var clientRepository = new ClientRepository(dbContext, new MacroEngine(),
+            changeTrackingService, entityManagementService);
+
+        var clientFilterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
+            clientFilterService, membershipFilterService, searchService, sortingService);
+
         var mockTreeService = Substitute.For<IGroupTreeService>();
         var mockHierarchyService = Substitute.For<IGroupHierarchyService>();
         var mockSearchService = Substitute.For<IGroupSearchService>();  
         var mockValidityService = Substitute.For<IGroupValidityService>();
         var mockMembershipService = Substitute.For<IGroupMembershipService>();
         var mockIntegrityService = Substitute.For<IGroupIntegrityService>();
-        
-        // Configure tree service for integration tests
+
         mockTreeService.AddChildNodeAsync(Arg.Any<Guid>(), Arg.Any<Group>()).Returns(info =>
         {
             var parentId = info.ArgAt<Guid>(0);
             var newGroup = info.ArgAt<Group>(1);
-            
-            // Handle empty GUID as root node
+
             if (parentId == Guid.Empty)
             {
                 var maxRgt = dbContext.Group.Max(g => (int?)g.Rgt) ?? 0;
@@ -114,12 +114,10 @@ internal class GoupTests
             dbContext.Group.Add(newGroup);
             return Task.FromResult(newGroup);
         });
-        
-        // Configure search service to pass through queries for integration tests
+
         mockSearchService.ApplyFilters(Arg.Any<IQueryable<Group>>(), Arg.Any<GroupFilter>())
             .Returns(info => info.Arg<IQueryable<Group>>());
-            
-        // Configure validity service to pass through queries
+
         mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(info => info.Arg<IQueryable<Group>>());
         
@@ -128,7 +126,7 @@ internal class GoupTests
             mockHierarchyService, mockSearchService, mockValidityService, mockMembershipService, 
             mockIntegrityService, _groupLogger);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
-        var group = await CreateGroupAsync(1, clientRepository);
+        var group = await CreateGroupAsync(1, clientRepository, clientFilterRepository);
         var command = new PostCommand<GroupResource>(group);
         var handler = new PostCommandHandler(groupRepository, _mapper, unitOfWork, _logger);
 
@@ -162,7 +160,7 @@ internal class GoupTests
         dbContext.Dispose();
     }
 
-    private async Task<GroupResource> CreateGroupAsync(int index, ClientRepository clientRepository)
+    private async Task<GroupResource> CreateGroupAsync(int index, ClientRepository clientRepository, ClientFilterRepository clientFilterRepository)
     {
         var idNumberList = new List<int>()
                                        { 15205,
@@ -177,7 +175,7 @@ internal class GoupTests
         filter.Female = false;
         filter.LegalEntity = false;
         var logger = Substitute.For<ILogger<Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler>>();
-        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientRepository, _mapper, logger);
+        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientFilterRepository, clientRepository, _mapper, logger);
 
         var group = new GroupResource();
         group.Name = $"FakeName{index}";

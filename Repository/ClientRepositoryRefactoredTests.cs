@@ -20,6 +20,7 @@ public class ClientRepositoryRefactoredTests
 {
     private DataBaseContext _context;
     private IClientRepository _clientRepository;
+    private IClientFilterRepository _clientFilterRepository;
     private IClientBreakRepository _clientBreakRepository;
     private IClientWorkRepository _clientWorkRepository;
     private IClientSearchFilterService _mockSearchFilterService;
@@ -65,20 +66,22 @@ public class ClientRepositoryRefactoredTests
         _clientRepository = new ClientRepository(
             _context,
             _mockMacroEngine,
+            _mockChangeTrackingService,
+            _mockEntityManagementService);
+
+        _clientFilterRepository = new ClientFilterRepository(
+            _context,
             mockGroupFilterService,
             _mockClientFilterService,
             _mockMembershipFilterService,
             _mockSearchService,
-            _mockSortingService,
-            _mockChangeTrackingService,
-            _mockEntityManagementService,
-            _mockWorkFilterService);
-            
+            _mockSortingService);
+
         _clientBreakRepository = new ClientBreakRepository(
             _context,
             mockGroupFilterService,
             _mockSearchFilterService);
-            
+
         _clientWorkRepository = new ClientWorkRepository(
             _context,
             mockGroupFilterService,
@@ -156,8 +159,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(Task.FromResult(new List<Guid>()));
         _mockGroupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
             .Returns(Task.FromResult(new List<Guid>()));
-        
-        // Setup domain service mocks
+
         _mockSearchService.IsNumericSearch("Hans").Returns(false);
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Hans", false)
             .Returns(testClients.Where(c => c.FirstName.Contains("Hans")));
@@ -272,8 +274,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(Task.FromResult(new List<Guid>()));
         _mockGroupClient.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Any<List<Guid>>())
             .Returns(Task.FromResult(new List<Guid>()));
-        
-        // Setup mock responses for domain services
+
         _mockSearchService.IsNumericSearch("Test").Returns(false);
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Test", Arg.Any<bool>())
             .Returns(testClients);
@@ -291,7 +292,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients.OrderBy(c => c.Name));
 
         //Act
-        var result = await _clientRepository.FilterClients(filter);
+        var result = await _clientFilterRepository.FilterClients(filter);
         var clients = result.ToList();
 
         //Assert

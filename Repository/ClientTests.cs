@@ -116,17 +116,19 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService,
-            changeTrackingService, entityManagementService, workFilterService);
-            
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
+            changeTrackingService, entityManagementService);
+
+        var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
+            clientFilterService, membershipFilterService, searchService, sortingService);
+
         var mappedFilter = _mapper.Map<Klacks.Api.Domain.Models.Filters.ClientFilter>(filter);
         var selectedStates = mappedFilter.FilteredStateToken?.Where(x => x.Select).Select(x => x.State).ToList();
-        
-        
+
+
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _mapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -163,12 +165,14 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService,
-            changeTrackingService, entityManagementService, workFilterService);
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
+            changeTrackingService, entityManagementService);
+
+        var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
+            clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _mapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -211,12 +215,14 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService,
-            changeTrackingService, entityManagementService, workFilterService);
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
+            changeTrackingService, entityManagementService);
+
+        var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
+            clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(repository, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _mapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -302,9 +308,11 @@ internal class ClientTests
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         
-        var repository = new ClientRepository(dbContext, new MacroEngine(), _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService,
-            changeTrackingService, entityManagementService, workFilterService);
+        var repository = new ClientRepository(dbContext, new MacroEngine(),
+            changeTrackingService, entityManagementService);
+
+        var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
+            clientFilterService, membershipFilterService, searchService, sortingService);
 
         // Zugriff auf die private Methode �ber Reflection
         var method = typeof(ClientRepository).GetMethod("FilterBySearchStringStandard",

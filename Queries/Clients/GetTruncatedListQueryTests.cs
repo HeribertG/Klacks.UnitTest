@@ -21,6 +21,7 @@ internal class GetTruncatedListQueryTests
         var returns = FakeData.Clients.TruncatedClient();
         var filter = FakeData.Clients.Filter();
 
+        var clientFilterRepositoryMock = Substitute.For<IClientFilterRepository>();
         var clientRepositoryMock = Substitute.For<IClientRepository>();
         var pagedResult = new Klacks.Api.Domain.Models.Results.PagedResult<Klacks.Api.Domain.Models.Staffs.Client>
         {
@@ -29,9 +30,9 @@ internal class GetTruncatedListQueryTests
             PageNumber = 1,
             PageSize = 10
         };
-        clientRepositoryMock.GetFilteredClients(Arg.Any<Klacks.Api.Domain.Models.Filters.ClientFilter>(), Arg.Any<Klacks.Api.Domain.Models.Filters.PaginationParams>())
+        clientFilterRepositoryMock.GetFilteredClients(Arg.Any<Klacks.Api.Domain.Models.Filters.ClientFilter>(), Arg.Any<Klacks.Api.Domain.Models.Filters.PaginationParams>())
             .Returns(Task.FromResult(pagedResult));
-        
+
         var lastChangeMetaData = new Klacks.Api.Domain.Models.Filters.LastChangeMetaData
         {
             Author = "TestUser",
@@ -41,7 +42,7 @@ internal class GetTruncatedListQueryTests
             .Returns(Task.FromResult(lastChangeMetaData));
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(clientRepositoryMock, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(clientFilterRepositoryMock, clientRepositoryMock, _mapper, logger);
 
         //Act
         var result = await handler.Handle(query, default);
