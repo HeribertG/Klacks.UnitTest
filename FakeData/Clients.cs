@@ -3,6 +3,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
+using Klacks.Api.Presentation.DTOs.Clients;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Presentation.DTOs.Staffs;
 using AutoMapper;
@@ -154,13 +155,15 @@ namespace UnitTest.FakeData
             var truncatedClient = TruncatedClient();
             return new TruncatedClientResource
             {
-                Clients = truncatedClient.Clients.Select(c => new ClientResource
+                Clients = truncatedClient.Clients.Select(c => new ClientListItemResource
                 {
-                    Id = c.Id,
+                    Id = c.Id.ToString(),
                     IdNumber = c.IdNumber,
-                    FirstName = c.FirstName,
-                    Company = c.Company,
-                    // Map other properties as needed
+                    FirstName = c.FirstName ?? string.Empty,
+                    Name = c.Name,
+                    Company = c.Company ?? string.Empty,
+                    Type = (int)c.Type,
+                    IsDeleted = c.IsDeleted
                 }).ToList(),
                 MaxItems = truncatedClient.MaxItems,
                 MaxPages = truncatedClient.MaxPages,

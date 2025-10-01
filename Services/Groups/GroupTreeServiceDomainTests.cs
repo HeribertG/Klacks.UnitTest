@@ -26,7 +26,8 @@ public class GroupTreeServiceDomainTests
         var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, mockHttpContextAccessor);
         _mockLogger = Substitute.For<ILogger<GroupTreeService>>();
-        _treeService = new GroupTreeService(_context, _mockLogger);
+        var databaseAdapter = new Klacks.Api.Infrastructure.Persistence.Adapters.GroupTreeInMemoryAdapter(_context);
+        _treeService = new GroupTreeService(_context, _mockLogger, databaseAdapter);
 
         CreateTestData();
     }

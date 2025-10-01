@@ -16,19 +16,19 @@ namespace UnitTest.Controllers.Settings
     [TestFixture]
     public class SettingsControllerEmailTests
     {
-        private SettingsController _controller;
+        private GeneralSettingsController _controller;
         private IEmailTestService _mockEmailTestService;
-        private ILogger<SettingsController> _mockLogger;
+        private ILogger<GeneralSettingsController> _mockLogger;
         private IMediator _mockMediator;
 
         [SetUp]
         public void SetUp()
         {
             _mockEmailTestService = Substitute.For<IEmailTestService>();
-            _mockLogger = Substitute.For<ILogger<SettingsController>>();
+            _mockLogger = Substitute.For<ILogger<GeneralSettingsController>>();
             _mockMediator = Substitute.For<IMediator>();
-            
-            _controller = new SettingsController(_mockMediator, _mockLogger, _mockEmailTestService)
+
+            _controller = new GeneralSettingsController(_mockMediator, _mockLogger, _mockEmailTestService)
             {
                 ControllerContext = new ControllerContext
                 {

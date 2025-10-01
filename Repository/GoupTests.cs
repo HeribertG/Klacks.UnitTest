@@ -56,9 +56,10 @@ internal class GoupTests
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
-        
+        var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(dbContext);
+
         var clientRepository = new ClientRepository(dbContext, new MacroEngine(),
-            changeTrackingService, entityManagementService);
+            changeTrackingService, entityManagementService, collectionUpdateService);
 
         var clientFilterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService);
@@ -190,10 +191,10 @@ internal class GoupTests
             var result = await handler.Handle(command, default);
             if (result != null && result.Clients != null && result.Clients.Any())
             {
-                var item = new GroupItemResource() 
-                { 
-                    ClientId = result.Clients.First().Id
-                    // ShiftId should be null for GroupItems to be included in Get method
+                var clientId = result.Clients.First().Id;
+                var item = new GroupItemResource()
+                {
+                    ClientId = string.IsNullOrEmpty(clientId) ? null : Guid.Parse(clientId)
                 };
                 group.GroupItems.Add(item);
             }
