@@ -143,10 +143,17 @@ public class GroupSearchServiceTests
             
             return Task.FromResult(result);
         });
-        
-        _groupRepository = new GroupRepository(_context, _mockGroupVisibility, mockTreeService,
-            mockHierarchyService, mockSearchService, mockValidityService, mockMembershipService,
-            mockIntegrityService, Substitute.For<ILogger<Group>>());
+
+        var mockGroupServiceFacade = Substitute.For<IGroupServiceFacade>();
+        mockGroupServiceFacade.VisibilityService.Returns(_mockGroupVisibility);
+        mockGroupServiceFacade.TreeService.Returns(mockTreeService);
+        mockGroupServiceFacade.HierarchyService.Returns(mockHierarchyService);
+        mockGroupServiceFacade.SearchService.Returns(mockSearchService);
+        mockGroupServiceFacade.ValidityService.Returns(mockValidityService);
+        mockGroupServiceFacade.MembershipService.Returns(mockMembershipService);
+        mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
+
+        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, Substitute.For<ILogger<Group>>());
 
         CreateTestData();
     }

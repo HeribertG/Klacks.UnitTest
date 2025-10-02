@@ -265,10 +265,17 @@ public class GroupTreeServiceTests
         mockMembershipService.GetClientGroupsAsync(Arg.Any<Guid>()).Returns(Task.FromResult(Enumerable.Empty<Group>()));
         mockMembershipService.IsClientInGroupAsync(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(Task.FromResult(false));
         mockMembershipService.GetGroupMemberCountAsync(Arg.Any<Guid>()).Returns(Task.FromResult(0));
-        
-        _groupRepository = new GroupRepository(_context, _mockGroupVisibility, mockTreeService,
-            mockHierarchyService, mockSearchService, mockValidityService, mockMembershipService,
-            mockIntegrityService, _mockLogger);
+
+        var mockGroupServiceFacade = Substitute.For<IGroupServiceFacade>();
+        mockGroupServiceFacade.VisibilityService.Returns(_mockGroupVisibility);
+        mockGroupServiceFacade.TreeService.Returns(mockTreeService);
+        mockGroupServiceFacade.HierarchyService.Returns(mockHierarchyService);
+        mockGroupServiceFacade.SearchService.Returns(mockSearchService);
+        mockGroupServiceFacade.ValidityService.Returns(mockValidityService);
+        mockGroupServiceFacade.MembershipService.Returns(mockMembershipService);
+        mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
+
+        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, _mockLogger);
 
         CreateTestData();
     }

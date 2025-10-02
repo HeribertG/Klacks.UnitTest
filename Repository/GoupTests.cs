@@ -121,11 +121,18 @@ internal class GoupTests
 
         mockValidityService.ApplyDateRangeFilter(Arg.Any<IQueryable<Group>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(info => info.Arg<IQueryable<Group>>());
-        
+
         var mockGroupVisibilityService = Substitute.For<IGroupVisibilityService>();
-        var groupRepository = new GroupRepository(dbContext, mockGroupVisibilityService, mockTreeService, 
-            mockHierarchyService, mockSearchService, mockValidityService, mockMembershipService, 
-            mockIntegrityService, _groupLogger);
+        var mockGroupServiceFacade = Substitute.For<IGroupServiceFacade>();
+        mockGroupServiceFacade.VisibilityService.Returns(mockGroupVisibilityService);
+        mockGroupServiceFacade.TreeService.Returns(mockTreeService);
+        mockGroupServiceFacade.HierarchyService.Returns(mockHierarchyService);
+        mockGroupServiceFacade.SearchService.Returns(mockSearchService);
+        mockGroupServiceFacade.ValidityService.Returns(mockValidityService);
+        mockGroupServiceFacade.MembershipService.Returns(mockMembershipService);
+        mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
+
+        var groupRepository = new GroupRepository(dbContext, mockGroupServiceFacade, _groupLogger);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository, clientFilterRepository);
         var command = new PostCommand<GroupResource>(group);

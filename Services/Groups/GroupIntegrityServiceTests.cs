@@ -2,6 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
+using Klacks.Api.Domain.Services.Groups.Integrity;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +29,17 @@ public class GroupIntegrityServiceTests
         _context = new DataBaseContext(options, mockHttpContextAccessor);
         _mockLogger = Substitute.For<ILogger<GroupIntegrityService>>();
 
-        _integrityService = new GroupIntegrityService(_context, _mockLogger);
+        var repairLogger = Substitute.For<ILogger<NestedSetRepairService>>();
+        var validationLogger = Substitute.For<ILogger<NestedSetValidationService>>();
+        var findingLogger = Substitute.For<ILogger<GroupIssueFindingService>>();
+        var rootLogger = Substitute.For<ILogger<RootIntegrityService>>();
+
+        var repairService = new NestedSetRepairService(_context, repairLogger);
+        var validationService = new NestedSetValidationService(_context, validationLogger);
+        var rootIntegrityService = new RootIntegrityService(_context, rootLogger);
+        var issueFindingService = new GroupIssueFindingService(_context, findingLogger, validationService);
+
+        _integrityService = new GroupIntegrityService(repairService, validationService, issueFindingService, rootIntegrityService, _mockLogger);
     }
 
     [TearDown]
