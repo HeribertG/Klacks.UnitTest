@@ -34,6 +34,7 @@ public class ClientRepositoryRefactoredTests
     private IClientChangeTrackingService _mockChangeTrackingService;
     private IClientEntityManagementService _mockEntityManagementService;
     private IClientWorkFilterService _mockWorkFilterService;
+    private IClientValidator _mockClientValidator;
 
     [SetUp]
     public async Task SetUp()
@@ -55,6 +56,7 @@ public class ClientRepositoryRefactoredTests
         _mockChangeTrackingService = Substitute.For<IClientChangeTrackingService>();
         _mockEntityManagementService = Substitute.For<IClientEntityManagementService>();
         _mockWorkFilterService = Substitute.For<IClientWorkFilterService>();
+        _mockClientValidator = Substitute.For<IClientValidator>();
 
         var mockGroupFilterService = Substitute.For<IClientGroupFilterService>();
         _mockSearchFilterService = Substitute.For<IClientSearchFilterService>();
@@ -70,7 +72,8 @@ public class ClientRepositoryRefactoredTests
             _mockMacroEngine,
             _mockChangeTrackingService,
             _mockEntityManagementService,
-            collectionUpdateService);
+            collectionUpdateService,
+            _mockClientValidator);
 
         _clientFilterRepository = new ClientFilterRepository(
             _context,

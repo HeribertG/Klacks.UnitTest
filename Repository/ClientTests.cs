@@ -113,12 +113,13 @@ internal class ClientTests
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
+        var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
+        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(dbContext);
 
         var repository = new ClientRepository(dbContext, new MacroEngine(),
-            changeTrackingService, entityManagementService, collectionUpdateService);
+            changeTrackingService, entityManagementService, collectionUpdateService, clientValidator);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService);
@@ -163,12 +164,13 @@ internal class ClientTests
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
+        var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
+        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(dbContext);
 
         var repository = new ClientRepository(dbContext, new MacroEngine(),
-            changeTrackingService, entityManagementService, collectionUpdateService);
+            changeTrackingService, entityManagementService, collectionUpdateService, clientValidator);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService);
@@ -214,12 +216,13 @@ internal class ClientTests
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
+        var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
+        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(dbContext);
 
         var repository = new ClientRepository(dbContext, new MacroEngine(),
-            changeTrackingService, entityManagementService, collectionUpdateService);
+            changeTrackingService, entityManagementService, collectionUpdateService, clientValidator);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService);
@@ -308,12 +311,13 @@ internal class ClientTests
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService();
+        var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
+        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(dbContext);
 
         var repository = new ClientRepository(dbContext, new MacroEngine(),
-            changeTrackingService, entityManagementService, collectionUpdateService);
+            changeTrackingService, entityManagementService, collectionUpdateService, clientValidator);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService);
