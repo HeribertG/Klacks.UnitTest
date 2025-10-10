@@ -59,8 +59,9 @@ internal class GoupTests
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(dbContext);
 
+        var mockLogger = Substitute.For<ILogger<ClientRepository>>();
         var clientRepository = new ClientRepository(dbContext, new MacroEngine(),
-            changeTrackingService, entityManagementService, collectionUpdateService, clientValidator);
+            changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var clientFilterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService);

@@ -11,6 +11,7 @@ using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Presentation.DTOs.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace UnitTest.Repository;
@@ -67,13 +68,16 @@ public class ClientRepositoryRefactoredTests
         
         var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(_context);
 
+        var mockLogger = Substitute.For<ILogger<ClientRepository>>();
+
         _clientRepository = new ClientRepository(
             _context,
             _mockMacroEngine,
             _mockChangeTrackingService,
             _mockEntityManagementService,
             collectionUpdateService,
-            _mockClientValidator);
+            _mockClientValidator,
+            mockLogger);
 
         _clientFilterRepository = new ClientFilterRepository(
             _context,
