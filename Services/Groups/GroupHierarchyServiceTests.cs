@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
+using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,7 @@ public class GroupHierarchyServiceTests
     private DataBaseContext _context;
     private GroupHierarchyService _hierarchyService;
     private ILogger<GroupHierarchyService> _mockLogger;
+    private IGroupVisibilityService _mockGroupVisibilityService;
 
     [SetUp]
     public void SetUp()
@@ -26,8 +28,12 @@ public class GroupHierarchyServiceTests
         var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, mockHttpContextAccessor);
         _mockLogger = Substitute.For<ILogger<GroupHierarchyService>>();
+        _mockGroupVisibilityService = Substitute.For<IGroupVisibilityService>();
 
-        _hierarchyService = new GroupHierarchyService(_context, _mockLogger);
+        _mockGroupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
+        _mockGroupVisibilityService.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid>()));
+
+        _hierarchyService = new GroupHierarchyService(_context, _mockLogger, _mockGroupVisibilityService);
     }
 
     [TearDown]
