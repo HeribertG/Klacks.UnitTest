@@ -10,6 +10,7 @@ using NSubstitute;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Services.Groups;
 using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 
@@ -153,7 +154,8 @@ public class GroupSearchServiceTests
         mockGroupServiceFacade.MembershipService.Returns(mockMembershipService);
         mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
 
-        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, Substitute.For<ILogger<Group>>());
+        var mockGroupCacheService = Substitute.For<IGroupCacheService>();
+        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, mockGroupCacheService, Substitute.For<ILogger<Group>>());
 
         CreateTestData();
     }

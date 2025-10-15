@@ -6,6 +6,7 @@ using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;
+using Klacks.Api.Domain.Services.Groups;
 using NSubstitute;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
@@ -134,7 +135,8 @@ internal class GoupTests
         mockGroupServiceFacade.MembershipService.Returns(mockMembershipService);
         mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
 
-        var groupRepository = new GroupRepository(dbContext, mockGroupServiceFacade, _groupLogger);
+        var mockGroupCacheService = Substitute.For<IGroupCacheService>();
+        var groupRepository = new GroupRepository(dbContext, mockGroupServiceFacade, mockGroupCacheService, _groupLogger);
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository, clientFilterRepository);
         var command = new PostCommand<GroupResource>(group);

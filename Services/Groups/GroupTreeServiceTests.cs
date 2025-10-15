@@ -9,6 +9,7 @@ using NSubstitute;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Services.Groups;
 using Microsoft.Extensions.Logging;
 
 namespace UnitTest.Services.Groups;
@@ -275,7 +276,8 @@ public class GroupTreeServiceTests
         mockGroupServiceFacade.MembershipService.Returns(mockMembershipService);
         mockGroupServiceFacade.IntegrityService.Returns(mockIntegrityService);
 
-        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, _mockLogger);
+        var mockGroupCacheService = Substitute.For<IGroupCacheService>();
+        _groupRepository = new GroupRepository(_context, mockGroupServiceFacade, mockGroupCacheService, _mockLogger);
 
         CreateTestData();
     }
