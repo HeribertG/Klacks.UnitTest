@@ -34,6 +34,7 @@ internal class BreakTests
     [Test]
     public async Task GetClientList_Ok()
     {
+        // Arrange
         var clients = Clients.GenerateClients(500, 2023, true);
         var absence = Clients.GenerateAbsences(20);
         var breaks = Clients.GenerateBreaks(clients, absence, 2023, 200).Where(b => b.From.Year == 2023).ToList();
@@ -47,33 +48,26 @@ internal class BreakTests
 
         DataSeed(clients, absence, breaks);
 
-        // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
-        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
-        var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
-        var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
-        var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
-        
         var groupFilterService = Substitute.For<IClientGroupFilterService>();
         var searchFilterService = Substitute.For<IClientSearchFilterService>();
-        
+
         groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
         searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
-        
+
         var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
         var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
 
-        var result = await handler.Handle(query, default);
+        // Act
+        var (result, totalCount) = await handler.Handle(query, default);
 
+        // Assert
         result.Should().NotBeNull();
         result.Count().Should().Be(500);
+        totalCount.Should().Be(500);
 
         var tmpBreaks = new List<Break>();
 
@@ -87,6 +81,127 @@ internal class BreakTests
 
         tmpBreaks.Should().NotBeNull();
         tmpBreaks.Count().Should().Be(200);
+    }
+
+    [Test]
+    public async Task GetClientList_WithVirtualScrolling_ReturnsFirstChunk()
+    {
+        // Arrange
+        var clients = Clients.GenerateClients(500, 2023, true);
+        var absence = Clients.GenerateAbsences(20);
+        var breaks = Clients.GenerateBreaks(clients, absence, 2023, 200).Where(b => b.From.Year == 2023).ToList();
+        var filter = Clients.GenerateBreakFilter(absence, 2023);
+        filter.StartRow = 0;
+        filter.RowCount = 100;
+
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+        dbContext = new DataBaseContext(options, _httpContextAccessor);
+        dbContext.Database.EnsureCreated();
+        DataSeed(clients, absence, breaks);
+
+        var groupFilterService = Substitute.For<IClientGroupFilterService>();
+        var searchFilterService = Substitute.For<IClientSearchFilterService>();
+
+        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+            .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
+        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Client>)args[0]);
+
+        var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
+        var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
+        var logger = Substitute.For<ILogger<GetListQueryHandler>>();
+        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
+
+        // Act
+        var (result, totalCount) = await handler.Handle(query, default);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Count().Should().Be(100);
+        totalCount.Should().Be(500);
+    }
+
+    [Test]
+    public async Task GetClientList_WithVirtualScrolling_ReturnsSecondChunk()
+    {
+        // Arrange
+        var clients = Clients.GenerateClients(500, 2023, true);
+        var absence = Clients.GenerateAbsences(20);
+        var breaks = Clients.GenerateBreaks(clients, absence, 2023, 200).Where(b => b.From.Year == 2023).ToList();
+        var filter = Clients.GenerateBreakFilter(absence, 2023);
+        filter.StartRow = 100;
+        filter.RowCount = 50;
+
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+        dbContext = new DataBaseContext(options, _httpContextAccessor);
+        dbContext.Database.EnsureCreated();
+        DataSeed(clients, absence, breaks);
+
+        var groupFilterService = Substitute.For<IClientGroupFilterService>();
+        var searchFilterService = Substitute.For<IClientSearchFilterService>();
+
+        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+            .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
+        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Client>)args[0]);
+
+        var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
+        var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
+        var logger = Substitute.For<ILogger<GetListQueryHandler>>();
+        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
+
+        // Act
+        var (result, totalCount) = await handler.Handle(query, default);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Count().Should().Be(50);
+        totalCount.Should().Be(500);
+    }
+
+    [Test]
+    public async Task GetClientList_WithVirtualScrolling_Performance_5000Clients()
+    {
+        // Arrange
+        var clients = Clients.GenerateClients(5000, 2023, true);
+        var absence = Clients.GenerateAbsences(20);
+        var breaks = Clients.GenerateBreaks(clients, absence, 2023, 2000).Where(b => b.From.Year == 2023).ToList();
+        var filter = Clients.GenerateBreakFilter(absence, 2023);
+        filter.StartRow = 0;
+        filter.RowCount = 100;
+
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+        dbContext = new DataBaseContext(options, _httpContextAccessor);
+        dbContext.Database.EnsureCreated();
+        DataSeed(clients, absence, breaks);
+
+        var groupFilterService = Substitute.For<IClientGroupFilterService>();
+        var searchFilterService = Substitute.For<IClientSearchFilterService>();
+
+        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+            .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
+        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Client>)args[0]);
+
+        var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
+        var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
+        var logger = Substitute.For<ILogger<GetListQueryHandler>>();
+        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        // Act
+        var (result, totalCount) = await handler.Handle(query, default);
+
+        // Assert
+        stopwatch.Stop();
+        result.Should().NotBeNull();
+        result.Count().Should().Be(100);
+        totalCount.Should().Be(5000);
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(1000);
     }
 
     [SetUp]
