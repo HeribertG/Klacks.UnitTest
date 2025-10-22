@@ -5,11 +5,13 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Repositories;
+using Klacks.Api.Infrastructure.Services;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Domain.Services.Shifts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 using System.Diagnostics;
 
 namespace UnitTest.Integration;
@@ -68,7 +70,9 @@ public class ShiftPerformanceIntegrationTests
                 });
             });
         
-        _shiftRepository = new ShiftRepository(_context, mockLogger, _dateRangeFilterService, _searchService, _sortingService, _statusFilterService, _paginationService, _groupManagementService);
+        var mockCollectionUpdateService = Substitute.For<EntityCollectionUpdateService>();
+        var mockShiftValidator = Substitute.For<IShiftValidator>();
+        _shiftRepository = new ShiftRepository(_context, mockLogger, _dateRangeFilterService, _searchService, _sortingService, _statusFilterService, _paginationService, _groupManagementService, mockCollectionUpdateService, mockShiftValidator);
         
         _shiftFilterService = new ShiftFilterService(
             _dateRangeFilterService,

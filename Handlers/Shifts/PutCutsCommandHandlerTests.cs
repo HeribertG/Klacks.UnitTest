@@ -16,6 +16,7 @@ public class PutCutsCommandHandlerTests
     private PutCutsCommandHandler _handler;
     private IShiftRepository _mockShiftRepository;
     private IMapper _mockMapper;
+    private IUnitOfWork _mockUnitOfWork;
     private ILogger<PutCutsCommandHandler> _mockLogger;
 
     [SetUp]
@@ -23,8 +24,9 @@ public class PutCutsCommandHandlerTests
     {
         _mockShiftRepository = Substitute.For<IShiftRepository>();
         _mockMapper = Substitute.For<IMapper>();
+        _mockUnitOfWork = Substitute.For<IUnitOfWork>();
         _mockLogger = Substitute.For<ILogger<PutCutsCommandHandler>>();
-        _handler = new PutCutsCommandHandler(_mockShiftRepository, _mockMapper, _mockLogger);
+        _handler = new PutCutsCommandHandler(_mockShiftRepository, _mockMapper, _mockUnitOfWork, _mockLogger);
     }
 
     [Test]
@@ -55,9 +57,10 @@ public class PutCutsCommandHandlerTests
         Assert.That(result, Is.Not.Null);
         Assert.That(result.Count, Is.EqualTo(1));
         Assert.That(result.First(), Is.EqualTo(shiftResource));
-        
+
         _mockMapper.Received(1).Map<Shift>(shiftResource);
         await _mockShiftRepository.Received(1).Put(shiftEntity);
+        await _mockUnitOfWork.Received(1).CompleteAsync();
         _mockMapper.Received(1).Map<ShiftResource>(updatedShiftEntity);
     }
 
