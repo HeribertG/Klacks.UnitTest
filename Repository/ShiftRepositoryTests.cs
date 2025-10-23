@@ -53,7 +53,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Original Shift",
-            Status = ShiftStatus.Original,
+            Status = ShiftStatus.OriginalOrder,
             OriginalId = null,
             Lft = 1,
             Rgt = 2
@@ -66,7 +66,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Cut Original Shift",
-            Status = ShiftStatus.IsCutOriginal,
+            Status = ShiftStatus.OriginalShift,
             OriginalId = originalShift.Id,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
@@ -81,7 +81,7 @@ public class ShiftRepositoryTests
         var savedShift = await _context.Shift.FirstOrDefaultAsync(s => s.Id == cutOriginalShift.Id);
         savedShift.Should().NotBeNull();
         savedShift.OriginalId.Should().Be(originalShift.Id);
-        savedShift.Status.Should().Be(ShiftStatus.IsCutOriginal);
+        savedShift.Status.Should().Be(ShiftStatus.OriginalShift);
     }
 
     [Test]
@@ -92,7 +92,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Original Shift",
-            Status = ShiftStatus.Original,
+            Status = ShiftStatus.OriginalOrder,
             OriginalId = null,
             Lft = 1,
             Rgt = 2
@@ -105,7 +105,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Ready to Cut Shift",
-            Status = ShiftStatus.ReadyToCut,
+            Status = ShiftStatus.SealedOrder,
             OriginalId = originalShift.Id,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
@@ -120,7 +120,7 @@ public class ShiftRepositoryTests
         var savedShift = await _context.Shift.FirstOrDefaultAsync(s => s.Id == readyToCutShift.Id);
         savedShift.Should().NotBeNull();
         savedShift.OriginalId.Should().Be(originalShift.Id);
-        savedShift.Status.Should().Be(ShiftStatus.ReadyToCut);
+        savedShift.Status.Should().Be(ShiftStatus.SealedOrder);
     }
 
     [Test]
@@ -131,7 +131,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Original Shift",
-            Status = ShiftStatus.Original,
+            Status = ShiftStatus.OriginalOrder,
             OriginalId = null,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
@@ -145,7 +145,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Cut Shift",
-            Status = ShiftStatus.IsCut,
+            Status = ShiftStatus.SplitShift,
             OriginalId = originalShift.Id,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
@@ -161,7 +161,7 @@ public class ShiftRepositoryTests
         
         savedCut.Should().NotBeNull();
         savedCut.OriginalId.Should().Be(originalShift.Id);
-        savedCut.Status.Should().Be(ShiftStatus.IsCut);
+        savedCut.Status.Should().Be(ShiftStatus.SplitShift);
     }
 
 
@@ -173,7 +173,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Original Shift",
-            Status = ShiftStatus.Original,
+            Status = ShiftStatus.OriginalOrder,
             OriginalId = null,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
@@ -187,7 +187,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Cut Shift 1",
-            Status = ShiftStatus.IsCut,
+            Status = ShiftStatus.SplitShift,
             OriginalId = originalShift.Id,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
@@ -198,7 +198,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Cut Shift 2",
-            Status = ShiftStatus.IsCut,
+            Status = ShiftStatus.SplitShift,
             OriginalId = originalShift.Id,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(12)),
@@ -217,7 +217,7 @@ public class ShiftRepositoryTests
 
         allCutShifts.Should().HaveCount(2);
         allCutShifts.Should().AllSatisfy(cut => cut.OriginalId.Should().Be(originalShift.Id));
-        allCutShifts.Should().AllSatisfy(cut => cut.Status.Should().Be(ShiftStatus.IsCut));
+        allCutShifts.Should().AllSatisfy(cut => cut.Status.Should().Be(ShiftStatus.SplitShift));
     }
 
     [Test]
@@ -228,7 +228,7 @@ public class ShiftRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Original Shift",
-            Status = ShiftStatus.Original,
+            Status = ShiftStatus.OriginalOrder,
             OriginalId = null,
             FromDate = DateOnly.FromDateTime(DateTime.Now),
             StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
@@ -240,9 +240,9 @@ public class ShiftRepositoryTests
 
         var testCases = new[]
         {
-            (ShiftStatus.ReadyToCut, "Ready to Cut"),
-            (ShiftStatus.IsCutOriginal, "Is Cut Original"),
-            (ShiftStatus.IsCut, "Is Cut")
+            (ShiftStatus.SealedOrder, "Ready to Cut"),
+            (ShiftStatus.OriginalShift, "Is Cut Original"),
+            (ShiftStatus.SplitShift, "Is Cut")
         };
 
         foreach (var (status, name) in testCases)
@@ -260,7 +260,7 @@ public class ShiftRepositoryTests
             };
 
             // Act
-            if (status == ShiftStatus.IsCut)
+            if (status == ShiftStatus.SplitShift)
             {
                 // Direkt speichern für IsCut wegen InMemory DB Limitation
                 _context.Shift.Add(shift);

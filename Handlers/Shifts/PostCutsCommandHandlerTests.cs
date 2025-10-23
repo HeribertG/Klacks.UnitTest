@@ -37,7 +37,7 @@ public class PostCutsCommandHandlerTests
         { 
             Id = Guid.NewGuid(), 
             Name = "Cut Shift 1",
-            Status = ShiftStatus.IsCut,
+            Status = ShiftStatus.SplitShift,
             Groups = new List<SimpleGroupResource>()
         };
         var cutShifts = new List<ShiftResource> { shiftResource };

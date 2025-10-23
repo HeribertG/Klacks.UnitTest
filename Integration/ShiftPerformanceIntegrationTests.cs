@@ -127,7 +127,7 @@ public class ShiftPerformanceIntegrationTests
                 ClientId = client.Id,
                 Client = client,
                 IsDeleted = false,
-                Status = i % 3 == 0 ? ShiftStatus.Original : ShiftStatus.IsCutOriginal
+                Status = i % 3 == 0 ? ShiftStatus.OriginalOrder : ShiftStatus.OriginalShift
             };
 
             // Create different date scenarios
@@ -262,7 +262,7 @@ public class ShiftPerformanceIntegrationTests
             isActive.Should().BeTrue($"Shift {shift.Name} should be active");
             
             // Check status (not original)
-            shift.Status.Should().NotBe(ShiftStatus.Original);
+            shift.Status.Should().NotBe(ShiftStatus.OriginalOrder);
         }
 
         // Check sorting

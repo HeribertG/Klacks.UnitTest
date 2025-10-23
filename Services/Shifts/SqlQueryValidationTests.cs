@@ -38,7 +38,7 @@ public class DomainServiceFunctionalTests
                 Abbreviation = "AS",
                 FromDate = today.AddDays(-1), 
                 UntilDate = today.AddDays(1),
-                Status = ShiftStatus.Original,
+                Status = ShiftStatus.OriginalOrder,
                 IsDeleted = false
             },
             new Shift 
@@ -48,7 +48,7 @@ public class DomainServiceFunctionalTests
                 Abbreviation = "FST",
                 FromDate = today.AddDays(-10), 
                 UntilDate = today.AddDays(-2),
-                Status = ShiftStatus.IsCutOriginal,
+                Status = ShiftStatus.OriginalShift,
                 IsDeleted = false
             },
             new Shift 
@@ -58,7 +58,7 @@ public class DomainServiceFunctionalTests
                 Abbreviation = "FS",
                 FromDate = today.AddDays(2), 
                 UntilDate = today.AddDays(10),
-                Status = ShiftStatus.Original,
+                Status = ShiftStatus.OriginalOrder,
                 IsDeleted = false
             },
             new Shift 
@@ -68,7 +68,7 @@ public class DomainServiceFunctionalTests
                 Abbreviation = "STS",
                 FromDate = today.AddDays(-1), 
                 UntilDate = today.AddDays(1),
-                Status = ShiftStatus.IsCut,
+                Status = ShiftStatus.SplitShift,
                 IsDeleted = false
             }
         };
@@ -147,7 +147,7 @@ public class DomainServiceFunctionalTests
 
         // Assert
         shifts.Should().HaveCount(2, "Should return 2 shifts with Original status");
-        shifts.Should().OnlyContain(s => s.Status == ShiftStatus.Original);
+        shifts.Should().OnlyContain(s => s.Status == ShiftStatus.OriginalOrder);
 
         Console.WriteLine($"Original status filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
@@ -164,7 +164,7 @@ public class DomainServiceFunctionalTests
 
         // Assert
         shifts.Should().HaveCount(2, "Should return 2 shifts with non-Original status");
-        shifts.Should().OnlyContain(s => s.Status != ShiftStatus.Original);
+        shifts.Should().OnlyContain(s => s.Status != ShiftStatus.OriginalOrder);
 
         Console.WriteLine($"Non-original status filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
@@ -219,7 +219,7 @@ public class DomainServiceFunctionalTests
                 Abbreviation = "AST",
                 FromDate = today.AddDays(-1), 
                 UntilDate = today.AddDays(1),
-                Status = ShiftStatus.IsCutOriginal, // Non-original
+                Status = ShiftStatus.OriginalShift, // Non-original
                 IsDeleted = false
             },
             new Shift 
@@ -229,7 +229,7 @@ public class DomainServiceFunctionalTests
                 Abbreviation = "AOS",
                 FromDate = today.AddDays(-1), 
                 UntilDate = today.AddDays(1),
-                Status = ShiftStatus.Original, // Original - should be filtered out
+                Status = ShiftStatus.OriginalOrder, // Original - should be filtered out
                 IsDeleted = false
             },
             new Shift 
@@ -239,7 +239,7 @@ public class DomainServiceFunctionalTests
                 Abbreviation = "FST",
                 FromDate = today.AddDays(-10), 
                 UntilDate = today.AddDays(-2),
-                Status = ShiftStatus.IsCutOriginal, // Non-original but former
+                Status = ShiftStatus.OriginalShift, // Non-original but former
                 IsDeleted = false
             }
         };
@@ -247,7 +247,7 @@ public class DomainServiceFunctionalTests
         var query = combinedTestShifts.AsQueryable();
 
         // Act - Apply multiple filters manually (since EF.Functions.Like doesn't work with in-memory data)
-        var step1 = query.Where(s => s.Status != ShiftStatus.Original); // Non-original only
+        var step1 = query.Where(s => s.Status != ShiftStatus.OriginalOrder); // Non-original only
         var step2 = step1.Where(s => s.FromDate <= today && (!s.UntilDate.HasValue || s.UntilDate.Value >= today)); // Active only
         var step3 = step2.Where(s => s.Name.Contains("Shift", StringComparison.OrdinalIgnoreCase)); // Contains "Shift"
         var finalQuery = step3.OrderBy(s => s.Name); // Sort by name
@@ -258,7 +258,7 @@ public class DomainServiceFunctionalTests
         results.Should().HaveCount(1, "Should return 1 shift matching all criteria");
         var result = results.First();
         result.Name.Should().Be("Active Shift Test");
-        result.Status.Should().Be(ShiftStatus.IsCutOriginal);
+        result.Status.Should().Be(ShiftStatus.OriginalShift);
         
         // Verify it's active
         var isActive = result.FromDate <= today && (!result.UntilDate.HasValue || result.UntilDate.Value >= today);
