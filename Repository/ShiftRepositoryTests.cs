@@ -40,9 +40,9 @@ public class ShiftRepositoryTests
         _mockShiftStatusFilterService = Substitute.For<IShiftStatusFilterService>();
         _mockShiftPaginationService = Substitute.For<IShiftPaginationService>();
         _mockShiftGroupManagementService = Substitute.For<IShiftGroupManagementService>();
-        var mockCollectionUpdateService = Substitute.For<EntityCollectionUpdateService>();
+        var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
-        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService, _mockShiftPaginationService, _mockShiftGroupManagementService, mockCollectionUpdateService, mockShiftValidator);
+        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService, _mockShiftPaginationService, _mockShiftGroupManagementService, collectionUpdateService, mockShiftValidator);
     }
 
     [Test]

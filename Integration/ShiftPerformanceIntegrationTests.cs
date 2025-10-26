@@ -71,9 +71,9 @@ public class ShiftPerformanceIntegrationTests
                 });
             });
         
-        var mockCollectionUpdateService = Substitute.For<EntityCollectionUpdateService>();
+        var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
-        _shiftRepository = new ShiftRepository(_context, mockLogger, _dateRangeFilterService, _searchService, _sortingService, _statusFilterService, _paginationService, _groupManagementService, mockCollectionUpdateService, mockShiftValidator);
+        _shiftRepository = new ShiftRepository(_context, mockLogger, _dateRangeFilterService, _searchService, _sortingService, _statusFilterService, _paginationService, _groupManagementService, collectionUpdateService, mockShiftValidator);
         
         _shiftFilterService = new ShiftFilterService(
             _dateRangeFilterService,
