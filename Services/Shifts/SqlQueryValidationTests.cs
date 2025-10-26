@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
@@ -142,7 +143,7 @@ public class DomainServiceFunctionalTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _statusFilterService.ApplyStatusFilter(query, true);
+        var result = _statusFilterService.ApplyStatusFilter(query, ShiftFilterType.Original);
         var shifts = result.ToList();
 
         // Assert
@@ -159,7 +160,7 @@ public class DomainServiceFunctionalTests
         var query = _testShifts.AsQueryable();
 
         // Act
-        var result = _statusFilterService.ApplyStatusFilter(query, false);
+        var result = _statusFilterService.ApplyStatusFilter(query, ShiftFilterType.Shift);
         var shifts = result.ToList();
 
         // Assert
@@ -281,7 +282,7 @@ public class DomainServiceFunctionalTests
         var act2 = () => query.Where(s => s.Name.Contains("Test", StringComparison.OrdinalIgnoreCase)).ToList();
         act2.Should().NotThrow("SearchString filter should execute successfully");
 
-        var act3 = () => _statusFilterService.ApplyStatusFilter(query, true).ToList();
+        var act3 = () => _statusFilterService.ApplyStatusFilter(query, ShiftFilterType.Original).ToList();
         act3.Should().NotThrow("Status filter should execute successfully");
 
         var act4 = () => _sortingService.ApplySorting(query, "name", "asc").ToList();

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces;
@@ -238,7 +239,7 @@ public class ShiftPerformanceIntegrationTests
             ActiveDateRange = true,
             FormerDateRange = false,
             FutureDateRange = false,
-            IsOriginal = false,
+            FilterType = ShiftFilterType.Shift,
             NumberOfItemsPerPage = 25,
             OrderBy = "name",
             SortOrder = "asc"
