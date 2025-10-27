@@ -358,4 +358,72 @@ public class ShiftStatusFilterServiceTests
 
         intersection.Should().BeEmpty("Filters should be mutually exclusive - no shift should appear in multiple filter results");
     }
+
+    [Test]
+    public void ApplyStatusFilter_WithIsSealedOrderFalse_ShouldReturnOnlyOriginalOrders()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+
+        // Act
+        var result = _filterService.ApplyStatusFilter(query, ShiftFilterType.Original, isSealedOrder: false);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(2, "Should return only OriginalOrder shifts (Status = 0)");
+        shifts.Should().OnlyContain(s => s.Status == ShiftStatus.OriginalOrder);
+        shifts.Should().NotContain(s => s.Status == ShiftStatus.SealedOrder, "SealedOrder should be excluded when isSealedOrder = false");
+    }
+
+    [Test]
+    public void ApplyStatusFilter_WithIsSealedOrderTrue_ShouldReturnOriginalAndSealedOrders()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+
+        // Act
+        var result = _filterService.ApplyStatusFilter(query, ShiftFilterType.Original, isSealedOrder: true);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(3, "Should return both OriginalOrder (2) and SealedOrder (1) shifts");
+        shifts.Should().Contain(s => s.Status == ShiftStatus.OriginalOrder);
+        shifts.Should().Contain(s => s.Status == ShiftStatus.SealedOrder);
+        shifts.Should().Contain(s => s.Name == "Sealed Order 1", "Should include the SealedOrder shift");
+        shifts.Where(s => s.Status == ShiftStatus.OriginalOrder).Should().HaveCount(2);
+        shifts.Where(s => s.Status == ShiftStatus.SealedOrder).Should().HaveCount(1);
+    }
+
+    [Test]
+    public void ApplyStatusFilter_IsSealedOrderOnlyAffectsOriginalFilterType()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+
+        // Act
+        var shiftResultWithoutFlag = _filterService.ApplyStatusFilter(query, ShiftFilterType.Shift, isSealedOrder: false).ToList();
+        var shiftResultWithFlag = _filterService.ApplyStatusFilter(query, ShiftFilterType.Shift, isSealedOrder: true).ToList();
+        var containerResultWithoutFlag = _filterService.ApplyStatusFilter(query, ShiftFilterType.Container, isSealedOrder: false).ToList();
+        var containerResultWithFlag = _filterService.ApplyStatusFilter(query, ShiftFilterType.Container, isSealedOrder: true).ToList();
+
+        // Assert
+        shiftResultWithoutFlag.Should().BeEquivalentTo(shiftResultWithFlag, "isSealedOrder flag should not affect Shift filter");
+        containerResultWithoutFlag.Should().BeEquivalentTo(containerResultWithFlag, "isSealedOrder flag should not affect Container filter");
+    }
+
+    [Test]
+    public void ApplyStatusFilter_DefaultBehavior_ShouldExcludeSealedOrders()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+
+        // Act - Aufruf ohne isSealedOrder Parameter (sollte Default = false verwenden)
+        var result = _filterService.ApplyStatusFilter(query, ShiftFilterType.Original);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(2, "Default behavior should exclude SealedOrders");
+        shifts.Should().NotContain(s => s.Status == ShiftStatus.SealedOrder, "SealedOrder should be excluded by default");
+        shifts.Should().OnlyContain(s => s.Status == ShiftStatus.OriginalOrder);
+    }
 }
