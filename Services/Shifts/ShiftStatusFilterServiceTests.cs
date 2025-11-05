@@ -463,8 +463,8 @@ public class ShiftStatusFilterServiceTests
         // Assert
         shiftResultWithoutFlag.Should().BeEquivalentTo(shiftResultWithFlag, "isSealedOrder flag should not affect Shift filter");
         containerResultWithoutFlag.Should().BeEquivalentTo(containerResultWithFlag, "isSealedOrder flag should not affect Container filter");
-        containerResultWithoutFlag.Should().HaveCount(5, "Container filter returns all containers");
-        containerResultWithFlag.Should().HaveCount(5, "Container filter returns all containers");
+        containerResultWithoutFlag.Should().HaveCount(1, "Container filter returns only containers with Status = OriginalShift");
+        containerResultWithFlag.Should().HaveCount(1, "Container filter returns only containers with Status = OriginalShift");
     }
 
     [Test]
@@ -494,11 +494,15 @@ public class ShiftStatusFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(5, "Container filter returns ALL containers regardless of isSealedOrder flag");
-        shifts.Should().Contain(s => s.Name == "Sealed Container Order 1",
-            "Sealed containers are included");
-        shifts.Should().OnlyContain(s => s.ShiftType == ShiftType.IsContainer,
-            "All returned items must be containers");
+        shifts.Should().HaveCount(1, "Container filter returns only containers with Status = OriginalShift");
+        shifts.Should().Contain(s => s.Name == "Container Shift 1",
+            "Only Container Shift 1 has Status = OriginalShift");
+        shifts.Should().NotContain(s => s.Name == "Sealed Container Order 1",
+            "Sealed containers (Status = SealedOrder) are excluded");
+        shifts.Should().NotContain(s => s.Name == "Container Order 1",
+            "Container orders (Status = OriginalOrder) are excluded");
+        shifts.Should().OnlyContain(s => s.ShiftType == ShiftType.IsContainer && s.Status == ShiftStatus.OriginalShift,
+            "Only containers with Status = OriginalShift are returned");
     }
 
     [Test]
@@ -512,11 +516,13 @@ public class ShiftStatusFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(5, "Container filter returns ALL containers regardless of isSealedOrder flag");
-        shifts.Should().Contain(s => s.Name == "Sealed Container Order 1",
-            "Sealed containers are included");
-        shifts.Should().Contain(s => s.Name == "Container Order 1",
-            "OriginalOrder containers are also included");
-        shifts.Should().OnlyContain(s => s.ShiftType == ShiftType.IsContainer);
+        shifts.Should().HaveCount(1, "Container filter returns only containers with Status = OriginalShift, isSealedOrder flag has no effect");
+        shifts.Should().Contain(s => s.Name == "Container Shift 1",
+            "Only Container Shift 1 has Status = OriginalShift");
+        shifts.Should().NotContain(s => s.Name == "Sealed Container Order 1",
+            "Sealed containers (Status = SealedOrder) are excluded");
+        shifts.Should().NotContain(s => s.Name == "Container Order 1",
+            "Container orders (Status = OriginalOrder) are excluded");
+        shifts.Should().OnlyContain(s => s.ShiftType == ShiftType.IsContainer && s.Status == ShiftStatus.OriginalShift);
     }
 }
