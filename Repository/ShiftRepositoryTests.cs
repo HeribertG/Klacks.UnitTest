@@ -1,7 +1,10 @@
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Services;
+using Klacks.Api.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
@@ -277,6 +280,242 @@ public class ShiftRepositoryTests
             savedShift.OriginalId.Should().Be(originalShift.Id, $"OriginalId should be preserved for status {status}");
             savedShift.Status.Should().Be(status);
         }
+    }
+
+    [Test]
+    public void FilterShifts_WithGroupFilter_IncludesShiftsWithMatchingGroup()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var shift = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Shift with Group",
+            Status = ShiftStatus.OriginalShift,
+            ShiftType = ShiftType.IsTask,
+            FromDate = DateOnly.FromDateTime(DateTime.Now),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
+            GroupItems = new List<GroupItem>
+            {
+                new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ShiftId = Guid.NewGuid() }
+            }
+        };
+
+        _context.Shift.Add(shift);
+        _context.SaveChanges();
+
+        var filter = new ShiftFilter
+        {
+            FilterType = ShiftFilterType.Shift,
+            SelectedGroup = groupId,
+            IsTimeRange = true,
+            IsSporadic = true
+        };
+
+        _mockShiftStatusFilterService
+            .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockDateRangeFilterService
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSearchService
+            .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSortingService
+            .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+
+        // Act
+        var result = _repository.FilterShifts(filter).ToList();
+
+        // Assert
+        result.Should().HaveCount(1);
+        result.First().Id.Should().Be(shift.Id);
+    }
+
+    [Test]
+    public void FilterShifts_WithGroupFilter_IncludesShiftsWithoutGroups()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var shiftWithoutGroup = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Shift without Group",
+            Status = ShiftStatus.OriginalShift,
+            ShiftType = ShiftType.IsTask,
+            FromDate = DateOnly.FromDateTime(DateTime.Now),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
+            GroupItems = new List<GroupItem>()
+        };
+
+        _context.Shift.Add(shiftWithoutGroup);
+        _context.SaveChanges();
+
+        var filter = new ShiftFilter
+        {
+            FilterType = ShiftFilterType.Shift,
+            SelectedGroup = groupId,
+            IsTimeRange = true,
+            IsSporadic = true
+        };
+
+        _mockShiftStatusFilterService
+            .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockDateRangeFilterService
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSearchService
+            .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSortingService
+            .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+
+        // Act
+        var result = _repository.FilterShifts(filter).ToList();
+
+        // Assert
+        result.Should().HaveCount(1);
+        result.First().Id.Should().Be(shiftWithoutGroup.Id);
+    }
+
+    [Test]
+    public void FilterShifts_WithGroupFilter_ExcludesShiftsWithDifferentGroup()
+    {
+        // Arrange
+        var filterGroupId = Guid.NewGuid();
+        var differentGroupId = Guid.NewGuid();
+        var shiftWithDifferentGroup = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Shift with Different Group",
+            Status = ShiftStatus.OriginalShift,
+            ShiftType = ShiftType.IsTask,
+            FromDate = DateOnly.FromDateTime(DateTime.Now),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
+            GroupItems = new List<GroupItem>
+            {
+                new GroupItem { Id = Guid.NewGuid(), GroupId = differentGroupId, ShiftId = Guid.NewGuid() }
+            }
+        };
+
+        _context.Shift.Add(shiftWithDifferentGroup);
+        _context.SaveChanges();
+
+        var filter = new ShiftFilter
+        {
+            FilterType = ShiftFilterType.Shift,
+            SelectedGroup = filterGroupId,
+            IsTimeRange = true,
+            IsSporadic = true
+        };
+
+        _mockShiftStatusFilterService
+            .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockDateRangeFilterService
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSearchService
+            .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSortingService
+            .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+
+        // Act
+        var result = _repository.FilterShifts(filter).ToList();
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Test]
+    public void FilterShifts_WithGroupFilter_HandlesMixedShiftsCorrectly()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var differentGroupId = Guid.NewGuid();
+
+        var shiftWithMatchingGroup = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Shift with Matching Group",
+            Status = ShiftStatus.OriginalShift,
+            ShiftType = ShiftType.IsTask,
+            FromDate = DateOnly.FromDateTime(DateTime.Now),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
+            GroupItems = new List<GroupItem>
+            {
+                new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ShiftId = Guid.NewGuid() }
+            }
+        };
+
+        var shiftWithoutGroup = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Shift without Group",
+            Status = ShiftStatus.OriginalShift,
+            ShiftType = ShiftType.IsTask,
+            FromDate = DateOnly.FromDateTime(DateTime.Now.AddDays(1)),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
+            GroupItems = new List<GroupItem>()
+        };
+
+        var shiftWithDifferentGroup = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Shift with Different Group",
+            Status = ShiftStatus.OriginalShift,
+            ShiftType = ShiftType.IsTask,
+            FromDate = DateOnly.FromDateTime(DateTime.Now.AddDays(2)),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
+            GroupItems = new List<GroupItem>
+            {
+                new GroupItem { Id = Guid.NewGuid(), GroupId = differentGroupId, ShiftId = Guid.NewGuid() }
+            }
+        };
+
+        _context.Shift.AddRange(shiftWithMatchingGroup, shiftWithoutGroup, shiftWithDifferentGroup);
+        _context.SaveChanges();
+
+        var filter = new ShiftFilter
+        {
+            FilterType = ShiftFilterType.Shift,
+            SelectedGroup = groupId,
+            IsTimeRange = true,
+            IsSporadic = true
+        };
+
+        _mockShiftStatusFilterService
+            .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockDateRangeFilterService
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSearchService
+            .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockShiftSortingService
+            .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+
+        // Act
+        var result = _repository.FilterShifts(filter).ToList();
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Should().Contain(s => s.Id == shiftWithMatchingGroup.Id);
+        result.Should().Contain(s => s.Id == shiftWithoutGroup.Id);
+        result.Should().NotContain(s => s.Id == shiftWithDifferentGroup.Id);
     }
 
     [TearDown]
