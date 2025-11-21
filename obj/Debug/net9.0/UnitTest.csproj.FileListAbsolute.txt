@@ -1,5 +1,11 @@
 C:\SourceCode\UnitTest\bin\Debug\net9.0\.msCoverageSourceRootsMapping_UnitTest
 C:\SourceCode\UnitTest\bin\Debug\net9.0\CoverletSourceRootsMapping_UnitTest
+C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.csproj.AssemblyReference.cache
+C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.GeneratedMSBuildEditorConfig.editorconfig
+C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.AssemblyInfoInputs.cache
+C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.AssemblyInfo.cs
+C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.csproj.CoreCompileInputs.cache
+C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.sourcelink.json
 C:\SourceCode\UnitTest\bin\Debug\net9.0\testhost.dll
 C:\SourceCode\UnitTest\bin\Debug\net9.0\Klacks.Api.deps.json
 C:\SourceCode\UnitTest\bin\Debug\net9.0\Klacks.Api.runtimeconfig.json
@@ -656,12 +662,6 @@ C:\SourceCode\UnitTest\bin\Debug\net9.0\runtimes\win-x64\native\libSkiaSharp.dll
 C:\SourceCode\UnitTest\bin\Debug\net9.0\runtimes\win-x86\native\libSkiaSharp.dll
 C:\SourceCode\UnitTest\bin\Debug\net9.0\Klacks.Api.dll
 C:\SourceCode\UnitTest\bin\Debug\net9.0\Klacks.Api.pdb
-C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.csproj.AssemblyReference.cache
-C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.GeneratedMSBuildEditorConfig.editorconfig
-C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.AssemblyInfoInputs.cache
-C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.AssemblyInfo.cs
-C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.csproj.CoreCompileInputs.cache
-C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.sourcelink.json
 C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.csproj.Up2Date
 C:\SourceCode\UnitTest\obj\Debug\net9.0\UnitTest.dll
 C:\SourceCode\UnitTest\obj\Debug\net9.0\refint\UnitTest.dll

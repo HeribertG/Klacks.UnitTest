@@ -60,7 +60,12 @@ public class ContainerAvailableTasksServiceTests
             mockShiftValidator);
 
         _groupItemRepository = new GroupItemRepository(_context, groupItemLogger);
-        _containerTemplateRepository = new ContainerTemplateRepository(_context, containerTemplateLogger, collectionUpdateService);
+
+        var containerTemplateServiceLogger = Substitute.For<ILogger<ContainerTemplateService>>();
+        var mockUnitOfWork = Substitute.For<Klacks.Api.Application.Interfaces.IUnitOfWork>();
+        var containerTemplateService = new ContainerTemplateService(mockUnitOfWork, containerTemplateServiceLogger);
+
+        _containerTemplateRepository = new ContainerTemplateRepository(_context, containerTemplateLogger, collectionUpdateService, containerTemplateService);
 
         _service = new ContainerAvailableTasksService(
             _shiftRepository,
@@ -657,7 +662,7 @@ public class ContainerAvailableTasksServiceTests
             ShiftId = usedShift.Id
         };
 
-        template.Items = new List<ContainerTemplateItem> { templateItem };
+        template.ContainerTemplateItems = new List<ContainerTemplateItem> { templateItem };
 
         await _context.ContainerTemplate.AddAsync(template);
         await _context.SaveChangesAsync();
