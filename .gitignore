@@ -23,7 +23,7 @@
 /bin/Debug/net9.0/UnitTest.pdb
 /bin/Debug/net9.0/nunit_random_seed.tmp
 /obj/Debug/net10.0/UnitTest.AssemblyInfoInputs.cache
-/obj/Debug/net10.0/UnitTest.csproj.AssemblyReference.cache
+/obj/Debug/ne*.cache
 /bin/Debug/net10.0/Klacks.Api.dll
 /bin/Debug/net10.0/Klacks.Api.exe
 /obj/Debug/net10.0/ref/UnitTest.dll
@@ -31,6 +31,6 @@
 /obj/Debug/net10.0/UnitTest.dll
 /obj/Debug/net10.0/UnitTest.pdb
 /bin/Debug/net10.0/Klacks.Api.pdb
-/bin/Debug/net10.0/UnitTest.dll
-/bin/Debug/net10.0/UnitTest.pdb
-/bin/Debug/net10.0/nunit_random_seed.tmp
+*.dll
+*.pdb
+*.tmp
