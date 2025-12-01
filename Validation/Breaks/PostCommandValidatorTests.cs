@@ -415,7 +415,6 @@ public class PostCommandValidatorTests
         var client = new Client
         {
             Id = clientId,
-            MembershipId = membership.Id,
             Membership = membership,
             Name = "Test Employee"
         };

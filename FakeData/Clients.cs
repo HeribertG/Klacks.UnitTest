@@ -121,7 +121,6 @@ namespace UnitTest.FakeData
 
                 var membership = GenerateMembershipForClient(client, year);
                 client.Membership = membership;
-                client.MembershipId = membership.Id;
 
                 clients.Add(client);
             }

@@ -529,7 +529,6 @@ public class PutCommandValidatorTests
         var client = new Client
         {
             Id = clientId,
-            MembershipId = membership.Id,
             Membership = membership,
             Name = "Test Employee"
         };
