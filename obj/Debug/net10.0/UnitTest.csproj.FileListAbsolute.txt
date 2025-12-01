@@ -418,6 +418,7 @@ C:\SourceCode\UnitTest\bin\Debug\net10.0\BouncyCastle.Cryptography.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Castle.Core.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Common.Logging.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Common.Logging.Core.dll
+C:\SourceCode\UnitTest\bin\Debug\net10.0\EFCore.NamingConventions.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\FluentAssertions.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\FluentValidation.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\FluentValidation.DependencyInjectionExtensions.dll
@@ -440,6 +441,7 @@ C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.AspNetCore.Authentication.Jwt
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.AspNetCore.Identity.EntityFrameworkCore.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.AspNetCore.JsonPatch.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.AspNetCore.Mvc.NewtonsoftJson.dll
+C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.AspNetCore.OpenApi.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.Bcl.AsyncInterfaces.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.Build.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.Build.Framework.dll
@@ -490,10 +492,8 @@ C:\SourceCode\UnitTest\bin\Debug\net10.0\NSubstitute.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\nunit.framework.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\nunit.framework.legacy.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\BouncyCastle.Crypto.dll
+C:\SourceCode\UnitTest\bin\Debug\net10.0\Scalar.AspNetCore.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\SkiaSharp.dll
-C:\SourceCode\UnitTest\bin\Debug\net10.0\Swashbuckle.AspNetCore.Swagger.dll
-C:\SourceCode\UnitTest\bin\Debug\net10.0\Swashbuckle.AspNetCore.SwaggerGen.dll
-C:\SourceCode\UnitTest\bin\Debug\net10.0\Swashbuckle.AspNetCore.SwaggerUI.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\System.CodeDom.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\System.Composition.AttributedModel.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\System.Composition.Convention.dll
@@ -714,4 +714,3 @@ C:\SourceCode\UnitTest\obj\Debug\net10.0\refint\UnitTest.dll
 C:\SourceCode\UnitTest\obj\Debug\net10.0\UnitTest.pdb
 C:\SourceCode\UnitTest\obj\Debug\net10.0\UnitTest.genruntimeconfig.cache
 C:\SourceCode\UnitTest\obj\Debug\net10.0\ref\UnitTest.dll
-C:\SourceCode\UnitTest\bin\Debug\net10.0\EFCore.NamingConventions.dll

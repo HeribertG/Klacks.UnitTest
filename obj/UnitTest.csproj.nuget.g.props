@@ -537,7 +537,6 @@
     <Import Project="$(NuGetPackageRoot)microsoft.entityframeworkcore.design\10.0.0\build\net10.0\Microsoft.EntityFrameworkCore.Design.props" Condition="Exists('$(NuGetPackageRoot)microsoft.entityframeworkcore.design\10.0.0\build\net10.0\Microsoft.EntityFrameworkCore.Design.props')" />
   </ImportGroup>
   <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
-    <PkgMicrosoft_Extensions_ApiDescription_Server Condition=" '$(PkgMicrosoft_Extensions_ApiDescription_Server)' == '' ">C:\Users\hgasp\.nuget\packages\microsoft.extensions.apidescription.server\6.0.5</PkgMicrosoft_Extensions_ApiDescription_Server>
     <PkgStyleCop_Analyzers Condition=" '$(PkgStyleCop_Analyzers)' == '' ">C:\Users\hgasp\.nuget\packages\stylecop.analyzers\1.1.118</PkgStyleCop_Analyzers>
     <PkgMicrosoft_VsSDK_CompatibilityAnalyzer Condition=" '$(PkgMicrosoft_VsSDK_CompatibilityAnalyzer)' == '' ">C:\Users\hgasp\.nuget\packages\microsoft.vssdk.compatibilityanalyzer\17.14.2094</PkgMicrosoft_VsSDK_CompatibilityAnalyzer>
     <PkgMicrosoft_VisualStudio_SDK_Analyzers Condition=" '$(PkgMicrosoft_VisualStudio_SDK_Analyzers)' == '' ">C:\Users\hgasp\.nuget\packages\microsoft.visualstudio.sdk.analyzers\17.7.79</PkgMicrosoft_VisualStudio_SDK_Analyzers>
