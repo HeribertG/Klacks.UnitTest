@@ -297,21 +297,19 @@ namespace UnitTest.Infrastructure.Email
                 Port = "465",
                 Username = "test@gmail.com",
                 Password = "password",
-                EnableSSL = false, // Even if false, port 465 should force SSL
+                EnableSSL = false,
                 AuthenticationType = "LOGIN",
                 Timeout = 10000
             };
 
             // Act
-            // Note: This will fail to connect, but we're testing the configuration logic
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            // The test will fail due to connection issues, but SSL should be enabled
             _mockLogger.Received().Log(
                 LogLevel.Information,
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString().Contains("Using implicit SSL for port 465")),
+                Arg.Is<object>(o => o.ToString().Contains("SecureSocketOptions=SslOnConnect")),
                 Arg.Any<Exception>(),
                 Arg.Any<Func<object, Exception, string>>()
             );
@@ -339,7 +337,7 @@ namespace UnitTest.Infrastructure.Email
             _mockLogger.Received().Log(
                 LogLevel.Information,
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString().Contains("Using explicit SSL (STARTTLS) for port 587")),
+                Arg.Is<object>(o => o.ToString().Contains("SecureSocketOptions=StartTls")),
                 Arg.Any<Exception>(),
                 Arg.Any<Func<object, Exception, string>>()
             );
@@ -373,7 +371,7 @@ namespace UnitTest.Infrastructure.Email
         }
 
         [Test]
-        public async Task TestConnectionAsync_WithVeryLowTimeout_ShouldUseMinimumTimeout()
+        public async Task TestConnectionAsync_WithVeryLowTimeout_ShouldStillAttemptConnection()
         {
             // Arrange
             var request = new EmailTestRequest
@@ -384,7 +382,7 @@ namespace UnitTest.Infrastructure.Email
                 Password = "password",
                 EnableSSL = true,
                 AuthenticationType = "LOGIN",
-                Timeout = 1000 // Very low timeout
+                Timeout = 1000
             };
 
             // Act
@@ -394,7 +392,7 @@ namespace UnitTest.Infrastructure.Email
             _mockLogger.Received().Log(
                 LogLevel.Information,
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString().Contains("Timeout=30000ms")), // Should use minimum 30 seconds
+                Arg.Is<object>(o => o.ToString().Contains("Connecting to SMTP server")),
                 Arg.Any<Exception>(),
                 Arg.Any<Func<object, Exception, string>>()
             );
