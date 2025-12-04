@@ -35,3 +35,4 @@
 *.pdb
 *.tmp
 /obj/Debug/net10.0/UnitTest.csproj.AssemblyReference.cache
+/obj/Debug/net10.0/UnitTest.csproj.CoreCompileInputs.cache
