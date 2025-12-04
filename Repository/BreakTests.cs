@@ -12,7 +12,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Presentation.DTOs.Settings;
-using MediatR;
+using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;

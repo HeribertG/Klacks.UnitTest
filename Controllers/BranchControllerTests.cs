@@ -3,7 +3,7 @@ using Klacks.Api.Application.Commands.Settings.Branch;
 using Klacks.Api.Application.Queries.Settings.Branch;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Presentation.Controllers.v1.UserBackend;
-using MediatR;
+using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;

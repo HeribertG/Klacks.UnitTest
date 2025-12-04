@@ -4,7 +4,7 @@ using Klacks.Api.Application.Queries;
 using Klacks.Api.Presentation.Controllers.v1.UserBackend;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Presentation.DTOs.Schedules;
-using MediatR;
+using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;

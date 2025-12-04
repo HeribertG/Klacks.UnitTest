@@ -9,7 +9,7 @@ using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Groups;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Presentation.DTOs.Filter;
-using MediatR;
+using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;

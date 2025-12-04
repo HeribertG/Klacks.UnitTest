@@ -4,7 +4,7 @@ using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Clients;
 using NSubstitute;
-using MediatR;
+using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.Logging;
 
 namespace UnitTest.Queries.Clients;

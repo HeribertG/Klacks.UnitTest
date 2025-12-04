@@ -13,8 +13,6 @@
 		<PackageReference Include="AutoMapper" Version="14.0.0" />
 		<PackageReference Include="AutoMapper.Collection" Version="11.0.0" />
 		<PackageReference Include="FluentAssertions" Version="8.3.0" />
-		<PackageReference Include="MediatR" Version="13.1.0" />
-		<PackageReference Include="MediatR.Extensions.FluentValidation.AspNetCore" Version="6.0.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
 		<PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2094">

@@ -433,9 +433,6 @@ C:\SourceCode\UnitTest\bin\Debug\net10.0\itext.sign.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\itext.styledxmlparser.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\itext.svg.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\iTextSharp.LGPLv2.Core.dll
-C:\SourceCode\UnitTest\bin\Debug\net10.0\MediatR.dll
-C:\SourceCode\UnitTest\bin\Debug\net10.0\MediatR.Contracts.dll
-C:\SourceCode\UnitTest\bin\Debug\net10.0\MediatR.Extensions.FluentValidation.AspNetCore.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.ApplicationInsights.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\Microsoft.AspNetCore.Identity.EntityFrameworkCore.dll

@@ -4,7 +4,7 @@ using FluentAssertions;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Presentation.Controllers.v1.UserBackend;
 using Klacks.Api.Presentation.DTOs.Settings;
-using MediatR;
+using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
