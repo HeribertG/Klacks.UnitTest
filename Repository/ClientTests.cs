@@ -1,8 +1,8 @@
-using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Infrastructure.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;
 using NSubstitute;
@@ -18,7 +18,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
-using Klacks.Api.Application.AutoMapper;
 
 
 namespace UnitTest.Repository;
@@ -29,7 +28,8 @@ internal class ClientTests
     public IHttpContextAccessor _httpContextAccessor = null!;
     public TruncatedClient _truncatedClient = null!;
     public DataBaseContext dbContext = null!;
-    private IMapper _mapper = null!;
+    private ClientMapper _clientMapper = null!;
+    private FilterMapper _filterMapper = null!;
     private IClientGroupFilterService _clientGroupFilterService = null!;
 
     [TestCase("ag", "", "", 12)]
@@ -125,13 +125,13 @@ internal class ClientTests
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
             clientFilterService, membershipFilterService, searchService, sortingService);
 
-        var mappedFilter = _mapper.Map<Klacks.Api.Domain.Models.Filters.ClientFilter>(filter);
+        var mappedFilter = _filterMapper.ToClientFilter(filter);
         var selectedStates = mappedFilter.FilteredStateToken?.Where(x => x.Select).Select(x => x.State).ToList();
 
 
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -178,7 +178,7 @@ internal class ClientTests
             clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -231,7 +231,7 @@ internal class ClientTests
             clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -375,12 +375,8 @@ internal class ClientTests
     [SetUp]
     public void Setup()
     {
-        var config = new MapperConfiguration(cfg =>
-        {
-            cfg.AddMaps(typeof(Klacks.Api.Application.AutoMapper.ClientMappingProfile).Assembly);
-        });
-
-        _mapper = config.CreateMapper();
+        _clientMapper = new ClientMapper();
+        _filterMapper = new FilterMapper();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
 

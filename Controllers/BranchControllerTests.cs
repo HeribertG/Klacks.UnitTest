@@ -225,15 +225,15 @@ public class BranchControllerTests
         // Arrange
         var branchId = Guid.NewGuid();
 
-        mockMediator.Send(Arg.Any<DeleteCommand>())
-            .Returns(Task.CompletedTask);
+        mockMediator.Send(Arg.Any<IRequest<Unit>>(), Arg.Any<CancellationToken>())
+            .Returns(Unit.Value);
 
         // Act
         var result = await controller.DeleteBranch(branchId);
 
         // Assert
         result.Should().BeOfType<NoContentResult>();
-        await mockMediator.Received(1).Send(Arg.Any<DeleteCommand>());
+        await mockMediator.Received(1).Send(Arg.Any<IRequest<Unit>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

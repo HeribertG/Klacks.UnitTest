@@ -1,8 +1,8 @@
-using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Breaks;
 using Klacks.Api.Infrastructure.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;
 using NSubstitute;
@@ -17,7 +17,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
-using UnitTest.Helper;
 
 namespace UnitTest.Repository;
 
@@ -26,7 +25,9 @@ internal class BreakTests
 {
     private IHttpContextAccessor _httpContextAccessor = null!;
     private DataBaseContext dbContext = null!;
-    private IMapper _mapper = null!;
+    private ScheduleMapper _scheduleMapper = null!;
+    private FilterMapper _filterMapper = null!;
+    private ClientMapper _clientMapper = null!;
     private IMediator _mediator = null!;
     private IGetAllClientIdsFromGroupAndSubgroups _groupClient = null!;
     private IGroupVisibilityService _groupVisibility = null!;
@@ -59,7 +60,7 @@ internal class BreakTests
         var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
-        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
+        var handler = new GetListQueryHandler(breakRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
 
         // Act
         var (result, totalCount) = await handler.Handle(query, default);
@@ -111,7 +112,7 @@ internal class BreakTests
         var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
-        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
+        var handler = new GetListQueryHandler(breakRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
 
         // Act
         var (result, totalCount) = await handler.Handle(query, default);
@@ -150,7 +151,7 @@ internal class BreakTests
         var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
-        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
+        var handler = new GetListQueryHandler(breakRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
 
         // Act
         var (result, totalCount) = await handler.Handle(query, default);
@@ -189,7 +190,7 @@ internal class BreakTests
         var breakRepository = new ClientBreakRepository(dbContext, groupFilterService, searchFilterService);
         var query = new Klacks.Api.Application.Queries.Breaks.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
-        var handler = new GetListQueryHandler(breakRepository, _mapper, logger);
+        var handler = new GetListQueryHandler(breakRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -207,7 +208,9 @@ internal class BreakTests
     [SetUp]
     public void Setup()
     {
-        _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
+        _scheduleMapper = new ScheduleMapper();
+        _filterMapper = new FilterMapper();
+        _clientMapper = new ClientMapper();
         _mediator = Substitute.For<IMediator>();
         _groupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _groupClient.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>())

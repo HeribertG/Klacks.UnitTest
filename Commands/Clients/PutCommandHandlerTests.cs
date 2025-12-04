@@ -1,10 +1,11 @@
-using AutoMapper;
 using FluentAssertions;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Presentation.DTOs.Staffs;
@@ -17,7 +18,7 @@ namespace UnitTest.Commands.Clients;
 public class PutCommandHandlerTests
 {
     private IClientRepository _clientRepository = null!;
-    private IMapper _mapper = null!;
+    private ClientMapper _mapper = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IGroupVisibilityService _groupVisibilityService = null!;
     private ILogger<PutCommandHandler> _logger = null!;
@@ -27,7 +28,7 @@ public class PutCommandHandlerTests
     public void Setup()
     {
         _clientRepository = Substitute.For<IClientRepository>();
-        _mapper = Substitute.For<IMapper>();
+        _mapper = new ClientMapper();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _groupVisibilityService = Substitute.For<IGroupVisibilityService>();
         _logger = Substitute.For<ILogger<PutCommandHandler>>();
@@ -44,23 +45,19 @@ public class PutCommandHandlerTests
     [Test]
     public async Task Handle_AdminUser_CanModifyClientContracts()
     {
+        // Arrange
         var clientId = Guid.NewGuid();
-        var existingClient = new Client
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.ClientContracts = new List<ClientContract>
         {
-            Id = clientId,
-            Name = "Test Client",
-            ClientContracts = new List<ClientContract>
+            new ClientContract
             {
-                new ClientContract
-                {
-                    Id = Guid.NewGuid(),
-                    ContractId = Guid.NewGuid(),
-                    IsActive = true,
-                    FromDate = new DateOnly(2024, 1, 1),
-                    UntilDate = null
-                }
-            },
-            GroupItems = new List<GroupItem>()
+                Id = Guid.NewGuid(),
+                ContractId = Guid.NewGuid(),
+                IsActive = true,
+                FromDate = new DateOnly(2024, 1, 1),
+                UntilDate = null
+            }
         };
 
         var updatedResource = new ClientResource
@@ -83,9 +80,7 @@ public class PutCommandHandlerTests
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
         _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
-        _mapper.Map<Client>(updatedResource).Returns(existingClient);
         _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult(existingClient));
-        _mapper.Map<ClientResource>(existingClient).Returns(updatedResource);
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -154,22 +149,18 @@ public class PutCommandHandlerTests
     [Test]
     public async Task Handle_AdminUser_CanModifyGroupItems()
     {
+        // Arrange
         var clientId = Guid.NewGuid();
         var groupId = Guid.NewGuid();
-        var existingClient = new Client
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.GroupItems = new List<GroupItem>
         {
-            Id = clientId,
-            Name = "Test Client",
-            ClientContracts = new List<ClientContract>(),
-            GroupItems = new List<GroupItem>
+            new GroupItem
             {
-                new GroupItem
-                {
-                    GroupId = groupId,
-                    ClientId = clientId,
-                    ValidFrom = new DateTime(2024, 1, 1),
-                    ValidUntil = null
-                }
+                GroupId = groupId,
+                ClientId = clientId,
+                ValidFrom = new DateTime(2024, 1, 1),
+                ValidUntil = null
             }
         };
 
@@ -192,9 +183,7 @@ public class PutCommandHandlerTests
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
         _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
-        _mapper.Map<Client>(updatedResource).Returns(existingClient);
         _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult(existingClient));
-        _mapper.Map<ClientResource>(existingClient).Returns(updatedResource);
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -261,34 +250,31 @@ public class PutCommandHandlerTests
     [Test]
     public async Task Handle_NonAdminUser_CanModifyOtherFields()
     {
+        // Arrange
         var clientId = Guid.NewGuid();
         var contractId = Guid.NewGuid();
         var groupId = Guid.NewGuid();
-        var existingClient = new Client
+        var existingClient = CreateTestClient(clientId, "Old Name");
+        existingClient.FirstName = "Old FirstName";
+        existingClient.ClientContracts = new List<ClientContract>
         {
-            Id = clientId,
-            Name = "Old Name",
-            FirstName = "Old FirstName",
-            ClientContracts = new List<ClientContract>
+            new ClientContract
             {
-                new ClientContract
-                {
-                    Id = contractId,
-                    ContractId = Guid.NewGuid(),
-                    IsActive = true,
-                    FromDate = new DateOnly(2024, 1, 1),
-                    UntilDate = null
-                }
-            },
-            GroupItems = new List<GroupItem>
+                Id = contractId,
+                ContractId = Guid.NewGuid(),
+                IsActive = true,
+                FromDate = new DateOnly(2024, 1, 1),
+                UntilDate = null
+            }
+        };
+        existingClient.GroupItems = new List<GroupItem>
+        {
+            new GroupItem
             {
-                new GroupItem
-                {
-                    GroupId = groupId,
-                    ClientId = clientId,
-                    ValidFrom = new DateTime(2024, 1, 1),
-                    ValidUntil = null
-                }
+                GroupId = groupId,
+                ClientId = clientId,
+                ValidFrom = new DateTime(2024, 1, 1),
+                ValidUntil = null
             }
         };
 
@@ -322,9 +308,7 @@ public class PutCommandHandlerTests
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
         _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
-        _mapper.Map<Client>(updatedResource).Returns(existingClient);
         _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult(existingClient));
-        _mapper.Map<ClientResource>(existingClient).Returns(updatedResource);
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -485,5 +469,20 @@ public class PutCommandHandlerTests
         await act.Should().ThrowAsync<KeyNotFoundException>();
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+    }
+
+    private static Client CreateTestClient(Guid clientId, string name)
+    {
+        return new Client
+        {
+            Id = clientId,
+            Name = name,
+            Addresses = new List<Address>(),
+            Communications = new List<Communication>(),
+            Annotations = new List<Annotation>(),
+            Works = new List<Work>(),
+            ClientContracts = new List<ClientContract>(),
+            GroupItems = new List<GroupItem>()
+        };
     }
 }

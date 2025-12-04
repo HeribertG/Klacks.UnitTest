@@ -1,8 +1,8 @@
-using AutoMapper;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.CalendarSelections;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.CalendarSelections;
 using Klacks.Api.Domain.Services.CalendarSelections;
@@ -12,7 +12,6 @@ using Klacks.Api.Presentation.DTOs.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using UnitTest.Helper;
 
 namespace UnitTest.Repository;
 
@@ -27,8 +26,8 @@ internal class CalendarSelectionTest
     private ILogger<CalendarSelection> _calendarSelectionLogger = null!;
     private ILogger<SelectedCalendar> _selectedCalendarLogger = null!;
     private ILogger<CalendarSelectionUpdateService> _updateServiceLogger = null!;
-    
-    private IMapper _mapper = null!;
+
+    private ScheduleMapper _mapper = null!;
 
     [Test]
     public async Task AddAndReReadCalendarSelection_Ok()
@@ -118,7 +117,7 @@ internal class CalendarSelectionTest
     [SetUp]
     public void Setup()
     {
-        _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
+        _mapper = new ScheduleMapper();
         _logger = Substitute.For<ILogger<PostCommandHandler>>();
         _logger2 = Substitute.For<ILogger<PutCommandHandler>>();
         _logger3 = Substitute.For<ILogger<DeleteCommandHandler>>();

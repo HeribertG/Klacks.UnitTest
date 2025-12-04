@@ -1,6 +1,6 @@
-using AutoMapper;
 using FluentAssertions;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
@@ -14,7 +14,7 @@ namespace UnitTest.Services.Shifts;
 public class ShiftResetServiceTests
 {
     private IShiftRepository _shiftRepository = null!;
-    private IMapper _mapper = null!;
+    private ScheduleMapper _scheduleMapper = null!;
     private ILogger<ShiftResetService> _logger = null!;
     private ShiftResetService _service = null!;
 
@@ -22,12 +22,12 @@ public class ShiftResetServiceTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
-        _mapper = Substitute.For<IMapper>();
+        _scheduleMapper = new ScheduleMapper();
         _logger = Substitute.For<ILogger<ShiftResetService>>();
 
         _service = new ShiftResetService(
             _shiftRepository,
-            _mapper,
+            _scheduleMapper,
             _logger
         );
     }
@@ -49,17 +49,6 @@ public class ShiftResetServiceTests
             EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
             GroupItems = new List<GroupItem>()
         };
-
-        var mappedShift = new Shift
-        {
-            Name = sealedOrder.Name,
-            StartShift = sealedOrder.StartShift,
-            EndShift = sealedOrder.EndShift,
-            UntilDate = sealedOrder.UntilDate,
-            GroupItems = new List<GroupItem>()
-        };
-
-        _mapper.Map<Shift>(sealedOrder).Returns(mappedShift);
 
         // Act
         var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
@@ -93,14 +82,6 @@ public class ShiftResetServiceTests
             GroupItems = new List<GroupItem>()
         };
 
-        var mappedShift = new Shift
-        {
-            Name = sealedOrder.Name,
-            GroupItems = new List<GroupItem>()
-        };
-
-        _mapper.Map<Shift>(sealedOrder).Returns(mappedShift);
-
         // Act
         var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
 
@@ -129,14 +110,6 @@ public class ShiftResetServiceTests
             UntilDate = new DateOnly(2025, 12, 31),
             GroupItems = new List<GroupItem> { groupItem }
         };
-
-        var mappedShift = new Shift
-        {
-            Name = sealedOrder.Name,
-            GroupItems = new List<GroupItem> { groupItem }
-        };
-
-        _mapper.Map<Shift>(sealedOrder).Returns(mappedShift);
 
         // Act
         var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);

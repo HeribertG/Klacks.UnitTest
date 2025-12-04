@@ -1,17 +1,17 @@
-using AutoMapper;
-using Klacks.Api.Application.AutoMapper;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Clients;
 using NSubstitute;
 using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.Logging;
+using Klacks.Api.Application.Mappers;
 
 namespace UnitTest.Queries.Clients;
 
 internal class GetTruncatedListQueryTests
 {
-    private IMapper _mapper = null!;
+    private ClientMapper _clientMapper = null!;
+    private FilterMapper _filterMapper = null!;
     private IMediator _mediator = null!;
 
     [Test]
@@ -42,7 +42,7 @@ internal class GetTruncatedListQueryTests
             .Returns(Task.FromResult(lastChangeMetaData));
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(clientFilterRepositoryMock, clientRepositoryMock, _mapper, logger);
+        var handler = new GetTruncatedListQueryHandler(clientFilterRepositoryMock, clientRepositoryMock, _clientMapper, _filterMapper, logger);
 
         //Act
         var result = await handler.Handle(query, default);
@@ -54,12 +54,8 @@ internal class GetTruncatedListQueryTests
     [SetUp]
     public void Setup()
     {
-        var config = new MapperConfiguration(cfg =>
-        {
-            cfg.AddMaps(typeof(ClientMappingProfile).Assembly);
-        });
-
-        _mapper = config.CreateMapper();
+        _clientMapper = new ClientMapper();
+        _filterMapper = new FilterMapper();
         _mediator = Substitute.For<IMediator>();
     }
 }

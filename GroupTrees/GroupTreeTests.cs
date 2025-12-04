@@ -1,9 +1,9 @@
-﻿using AutoMapper;
-using Klacks.Api.Application.Commands;
+﻿using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Commands.Groups;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Groups;
@@ -26,7 +26,7 @@ public class GroupTreeTests
     private DataBaseContext _dbContext = null!;
     private MockGroupRepository _groupRepository = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
-    private IMapper _mapper = null!;
+    private GroupMapper _mapper = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<MockUnitOfWork> _unitOfWorkLogger = null!;
     private IMediator _mediator = null!;
@@ -65,15 +65,7 @@ public class GroupTreeTests
         _groupRepository = new MockGroupRepository(_dbContext);
         _unitOfWork = new MockUnitOfWork(_dbContext, _unitOfWorkLogger);
 
-        var mapperConfig = new MapperConfiguration(cfg =>
-        {
-            cfg.CreateMap<Group, GroupResource>().ReverseMap();
-            cfg.CreateMap<GroupResource, Group>();
-            cfg.CreateMap<GroupItemResource, GroupItem>().ReverseMap();
-
-            cfg.CreateMap<TruncatedGroup, TruncatedGroupResource>();
-        });
-        _mapper = mapperConfig.CreateMapper();
+        _mapper = new GroupMapper();
 
         _mediator = Substitute.For<IMediator>();
 

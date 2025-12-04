@@ -713,3 +713,4 @@ C:\SourceCode\UnitTest\obj\Debug\net10.0\UnitTest.genruntimeconfig.cache
 C:\SourceCode\UnitTest\obj\Debug\net10.0\ref\UnitTest.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\MailKit.dll
 C:\SourceCode\UnitTest\bin\Debug\net10.0\MimeKit.dll
+C:\SourceCode\UnitTest\bin\Debug\net10.0\Riok.Mapperly.Abstractions.dll

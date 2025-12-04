@@ -1,8 +1,8 @@
-using AutoMapper;
 using FluentAssertions;
 using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
@@ -17,7 +17,7 @@ public class PostResetCutsCommandHandlerTests
 {
     private IShiftRepository _shiftRepository = null!;
     private IShiftResetService _shiftResetService = null!;
-    private IMapper _mapper = null!;
+    private ScheduleMapper _mapper = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<PostResetCutsCommandHandler> _logger = null!;
     private PostResetCutsCommandHandler _handler = null!;
@@ -27,7 +27,7 @@ public class PostResetCutsCommandHandlerTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _shiftResetService = Substitute.For<IShiftResetService>();
-        _mapper = Substitute.For<IMapper>();
+        _mapper = new ScheduleMapper();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<PostResetCutsCommandHandler>>();
 
@@ -94,7 +94,6 @@ public class PostResetCutsCommandHandlerTests
         _shiftResetService.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate)
             .Returns(Task.FromResult(newOriginalShift));
         _shiftRepository.CutList(originalId).Returns(Task.FromResult(updatedShifts));
-        _mapper.Map<ShiftResource>(Arg.Any<Shift>()).Returns(x => new ShiftResource { Id = ((Shift)x[0]).Id });
 
         var command = new PostResetCutsCommand(originalId, newStartDate);
 
@@ -203,7 +202,6 @@ public class PostResetCutsCommandHandlerTests
         _shiftResetService.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate)
             .Returns(Task.FromResult(newOriginalShift));
         _shiftRepository.CutList(originalId).Returns(Task.FromResult(new List<Shift> { newOriginalShift }));
-        _mapper.Map<ShiftResource>(Arg.Any<Shift>()).Returns(x => new ShiftResource { Id = ((Shift)x[0]).Id });
 
         var command = new PostResetCutsCommand(originalId, newStartDate);
 
@@ -250,7 +248,6 @@ public class PostResetCutsCommandHandlerTests
         _shiftResetService.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate)
             .Returns(Task.FromResult(newOriginalShift));
         _shiftRepository.CutList(originalId).Returns(Task.FromResult(new List<Shift> { newOriginalShift }));
-        _mapper.Map<ShiftResource>(Arg.Any<Shift>()).Returns(x => new ShiftResource { Id = ((Shift)x[0]).Id });
 
         var command = new PostResetCutsCommand(originalId, newStartDate);
 

@@ -1,9 +1,9 @@
-using AutoMapper;
 using Klacks.Api.BasicScriptInterpreter;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Infrastructure.Interfaces;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Domain.Services.Groups;
@@ -19,7 +19,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using UnitTest.FakeData;
-using UnitTest.Helper;
 
 namespace UnitTest.Repository;
 
@@ -32,7 +31,9 @@ internal class GoupTests
     private ILogger<PostCommandHandler> _logger = null!;
     private ILogger<UnitOfWork> _unitOfWorkLogger = null!;
     private ILogger<Group> _groupLogger = null!;
-    private IMapper _mapper = null!;
+    private GroupMapper _groupMapper = null!;
+    private ClientMapper _clientMapper = null!;
+    private FilterMapper _filterMapper = null!;
     private IClientGroupFilterService _clientGroupFilterService = null!;
 
     [Test]
@@ -140,7 +141,7 @@ internal class GoupTests
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository, clientFilterRepository);
         var command = new PostCommand<GroupResource>(group);
-        var handler = new PostCommandHandler(groupRepository, _mapper, unitOfWork, _logger);
+        var handler = new PostCommandHandler(groupRepository, _groupMapper, unitOfWork, _logger);
 
         //Act
         var result = await handler.Handle(command, default);
@@ -158,7 +159,9 @@ internal class GoupTests
         _unitOfWorkLogger = Substitute.For<ILogger<UnitOfWork>>();
         _groupLogger = Substitute.For<ILogger<Group>>();
         _truncatedClient = FakeData.Clients.TruncatedClient();
-        _mapper = TestHelper.GetFullMapperConfiguration().CreateMapper();
+        _groupMapper = new GroupMapper();
+        _clientMapper = new ClientMapper();
+        _filterMapper = new FilterMapper();
 
         _clientGroupFilterService = Substitute.For<IClientGroupFilterService>();
         _clientGroupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
@@ -187,7 +190,7 @@ internal class GoupTests
         filter.Female = false;
         filter.LegalEntity = false;
         var logger = Substitute.For<ILogger<Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler>>();
-        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientFilterRepository, clientRepository, _mapper, logger);
+        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientFilterRepository, clientRepository, _clientMapper, _filterMapper, logger);
 
         var group = new GroupResource();
         group.Name = $"FakeName{index}";
