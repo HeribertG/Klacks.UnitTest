@@ -1,18 +1,12 @@
-using FluentAssertions;
-using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Domain.Models.Associations;
-using Klacks.Api.Domain.Models.Staffs;
+using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Presentation.DTOs.Filter;
-using Klacks.Api.Presentation.DTOs.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 
 namespace UnitTest.Repository;
 
@@ -22,7 +16,7 @@ public class ClientRepositoryRefactoredTests
     private DataBaseContext _context;
     private IClientRepository _clientRepository;
     private IClientFilterRepository _clientFilterRepository;
-    private IClientBreakRepository _clientBreakRepository;
+    private IClientBreakPlaceholderRepository _clientBreakPlaceholderRepository;
     private IClientWorkRepository _clientWorkRepository;
     private IClientSearchFilterService _mockSearchFilterService;
     private IMacroEngine _mockMacroEngine;
@@ -87,7 +81,7 @@ public class ClientRepositoryRefactoredTests
             _mockSearchService,
             _mockSortingService);
 
-        _clientBreakRepository = new ClientBreakRepository(
+        _clientBreakPlaceholderRepository = new ClientBreakPlaceholderRepository(
             _context,
             mockGroupFilterService,
             _mockSearchFilterService);
@@ -175,7 +169,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(testClients.Where(c => c.FirstName.Contains("Hans")));
 
         //Act
-        var result = await _clientBreakRepository.BreakList(filter);
+        var result = await _clientBreakPlaceholderRepository.BreakList(filter);
 
         //Assert
         result.Should().NotBeNull();
@@ -209,7 +203,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(Task.FromResult(new List<Guid>()));
         
         //Act
-        var result = await _clientBreakRepository.BreakList(filter);
+        var result = await _clientBreakPlaceholderRepository.BreakList(filter);
 
         //Assert
         result.Should().NotBeNull();
@@ -341,7 +335,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(Task.FromResult(new List<Guid>()));
         
         //Act
-        await _clientBreakRepository.BreakList(filter);
+        await _clientBreakPlaceholderRepository.BreakList(filter);
 
         //Assert
         _mockSearchFilterService.Received().ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>());
