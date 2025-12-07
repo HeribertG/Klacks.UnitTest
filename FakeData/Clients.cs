@@ -89,15 +89,15 @@ namespace UnitTest.FakeData
             return breakFilter;
         }
 
-        internal static List<Break> GenerateBreaks(List<Client> clients, List<Absence> absences, int year, int count)
+        internal static List<BreakPlaceholder> GenerateBreakPlaceholders(List<Client> clients, List<Absence> absences, int year, int count)
         {
-            List<Break> breaks = new List<Break>();
+            List<BreakPlaceholder> breakPlaceholders = new List<BreakPlaceholder>();
 
-            createBreaks(clients, breaks, absences, year - 1, count);
-            createBreaks(clients, breaks, absences, year, count);
-            createBreaks(clients, breaks, absences, year + 1, count);
+            createBreakPlaceholders(clients, breakPlaceholders, absences, year - 1, count);
+            createBreakPlaceholders(clients, breakPlaceholders, absences, year, count);
+            createBreakPlaceholders(clients, breakPlaceholders, absences, year + 1, count);
 
-            return breaks;
+            return breakPlaceholders;
         }
 
         internal static List<Client> GenerateClients(int count, int year, bool withIncludes)
@@ -179,7 +179,7 @@ namespace UnitTest.FakeData
             }).ToList();
         }
 
-        private static void createBreaks(List<Client> clients, List<Break> breaks, List<Absence> absences, int year, int count)
+        private static void createBreakPlaceholders(List<Client> clients, List<BreakPlaceholder> breakPlaceholders, List<Absence> absences, int year, int count)
         {
             Random rand = new Random();
 
@@ -189,23 +189,23 @@ namespace UnitTest.FakeData
             for (int i = 0; i < count; i++)
             {
                 var client = clients[i];
-                var absence = absences[rand.Next(absences.Count)]; // Zufällige Absences
+                var absence = absences[rand.Next(absences.Count)];
 
-                int range = (endOfYear - startOfYear).Days - absence.DefaultLength; // Um sicherzustellen, dass das Enddatum nicht über das ausgewählte Jahr hinausgeht
+                int range = (endOfYear - startOfYear).Days - absence.DefaultLength;
                 DateTime start = startOfYear.AddDays(rand.Next(range));
                 DateTime end = start.AddDays(absence.DefaultLength);
-                var breakEntry = new Break
+                var breakPlaceholderEntry = new BreakPlaceholder
                 {
                     Absence = absence,
                     AbsenceId = absence.Id,
                     Client = client,
                     ClientId = client.Id,
-                    Information = $"Break_{i}",
+                    Information = $"BreakPlaceholder_{i}",
                     From = start,
                     Until = end
                 };
 
-                breaks.Add(breakEntry);
+                breakPlaceholders.Add(breakPlaceholderEntry);
             }
         }
 
