@@ -40,7 +40,7 @@ public class PutCommandValidatorTests
     }
 
     [Test]
-    public async Task Validate_ShouldBeInvalid_WhenBreakIdIsEmpty()
+    public async Task Validate_ShouldBeInvalid_WhenBreakPlaceholderIdIsEmpty()
     {
         // Arrange
         var breakResource = new BreakResource
@@ -200,15 +200,15 @@ public class PutCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenClientDoesNotExist()
     {
         // Arrange
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         
-        await SeedExistingBreak(breakId, Guid.NewGuid(), absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, Guid.NewGuid(), absenceId);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = Guid.NewGuid(), // Different client (non-existent)
             AbsenceId = absenceId,
             From = DateTime.Now,
@@ -229,16 +229,16 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         
         await SeedClientWithoutMembership(clientId);
-        await SeedExistingBreak(breakId, clientId, absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = DateTime.Now,
@@ -259,17 +259,17 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now.AddDays(5);
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreak(breakId, clientId, absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(-1), // Before membership starts
@@ -290,18 +290,18 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var membershipValidUntil = DateTime.Now.AddDays(30);
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidUntil);
-        await SeedExistingBreak(breakId, clientId, absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidUntil.AddDays(-1),
@@ -322,15 +322,15 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreak(breakId, clientId, Guid.NewGuid());
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, Guid.NewGuid());
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = Guid.NewGuid(), // Non-existent absence
             From = membershipValidFrom.AddDays(1),
@@ -351,19 +351,19 @@ public class PutCommandValidatorTests
     {
         // Arrange - Überlappungen sind jetzt erlaubt
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
-        var otherBreakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
+        var otherBreakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreak(breakId, clientId, absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
         await SeedAbsence(absenceId);
         
         // Add another existing break that will overlap
         var otherBreak = new BreakPlaceholder
         {
-            Id = otherBreakId,
+            Id = otherBreakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
@@ -374,7 +374,7 @@ public class PutCommandValidatorTests
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(7), // Overlaps with other break - jetzt erlaubt
@@ -395,17 +395,17 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreak(breakId, clientId, absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
@@ -426,17 +426,17 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         
         await SeedClientWithMembership(clientId, membershipValidFrom, null); // No ValidUntil
-        await SeedExistingBreak(breakId, clientId, absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
@@ -457,19 +457,19 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var breakFrom = membershipValidFrom.AddDays(5);
         var breakUntil = membershipValidFrom.AddDays(10);
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreakWithDates(breakId, clientId, absenceId, breakFrom, breakUntil);
+        await SeedExistingBreakPlaceholderWithDates(breakPlaceholderId, clientId, absenceId, breakFrom, breakUntil);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = breakFrom, // Same dates as existing break
@@ -490,18 +490,18 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakId = Guid.NewGuid();
+        var breakPlaceholderId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var breakDate = membershipValidFrom.AddDays(5);
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreak(breakId, clientId, absenceId);
+        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
         await SeedAbsence(absenceId);
 
         var breakResource = new BreakResource
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = breakDate,
@@ -563,11 +563,11 @@ public class PutCommandValidatorTests
         await _context.SaveChangesAsync();
     }
 
-    private async Task SeedExistingBreak(Guid breakId, Guid clientId, Guid absenceId)
+    private async Task SeedExistingBreakPlaceholder(Guid breakPlaceholderId, Guid clientId, Guid absenceId)
     {
         var existingBreak = new BreakPlaceholder
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = DateTime.Now.AddDays(1),
@@ -578,11 +578,11 @@ public class PutCommandValidatorTests
         await _context.SaveChangesAsync();
     }
 
-    private async Task SeedExistingBreakWithDates(Guid breakId, Guid clientId, Guid absenceId, DateTime from, DateTime until)
+    private async Task SeedExistingBreakPlaceholderWithDates(Guid breakPlaceholderId, Guid clientId, Guid absenceId, DateTime from, DateTime until)
     {
         var existingBreak = new BreakPlaceholder
         {
-            Id = breakId,
+            Id = breakPlaceholderId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = from,
