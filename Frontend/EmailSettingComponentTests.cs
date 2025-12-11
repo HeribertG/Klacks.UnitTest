@@ -277,10 +277,15 @@ namespace UnitTest.Frontend
         private class EmailFormData
         {
             public string OutgoingServer { get; set; }
+
             public string OutgoingServerPort { get; set; }
+
             public string EnabledSSL { get; set; }
+
             public string AuthenticationType { get; set; }
+
             public string OutgoingServerUsername { get; set; }
+
             public string OutgoingServerPassword { get; set; }
         }
 

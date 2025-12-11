@@ -1,12 +1,6 @@
-using System;
-using System.Net.Mail;
-using System.Threading.Tasks;
-using FluentAssertions;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Presentation.DTOs.Settings;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
-using NUnit.Framework;
 
 namespace UnitTest.Infrastructure.Email
 {
