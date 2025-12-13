@@ -1,38 +1,28 @@
-﻿################################################################################
-# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
-################################################################################
+# Build results
+bin/
+obj/
 
-/obj/Debug/net8.0/UnitTest.AssemblyInfoInputs.cache
-/obj/Debug/net8.0/UnitTest.AssemblyInfo.cs
-/obj/Debug/net9.0/UnitTest.AssemblyInfo.cs
-/obj/Debug/net9.0/UnitTest.AssemblyInfoInputs.cache
-/obj/Debug/net9.0/UnitTest.csproj.AssemblyReference.cache
-/obj/project.assets.json
-/obj/project.nuget.cache
-/obj/UnitTest.csproj.nuget.dgspec.json
-/obj/Debug/net9.0/ref/UnitTest.dll
-/obj/Debug/net9.0/refint/UnitTest.dll
-/obj/Debug/net9.0/UnitTest.csproj.CoreCompileInputs.cache
-/obj/Debug/net9.0/UnitTest.dll
-/obj/Debug/net9.0/UnitTest.pdb
-/obj/Debug/net9.0/UnitTest.sourcelink.json
-/bin/Debug/net9.0/Klacks.Api.dll
-/bin/Debug/net9.0/Klacks.Api.exe
-/bin/Debug/net9.0/Klacks.Api.pdb
-/bin/Debug/net9.0/UnitTest.dll
-/bin/Debug/net9.0/UnitTest.pdb
-/bin/Debug/net9.0/nunit_random_seed.tmp
-/obj/Debug/net10.0/UnitTest.AssemblyInfoInputs.cache
-/obj/Debug/ne*.cache
-/bin/Debug/net10.0/Klacks.Api.dll
-/bin/Debug/net10.0/Klacks.Api.exe
-/obj/Debug/net10.0/ref/UnitTest.dll
-/obj/Debug/net10.0/refint/UnitTest.dll
-/obj/Debug/net10.0/UnitTest.dll
-/obj/Debug/net10.0/UnitTest.pdb
-/bin/Debug/net10.0/Klacks.Api.pdb
+# Build artifacts
 *.dll
 *.pdb
-*.tmp
-/obj/Debug/net10.0/UnitTest.csproj.AssemblyReference.cache
+*.exe
 *.cache
+*.tmp
+
+# NuGet
+*.nupkg
+*.snupkg
+project.lock.json
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Test results
+TestResults/
+*.trx
+nunit_random_seed.tmp
+
+# Source link
+*.sourcelink.json
