@@ -5,6 +5,7 @@ using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Services;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Application.Mappers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
@@ -45,7 +46,8 @@ public class ShiftRepositoryTests
         _mockShiftGroupManagementService = Substitute.For<IShiftGroupManagementService>();
         var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
-        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService, _mockShiftPaginationService, _mockShiftGroupManagementService, collectionUpdateService, mockShiftValidator);
+        var scheduleMapper = new ScheduleMapper();
+        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService, _mockShiftPaginationService, _mockShiftGroupManagementService, collectionUpdateService, mockShiftValidator, scheduleMapper);
     }
 
     [Test]

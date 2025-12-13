@@ -4,6 +4,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
+using Klacks.Api.Application.Mappers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -38,6 +39,7 @@ public class ShiftValidatorTests
         var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftValidator>();
 
+        var scheduleMapper = new ScheduleMapper();
         _shiftRepository = new ShiftRepository(
             _context,
             mockLogger,
@@ -48,7 +50,8 @@ public class ShiftValidatorTests
             mockShiftPaginationService,
             mockShiftGroupManagementService,
             collectionUpdateService,
-            mockShiftValidator);
+            mockShiftValidator,
+            scheduleMapper);
 
         _validator = new ShiftValidator();
     }

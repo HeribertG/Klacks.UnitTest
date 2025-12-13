@@ -5,6 +5,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.ContainerTemplates;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
+using Klacks.Api.Application.Mappers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -47,6 +48,7 @@ public class ContainerAvailableTasksServiceTests
         var mockShiftPaginationService = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftPaginationService>();
         var mockShiftGroupManagementService = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftGroupManagementService>();
 
+        var scheduleMapper = new ScheduleMapper();
         _shiftRepository = new ShiftRepository(
             _context,
             shiftLogger,
@@ -57,7 +59,8 @@ public class ContainerAvailableTasksServiceTests
             mockShiftPaginationService,
             mockShiftGroupManagementService,
             collectionUpdateService,
-            mockShiftValidator);
+            mockShiftValidator,
+            scheduleMapper);
 
         _groupItemRepository = new GroupItemRepository(_context, groupItemLogger);
 
