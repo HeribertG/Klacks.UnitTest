@@ -39,7 +39,6 @@ public class ShiftSearchServiceTests
 
     private void CreateTestData()
     {
-        // Create test clients first
         _testClients = new List<Client>
         {
             new Client
@@ -62,7 +61,6 @@ public class ShiftSearchServiceTests
 
         _context.Client.AddRange(_testClients);
 
-        // Create test shifts
         _testShifts = new List<Shift>
         {
             new Shift
@@ -113,7 +111,7 @@ public class ShiftSearchServiceTests
                 Name = "Weekend Shift",
                 Abbreviation = "WS",
                 Description = "Weekend work coverage",
-                ClientId = null, // No client assigned
+                ClientId = null,
                 Client = null,
                 StartShift = new TimeOnly(9, 0),
                 EndShift = new TimeOnly(17, 0),
@@ -124,9 +122,9 @@ public class ShiftSearchServiceTests
             new Shift
             {
                 Id = Guid.NewGuid(),
-                Name = "EmptyShift", // Name is required
+                Name = "EmptyShift",
                 Abbreviation = "NULL",
-                Description = "", // Test empty description handling
+                Description = "",
                 ClientId = null,
                 Client = null,
                 StartShift = new TimeOnly(10, 0),
@@ -204,14 +202,14 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.Include(s => s.Client).AsQueryable();
-        var searchString = "müller"; // Should find shifts assigned to client Müller
+        var searchString = "müller";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, true);
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2); // Morning and Night shifts are assigned to Müller
+        shifts.Should().HaveCount(2);
         shifts.Should().AllSatisfy(s => s.Client.Name.Should().Be("Müller"));
     }
 
@@ -220,7 +218,7 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.Include(s => s.Client).AsQueryable();
-        var searchString = "müller"; // Should not find anything when client search is disabled
+        var searchString = "müller";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, false);
@@ -235,14 +233,14 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.Include(s => s.Client).AsQueryable();
-        var searchString = "anna"; // Should find shifts assigned to client Anna
+        var searchString = "anna";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, true);
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1); // Evening shift is assigned to Anna
+        shifts.Should().HaveCount(1);
         shifts.First().Client.FirstName.Should().Be("Anna");
         shifts.First().Name.Should().Be("Evening Shift");
     }
@@ -252,14 +250,14 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.Include(s => s.Client).AsQueryable();
-        var searchString = "abc"; // Should find shifts assigned to client with ABC Corp
+        var searchString = "abc";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, true);
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2); // Morning and Night shifts are assigned to client with ABC Corp
+        shifts.Should().HaveCount(2);
         shifts.Should().AllSatisfy(s => s.Client.Company.Should().Contain("ABC"));
     }
 
@@ -268,14 +266,14 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.AsQueryable();
-        var searchString = "M"; // Should find shifts starting with M
+        var searchString = "M";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, false);
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1); // Only Morning Shift starts with M
+        shifts.Should().HaveCount(1);
         shifts.First().Name.Should().Be("Morning Shift");
     }
 
@@ -284,7 +282,7 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.AsQueryable();
-        var searchString = "E"; // Should find Evening Shift and EmptyShift
+        var searchString = "E";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, false);
@@ -297,48 +295,14 @@ public class ShiftSearchServiceTests
     }
 
     [Test]
-    public void ApplySearchFilter_WithMultipleKeywords_ShouldUseOrLogic()
+    public void ApplySearchFilter_WithMultipleKeywordsAndSpace_ShouldUseAndLogic()
     {
         // Arrange
         var query = _context.Shift.AsQueryable();
-        var searchString = "weekend shift"; // Should find all shifts with "weekend" OR "shift" (OR logic)
+        var searchString = "morning shift";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, false);
-        var shifts = result.ToList();
-
-        // Assert
-        shifts.Should().HaveCount(5); // All shifts contain "shift" + Weekend Shift contains "weekend"
-        shifts.Should().Contain(s => s.Name == "Weekend Shift");
-        shifts.Should().Contain(s => s.Name == "Morning Shift");
-        shifts.Should().Contain(s => s.Name == "Evening Shift");
-        shifts.Should().Contain(s => s.Name == "Night Shift");
-        shifts.Should().Contain(s => s.Name == "EmptyShift");
-    }
-
-    [Test]
-    public void ApplyKeywordSearch_WithEmptyKeywords_ShouldReturnOriginalQuery()
-    {
-        // Arrange
-        var query = _context.Shift.AsQueryable();
-        var keywords = new string[] { };
-
-        // Act
-        var result = _searchService.ApplyKeywordSearch(query, keywords, false);
-
-        // Assert
-        result.Should().BeEquivalentTo(query);
-    }
-
-    [Test]
-    public void ApplyKeywordSearch_WithWhitespaceKeywords_ShouldIgnoreThem()
-    {
-        // Arrange
-        var query = _context.Shift.AsQueryable();
-        var keywords = new[] { " ", "", "  ", "morning" };
-
-        // Act
-        var result = _searchService.ApplyKeywordSearch(query, keywords, false);
         var shifts = result.ToList();
 
         // Assert
@@ -347,14 +311,80 @@ public class ShiftSearchServiceTests
     }
 
     [Test]
-    public void ApplyKeywordSearch_WithDuplicateKeywords_ShouldRemoveDuplicates()
+    public void ApplySearchFilter_WithPlusOperator_ShouldUseOrLogic()
     {
         // Arrange
         var query = _context.Shift.AsQueryable();
-        var keywords = new[] { "morning", "MORNING", "Morning" };
+        var searchString = "morning+evening";
 
         // Act
-        var result = _searchService.ApplyKeywordSearch(query, keywords, false);
+        var result = _searchService.ApplySearchFilter(query, searchString, false);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(2);
+        shifts.Should().Contain(s => s.Name == "Morning Shift");
+        shifts.Should().Contain(s => s.Name == "Evening Shift");
+    }
+
+    [Test]
+    public void ApplySearchFilter_WithPlusOperator_MultipleTerms_ShouldUseOrLogic()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+        var searchString = "morning+evening+night";
+
+        // Act
+        var result = _searchService.ApplySearchFilter(query, searchString, false);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(3);
+        shifts.Should().Contain(s => s.Name == "Morning Shift");
+        shifts.Should().Contain(s => s.Name == "Evening Shift");
+        shifts.Should().Contain(s => s.Name == "Night Shift");
+    }
+
+    [Test]
+    public void ApplyExactSearch_WithEmptyKeywords_ShouldReturnNoResults()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+        var keywords = new string[] { };
+
+        // Act
+        var result = _searchService.ApplyExactSearch(query, keywords, false);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(0);
+    }
+
+    [Test]
+    public void ApplyExactSearch_WithWhitespaceKeywords_ShouldIgnoreThem()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+        var keywords = new[] { " ", "", "  ", "morning" };
+
+        // Act
+        var result = _searchService.ApplyExactSearch(query, keywords, false);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(1);
+        shifts.First().Name.Should().Be("Morning Shift");
+    }
+
+    [Test]
+    public void ApplyStandardSearch_WithMultipleKeywords_ShouldUseAndLogic()
+    {
+        // Arrange
+        var query = _context.Shift.AsQueryable();
+        var keywords = new[] { "morning", "shift" };
+
+        // Act
+        var result = _searchService.ApplyStandardSearch(query, keywords, false);
         var shifts = result.ToList();
 
         // Assert
@@ -367,14 +397,14 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.AsQueryable();
-        var symbol = "e"; // Should find EmptyShift and Evening Shift (both start with 'e')
+        var symbol = "e";
 
         // Act
         var result = _searchService.ApplyFirstSymbolSearch(query, symbol);
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2); // EmptyShift and Evening Shift both start with 'e'
+        shifts.Should().HaveCount(2);
         shifts.Should().Contain(s => s.Name == "EmptyShift");
         shifts.Should().Contain(s => s.Name == "Evening Shift");
     }
@@ -384,7 +414,7 @@ public class ShiftSearchServiceTests
     {
         // Arrange
         var query = _context.Shift.AsQueryable();
-        var searchString = "empty"; // Should find shift with EmptyShift name
+        var searchString = "empty";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, false);
@@ -393,51 +423,49 @@ public class ShiftSearchServiceTests
         // Assert
         shifts.Should().HaveCount(1);
         shifts.First().Name.Should().Be("EmptyShift");
-        shifts.First().Description.Should().Be(""); // Verify empty description handling
+        shifts.First().Description.Should().Be("");
     }
 
     [Test]
-    public void ApplySearchFilter_WithSpecificKeywords_ShouldFindExactMatches()
+    public void ApplySearchFilter_WithSpecificKeywords_AndLogic_ShouldFindExactMatches()
     {
         // Arrange
         var query = _context.Shift.AsQueryable();
-        var searchString = "morning evening"; // Should find shifts with "morning" OR "evening" (OR logic)
+        var searchString = "morning evening";
 
-        // Act  
+        // Act
         var result = _searchService.ApplySearchFilter(query, searchString, false);
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2);
-        shifts.Should().Contain(s => s.Name == "Morning Shift");
-        shifts.Should().Contain(s => s.Name == "Evening Shift");
+        shifts.Should().HaveCount(0);
     }
 
     [Test]
-    public void ApplyKeywordSearch_WithClientSearch_ShouldFindShiftsByClientAndShiftData()
+    public void ApplyExactSearch_WithClientSearch_ShouldFindShiftsByClientAndShiftData()
     {
         // Arrange
         var query = _context.Shift.Include(s => s.Client).AsQueryable();
-        var keywords = new[] { "morning" }; // Should find by shift name
+        var keywords = new[] { "morning" };
 
         // Act
-        var result1 = _searchService.ApplyKeywordSearch(query, keywords, false);
-        var result2 = _searchService.ApplyKeywordSearch(query, new[] { "hans" }, true); // Should find by client name
+        var result1 = _searchService.ApplyExactSearch(query, keywords, false);
+        var result2 = _searchService.ApplyExactSearch(query, new[] { "hans" }, true);
 
         // Assert
         result1.Should().HaveCount(1);
         result1.First().Name.Should().Be("Morning Shift");
-        
-        result2.Should().HaveCount(2); // Hans has 2 shifts
+
+        result2.Should().HaveCount(2);
         result2.Should().AllSatisfy(s => s.Client.FirstName.Should().Be("Hans"));
     }
 
     [Test]
-    public void ApplySearchFilter_WithComplexClientSearch_ShouldFindCorrectResults()
+    public void ApplySearchFilter_WithComplexClientSearch_AndLogic_ShouldFindCorrectResults()
     {
         // Arrange
         var query = _context.Shift.Include(s => s.Client).AsQueryable();
-        var searchString = "xyz anna"; // Should find shift with client Anna from XYZ
+        var searchString = "xyz anna";
 
         // Act
         var result = _searchService.ApplySearchFilter(query, searchString, true);
@@ -447,5 +475,20 @@ public class ShiftSearchServiceTests
         shifts.Should().HaveCount(1);
         shifts.First().Client.FirstName.Should().Be("Anna");
         shifts.First().Client.Company.Should().Contain("XYZ");
+    }
+
+    [Test]
+    public void ApplySearchFilter_WithComplexClientSearch_OrLogic_ShouldFindCorrectResults()
+    {
+        // Arrange
+        var query = _context.Shift.Include(s => s.Client).AsQueryable();
+        var searchString = "xyz+abc";
+
+        // Act
+        var result = _searchService.ApplySearchFilter(query, searchString, true);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Should().HaveCount(3);
     }
 }
