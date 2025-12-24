@@ -17,7 +17,7 @@ public class ClientRepositoryRefactoredTests
     private IClientRepository _clientRepository;
     private IClientFilterRepository _clientFilterRepository;
     private IClientBreakPlaceholderRepository _clientBreakPlaceholderRepository;
-    private IClientWorkRepository _clientWorkRepository;
+    private IWorkRepository _workRepository;
     private IClientSearchFilterService _mockSearchFilterService;
     private IMacroEngine _mockMacroEngine;
     private IGetAllClientIdsFromGroupAndSubgroups _mockGroupClient;
@@ -86,8 +86,10 @@ public class ClientRepositoryRefactoredTests
             mockGroupFilterService,
             _mockSearchFilterService);
 
-        _clientWorkRepository = new ClientWorkRepository(
+        var mockWorkLogger = Substitute.For<ILogger<Work>>();
+        _workRepository = new WorkRepository(
             _context,
+            mockWorkLogger,
             mockGroupFilterService,
             _mockSearchFilterService);
 
@@ -244,7 +246,7 @@ public class ClientRepositoryRefactoredTests
             .Returns(args => (IQueryable<Client>)args[0]);
 
         //Act
-        var result = await _clientWorkRepository.WorkList(filter);
+        var result = await _workRepository.WorkList(filter);
 
         //Assert
         result.Should().NotBeNull();
