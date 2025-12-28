@@ -23,6 +23,7 @@ public class WorkRepositorySortingTests
     private IWorkRepository _workRepository = null!;
     private IClientGroupFilterService _mockGroupFilterService = null!;
     private IClientSearchFilterService _mockSearchFilterService = null!;
+    private IWorkMacroService _mockWorkMacroService = null!;
 
     [SetUp]
     public async Task SetUp()
@@ -36,6 +37,7 @@ public class WorkRepositorySortingTests
 
         _mockGroupFilterService = Substitute.For<IClientGroupFilterService>();
         _mockSearchFilterService = Substitute.For<IClientSearchFilterService>();
+        _mockWorkMacroService = Substitute.For<IWorkMacroService>();
 
         _mockGroupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
@@ -48,7 +50,8 @@ public class WorkRepositorySortingTests
             _context,
             mockLogger,
             _mockGroupFilterService,
-            _mockSearchFilterService);
+            _mockSearchFilterService,
+            _mockWorkMacroService);
 
         await CreateTestDataWithContracts();
     }

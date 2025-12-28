@@ -30,6 +30,7 @@ public class ClientRepositoryRefactoredTests
     private IClientEntityManagementService _mockEntityManagementService;
     private IClientWorkFilterService _mockWorkFilterService;
     private IClientValidator _mockClientValidator;
+    private IWorkMacroService _mockWorkMacroService;
 
     [SetUp]
     public async Task SetUp()
@@ -87,11 +88,13 @@ public class ClientRepositoryRefactoredTests
             _mockSearchFilterService);
 
         var mockWorkLogger = Substitute.For<ILogger<Work>>();
+        _mockWorkMacroService = Substitute.For<IWorkMacroService>();
         _workRepository = new WorkRepository(
             _context,
             mockWorkLogger,
             mockGroupFilterService,
-            _mockSearchFilterService);
+            _mockSearchFilterService,
+            _mockWorkMacroService);
 
         await CreateTestData();
     }
