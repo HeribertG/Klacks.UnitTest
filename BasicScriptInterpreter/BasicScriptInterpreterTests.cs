@@ -1,4 +1,4 @@
-using Klacks.Api.BasicScriptInterpreter;
+using Klacks.Api.Infrastructure.Scripting;
 
 namespace UnitTest.BasicScriptInterpreter
 {

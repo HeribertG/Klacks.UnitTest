@@ -1,4 +1,4 @@
-using Klacks.Api.BasicScriptInterpreter;
+using Klacks.Api.Infrastructure.Scripting;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Infrastructure.Interfaces;
