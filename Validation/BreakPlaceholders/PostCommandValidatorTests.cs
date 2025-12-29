@@ -43,14 +43,14 @@ public class PostCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenClientIdIsEmpty()
     {
         // Arrange
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = Guid.Empty,
             AbsenceId = Guid.NewGuid(),
             From = DateTime.Now,
             Until = DateTime.Now.AddDays(1)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -64,14 +64,14 @@ public class PostCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenAbsenceIdIsEmpty()
     {
         // Arrange
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = Guid.NewGuid(),
             AbsenceId = Guid.Empty,
             From = DateTime.Now,
             Until = DateTime.Now.AddDays(1)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -85,14 +85,14 @@ public class PostCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenFromDateIsDefault()
     {
         // Arrange
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = Guid.NewGuid(),
             AbsenceId = Guid.NewGuid(),
             From = default,
             Until = DateTime.Now.AddDays(1)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -106,14 +106,14 @@ public class PostCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenUntilDateIsDefault()
     {
         // Arrange
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = Guid.NewGuid(),
             AbsenceId = Guid.NewGuid(),
             From = DateTime.Now,
             Until = default
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -127,14 +127,14 @@ public class PostCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenUntilDateIsBeforeFromDate()
     {
         // Arrange
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = Guid.NewGuid(),
             AbsenceId = Guid.NewGuid(),
             From = DateTime.Now.AddDays(1),
             Until = DateTime.Now
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -151,14 +151,14 @@ public class PostCommandValidatorTests
         var absenceId = Guid.NewGuid();
         await SeedAbsence(absenceId);
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = Guid.NewGuid(), // Non-existent client
             AbsenceId = absenceId,
             From = DateTime.Now,
             Until = DateTime.Now.AddDays(1)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -178,14 +178,14 @@ public class PostCommandValidatorTests
         await SeedClientWithoutMembership(clientId);
         await SeedAbsence(absenceId);
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = DateTime.Now,
             Until = DateTime.Now.AddDays(1)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -206,14 +206,14 @@ public class PostCommandValidatorTests
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
         await SeedAbsence(absenceId);
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(-1), // Before membership starts
             Until = membershipValidFrom.AddDays(1)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -235,14 +235,14 @@ public class PostCommandValidatorTests
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidUntil);
         await SeedAbsence(absenceId);
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidUntil.AddDays(-1),
             Until = membershipValidUntil.AddDays(1) // After membership ends
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -261,14 +261,14 @@ public class PostCommandValidatorTests
         
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = Guid.NewGuid(), // Non-existent absence
             From = membershipValidFrom.AddDays(1),
             Until = membershipValidFrom.AddDays(2)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -301,14 +301,14 @@ public class PostCommandValidatorTests
         _context.BreakPlaceholder.Add(existingBreak);
         await _context.SaveChangesAsync();
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(7), // Overlaps with existing break - jetzt erlaubt
             Until = membershipValidFrom.AddDays(12)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -329,14 +329,14 @@ public class PostCommandValidatorTests
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
         await SeedAbsence(absenceId);
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
             Until = membershipValidFrom.AddDays(10)
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -357,14 +357,14 @@ public class PostCommandValidatorTests
         await SeedClientWithMembership(clientId, membershipValidFrom, null); // No ValidUntil
         await SeedAbsence(absenceId);
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
             Until = membershipValidFrom.AddDays(100) // Far in the future
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);
@@ -386,14 +386,14 @@ public class PostCommandValidatorTests
         await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
         await SeedAbsence(absenceId);
 
-        var breakResource = new BreakResource
+        var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = breakDate,
             Until = breakDate // Same date - should be valid for single day break
         };
-        var command = new PostCommand<BreakResource>(breakResource);
+        var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
         // Act
         var result = await _validator.ValidateAsync(command);

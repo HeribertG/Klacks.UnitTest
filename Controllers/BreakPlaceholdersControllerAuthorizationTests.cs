@@ -81,7 +81,7 @@ public class BreakPlaceholdersControllerAuthorizationTests
             .GetMethod("Post", BindingFlags.Public | BindingFlags.Instance);
 
         var baseMethod = typeof(InputBaseController<>)
-            .MakeGenericType(typeof(Klacks.Api.Presentation.DTOs.Schedules.BreakResource))
+            .MakeGenericType(typeof(Klacks.Api.Presentation.DTOs.Schedules.BreakPlaceholderResource))
             .GetMethod("Post", BindingFlags.Public | BindingFlags.Instance);
 
         // Act & Assert
@@ -103,7 +103,7 @@ public class BreakPlaceholdersControllerAuthorizationTests
             .GetMethod("Put", BindingFlags.Public | BindingFlags.Instance);
 
         var baseMethod = typeof(InputBaseController<>)
-            .MakeGenericType(typeof(Klacks.Api.Presentation.DTOs.Schedules.BreakResource))
+            .MakeGenericType(typeof(Klacks.Api.Presentation.DTOs.Schedules.BreakPlaceholderResource))
             .GetMethod("Put", BindingFlags.Public | BindingFlags.Instance);
 
         // Act & Assert
@@ -125,7 +125,7 @@ public class BreakPlaceholdersControllerAuthorizationTests
             .GetMethod("Delete", BindingFlags.Public | BindingFlags.Instance);
 
         var baseMethod = typeof(InputBaseController<>)
-            .MakeGenericType(typeof(Klacks.Api.Presentation.DTOs.Schedules.BreakResource))
+            .MakeGenericType(typeof(Klacks.Api.Presentation.DTOs.Schedules.BreakPlaceholderResource))
             .GetMethod("Delete", BindingFlags.Public | BindingFlags.Instance);
 
         // Act & Assert
