@@ -222,9 +222,9 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().HaveCount(3);
-        result.Should().OnlyContain(c => c.Type == EntityTypeEnum.Employee);
-        result.Should().NotContain(c => c.FirstName == "Charlie");
+        result.Clients.Should().HaveCount(3);
+        result.Clients.Should().OnlyContain(c => c.Type == EntityTypeEnum.Employee);
+        result.Clients.Should().NotContain(c => c.FirstName == "Charlie");
     }
 
     [Test]
@@ -248,9 +248,9 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().HaveCount(1);
-        result.Should().OnlyContain(c => c.Type == EntityTypeEnum.ExternEmp);
-        result[0].FirstName.Should().Be("Charlie");
+        result.Clients.Should().HaveCount(1);
+        result.Clients.Should().OnlyContain(c => c.Type == EntityTypeEnum.ExternEmp);
+        result.Clients[0].FirstName.Should().Be("Charlie");
     }
 
     [Test]
@@ -274,7 +274,7 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().BeEmpty();
+        result.Clients.Should().BeEmpty();
     }
 
     [Test]
@@ -298,11 +298,11 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().HaveCount(4);
-        result[0].Name.Should().Be("Anderson");
-        result[1].Name.Should().Be("Brown");
-        result[2].Name.Should().Be("Clark");
-        result[3].Name.Should().Be("Davis");
+        result.Clients.Should().HaveCount(4);
+        result.Clients[0].Name.Should().Be("Anderson");
+        result.Clients[1].Name.Should().Be("Brown");
+        result.Clients[2].Name.Should().Be("Clark");
+        result.Clients[3].Name.Should().Be("Davis");
     }
 
     [Test]
@@ -326,11 +326,11 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().HaveCount(4);
-        result[0].Name.Should().Be("Davis");
-        result[1].Name.Should().Be("Clark");
-        result[2].Name.Should().Be("Brown");
-        result[3].Name.Should().Be("Anderson");
+        result.Clients.Should().HaveCount(4);
+        result.Clients[0].Name.Should().Be("Davis");
+        result.Clients[1].Name.Should().Be("Clark");
+        result.Clients[2].Name.Should().Be("Brown");
+        result.Clients[3].Name.Should().Be("Anderson");
     }
 
     [Test]
@@ -355,11 +355,11 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().HaveCount(4);
-        result[0].Name.Should().Be("Anderson");
-        result[1].Name.Should().Be("Brown");
-        result[2].Name.Should().Be("Clark");
-        result[3].Name.Should().Be("Davis");
+        result.Clients.Should().HaveCount(4);
+        result.Clients[0].Name.Should().Be("Anderson");
+        result.Clients[1].Name.Should().Be("Brown");
+        result.Clients[2].Name.Should().Be("Clark");
+        result.Clients[3].Name.Should().Be("Davis");
     }
 
     [Test]
@@ -384,11 +384,11 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().HaveCount(4);
-        result[0].Name.Should().Be("Anderson");
-        result[1].Name.Should().Be("Brown");
-        result[2].Name.Should().Be("Clark");
-        result[3].Name.Should().Be("Davis");
+        result.Clients.Should().HaveCount(4);
+        result.Clients[0].Name.Should().Be("Anderson");
+        result.Clients[1].Name.Should().Be("Brown");
+        result.Clients[2].Name.Should().Be("Clark");
+        result.Clients[3].Name.Should().Be("Davis");
     }
 
     [Test]
@@ -412,11 +412,11 @@ public class WorkRepositorySortingTests
         var result = await _workRepository.WorkList(filter);
 
         // Assert
-        result.Should().HaveCount(4);
-        result[0].FirstName.Should().Be("Alice");
-        result[1].FirstName.Should().Be("Bob");
-        result[2].FirstName.Should().Be("Charlie");
-        result[3].FirstName.Should().Be("Diana");
+        result.Clients.Should().HaveCount(4);
+        result.Clients[0].FirstName.Should().Be("Alice");
+        result.Clients[1].FirstName.Should().Be("Bob");
+        result.Clients[2].FirstName.Should().Be("Charlie");
+        result.Clients[3].FirstName.Should().Be("Diana");
     }
 
     [Test]
@@ -455,9 +455,9 @@ public class WorkRepositorySortingTests
         var resultWithoutHours = await _workRepository.WorkList(filterWithoutHours);
 
         // Assert
-        resultWithHours.Should().HaveCount(4);
-        resultWithoutHours.Should().HaveCount(4);
-        resultWithHours[0].FirstName.Should().Be("Diana");
-        resultWithoutHours[0].FirstName.Should().Be("Diana");
+        resultWithHours.Clients.Should().HaveCount(4);
+        resultWithoutHours.Clients.Should().HaveCount(4);
+        resultWithHours.Clients[0].FirstName.Should().Be("Diana");
+        resultWithoutHours.Clients[0].FirstName.Should().Be("Diana");
     }
 }
