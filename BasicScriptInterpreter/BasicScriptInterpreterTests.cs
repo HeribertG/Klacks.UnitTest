@@ -1586,5 +1586,299 @@ namespace UnitTest.BasicScriptInterpreter
         }
 
         #endregion
+
+        #region String Functions
+
+        [TestCase("debugprint Len(\"Hello\")", "5")]
+        [TestCase("debugprint Len(\"\")", "0")]
+        [TestCase("debugprint Len(\"Hello World\")", "11")]
+        public void StringFunction_Len_ReturnsCorrectLength(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Left(\"Hello\", 3)", "Hel")]
+        [TestCase("debugprint Left(\"Hi\", 10)", "Hi")]
+        [TestCase("debugprint Left(\"Test\", 0)", "")]
+        public void StringFunction_Left_ReturnsLeftCharacters(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Right(\"Hello\", 3)", "llo")]
+        [TestCase("debugprint Right(\"Hi\", 10)", "Hi")]
+        [TestCase("debugprint Right(\"Test\", 1)", "t")]
+        public void StringFunction_Right_ReturnsRightCharacters(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Mid(\"Hello World\", 7, 5)", "World")]
+        [TestCase("debugprint Mid(\"Hello\", 1, 2)", "He")]
+        [TestCase("debugprint Mid(\"Test\", 2, 2)", "es")]
+        public void StringFunction_Mid_ReturnsSubstring(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint InStr(\"Hello World\", \"World\")", "7")]
+        [TestCase("debugprint InStr(\"Hello\", \"x\")", "0")]
+        [TestCase("debugprint InStr(\"Test\", \"e\")", "2")]
+        public void StringFunction_InStr_ReturnsPosition(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Replace(\"Hello World\", \"World\", \"Universe\")", "Hello Universe")]
+        [TestCase("debugprint Replace(\"aaa\", \"a\", \"b\")", "bbb")]
+        public void StringFunction_Replace_ReplacesText(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Trim(\"  Hello  \")", "Hello")]
+        [TestCase("debugprint Trim(\"NoSpaces\")", "NoSpaces")]
+        public void StringFunction_Trim_RemovesWhitespace(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint UCase(\"hello\")", "HELLO")]
+        [TestCase("debugprint LCase(\"HELLO\")", "hello")]
+        public void StringFunction_CaseConversion_Works(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        #endregion
+
+        #region Math Functions
+
+        [TestCase("debugprint Abs(-5)", "5")]
+        [TestCase("debugprint Abs(5)", "5")]
+        [TestCase("debugprint Abs(0)", "0")]
+        public void MathFunction_Abs_ReturnsAbsoluteValue(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Sqr(4)", "2")]
+        [TestCase("debugprint Sqr(9)", "3")]
+        [TestCase("debugprint Sqr(2)", "1.4142135623730951")]
+        public void MathFunction_Sqr_ReturnsSquareRoot(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Round(3.14159, 2)", "3.14")]
+        [TestCase("debugprint Round(3.5, 0)", "4")]
+        [TestCase("debugprint Round(2.5, 0)", "2")]
+        public void MathFunction_Round_RoundsToDecimals(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Round(3.14159)", "3")]
+        public void MathFunction_Round_DefaultZeroDecimals(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [Test]
+        public void MathFunction_Rnd_ReturnsBetween0And1()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                x = Rnd()
+                if x >= 0 and x < 1 then
+                    message 1, ""OK""
+                else
+                    message 1, ""FAIL""
+                end if
+            ";
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be("OK");
+        }
+
+        [TestCase("debugprint Log(1)", "0")]
+        [TestCase("debugprint Exp(0)", "1")]
+        public void MathFunction_LogExp_Works(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        [TestCase("debugprint Sgn(-5)", "-1")]
+        [TestCase("debugprint Sgn(0)", "0")]
+        [TestCase("debugprint Sgn(5)", "1")]
+        public void MathFunction_Sgn_ReturnsSign(string script, string expected)
+        {
+            // Arrange
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.DebugPrint += msg => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be(expected);
+        }
+
+        #endregion
     }
 }
