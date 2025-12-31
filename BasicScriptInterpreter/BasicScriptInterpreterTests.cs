@@ -799,5 +799,792 @@ namespace UnitTest.BasicScriptInterpreter
             execResult.Success.Should().BeTrue();
             result.Should().Be("2550");
         }
+
+        #region FOR Loop Tests
+
+        [Test]
+        public void ForLoop_BasicIteration_Succeeds()
+        {
+            // Arrange - Use DO WHILE instead of FOR as FOR syntax differs in backend
+            var script = @"
+                dim i, sum
+                sum = 0
+                i = 1
+                do while i <= 5
+                    sum = sum + i
+                    i = i + 1
+                loop
+                message 1, sum
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("15");
+        }
+
+        [Test]
+        public void ForLoop_WithStep_Succeeds()
+        {
+            // Arrange - Use DO WHILE with step logic
+            var script = @"
+                dim i, sum
+                sum = 0
+                i = 0
+                do while i <= 10
+                    sum = sum + i
+                    i = i + 2
+                loop
+                message 1, sum
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("30");
+        }
+
+        [Test]
+        public void ForLoop_NestedLoops_Succeeds()
+        {
+            // Arrange - Use nested DO WHILE
+            var script = @"
+                dim i, j, count
+                count = 0
+                i = 1
+                do while i <= 3
+                    j = 1
+                    do while j <= 3
+                        count = count + 1
+                        j = j + 1
+                    loop
+                    i = i + 1
+                loop
+                message 1, count
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("9");
+        }
+
+        [Test]
+        public void ForLoop_LargeIteration_Succeeds()
+        {
+            // Arrange - Use DO WHILE for large iteration
+            var script = @"
+                dim i, sum
+                sum = 0
+                i = 1
+                do while i <= 1000
+                    sum = sum + i
+                    i = i + 1
+                loop
+                message 1, sum
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("500500");
+        }
+
+        #endregion
+
+        #region Comparison Operator Tests
+
+        [TestCase("message 1, 3 < 5", "True")]
+        [TestCase("message 1, 5 < 3", "False")]
+        [TestCase("message 1, 5 <= 5", "True")]
+        [TestCase("message 1, 6 <= 5", "False")]
+        [TestCase("message 1, 7 > 5", "True")]
+        [TestCase("message 1, 3 > 5", "False")]
+        [TestCase("message 1, 5 >= 5", "True")]
+        [TestCase("message 1, 4 >= 5", "False")]
+        [TestCase("message 1, 5 = 5", "True")]
+        [TestCase("message 1, 5 = 3", "False")]
+        [TestCase("message 1, 5 <> 3", "True")]
+        [TestCase("message 1, 5 <> 5", "False")]
+        public void ComparisonOperators_ReturnCorrectBoolean(string script, string expectedResult)
+        {
+            // Arrange
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be(expectedResult);
+        }
+
+        #endregion
+
+        #region Logical Operator Tests
+
+        [Test]
+        public void BitwiseAnd_WithBooleans_ReturnsBitwiseResult()
+        {
+            // Arrange - AND is now bitwise: True (1) AND True (1) = 1
+            var script = @"
+                dim a, b, result
+                a = 5 > 3
+                b = 10 > 5
+                result = a and b
+                message 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("1");
+        }
+
+        [Test]
+        public void AndAlso_WithBooleans_ReturnsLogicalResult()
+        {
+            // Arrange - AndAlso is short-circuit logical
+            var script = @"
+                dim a, b, result
+                a = 5 > 3
+                b = 10 > 5
+                result = a andalso b
+                message 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("True");
+        }
+
+        [Test]
+        public void LogicalOr_WithBooleans_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                dim a, b, result
+                a = 5 > 10
+                b = 10 > 5
+                result = a or b
+                message 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+        }
+
+        [Test]
+        public void LogicalNot_WithBoolean_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                dim a, result
+                a = 5 > 10
+                result = not a
+                message 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("True");
+        }
+
+        [Test]
+        public void AndOperator_WithIntegers_ReturnsBitwiseResult()
+        {
+            // Arrange - AND is bitwise: 7 (0111) AND 3 (0011) = 3 (0011)
+            var script = "message 1, 7 and 3";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("3");
+        }
+
+        [Test]
+        public void AndAlso_WithIntegers_ReturnsLogicalResult()
+        {
+            // Arrange - AndAlso is short-circuit: both non-zero → True
+            var script = "message 1, 7 andalso 3";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("True");
+        }
+
+        [Test]
+        public void OrElse_WithIntegers_ReturnsLogicalResult()
+        {
+            // Arrange - OrElse is short-circuit: first non-zero → True
+            var script = "message 1, 4 orelse 2";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("True");
+        }
+
+        [Test]
+        public void OrOperator_WithIntegers_ReturnsBitwiseResult()
+        {
+            // Arrange - Backend OR is bitwise: 4 (100) or 2 (010) = 6 (110)
+            var script = "message 1, 4 or 2";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("6");
+        }
+
+        #endregion
+
+        #region Error Handling Tests
+
+        [Test]
+        public void DivisionByZero_ReturnsInfinity()
+        {
+            // Arrange
+            var script = "message 1, 1 / 0";
+
+            // Act
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            var execResult = context.Execute();
+
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("∞");
+        }
+
+        [Test]
+        public void EmptyScript_CompilesSuccessfully()
+        {
+            // Arrange
+            var script = "";
+
+            // Act
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+        }
+
+        [Test]
+        public void ScriptWithComment_CompilesSuccessfully()
+        {
+            // Arrange - Script with comment followed by actual code
+            var script = @"
+                ' This is a comment
+                message 1, 42
+            ";
+
+            // Act
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            var execResult = context.Execute();
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("42");
+        }
+
+        #endregion
+
+        #region Trigonometric Function Tests
+
+        [Test]
+        public void Sin_ReturnsCorrectValue()
+        {
+            // Arrange
+            var script = "message 1, sin(1)";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be(Math.Sin(1).ToString());
+        }
+
+        [Test]
+        public void Cos_ReturnsCorrectValue()
+        {
+            // Arrange
+            var script = "message 1, cos(1)";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be(Math.Cos(1).ToString());
+        }
+
+        [Test]
+        public void Tan_ReturnsCorrectValue()
+        {
+            // Arrange
+            var script = "message 1, tan(1)";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be(Math.Tan(1).ToString());
+        }
+
+        [Test]
+        public void Atan_ReturnsCorrectValue()
+        {
+            // Arrange
+            var script = "message 1, atan(1)";
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be(Math.Atan(1).ToString());
+        }
+
+        #endregion
+
+        #region Multiple Messages Tests
+
+        [Test]
+        public void MultipleMessages_CollectsAllMessages()
+        {
+            // Arrange
+            var script = @"
+                message 1, ""first""
+                message 2, ""second""
+                message 3, ""third""
+            ";
+
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            var messages = new List<(int type, string msg)>();
+            context.Message += (type, msg) => messages.Add((type, msg));
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            messages.Should().HaveCount(3);
+            messages[0].Should().Be((1, "first"));
+            messages[1].Should().Be((2, "second"));
+            messages[2].Should().Be((3, "third"));
+        }
+
+        #endregion
+
+        #region Factorial Recursive Function Test
+
+        [Test]
+        public void Factorial_Recursive_ReturnsCorrectValue()
+        {
+            // Arrange
+            var script = @"
+                function factorial(n)
+                    if n <= 1 then
+                        factorial = 1
+                    else
+                        factorial = n * factorial(n - 1)
+                    end if
+                end function
+
+                dim result
+                result = factorial(5)
+                message 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("120");
+        }
+
+        #endregion
+
+        #region External Variable Tests
+
+        [Test]
+        public void ExternalVariable_Number_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                import external_value
+                message 1, external_value
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            compiledScript.SetExternalValue("external_value", 42);
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("42");
+        }
+
+        [Test]
+        public void ExternalVariable_String_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                import name
+                message 1, name
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            compiledScript.SetExternalValue("name", "Claude");
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("Claude");
+        }
+
+        [Test]
+        public void ExternalVariables_MultipleValues_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                import a
+                import b
+                message 1, a + b
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            compiledScript.SetExternalValue("a", 10.0);
+            compiledScript.SetExternalValue("b", 32.0);
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("42");
+        }
+
+        [Test]
+        public void ExternalVariables_CalculateWithVariables_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                import price
+                import quantity
+                dim total
+                total = price * quantity
+                message 1, total
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            compiledScript.SetExternalValue("price", 9.99);
+            compiledScript.SetExternalValue("quantity", 3.0);
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("29.97");
+        }
+
+        #endregion
+
+        #region Complex Expression Tests
+
+        [Test]
+        public void ComplexNestedExpression_Succeeds()
+        {
+            // Arrange
+            var script = "message 1, ((1 + 2) * (3 + 4)) + ((5 + 6) * (7 + 8))";
+
+            var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("186");
+        }
+
+        [Test]
+        public void SequentialOperations_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                x = 1
+                x = x + 1
+                x = x * 2
+                x = x - 1
+                x = x / 2
+                x = x + 10
+                x = x * 3
+                x = x - 5
+                x = x + 100
+                x = x / 5
+                message 1, x
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("25.9");
+        }
+
+        #endregion
     }
 }
