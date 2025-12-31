@@ -1880,5 +1880,178 @@ namespace UnitTest.BasicScriptInterpreter
         }
 
         #endregion
+
+        #region Select Case
+
+        [Test]
+        public void SelectCase_MatchesFirstCase()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                x = 1
+                Select Case x
+                    Case 1
+                        message 1, ""first""
+                    Case 2
+                        message 1, ""second""
+                End Select
+            ";
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be("first");
+        }
+
+        [Test]
+        public void SelectCase_MatchesSecondCase()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                x = 2
+                Select Case x
+                    Case 1
+                        message 1, ""first""
+                    Case 2
+                        message 1, ""second""
+                End Select
+            ";
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be("second");
+        }
+
+        [Test]
+        public void SelectCase_CaseElse_Works()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                x = 99
+                Select Case x
+                    Case 1
+                        message 1, ""first""
+                    Case 2
+                        message 1, ""second""
+                    Case Else
+                        message 1, ""other""
+                End Select
+            ";
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be("other");
+        }
+
+        [Test]
+        public void SelectCase_MultipleValuesInCase_Works()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                x = 3
+                Select Case x
+                    Case 1, 2, 3
+                        message 1, ""low""
+                    Case 4, 5, 6
+                        message 1, ""high""
+                End Select
+            ";
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be("low");
+        }
+
+        [Test]
+        public void SelectCase_StringComparison_Works()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                x = ""B""
+                Select Case x
+                    Case ""A""
+                        message 1, ""letter A""
+                    Case ""B""
+                        message 1, ""letter B""
+                    Case Else
+                        message 1, ""other""
+                End Select
+            ";
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be("letter B");
+        }
+
+        [Test]
+        public void SelectCase_NoMatch_NoElse_NoOutput()
+        {
+            // Arrange
+            var script = @"
+                dim x
+                dim result
+                x = 99
+                result = ""none""
+                Select Case x
+                    Case 1
+                        result = ""first""
+                    Case 2
+                        result = ""second""
+                End Select
+                message 1, result
+            ";
+            var compiled = CompiledScript.Compile(script);
+            compiled.HasError.Should().BeFalse();
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            context.Execute();
+
+            // Assert
+            result.Should().Be("none");
+        }
+
+        #endregion
     }
 }
