@@ -5,29 +5,29 @@ namespace UnitTest.BasicScriptInterpreter
     internal class BasicScriptInterpreterTests
     {
         [TestCase("debugprint 10/9", "1.1111111111111112")]
-        [TestCase("message 1, 10/9", "1.1111111111111112")]
+        [TestCase("output 1, 10/9", "1.1111111111111112")]
         [TestCase("debugprint 10\\9", "1")]
-        [TestCase("message 1, 10\\9", "1")]
+        [TestCase("output 1, 10\\9", "1")]
         [TestCase("debugprint 10 mod 3", "1")]
-        [TestCase("message 1, 10 mod 3", "1")]
+        [TestCase("output 1, 10 mod 3", "1")]
         [TestCase("debugprint 10 ^ 3", "1000")]
-        [TestCase("message 1, 10 ^ 3", "1000")]
+        [TestCase("output 1, 10 ^ 3", "1000")]
         [TestCase("debugprint -1 * -1 ", "1")]
-        [TestCase("message 1, -1 * -1 ", "1")]
+        [TestCase("output 1, -1 * -1 ", "1")]
         [TestCase("debugprint 1 * -1 ", "-1")]
-        [TestCase("message 1, 1 * -1 ", "-1")]
+        [TestCase("output 1, 1 * -1 ", "-1")]
         [TestCase("debugprint 0 * 1 ", "0")]
-        [TestCase("message 1, 0 * 1 ", "0")]
+        [TestCase("output 1, 0 * 1 ", "0")]
         [TestCase("debugprint 0 / 1 ", "0")]
-        [TestCase("message 1, 0 / 1 ", "0")]
+        [TestCase("output 1, 0 / 1 ", "0")]
         [TestCase("debugprint 1 / 0 ", "∞")]
-        [TestCase("message 1, 1 / 0 ", "∞")]
+        [TestCase("output 1, 1 / 0 ", "∞")]
         [TestCase("debugprint 2  + 3 * 4 ", "14")]
-        [TestCase("message 1, 2  + 3 * 4 ", "14")]
+        [TestCase("output 1, 2  + 3 * 4 ", "14")]
         [TestCase("debugprint (2  + 3) * 4 ", "20")]
-        [TestCase("message 1, (2  + 3) * 4 ", "20")]
+        [TestCase("output 1, (2  + 3) * 4 ", "20")]
         [TestCase("dim x\n\nx = 10\nx += 5\nx *= 3\nx -=10\nx /= 2.5\n\nx &= \" cm\"\n\n debugprint x ", "14 cm")]
-        [TestCase("dim x\n\nx = 10\nx += 5\nx *= 3\nx -=10\nx /= 2.5\n\nx &= \" cm\"\n\n message 1, x", "14 cm")]
+        [TestCase("dim x\n\nx = 10\nx += 5\nx *= 3\nx -=10\nx /= 2.5\n\nx &= \" cm\"\n\n output 1, x", "14 cm")]
         public void Interpreter_Ok(string script, string expectedResult)
         {
             // Arrange
@@ -82,7 +82,7 @@ namespace UnitTest.BasicScriptInterpreter
                 Import rabatt
                 dim ergebnis
                 ergebnis = betrag * (1 - rabatt / 100)
-                message 1, ergebnis
+                output 1, ergebnis
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -125,7 +125,7 @@ namespace UnitTest.BasicScriptInterpreter
                     dim x
                     x = i * 2
                 next
-                message 1, ""done""
+                output 1, ""done""
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -183,7 +183,7 @@ namespace UnitTest.BasicScriptInterpreter
                     i = i + 1
                     sum = sum + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -217,7 +217,7 @@ namespace UnitTest.BasicScriptInterpreter
                     loop
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -245,7 +245,7 @@ namespace UnitTest.BasicScriptInterpreter
                 do while i < 1000
                     i = i + 1
                 loop
-                message 1, i
+                output 1, i
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -273,7 +273,7 @@ namespace UnitTest.BasicScriptInterpreter
                 do
                     i = i + 1
                 loop until i >= 1000
-                message 1, i
+                output 1, i
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -311,7 +311,7 @@ namespace UnitTest.BasicScriptInterpreter
                     loop
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -344,7 +344,7 @@ namespace UnitTest.BasicScriptInterpreter
 
                 dim result
                 result = countdown(100)
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -377,7 +377,7 @@ namespace UnitTest.BasicScriptInterpreter
                     b = temp
                     i = i + 1
                 loop
-                message 1, a
+                output 1, a
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -407,7 +407,7 @@ namespace UnitTest.BasicScriptInterpreter
                     result = result + i * 2 - i / 2 + i mod 7
                     i = i + 1
                 loop
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -442,8 +442,8 @@ namespace UnitTest.BasicScriptInterpreter
                     end if
                     i = i + 1
                 loop
-                message 1, evenCount
-                message 2, oddCount
+                output 1, evenCount
+                output 2, oddCount
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -483,7 +483,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + double(i)
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -509,7 +509,7 @@ namespace UnitTest.BasicScriptInterpreter
                 import x
                 dim result
                 result = x * x
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -542,7 +542,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + 1
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -576,7 +576,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + i
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -612,7 +612,7 @@ namespace UnitTest.BasicScriptInterpreter
                     result = result + (i * 2 + 3) / (i + 1) - i mod 3
                     i = i + 1
                 loop
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -642,7 +642,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + sin(i) + cos(i)
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -672,7 +672,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + 2 ^ i
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -702,7 +702,7 @@ namespace UnitTest.BasicScriptInterpreter
                     s = s & ""x""
                     i = i + 1
                 loop
-                message 1, s
+                output 1, s
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -744,7 +744,7 @@ namespace UnitTest.BasicScriptInterpreter
                     end if
                     i = i + 1
                 loop
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -782,7 +782,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = add(sum, multiply(i, 2))
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -814,7 +814,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + i
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -846,7 +846,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + i
                     i = i + 2
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -882,7 +882,7 @@ namespace UnitTest.BasicScriptInterpreter
                     loop
                     i = i + 1
                 loop
-                message 1, count
+                output 1, count
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -914,7 +914,7 @@ namespace UnitTest.BasicScriptInterpreter
                     sum = sum + i
                     i = i + 1
                 loop
-                message 1, sum
+                output 1, sum
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -938,18 +938,18 @@ namespace UnitTest.BasicScriptInterpreter
 
         #region Comparison Operator Tests
 
-        [TestCase("message 1, 3 < 5", "True")]
-        [TestCase("message 1, 5 < 3", "False")]
-        [TestCase("message 1, 5 <= 5", "True")]
-        [TestCase("message 1, 6 <= 5", "False")]
-        [TestCase("message 1, 7 > 5", "True")]
-        [TestCase("message 1, 3 > 5", "False")]
-        [TestCase("message 1, 5 >= 5", "True")]
-        [TestCase("message 1, 4 >= 5", "False")]
-        [TestCase("message 1, 5 = 5", "True")]
-        [TestCase("message 1, 5 = 3", "False")]
-        [TestCase("message 1, 5 <> 3", "True")]
-        [TestCase("message 1, 5 <> 5", "False")]
+        [TestCase("output 1, 3 < 5", "True")]
+        [TestCase("output 1, 5 < 3", "False")]
+        [TestCase("output 1, 5 <= 5", "True")]
+        [TestCase("output 1, 6 <= 5", "False")]
+        [TestCase("output 1, 7 > 5", "True")]
+        [TestCase("output 1, 3 > 5", "False")]
+        [TestCase("output 1, 5 >= 5", "True")]
+        [TestCase("output 1, 4 >= 5", "False")]
+        [TestCase("output 1, 5 = 5", "True")]
+        [TestCase("output 1, 5 = 3", "False")]
+        [TestCase("output 1, 5 <> 3", "True")]
+        [TestCase("output 1, 5 <> 5", "False")]
         public void ComparisonOperators_ReturnCorrectBoolean(string script, string expectedResult)
         {
             // Arrange
@@ -983,7 +983,7 @@ namespace UnitTest.BasicScriptInterpreter
                 a = 5 > 3
                 b = 10 > 5
                 result = a and b
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1012,7 +1012,7 @@ namespace UnitTest.BasicScriptInterpreter
                 a = 5 > 3
                 b = 10 > 5
                 result = a andalso b
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1041,7 +1041,7 @@ namespace UnitTest.BasicScriptInterpreter
                 a = 5 > 10
                 b = 10 > 5
                 result = a or b
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1068,7 +1068,7 @@ namespace UnitTest.BasicScriptInterpreter
                 dim a, result
                 a = 5 > 10
                 result = not a
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1092,7 +1092,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void AndOperator_WithIntegers_ReturnsBitwiseResult()
         {
             // Arrange - AND is bitwise: 7 (0111) AND 3 (0011) = 3 (0011)
-            var script = "message 1, 7 and 3";
+            var script = "output 1, 7 and 3";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1114,7 +1114,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void AndAlso_WithIntegers_ReturnsLogicalResult()
         {
             // Arrange - AndAlso is short-circuit: both non-zero → True
-            var script = "message 1, 7 andalso 3";
+            var script = "output 1, 7 andalso 3";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1136,7 +1136,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void OrElse_WithIntegers_ReturnsLogicalResult()
         {
             // Arrange - OrElse is short-circuit: first non-zero → True
-            var script = "message 1, 4 orelse 2";
+            var script = "output 1, 4 orelse 2";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1158,7 +1158,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void OrOperator_WithIntegers_ReturnsBitwiseResult()
         {
             // Arrange - Backend OR is bitwise: 4 (100) or 2 (010) = 6 (110)
-            var script = "message 1, 4 or 2";
+            var script = "output 1, 4 or 2";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1184,7 +1184,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void DivisionByZero_ReturnsInfinity()
         {
             // Arrange
-            var script = "message 1, 1 / 0";
+            var script = "output 1, 1 / 0";
 
             // Act
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
@@ -1221,7 +1221,7 @@ namespace UnitTest.BasicScriptInterpreter
             // Arrange - Script with comment followed by actual code
             var script = @"
                 ' This is a comment
-                message 1, 42
+                output 1, 42
             ";
 
             // Act
@@ -1247,7 +1247,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void Sin_ReturnsCorrectValue()
         {
             // Arrange
-            var script = "message 1, sin(1)";
+            var script = "output 1, sin(1)";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1269,7 +1269,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void Cos_ReturnsCorrectValue()
         {
             // Arrange
-            var script = "message 1, cos(1)";
+            var script = "output 1, cos(1)";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1291,7 +1291,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void Tan_ReturnsCorrectValue()
         {
             // Arrange
-            var script = "message 1, tan(1)";
+            var script = "output 1, tan(1)";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1313,7 +1313,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void Atan_ReturnsCorrectValue()
         {
             // Arrange
-            var script = "message 1, atan(1)";
+            var script = "output 1, atan(1)";
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
@@ -1340,9 +1340,9 @@ namespace UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var script = @"
-                message 1, ""first""
-                message 2, ""second""
-                message 3, ""third""
+                output 1, ""first""
+                output 2, ""second""
+                output 3, ""third""
             ";
 
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
@@ -1384,7 +1384,7 @@ namespace UnitTest.BasicScriptInterpreter
 
                 dim result
                 result = factorial(5)
-                message 1, result
+                output 1, result
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1414,7 +1414,7 @@ namespace UnitTest.BasicScriptInterpreter
             // Arrange
             var script = @"
                 import external_value
-                message 1, external_value
+                output 1, external_value
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1441,7 +1441,7 @@ namespace UnitTest.BasicScriptInterpreter
             // Arrange
             var script = @"
                 import name
-                message 1, name
+                output 1, name
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1469,7 +1469,7 @@ namespace UnitTest.BasicScriptInterpreter
             var script = @"
                 import a
                 import b
-                message 1, a + b
+                output 1, a + b
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1500,7 +1500,7 @@ namespace UnitTest.BasicScriptInterpreter
                 import quantity
                 dim total
                 total = price * quantity
-                message 1, total
+                output 1, total
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1530,7 +1530,7 @@ namespace UnitTest.BasicScriptInterpreter
         public void ComplexNestedExpression_Succeeds()
         {
             // Arrange
-            var script = "message 1, ((1 + 2) * (3 + 4)) + ((5 + 6) * (7 + 8))";
+            var script = "output 1, ((1 + 2) * (3 + 4)) + ((5 + 6) * (7 + 8))";
 
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
@@ -1565,7 +1565,7 @@ namespace UnitTest.BasicScriptInterpreter
                 x = x - 5
                 x = x + 100
                 x = x / 5
-                message 1, x
+                output 1, x
             ";
 
             var compiledScript = CompiledScript.Compile(script);
@@ -1824,9 +1824,9 @@ namespace UnitTest.BasicScriptInterpreter
                 dim x
                 x = Rnd()
                 if x >= 0 and x < 1 then
-                    message 1, ""OK""
+                    output 1, ""OK""
                 else
-                    message 1, ""FAIL""
+                    output 1, ""FAIL""
                 end if
             ";
             var compiled = CompiledScript.Compile(script);
@@ -1881,6 +1881,281 @@ namespace UnitTest.BasicScriptInterpreter
 
         #endregion
 
+        #region FUNCTION Keyword Tests
+
+        [Test]
+        public void Function_EndFunctionAsSingleKeyword_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                function double(x)
+                    double = x * 2
+                endfunction
+
+                dim result
+                result = double(21)
+                output 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("42");
+        }
+
+        [Test]
+        public void Function_WithIfInsideUsingEndfunction_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                function test(x)
+                    if x > 0 then
+                        test = 1
+                    else
+                        test = 0
+                    end if
+                endfunction
+
+                dim result
+                result = test(5)
+                output 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("1");
+        }
+
+        [Test]
+        public void Function_OnlyDefinitionNoMainCode_Compiles()
+        {
+            // Arrange
+            var script = @"
+                function unused()
+                    unused = 42
+                endfunction
+            ";
+
+            // Act
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+        }
+
+        [Test]
+        public void Function_MultipleFunctionsWithEndfunction_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                function add(a, b)
+                    add = a + b
+                endfunction
+
+                function multiply(a, b)
+                    multiply = a * b
+                endfunction
+
+                dim result
+                result = add(2, 3) + multiply(4, 5)
+                output 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("25");
+        }
+
+        [Test]
+        public void Function_WithForLoopInside_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                function sumTo(n)
+                    dim i, total
+                    total = 0
+                    for i = 1 to n
+                        total = total + i
+                    next
+                    sumTo = total
+                endfunction
+
+                dim result
+                result = sumTo(5)
+                output 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("15");
+        }
+
+        [Test]
+        public void Function_WithDoLoopInside_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                function countTo(n)
+                    dim i, count
+                    count = 0
+                    i = 1
+                    do while i <= n
+                        count = count + 1
+                        i = i + 1
+                    loop
+                    countTo = count
+                endfunction
+
+                dim result
+                result = countTo(5)
+                output 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("5");
+        }
+
+        [Test]
+        public void Function_WithSelectCaseInside_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                function grade(score)
+                    select case score
+                        case 5
+                            grade = ""A""
+                        case 4
+                            grade = ""B""
+                        case 3
+                            grade = ""C""
+                        case else
+                            grade = ""F""
+                    end select
+                endfunction
+
+                dim result
+                result = grade(4)
+                output 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("B");
+        }
+
+        [Test]
+        public void Function_NestedIfInsideFunction_WithEndfunction_Succeeds()
+        {
+            // Arrange
+            var script = @"
+                function classify(x)
+                    if x > 0 then
+                        if x > 100 then
+                            classify = ""large""
+                        else
+                            classify = ""small""
+                        end if
+                    else
+                        classify = ""negative""
+                    end if
+                endfunction
+
+                dim result
+                result = classify(50)
+                output 1, result
+            ";
+
+            var compiledScript = CompiledScript.Compile(script);
+
+            // Assert
+            compiledScript.HasError.Should().BeFalse();
+
+            var context = new ScriptExecutionContext(compiledScript);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("small");
+        }
+
+        #endregion
+
         #region Select Case
 
         [Test]
@@ -1892,9 +2167,9 @@ namespace UnitTest.BasicScriptInterpreter
                 x = 1
                 Select Case x
                     Case 1
-                        message 1, ""first""
+                        output 1, ""first""
                     Case 2
-                        message 1, ""second""
+                        output 1, ""second""
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
@@ -1919,9 +2194,9 @@ namespace UnitTest.BasicScriptInterpreter
                 x = 2
                 Select Case x
                     Case 1
-                        message 1, ""first""
+                        output 1, ""first""
                     Case 2
-                        message 1, ""second""
+                        output 1, ""second""
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
@@ -1946,11 +2221,11 @@ namespace UnitTest.BasicScriptInterpreter
                 x = 99
                 Select Case x
                     Case 1
-                        message 1, ""first""
+                        output 1, ""first""
                     Case 2
-                        message 1, ""second""
+                        output 1, ""second""
                     Case Else
-                        message 1, ""other""
+                        output 1, ""other""
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
@@ -1975,9 +2250,9 @@ namespace UnitTest.BasicScriptInterpreter
                 x = 3
                 Select Case x
                     Case 1, 2, 3
-                        message 1, ""low""
+                        output 1, ""low""
                     Case 4, 5, 6
-                        message 1, ""high""
+                        output 1, ""high""
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
@@ -2002,11 +2277,11 @@ namespace UnitTest.BasicScriptInterpreter
                 x = ""B""
                 Select Case x
                     Case ""A""
-                        message 1, ""letter A""
+                        output 1, ""letter A""
                     Case ""B""
-                        message 1, ""letter B""
+                        output 1, ""letter B""
                     Case Else
-                        message 1, ""other""
+                        output 1, ""other""
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
@@ -2037,7 +2312,7 @@ namespace UnitTest.BasicScriptInterpreter
                     Case 2
                         result = ""second""
                 End Select
-                message 1, result
+                output 1, result
             ";
             var compiled = CompiledScript.Compile(script);
             compiled.HasError.Should().BeFalse();
@@ -2050,6 +2325,196 @@ namespace UnitTest.BasicScriptInterpreter
 
             // Assert
             result.Should().Be("none");
+        }
+
+        #endregion
+
+        #region ENDFUNCTION as single keyword tests
+
+        [Test]
+        public void Function_WithIfInside_EndFunctionAsOneWord_Succeeds()
+        {
+            // Arrange
+            var script = @"
+function test(x)
+    if x > 0 then
+        test = 1
+    else
+        test = 0
+    end if
+endfunction
+
+dim result
+result = test(5)
+output 1, result
+";
+            var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
+
+            // Assert
+            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("1");
+        }
+
+        [Test]
+        public void Function_WithNestedIfInside_EndFunctionAsOneWord_Succeeds()
+        {
+            // Arrange
+            var script = @"
+function calcBonus(flag, weekday)
+    dim bonus
+    bonus = 0
+    if flag = 1 then
+        bonus = 10
+    else
+        if weekday = 0 or weekday = 6 then
+            bonus = 5
+        else
+            bonus = 1
+        end if
+    end if
+    calcBonus = bonus
+endfunction
+
+dim result
+result = calcBonus(0, 6)
+output 1, result
+";
+            var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
+
+            // Assert
+            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("5");
+        }
+
+        [Test]
+        public void Function_WithIfAfterFunction_EndFunctionAsOneWord_Succeeds()
+        {
+            // Arrange - This tests the user's exact scenario
+            var script = @"
+function double(x)
+    double = x * 2
+endfunction
+
+dim result
+if 1 > 0 then
+    result = double(21)
+else
+    result = 0
+end if
+output 1, result
+";
+            var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
+
+            // Assert
+            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            context.Message += (type, msg) => result = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("42");
+        }
+
+        [Test]
+        public void DebugPrint_InsideFunction_Succeeds()
+        {
+            // Arrange - DEBUGPRINT inside FUNCTION should work
+            var script = @"
+function test(x)
+    debugprint ""x = "" & x
+    test = x * 2
+endfunction
+
+dim result
+result = test(5)
+output 1, result
+";
+            var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
+
+            // Assert
+            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            string? debugOutput = null;
+            context.Message += (type, msg) => result = msg;
+            context.DebugPrint += (msg) => debugOutput = msg;
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("10");
+            debugOutput.Should().Be("x = 5");
+        }
+
+        [Test]
+        public void DebugPrint_InsideFunctionWithIfStatement_Succeeds()
+        {
+            // Arrange - DEBUGPRINT inside FUNCTION with IF statement
+            var script = @"
+function CalcSegment(x)
+    dim result
+    debugprint ""Input: "" & x
+    if x > 0 then
+        result = x * 2
+    else
+        result = 0
+    end if
+    debugprint ""Output: "" & result
+    CalcSegment = result
+endfunction
+
+dim r
+r = CalcSegment(5)
+output 1, r
+";
+            var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
+
+            // Assert
+            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+
+            var context = new ScriptExecutionContext(compiled);
+            string? result = null;
+            var debugOutputs = new List<string>();
+            context.Message += (type, msg) => result = msg;
+            context.DebugPrint += (msg) => debugOutputs.Add(msg);
+
+            // Act
+            var execResult = context.Execute();
+
+            // Assert
+            execResult.Success.Should().BeTrue();
+            result.Should().Be("10");
+            debugOutputs.Should().HaveCount(2);
+            debugOutputs[0].Should().Be("Input: 5");
+            debugOutputs[1].Should().Be("Output: 10");
         }
 
         #endregion
