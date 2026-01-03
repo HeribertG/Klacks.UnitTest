@@ -18,9 +18,9 @@ public class ContractTests
         // Assert
         contract.Id.Should().Be(Guid.Empty);
         contract.Name.Should().BeEmpty();
-        contract.GuaranteedHoursPerMonth.Should().Be(0);
-        contract.MaximumHoursPerMonth.Should().Be(0);
-        contract.MinimumHoursPerMonth.Should().Be(0);
+        contract.GuaranteedHours.Should().Be(0);
+        contract.MaximumHours.Should().Be(0);
+        contract.MinimumHours.Should().Be(0);
         contract.ValidFrom.Should().Be(default(DateTime));
         contract.ValidUntil.Should().BeNull();
         contract.CalendarSelectionId.Should().BeNull();
@@ -46,9 +46,9 @@ public class ContractTests
         {
             Id = id,
             Name = name,
-            GuaranteedHoursPerMonth = guaranteedHours,
-            MaximumHoursPerMonth = maxHours,
-            MinimumHoursPerMonth = minHours,
+            GuaranteedHours = guaranteedHours,
+            MaximumHours = maxHours,
+            MinimumHours = minHours,
             ValidFrom = validFrom,
             ValidUntil = validUntil,
             CalendarSelectionId = calendarSelectionId,
@@ -58,9 +58,9 @@ public class ContractTests
         // Assert
         contract.Id.Should().Be(id);
         contract.Name.Should().Be(name);
-        contract.GuaranteedHoursPerMonth.Should().Be(guaranteedHours);
-        contract.MaximumHoursPerMonth.Should().Be(maxHours);
-        contract.MinimumHoursPerMonth.Should().Be(minHours);
+        contract.GuaranteedHours.Should().Be(guaranteedHours);
+        contract.MaximumHours.Should().Be(maxHours);
+        contract.MinimumHours.Should().Be(minHours);
         contract.ValidFrom.Should().Be(validFrom);
         contract.ValidUntil.Should().Be(validUntil);
         contract.CalendarSelectionId.Should().Be(calendarSelectionId);
@@ -98,15 +98,15 @@ public class ContractTests
         // Arrange
         var contract = new Contract
         {
-            GuaranteedHoursPerMonth = 160.5m,
-            MaximumHoursPerMonth = 200.75m,
-            MinimumHoursPerMonth = 120.25m
+            GuaranteedHours = 160.5m,
+            MaximumHours = 200.75m,
+            MinimumHours = 120.25m
         };
 
         // Assert
-        contract.GuaranteedHoursPerMonth.Should().Be(160.5m);
-        contract.MaximumHoursPerMonth.Should().Be(200.75m);
-        contract.MinimumHoursPerMonth.Should().Be(120.25m);
+        contract.GuaranteedHours.Should().Be(160.5m);
+        contract.MaximumHours.Should().Be(200.75m);
+        contract.MinimumHours.Should().Be(120.25m);
     }
 
     [Test]

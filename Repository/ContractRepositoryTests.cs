@@ -67,9 +67,9 @@ public class ContractRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Test Contract",
-            GuaranteedHoursPerMonth = 160,
-            MaximumHoursPerMonth = 200,
-            MinimumHoursPerMonth = 120,
+            GuaranteedHours = 160,
+            MaximumHours = 200,
+            MinimumHours = 120,
             ValidFrom = DateTime.UtcNow,
             ValidUntil = DateTime.UtcNow.AddYears(1),
             CalendarSelectionId = testCalendarSelection.Id
@@ -83,9 +83,9 @@ public class ContractRepositoryTests
         var savedContract = await dbContext.Contract.FirstOrDefaultAsync(c => c.Id == contract.Id);
         savedContract.Should().NotBeNull();
         savedContract.Name.Should().Be("Test Contract");
-        savedContract.GuaranteedHoursPerMonth.Should().Be(160);
-        savedContract.MaximumHoursPerMonth.Should().Be(200);
-        savedContract.MinimumHoursPerMonth.Should().Be(120);
+        savedContract.GuaranteedHours.Should().Be(160);
+        savedContract.MaximumHours.Should().Be(200);
+        savedContract.MinimumHours.Should().Be(120);
     }
 
     [Test]
@@ -96,9 +96,9 @@ public class ContractRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Test Contract",
-            GuaranteedHoursPerMonth = 160,
-            MaximumHoursPerMonth = 200,
-            MinimumHoursPerMonth = 120,
+            GuaranteedHours = 160,
+            MaximumHours = 200,
+            MinimumHours = 120,
             ValidFrom = DateTime.UtcNow,
             CalendarSelectionId = testCalendarSelection.Id
         };
@@ -127,9 +127,9 @@ public class ContractRepositoryTests
             {
                 Id = Guid.NewGuid(),
                 Name = "Contract 1",
-                GuaranteedHoursPerMonth = 160,
-                MaximumHoursPerMonth = 200,
-                MinimumHoursPerMonth = 120,
+                GuaranteedHours = 160,
+                MaximumHours = 200,
+                MinimumHours = 120,
                 ValidFrom = DateTime.UtcNow,
                 CalendarSelectionId = testCalendarSelection.Id
             },
@@ -137,9 +137,9 @@ public class ContractRepositoryTests
             {
                 Id = Guid.NewGuid(),
                 Name = "Contract 2",
-                GuaranteedHoursPerMonth = 100,
-                MaximumHoursPerMonth = 150,
-                MinimumHoursPerMonth = 80,
+                GuaranteedHours = 100,
+                MaximumHours = 150,
+                MinimumHours = 80,
                 ValidFrom = DateTime.UtcNow,
                 CalendarSelectionId = testCalendarSelection.Id
             }
@@ -166,9 +166,9 @@ public class ContractRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Original Contract",
-            GuaranteedHoursPerMonth = 160,
-            MaximumHoursPerMonth = 200,
-            MinimumHoursPerMonth = 120,
+            GuaranteedHours = 160,
+            MaximumHours = 200,
+            MinimumHours = 120,
             ValidFrom = DateTime.UtcNow,
             CalendarSelectionId = testCalendarSelection.Id
         };
@@ -178,7 +178,7 @@ public class ContractRepositoryTests
 
         // Act
         contract.Name = "Updated Contract";
-        contract.GuaranteedHoursPerMonth = 180;
+        contract.GuaranteedHours = 180;
         await contractRepository.Put(contract);
         await dbContext.SaveChangesAsync();
 
@@ -186,7 +186,7 @@ public class ContractRepositoryTests
         var updatedContract = await dbContext.Contract.FirstOrDefaultAsync(c => c.Id == contract.Id);
         updatedContract.Should().NotBeNull();
         updatedContract.Name.Should().Be("Updated Contract");
-        updatedContract.GuaranteedHoursPerMonth.Should().Be(180);
+        updatedContract.GuaranteedHours.Should().Be(180);
     }
 
     [Test]
@@ -197,9 +197,9 @@ public class ContractRepositoryTests
         {
             Id = Guid.NewGuid(),
             Name = "Contract to Delete",
-            GuaranteedHoursPerMonth = 160,
-            MaximumHoursPerMonth = 200,
-            MinimumHoursPerMonth = 120,
+            GuaranteedHours = 160,
+            MaximumHours = 200,
+            MinimumHours = 120,
             ValidFrom = DateTime.UtcNow,
             CalendarSelectionId = testCalendarSelection.Id
         };

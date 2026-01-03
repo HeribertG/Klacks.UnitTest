@@ -38,9 +38,9 @@ public class ContractsControllerTests
             {
                 Id = Guid.NewGuid(),
                 Name = "Contract 1",
-                GuaranteedHoursPerMonth = 160,
-                MaximumHoursPerMonth = 200,
-                MinimumHoursPerMonth = 120,
+                GuaranteedHours = 160,
+                MaximumHours = 200,
+                MinimumHours = 120,
                 ValidFrom = DateTime.UtcNow,
                 CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid(), Name = "Calendar 1" }
             },
@@ -48,9 +48,9 @@ public class ContractsControllerTests
             {
                 Id = Guid.NewGuid(),
                 Name = "Contract 2",
-                GuaranteedHoursPerMonth = 100,
-                MaximumHoursPerMonth = 150,
-                MinimumHoursPerMonth = 80,
+                GuaranteedHours = 100,
+                MaximumHours = 150,
+                MinimumHours = 80,
                 ValidFrom = DateTime.UtcNow,
                 CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid(), Name = "Calendar 2" }
             }
@@ -93,9 +93,9 @@ public class ContractsControllerTests
         {
             Id = contractId,
             Name = "Test Contract",
-            GuaranteedHoursPerMonth = 160,
-            MaximumHoursPerMonth = 200,
-            MinimumHoursPerMonth = 120,
+            GuaranteedHours = 160,
+            MaximumHours = 200,
+            MinimumHours = 120,
             ValidFrom = DateTime.UtcNow,
             CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid(), Name = "Test Calendar" }
         };
@@ -120,9 +120,9 @@ public class ContractsControllerTests
         var newContract = new ContractResource
         {
             Name = "New Contract",
-            GuaranteedHoursPerMonth = 160,
-            MaximumHoursPerMonth = 200,
-            MinimumHoursPerMonth = 120,
+            GuaranteedHours = 160,
+            MaximumHours = 200,
+            MinimumHours = 120,
             ValidFrom = DateTime.UtcNow,
             CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid() }
         };
@@ -131,9 +131,9 @@ public class ContractsControllerTests
         {
             Id = Guid.NewGuid(),
             Name = newContract.Name,
-            GuaranteedHoursPerMonth = newContract.GuaranteedHoursPerMonth,
-            MaximumHoursPerMonth = newContract.MaximumHoursPerMonth,
-            MinimumHoursPerMonth = newContract.MinimumHoursPerMonth,
+            GuaranteedHours = newContract.GuaranteedHours,
+            MaximumHours = newContract.MaximumHours,
+            MinimumHours = newContract.MinimumHours,
             ValidFrom = newContract.ValidFrom,
             CalendarSelection = newContract.CalendarSelection
         };
@@ -159,9 +159,9 @@ public class ContractsControllerTests
         {
             Id = Guid.NewGuid(),
             Name = "Updated Contract",
-            GuaranteedHoursPerMonth = 180,
-            MaximumHoursPerMonth = 220,
-            MinimumHoursPerMonth = 140,
+            GuaranteedHours = 180,
+            MaximumHours = 220,
+            MinimumHours = 140,
             ValidFrom = DateTime.UtcNow,
             CalendarSelection = new CalendarSelectionResource { Id = Guid.NewGuid() }
         };

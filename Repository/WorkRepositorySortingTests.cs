@@ -68,19 +68,19 @@ public class WorkRepositorySortingTests
         {
             Id = Guid.NewGuid(),
             Name = "Low Hours",
-            GuaranteedHoursPerMonth = 80
+            GuaranteedHours = 80
         };
         var contractMedium = new Contract
         {
             Id = Guid.NewGuid(),
             Name = "Medium Hours",
-            GuaranteedHoursPerMonth = 120
+            GuaranteedHours = 120
         };
         var contractHigh = new Contract
         {
             Id = Guid.NewGuid(),
             Name = "High Hours",
-            GuaranteedHoursPerMonth = 160
+            GuaranteedHours = 160
         };
 
         _context.Contract.AddRange(contractLow, contractMedium, contractHigh);
