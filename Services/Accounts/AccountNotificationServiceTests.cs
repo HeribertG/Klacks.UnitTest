@@ -1,5 +1,6 @@
 using FluentAssertions;
 using FluentAssertions.Specialized;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Settings;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 using Klacks.Api.Domain.Services.Accounts;
@@ -17,20 +18,25 @@ public class AccountNotificationServiceTests
 {
     private DataBaseContext _context;
     private AccountNotificationService _notificationService;
+    private ISettingsEncryptionService _mockEncryptionService;
     private ILogger<AccountNotificationService> _mockLogger;
 
     [SetUp]
     public void SetUp()
     {
+        // Arrange
         var options = new DbContextOptionsBuilder<DataBaseContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, mockHttpContextAccessor);
+        _mockEncryptionService = Substitute.For<ISettingsEncryptionService>();
+        _mockEncryptionService.ProcessForReading(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(callInfo => callInfo.ArgAt<string>(1));
         _mockLogger = Substitute.For<ILogger<AccountNotificationService>>();
 
-        _notificationService = new AccountNotificationService(_context, _mockLogger);
+        _notificationService = new AccountNotificationService(_context, _mockEncryptionService, _mockLogger);
     }
 
     [TearDown]

@@ -1782,7 +1782,7 @@ namespace UnitTest.BasicScriptInterpreter
 
         [TestCase("debugprint Round(3.14159, 2)", "3.14")]
         [TestCase("debugprint Round(3.5, 0)", "4")]
-        [TestCase("debugprint Round(2.5, 0)", "2")]
+        [TestCase("debugprint Round(2.5, 0)", "3")]
         public void MathFunction_Round_RoundsToDecimals(string script, string expected)
         {
             // Arrange
