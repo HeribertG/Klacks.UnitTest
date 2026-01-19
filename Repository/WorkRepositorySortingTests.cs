@@ -206,12 +206,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = false,
             OrderBy = "name",
@@ -232,12 +232,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = false,
             ShowExtern = true,
             OrderBy = "name",
@@ -258,12 +258,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = false,
             ShowExtern = false,
             OrderBy = "name",
@@ -282,12 +282,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
             OrderBy = "name",
@@ -310,12 +310,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
             OrderBy = "name",
@@ -338,12 +338,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
             OrderBy = "name",
@@ -367,12 +367,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
             OrderBy = "name",
@@ -396,12 +396,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filter = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
             OrderBy = "firstName",
@@ -424,12 +424,12 @@ public class WorkRepositorySortingTests
     {
         // Arrange
         var today = DateTime.Now;
+        var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
+        var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
         var filterWithHours = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
             OrderBy = "firstName",
@@ -439,10 +439,8 @@ public class WorkRepositorySortingTests
 
         var filterWithoutHours = new WorkFilter
         {
-            CurrentYear = today.Year,
-            CurrentMonth = today.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5,
+            StartDate = startDate,
+            EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
             OrderBy = "firstName",

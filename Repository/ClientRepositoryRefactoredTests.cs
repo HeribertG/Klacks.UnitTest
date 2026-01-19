@@ -220,13 +220,12 @@ public class ClientRepositoryRefactoredTests
     public async Task WorkList_ShouldUseDomainServices()
     {
         //Arrange
+        var today = DateTime.Now;
         var filter = new Klacks.Api.Domain.Models.Filters.WorkFilter
         {
             SearchString = "Anna",
-            CurrentYear = DateTime.Now.Year,
-            CurrentMonth = DateTime.Now.Month,
-            DayVisibleBeforeMonth = 5,
-            DayVisibleAfterMonth = 5
+            StartDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5),
+            EndDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5)
         };
         var pagination = new Klacks.Api.Domain.Models.Filters.PaginationParams
         {
