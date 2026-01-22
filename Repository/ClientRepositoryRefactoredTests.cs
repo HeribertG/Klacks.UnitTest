@@ -31,6 +31,8 @@ public class ClientRepositoryRefactoredTests
     private IClientWorkFilterService _mockWorkFilterService;
     private IClientValidator _mockClientValidator;
     private IWorkMacroService _mockWorkMacroService;
+    private IPeriodHoursService _mockPeriodHoursService;
+    private IHttpContextAccessor _mockHttpContextAccessorForWork;
 
     [SetUp]
     public async Task SetUp()
@@ -88,13 +90,19 @@ public class ClientRepositoryRefactoredTests
             _mockSearchFilterService);
 
         var mockWorkLogger = Substitute.For<ILogger<Work>>();
+        var mockUnitOfWork = Substitute.For<IUnitOfWork>();
         _mockWorkMacroService = Substitute.For<IWorkMacroService>();
+        _mockPeriodHoursService = Substitute.For<IPeriodHoursService>();
+        _mockHttpContextAccessorForWork = Substitute.For<IHttpContextAccessor>();
         _workRepository = new WorkRepository(
             _context,
             mockWorkLogger,
+            mockUnitOfWork,
             mockGroupFilterService,
             _mockSearchFilterService,
-            _mockWorkMacroService);
+            _mockWorkMacroService,
+            _mockPeriodHoursService,
+            _mockHttpContextAccessorForWork);
 
         await CreateTestData();
     }

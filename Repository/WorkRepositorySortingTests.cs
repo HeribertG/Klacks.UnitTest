@@ -24,6 +24,8 @@ public class WorkRepositorySortingTests
     private IClientGroupFilterService _mockGroupFilterService = null!;
     private IClientSearchFilterService _mockSearchFilterService = null!;
     private IWorkMacroService _mockWorkMacroService = null!;
+    private IPeriodHoursService _mockPeriodHoursService = null!;
+    private IHttpContextAccessor _mockHttpContextAccessor = null!;
 
     [SetUp]
     public async Task SetUp()
@@ -38,6 +40,8 @@ public class WorkRepositorySortingTests
         _mockGroupFilterService = Substitute.For<IClientGroupFilterService>();
         _mockSearchFilterService = Substitute.For<IClientSearchFilterService>();
         _mockWorkMacroService = Substitute.For<IWorkMacroService>();
+        _mockPeriodHoursService = Substitute.For<IPeriodHoursService>();
+        _mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
 
         _mockGroupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
@@ -45,13 +49,17 @@ public class WorkRepositorySortingTests
             .Returns(args => (IQueryable<Client>)args[0]);
 
         var mockLogger = Substitute.For<ILogger<Klacks.Api.Domain.Models.Schedules.Work>>();
+        var mockUnitOfWork = Substitute.For<IUnitOfWork>();
 
         _workRepository = new WorkRepository(
             _context,
             mockLogger,
+            mockUnitOfWork,
             _mockGroupFilterService,
             _mockSearchFilterService,
-            _mockWorkMacroService);
+            _mockWorkMacroService,
+            _mockPeriodHoursService,
+            _mockHttpContextAccessor);
 
         await CreateTestDataWithContracts();
     }
