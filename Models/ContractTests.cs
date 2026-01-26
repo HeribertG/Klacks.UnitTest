@@ -12,15 +12,20 @@ public class ContractTests
     [Test]
     public void Contract_ShouldInitializeWithDefaultValues()
     {
-        // Act
+        // Arrange & Act
         var contract = new Contract();
 
         // Assert
         contract.Id.Should().Be(Guid.Empty);
         contract.Name.Should().BeEmpty();
-        contract.GuaranteedHours.Should().Be(0);
-        contract.MaximumHours.Should().Be(0);
-        contract.MinimumHours.Should().Be(0);
+        contract.GuaranteedHours.Should().BeNull();
+        contract.MaximumHours.Should().BeNull();
+        contract.MinimumHours.Should().BeNull();
+        contract.FullTime.Should().BeNull();
+        contract.NightRate.Should().BeNull();
+        contract.HolidayRate.Should().BeNull();
+        contract.SaRate.Should().BeNull();
+        contract.SoRate.Should().BeNull();
         contract.ValidFrom.Should().Be(default(DateTime));
         contract.ValidUntil.Should().BeNull();
         contract.CalendarSelectionId.Should().BeNull();
