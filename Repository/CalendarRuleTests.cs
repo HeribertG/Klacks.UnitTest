@@ -24,7 +24,6 @@ namespace UnitTest.Repository
         private ICalendarRuleSortingService _sortingService = null!;
         private ICalendarRulePaginationService _paginationService = null!;
         private IMacroManagementService _macroManagementService = null!;
-        private IMacroTypeManagementService _macroTypeManagementService = null!;
 
         [TestCase(5, 0, 5)]
         [TestCase(10, 0, 0)]
@@ -50,7 +49,7 @@ namespace UnitTest.Repository
             // Use domain services configured in SetUp
 
             // Create real SettingsRepository with mocked domain services
-            var settingsRepository = new SettingsRepository(dbContext, _filterService, _sortingService, _paginationService, _macroManagementService, _macroTypeManagementService);
+            var settingsRepository = new SettingsRepository(dbContext, _filterService, _sortingService, _paginationService, _macroManagementService);
             
             var query = new TruncatedListQuery(filter);
             var logger = Substitute.For<ILogger<TruncatedListQueryHandler>>();
@@ -73,7 +72,6 @@ namespace UnitTest.Repository
             _sortingService = Substitute.For<ICalendarRuleSortingService>();
             _paginationService = Substitute.For<ICalendarRulePaginationService>();
             _macroManagementService = Substitute.For<IMacroManagementService>();
-            _macroTypeManagementService = Substitute.For<IMacroTypeManagementService>();
 
             // Setup domain service mocks to return appropriate results
             _filterService.ApplyFilters(Arg.Any<IQueryable<CalendarRule>>(), Arg.Any<CalendarRulesFilter>())
