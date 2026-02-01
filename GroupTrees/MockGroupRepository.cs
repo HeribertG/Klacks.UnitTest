@@ -176,6 +176,11 @@ namespace UnitTest.Mocks
             return await context.Group.Where(x => x.Id == id).Include(x => x.GroupItems).ThenInclude(x => x.Client).AsNoTracking().FirstOrDefaultAsync();
         }
 
+        public async Task<Group?> GetNoTracking(Guid id)
+        {
+            return await Get(id);
+        }
+
         public async Task<IEnumerable<Group>> GetChildren(Guid parentId)
         {
             var parent = await context.Group
