@@ -6,7 +6,7 @@ using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Infrastructure.Services;
 using NSubstitute;
 
-namespace UnitTest.Services.Clients;
+namespace Klacks.UnitTest.Services.Clients;
 
 [TestFixture]
 public class ClientGroupFilterServiceTests

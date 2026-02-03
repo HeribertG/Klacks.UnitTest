@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using System.Security.Claims;
 
-namespace UnitTest.Validation.Accounts;
+namespace Klacks.UnitTest.Validation.Accounts;
 
 [TestFixture]
 public class DeleteAccountCommandValidatorTests

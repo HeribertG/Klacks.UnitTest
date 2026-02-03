@@ -4,7 +4,7 @@ using Klacks.Api.Application.Interfaces;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
-namespace UnitTest.Mocks
+namespace Klacks.UnitTest.Mocks
 {
     /// <summary>
     /// Mock-Implementierung von IUnitOfWork für Tests, die keine echten Transaktionen benötigt.

@@ -3,7 +3,7 @@ using NSubstitute;
 using Klacks.Api.Domain.Models.LLM;
 using Klacks.Api.Domain.Interfaces;
 
-namespace UnitTest.LLM;
+namespace Klacks.UnitTest.LLM;
 
 [TestFixture]
 public class LLMRepositoryMockTests

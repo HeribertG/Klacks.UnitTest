@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace UnitTest.Repository;
+namespace Klacks.UnitTest.Repository;
 
 [TestFixture]
 public class ClientSearchServiceTests

@@ -12,7 +12,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Groups;
 using Microsoft.Extensions.Logging;
 
-namespace UnitTest.Services.Groups;
+namespace Klacks.UnitTest.Services.Groups;
 
 [TestFixture]
 public class GroupTreeServiceTests

@@ -7,7 +7,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
-namespace UnitTest.Services.Shifts;
+namespace Klacks.UnitTest.Services.Shifts;
 
 [TestFixture]
 public class ShiftSearchServiceTests

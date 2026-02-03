@@ -4,7 +4,7 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using NUnit.Framework;
 
-namespace UnitTest.Application.Mappers;
+namespace Klacks.UnitTest.Application.Mappers;
 
 [TestFixture]
 public class ScheduleMapperTests

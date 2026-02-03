@@ -1,6 +1,6 @@
 using Newtonsoft.Json;
 
-namespace UnitTest.FakeData
+namespace Klacks.UnitTest.FakeData
 {
     internal static class FakeMockaroo
     {

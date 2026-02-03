@@ -4,7 +4,7 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.CalendarSelections;
 using NUnit.Framework;
 
-namespace UnitTest.Models;
+namespace Klacks.UnitTest.Models;
 
 [TestFixture]
 public class ContractTests

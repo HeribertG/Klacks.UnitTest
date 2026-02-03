@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace UnitTest.Integration
+namespace Klacks.UnitTest.Integration
 {
     [TestFixture]
     public class EmailIntegrationTests

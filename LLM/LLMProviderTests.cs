@@ -1,7 +1,7 @@
 using NUnit.Framework;
 using Klacks.Api.Domain.Models.LLM;
 
-namespace UnitTest.LLM;
+namespace Klacks.UnitTest.LLM;
 
 [TestFixture]
 public class LLMProviderTests

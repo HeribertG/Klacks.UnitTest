@@ -16,9 +16,9 @@ using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using UnitTest.FakeData;
+using Klacks.UnitTest.FakeData;
 
-namespace UnitTest.Repository;
+namespace Klacks.UnitTest.Repository;
 
 [TestFixture]
 internal class BreakPlaceholderTests

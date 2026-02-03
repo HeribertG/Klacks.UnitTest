@@ -7,7 +7,7 @@ using Klacks.Api.Presentation.DTOs.Filter;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Services.Settings;
+namespace Klacks.UnitTest.Services.Settings;
 
 [TestFixture]
 public class SettingsTokenServiceTests

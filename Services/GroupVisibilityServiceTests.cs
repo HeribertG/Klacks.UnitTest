@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace UnitTest.Services;
+namespace Klacks.UnitTest.Services;
 
 [TestFixture]
 internal class GroupVisibilityServiceTests

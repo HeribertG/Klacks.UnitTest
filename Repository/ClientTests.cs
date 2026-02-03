@@ -17,10 +17,10 @@ using Klacks.Api.Presentation.DTOs.Staffs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using UnitTest.FakeData;
+using Klacks.UnitTest.FakeData;
 
 
-namespace UnitTest.Repository;
+namespace Klacks.UnitTest.Repository;
 
 internal class ClientTests
 {

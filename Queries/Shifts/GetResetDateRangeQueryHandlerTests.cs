@@ -7,7 +7,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Queries.Shifts;
+namespace Klacks.UnitTest.Queries.Shifts;
 
 [TestFixture]
 public class GetResetDateRangeQueryHandlerTests

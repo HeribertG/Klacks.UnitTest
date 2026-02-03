@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace UnitTest.Controllers.Settings
+namespace Klacks.UnitTest.Controllers.Settings
 {
     [TestFixture]
     public class SettingsControllerEmailTests

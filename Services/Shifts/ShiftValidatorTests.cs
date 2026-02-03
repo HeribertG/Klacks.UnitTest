@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Services.Shifts;
+namespace Klacks.UnitTest.Services.Shifts;
 
 [TestFixture]
 public class ShiftValidatorTests

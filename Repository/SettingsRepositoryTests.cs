@@ -9,7 +9,7 @@ using Klacks.Api.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 
-namespace UnitTest.Repository
+namespace Klacks.UnitTest.Repository
 {
     [TestFixture]
     public class SettingsRepositoryTests : BaseRepositoryTest

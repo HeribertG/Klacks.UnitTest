@@ -1,4 +1,4 @@
-namespace UnitTest.FakeData.FakeDateSerializeString
+namespace Klacks.UnitTest.FakeData.FakeDateSerializeString
 {
     internal static class Data
     {

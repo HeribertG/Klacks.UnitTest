@@ -16,9 +16,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
 using NSubstitute;
-using UnitTest.Mocks;
+using Klacks.UnitTest.Mocks;
 
-namespace UnitTest.GroupTrees;
+namespace Klacks.UnitTest.GroupTrees;
 
 [TestFixture]
 public class GroupTreeTests

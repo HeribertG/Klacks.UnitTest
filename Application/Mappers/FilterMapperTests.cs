@@ -7,7 +7,7 @@ using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Presentation.DTOs.Settings;
 using NUnit.Framework;
 
-namespace UnitTest.Application.Mappers;
+namespace Klacks.UnitTest.Application.Mappers;
 
 [TestFixture]
 public class FilterMapperTests

@@ -3,7 +3,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
-namespace UnitTest.Infrastructure.Mediator;
+namespace Klacks.UnitTest.Infrastructure.Mediator;
 
 [TestFixture]
 public class ServiceCollectionExtensionsTests

@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Services.Accounts;
+namespace Klacks.UnitTest.Services.Accounts;
 
 [TestFixture]
 public class AccountNotificationServiceTests

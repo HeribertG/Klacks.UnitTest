@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Services.Groups;
+namespace Klacks.UnitTest.Services.Groups;
 
 [TestFixture]
 public class GroupValidityServiceTests

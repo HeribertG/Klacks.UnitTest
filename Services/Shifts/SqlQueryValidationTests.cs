@@ -4,7 +4,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
 
-namespace UnitTest.Services.Shifts;
+namespace Klacks.UnitTest.Services.Shifts;
 
 [TestFixture]
 public class DomainServiceFunctionalTests

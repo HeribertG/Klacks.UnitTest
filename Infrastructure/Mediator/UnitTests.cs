@@ -2,7 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Infrastructure.Mediator;
 using NUnit.Framework;
 
-namespace UnitTest.Infrastructure.Mediator;
+namespace Klacks.UnitTest.Infrastructure.Mediator;
 
 [TestFixture]
 public class UnitTests

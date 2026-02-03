@@ -6,7 +6,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Presentation.DTOs.Staffs;
 
-namespace UnitTest.Mappers;
+namespace Klacks.UnitTest.Mappers;
 
 [TestFixture]
 public class ClientMapperDebugTest

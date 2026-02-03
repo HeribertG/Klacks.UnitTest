@@ -10,7 +10,7 @@ using Klacks.Api.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 using Klacks.Api.Domain.Exceptions;
 
-namespace UnitTest.Services.Groups;
+namespace Klacks.UnitTest.Services.Groups;
 
 /// <summary>
 /// These tests demonstrate the expected behavior of GroupRepository tree operations.

@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Services.ContainerTemplates;
+namespace Klacks.UnitTest.Services.ContainerTemplates;
 
 [TestFixture]
 public class ContainerAvailableTasksServiceTests

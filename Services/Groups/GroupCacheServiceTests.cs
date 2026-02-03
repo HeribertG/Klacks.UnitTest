@@ -3,7 +3,7 @@ using Klacks.Api.Domain.Services.Groups;
 using Microsoft.Extensions.Caching.Memory;
 using NSubstitute;
 
-namespace UnitTest.Services.Groups;
+namespace Klacks.UnitTest.Services.Groups;
 
 [TestFixture]
 public class GroupCacheServiceTests

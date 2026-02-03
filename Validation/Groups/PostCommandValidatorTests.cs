@@ -3,7 +3,7 @@ using Klacks.Api.Application.Commands;
 using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Application.Validation.Groups;
 
-namespace UnitTest.Validation.Groups;
+namespace Klacks.UnitTest.Validation.Groups;
 
 [TestFixture]
 public class PostCommandValidatorTests

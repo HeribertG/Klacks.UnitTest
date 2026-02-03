@@ -1,6 +1,6 @@
 using Klacks.Api.Presentation.DTOs.Schedules;
 
-namespace UnitTest.FakeData
+namespace Klacks.UnitTest.FakeData
 {
     internal class CalendarSelections
     {

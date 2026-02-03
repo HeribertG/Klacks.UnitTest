@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 
-namespace UnitTest.Services.Shifts;
+namespace Klacks.UnitTest.Services.Shifts;
 
 [TestFixture]
 public class ShiftStatusFilterServiceTests

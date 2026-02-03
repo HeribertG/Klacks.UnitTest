@@ -1,6 +1,6 @@
 using Klacks.Api.Infrastructure.Scripting;
 
-namespace UnitTest.BasicScriptInterpreter
+namespace Klacks.UnitTest.BasicScriptInterpreter
 {
     internal class BasicScriptInterpreterTests
     {

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
-namespace UnitTest.Services.Accounts;
+namespace Klacks.UnitTest.Services.Accounts;
 
 [TestFixture]
 public class AccountPasswordServiceTests

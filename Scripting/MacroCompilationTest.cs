@@ -1,7 +1,7 @@
 using Klacks.Api.Infrastructure.Scripting;
 using NUnit.Framework;
 
-namespace UnitTest.Scripting;
+namespace Klacks.UnitTest.Scripting;
 
 [TestFixture]
 public class MacroCompilationTest

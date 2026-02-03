@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace UnitTest.Repository;
+namespace Klacks.UnitTest.Repository;
 
 [TestFixture]
 public class WorkRepositorySortingTests

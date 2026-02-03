@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Reflection;
 
-namespace UnitTest.Controllers;
+namespace Klacks.UnitTest.Controllers;
 
 [TestFixture]
 public class InputBaseControllerAuthorizationTests

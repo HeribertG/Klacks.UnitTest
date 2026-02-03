@@ -9,7 +9,7 @@ using Klacks.Api.Presentation.DTOs.Schedules;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Commands.Shifts;
+namespace Klacks.UnitTest.Commands.Shifts;
 
 [TestFixture]
 public class PostResetCutsCommandHandlerTests

@@ -6,7 +6,7 @@ using Klacks.Api.Presentation.DTOs.Associations;
 using Klacks.Api.Presentation.DTOs.Filter;
 using NUnit.Framework;
 
-namespace UnitTest.Application.Mappers;
+namespace Klacks.UnitTest.Application.Mappers;
 
 [TestFixture]
 public class GroupMapperTests

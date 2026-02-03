@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace UnitTest.Services.Settings
+namespace Klacks.UnitTest.Services.Settings
 {
     [TestFixture]
     public class EmailSettingsServiceTests

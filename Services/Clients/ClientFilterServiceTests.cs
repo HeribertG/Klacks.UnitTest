@@ -1,6 +1,6 @@
 using Klacks.Api.Domain.Services.Clients;
 
-namespace UnitTest.Services.Clients
+namespace Klacks.UnitTest.Services.Clients
 {
     [TestFixture]
     public class ClientFilterServiceTests

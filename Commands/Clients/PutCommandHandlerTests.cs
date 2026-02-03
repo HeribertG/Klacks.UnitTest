@@ -12,7 +12,7 @@ using Klacks.Api.Presentation.DTOs.Staffs;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Commands.Clients;
+namespace Klacks.UnitTest.Commands.Clients;
 
 [TestFixture]
 public class PutCommandHandlerTests

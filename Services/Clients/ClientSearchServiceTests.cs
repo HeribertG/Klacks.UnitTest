@@ -6,7 +6,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
-namespace UnitTest.Services.Clients;
+namespace Klacks.UnitTest.Services.Clients;
 
 [TestFixture]
 public class ClientSearchServiceTests

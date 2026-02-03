@@ -8,7 +8,7 @@ using Klacks.Api.Domain.Services.Shifts;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Services.Shifts;
+namespace Klacks.UnitTest.Services.Shifts;
 
 [TestFixture]
 public class ShiftResetServiceTests

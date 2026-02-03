@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Repository;
+namespace Klacks.UnitTest.Repository;
 
 [TestFixture]
 public class GroupRepositoryCacheInvalidationTests

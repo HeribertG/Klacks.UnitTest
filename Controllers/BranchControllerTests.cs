@@ -10,7 +10,7 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
-namespace UnitTest.Controllers;
+namespace Klacks.UnitTest.Controllers;
 
 [TestFixture]
 public class BranchControllerTests

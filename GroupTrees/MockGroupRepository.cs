@@ -5,7 +5,7 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Presentation.DTOs.Filter;
 using Microsoft.EntityFrameworkCore;
 
-namespace UnitTest.Mocks
+namespace Klacks.UnitTest.Mocks
 {
     public class MockGroupRepository : IGroupRepository
     {

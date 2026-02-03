@@ -5,7 +5,7 @@ using Klacks.Api.Presentation.DTOs.Settings;
 using NSubstitute;
 using NUnit.Framework;
 
-namespace UnitTest.Frontend
+namespace Klacks.UnitTest.Frontend
 {
     [TestFixture]
     public class EmailSettingComponentTests

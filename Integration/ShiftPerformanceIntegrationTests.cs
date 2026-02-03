@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using System.Diagnostics;
 
-namespace UnitTest.Integration;
+namespace Klacks.UnitTest.Integration;
 
 [TestFixture]
 public class ShiftPerformanceIntegrationTests

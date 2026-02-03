@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Http;
 using Klacks.Api.Domain.Interfaces;
 using NSubstitute;
 
-namespace UnitTest.Repository;
+namespace Klacks.UnitTest.Repository;
 
 [TestFixture]
 public class ShiftRepositoryTests

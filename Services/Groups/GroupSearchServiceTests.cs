@@ -14,7 +14,7 @@ using Klacks.Api.Domain.Services.Groups;
 using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 
-namespace UnitTest.Services.Groups;
+namespace Klacks.UnitTest.Services.Groups;
 
 [TestFixture]
 public class GroupSearchServiceTests

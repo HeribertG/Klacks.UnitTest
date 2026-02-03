@@ -2,7 +2,7 @@ using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Presentation.DTOs.Settings;
 using Microsoft.Extensions.Logging;
 
-namespace UnitTest.Infrastructure.Email
+namespace Klacks.UnitTest.Infrastructure.Email
 {
     [TestFixture]
     public class EmailTestServiceTests

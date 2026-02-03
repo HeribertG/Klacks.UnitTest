@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace UnitTest.Validation.BreakPlaceholders;
+namespace Klacks.UnitTest.Validation.BreakPlaceholders;
 
 [TestFixture]
 public class PutCommandValidatorTests

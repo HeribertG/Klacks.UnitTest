@@ -6,7 +6,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.Logging;
 using Klacks.Api.Application.Mappers;
 
-namespace UnitTest.Queries.Clients;
+namespace Klacks.UnitTest.Queries.Clients;
 
 internal class GetTruncatedListQueryTests
 {

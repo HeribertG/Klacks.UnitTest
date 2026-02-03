@@ -2,7 +2,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Clients;
 using Klacks.Api.Application.Validation.Clients;
 
-namespace UnitTest.Validation.Clients
+namespace Klacks.UnitTest.Validation.Clients
 {
     [TestFixture]
     internal class GetTruncatedListQueryValidatorTests

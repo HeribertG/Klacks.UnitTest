@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Microsoft.Extensions.Logging;
 
-namespace UnitTest.Services.Groups;
+namespace Klacks.UnitTest.Services.Groups;
 
 [TestFixture]
 public class GroupTreeServiceDomainTests

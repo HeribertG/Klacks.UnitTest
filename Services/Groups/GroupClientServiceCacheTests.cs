@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
 
-namespace UnitTest.Services.Groups;
+namespace Klacks.UnitTest.Services.Groups;
 
 [TestFixture]
 public class GroupClientServiceCacheTests

@@ -2,7 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Domain.Services.RouteOptimization;
 using Microsoft.Extensions.Logging;
 
-namespace UnitTest.Services.RouteOptimization;
+namespace Klacks.UnitTest.Services.RouteOptimization;
 
 [TestFixture]
 public class AntColonyOptimizerTests

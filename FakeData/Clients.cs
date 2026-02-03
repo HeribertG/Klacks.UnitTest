@@ -7,7 +7,7 @@ using Klacks.Api.Presentation.DTOs.Filter;
 using Klacks.Api.Presentation.DTOs.Staffs;
 using Newtonsoft.Json;
 
-namespace UnitTest.FakeData
+namespace Klacks.UnitTest.FakeData
 {
     internal static class Clients
     {

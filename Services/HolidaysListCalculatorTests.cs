@@ -2,7 +2,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Holidays;
 
-namespace UnitTest.Services;
+namespace Klacks.UnitTest.Services;
 
 [TestFixture]
 internal class HolidaysListCalculatorTests
