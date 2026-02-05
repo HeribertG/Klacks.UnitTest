@@ -7,7 +7,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Services;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Application.Mappers;
 using Microsoft.AspNetCore.Http;

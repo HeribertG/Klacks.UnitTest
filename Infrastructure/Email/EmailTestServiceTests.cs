@@ -1,5 +1,5 @@
 using Klacks.Api.Infrastructure.Email;
-using Klacks.Api.Presentation.DTOs.Settings;
+using Klacks.Api.Application.DTOs.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Infrastructure.Email

@@ -3,8 +3,8 @@ using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
-using Klacks.Api.Presentation.DTOs.Associations;
-using Klacks.Api.Presentation.DTOs.Staffs;
+using Klacks.Api.Application.DTOs.Associations;
+using Klacks.Api.Application.DTOs.Staffs;
 
 namespace Klacks.UnitTest.Mappers;
 

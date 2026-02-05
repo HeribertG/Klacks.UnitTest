@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Schedules;
 
 namespace Klacks.UnitTest.Domain.Services;
@@ -190,5 +192,130 @@ public class WorkLockLevelServiceTests
 
         // Assert
         result.Should().BeFalse();
+    }
+
+    [Test]
+    public void Seal_ValidPermission_SetsProperties()
+    {
+        // Arrange
+        var entity = new Work { LockLevel = WorkLockLevel.None, ShiftId = Guid.NewGuid() };
+
+        // Act
+        _service.Seal(entity, WorkLockLevel.Confirmed, "testuser", isAdmin: false, isAuthorised: false);
+
+        // Assert
+        entity.LockLevel.Should().Be(WorkLockLevel.Confirmed);
+        entity.SealedBy.Should().Be("testuser");
+        entity.SealedAt.Should().NotBeNull();
+        entity.SealedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Test]
+    public void Seal_InsufficientPermission_ThrowsInvalidRequestException()
+    {
+        // Arrange
+        var entity = new Work { LockLevel = WorkLockLevel.None, ShiftId = Guid.NewGuid() };
+
+        // Act
+        var act = () => _service.Seal(entity, WorkLockLevel.Closed, "testuser", isAdmin: false, isAuthorised: false);
+
+        // Assert
+        act.Should().Throw<InvalidRequestException>();
+    }
+
+    [Test]
+    public void Seal_SameLevel_ThrowsInvalidRequestException()
+    {
+        // Arrange
+        var entity = new Work { LockLevel = WorkLockLevel.Confirmed, ShiftId = Guid.NewGuid() };
+
+        // Act
+        var act = () => _service.Seal(entity, WorkLockLevel.Confirmed, "testuser", isAdmin: true, isAuthorised: true);
+
+        // Assert
+        act.Should().Throw<InvalidRequestException>();
+    }
+
+    [Test]
+    public void Seal_AdminToApproved_SetsProperties()
+    {
+        // Arrange
+        var entity = new Work { LockLevel = WorkLockLevel.Confirmed, ShiftId = Guid.NewGuid() };
+
+        // Act
+        _service.Seal(entity, WorkLockLevel.Approved, "admin", isAdmin: true, isAuthorised: false);
+
+        // Assert
+        entity.LockLevel.Should().Be(WorkLockLevel.Approved);
+        entity.SealedBy.Should().Be("admin");
+        entity.SealedAt.Should().NotBeNull();
+    }
+
+    [Test]
+    public void Unseal_ValidPermission_ClearsProperties()
+    {
+        // Arrange
+        var entity = new Work
+        {
+            LockLevel = WorkLockLevel.Confirmed,
+            SealedAt = DateTime.UtcNow,
+            SealedBy = "testuser",
+            ShiftId = Guid.NewGuid()
+        };
+
+        // Act
+        _service.Unseal(entity, isAdmin: false, isAuthorised: false);
+
+        // Assert
+        entity.LockLevel.Should().Be(WorkLockLevel.None);
+        entity.SealedAt.Should().BeNull();
+        entity.SealedBy.Should().BeNull();
+    }
+
+    [Test]
+    public void Unseal_InsufficientPermission_ThrowsInvalidRequestException()
+    {
+        // Arrange
+        var entity = new Work { LockLevel = WorkLockLevel.Approved, ShiftId = Guid.NewGuid() };
+
+        // Act
+        var act = () => _service.Unseal(entity, isAdmin: false, isAuthorised: false);
+
+        // Assert
+        act.Should().Throw<InvalidRequestException>();
+    }
+
+    [Test]
+    public void Unseal_AtNone_ThrowsInvalidRequestException()
+    {
+        // Arrange
+        var entity = new Work { LockLevel = WorkLockLevel.None, ShiftId = Guid.NewGuid() };
+
+        // Act
+        var act = () => _service.Unseal(entity, isAdmin: true, isAuthorised: true);
+
+        // Assert
+        act.Should().Throw<InvalidRequestException>();
+    }
+
+    [Test]
+    public void Unseal_AdminAtClosed_ClearsProperties()
+    {
+        // Arrange
+        var entity = new Work
+        {
+            LockLevel = WorkLockLevel.Closed,
+            SealedAt = DateTime.UtcNow,
+            SealedBy = "admin",
+            ShiftId = Guid.NewGuid()
+        };
+
+        // Act
+        _service.Unseal(entity, isAdmin: true, isAuthorised: false);
+
+        // Assert
+        entity.LockLevel.Should().Be(WorkLockLevel.None);
+        entity.SealedAt.Should().BeNull();
+        entity.SealedBy.Should().BeNull();
     }
 }

@@ -2,7 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Infrastructure.Persistence;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;

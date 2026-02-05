@@ -5,7 +5,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
-using Klacks.Api.Presentation.DTOs.Schedules;
+using Klacks.Api.Application.DTOs.Schedules;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 

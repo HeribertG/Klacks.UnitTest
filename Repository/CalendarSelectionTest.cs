@@ -8,7 +8,7 @@ using Klacks.Api.Domain.Models.CalendarSelections;
 using Klacks.Api.Domain.Services.CalendarSelections;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Infrastructure.Repositories;
-using Klacks.Api.Presentation.DTOs.Schedules;
+using Klacks.Api.Application.DTOs.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;

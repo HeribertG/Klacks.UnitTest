@@ -2,9 +2,9 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
-using Klacks.Api.Presentation.DTOs.Clients;
-using Klacks.Api.Presentation.DTOs.Filter;
-using Klacks.Api.Presentation.DTOs.Staffs;
+using Klacks.Api.Application.DTOs.Clients;
+using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Staffs;
 using Newtonsoft.Json;
 
 namespace Klacks.UnitTest.FakeData

@@ -3,8 +3,8 @@ using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Results;
 using Klacks.Api.Domain.Models.Staffs;
-using Klacks.Api.Presentation.DTOs.Filter;
-using Klacks.Api.Presentation.DTOs.Settings;
+using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Settings;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Application.Mappers;
@@ -224,7 +224,7 @@ public class FilterMapperTests
     public void ToBreakFilter_ValidFilter_MapsCorrectly()
     {
         // Arrange
-        var filter = new Klacks.Api.Presentation.DTOs.Filter.BreakFilter
+        var filter = new Klacks.Api.Application.DTOs.Filter.BreakFilter
         {
             SearchString = "test",
             CurrentYear = 2024,

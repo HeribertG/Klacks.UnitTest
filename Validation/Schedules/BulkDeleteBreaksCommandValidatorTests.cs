@@ -6,7 +6,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Schedules;
-using Klacks.Api.Presentation.DTOs.Schedules;
+using Klacks.Api.Application.DTOs.Schedules;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using System.Security.Claims;

@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Presentation.Controllers.UserBackend.Settings;
-using Klacks.Api.Presentation.DTOs.Settings;
+using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

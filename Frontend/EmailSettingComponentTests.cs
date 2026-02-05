@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using FluentAssertions;
-using Klacks.Api.Presentation.DTOs.Settings;
+using Klacks.Api.Application.DTOs.Settings;
 using NSubstitute;
 using NUnit.Framework;
 

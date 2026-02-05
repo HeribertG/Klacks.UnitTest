@@ -6,7 +6,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;

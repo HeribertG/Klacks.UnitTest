@@ -1,4 +1,4 @@
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Newtonsoft.Json;
 
 namespace Klacks.UnitTest.FakeData

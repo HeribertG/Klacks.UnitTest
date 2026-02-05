@@ -2,7 +2,7 @@
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Models.Associations;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Microsoft.EntityFrameworkCore;
 
 namespace Klacks.UnitTest.Mocks

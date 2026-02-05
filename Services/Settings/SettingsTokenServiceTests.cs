@@ -3,7 +3,7 @@ using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Settings;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 

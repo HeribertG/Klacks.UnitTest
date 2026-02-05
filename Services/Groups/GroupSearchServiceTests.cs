@@ -2,7 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Schedules;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;

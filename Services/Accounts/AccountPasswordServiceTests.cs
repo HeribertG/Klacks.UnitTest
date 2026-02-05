@@ -2,7 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
-using Klacks.Api.Presentation.DTOs.Registrations;
+using Klacks.Api.Application.DTOs.Registrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;

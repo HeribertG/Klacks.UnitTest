@@ -1,7 +1,7 @@
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Associations;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Infrastructure.Services;
 using Klacks.Api.Domain.Enums;

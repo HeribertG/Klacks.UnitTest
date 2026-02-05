@@ -2,8 +2,8 @@ using FluentAssertions;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Results;
-using Klacks.Api.Presentation.DTOs.Associations;
-using Klacks.Api.Presentation.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Associations;
+using Klacks.Api.Application.DTOs.Filter;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Application.Mappers;
