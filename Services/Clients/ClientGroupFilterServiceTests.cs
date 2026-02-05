@@ -1,3 +1,4 @@
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Associations;
