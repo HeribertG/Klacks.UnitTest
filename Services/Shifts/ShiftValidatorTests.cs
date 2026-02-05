@@ -30,14 +30,14 @@ public class ShiftValidatorTests
         _context = new DataBaseContext(options, mockHttpContextAccessor);
 
         var mockLogger = Substitute.For<ILogger<Shift>>();
-        var mockDateRangeFilterService = Substitute.For<Klacks.Api.Domain.Interfaces.IDateRangeFilterService>();
-        var mockShiftSearchService = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftSearchService>();
-        var mockShiftSortingService = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftSortingService>();
-        var mockShiftStatusFilterService = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftStatusFilterService>();
-        var mockShiftPaginationService = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftPaginationService>();
-        var mockShiftGroupManagementService = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftGroupManagementService>();
-        var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(_context);
-        var mockShiftValidator = Substitute.For<Klacks.Api.Domain.Interfaces.IShiftValidator>();
+        var mockDateRangeFilterService = Substitute.For<IDateRangeFilterService>();
+        var mockShiftSearchService = Substitute.For<IShiftSearchService>();
+        var mockShiftSortingService = Substitute.For<IShiftSortingService>();
+        var mockShiftStatusFilterService = Substitute.For<IShiftStatusFilterService>();
+        var mockShiftPaginationService = Substitute.For<IShiftPaginationService>();
+        var mockShiftGroupManagementService = Substitute.For<IShiftGroupManagementService>();
+        var collectionUpdateService = new EntityCollectionUpdateService(_context);
+        var mockShiftValidator = Substitute.For<IShiftValidator>();
 
         var scheduleMapper = new ScheduleMapper();
         _shiftRepository = new ShiftRepository(

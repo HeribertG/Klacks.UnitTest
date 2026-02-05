@@ -63,7 +63,7 @@ public class ClientRepositoryRefactoredTests
         _mockSearchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
         
-        var collectionUpdateService = new Klacks.Api.Infrastructure.Services.EntityCollectionUpdateService(_context);
+        var collectionUpdateService = new EntityCollectionUpdateService(_context);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
 
