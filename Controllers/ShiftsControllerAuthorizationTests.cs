@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Klacks.Api.Domain.Constants;
-using Klacks.Api.Presentation.Controllers.UserBackend;
+using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Reflection;

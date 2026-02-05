@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Klacks.Api.Presentation.Controllers.UserBackend;
+using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
