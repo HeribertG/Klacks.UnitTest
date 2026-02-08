@@ -1,13 +1,9 @@
 using FluentValidation.Results;
 using Klacks.Api.Application.Commands;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Validation.BreakPlaceholders;
-using Klacks.Api.Domain.Common;
-using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
-using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.DTOs.Schedules;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -17,26 +13,17 @@ namespace Klacks.UnitTest.Validation.BreakPlaceholders;
 public class PostCommandValidatorTests
 {
     private PostCommandValidator _validator;
-    private DataBaseContext _context;
+    private IClientRepository _clientRepository;
+    private IAbsenceRepository _absenceRepository;
     private ILogger<PostCommandValidator> _logger;
 
     [SetUp]
     public void Setup()
     {
-        var options = new DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-
-        var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        _context = new DataBaseContext(options, mockHttpContextAccessor);
+        _clientRepository = Substitute.For<IClientRepository>();
+        _absenceRepository = Substitute.For<IAbsenceRepository>();
         _logger = Substitute.For<ILogger<PostCommandValidator>>();
-        _validator = new PostCommandValidator(_context, _logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _context.Dispose();
+        _validator = new PostCommandValidator(_clientRepository, _absenceRepository, _logger);
     }
 
     [Test]
@@ -148,12 +135,14 @@ public class PostCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenClientDoesNotExist()
     {
         // Arrange
+        var clientId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
-        await SeedAbsence(absenceId);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns((Client?)null);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            ClientId = Guid.NewGuid(), // Non-existent client
+            ClientId = clientId,
             AbsenceId = absenceId,
             From = DateTime.Now,
             Until = DateTime.Now.AddDays(1)
@@ -174,9 +163,9 @@ public class PostCommandValidatorTests
         // Arrange
         var clientId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
-        
-        await SeedClientWithoutMembership(clientId);
-        await SeedAbsence(absenceId);
+        var client = new Client { Id = clientId, Name = "Test Employee", Membership = null };
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
@@ -202,15 +191,15 @@ public class PostCommandValidatorTests
         var clientId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now.AddDays(5);
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
-            From = membershipValidFrom.AddDays(-1), // Before membership starts
+            From = membershipValidFrom.AddDays(-1),
             Until = membershipValidFrom.AddDays(1)
         };
         var command = new PostCommand<BreakPlaceholderResource>(breakResource);
@@ -231,16 +220,16 @@ public class PostCommandValidatorTests
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var membershipValidUntil = DateTime.Now.AddDays(30);
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidUntil);
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidUntil);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidUntil.AddDays(-1),
-            Until = membershipValidUntil.AddDays(1) // After membership ends
+            Until = membershipValidUntil.AddDays(1)
         };
         var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
@@ -257,14 +246,16 @@ public class PostCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
+        var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(false);
 
         var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
-            AbsenceId = Guid.NewGuid(), // Non-existent absence
+            AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(1),
             Until = membershipValidFrom.AddDays(2)
         };
@@ -281,31 +272,19 @@ public class PostCommandValidatorTests
     [Test]
     public async Task Validate_ShouldBeValid_WhenBreakOverlapsWithExistingBreak()
     {
-        // Arrange - Überlappungen sind jetzt erlaubt
+        // Arrange
         var clientId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedAbsence(absenceId);
-        
-        // Add existing break
-        var existingBreak = new BreakPlaceholder
-        {
-            Id = Guid.NewGuid(),
-            ClientId = clientId,
-            AbsenceId = absenceId,
-            From = membershipValidFrom.AddDays(5),
-            Until = membershipValidFrom.AddDays(10)
-        };
-        _context.BreakPlaceholder.Add(existingBreak);
-        await _context.SaveChangesAsync();
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
-            From = membershipValidFrom.AddDays(7), // Overlaps with existing break - jetzt erlaubt
+            From = membershipValidFrom.AddDays(7),
             Until = membershipValidFrom.AddDays(12)
         };
         var command = new PostCommand<BreakPlaceholderResource>(breakResource);
@@ -325,9 +304,9 @@ public class PostCommandValidatorTests
         var clientId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
@@ -353,16 +332,16 @@ public class PostCommandValidatorTests
         var clientId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, null); // No ValidUntil
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, null);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
-            Until = membershipValidFrom.AddDays(100) // Far in the future
+            Until = membershipValidFrom.AddDays(100)
         };
         var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
@@ -382,16 +361,16 @@ public class PostCommandValidatorTests
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var breakDate = membershipValidFrom.AddDays(5);
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
             ClientId = clientId,
             AbsenceId = absenceId,
             From = breakDate,
-            Until = breakDate // Same date - should be valid for single day break
+            Until = breakDate
         };
         var command = new PostCommand<BreakPlaceholderResource>(breakResource);
 
@@ -403,49 +382,18 @@ public class PostCommandValidatorTests
         Assert.That(result.Errors, Is.Empty);
     }
 
-    private async Task SeedClientWithMembership(Guid clientId, DateTime validFrom, DateTime? validUntil)
+    private static Client CreateClientWithMembership(Guid clientId, DateTime validFrom, DateTime? validUntil)
     {
-        var membership = new Membership
-        {
-            Id = Guid.NewGuid(),
-            ValidFrom = validFrom,
-            ValidUntil = validUntil
-        };
-
-        var client = new Client
+        return new Client
         {
             Id = clientId,
-            Membership = membership,
-            Name = "Test Employee"
+            Name = "Test Employee",
+            Membership = new Membership
+            {
+                Id = Guid.NewGuid(),
+                ValidFrom = validFrom,
+                ValidUntil = validUntil
+            }
         };
-
-        _context.Membership.Add(membership);
-        _context.Client.Add(client);
-        await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedClientWithoutMembership(Guid clientId)
-    {
-        var client = new Client
-        {
-            Id = clientId,
-            Name = "Test Employee"
-        };
-
-        _context.Client.Add(client);
-        await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedAbsence(Guid absenceId)
-    {
-        var absence = new Absence
-        {
-            Id = absenceId,
-            Name = new MultiLanguage { De = "Test Absence", En = "Test Absence" },
-            Description = new MultiLanguage { De = "Test Description", En = "Test Description" }
-        };
-
-        _context.Absence.Add(absence);
-        await _context.SaveChangesAsync();
     }
 }

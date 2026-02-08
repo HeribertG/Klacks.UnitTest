@@ -1,13 +1,9 @@
 using FluentValidation.Results;
 using Klacks.Api.Application.Commands;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Validation.BreakPlaceholders;
-using Klacks.Api.Domain.Common;
-using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
-using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.DTOs.Schedules;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -17,26 +13,19 @@ namespace Klacks.UnitTest.Validation.BreakPlaceholders;
 public class PutCommandValidatorTests
 {
     private PutCommandValidator _validator;
-    private DataBaseContext _context;
+    private IClientRepository _clientRepository;
+    private IAbsenceRepository _absenceRepository;
+    private IBreakPlaceholderRepository _breakPlaceholderRepository;
     private ILogger<PutCommandValidator> _logger;
 
     [SetUp]
     public void Setup()
     {
-        var options = new DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-
-        var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        _context = new DataBaseContext(options, mockHttpContextAccessor);
+        _clientRepository = Substitute.For<IClientRepository>();
+        _absenceRepository = Substitute.For<IAbsenceRepository>();
+        _breakPlaceholderRepository = Substitute.For<IBreakPlaceholderRepository>();
         _logger = Substitute.For<ILogger<PutCommandValidator>>();
-        _validator = new PutCommandValidator(_context, _logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _context.Dispose();
+        _validator = new PutCommandValidator(_clientRepository, _absenceRepository, _breakPlaceholderRepository, _logger);
     }
 
     [Test]
@@ -175,12 +164,14 @@ public class PutCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenBreakDoesNotExist()
     {
         // Arrange
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
-        await SeedAbsence(absenceId);
+        _breakPlaceholderRepository.Exists(breakId).Returns(false);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = Guid.NewGuid(), // Non-existent break
+            Id = breakId,
             ClientId = Guid.NewGuid(),
             AbsenceId = absenceId,
             From = DateTime.Now,
@@ -200,16 +191,17 @@ public class PutCommandValidatorTests
     public async Task Validate_ShouldBeInvalid_WhenClientDoesNotExist()
     {
         // Arrange
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
+        var clientId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
-        
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, Guid.NewGuid(), absenceId);
-        await SeedAbsence(absenceId);
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns((Client?)null);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
-            ClientId = Guid.NewGuid(), // Different client (non-existent)
+            Id = breakId,
+            ClientId = clientId,
             AbsenceId = absenceId,
             From = DateTime.Now,
             Until = DateTime.Now.AddDays(1)
@@ -229,16 +221,16 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
-        
-        await SeedClientWithoutMembership(clientId);
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
-        await SeedAbsence(absenceId);
+        var client = new Client { Id = clientId, Name = "Test Employee", Membership = null };
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = DateTime.Now,
@@ -259,20 +251,20 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now.AddDays(5);
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
-            From = membershipValidFrom.AddDays(-1), // Before membership starts
+            From = membershipValidFrom.AddDays(-1),
             Until = membershipValidFrom.AddDays(1)
         };
         var command = new PutCommand<BreakPlaceholderResource>(breakResource);
@@ -290,22 +282,22 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var membershipValidUntil = DateTime.Now.AddDays(30);
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidUntil);
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidUntil);
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidUntil.AddDays(-1),
-            Until = membershipValidUntil.AddDays(1) // After membership ends
+            Until = membershipValidUntil.AddDays(1)
         };
         var command = new PutCommand<BreakPlaceholderResource>(breakResource);
 
@@ -322,17 +314,19 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
+        var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, Guid.NewGuid());
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(false);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
-            AbsenceId = Guid.NewGuid(), // Non-existent absence
+            AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(1),
             Until = membershipValidFrom.AddDays(2)
         };
@@ -349,35 +343,22 @@ public class PutCommandValidatorTests
     [Test]
     public async Task Validate_ShouldBeValid_WhenBreakOverlapsWithExistingBreak()
     {
-        // Arrange - Überlappungen sind jetzt erlaubt
+        // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
-        var otherBreakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
-        await SeedAbsence(absenceId);
-        
-        // Add another existing break that will overlap
-        var otherBreak = new BreakPlaceholder
-        {
-            Id = otherBreakPlaceholderId,
-            ClientId = clientId,
-            AbsenceId = absenceId,
-            From = membershipValidFrom.AddDays(5),
-            Until = membershipValidFrom.AddDays(10)
-        };
-        _context.BreakPlaceholder.Add(otherBreak);
-        await _context.SaveChangesAsync();
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
-            From = membershipValidFrom.AddDays(7), // Overlaps with other break - jetzt erlaubt
+            From = membershipValidFrom.AddDays(7),
             Until = membershipValidFrom.AddDays(12)
         };
         var command = new PutCommand<BreakPlaceholderResource>(breakResource);
@@ -395,17 +376,17 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
@@ -426,21 +407,21 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, null); // No ValidUntil
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, null);
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = membershipValidFrom.AddDays(5),
-            Until = membershipValidFrom.AddDays(100) // Far in the future
+            Until = membershipValidFrom.AddDays(100)
         };
         var command = new PutCommand<BreakPlaceholderResource>(breakResource);
 
@@ -457,22 +438,22 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var breakFrom = membershipValidFrom.AddDays(5);
         var breakUntil = membershipValidFrom.AddDays(10);
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreakPlaceholderWithDates(breakPlaceholderId, clientId, absenceId, breakFrom, breakUntil);
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
-            From = breakFrom, // Same dates as existing break
+            From = breakFrom,
             Until = breakUntil
         };
         var command = new PutCommand<BreakPlaceholderResource>(breakResource);
@@ -490,22 +471,22 @@ public class PutCommandValidatorTests
     {
         // Arrange
         var clientId = Guid.NewGuid();
-        var breakPlaceholderId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
         var absenceId = Guid.NewGuid();
         var membershipValidFrom = DateTime.Now;
         var breakDate = membershipValidFrom.AddDays(5);
-        
-        await SeedClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
-        await SeedExistingBreakPlaceholder(breakPlaceholderId, clientId, absenceId);
-        await SeedAbsence(absenceId);
+        var client = CreateClientWithMembership(clientId, membershipValidFrom, membershipValidFrom.AddDays(30));
+        _breakPlaceholderRepository.Exists(breakId).Returns(true);
+        _clientRepository.GetWithMembershipAsync(clientId, Arg.Any<CancellationToken>()).Returns(client);
+        _absenceRepository.Exists(absenceId).Returns(true);
 
         var breakResource = new BreakPlaceholderResource
         {
-            Id = breakPlaceholderId,
+            Id = breakId,
             ClientId = clientId,
             AbsenceId = absenceId,
             From = breakDate,
-            Until = breakDate // Same date - should be valid for single day break
+            Until = breakDate
         };
         var command = new PutCommand<BreakPlaceholderResource>(breakResource);
 
@@ -517,79 +498,18 @@ public class PutCommandValidatorTests
         Assert.That(result.Errors, Is.Empty);
     }
 
-    private async Task SeedClientWithMembership(Guid clientId, DateTime validFrom, DateTime? validUntil)
+    private static Client CreateClientWithMembership(Guid clientId, DateTime validFrom, DateTime? validUntil)
     {
-        var membership = new Membership
-        {
-            Id = Guid.NewGuid(),
-            ValidFrom = validFrom,
-            ValidUntil = validUntil
-        };
-
-        var client = new Client
+        return new Client
         {
             Id = clientId,
-            Membership = membership,
-            Name = "Test Employee"
+            Name = "Test Employee",
+            Membership = new Membership
+            {
+                Id = Guid.NewGuid(),
+                ValidFrom = validFrom,
+                ValidUntil = validUntil
+            }
         };
-
-        _context.Membership.Add(membership);
-        _context.Client.Add(client);
-        await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedClientWithoutMembership(Guid clientId)
-    {
-        var client = new Client
-        {
-            Id = clientId,
-            Name = "Test Employee"
-        };
-
-        _context.Client.Add(client);
-        await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedAbsence(Guid absenceId)
-    {
-        var absence = new Absence
-        {
-            Id = absenceId,
-            Name = new MultiLanguage { De = "Test Absence", En = "Test Absence" },
-            Description = new MultiLanguage { De = "Test Description", En = "Test Description" }
-        };
-
-        _context.Absence.Add(absence);
-        await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedExistingBreakPlaceholder(Guid breakPlaceholderId, Guid clientId, Guid absenceId)
-    {
-        var existingBreak = new BreakPlaceholder
-        {
-            Id = breakPlaceholderId,
-            ClientId = clientId,
-            AbsenceId = absenceId,
-            From = DateTime.Now.AddDays(1),
-            Until = DateTime.Now.AddDays(2)
-        };
-
-        _context.BreakPlaceholder.Add(existingBreak);
-        await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedExistingBreakPlaceholderWithDates(Guid breakPlaceholderId, Guid clientId, Guid absenceId, DateTime from, DateTime until)
-    {
-        var existingBreak = new BreakPlaceholder
-        {
-            Id = breakPlaceholderId,
-            ClientId = clientId,
-            AbsenceId = absenceId,
-            From = from,
-            Until = until
-        };
-
-        _context.BreakPlaceholder.Add(existingBreak);
-        await _context.SaveChangesAsync();
     }
 }
