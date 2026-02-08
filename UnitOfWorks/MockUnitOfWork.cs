@@ -1,14 +1,9 @@
-﻿using Klacks.Api.Domain.Common;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Mocks
 {
-    /// <summary>
-    /// Mock-Implementierung von IUnitOfWork für Tests, die keine echten Transaktionen benötigt.
-    /// </summary>
     public class MockUnitOfWork : IUnitOfWork
     {
         private readonly DataBaseContext _context;
@@ -30,60 +25,33 @@ namespace Klacks.UnitTest.Mocks
             return _context.SaveChanges();
         }
 
-        // Mock-Implementierung ohne echte Transaktionen
-        public Task<IDbContextTransaction> BeginTransactionAsync()
+        public Task<ITransaction> BeginTransactionAsync()
         {
             _logger.LogInformation("Mock-Transaktion gestartet (keine echte Transaktion)");
-            return Task.FromResult<IDbContextTransaction>(new MockTransaction());
+            return Task.FromResult<ITransaction>(new MockTransaction());
         }
 
-        public Task CommitTransactionAsync(IDbContextTransaction transaction)
+        public Task CommitTransactionAsync(ITransaction transaction)
         {
             _logger.LogInformation("Mock-Transaktion committed (keine echte Transaktion)");
             return Task.CompletedTask;
         }
 
-        public Task RollbackTransactionAsync(IDbContextTransaction transaction)
+        public Task RollbackTransactionAsync(ITransaction transaction)
         {
             _logger.LogInformation("Mock-Transaktion zurückgerollt (keine echte Transaktion)");
             return Task.CompletedTask;
         }
 
-        /// <summary>
-        /// Eine einfache Mock-Implementierung von IDbContextTransaction für Tests.
-        /// </summary>
-        private class MockTransaction : IDbContextTransaction
+        private class MockTransaction : ITransaction
         {
-            public Guid TransactionId => Guid.NewGuid();
-
-            public void Commit()
-            {
-                // Nichts zu tun
-            }
-
-            public Task CommitAsync(CancellationToken cancellationToken = default)
-            {
-                return Task.CompletedTask;
-            }
-
             public void Dispose()
             {
-                // Nichts zu tun
             }
 
             public ValueTask DisposeAsync()
             {
                 return ValueTask.CompletedTask;
-            }
-
-            public void Rollback()
-            {
-                // Nichts zu tun
-            }
-
-            public Task RollbackAsync(CancellationToken cancellationToken = default)
-            {
-                return Task.CompletedTask;
             }
         }
     }

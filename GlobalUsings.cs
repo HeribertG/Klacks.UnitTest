@@ -19,7 +19,7 @@ global using Klacks.Api.Domain.Common;
 
 global using Klacks.Api.Domain.Enums;
 
-global using Klacks.Api.Application.Services.Common;
+global using Klacks.Api.Infrastructure.Services;
 
 global using Klacks.Api.Infrastructure.Persistence;
 global using Klacks.Api.Infrastructure.Repositories.Associations;
