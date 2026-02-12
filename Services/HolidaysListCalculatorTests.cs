@@ -1623,4 +1623,248 @@ internal class HolidaysListCalculatorTests
     }
 
     #endregion
+
+    #region Weekday Rule Tests
+
+    [Test]
+    public void ShouldComputeFirstMondayInSeptember_LaborDay()
+    {
+        // Arrange
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "09/01+00+MO",
+            Name = new MultiLanguage { En = "Labor Day" },
+            State = "",
+            Country = "US",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        };
+        _holidaysListCalculator.Add(rule);
+
+        // Act & Assert 2023: Sep 1 (Fri) → next Mon = Sep 4
+        _holidaysListCalculator.CurrentYear = 2023;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.IsHoliday(new DateOnly(2023, 9, 4))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2022: Sep 1 (Thu) → next Mon = Sep 5
+        _holidaysListCalculator.CurrentYear = 2022;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2022, 9, 5))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2024: Sep 1 (Sun) → next Mon = Sep 2
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2024, 9, 2))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+    }
+
+    [Test]
+    public void ShouldComputeFourthThursdayInNovember_Thanksgiving()
+    {
+        // Arrange
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "11/01+21+TH",
+            Name = new MultiLanguage { En = "Thanksgiving" },
+            State = "",
+            Country = "US",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        };
+        _holidaysListCalculator.Add(rule);
+
+        // Act & Assert 2023: Nov 1+21=Nov 22 (Wed) → next Thu = Nov 23
+        _holidaysListCalculator.CurrentYear = 2023;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.IsHoliday(new DateOnly(2023, 11, 23))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2022: Nov 22 (Tue) → next Thu = Nov 24
+        _holidaysListCalculator.CurrentYear = 2022;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2022, 11, 24))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2024: Nov 22 (Fri) → next Thu = Nov 28
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2024, 11, 28))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+    }
+
+    [Test]
+    public void ShouldComputeThirdMondayInJanuary_MLKDay()
+    {
+        // Arrange
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "01/15+00+MO",
+            Name = new MultiLanguage { En = "Martin Luther King Jr. Day" },
+            State = "",
+            Country = "US",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        };
+        _holidaysListCalculator.Add(rule);
+
+        // Act & Assert 2023: Jan 15 (Sun) → next Mon = Jan 16
+        _holidaysListCalculator.CurrentYear = 2023;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.IsHoliday(new DateOnly(2023, 1, 16))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2024: Jan 15 (Mon) → stays Jan 15
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2024, 1, 15))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2022: Jan 15 (Sat) → next Mon = Jan 17
+        _holidaysListCalculator.CurrentYear = 2022;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2022, 1, 17))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+    }
+
+    [Test]
+    public void ShouldComputeFirstThursdayInApril_NaefelserFahrt()
+    {
+        // Arrange
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "04/01+00+TH",
+            Name = new MultiLanguage { En = "Näfelser Fahrt" },
+            State = "GL",
+            Country = "CH",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        };
+        _holidaysListCalculator.Add(rule);
+
+        // Act & Assert 2023: Apr 1 (Sat) → next Thu = Apr 6
+        _holidaysListCalculator.CurrentYear = 2023;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.IsHoliday(new DateOnly(2023, 4, 6))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2024: Apr 1 (Mon) → next Thu = Apr 4
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2024, 4, 4))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+    }
+
+    [Test]
+    public void ShouldComputeWeekdayRuleWithBackwardDirection()
+    {
+        // Arrange
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "05/25+00-MO",
+            Name = new MultiLanguage { En = "Test Backward Rule" },
+            State = "",
+            Country = "US",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        };
+        _holidaysListCalculator.Add(rule);
+
+        // Act & Assert 2023: May 25 (Thu) → prev Mon = May 22
+        _holidaysListCalculator.CurrentYear = 2023;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.IsHoliday(new DateOnly(2023, 5, 22))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2022: May 25 (Wed) → prev Mon = May 23
+        _holidaysListCalculator.CurrentYear = 2022;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2022, 5, 23))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2024: May 25 (Sat) → prev Mon = May 20
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2024, 5, 20))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+    }
+
+    [Test]
+    public void ShouldComputeWednesdayBetweenNov16And22_BussUndBettag()
+    {
+        // Arrange
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "11/16+00+WE",
+            Name = new MultiLanguage { En = "Buß- und Bettag" },
+            State = "SN",
+            Country = "DE",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        };
+        _holidaysListCalculator.Add(rule);
+
+        // Act & Assert 2023: Nov 16 (Thu) → next Wed = Nov 22
+        _holidaysListCalculator.CurrentYear = 2023;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.IsHoliday(new DateOnly(2023, 11, 22))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2022: Nov 16 (Wed) → stays Nov 16
+        _holidaysListCalculator.CurrentYear = 2022;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2022, 11, 16))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+
+        // Act & Assert 2024: Nov 16 (Sat) → next Wed = Nov 20
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2024, 11, 20))
+            .Should().Be(HolidayStatus.OfficialHoliday);
+    }
+
+    [Test]
+    public void ShouldNotReportWrongDateForWeekdayRule()
+    {
+        // Arrange
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "09/01+00+MO",
+            Name = new MultiLanguage { En = "Labor Day" },
+            State = "",
+            Country = "US",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        };
+        _holidaysListCalculator.Add(rule);
+
+        // Act & Assert - Sep 1 2023 is NOT Labor Day (it's a Friday)
+        _holidaysListCalculator.CurrentYear = 2023;
+        _holidaysListCalculator.ComputeHolidays();
+        _holidaysListCalculator.IsHoliday(new DateOnly(2023, 9, 1))
+            .Should().NotBe(HolidayStatus.OfficialHoliday);
+    }
+
+    #endregion
 }
