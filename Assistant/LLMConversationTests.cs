@@ -1,7 +1,7 @@
 using NUnit.Framework;
-using Klacks.Api.Domain.Models.LLM;
+using Klacks.Api.Domain.Models.Assistant;
 
-namespace Klacks.UnitTest.LLM;
+namespace Klacks.UnitTest.Assistant;
 
 [TestFixture]
 public class LLMConversationTests

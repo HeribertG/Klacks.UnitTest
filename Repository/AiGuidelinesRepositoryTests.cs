@@ -1,5 +1,5 @@
-using Klacks.Api.Domain.Models.AI;
-using Klacks.Api.Infrastructure.Repositories.AI;
+using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Infrastructure.Repositories.Assistant;
 using NUnit.Framework;
 using FluentAssertions;
 

@@ -1,9 +1,9 @@
 using NUnit.Framework;
 using NSubstitute;
-using Klacks.Api.Domain.Models.LLM;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Interfaces;
 
-namespace Klacks.UnitTest.LLM;
+namespace Klacks.UnitTest.Assistant;
 
 [TestFixture]
 public class LLMRepositoryMockTests

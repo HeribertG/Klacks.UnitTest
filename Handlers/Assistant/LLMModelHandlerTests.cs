@@ -1,13 +1,13 @@
 using FluentAssertions;
 using Klacks.Api.Application.Commands;
-using Klacks.Api.Application.Handlers.LLM;
+using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Interfaces;
-using Klacks.Api.Domain.Interfaces.LLM;
-using Klacks.Api.Domain.Models.LLM;
+using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace Klacks.UnitTest.Handlers.LLM;
+namespace Klacks.UnitTest.Handlers.Assistant;
 
 [TestFixture]
 public class CreateLLMModelCommandHandlerTests

@@ -1,10 +1,10 @@
-using Klacks.Api.Application.DTOs.LLM;
-using Klacks.Api.Domain.Models.AI;
-using Klacks.Api.Domain.Services.LLM;
+using Klacks.Api.Application.DTOs.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant;
 using NUnit.Framework;
 using FluentAssertions;
 
-namespace Klacks.UnitTest.LLM;
+namespace Klacks.UnitTest.Assistant;
 
 [TestFixture]
 public class LLMSystemPromptBuilderGuidelinesTests
