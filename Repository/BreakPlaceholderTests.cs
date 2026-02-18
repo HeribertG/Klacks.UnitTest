@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.AspNetCore.Http;
@@ -71,7 +72,7 @@ internal class BreakPlaceholderTests
         result.Count().Should().Be(500);
         totalCount.Should().Be(500);
 
-        var tmpBreakPlaceholders = new List<BreakPlaceholder>();
+        var tmpBreakPlaceholders = new List<BreakPlaceholderResource>();
 
         foreach (var c in result)
         {
