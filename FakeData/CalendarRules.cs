@@ -1,5 +1,5 @@
 using Klacks.Api.Application.DTOs.Filter;
-using Newtonsoft.Json;
+using System.Text.Json;
 
 namespace Klacks.UnitTest.FakeData
 {
@@ -7,22 +7,22 @@ namespace Klacks.UnitTest.FakeData
     {
         internal static List<CalendarRule> CalendarRuleList()
         {
-            return JsonConvert.DeserializeObject<List<CalendarRule>>(FakeDateSerializeString.Data.calendarRuleList)!;
+            return JsonSerializer.Deserialize<List<CalendarRule>>(FakeDateSerializeString.Data.calendarRuleList)!;
         }
 
         internal static CalendarRulesFilter CalendarRulesFilter()
         {
-            return JsonConvert.DeserializeObject<CalendarRulesFilter>(FakeDateSerializeString.Data.filterCalendarRuleList)!;
+            return JsonSerializer.Deserialize<CalendarRulesFilter>(FakeDateSerializeString.Data.filterCalendarRuleList)!;
         }
 
         internal static List<Countries> CountryList()
         {
-            return JsonConvert.DeserializeObject<List<Countries>>(FakeDateSerializeString.Data.countryList)!;
+            return JsonSerializer.Deserialize<List<Countries>>(FakeDateSerializeString.Data.countryList)!;
         }
 
         internal static List<State> StateList()
         {
-            return JsonConvert.DeserializeObject<List<State>>(FakeDateSerializeString.Data.stateList)!;
+            return JsonSerializer.Deserialize<List<State>>(FakeDateSerializeString.Data.stateList)!;
         }
     }
 }

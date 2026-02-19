@@ -5,7 +5,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Application.DTOs.Clients;
 using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Application.DTOs.Staffs;
-using Newtonsoft.Json;
+using System.Text.Json;
 
 namespace Klacks.UnitTest.FakeData
 {
@@ -13,7 +13,7 @@ namespace Klacks.UnitTest.FakeData
     {
         internal static FilterResource Filter()
         {
-            return JsonConvert.DeserializeObject<FilterResource>(FakeDateSerializeString.Data.filterSimpleList)!;
+            return JsonSerializer.Deserialize<FilterResource>(FakeDateSerializeString.Data.filterSimpleList)!;
         }
 
         internal static List<Absence> GenerateAbsences(int count)
@@ -144,7 +144,7 @@ namespace Klacks.UnitTest.FakeData
 
         internal static TruncatedClient TruncatedClient()
         {
-            return JsonConvert.DeserializeObject<TruncatedClient>(FakeDateSerializeString.Data.clientsSimpleList)!;
+            return JsonSerializer.Deserialize<TruncatedClient>(FakeDateSerializeString.Data.clientsSimpleList)!;
         }
 
         internal static TruncatedClientResource TruncatedClientResource()

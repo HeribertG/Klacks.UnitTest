@@ -1,4 +1,4 @@
-using Newtonsoft.Json;
+using System.Text.Json;
 
 namespace Klacks.UnitTest.FakeData
 {
@@ -6,7 +6,7 @@ namespace Klacks.UnitTest.FakeData
     {
         internal static List<MockarooClient> FakeClient()
         {
-            return JsonConvert.DeserializeObject<List<MockarooClient>>(FakeDateSerializeString.Data.fakeTonicList)!;
+            return JsonSerializer.Deserialize<List<MockarooClient>>(FakeDateSerializeString.Data.fakeTonicList)!;
         }
 
         public class MockarooClient
