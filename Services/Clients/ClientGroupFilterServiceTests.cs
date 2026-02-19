@@ -3,7 +3,6 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Application.Services.Clients;
 using NSubstitute;
 

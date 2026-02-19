@@ -7,7 +7,6 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
-using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Application.DTOs.Staffs;
 using Microsoft.Extensions.Logging;
 using NSubstitute;

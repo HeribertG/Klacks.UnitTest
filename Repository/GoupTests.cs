@@ -2,7 +2,7 @@ using Klacks.Api.Infrastructure.Scripting;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
-using Klacks.Api.Infrastructure.Interfaces;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;

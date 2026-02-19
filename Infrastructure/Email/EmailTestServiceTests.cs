@@ -1,3 +1,4 @@
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Application.DTOs.Settings;
 using Microsoft.Extensions.Logging;
