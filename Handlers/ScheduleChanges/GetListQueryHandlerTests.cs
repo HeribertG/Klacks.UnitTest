@@ -1,6 +1,7 @@
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.ScheduleChanges;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Handlers.ScheduleChanges;
@@ -22,43 +23,55 @@ public class GetListQueryHandlerTests
     [Test]
     public async Task Handle_ShouldCallGetChangesAsyncWithCorrectDates()
     {
+        // Arrange
         var startDate = new DateOnly(2026, 1, 1);
         var endDate = new DateOnly(2026, 12, 31);
         var query = new GetListQuery { StartDate = startDate, EndDate = endDate };
 
         _mockTracker.GetChangesAsync(startDate, endDate)
-            .Returns(Task.FromResult(new List<ScheduleChangeResource>()));
+            .Returns(Task.FromResult(new List<ScheduleChange>()));
 
+        // Act
         await _handler.Handle(query, CancellationToken.None);
 
+        // Assert
         await _mockTracker.Received(1).GetChangesAsync(startDate, endDate);
     }
 
     [Test]
     public async Task Handle_ShouldReturnResultsFromTracker()
     {
+        // Arrange
         var startDate = new DateOnly(2026, 2, 1);
         var endDate = new DateOnly(2026, 2, 28);
         var query = new GetListQuery { StartDate = startDate, EndDate = endDate };
 
-        var expectedResults = new List<ScheduleChangeResource>
+        var clientId1 = Guid.NewGuid();
+        var clientId2 = Guid.NewGuid();
+        var domainChanges = new List<ScheduleChange>
         {
-            new() { ClientId = Guid.NewGuid(), ChangeDate = new DateOnly(2026, 2, 10) },
-            new() { ClientId = Guid.NewGuid(), ChangeDate = new DateOnly(2026, 2, 15) }
+            new() { ClientId = clientId1, ChangeDate = new DateOnly(2026, 2, 10) },
+            new() { ClientId = clientId2, ChangeDate = new DateOnly(2026, 2, 15) }
         };
 
         _mockTracker.GetChangesAsync(startDate, endDate)
-            .Returns(Task.FromResult(expectedResults));
+            .Returns(Task.FromResult(domainChanges));
 
+        // Act
         var result = await _handler.Handle(query, CancellationToken.None);
 
+        // Assert
         result.Should().HaveCount(2);
-        result.Should().BeEquivalentTo(expectedResults);
+        result[0].ClientId.Should().Be(clientId1);
+        result[0].ChangeDate.Should().Be(new DateOnly(2026, 2, 10));
+        result[1].ClientId.Should().Be(clientId2);
+        result[1].ChangeDate.Should().Be(new DateOnly(2026, 2, 15));
     }
 
     [Test]
     public async Task Handle_NoChanges_ShouldReturnEmptyList()
     {
+        // Arrange
         var query = new GetListQuery
         {
             StartDate = new DateOnly(2026, 3, 1),
@@ -66,10 +79,12 @@ public class GetListQueryHandlerTests
         };
 
         _mockTracker.GetChangesAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(Task.FromResult(new List<ScheduleChangeResource>()));
+            .Returns(Task.FromResult(new List<ScheduleChange>()));
 
+        // Act
         var result = await _handler.Handle(query, CancellationToken.None);
 
+        // Assert
         result.Should().BeEmpty();
     }
 }
