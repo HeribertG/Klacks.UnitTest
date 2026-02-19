@@ -238,13 +238,15 @@ public class ContractRepositoryTests
     }
 
     [Test]
-    public async Task Delete_WithNonExistentId_ShouldThrowException()
+    public async Task Delete_WithNonExistentId_ShouldReturnNull()
     {
         // Arrange
         var nonExistentId = Guid.NewGuid();
 
-        // Act & Assert
-        var act = async () => await contractRepository.Delete(nonExistentId);
-        await act.Should().ThrowAsync<ArgumentNullException>();
+        // Act
+        var result = await contractRepository.Delete(nonExistentId);
+
+        // Assert
+        result.Should().BeNull();
     }
 }
