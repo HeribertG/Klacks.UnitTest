@@ -13,7 +13,8 @@ namespace Klacks.UnitTest.FakeData
     {
         internal static FilterResource Filter()
         {
-            return JsonSerializer.Deserialize<FilterResource>(FakeDateSerializeString.Data.filterSimpleList)!;
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            return JsonSerializer.Deserialize<FilterResource>(FakeDateSerializeString.Data.filterSimpleList, options)!;
         }
 
         internal static List<Absence> GenerateAbsences(int count)
@@ -144,7 +145,8 @@ namespace Klacks.UnitTest.FakeData
 
         internal static TruncatedClient TruncatedClient()
         {
-            return JsonSerializer.Deserialize<TruncatedClient>(FakeDateSerializeString.Data.clientsSimpleList)!;
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            return JsonSerializer.Deserialize<TruncatedClient>(FakeDateSerializeString.Data.clientsSimpleList, options)!;
         }
 
         internal static TruncatedClientResource TruncatedClientResource()

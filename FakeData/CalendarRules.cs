@@ -7,22 +7,26 @@ namespace Klacks.UnitTest.FakeData
     {
         internal static List<CalendarRule> CalendarRuleList()
         {
-            return JsonSerializer.Deserialize<List<CalendarRule>>(FakeDateSerializeString.Data.calendarRuleList)!;
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            return JsonSerializer.Deserialize<List<CalendarRule>>(FakeDateSerializeString.Data.calendarRuleList, options)!;
         }
 
         internal static CalendarRulesFilter CalendarRulesFilter()
         {
-            return JsonSerializer.Deserialize<CalendarRulesFilter>(FakeDateSerializeString.Data.filterCalendarRuleList)!;
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            return JsonSerializer.Deserialize<CalendarRulesFilter>(FakeDateSerializeString.Data.filterCalendarRuleList, options)!;
         }
 
         internal static List<Countries> CountryList()
         {
-            return JsonSerializer.Deserialize<List<Countries>>(FakeDateSerializeString.Data.countryList)!;
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            return JsonSerializer.Deserialize<List<Countries>>(FakeDateSerializeString.Data.countryList, options)!;
         }
 
         internal static List<State> StateList()
         {
-            return JsonSerializer.Deserialize<List<State>>(FakeDateSerializeString.Data.stateList)!;
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            return JsonSerializer.Deserialize<List<State>>(FakeDateSerializeString.Data.stateList, options)!;
         }
     }
 }

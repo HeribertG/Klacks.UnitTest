@@ -412,14 +412,14 @@ internal class ClientTests
             }
             if (item.Communications.Any())
             {
-                foreach (var communication in communications)
+                foreach (var communication in item.Communications)
                 {
                     communications.Add(communication);
                 }
             }
             if (item.Annotations.Any())
             {
-                foreach (var annotation in annotations)
+                foreach (var annotation in item.Annotations)
                 {
                     annotations.Add(annotation);
                 }

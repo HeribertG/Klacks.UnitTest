@@ -6,7 +6,8 @@ namespace Klacks.UnitTest.FakeData
     {
         internal static List<MockarooClient> FakeClient()
         {
-            return JsonSerializer.Deserialize<List<MockarooClient>>(FakeDateSerializeString.Data.fakeTonicList)!;
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            return JsonSerializer.Deserialize<List<MockarooClient>>(FakeDateSerializeString.Data.fakeTonicList, options)!;
         }
 
         public class MockarooClient
