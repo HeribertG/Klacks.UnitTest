@@ -221,7 +221,12 @@ public class ContractsControllerTests
 
         // Assert
         mockLogger.Received().LogInformation("Fetching all contracts.");
-        mockLogger.Received().LogInformation($"Retrieved {contracts.Count()} contracts.");
+        mockLogger.Received().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o != null && o.ToString()!.Contains("Retrieved 2 contracts.")),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     [Test]
