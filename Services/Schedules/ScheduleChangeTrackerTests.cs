@@ -1,3 +1,4 @@
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
@@ -20,7 +21,8 @@ public class ScheduleChangeTrackerTests
 
         var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, mockHttpContextAccessor);
-        _tracker = new ScheduleChangeTracker(_context);
+        var mockNotificationService = Substitute.For<IWorkNotificationService>();
+        _tracker = new ScheduleChangeTracker(_context, mockNotificationService, mockHttpContextAccessor);
     }
 
     [TearDown]
