@@ -107,6 +107,7 @@ public class ScheduleChangeTrackingTests
     private IPeriodHoursService _periodHoursService = null!;
     private IScheduleEntriesService _scheduleEntriesService = null!;
     private IWorkNotificationService _notificationService = null!;
+    private IScheduleCompletionService _completionService = null!;
     private ScheduleMapper _scheduleMapper = null!;
 
     [SetUp]
@@ -135,6 +136,23 @@ public class ScheduleChangeTrackingTests
             .Returns(new TestAsyncEnumerable<ScheduleCell>(Enumerable.Empty<ScheduleCell>()));
 
         _notificationService = Substitute.For<IWorkNotificationService>();
+
+        _completionService = Substitute.For<IScheduleCompletionService>();
+        _completionService.SaveAndTrackAsync(
+                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(new PeriodHoursResource());
+        _completionService.SaveAndTrackMoveAsync(
+                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+                Arg.Any<Guid?>(), Arg.Any<DateOnly?>())
+            .Returns(new PeriodHoursResource());
+        _completionService.SaveBulkAndTrackAsync(
+                Arg.Any<List<(Guid, DateOnly)>>())
+            .Returns(Task.CompletedTask);
+        _completionService.SaveAndTrackWithReplaceClientAsync(
+                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+                Arg.Any<Guid?>())
+            .Returns(Task.CompletedTask);
+
         _scheduleMapper = new ScheduleMapper();
     }
 
@@ -187,16 +205,13 @@ public class ScheduleChangeTrackingTests
         Description = "Test",
     };
 
-    #region Work Handler - Repository Delegation
+    #region Work Handler - CompletionService Delegation
 
     [Test]
-    public async Task Work_Post_ShouldCallAddWithPeriodHours()
+    public async Task Work_Post_ShouldCallAddAndSaveAndTrack()
     {
         // Arrange
         var workRepository = Substitute.For<IWorkRepository>();
-        var testWork = CreateTestWork();
-        workRepository.AddWithPeriodHours(Arg.Any<Work>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns((testWork, new PeriodHoursResource()));
 
         var shiftStatsService = Substitute.For<IShiftStatsNotificationService>();
         var shiftScheduleService = Substitute.For<IShiftScheduleService>();
@@ -207,7 +222,7 @@ public class ScheduleChangeTrackingTests
         var handler = new WorkPostHandler(
             workRepository, _scheduleMapper, _notificationService,
             shiftStatsService, shiftScheduleService, _periodHoursService,
-            _scheduleEntriesService, _httpContextAccessor,
+            _scheduleEntriesService, _completionService, _httpContextAccessor,
             Substitute.For<ILogger<WorkPostHandler>>());
 
         var resource = new WorkResource
@@ -227,19 +242,19 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await workRepository.Received(1)
-            .AddWithPeriodHours(Arg.Any<Work>(), PeriodStart, PeriodEnd);
+        await workRepository.Received(1).Add(Arg.Any<Work>());
+        await _completionService.Received(1)
+            .SaveAndTrackAsync(Arg.Any<Guid>(), TestDate, PeriodStart, PeriodEnd);
     }
 
     [Test]
-    public async Task Work_Put_ShouldCallPutWithPeriodHours()
+    public async Task Work_Put_ShouldCallPutAndSaveAndTrackMove()
     {
         // Arrange
         var workRepository = Substitute.For<IWorkRepository>();
         var testWork = CreateTestWork();
         workRepository.GetNoTracking(testWork.Id).Returns(testWork);
-        workRepository.PutWithPeriodHours(Arg.Any<Work>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns((testWork, new PeriodHoursResource()));
+        workRepository.Put(Arg.Any<Work>()).Returns(testWork);
 
         var shiftStatsService = Substitute.For<IShiftStatsNotificationService>();
         var shiftScheduleService = Substitute.For<IShiftScheduleService>();
@@ -250,7 +265,7 @@ public class ScheduleChangeTrackingTests
         var handler = new WorkPutHandler(
             workRepository, _scheduleMapper, _notificationService,
             shiftStatsService, shiftScheduleService, _periodHoursService,
-            _scheduleEntriesService, _httpContextAccessor,
+            _scheduleEntriesService, _completionService, _httpContextAccessor,
             Substitute.For<ILogger<WorkPutHandler>>());
 
         var resource = new WorkResource
@@ -271,19 +286,19 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await workRepository.Received(1)
-            .PutWithPeriodHours(Arg.Any<Work>(), PeriodStart, PeriodEnd);
+        await workRepository.Received(1).Put(Arg.Any<Work>());
+        await _completionService.Received(1)
+            .SaveAndTrackMoveAsync(TestClientId, TestDate, PeriodStart, PeriodEnd,
+                Arg.Any<Guid?>(), Arg.Any<DateOnly?>());
     }
 
     [Test]
-    public async Task Work_Delete_ShouldCallDeleteWithPeriodHours()
+    public async Task Work_Delete_ShouldCallDeleteAndSaveAndTrack()
     {
         // Arrange
         var workRepository = Substitute.For<IWorkRepository>();
         var testWork = CreateTestWork();
         workRepository.Get(testWork.Id).Returns(testWork);
-        workRepository.DeleteWithPeriodHours(testWork.Id, Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns((testWork, new PeriodHoursResource()));
 
         var shiftStatsService = Substitute.For<IShiftStatsNotificationService>();
         var shiftScheduleService = Substitute.For<IShiftScheduleService>();
@@ -294,7 +309,7 @@ public class ScheduleChangeTrackingTests
         var handler = new WorkDeleteHandler(
             workRepository, _scheduleMapper, _notificationService,
             shiftStatsService, shiftScheduleService, _scheduleEntriesService,
-            _httpContextAccessor,
+            _completionService, _httpContextAccessor,
             Substitute.For<ILogger<WorkDeleteHandler>>());
 
         var command = new DeleteWorkCommand(testWork.Id, PeriodStart, PeriodEnd);
@@ -303,26 +318,25 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await workRepository.Received(1)
-            .DeleteWithPeriodHours(testWork.Id, PeriodStart, PeriodEnd);
+        await workRepository.Received(1).Delete(testWork.Id);
+        await _completionService.Received(1)
+            .SaveAndTrackAsync(TestClientId, TestDate, PeriodStart, PeriodEnd);
     }
 
     #endregion
 
-    #region Break Handler - Repository Delegation
+    #region Break Handler - CompletionService Delegation
 
     [Test]
-    public async Task Break_Post_ShouldCallAddWithPeriodHours()
+    public async Task Break_Post_ShouldCallAddAndSaveAndTrack()
     {
         // Arrange
         var breakRepository = Substitute.For<IBreakRepository>();
-        var testBreak = CreateTestBreak();
-        breakRepository.AddWithPeriodHours(Arg.Any<Api.Domain.Models.Schedules.Break>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns((testBreak, new PeriodHoursResource()));
 
         var handler = new BreakPostHandler(
             breakRepository, _scheduleMapper, _periodHoursService,
-            _scheduleEntriesService, _notificationService, _httpContextAccessor,
+            _scheduleEntriesService, _notificationService, _completionService,
+            _httpContextAccessor,
             Substitute.For<ILogger<BreakPostHandler>>());
 
         var resource = new BreakResource
@@ -343,21 +357,23 @@ public class ScheduleChangeTrackingTests
 
         // Assert
         await breakRepository.Received(1)
-            .AddWithPeriodHours(Arg.Any<Api.Domain.Models.Schedules.Break>(), PeriodStart, PeriodEnd);
+            .Add(Arg.Any<Api.Domain.Models.Schedules.Break>());
+        await _completionService.Received(1)
+            .SaveAndTrackAsync(TestClientId, TestDate, PeriodStart, PeriodEnd);
     }
 
     [Test]
-    public async Task Break_Put_ShouldCallPutWithPeriodHours()
+    public async Task Break_Put_ShouldCallPutAndSaveAndTrack()
     {
         // Arrange
         var breakRepository = Substitute.For<IBreakRepository>();
         var testBreak = CreateTestBreak();
-        breakRepository.PutWithPeriodHours(Arg.Any<Api.Domain.Models.Schedules.Break>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns((testBreak, new PeriodHoursResource()));
+        breakRepository.Put(Arg.Any<Api.Domain.Models.Schedules.Break>()).Returns(testBreak);
 
         var handler = new BreakPutHandler(
             breakRepository, _scheduleMapper, _periodHoursService,
-            _scheduleEntriesService, _notificationService, _httpContextAccessor,
+            _scheduleEntriesService, _notificationService, _completionService,
+            _httpContextAccessor,
             Substitute.For<ILogger<BreakPutHandler>>());
 
         var resource = new BreakResource
@@ -379,22 +395,22 @@ public class ScheduleChangeTrackingTests
 
         // Assert
         await breakRepository.Received(1)
-            .PutWithPeriodHours(Arg.Any<Api.Domain.Models.Schedules.Break>(), PeriodStart, PeriodEnd);
+            .Put(Arg.Any<Api.Domain.Models.Schedules.Break>());
+        await _completionService.Received(1)
+            .SaveAndTrackAsync(TestClientId, TestDate, PeriodStart, PeriodEnd);
     }
 
     [Test]
-    public async Task Break_Delete_ShouldCallDeleteWithPeriodHours()
+    public async Task Break_Delete_ShouldCallDeleteAndSaveAndTrack()
     {
         // Arrange
         var breakRepository = Substitute.For<IBreakRepository>();
         var testBreak = CreateTestBreak();
         breakRepository.Get(testBreak.Id).Returns(testBreak);
-        breakRepository.DeleteWithPeriodHours(testBreak.Id, Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns((testBreak, new PeriodHoursResource()));
 
         var handler = new BreakDeleteHandler(
             breakRepository, _scheduleMapper, _scheduleEntriesService,
-            _notificationService, _httpContextAccessor,
+            _notificationService, _completionService, _httpContextAccessor,
             Substitute.For<ILogger<BreakDeleteHandler>>());
 
         var command = new DeleteBreakCommand(testBreak.Id, PeriodStart, PeriodEnd);
@@ -403,8 +419,9 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await breakRepository.Received(1)
-            .DeleteWithPeriodHours(testBreak.Id, PeriodStart, PeriodEnd);
+        await breakRepository.Received(1).Delete(testBreak.Id);
+        await _completionService.Received(1)
+            .SaveAndTrackAsync(TestClientId, TestDate, PeriodStart, PeriodEnd);
     }
 
     #endregion
@@ -547,7 +564,7 @@ public class ScheduleChangeTrackingTests
         var handler = new WorkChangePostHandler(
             workChangeRepository, workRepository, _scheduleMapper,
             _periodHoursService, _scheduleEntriesService, _notificationService,
-            _httpContextAccessor,
+            _completionService, _httpContextAccessor,
             Substitute.For<ILogger<WorkChangePostHandler>>());
 
         var resource = new WorkChangeResource
@@ -584,7 +601,7 @@ public class ScheduleChangeTrackingTests
         var handler = new WorkChangePutHandler(
             workChangeRepository, workRepository, _scheduleMapper,
             _periodHoursService, _scheduleEntriesService, _notificationService,
-            _httpContextAccessor,
+            _completionService, _httpContextAccessor,
             Substitute.For<ILogger<WorkChangePutHandler>>());
 
         var resource = new WorkChangeResource
@@ -622,7 +639,7 @@ public class ScheduleChangeTrackingTests
         var handler = new WorkChangeDeleteHandler(
             workChangeRepository, workRepository, _scheduleMapper,
             _periodHoursService, _scheduleEntriesService, _notificationService,
-            _httpContextAccessor,
+            _completionService, _httpContextAccessor,
             Substitute.For<ILogger<WorkChangeDeleteHandler>>());
 
         var command = new DeleteCommand<WorkChangeResource>(testWorkChange.Id);
@@ -637,15 +654,13 @@ public class ScheduleChangeTrackingTests
 
     #endregion
 
-    #region BulkAdd/BulkDelete Work - Repository Delegation
+    #region BulkAdd/BulkDelete Work - CompletionService Delegation
 
     [Test]
-    public async Task BulkAddWorks_ShouldCallBulkAddWithTracking()
+    public async Task BulkAddWorks_ShouldCallAddAndSaveBulk()
     {
         // Arrange
         var workRepository = Substitute.For<IWorkRepository>();
-        workRepository.BulkAddWithTracking(Arg.Any<List<Work>>())
-            .Returns(callInfo => callInfo.Arg<List<Work>>());
 
         var shiftStatsService = Substitute.For<IShiftStatsNotificationService>();
         var shiftScheduleService = Substitute.For<IShiftScheduleService>();
@@ -656,7 +671,7 @@ public class ScheduleChangeTrackingTests
         var handler = new BulkAddWorksCommandHandler(
             workRepository, _scheduleMapper, _notificationService,
             shiftStatsService, shiftScheduleService, _periodHoursService,
-            _httpContextAccessor,
+            _completionService, _httpContextAccessor,
             Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
 
         var clientId2 = Guid.NewGuid();
@@ -686,12 +701,13 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await workRepository.Received(1)
-            .BulkAddWithTracking(Arg.Is<List<Work>>(works => works.Count == 2));
+        await workRepository.Received(2).Add(Arg.Any<Work>());
+        await _completionService.Received(1)
+            .SaveBulkAndTrackAsync(Arg.Is<List<(Guid, DateOnly)>>(l => l.Count == 2));
     }
 
     [Test]
-    public async Task BulkDeleteWorks_ShouldCallBulkDeleteWithTracking()
+    public async Task BulkDeleteWorks_ShouldCallDeleteAndSaveBulk()
     {
         // Arrange
         var workRepository = Substitute.For<IWorkRepository>();
@@ -705,8 +721,8 @@ public class ScheduleChangeTrackingTests
             WorkTime = 4, StartTime = new TimeOnly(8, 0), EndTime = new TimeOnly(12, 0),
         };
 
-        workRepository.BulkDeleteWithTracking(Arg.Any<List<Guid>>())
-            .Returns(new List<Work> { work1, work2 });
+        workRepository.Get(work1.Id).Returns(work1);
+        workRepository.Get(work2.Id).Returns(work2);
 
         var shiftStatsService = Substitute.For<IShiftStatsNotificationService>();
         var shiftScheduleService = Substitute.For<IShiftScheduleService>();
@@ -717,7 +733,7 @@ public class ScheduleChangeTrackingTests
         var handler = new BulkDeleteWorksCommandHandler(
             workRepository, _scheduleMapper, _notificationService,
             shiftStatsService, shiftScheduleService, _periodHoursService,
-            _httpContextAccessor,
+            _completionService, _httpContextAccessor,
             Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
 
         var request = new BulkDeleteWorksRequest { WorkIds = [work1.Id, work2.Id] };
@@ -727,24 +743,23 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await workRepository.Received(1)
-            .BulkDeleteWithTracking(Arg.Is<List<Guid>>(ids => ids.Count == 2));
+        await workRepository.Received(2).Delete(Arg.Any<Guid>());
+        await _completionService.Received(1)
+            .SaveBulkAndTrackAsync(Arg.Is<List<(Guid, DateOnly)>>(l => l.Count == 2));
     }
 
     #endregion
 
-    #region BulkAdd/BulkDelete Break - Repository Delegation
+    #region BulkAdd/BulkDelete Break - CompletionService Delegation
 
     [Test]
-    public async Task BulkAddBreaks_ShouldCallBulkAddWithTracking()
+    public async Task BulkAddBreaks_ShouldCallAddAndSaveBulk()
     {
         // Arrange
         var breakRepository = Substitute.For<IBreakRepository>();
-        breakRepository.BulkAddWithTracking(Arg.Any<List<Api.Domain.Models.Schedules.Break>>())
-            .Returns(callInfo => callInfo.Arg<List<Api.Domain.Models.Schedules.Break>>());
 
         var handler = new BulkAddBreaksCommandHandler(
-            breakRepository, _periodHoursService,
+            breakRepository, _periodHoursService, _completionService,
             Substitute.For<ILogger<BulkAddBreaksCommandHandler>>());
 
         var clientId2 = Guid.NewGuid();
@@ -774,12 +789,14 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await breakRepository.Received(1)
-            .BulkAddWithTracking(Arg.Is<List<Api.Domain.Models.Schedules.Break>>(breaks => breaks.Count == 2));
+        await breakRepository.Received(2)
+            .Add(Arg.Any<Api.Domain.Models.Schedules.Break>());
+        await _completionService.Received(1)
+            .SaveBulkAndTrackAsync(Arg.Is<List<(Guid, DateOnly)>>(l => l.Count == 2));
     }
 
     [Test]
-    public async Task BulkDeleteBreaks_ShouldCallBulkDeleteWithTracking()
+    public async Task BulkDeleteBreaks_ShouldCallDeleteAndSaveBulk()
     {
         // Arrange
         var breakRepository = Substitute.For<IBreakRepository>();
@@ -793,11 +810,11 @@ public class ScheduleChangeTrackingTests
             WorkTime = 0.5m, StartTime = new TimeOnly(12, 0), EndTime = new TimeOnly(12, 30),
         };
 
-        breakRepository.BulkDeleteWithTracking(Arg.Any<List<Guid>>())
-            .Returns(new List<Api.Domain.Models.Schedules.Break> { break1, break2 });
+        breakRepository.Get(break1.Id).Returns(break1);
+        breakRepository.Get(break2.Id).Returns(break2);
 
         var handler = new BulkDeleteBreaksCommandHandler(
-            breakRepository, _periodHoursService,
+            breakRepository, _periodHoursService, _completionService,
             Substitute.For<ILogger<BulkDeleteBreaksCommandHandler>>());
 
         var request = new BulkDeleteBreaksRequest
@@ -812,8 +829,9 @@ public class ScheduleChangeTrackingTests
         await handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await breakRepository.Received(1)
-            .BulkDeleteWithTracking(Arg.Is<List<Guid>>(ids => ids.Count == 2));
+        await breakRepository.Received(2).Delete(Arg.Any<Guid>());
+        await _completionService.Received(1)
+            .SaveBulkAndTrackAsync(Arg.Is<List<(Guid, DateOnly)>>(l => l.Count == 2));
     }
 
     #endregion

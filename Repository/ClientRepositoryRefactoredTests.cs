@@ -90,19 +90,13 @@ public class ClientRepositoryRefactoredTests
             _mockSearchFilterService);
 
         var mockWorkLogger = Substitute.For<ILogger<Work>>();
-        var mockUnitOfWork = Substitute.For<IUnitOfWork>();
         _mockWorkMacroService = Substitute.For<IWorkMacroService>();
-        _mockPeriodHoursService = Substitute.For<IPeriodHoursService>();
-        _mockHttpContextAccessorForWork = Substitute.For<IHttpContextAccessor>();
         _workRepository = new WorkRepository(
             _context,
             mockWorkLogger,
-            mockUnitOfWork,
             mockGroupFilterService,
             _mockSearchFilterService,
-            _mockWorkMacroService,
-            _mockPeriodHoursService,
-            _mockHttpContextAccessorForWork);
+            _mockWorkMacroService);
 
         await CreateTestData();
     }
