@@ -1,4 +1,4 @@
-using Klacks.Api.Application.DTOs.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using NSubstitute;

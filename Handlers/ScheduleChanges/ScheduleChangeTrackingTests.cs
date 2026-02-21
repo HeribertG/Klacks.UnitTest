@@ -108,6 +108,7 @@ public class ScheduleChangeTrackingTests
     private IScheduleEntriesService _scheduleEntriesService = null!;
     private IWorkNotificationService _notificationService = null!;
     private IScheduleCompletionService _completionService = null!;
+    private IWorkChangeResultService _resultService = null!;
     private ScheduleMapper _scheduleMapper = null!;
 
     [SetUp]
@@ -152,6 +153,8 @@ public class ScheduleChangeTrackingTests
                 Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
                 Arg.Any<Guid?>())
             .Returns(Task.CompletedTask);
+
+        _resultService = Substitute.For<IWorkChangeResultService>();
 
         _scheduleMapper = new ScheduleMapper();
     }
@@ -563,8 +566,8 @@ public class ScheduleChangeTrackingTests
 
         var handler = new WorkChangePostHandler(
             workChangeRepository, workRepository, _scheduleMapper,
-            _periodHoursService, _scheduleEntriesService, _notificationService,
-            _completionService, _httpContextAccessor,
+            _periodHoursService, _notificationService,
+            _completionService, _resultService, _httpContextAccessor,
             Substitute.For<ILogger<WorkChangePostHandler>>());
 
         var resource = new WorkChangeResource
@@ -594,14 +597,14 @@ public class ScheduleChangeTrackingTests
         var testWork = CreateTestWork();
         var testWorkChange = CreateTestWorkChange(testWork.Id);
 
-        workChangeRepository.Get(testWorkChange.Id).Returns(testWorkChange);
+        workChangeRepository.GetNoTracking(testWorkChange.Id).Returns(testWorkChange);
         workChangeRepository.Put(Arg.Any<WorkChange>()).Returns(testWorkChange);
         workRepository.Get(testWork.Id).Returns(testWork);
 
         var handler = new WorkChangePutHandler(
             workChangeRepository, workRepository, _scheduleMapper,
-            _periodHoursService, _scheduleEntriesService, _notificationService,
-            _completionService, _httpContextAccessor,
+            _periodHoursService, _notificationService,
+            _completionService, _resultService, _httpContextAccessor,
             Substitute.For<ILogger<WorkChangePutHandler>>());
 
         var resource = new WorkChangeResource
@@ -638,8 +641,8 @@ public class ScheduleChangeTrackingTests
 
         var handler = new WorkChangeDeleteHandler(
             workChangeRepository, workRepository, _scheduleMapper,
-            _periodHoursService, _scheduleEntriesService, _notificationService,
-            _completionService, _httpContextAccessor,
+            _periodHoursService, _notificationService,
+            _completionService, _resultService, _httpContextAccessor,
             Substitute.For<ILogger<WorkChangeDeleteHandler>>());
 
         var command = new DeleteCommand<WorkChangeResource>(testWorkChange.Id);
