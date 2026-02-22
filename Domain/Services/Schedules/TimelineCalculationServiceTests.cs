@@ -1,12 +1,15 @@
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
-using Klacks.Api.Infrastructure.Services;
+using Klacks.Api.Domain.Services.Schedules;
 
-namespace Klacks.UnitTest.Infrastructure.Services;
+namespace Klacks.UnitTest.Domain.Services.Schedules;
 
 [TestFixture]
-public class ScheduleTimelineBackgroundServiceTests
+public class TimelineCalculationServiceTests
 {
+    private readonly TimelineCalculationService _sut = new();
+
+
     private static Work CreateWork(
         Guid? id = null,
         Guid? clientId = null,
@@ -50,7 +53,7 @@ public class ScheduleTimelineBackgroundServiceTests
         var work = CreateWork(start: new TimeOnly(8, 0), end: new TimeOnly(16, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [], []);
+        var rects = _sut.CalculateTimeRects([work], [], []);
 
         // Assert
         rects.Should().HaveCount(1);
@@ -69,7 +72,7 @@ public class ScheduleTimelineBackgroundServiceTests
             new TimeOnly(9, 0), new TimeOnly(9, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [change], []);
+        var rects = _sut.CalculateTimeRects([work], [change], []);
 
         // Assert
         rects.Should().HaveCount(2);
@@ -93,7 +96,7 @@ public class ScheduleTimelineBackgroundServiceTests
             new TimeOnly(14, 0), new TimeOnly(14, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [change], []);
+        var rects = _sut.CalculateTimeRects([work], [change], []);
 
         // Assert
         rects.Should().HaveCount(2);
@@ -119,7 +122,7 @@ public class ScheduleTimelineBackgroundServiceTests
             new TimeOnly(8, 0), new TimeOnly(10, 0), replaceClientId);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [change], []);
+        var rects = _sut.CalculateTimeRects([work], [change], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -143,7 +146,7 @@ public class ScheduleTimelineBackgroundServiceTests
             new TimeOnly(14, 0), new TimeOnly(16, 0), replaceClientId);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [change], []);
+        var rects = _sut.CalculateTimeRects([work], [change], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -164,7 +167,7 @@ public class ScheduleTimelineBackgroundServiceTests
         var work = CreateWork(date: date, start: new TimeOnly(22, 0), end: new TimeOnly(6, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [], []);
+        var rects = _sut.CalculateTimeRects([work], [], []);
 
         // Assert
         rects.Should().HaveCount(2);
@@ -192,7 +195,7 @@ public class ScheduleTimelineBackgroundServiceTests
         };
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([], [], [breakEntry]);
+        var rects = _sut.CalculateTimeRects([], [], [breakEntry]);
 
         // Assert
         rects.Should().HaveCount(1);

@@ -1,12 +1,13 @@
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
-using Klacks.Api.Infrastructure.Services;
+using Klacks.Api.Domain.Services.Schedules;
 
-namespace Klacks.UnitTest.Infrastructure.Services;
+namespace Klacks.UnitTest.Domain.Services.Schedules;
 
 [TestFixture]
 public class ScheduleTimelineIntegrationTests
 {
+    private static readonly TimelineCalculationService _sut = new();
     private static readonly DateOnly TestDate = new(2025, 1, 15);
 
     private static Work CreateWork(
@@ -70,7 +71,7 @@ public class ScheduleTimelineIntegrationTests
         DateOnly? date = null)
     {
         var d = date ?? TestDate;
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects(works, workChanges, breaks);
+        var rects = _sut.CalculateTimeRects(works, workChanges, breaks);
         var timeline = new ClientDayTimeline(clientId, d);
         timeline.Rects.AddRange(rects.Where(r => r.ClientId == clientId && r.Date == d));
         return timeline.GetCollisions();
@@ -207,7 +208,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(15, 0), new TimeOnly(15, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [corrStart, corrEnd], []);
+        var rects = _sut.CalculateTimeRects([work], [corrStart, corrEnd], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -229,7 +230,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(8, 0), new TimeOnly(10, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [corrStart], []);
+        var rects = _sut.CalculateTimeRects([work], [corrStart], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -250,7 +251,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(14, 0), new TimeOnly(16, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [corrEnd], []);
+        var rects = _sut.CalculateTimeRects([work], [corrEnd], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -280,7 +281,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(14, 0), new TimeOnly(16, 0), replaceClientB);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [replStart, replEnd], []);
+        var rects = _sut.CalculateTimeRects([work], [replStart, replEnd], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -311,7 +312,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(6, 0), new TimeOnly(9, 0), replaceClientId);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [change], []);
+        var rects = _sut.CalculateTimeRects([work], [change], []);
 
         // Assert
         var replRect = rects.Single(r => r.SourceType == TimeRectSourceType.Replacement);
@@ -336,7 +337,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(14, 0), new TimeOnly(16, 0), replaceClientId);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [corrStart, replEnd], []);
+        var rects = _sut.CalculateTimeRects([work], [corrStart, replEnd], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -368,7 +369,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(15, 0), new TimeOnly(15, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [replStart, corrEnd], []);
+        var rects = _sut.CalculateTimeRects([work], [replStart, corrEnd], []);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -398,7 +399,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(15, 0), new TimeOnly(18, 0), replaceClientB);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects(
+        var rects = _sut.CalculateTimeRects(
             [work], [corrStart, corrEnd, replStart, replEnd], []);
 
         // Assert
@@ -421,7 +422,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(23, 0), new TimeOnly(23, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [corrStart], []);
+        var rects = _sut.CalculateTimeRects([work], [corrStart], []);
 
         // Assert
         var workRects = rects.Where(r => r.SourceType == TimeRectSourceType.Work).ToList();
@@ -447,7 +448,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(2, 0), new TimeOnly(6, 0), replaceClientId);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [replEnd], []);
+        var rects = _sut.CalculateTimeRects([work], [replEnd], []);
 
         // Assert
         var workRects = rects.Where(r => r.SourceType == TimeRectSourceType.Work).ToList();
@@ -469,7 +470,7 @@ public class ScheduleTimelineIntegrationTests
         var work2 = CreateWork(clientId: clientId, start: new TimeOnly(23, 0), end: new TimeOnly(5, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work1, work2], [], []);
+        var rects = _sut.CalculateTimeRects([work1, work2], [], []);
 
         var nextDay = TestDate.AddDays(1);
         var timelineNextDay = new ClientDayTimeline(clientId, nextDay);
@@ -489,7 +490,7 @@ public class ScheduleTimelineIntegrationTests
         var work2 = CreateWork(clientId: clientId, start: new TimeOnly(21, 0), end: new TimeOnly(3, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work1, work2], [], []);
+        var rects = _sut.CalculateTimeRects([work1, work2], [], []);
 
         var timelineSameDay = new ClientDayTimeline(clientId, TestDate);
         timelineSameDay.Rects.AddRange(rects.Where(r => r.ClientId == clientId && r.Date == TestDate));
@@ -507,7 +508,7 @@ public class ScheduleTimelineIntegrationTests
         var breakEntry = CreateBreak(clientId: clientId, start: new TimeOnly(23, 0), end: new TimeOnly(1, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([], [], [breakEntry]);
+        var rects = _sut.CalculateTimeRects([], [], [breakEntry]);
 
         // Assert
         rects.Should().HaveCount(2);
@@ -563,7 +564,7 @@ public class ScheduleTimelineIntegrationTests
         var breakEntry = CreateBreak(clientId: clientId, start: new TimeOnly(8, 0), end: new TimeOnly(16, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work1], [], [breakEntry]);
+        var rects = _sut.CalculateTimeRects([work1], [], [breakEntry]);
         var timeline = new ClientDayTimeline(clientId, TestDate);
         timeline.Rects.AddRange(rects.Where(r => r.ClientId == clientId && r.Date == TestDate));
         var collisions = timeline.GetCollisions();
@@ -622,7 +623,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(12, 0), new TimeOnly(16, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work1, work2], [corrEnd], []);
+        var rects = _sut.CalculateTimeRects([work1, work2], [corrEnd], []);
         var timeline = new ClientDayTimeline(clientId, TestDate);
         timeline.Rects.AddRange(rects.Where(r => r.ClientId == clientId && r.Date == TestDate));
         var collisions = timeline.GetCollisions();
@@ -645,7 +646,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(8, 0), new TimeOnly(10, 0), clientId);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [replStart], []);
+        var rects = _sut.CalculateTimeRects([work], [replStart], []);
         var clientRects = rects.Where(r => r.ClientId == clientId).ToList();
 
         // Assert
@@ -671,7 +672,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(16, 0), new TimeOnly(18, 0), clientId);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects(
+        var rects = _sut.CalculateTimeRects(
             [work1, work2, work3], [corrStart1, replEnd3], []);
 
         var timeline = new ClientDayTimeline(clientId, TestDate);
@@ -709,7 +710,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(10, 0), new TimeOnly(13, 0), replaceClient);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects(
+        var rects = _sut.CalculateTimeRects(
             [work1, work2], [repl1, repl2], []);
 
         var timeline = new ClientDayTimeline(replaceClient, TestDate);
@@ -733,7 +734,7 @@ public class ScheduleTimelineIntegrationTests
         var work = CreateWork(start: new TimeOnly(12, 0), end: new TimeOnly(12, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [], []);
+        var rects = _sut.CalculateTimeRects([work], [], []);
 
         // Assert
         rects.Should().HaveCount(1);
@@ -750,7 +751,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(10, 0), new TimeOnly(10, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [corrStart], []);
+        var rects = _sut.CalculateTimeRects([work], [corrStart], []);
 
         // Assert
         var corrRects = rects.Where(r => r.SourceType == TimeRectSourceType.Correction).ToList();
@@ -762,7 +763,7 @@ public class ScheduleTimelineIntegrationTests
     public void EmptyInputs_NoRects()
     {
         // Arrange & Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([], [], []);
+        var rects = _sut.CalculateTimeRects([], [], []);
 
         // Assert
         rects.Should().BeEmpty();
@@ -779,7 +780,7 @@ public class ScheduleTimelineIntegrationTests
                 end: new TimeOnly(i * 3 + 2, 0))).ToList();
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects(works, [], []);
+        var rects = _sut.CalculateTimeRects(works, [], []);
 
         // Assert
         rects.Should().HaveCount(5);
@@ -795,7 +796,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(10, 0), new TimeOnly(10, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [unrelatedChange], []);
+        var rects = _sut.CalculateTimeRects([work], [unrelatedChange], []);
 
         // Assert
         rects.Should().HaveCount(1);
@@ -839,7 +840,7 @@ public class ScheduleTimelineIntegrationTests
         var morningWork = CreateWork(clientId: clientId, date: day2, start: new TimeOnly(4, 0), end: new TimeOnly(12, 0));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([nightWork, morningWork], [], []);
+        var rects = _sut.CalculateTimeRects([nightWork, morningWork], [], []);
         var timelineDay2 = new ClientDayTimeline(clientId, day2);
         timelineDay2.Rects.AddRange(rects.Where(r => r.ClientId == clientId && r.Date == day2));
         var collisions = timelineDay2.GetCollisions();
@@ -870,7 +871,7 @@ public class ScheduleTimelineIntegrationTests
         };
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], changes, []);
+        var rects = _sut.CalculateTimeRects([work], changes, []);
 
         // Assert
         rects.Where(r => r.SourceType == TimeRectSourceType.Work).Should().HaveCount(1);
@@ -895,7 +896,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(18, 0), new TimeOnly(20, 0), replClient);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects(
+        var rects = _sut.CalculateTimeRects(
             [work1, work2], [corr1, repl2], []);
 
         // Assert
@@ -916,7 +917,7 @@ public class ScheduleTimelineIntegrationTests
         var break2 = CreateBreak(clientId: clientId, start: new TimeOnly(13, 0), end: new TimeOnly(13, 30));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work1, work2], [], [break1, break2]);
+        var rects = _sut.CalculateTimeRects([work1, work2], [], [break1, break2]);
 
         // Assert
         rects.Where(r => r.SourceType == TimeRectSourceType.Work).Should().HaveCount(2);
@@ -939,7 +940,7 @@ public class ScheduleTimelineIntegrationTests
         var breakEntry = CreateBreak(clientId: clientId, start: new TimeOnly(12, 0), end: new TimeOnly(12, 30));
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [corrStart], [breakEntry]);
+        var rects = _sut.CalculateTimeRects([work], [corrStart], [breakEntry]);
 
         // Assert
         var workRect = rects.Single(r => r.SourceType == TimeRectSourceType.Work);
@@ -962,7 +963,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(22, 0), new TimeOnly(0, 0), replaceClient);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects([work], [replStart], []);
+        var rects = _sut.CalculateTimeRects([work], [replStart], []);
 
         // Assert
         var workRects = rects.Where(r => r.SourceType == TimeRectSourceType.Work).ToList();
@@ -991,7 +992,7 @@ public class ScheduleTimelineIntegrationTests
             new TimeOnly(12, 0), new TimeOnly(16, 0), clientA);
 
         // Act
-        var rects = ScheduleTimelineBackgroundService.CalculateTimeRects(
+        var rects = _sut.CalculateTimeRects(
             [workA, workB], [replEndA, replEndB], []);
 
         var timelineA = new ClientDayTimeline(clientA, TestDate);
