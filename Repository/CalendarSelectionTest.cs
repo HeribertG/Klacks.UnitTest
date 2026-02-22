@@ -5,7 +5,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.CalendarSelections;
-using Klacks.Api.Domain.Services.CalendarSelections;
+using Klacks.Api.Infrastructure.Services.CalendarSelections;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Application.DTOs.Schedules;

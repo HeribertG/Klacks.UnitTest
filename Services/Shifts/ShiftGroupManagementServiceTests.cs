@@ -1,6 +1,6 @@
 using FluentAssertions;
 using Klacks.Api.Domain.Models.Associations;
-using Klacks.Api.Domain.Services.Shifts;
+using Klacks.Api.Infrastructure.Services.Shifts;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;

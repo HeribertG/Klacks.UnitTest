@@ -55,7 +55,7 @@ internal class GoupTests
         var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
-        var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
+        var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
         var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();

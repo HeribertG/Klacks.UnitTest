@@ -1,8 +1,8 @@
 using FluentAssertions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Associations;
-using Klacks.Api.Domain.Services.Groups;
-using Klacks.Api.Domain.Services.Groups.Integrity;
+using Klacks.Api.Infrastructure.Services.Groups;
+using Klacks.Api.Infrastructure.Services.Groups.Integrity;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
