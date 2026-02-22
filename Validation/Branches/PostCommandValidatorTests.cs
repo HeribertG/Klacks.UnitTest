@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Klacks.Api.Application.Commands.Settings.Branch;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Validation.Branches;
 using NSubstitute;
 

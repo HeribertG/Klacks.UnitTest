@@ -2,6 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;

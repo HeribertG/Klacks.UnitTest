@@ -109,7 +109,7 @@ internal class ClientTests
 
         // Use real domain services for proper filtering behavior in integration tests
         var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
@@ -161,7 +161,7 @@ internal class ClientTests
 
         // Use real domain services for proper filtering behavior in integration tests
         var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
@@ -214,7 +214,7 @@ internal class ClientTests
 
         // Use real domain services for proper filtering behavior in integration tests
         var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
@@ -310,7 +310,7 @@ internal class ClientTests
 
         // Use real domain services for proper filtering behavior in integration tests
         var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(dbContext);
+        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
         var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
         var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Domain.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);

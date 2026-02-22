@@ -1,5 +1,6 @@
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Mocks

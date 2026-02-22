@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Application.DTOs.Settings;
 using Microsoft.Extensions.Logging;

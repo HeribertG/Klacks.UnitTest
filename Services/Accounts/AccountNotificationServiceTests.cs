@@ -1,236 +1,163 @@
-using FluentAssertions;
-using FluentAssertions.Specialized;
 using Klacks.Api.Domain.Interfaces;
-using Klacks.Api.Domain.Models.Settings;
-using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 using Klacks.Api.Domain.Services.Accounts;
-using Klacks.Api.Infrastructure.Email;
-using Klacks.Api.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.Services.Accounts;
 
 [TestFixture]
 public class AccountNotificationServiceTests
 {
-    private DataBaseContext _context;
     private AccountNotificationService _notificationService;
-    private ISettingsEncryptionService _mockEncryptionService;
+    private IEmailService _mockEmailService;
     private ILogger<AccountNotificationService> _mockLogger;
 
     [SetUp]
     public void SetUp()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-
-        var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        _context = new DataBaseContext(options, mockHttpContextAccessor);
-        _mockEncryptionService = Substitute.For<ISettingsEncryptionService>();
-        _mockEncryptionService.ProcessForReading(Arg.Any<string>(), Arg.Any<string>())
-            .Returns(callInfo => callInfo.ArgAt<string>(1));
+        _mockEmailService = Substitute.For<IEmailService>();
         _mockLogger = Substitute.For<ILogger<AccountNotificationService>>();
 
-        _notificationService = new AccountNotificationService(_context, _mockEncryptionService, _mockLogger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _context?.Dispose();
+        _notificationService = new AccountNotificationService(_mockEmailService, _mockLogger);
     }
 
     [Test]
     public async Task SendEmailAsync_WithValidParameters_ShouldReturnSuccessMessage()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        var email = "test@example.com";
-        var message = "This is a test message";
+        ConfigureEmailServiceAvailable();
+        _mockEmailService.SendMail("test@example.com", "Test Email", "This is a test message")
+            .Returns("Email sent");
 
         // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
+        var result = await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
         // Assert
         result.Should().NotBeNull();
-        result.Should().NotBe("Wrong Initialisation of the Email Wrapper");
+        result.Should().Be("Email sent");
     }
 
     [Test]
-    public async Task SendEmailAsync_WithMissingSettings_ShouldReturnWrongInitialisationMessage()
+    public async Task SendEmailAsync_WithUnavailableEmailService_ShouldReturnConfigNotAvailable()
     {
-        // Arrange - No email settings seeded
-        var title = "Test Email";
-        var email = "test@example.com";
-        var message = "This is a test message";
+        // Arrange
+        _mockEmailService.CanSendEmailAsync().Returns(Task.FromResult(false));
 
         // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
+        var result = await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
         // Assert
-        result.Should().Be("Wrong Initialisation of the Email Wrapper");
+        result.Should().Be("Email configuration not available");
     }
 
     [Test]
-    public async Task SendEmailAsync_WithNullEmail_ShouldThrowException()
+    public async Task SendEmailAsync_WithNullEmail_ShouldThrowArgumentNullException()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        string email = null;
-        var message = "This is a test message";
+        ConfigureEmailServiceAvailable();
 
-        // Act & Assert - The EmailWrapper.SendEmailMessage will throw NullReferenceException with null email
-        await FluentActions.Invoking(async () => 
-            await _notificationService.SendEmailAsync(title, email, message))
-            .Should().ThrowAsync<Exception>();
+        // Act & Assert
+        await FluentActions.Invoking(async () =>
+            await _notificationService.SendEmailAsync("Test Email", null, "This is a test message"))
+            .Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Test]
-    public async Task SendEmailAsync_WithEmptyEmail_ShouldHandleGracefully()
+    public async Task SendEmailAsync_WithEmptyEmail_ShouldCallSendMail()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        var email = "";
-        var message = "This is a test message";
+        ConfigureEmailServiceAvailable();
+        _mockEmailService.SendMail("", "Test Email", "This is a test message")
+            .Returns("Email sent");
 
         // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
+        var result = await _notificationService.SendEmailAsync("Test Email", "", "This is a test message");
 
         // Assert
         result.Should().NotBeNull();
+        _mockEmailService.Received(1).SendMail("", "Test Email", "This is a test message");
     }
 
     [Test]
-    public async Task SendEmailAsync_WithNullTitle_ShouldHandleGracefully()
+    public async Task SendEmailAsync_WithNullTitle_ShouldCallSendMail()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        string title = null;
-        var email = "test@example.com";
-        var message = "This is a test message";
+        ConfigureEmailServiceAvailable();
+        _mockEmailService.SendMail("test@example.com", null, "This is a test message")
+            .Returns("Email sent");
 
         // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
+        var result = await _notificationService.SendEmailAsync(null, "test@example.com", "This is a test message");
 
         // Assert
         result.Should().NotBeNull();
     }
 
     [Test]
-    public async Task SendEmailAsync_WithNullMessage_ShouldHandleGracefully()
+    public async Task SendEmailAsync_WithNullMessage_ShouldCallSendMail()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        var email = "test@example.com";
-        string message = null;
+        ConfigureEmailServiceAvailable();
+        _mockEmailService.SendMail("test@example.com", "Test Email", null)
+            .Returns("Email sent");
 
         // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
+        var result = await _notificationService.SendEmailAsync("Test Email", "test@example.com", null);
 
         // Assert
         result.Should().NotBeNull();
     }
 
     [Test]
-    public async Task SendEmailAsync_WithLongEmail_ShouldHandleGracefully()
+    public async Task SendEmailAsync_WhenSendMailThrows_ShouldReturnFailureMessage()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        var email = "verylongemailaddressthatmightcauseissues@verylongdomainnamethatmightcauseproblems.com";
-        var message = "This is a test message";
+        ConfigureEmailServiceAvailable();
+        _mockEmailService.SendMail(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Throws(new InvalidOperationException("SMTP connection failed"));
 
         // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
+        var result = await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
         // Assert
-        result.Should().NotBeNull();
+        result.Should().Contain("Email sending failed");
+        result.Should().Contain("SMTP connection failed");
     }
 
     [Test]
-    public async Task SendEmailAsync_WithSpecialCharactersInTitle_ShouldHandleGracefully()
+    public async Task SendEmailAsync_WithSpecialCharactersInTitle_ShouldCallSendMail()
     {
         // Arrange
-        await SeedEmailSettings();
-        
+        ConfigureEmailServiceAvailable();
         var title = "Test Email with Special Characters: äöü ß €";
-        var email = "test@example.com";
-        var message = "This is a test message";
+        _mockEmailService.SendMail("test@example.com", title, "This is a test message")
+            .Returns("Email sent");
 
         // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
+        var result = await _notificationService.SendEmailAsync(title, "test@example.com", "This is a test message");
 
         // Assert
         result.Should().NotBeNull();
-    }
-
-    [Test]
-    public async Task SendEmailAsync_WithSpecialCharactersInMessage_ShouldHandleGracefully()
-    {
-        // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        var email = "test@example.com";
-        var message = "Message with special characters: äöü ß € <script>alert('test')</script>";
-
-        // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
-
-        // Assert
-        result.Should().NotBeNull();
-    }
-
-    [Test]
-    public async Task SendEmailAsync_WithPartialSettings_ShouldReturnWrongInitialisation()
-    {
-        // Arrange
-        await SeedPartialEmailSettings();
-        
-        var title = "Test Email";
-        var email = "test@example.com";
-        var message = "This is a test message";
-
-        // Act
-        var result = await _notificationService.SendEmailAsync(title, email, message);
-
-        // Assert - Partial settings will result in missing ReplyTo, causing "No sender address available"
-        result.Should().Be("No sender address available");
+        _mockEmailService.Received(1).SendMail("test@example.com", title, "This is a test message");
     }
 
     [Test]
     public async Task SendEmailAsync_ShouldLogInformationOnStart()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        var email = "test@example.com";
-        var message = "This is a test message";
+        ConfigureEmailServiceAvailable();
+        _mockEmailService.SendMail(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns("Email sent");
 
         // Act
-        await _notificationService.SendEmailAsync(title, email, message);
+        await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
-        // Assert - Check that logging was called (parameters may vary due to structured logging)
+        // Assert
         _mockLogger.Received(1).Log(
-            Microsoft.Extensions.Logging.LogLevel.Information,
-            Arg.Any<Microsoft.Extensions.Logging.EventId>(),
-            Arg.Is<object>(v => v.ToString().Contains("Attempting to send email to")),
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(v => v.ToString()!.Contains("Attempting to send email to")),
             Arg.Any<Exception>(),
             Arg.Any<Func<object, Exception, string>>());
     }
@@ -239,56 +166,37 @@ public class AccountNotificationServiceTests
     public async Task SendEmailAsync_ShouldLogInformationOnSuccess()
     {
         // Arrange
-        await SeedEmailSettings();
-        
-        var title = "Test Email";
-        var email = "test@example.com";
-        var message = "This is a test message";
+        ConfigureEmailServiceAvailable();
+        _mockEmailService.SendMail(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns("Email sent");
 
         // Act
-        await _notificationService.SendEmailAsync(title, email, message);
+        await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
-        // Assert - Check that success logging was called
+        // Assert
         _mockLogger.Received(1).Log(
-            Microsoft.Extensions.Logging.LogLevel.Information,
-            Arg.Any<Microsoft.Extensions.Logging.EventId>(),
-            Arg.Is<object>(v => v.ToString().Contains("Email sent successfully")),
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(v => v.ToString()!.Contains("Email sent successfully")),
             Arg.Any<Exception>(),
             Arg.Any<Func<object, Exception, string>>());
     }
 
-    private async Task SeedEmailSettings()
+    [Test]
+    public async Task SendEmailAsync_WhenCanSendEmailFails_ShouldNotCallSendMail()
     {
-        var settings = new List<SettingsModel>
-        {
-            new SettingsModel() { Type = "APP_ADDRESS_MAIL", Value = "test@klacks.com" },
-            new SettingsModel() { Type = "subject", Value = "Test Subject" },
-            new SettingsModel() { Type = "mark", Value = "Test Mark" },
-            new SettingsModel() { Type = "replyTo", Value = "noreply@klacks.com" },
-            new SettingsModel() { Type = "outgoingserver", Value = "smtp.test.com" },
-            new SettingsModel() { Type = "outgoingserverPort", Value = "587" },
-            new SettingsModel() { Type = "outgoingserverUsername", Value = "testuser" },
-            new SettingsModel() { Type = "outgoingserverPassword", Value = "testpass" },
-            new SettingsModel() { Type = "enabledSSL", Value = "true" },
-            new SettingsModel() { Type = "authenticationType", Value = "Basic" },
-            new SettingsModel() { Type = "readReceipt", Value = "false" },
-            new SettingsModel() { Type = "dispositionNotification", Value = "false" },
-            new SettingsModel() { Type = "outgoingserverTimeout", Value = "30000" }
-        };
+        // Arrange
+        _mockEmailService.CanSendEmailAsync().Returns(Task.FromResult(false));
 
-        await _context.Settings.AddRangeAsync(settings);
-        await _context.SaveChangesAsync();
+        // Act
+        await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
+
+        // Assert
+        _mockEmailService.DidNotReceive().SendMail(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
     }
 
-    private async Task SeedPartialEmailSettings()
+    private void ConfigureEmailServiceAvailable()
     {
-        var settings = new List<SettingsModel>
-        {
-            new SettingsModel() { Type = "APP_ADDRESS_MAIL", Value = "test@klacks.com" },
-            new SettingsModel() { Type = "subject", Value = "Test Subject" }
-        };
-
-        await _context.Settings.AddRangeAsync(settings);
-        await _context.SaveChangesAsync();
+        _mockEmailService.CanSendEmailAsync().Returns(Task.FromResult(true));
     }
 }

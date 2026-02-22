@@ -65,7 +65,7 @@ public class ContainerAvailableTasksServiceTests
         _groupItemRepository = new GroupItemRepository(_context, groupItemLogger);
 
         var containerTemplateServiceLogger = Substitute.For<ILogger<ContainerTemplateService>>();
-        var mockUnitOfWork = Substitute.For<Klacks.Api.Application.Interfaces.IUnitOfWork>();
+        var mockUnitOfWork = Substitute.For<Klacks.Api.Domain.Interfaces.IUnitOfWork>();
         var containerTemplateService = new ContainerTemplateService(mockUnitOfWork, containerTemplateServiceLogger);
 
         _containerTemplateRepository = new ContainerTemplateRepository(_context, containerTemplateLogger, collectionUpdateService, containerTemplateService);

@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Validation.BreakPlaceholders;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Application.DTOs.Schedules;

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;

@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Klacks.Api.Application.Commands;
+using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Validation.Schedules;
 using Klacks.Api.Domain.Enums;

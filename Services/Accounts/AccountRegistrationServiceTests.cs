@@ -40,8 +40,9 @@ public class AccountRegistrationServiceTests
         _mockAccountPasswordService = Substitute.For<IAccountPasswordService>();
         _mockLogger = Substitute.For<ILogger<AccountRegistrationService>>();
 
+        var mockUnitOfWork = Substitute.For<IUnitOfWork>();
         _registrationService = new AccountRegistrationService(
-            _context,
+            mockUnitOfWork,
             _mockAuthService,
             _mockUserManagementService,
             _mockRefreshTokenService,

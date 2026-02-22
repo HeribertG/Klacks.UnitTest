@@ -2,6 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Associations;

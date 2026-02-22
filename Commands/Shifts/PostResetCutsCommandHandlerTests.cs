@@ -2,6 +2,7 @@ using FluentAssertions;
 using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;

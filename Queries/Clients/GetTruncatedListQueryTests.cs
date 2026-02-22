@@ -1,5 +1,6 @@
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Queries.Clients;
 using NSubstitute;
 using Klacks.Api.Infrastructure.Mediator;

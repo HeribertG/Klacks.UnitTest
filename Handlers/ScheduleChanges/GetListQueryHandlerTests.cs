@@ -1,6 +1,7 @@
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.ScheduleChanges;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.Extensions.Logging;
 

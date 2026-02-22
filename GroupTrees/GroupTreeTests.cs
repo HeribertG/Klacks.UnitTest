@@ -3,6 +3,7 @@ using Klacks.Api.Application.Commands.Groups;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Queries;

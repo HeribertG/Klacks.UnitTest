@@ -246,9 +246,6 @@ public class ClientRepositoryRefactoredTests
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Anna", false)
             .Returns(args => (IQueryable<Client>)args[0]);
         
-        _mockWorkFilterService.FilterByWorkSchedule(Arg.Any<IQueryable<Client>>(), Arg.Any<WorkFilter>(), Arg.Any<DataBaseContext>())
-            .Returns(args => (IQueryable<Client>)args[0]);
-
         //Act
         var result = await _workRepository.WorkList(filter);
 
