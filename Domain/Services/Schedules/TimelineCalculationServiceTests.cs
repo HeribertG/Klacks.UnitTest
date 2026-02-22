@@ -244,7 +244,7 @@ public class TimelineCalculationServiceTests
     }
 
     [Test]
-    public void ClientDayTimeline_GetCollisions_BreakRectsIgnored_NoCollision()
+    public void ClientDayTimeline_GetCollisions_BreakAndWorkOverlap_OneCollision()
     {
         // Arrange
         var clientId = Guid.NewGuid();
@@ -259,7 +259,7 @@ public class TimelineCalculationServiceTests
         var collisions = timeline.GetCollisions();
 
         // Assert
-        collisions.Should().BeEmpty();
+        collisions.Should().HaveCount(1);
     }
 
     [Test]

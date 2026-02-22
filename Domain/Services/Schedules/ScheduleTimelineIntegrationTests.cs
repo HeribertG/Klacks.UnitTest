@@ -526,7 +526,7 @@ public class ScheduleTimelineIntegrationTests
     #region Break Scenarios
 
     [Test]
-    public void WorkAndBreak_SameClient_Overlapping_NoCollision()
+    public void WorkAndBreak_SameClient_Overlapping_OneCollision()
     {
         // Arrange
         var clientId = Guid.NewGuid();
@@ -537,11 +537,11 @@ public class ScheduleTimelineIntegrationTests
         var collisions = RunFullPipeline([work], [], [breakEntry], clientId);
 
         // Assert
-        collisions.Should().BeEmpty();
+        collisions.Should().HaveCount(1);
     }
 
     [Test]
-    public void MultipleBreaks_SameClient_Overlapping_NoCollision()
+    public void MultipleBreaks_SameClient_Overlapping_OneCollision()
     {
         // Arrange
         var clientId = Guid.NewGuid();
@@ -552,11 +552,11 @@ public class ScheduleTimelineIntegrationTests
         var collisions = RunFullPipeline([], [], [break1, break2], clientId);
 
         // Assert
-        collisions.Should().BeEmpty();
+        collisions.Should().HaveCount(1);
     }
 
     [Test]
-    public void WorkAndBreak_BreakRectNotInCollisionDetection()
+    public void WorkAndBreak_FullOverlap_OneCollision()
     {
         // Arrange
         var clientId = Guid.NewGuid();
@@ -571,7 +571,7 @@ public class ScheduleTimelineIntegrationTests
 
         // Assert
         rects.Should().HaveCount(2);
-        collisions.Should().BeEmpty();
+        collisions.Should().HaveCount(1);
     }
 
     #endregion
@@ -1024,11 +1024,11 @@ public class ScheduleTimelineIntegrationTests
         var collisions = RunFullPipeline([morningShift, afternoonShift], [], [breakEntry], clientId);
 
         // Assert
-        collisions.Should().HaveCount(1);
-        var collision = collisions[0];
-        var sourceIds = new[] { collision.A.SourceId, collision.B.SourceId };
-        sourceIds.Should().Contain(morningShift.Id);
-        sourceIds.Should().Contain(afternoonShift.Id);
+        collisions.Should().HaveCount(2);
+        var allSourceIds = collisions.SelectMany(c => new[] { c.A.SourceId, c.B.SourceId }).ToList();
+        allSourceIds.Should().Contain(morningShift.Id);
+        allSourceIds.Should().Contain(afternoonShift.Id);
+        allSourceIds.Should().Contain(breakEntry.Id);
     }
 
     [Test]
