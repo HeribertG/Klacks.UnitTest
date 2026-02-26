@@ -17,6 +17,7 @@ public class ContextAssemblyPipelineTests
     private IAgentMemoryRepository _memoryRepository = null!;
     private IAgentSkillRepository _skillRepository = null!;
     private IGlobalAgentRuleRepository _globalRuleRepository = null!;
+    private IAiGuidelinesRepository _guidelinesRepository = null!;
     private IEmbeddingService _embeddingService = null!;
     private IConfiguration _configuration = null!;
     private ILogger<ContextAssemblyPipeline> _logger = null!;
@@ -31,6 +32,7 @@ public class ContextAssemblyPipelineTests
         _memoryRepository = Substitute.For<IAgentMemoryRepository>();
         _skillRepository = Substitute.For<IAgentSkillRepository>();
         _globalRuleRepository = Substitute.For<IGlobalAgentRuleRepository>();
+        _guidelinesRepository = Substitute.For<IAiGuidelinesRepository>();
         _embeddingService = Substitute.For<IEmbeddingService>();
         _logger = Substitute.For<ILogger<ContextAssemblyPipeline>>();
 
@@ -61,7 +63,7 @@ public class ContextAssemblyPipelineTests
 
         _pipeline = new ContextAssemblyPipeline(
             _soulRepository, _memoryRepository, _skillRepository,
-            _globalRuleRepository, _embeddingService, _configuration, _logger);
+            _globalRuleRepository, _guidelinesRepository, _embeddingService, _configuration, _logger);
     }
 
     [Test]
