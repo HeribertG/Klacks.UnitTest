@@ -1,7 +1,8 @@
-using Klacks.Api.Application.DTOs.LLM;
-using Klacks.Api.Domain.Models.AI;
-using Klacks.Api.Domain.Services.LLM;
+using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant;
 using NUnit.Framework;
+using NSubstitute;
 using FluentAssertions;
 
 namespace Klacks.UnitTest.LLM;
@@ -9,15 +10,17 @@ namespace Klacks.UnitTest.LLM;
 [TestFixture]
 public class LLMSystemPromptBuilderGuidelinesTests
 {
+    private IPromptTranslationProvider _translationProvider = null!;
     private LLMSystemPromptBuilder _builder = null!;
 
     [SetUp]
     public void Setup()
     {
-        _builder = new LLMSystemPromptBuilder();
+        _translationProvider = Substitute.For<IPromptTranslationProvider>();
+        _builder = new LLMSystemPromptBuilder(_translationProvider);
     }
 
-    private static LLMContext CreateContext(string language = "de")
+    private static LLMContext CreateContext(string language = "en")
     {
         return new LLMContext
         {
@@ -31,160 +34,172 @@ public class LLMSystemPromptBuilderGuidelinesTests
         };
     }
 
-    [Test]
-    public void BuildSystemPrompt_NullGuidelines_UsesFallbackDefaults()
+    private static Dictionary<string, string> CreateTranslations(string language = "en")
     {
-        var context = CreateContext("en");
-
-        var result = _builder.BuildSystemPrompt(context, null, null, null);
-
-        result.Should().Contain("Guidelines:");
-        result.Should().Contain("Be polite and professional");
-        result.Should().Contain("Use available functions when users ask for them");
-        result.Should().Contain("Always check permissions before executing functions");
+        return new Dictionary<string, string>
+        {
+            { "Intro", "You are a helpful assistant." },
+            { "ToolUsageRules", "Use tools when appropriate." },
+            { "HeaderUserContext", "User Context" },
+            { "LabelUserId", "User ID" },
+            { "LabelPermissions", "Permissions" },
+            { "HeaderAvailableFunctions", "Available Functions" },
+            { "SettingsNoPermission", "No settings permission" },
+            { "SettingsViewOnly", "View settings only" }
+        };
     }
 
     [Test]
-    public void BuildSystemPrompt_EmptyGuidelines_UsesFallbackDefaults()
+    public async Task BuildSystemPromptAsync_WithContext_ContainsUserId()
     {
-        var context = CreateContext("en");
+        // Arrange
+        var context = CreateContext();
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
 
-        var result = _builder.BuildSystemPrompt(context, null, null, "   ");
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
 
-        result.Should().Contain("Guidelines:");
-        result.Should().Contain("Be polite and professional");
+        // Assert
+        result.Should().Contain("user-123");
     }
 
     [Test]
-    public void BuildSystemPrompt_CustomGuidelines_UsesCustomContent()
+    public async Task BuildSystemPromptAsync_WithContext_ContainsPermissions()
     {
-        var context = CreateContext("en");
-        var customGuidelines = "- Always respond in bullet points\n- Never use emojis";
+        // Arrange
+        var context = CreateContext();
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
 
-        var result = _builder.BuildSystemPrompt(context, null, null, customGuidelines);
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
 
-        result.Should().Contain("Guidelines:");
-        result.Should().Contain("Always respond in bullet points");
-        result.Should().Contain("Never use emojis");
-        result.Should().NotContain("Be polite and professional");
+        // Assert
+        result.Should().Contain("CanViewSettings");
+        result.Should().Contain("CanEditSettings");
     }
 
     [Test]
-    public void BuildSystemPrompt_German_UsesRichtlinienHeader()
+    public async Task BuildSystemPromptAsync_WithContext_ContainsFunctionName()
     {
-        var context = CreateContext("de");
-        var guidelines = "- Eigene Richtlinie";
+        // Arrange
+        var context = CreateContext();
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
 
-        var result = _builder.BuildSystemPrompt(context, null, null, guidelines);
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
 
-        result.Should().Contain("Richtlinien:");
-        result.Should().Contain("Eigene Richtlinie");
+        // Assert
+        result.Should().Contain("test_func");
+        result.Should().Contain("A test function");
     }
 
     [Test]
-    public void BuildSystemPrompt_French_UsesDirectivesHeader()
+    public async Task BuildSystemPromptAsync_WithSoulAndMemoryPrompt_ContainsIdentity()
     {
-        var context = CreateContext("fr");
-        var guidelines = "- Custom directive";
+        // Arrange
+        var context = CreateContext();
+        var soulPrompt = "I am a helpful planning assistant.";
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
 
-        var result = _builder.BuildSystemPrompt(context, null, null, guidelines);
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context, soulPrompt);
 
-        result.Should().Contain("Directives:");
-        result.Should().Contain("Custom directive");
-    }
-
-    [Test]
-    public void BuildSystemPrompt_Italian_UsesLineeGuidaHeader()
-    {
-        var context = CreateContext("it");
-        var guidelines = "- Regola personalizzata";
-
-        var result = _builder.BuildSystemPrompt(context, null, null, guidelines);
-
-        result.Should().Contain("Linee guida:");
-        result.Should().Contain("Regola personalizzata");
-    }
-
-    [Test]
-    [TestCase("de", "Richtlinien")]
-    [TestCase("en", "Guidelines")]
-    [TestCase("fr", "Directives")]
-    [TestCase("it", "Linee guida")]
-    public void BuildSystemPrompt_AllLanguages_FallbackContainsDefaultRules(string language, string expectedHeader)
-    {
-        var context = CreateContext(language);
-
-        var result = _builder.BuildSystemPrompt(context, null, null, null);
-
-        result.Should().Contain($"{expectedHeader}:");
-        result.Should().Contain("Be polite and professional");
-        result.Should().Contain("contact an administrator");
-    }
-
-    [Test]
-    public void BuildSystemPrompt_WithSoulAndGuidelines_ContainsBoth()
-    {
-        var context = CreateContext("en");
-        var soul = "I am a helpful planning assistant.";
-        var guidelines = "- Custom rule 1\n- Custom rule 2";
-
-        var result = _builder.BuildSystemPrompt(context, soul, null, guidelines);
-
-        result.Should().Contain("=== IDENTITY ===");
+        // Assert
         result.Should().Contain("helpful planning assistant");
-        result.Should().Contain("Guidelines:");
-        result.Should().Contain("Custom rule 1");
     }
 
     [Test]
-    public void BuildSystemPrompt_WithMemoriesAndGuidelines_ContainsBoth()
+    public async Task BuildSystemPromptAsync_WithoutSoulPrompt_DoesNotContainIdentitySection()
     {
-        var context = CreateContext("en");
-        var memories = new List<AiMemory>
+        // Arrange
+        var context = CreateContext();
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context, null);
+
+        // Assert
+        result.Should().Contain("You are a helpful assistant.");
+    }
+
+    [Test]
+    public async Task BuildSystemPromptAsync_UsesCorrectLanguage()
+    {
+        // Arrange
+        var context = CreateContext("de");
+        var germanTranslations = new Dictionary<string, string>
         {
-            new() { Category = "test", Key = "key1", Content = "value1", Importance = 5 }
+            { "Intro", "Du bist ein hilfreicher Assistent." },
+            { "ToolUsageRules", "Verwende Werkzeuge wenn angemessen." },
+            { "HeaderUserContext", "Benutzerkontext" },
+            { "LabelUserId", "Benutzer-ID" },
+            { "LabelPermissions", "Berechtigungen" },
+            { "HeaderAvailableFunctions", "Verfuegbare Funktionen" },
+            { "SettingsNoPermission", "Keine Einstellungsberechtigung" },
+            { "SettingsViewOnly", "Nur Einstellungen ansehen" }
         };
-        var guidelines = "- Custom guideline";
+        _translationProvider.GetTranslationsAsync("de").Returns(germanTranslations);
 
-        var result = _builder.BuildSystemPrompt(context, null, memories, guidelines);
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
 
-        result.Should().Contain("Guidelines:");
-        result.Should().Contain("Custom guideline");
-        result.Should().Contain("Persistent Knowledge:");
-        result.Should().Contain("key1: value1");
+        // Assert
+        result.Should().Contain("Benutzerkontext");
+        result.Should().Contain("Verfuegbare Funktionen");
     }
 
     [Test]
-    public void BuildSystemPrompt_WithAllSections_CorrectOrder()
+    public async Task BuildSystemPromptAsync_NoViewSettingsPermission_ContainsNoPermissionNote()
     {
-        var context = CreateContext("en");
-        var soul = "I am the assistant.";
-        var memories = new List<AiMemory>
+        // Arrange
+        var context = new LLMContext
         {
-            new() { Category = "info", Key = "k", Content = "v", Importance = 5 }
+            UserId = "user-456",
+            UserRights = new List<string> { "SomeOtherPermission" },
+            AvailableFunctions = new List<LLMFunction>(),
+            Language = "en"
         };
-        var guidelines = "- My rule";
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
 
-        var result = _builder.BuildSystemPrompt(context, soul, memories, guidelines);
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
 
-        var identityIndex = result.IndexOf("=== IDENTITY ===");
-        var functionsIndex = result.IndexOf("Available Functions:");
-        var guidelinesIndex = result.IndexOf("Guidelines:");
-        var memoryIndex = result.IndexOf("Persistent Knowledge:");
-
-        identityIndex.Should().BeLessThan(functionsIndex);
-        functionsIndex.Should().BeLessThan(guidelinesIndex);
-        guidelinesIndex.Should().BeLessThan(memoryIndex);
+        // Assert
+        result.Should().Contain("No settings permission");
     }
 
     [Test]
-    public void BuildSystemPrompt_CustomGuidelines_TrimsWhitespace()
+    public async Task BuildSystemPromptAsync_ViewOnlyPermission_ContainsViewOnlyNote()
     {
-        var context = CreateContext("en");
-        var guidelines = "  \n  - Trimmed rule  \n  ";
+        // Arrange
+        var context = new LLMContext
+        {
+            UserId = "user-789",
+            UserRights = new List<string> { "CanViewSettings" },
+            AvailableFunctions = new List<LLMFunction>(),
+            Language = "en"
+        };
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
 
-        var result = _builder.BuildSystemPrompt(context, null, null, guidelines);
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
 
-        result.Should().Contain("- Trimmed rule");
+        // Assert
+        result.Should().Contain("View settings only");
+    }
+
+    [Test]
+    public async Task BuildSystemPromptAsync_BothSettingsPermissions_NoSettingsNote()
+    {
+        // Arrange
+        var context = CreateContext();
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
+
+        // Assert
+        result.Should().NotContain("No settings permission");
+        result.Should().NotContain("View settings only");
     }
 }

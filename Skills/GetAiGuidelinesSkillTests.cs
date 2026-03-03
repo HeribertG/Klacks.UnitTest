@@ -1,7 +1,6 @@
 using Klacks.Api.Application.Skills;
-using Klacks.Api.Domain.Interfaces.AI;
-using Klacks.Api.Domain.Models.AI;
-using Klacks.Api.Domain.Models.Skills;
+using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
 using NUnit.Framework;
 using NSubstitute;
 using FluentAssertions;

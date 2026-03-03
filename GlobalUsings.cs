@@ -1,16 +1,16 @@
+global using Klacks.Api.Domain.Interfaces;
 global using Klacks.Api.Domain.Interfaces.Accounts;
-global using Klacks.Api.Domain.Interfaces.AI;
+global using Klacks.Api.Domain.Interfaces.Assistant;
 global using Klacks.Api.Domain.Interfaces.Associations;
 global using Klacks.Api.Domain.Interfaces.Authentification;
 global using Klacks.Api.Domain.Interfaces.CalendarSelections;
-global using Klacks.Api.Domain.Interfaces.LLM;
 global using Klacks.Api.Domain.Interfaces.Macros;
 global using Klacks.Api.Domain.Interfaces.Schedules;
 global using Klacks.Api.Domain.Interfaces.Settings;
-global using Klacks.Api.Domain.Interfaces.Skills;
 global using Klacks.Api.Domain.Interfaces.Staffs;
 global using Klacks.Api.Domain.Interfaces.Translation;
 
+global using Klacks.Api.Domain.Models.Assistant;
 global using Klacks.Api.Domain.Models.Associations;
 global using Klacks.Api.Domain.Models.CalendarSelections;
 global using Klacks.Api.Domain.Models.Schedules;
@@ -20,9 +20,18 @@ global using Klacks.Api.Domain.Common;
 
 global using Klacks.Api.Domain.Enums;
 
+global using Klacks.Api.Domain.Services.Assistant;
+
+global using Klacks.Api.Application.Interfaces;
+
 global using Klacks.Api.Infrastructure.Services;
+global using Klacks.Api.Infrastructure.Services.Groups;
+global using Klacks.Api.Infrastructure.Services.Settings;
+global using Klacks.Api.Infrastructure.Services.Shifts;
+global using Klacks.Api.Infrastructure.Services.CalendarSelections;
 
 global using Klacks.Api.Infrastructure.Persistence;
+global using Klacks.Api.Infrastructure.Repositories.Assistant;
 global using Klacks.Api.Infrastructure.Repositories.Associations;
 global using Klacks.Api.Infrastructure.Repositories.CalendarSelections;
 global using Klacks.Api.Infrastructure.Repositories.Schedules;
