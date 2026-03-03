@@ -1,4 +1,5 @@
 global using Klacks.Api.Domain.Interfaces.Accounts;
+global using Klacks.Api.Domain.Interfaces.AI;
 global using Klacks.Api.Domain.Interfaces.Associations;
 global using Klacks.Api.Domain.Interfaces.Authentification;
 global using Klacks.Api.Domain.Interfaces.CalendarSelections;
