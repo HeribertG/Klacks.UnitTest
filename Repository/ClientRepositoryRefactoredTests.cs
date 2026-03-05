@@ -91,12 +91,14 @@ public class ClientRepositoryRefactoredTests
 
         var mockWorkLogger = Substitute.For<ILogger<Work>>();
         _mockWorkMacroService = Substitute.For<IWorkMacroService>();
+        var mockContractDataProvider = Substitute.For<Klacks.Api.Domain.Interfaces.Associations.IClientContractDataProvider>();
         _workRepository = new WorkRepository(
             _context,
             mockWorkLogger,
             mockGroupFilterService,
             _mockSearchFilterService,
-            _mockWorkMacroService);
+            _mockWorkMacroService,
+            mockContractDataProvider);
 
         await CreateTestData();
     }

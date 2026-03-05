@@ -46,12 +46,14 @@ public class WorkRepositorySortingTests
 
         var mockLogger = Substitute.For<ILogger<Klacks.Api.Domain.Models.Schedules.Work>>();
 
+        var mockContractDataProvider = Substitute.For<Klacks.Api.Domain.Interfaces.Associations.IClientContractDataProvider>();
         _workRepository = new WorkRepository(
             _context,
             mockLogger,
             _mockGroupFilterService,
             _mockSearchFilterService,
-            _mockWorkMacroService);
+            _mockWorkMacroService,
+            mockContractDataProvider);
 
         await CreateTestDataWithContracts();
     }
