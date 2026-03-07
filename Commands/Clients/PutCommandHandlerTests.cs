@@ -7,6 +7,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
+using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Application.DTOs.Staffs;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ public class PutCommandHandlerTests
     private ClientMapper _mapper = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IGroupVisibilityService _groupVisibilityService = null!;
+    private IEmailClientAssignmentService _emailClientAssignmentService = null!;
     private ILogger<PutCommandHandler> _logger = null!;
     private PutCommandHandler _handler = null!;
 
@@ -31,6 +33,7 @@ public class PutCommandHandlerTests
         _mapper = new ClientMapper();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _groupVisibilityService = Substitute.For<IGroupVisibilityService>();
+        _emailClientAssignmentService = Substitute.For<IEmailClientAssignmentService>();
         _logger = Substitute.For<ILogger<PutCommandHandler>>();
 
         _handler = new PutCommandHandler(
@@ -38,6 +41,7 @@ public class PutCommandHandlerTests
             _mapper,
             _unitOfWork,
             _groupVisibilityService,
+            _emailClientAssignmentService,
             _logger
         );
     }
