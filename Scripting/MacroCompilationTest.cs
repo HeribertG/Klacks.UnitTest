@@ -122,4 +122,154 @@ FUNCTION CalcSegment(StartTime, EndTime, HolidayFlag, WeekdayNum)
         Assert.That(result.Success, Is.True);
         Assert.That(result.Messages, Is.Not.Empty);
     }
+
+    [Test]
+    public void WorkMacroServiceFlow_CacheCloneSetRun_ShouldWork()
+    {
+        var script = @"
+import hour
+import fromhour
+import untilhour
+import weekday
+import holiday
+import nightrate
+
+dim result
+result = hour * nightrate
+output 1, result
+";
+
+        var cache = new MacroCache();
+        var macroId = Guid.NewGuid();
+
+        var cached = cache.GetOrCompile(macroId, script);
+        Assert.That(cached.HasError, Is.False, $"Compile error: {cached.Error?.Description}");
+
+        Console.WriteLine($"Cached ExternalSymbols: [{string.Join(", ", cached.ExternalSymbols.Keys)}]");
+
+        var clone = cached.CloneForExecution();
+        Console.WriteLine($"Cloned ExternalSymbols before set: [{string.Join(", ", clone.ExternalSymbols.Keys)}]");
+
+        clone.SetExternalValue("hour", 8.0m);
+        clone.SetExternalValue("fromhour", "08:00");
+        clone.SetExternalValue("untilhour", "16:00");
+        clone.SetExternalValue("weekday", 3);
+        clone.SetExternalValue("holiday", 0);
+        clone.SetExternalValue("nightrate", 0.25m);
+
+        Console.WriteLine($"Cloned ExternalSymbols after set: [{string.Join(", ", clone.ExternalSymbols.Keys)}]");
+
+        var engine = new MacroEngine();
+        var results = engine.RunWithScript(clone);
+
+        Console.WriteLine($"ErrorNumber: {engine.ErrorNumber}");
+        Console.WriteLine($"ErrorCode: {engine.ErrorCode}");
+        Console.WriteLine($"Results count: {results.Count}");
+        foreach (var msg in results)
+        {
+            Console.WriteLine($"  Type={msg.Type}, Message={msg.Message}");
+        }
+
+        Assert.That(engine.ErrorNumber, Is.EqualTo(0));
+        Assert.That(results.Count, Is.GreaterThan(0));
+        Assert.That(results[0].Message, Is.EqualTo("2"));
+    }
+
+    [Test]
+    public void NumberLiteralComparison_ShouldWorkCorrectly()
+    {
+        var script = @"
+import weekday
+
+dim result
+result = 0
+if weekday = 6 then
+  result = 100
+endif
+output 1, result
+";
+
+        var compiled = CompiledScript.Compile(script);
+        Assert.That(compiled.HasError, Is.False);
+
+        compiled.SetExternalValue("weekday", 6);
+
+        var context = new ScriptExecutionContext(compiled);
+        var execResult = context.Execute();
+
+        Console.WriteLine($"Success: {execResult.Success}");
+        foreach (var msg in execResult.Messages)
+        {
+            Console.WriteLine($"  Type={msg.Type}, Message={msg.Message}");
+        }
+
+        Assert.That(execResult.Success, Is.True);
+        Assert.That(execResult.Messages.Count, Is.GreaterThan(0));
+        Assert.That(execResult.Messages[0].Message, Is.EqualTo("100"));
+    }
+
+    [Test]
+    public void BooleanExternalVariable_EqualityComparison_ShouldWork()
+    {
+        var script = @"
+import holiday
+
+dim result
+result = 0
+if holiday = 1 then
+  result = 50
+endif
+output 1, result
+";
+
+        var compiled = CompiledScript.Compile(script);
+        Assert.That(compiled.HasError, Is.False);
+
+        compiled.SetExternalValue("holiday", 1);
+
+        var context = new ScriptExecutionContext(compiled);
+        var execResult = context.Execute();
+
+        Console.WriteLine($"Success: {execResult.Success}");
+        foreach (var msg in execResult.Messages)
+        {
+            Console.WriteLine($"  Type={msg.Type}, Message={msg.Message}");
+        }
+
+        Assert.That(execResult.Success, Is.True);
+        Assert.That(execResult.Messages.Count, Is.GreaterThan(0));
+        Assert.That(execResult.Messages[0].Message, Is.EqualTo("50"));
+    }
+
+    [Test]
+    public void DecimalExternalVariable_Arithmetic_ShouldWork()
+    {
+        var script = @"
+import hour
+import nightrate
+
+dim result
+result = hour * nightrate
+output 1, result
+";
+
+        var compiled = CompiledScript.Compile(script);
+        Assert.That(compiled.HasError, Is.False);
+
+        compiled.SetExternalValue("hour", 8.5m);
+        compiled.SetExternalValue("nightrate", 0.25m);
+
+        var context = new ScriptExecutionContext(compiled);
+        var execResult = context.Execute();
+
+        Console.WriteLine($"Success: {execResult.Success}");
+        foreach (var msg in execResult.Messages)
+        {
+            Console.WriteLine($"  Type={msg.Type}, Message={msg.Message}");
+        }
+
+        Assert.That(execResult.Success, Is.True);
+        Assert.That(execResult.Messages.Count, Is.GreaterThan(0));
+        Assert.That(execResult.Messages[0].Message, Is.EqualTo("2.125"));
+    }
 }
