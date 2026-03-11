@@ -98,7 +98,7 @@ internal class CalendarSelectionTest
         var updateService4 = new CalendarSelectionUpdateService(dbContext, _updateServiceLogger);
         var repository4 = new CalendarSelectionRepository(dbContext, _calendarSelectionLogger, updateService4);
         var settingsRepository = Substitute.For<ISettingsRepository>();
-        var handlerDelete = new DeleteCommandHandler(repository4, settingsRepository, dbContext, _mapper, unitOfWork, _logger3);
+        var handlerDelete = new DeleteCommandHandler(repository4, settingsRepository, _mapper, unitOfWork, _logger3);
 
         //Act Delete
         var resultDelete = await handlerDelete.Handle(queryDelete, default);
