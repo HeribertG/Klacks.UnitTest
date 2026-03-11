@@ -5,6 +5,7 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Application.Services.Clients;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace Klacks.UnitTest.Services.Clients;
@@ -21,7 +22,8 @@ public class ClientGroupFilterServiceTests
     {
         _mockGroupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _mockGroupVisibility = Substitute.For<IGroupVisibilityService>();
-        _service = new ClientGroupFilterService(_mockGroupClient, _mockGroupVisibility);
+        var logger = Substitute.For<ILogger<ClientGroupFilterService>>();
+        _service = new ClientGroupFilterService(_mockGroupClient, _mockGroupVisibility, logger);
     }
 
     [Test]
