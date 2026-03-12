@@ -79,7 +79,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
     }
 
     [Test]
-    public async Task BuildSystemPromptAsync_WithContext_ContainsFunctionName()
+    public async Task BuildSystemPromptAsync_WithContext_DoesNotContainFunctionNames()
     {
         // Arrange
         var context = CreateContext();
@@ -89,8 +89,8 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().Contain("test_func");
-        result.Should().Contain("A test function");
+        result.Should().NotContain("test_func",
+            "functions are passed separately as tools to the provider, not in the system prompt");
     }
 
     [Test]
@@ -145,7 +145,8 @@ public class LLMSystemPromptBuilderGuidelinesTests
 
         // Assert
         result.Should().Contain("Benutzerkontext");
-        result.Should().Contain("Verfuegbare Funktionen");
+        result.Should().NotContain("Verfuegbare Funktionen",
+            "functions are passed separately as tools to the provider, not in the system prompt");
     }
 
     [Test]
