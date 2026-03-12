@@ -7,7 +7,9 @@ using Klacks.Api.Domain.Models.Filters;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Persistence;
+using Klacks.Api.Application.Services.Clients;
 using Klacks.Api.Infrastructure.Repositories;
+using Klacks.Api.Infrastructure.Repositories.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -21,8 +23,6 @@ public class WorkRepositorySortingTests
 {
     private DataBaseContext _context = null!;
     private IWorkRepository _workRepository = null!;
-    private IClientGroupFilterService _mockGroupFilterService = null!;
-    private IClientSearchFilterService _mockSearchFilterService = null!;
     private IWorkMacroService _mockWorkMacroService = null!;
 
     [SetUp]
@@ -35,14 +35,16 @@ public class WorkRepositorySortingTests
         var mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, mockHttpContextAccessor);
 
-        _mockGroupFilterService = Substitute.For<IClientGroupFilterService>();
-        _mockSearchFilterService = Substitute.For<IClientSearchFilterService>();
         _mockWorkMacroService = Substitute.For<IWorkMacroService>();
 
-        _mockGroupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+        var mockGroupFilterService = Substitute.For<IClientGroupFilterService>();
+        mockGroupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
-        _mockSearchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+        var mockSearchFilterService = Substitute.For<IClientSearchFilterService>();
+        mockSearchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
+
+        var baseQueryService = new ClientBaseQueryService(_context, mockGroupFilterService, mockSearchFilterService);
 
         var mockLogger = Substitute.For<ILogger<Klacks.Api.Domain.Models.Schedules.Work>>();
 
@@ -50,8 +52,7 @@ public class WorkRepositorySortingTests
         _workRepository = new WorkRepository(
             _context,
             mockLogger,
-            _mockGroupFilterService,
-            _mockSearchFilterService,
+            baseQueryService,
             _mockWorkMacroService,
             mockContractDataProvider);
 

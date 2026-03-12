@@ -84,10 +84,11 @@ public class ClientRepositoryRefactoredTests
             _mockSearchService,
             _mockSortingService);
 
+        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(
+            _context, mockGroupFilterService, _mockSearchFilterService);
         _clientBreakPlaceholderRepository = new ClientBreakPlaceholderRepository(
             _context,
-            mockGroupFilterService,
-            _mockSearchFilterService);
+            baseQueryService);
 
         var mockWorkLogger = Substitute.For<ILogger<Work>>();
         _mockWorkMacroService = Substitute.For<IWorkMacroService>();
@@ -95,8 +96,7 @@ public class ClientRepositoryRefactoredTests
         _workRepository = new WorkRepository(
             _context,
             mockWorkLogger,
-            mockGroupFilterService,
-            _mockSearchFilterService,
+            baseQueryService,
             _mockWorkMacroService,
             mockContractDataProvider);
 

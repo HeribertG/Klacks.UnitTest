@@ -50,15 +50,15 @@ internal class BreakPlaceholderTests
 
         DataSeed(clients, absence, breakPlaceholders);
 
-        var groupFilterService = Substitute.For<IClientGroupFilterService>();
-        var searchFilterService = Substitute.For<IClientSearchFilterService>();
-
-        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+        var mockGroupFilter = Substitute.For<IClientGroupFilterService>();
+        mockGroupFilter.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
-        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+        var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
+        mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
+        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
-        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, groupFilterService, searchFilterService);
+        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
         var handler = new GetListQueryHandler(breakPlaceholderRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
@@ -102,15 +102,15 @@ internal class BreakPlaceholderTests
         dbContext.Database.EnsureCreated();
         DataSeed(clients, absence, breakPlaceholders);
 
-        var groupFilterService = Substitute.For<IClientGroupFilterService>();
-        var searchFilterService = Substitute.For<IClientSearchFilterService>();
-
-        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+        var mockGroupFilter = Substitute.For<IClientGroupFilterService>();
+        mockGroupFilter.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
-        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+        var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
+        mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
+        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
-        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, groupFilterService, searchFilterService);
+        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
         var handler = new GetListQueryHandler(breakPlaceholderRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
@@ -141,15 +141,15 @@ internal class BreakPlaceholderTests
         dbContext.Database.EnsureCreated();
         DataSeed(clients, absence, breakPlaceholders);
 
-        var groupFilterService = Substitute.For<IClientGroupFilterService>();
-        var searchFilterService = Substitute.For<IClientSearchFilterService>();
-
-        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+        var mockGroupFilter = Substitute.For<IClientGroupFilterService>();
+        mockGroupFilter.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
-        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+        var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
+        mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
+        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
-        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, groupFilterService, searchFilterService);
+        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
         var handler = new GetListQueryHandler(breakPlaceholderRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
@@ -180,15 +180,15 @@ internal class BreakPlaceholderTests
         dbContext.Database.EnsureCreated();
         DataSeed(clients, absence, breakPlaceholders);
 
-        var groupFilterService = Substitute.For<IClientGroupFilterService>();
-        var searchFilterService = Substitute.For<IClientSearchFilterService>();
-
-        groupFilterService.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
+        var mockGroupFilter = Substitute.For<IClientGroupFilterService>();
+        mockGroupFilter.FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>())
             .Returns(args => Task.FromResult((IQueryable<Client>)args[1]));
-        searchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
+        var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
+        mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
+        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
-        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, groupFilterService, searchFilterService);
+        var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
         var logger = Substitute.For<ILogger<GetListQueryHandler>>();
         var handler = new GetListQueryHandler(breakPlaceholderRepository, _scheduleMapper, _filterMapper, _clientMapper, logger);
