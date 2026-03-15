@@ -287,4 +287,74 @@ public class TimelineCalculationServiceTests
         blocks[0].End.Should().Be(BaseDate.AddDays(1).ToDateTime(new TimeOnly(1, 0)));
         blocks[0].Duration.Should().Be(TimeSpan.FromHours(2));
     }
+
+    [Test]
+    public void CalculateScheduleBlocks_WorkBlock_ContainsShiftId()
+    {
+        // Arrange
+        var shiftId = Guid.NewGuid();
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            CurrentDate = BaseDate,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            ShiftId = shiftId
+        };
+
+        // Act
+        var blocks = _service.CalculateScheduleBlocks([work], [], []);
+
+        // Assert
+        blocks.Should().HaveCount(1);
+        blocks[0].ShiftId.Should().Be(shiftId);
+    }
+
+    [Test]
+    public void CalculateScheduleBlocks_BreakBlock_HasNoShiftId()
+    {
+        // Arrange
+        var breakEntry = new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            CurrentDate = BaseDate,
+            StartTime = new TimeOnly(12, 0),
+            EndTime = new TimeOnly(13, 0),
+            AbsenceId = Guid.NewGuid()
+        };
+
+        // Act
+        var blocks = _service.CalculateScheduleBlocks([], [], [breakEntry]);
+
+        // Assert
+        blocks.Should().HaveCount(1);
+        blocks[0].ShiftId.Should().BeNull();
+    }
+
+    [Test]
+    public void CalculateScheduleBlocks_CorrectionBlock_HasNoShiftId()
+    {
+        // Arrange
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+        var correction = new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Type = WorkChangeType.CorrectionStart,
+            StartTime = new TimeOnly(9, 0),
+            EndTime = new TimeOnly(9, 0)
+        };
+
+        // Act
+        var blocks = _service.CalculateScheduleBlocks([work], [correction], []);
+
+        // Assert
+        var correctionBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Correction);
+        correctionBlock.ShiftId.Should().BeNull();
+
+        var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
+        workBlock.ShiftId.Should().NotBeNull();
+    }
 }
