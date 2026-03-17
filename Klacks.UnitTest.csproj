@@ -10,11 +10,10 @@
 
 
 	<ItemGroup>
-		<PackageReference Include="AutoMapper.Collection" Version="11.0.0" />
-		<PackageReference Include="FluentAssertions" Version="8.3.0" />
+<PackageReference Include="FluentAssertions" Version="8.3.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.3" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
-		<PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2094">
+		<PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2120">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
@@ -34,8 +33,7 @@
 		<PackageReference Include="Microsoft.AspNetCore.Cryptography.Internal" Version="10.0.3" />
 		<PackageReference Include="Microsoft.AspNetCore.Cryptography.KeyDerivation" Version="10.0.3" />
 		<PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.3" />
-		<PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="10.0.3" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.3" />
+<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.3" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.3">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
