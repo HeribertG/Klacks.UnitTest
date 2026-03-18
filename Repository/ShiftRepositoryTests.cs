@@ -21,11 +21,7 @@ public class ShiftRepositoryTests
     private ShiftRepository _repository;
     private ILogger<Shift> _mockLogger;
     private IHttpContextAccessor _mockHttpContextAccessor;
-    private IDateRangeFilterService _mockDateRangeFilterService;
-    private IShiftSearchService _mockShiftSearchService;
-    private IShiftSortingService _mockShiftSortingService;
-    private IShiftStatusFilterService _mockShiftStatusFilterService;
-    private IShiftPaginationService _mockShiftPaginationService;
+    private IShiftQueryPipelineService _mockQueryPipeline;
     private IShiftGroupManagementService _mockShiftGroupManagementService;
 
     [SetUp]
@@ -38,16 +34,12 @@ public class ShiftRepositoryTests
         _mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, _mockHttpContextAccessor);
         _mockLogger = Substitute.For<ILogger<Shift>>();
-        _mockDateRangeFilterService = Substitute.For<IDateRangeFilterService>();
-        _mockShiftSearchService = Substitute.For<IShiftSearchService>();
-        _mockShiftSortingService = Substitute.For<IShiftSortingService>();
-        _mockShiftStatusFilterService = Substitute.For<IShiftStatusFilterService>();
-        _mockShiftPaginationService = Substitute.For<IShiftPaginationService>();
+        _mockQueryPipeline = Substitute.For<IShiftQueryPipelineService>();
         _mockShiftGroupManagementService = Substitute.For<IShiftGroupManagementService>();
         var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
         var scheduleMapper = new ScheduleMapper();
-        _repository = new ShiftRepository(_context, _mockLogger, _mockDateRangeFilterService, _mockShiftSearchService, _mockShiftSortingService, _mockShiftStatusFilterService, _mockShiftPaginationService, _mockShiftGroupManagementService, collectionUpdateService, mockShiftValidator, scheduleMapper);
+        _repository = new ShiftRepository(_context, _mockLogger, _mockQueryPipeline, _mockShiftGroupManagementService, collectionUpdateService, mockShiftValidator, scheduleMapper);
     }
 
     [Test]
@@ -315,16 +307,16 @@ public class ShiftRepositoryTests
             IsSporadic = true
         };
 
-        _mockShiftStatusFilterService
+        _mockQueryPipeline
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockDateRangeFilterService
+        _mockQueryPipeline
             .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSearchService
+        _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSortingService
+        _mockQueryPipeline
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 
@@ -364,16 +356,16 @@ public class ShiftRepositoryTests
             IsSporadic = true
         };
 
-        _mockShiftStatusFilterService
+        _mockQueryPipeline
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockDateRangeFilterService
+        _mockQueryPipeline
             .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSearchService
+        _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSortingService
+        _mockQueryPipeline
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 
@@ -417,16 +409,16 @@ public class ShiftRepositoryTests
             IsSporadic = true
         };
 
-        _mockShiftStatusFilterService
+        _mockQueryPipeline
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockDateRangeFilterService
+        _mockQueryPipeline
             .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSearchService
+        _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSortingService
+        _mockQueryPipeline
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 
@@ -497,16 +489,16 @@ public class ShiftRepositoryTests
             IsSporadic = true
         };
 
-        _mockShiftStatusFilterService
+        _mockQueryPipeline
             .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockDateRangeFilterService
+        _mockQueryPipeline
             .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSearchService
+        _mockQueryPipeline
             .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Shift>)args[0]);
-        _mockShiftSortingService
+        _mockQueryPipeline
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 

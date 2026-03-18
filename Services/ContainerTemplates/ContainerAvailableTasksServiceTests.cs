@@ -41,22 +41,14 @@ public class ContainerAvailableTasksServiceTests
 
         var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
-        var mockDateRangeFilterService = Substitute.For<IDateRangeFilterService>();
-        var mockShiftSearchService = Substitute.For<IShiftSearchService>();
-        var mockShiftSortingService = Substitute.For<IShiftSortingService>();
-        var mockShiftStatusFilterService = Substitute.For<IShiftStatusFilterService>();
-        var mockShiftPaginationService = Substitute.For<IShiftPaginationService>();
+        var mockQueryPipeline = Substitute.For<IShiftQueryPipelineService>();
         var mockShiftGroupManagementService = Substitute.For<IShiftGroupManagementService>();
 
         var scheduleMapper = new ScheduleMapper();
         _shiftRepository = new ShiftRepository(
             _context,
             shiftLogger,
-            mockDateRangeFilterService,
-            mockShiftSearchService,
-            mockShiftSortingService,
-            mockShiftStatusFilterService,
-            mockShiftPaginationService,
+            mockQueryPipeline,
             mockShiftGroupManagementService,
             collectionUpdateService,
             mockShiftValidator,

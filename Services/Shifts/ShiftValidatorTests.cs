@@ -30,11 +30,7 @@ public class ShiftValidatorTests
         _context = new DataBaseContext(options, mockHttpContextAccessor);
 
         var mockLogger = Substitute.For<ILogger<Shift>>();
-        var mockDateRangeFilterService = Substitute.For<IDateRangeFilterService>();
-        var mockShiftSearchService = Substitute.For<IShiftSearchService>();
-        var mockShiftSortingService = Substitute.For<IShiftSortingService>();
-        var mockShiftStatusFilterService = Substitute.For<IShiftStatusFilterService>();
-        var mockShiftPaginationService = Substitute.For<IShiftPaginationService>();
+        var mockQueryPipeline = Substitute.For<IShiftQueryPipelineService>();
         var mockShiftGroupManagementService = Substitute.For<IShiftGroupManagementService>();
         var collectionUpdateService = new EntityCollectionUpdateService(_context);
         var mockShiftValidator = Substitute.For<IShiftValidator>();
@@ -43,11 +39,7 @@ public class ShiftValidatorTests
         _shiftRepository = new ShiftRepository(
             _context,
             mockLogger,
-            mockDateRangeFilterService,
-            mockShiftSearchService,
-            mockShiftSortingService,
-            mockShiftStatusFilterService,
-            mockShiftPaginationService,
+            mockQueryPipeline,
             mockShiftGroupManagementService,
             collectionUpdateService,
             mockShiftValidator,
