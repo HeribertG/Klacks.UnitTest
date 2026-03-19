@@ -77,7 +77,7 @@ public class AddressesControllerTests
     }
 
     [Test]
-    public async Task Validate_InvalidAddress_ReturnsBadRequest()
+    public async Task Validate_InvalidAddress_ReturnsOkWithIsValidFalse()
     {
         // Arrange
         var resource = new AddressResource
@@ -110,9 +110,9 @@ public class AddressesControllerTests
         var result = await _controller.Validate(resource);
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
-        var badResult = result.Result as BadRequestObjectResult;
-        var response = badResult!.Value as AddressValidationResponse;
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var okResult = result.Result as OkObjectResult;
+        var response = okResult!.Value as AddressValidationResponse;
         response.Should().NotBeNull();
         response!.IsValid.Should().BeFalse();
         response.MatchType.Should().Be("not_found");
@@ -120,7 +120,7 @@ public class AddressesControllerTests
     }
 
     [Test]
-    public async Task Validate_MissingCity_ReturnsBadRequest()
+    public async Task Validate_MissingCity_ReturnsOkWithIsValidFalse()
     {
         // Arrange
         var resource = new AddressResource
@@ -135,16 +135,16 @@ public class AddressesControllerTests
         var result = await _controller.Validate(resource);
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
-        var badResult = result.Result as BadRequestObjectResult;
-        var response = badResult!.Value as AddressValidationResponse;
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var okResult = result.Result as OkObjectResult;
+        var response = okResult!.Value as AddressValidationResponse;
         response.Should().NotBeNull();
         response!.IsValid.Should().BeFalse();
         response.MatchType.Should().Be("missing_fields");
     }
 
     [Test]
-    public async Task Validate_MissingZip_ReturnsBadRequest()
+    public async Task Validate_MissingZip_ReturnsOkWithIsValidFalse()
     {
         // Arrange
         var resource = new AddressResource
@@ -159,9 +159,9 @@ public class AddressesControllerTests
         var result = await _controller.Validate(resource);
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
-        var badResult = result.Result as BadRequestObjectResult;
-        var response = badResult!.Value as AddressValidationResponse;
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var okResult = result.Result as OkObjectResult;
+        var response = okResult!.Value as AddressValidationResponse;
         response.Should().NotBeNull();
         response!.IsValid.Should().BeFalse();
         response.MatchType.Should().Be("missing_fields");
