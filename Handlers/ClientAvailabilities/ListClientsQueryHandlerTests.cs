@@ -6,6 +6,7 @@
 /// <param name="_baseQueryService">Mock für den zentralen ClientBaseQueryService</param>
 using FluentAssertions;
 using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Application.Handlers.ClientAvailabilities;
 using Klacks.Api.Application.Queries.ClientAvailabilities;
 using Klacks.Api.Domain.Enums;

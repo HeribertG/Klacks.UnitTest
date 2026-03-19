@@ -12,6 +12,7 @@ using Klacks.Api.Application.Queries.Clients;
 using Klacks.Api.Infrastructure.Repositories;
 using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Application.DTOs.Staffs;
 using Microsoft.AspNetCore.Http;

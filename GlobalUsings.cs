@@ -1,5 +1,9 @@
 global using Klacks.Api.Application.Interfaces;
 global using Klacks.Api.Domain.Common;
+global using Klacks.Api.Domain.DTOs.Filter;
+global using Klacks.Api.Domain.DTOs.Registrations;
+global using Klacks.Api.Domain.DTOs.Settings;
+global using Klacks.Api.Domain.Interfaces.Settings;
 global using Klacks.Api.Domain.Enums;
 global using Klacks.Api.Domain.Interfaces;
 global using Klacks.Api.Domain.Interfaces.Accounts;

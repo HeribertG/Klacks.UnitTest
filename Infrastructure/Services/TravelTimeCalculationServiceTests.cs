@@ -4,6 +4,7 @@
 /// Tests für TravelTimeCalculationService: API-Key-Prüfung, Koordinaten-Auflösung und Haversine-Fallback.
 /// </summary>
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Services;

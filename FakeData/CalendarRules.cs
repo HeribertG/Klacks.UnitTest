@@ -1,4 +1,5 @@
 using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Domain.DTOs.Filter;
 using System.Text.Json;
 
 namespace Klacks.UnitTest.FakeData

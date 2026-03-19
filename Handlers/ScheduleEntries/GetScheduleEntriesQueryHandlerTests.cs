@@ -6,6 +6,7 @@
 /// <param name="_workRepository">Mock für Work-Repository mit WorkList-Methode</param>
 using FluentAssertions;
 using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Application.Handlers.ScheduleEntries;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
