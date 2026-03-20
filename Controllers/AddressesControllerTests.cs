@@ -63,7 +63,7 @@ public class AddressesControllerTests
             });
 
         // Act
-        var result = await _controller.Validate(resource);
+        var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
         result.Result.Should().BeOfType<OkObjectResult>();
@@ -107,7 +107,7 @@ public class AddressesControllerTests
             .Returns(suggestions);
 
         // Act
-        var result = await _controller.Validate(resource);
+        var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
         result.Result.Should().BeOfType<OkObjectResult>();
@@ -132,7 +132,7 @@ public class AddressesControllerTests
         };
 
         // Act
-        var result = await _controller.Validate(resource);
+        var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
         result.Result.Should().BeOfType<OkObjectResult>();
@@ -156,7 +156,7 @@ public class AddressesControllerTests
         };
 
         // Act
-        var result = await _controller.Validate(resource);
+        var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
         result.Result.Should().BeOfType<OkObjectResult>();
@@ -190,7 +190,7 @@ public class AddressesControllerTests
             });
 
         // Act
-        await _controller.Validate(resource);
+        await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
         await _mockGeocodingService.Received(1).ValidateExactAddressAsync(
@@ -214,7 +214,7 @@ public class AddressesControllerTests
             .Throws(new HttpRequestException("Connection refused"));
 
         // Act
-        var result = await _controller.Validate(resource);
+        var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
         result.Result.Should().BeOfType<OkObjectResult>();
