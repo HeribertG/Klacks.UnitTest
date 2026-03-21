@@ -10,6 +10,7 @@
 
 using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
+using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.UserBackend.Staffs;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +26,7 @@ public class AddressesControllerTests
     private ILogger<AddressesController> _mockLogger = null!;
     private IGeocodingService _mockGeocodingService = null!;
     private IAddressCoordinateWriter _mockCoordinateWriter = null!;
+    private StateAbbreviationResolver _stateResolver = null!;
     private AddressesController _controller = null!;
 
     [SetUp]
@@ -34,8 +36,10 @@ public class AddressesControllerTests
         _mockLogger = Substitute.For<ILogger<AddressesController>>();
         _mockGeocodingService = Substitute.For<IGeocodingService>();
         _mockCoordinateWriter = Substitute.For<IAddressCoordinateWriter>();
+        var mockStateRepository = Substitute.For<Klacks.Api.Domain.Interfaces.Settings.IStateRepository>();
+        _stateResolver = new StateAbbreviationResolver(mockStateRepository);
         _controller = new AddressesController(
-            _mockMediator, _mockLogger, _mockGeocodingService, _mockCoordinateWriter);
+            _mockMediator, _mockLogger, _mockGeocodingService, _mockCoordinateWriter, _stateResolver);
     }
 
     [Test]
