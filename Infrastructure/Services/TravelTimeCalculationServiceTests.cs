@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests für TravelTimeCalculationService: API-Key-Prüfung, Koordinaten-Auflösung und Haversine-Fallback.
+/// Tests for TravelTimeCalculationService: API key validation, coordinate resolution, and Haversine fallback.
 /// </summary>
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;

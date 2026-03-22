@@ -1,8 +1,8 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests für den optionalen ShiftId-Parameter am ScheduleBlock-Record.
-/// Stellt sicher, dass ShiftId korrekt transportiert wird und Rückwärtskompatibilität gewahrt bleibt.
+/// Tests for the optional ShiftId parameter on the ScheduleBlock record.
+/// Ensures that ShiftId is transported correctly and backward compatibility is maintained.
 /// </summary>
 using Klacks.Api.Domain.Models.Schedules;
 

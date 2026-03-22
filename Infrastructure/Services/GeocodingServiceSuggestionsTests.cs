@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests fuer GeocodingService.GetAddressSuggestionsAsync: Nominatim-Response-Parsing,
-/// Fallback-Query bei leeren Ergebnissen, Caching und HTTP-Fehlerbehandlung.
+/// Tests for GeocodingService.GetAddressSuggestionsAsync: Nominatim response parsing,
+/// fallback query on empty results, caching, and HTTP error handling.
 /// </summary>
-/// <param name="mockHandler">MockHttpMessageHandler zur Kontrolle der HTTP-Responses</param>
-/// <param name="cache">In-Memory-Cache fuer Geocoding-Ergebnis-Caching</param>
+/// <param name="mockHandler">MockHttpMessageHandler to control HTTP responses</param>
+/// <param name="cache">In-memory cache for geocoding result caching</param>
 
 using System.Net;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;

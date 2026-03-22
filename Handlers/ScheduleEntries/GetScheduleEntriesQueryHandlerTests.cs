@@ -1,9 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests für den GetScheduleEntriesQueryHandler: SearchString-Durchreichung an WorkFilter.
+/// Tests for the GetScheduleEntriesQueryHandler: SearchString pass-through to WorkFilter.
 /// </summary>
-/// <param name="_workRepository">Mock für Work-Repository mit WorkList-Methode</param>
+/// <param name="_workRepository">Mock for the Work repository with WorkList method</param>
 using FluentAssertions;
 using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Domain.DTOs.Filter;

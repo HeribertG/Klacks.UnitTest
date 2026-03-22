@@ -1,9 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests für den ListClientsQueryHandler: Paging, Mapping und BaseQuery-Delegation.
+/// Tests for the ListClientsQueryHandler: paging, mapping, and base query delegation.
 /// </summary>
-/// <param name="_baseQueryService">Mock für den zentralen ClientBaseQueryService</param>
+/// <param name="_baseQueryService">Mock for the central ClientBaseQueryService</param>
 using FluentAssertions;
 using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Domain.DTOs.Filter;
