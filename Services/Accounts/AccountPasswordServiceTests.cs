@@ -1,11 +1,12 @@
 using FluentAssertions;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Accounts;
 using Klacks.Api.Domain.Models.Authentification;
+using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Application.DTOs.Registrations;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Klacks.UnitTest.Services.Accounts;
@@ -17,8 +18,6 @@ public class AccountPasswordServiceTests
     private IAuthenticationService _mockAuthService;
     private IUserManagementService _mockUserManagementService;
     private IAccountNotificationService _mockNotificationService;
-    private IServiceProvider _mockServiceProvider;
-    private IConfiguration _mockConfiguration;
     private ILogger<AccountPasswordService> _mockLogger;
 
     [SetUp]
@@ -27,14 +26,11 @@ public class AccountPasswordServiceTests
         _mockAuthService = Substitute.For<IAuthenticationService>();
         _mockUserManagementService = Substitute.For<IUserManagementService>();
         _mockNotificationService = Substitute.For<IAccountNotificationService>();
-        _mockServiceProvider = Substitute.For<IServiceProvider>();
-        _mockConfiguration = Substitute.For<IConfiguration>();
         _mockLogger = Substitute.For<ILogger<AccountPasswordService>>();
 
-        // Setup service provider to return the notification service when requested
-        _mockServiceProvider.GetService<IAccountNotificationService>().Returns(_mockNotificationService);
+        var settings = Options.Create(new PasswordResetSettings { BaseUrl = "https://localhost:7002" });
 
-        _passwordService = new AccountPasswordService(_mockAuthService, _mockUserManagementService, _mockServiceProvider, _mockConfiguration, _mockLogger);
+        _passwordService = new AccountPasswordService(_mockAuthService, _mockUserManagementService, _mockNotificationService, settings, _mockLogger);
     }
 
     [Test]
