@@ -43,6 +43,11 @@ namespace Klacks.UnitTest.Mocks
             return Task.CompletedTask;
         }
 
+        public async Task<TResult> ExecuteInTransactionAsync<TResult>(Func<Task<TResult>> operation)
+        {
+            return await operation();
+        }
+
         private class MockTransaction : ITransaction
         {
             public void Dispose()
