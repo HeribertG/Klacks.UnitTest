@@ -36,8 +36,8 @@ public class BulkDeleteWorksCommandValidatorTests
     {
         // Arrange
         var ids = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
-        foreach (var id in ids)
-            _workRepository.Get(id).Returns(new Work { LockLevel = WorkLockLevel.None });
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>())
+            .Returns(ids.Select(_ => new Work { LockLevel = WorkLockLevel.None }).ToList());
         SetupNonAdminUser();
         var command = new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = ids });
 
@@ -54,8 +54,12 @@ public class BulkDeleteWorksCommandValidatorTests
         // Arrange
         var unsealedId = Guid.NewGuid();
         var sealedId = Guid.NewGuid();
-        _workRepository.Get(unsealedId).Returns(new Work { LockLevel = WorkLockLevel.None });
-        _workRepository.Get(sealedId).Returns(new Work { LockLevel = WorkLockLevel.Confirmed });
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>())
+            .Returns(new List<Work>
+            {
+                new() { LockLevel = WorkLockLevel.None },
+                new() { LockLevel = WorkLockLevel.Confirmed }
+            });
         SetupNonAdminUser();
         var command = new BulkDeleteWorksCommand(new BulkDeleteWorksRequest
         {
@@ -75,7 +79,8 @@ public class BulkDeleteWorksCommandValidatorTests
     {
         // Arrange
         var sealedId = Guid.NewGuid();
-        _workRepository.Get(sealedId).Returns(new Work { LockLevel = WorkLockLevel.Closed });
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>())
+            .Returns(new List<Work> { new() { LockLevel = WorkLockLevel.Closed } });
         SetupAdminUser();
         var command = new BulkDeleteWorksCommand(new BulkDeleteWorksRequest
         {

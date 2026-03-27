@@ -14,7 +14,6 @@ public class CreateLLMModelCommandHandlerTests
 {
     private ILLMRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private ITransaction _transaction = null!;
     private CreateLLMModelCommandHandler _handler = null!;
 
     [SetUp]
@@ -22,17 +21,11 @@ public class CreateLLMModelCommandHandlerTests
     {
         _repository = Substitute.For<ILLMRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _transaction = Substitute.For<ITransaction>();
-        _unitOfWork.BeginTransactionAsync().Returns(_transaction);
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<LLMModel?>>>())
+            .Returns(x => ((Func<Task<LLMModel?>>)x[0])());
 
         var logger = Substitute.For<ILogger<CreateLLMModelCommandHandler>>();
         _handler = new CreateLLMModelCommandHandler(_repository, _unitOfWork, logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _transaction.Dispose();
     }
 
     [Test]
@@ -67,7 +60,6 @@ public class UpdateLLMModelCommandHandlerTests
 {
     private ILLMRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private ITransaction _transaction = null!;
     private UpdateLLMModelCommandHandler _handler = null!;
 
     [SetUp]
@@ -75,17 +67,11 @@ public class UpdateLLMModelCommandHandlerTests
     {
         _repository = Substitute.For<ILLMRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _transaction = Substitute.For<ITransaction>();
-        _unitOfWork.BeginTransactionAsync().Returns(_transaction);
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<LLMModel?>>>())
+            .Returns(x => ((Func<Task<LLMModel?>>)x[0])());
 
         var logger = Substitute.For<ILogger<UpdateLLMModelCommandHandler>>();
         _handler = new UpdateLLMModelCommandHandler(_repository, _unitOfWork, logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _transaction.Dispose();
     }
 
     [Test]

@@ -36,8 +36,8 @@ public class BulkDeleteBreaksCommandValidatorTests
     {
         // Arrange
         var ids = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
-        foreach (var id in ids)
-            _breakRepository.Get(id).Returns(new Break { LockLevel = WorkLockLevel.None });
+        _breakRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>())
+            .Returns(ids.Select(_ => new Break { LockLevel = WorkLockLevel.None }).ToList());
         SetupNonAdminUser();
         var command = new BulkDeleteBreaksCommand(new BulkDeleteBreaksRequest
         {
@@ -59,8 +59,12 @@ public class BulkDeleteBreaksCommandValidatorTests
         // Arrange
         var unsealedId = Guid.NewGuid();
         var sealedId = Guid.NewGuid();
-        _breakRepository.Get(unsealedId).Returns(new Break { LockLevel = WorkLockLevel.None });
-        _breakRepository.Get(sealedId).Returns(new Break { LockLevel = WorkLockLevel.Approved });
+        _breakRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>())
+            .Returns(new List<Break>
+            {
+                new() { LockLevel = WorkLockLevel.None },
+                new() { LockLevel = WorkLockLevel.Approved }
+            });
         SetupNonAdminUser();
         var command = new BulkDeleteBreaksCommand(new BulkDeleteBreaksRequest
         {
@@ -82,7 +86,8 @@ public class BulkDeleteBreaksCommandValidatorTests
     {
         // Arrange
         var sealedId = Guid.NewGuid();
-        _breakRepository.Get(sealedId).Returns(new Break { LockLevel = WorkLockLevel.Closed });
+        _breakRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>())
+            .Returns(new List<Break> { new() { LockLevel = WorkLockLevel.Closed } });
         SetupAdminUser();
         var command = new BulkDeleteBreaksCommand(new BulkDeleteBreaksRequest
         {
