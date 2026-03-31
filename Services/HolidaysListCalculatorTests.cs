@@ -1867,4 +1867,139 @@ internal class HolidaysListCalculatorTests
     }
 
     #endregion
+
+    #region Hijri Calendar Rules
+
+    [Test]
+    public void ComputeHolidays_HijriRule_ShouldCalculateEidAlFitr()
+    {
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "HIJRI_01_10",
+            SubRule = string.Empty,
+            IsMandatory = true,
+            IsPaid = true,
+            State = "SA",
+            Country = "SA"
+        };
+
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.Add(rule);
+        _holidaysListCalculator.ComputeHolidays();
+
+        _holidaysListCalculator.HolidayList.Should().NotBeEmpty();
+        var holiday = _holidaysListCalculator.HolidayList[0];
+        holiday.CurrentDate.Year.Should().Be(2024);
+        holiday.CurrentDate.Month.Should().BeInRange(3, 5);
+    }
+
+    [Test]
+    public void ComputeHolidays_HijriRuleWithOffset_ShouldApplyOffset()
+    {
+        var baseRule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "HIJRI_01_10+0",
+            SubRule = string.Empty,
+            IsMandatory = true,
+            IsPaid = true,
+            State = "SA",
+            Country = "SA"
+        };
+
+        var offsetRule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "HIJRI_01_10+2",
+            SubRule = string.Empty,
+            IsMandatory = true,
+            IsPaid = true,
+            State = "SA",
+            Country = "SA"
+        };
+
+        _holidaysListCalculator.CurrentYear = 2025;
+        _holidaysListCalculator.Add(baseRule);
+        _holidaysListCalculator.Add(offsetRule);
+        _holidaysListCalculator.ComputeHolidays();
+
+        _holidaysListCalculator.HolidayList.Should().HaveCountGreaterThanOrEqualTo(2);
+        var diff = _holidaysListCalculator.HolidayList[1].CurrentDate.DayNumber -
+                   _holidaysListCalculator.HolidayList[0].CurrentDate.DayNumber;
+        diff.Should().Be(2);
+    }
+
+    #endregion
+
+    #region Lunar Calendar Rules
+
+    [Test]
+    public void ComputeHolidays_LunarRule_ShouldCalculateChineseNewYear2026()
+    {
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "LUNAR_01_01",
+            SubRule = string.Empty,
+            IsMandatory = true,
+            IsPaid = true,
+            State = "CN",
+            Country = "CN"
+        };
+
+        _holidaysListCalculator.CurrentYear = 2026;
+        _holidaysListCalculator.Add(rule);
+        _holidaysListCalculator.ComputeHolidays();
+
+        _holidaysListCalculator.HolidayList.Should().NotBeEmpty();
+        var holiday = _holidaysListCalculator.HolidayList.First(h => h.CurrentDate.Year == 2026);
+        holiday.CurrentDate.Should().Be(new DateOnly(2026, 2, 17));
+    }
+
+    [Test]
+    public void ComputeHolidays_LunarRule_DragonBoatFestival2024()
+    {
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "LUNAR_05_05",
+            SubRule = string.Empty,
+            IsMandatory = true,
+            IsPaid = true,
+            State = "CN",
+            Country = "CN"
+        };
+
+        _holidaysListCalculator.CurrentYear = 2024;
+        _holidaysListCalculator.Add(rule);
+        _holidaysListCalculator.ComputeHolidays();
+
+        var holiday = _holidaysListCalculator.HolidayList.First(h => h.CurrentDate.Year == 2024);
+        holiday.CurrentDate.Should().Be(new DateOnly(2024, 6, 10));
+    }
+
+    [Test]
+    public void ComputeHolidays_LunarRuleWithOffset_ShouldApplyOffset()
+    {
+        var rule = new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "LUNAR_01_01+1",
+            SubRule = string.Empty,
+            IsMandatory = true,
+            IsPaid = true,
+            State = "CN",
+            Country = "CN"
+        };
+
+        _holidaysListCalculator.CurrentYear = 2026;
+        _holidaysListCalculator.Add(rule);
+        _holidaysListCalculator.ComputeHolidays();
+
+        var holiday = _holidaysListCalculator.HolidayList.First(h => h.CurrentDate.Year == 2026);
+        holiday.CurrentDate.Should().Be(new DateOnly(2026, 2, 18));
+    }
+
+    #endregion
 }
