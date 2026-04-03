@@ -190,4 +190,89 @@ public class ScheduleMapperTests
         result.FromTime.Should().Be(new TimeOnly(8, 0));
         result.UntilTime.Should().Be(new TimeOnly(17, 0));
     }
+
+    [Test]
+    public void ToShiftResource_ShiftWithExpenses_MapsDefaultExpenses()
+    {
+        var shiftId = Guid.NewGuid();
+        var shift = new Shift
+        {
+            Id = shiftId,
+            Name = "Shift with Expenses",
+            GroupItems = [],
+            ShiftExpenses =
+            [
+                new ShiftExpenses { Id = Guid.NewGuid(), ShiftId = shiftId, Amount = 25.50m, Description = "Fahrtkosten", Taxable = true },
+                new ShiftExpenses { Id = Guid.NewGuid(), ShiftId = shiftId, Amount = 10.00m, Description = "Verpflegung", Taxable = false }
+            ]
+        };
+
+        var result = _mapper.ToShiftResource(shift);
+
+        result.DefaultExpenses.Should().HaveCount(2);
+        result.DefaultExpenses.Should().Contain(e => e.Description == "Fahrtkosten" && e.Amount == 25.50m && e.Taxable);
+        result.DefaultExpenses.Should().Contain(e => e.Description == "Verpflegung" && e.Amount == 10.00m && !e.Taxable);
+    }
+
+    [Test]
+    public void ToShiftResource_ShiftWithoutExpenses_ReturnsEmptyList()
+    {
+        var shift = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Shift without Expenses",
+            GroupItems = [],
+            ShiftExpenses = []
+        };
+
+        var result = _mapper.ToShiftResource(shift);
+
+        result.DefaultExpenses.Should().BeEmpty();
+    }
+
+    [Test]
+    public void ToShiftEntity_ResourceWithExpenses_MapsShiftExpenses()
+    {
+        var shiftId = Guid.NewGuid();
+        var resource = new Api.Application.DTOs.Schedules.ShiftResource
+        {
+            Id = shiftId,
+            Name = "Test",
+            Groups = [],
+            DefaultExpenses =
+            [
+                new Api.Application.DTOs.Schedules.ShiftExpensesResource { Id = Guid.NewGuid(), ShiftId = shiftId, Amount = 15m, Description = "Taxi", Taxable = true }
+            ]
+        };
+
+        var result = _mapper.ToShiftEntity(resource);
+
+        result.ShiftExpenses.Should().HaveCount(1);
+        result.ShiftExpenses[0].Amount.Should().Be(15m);
+        result.ShiftExpenses[0].Description.Should().Be("Taxi");
+    }
+
+    [Test]
+    public void CloneShift_WithExpenses_ClonesWithEmptyIds()
+    {
+        var originalExpenseId = Guid.NewGuid();
+        var originalShift = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Original",
+            GroupItems = [],
+            ShiftExpenses =
+            [
+                new ShiftExpenses { Id = originalExpenseId, ShiftId = Guid.NewGuid(), Amount = 20m, Description = "Parking", Taxable = true }
+            ]
+        };
+
+        var result = _mapper.CloneShift(originalShift);
+
+        result.ShiftExpenses.Should().HaveCount(1);
+        result.ShiftExpenses[0].Id.Should().Be(Guid.Empty);
+        result.ShiftExpenses[0].ShiftId.Should().Be(Guid.Empty);
+        result.ShiftExpenses[0].Amount.Should().Be(20m);
+        result.ShiftExpenses[0].Description.Should().Be("Parking");
+    }
 }
