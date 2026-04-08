@@ -1,6 +1,8 @@
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Schedules;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Klacks.UnitTest.Domain.Services.Schedules;
 
@@ -13,7 +15,9 @@ public class TimelineCalculationServiceTests
     [SetUp]
     public void Setup()
     {
-        _service = new TimelineCalculationService();
+        _service = new TimelineCalculationService(
+            Options.Create(new ScheduleTimeOptions()),
+            NullLogger<TimelineCalculationService>.Instance);
     }
 
     private Work CreateWork(TimeOnly start, TimeOnly end, Guid? clientId = null, Guid? id = null, DateOnly? date = null)
