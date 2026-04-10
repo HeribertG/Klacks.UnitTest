@@ -235,4 +235,23 @@ public class TranscriptionEnhancerServiceTests
 
         result.Should().Be(paddedText.Trim());
     }
+
+    [Test]
+    public async Task EnhanceTranscriptionAsync_ShouldUseOverrideModelId_WhenProvided()
+    {
+        var rawText = "some raw text";
+        var overrideModelId = "override-model";
+        _mockProviderFactory.GetProviderForModelAsync(overrideModelId).Returns(_mockProvider);
+        _mockProvider.ProcessAsync(Arg.Any<LLMProviderRequest>()).Returns(new LLMProviderResponse
+        {
+            Success = true,
+            Content = "Enhanced"
+        });
+
+        var result = await _service.EnhanceTranscriptionAsync(rawText, "de", overrideModelId);
+
+        result.Should().Be("Enhanced");
+        await _mockProviderFactory.Received(1).GetProviderForModelAsync(overrideModelId);
+        await _mockSettingsRepository.DidNotReceive().GetSetting(Arg.Any<string>());
+    }
 }
