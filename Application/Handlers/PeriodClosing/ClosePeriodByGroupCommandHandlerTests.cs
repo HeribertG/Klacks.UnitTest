@@ -7,7 +7,6 @@
 using FluentAssertions;
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.Handlers.PeriodClosing;
-using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
@@ -15,7 +14,6 @@ using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using System.Security.Claims;
 
 namespace Klacks.UnitTest.Application.Handlers.PeriodClosing;
 
@@ -58,7 +56,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     [Test]
     public async Task Handle_ThrowsInvalidRequest_WhenUserIsNotAdmin()
     {
-        SetupNonAdminUser();
+        PeriodClosingTestHelpers.GivenUserIsNotAdmin(_httpContextAccessor);
         _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(false);
 
         var command = new ClosePeriodByGroupCommand(
@@ -79,7 +77,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     [Test]
     public async Task Handle_CallsSealByPeriod_WhenGroupIdIsNull_AndAdmin()
     {
-        SetupAdminUser("admin-user");
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
         _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
         _workRepository.SealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(10);
         _breakRepository.SealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(3);
@@ -110,7 +108,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     public async Task Handle_CallsSealByPeriodAndGroup_WhenGroupIdIsProvided()
     {
         var groupId = Guid.NewGuid();
-        SetupAdminUser("admin-user");
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
         _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
         _workRepository.SealByPeriodAndGroup(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), groupId, Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(5);
         _breakRepository.SealByPeriodAndGroup(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), groupId, Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(2);
@@ -135,23 +133,4 @@ public class ClosePeriodByGroupCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
-    private void SetupAdminUser(string userName)
-    {
-        var httpContext = new DefaultHttpContext();
-        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.Role, Roles.Admin),
-                new Claim(ClaimNames.IsAuthorised, "true"),
-                new Claim(ClaimTypes.NameIdentifier, userName)
-            ], "TestAuth"));
-        _httpContextAccessor.HttpContext.Returns(httpContext);
-    }
-
-    private void SetupNonAdminUser()
-    {
-        var httpContext = new DefaultHttpContext();
-        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Role, Roles.User)], "TestAuth"));
-        _httpContextAccessor.HttpContext.Returns(httpContext);
-    }
 }

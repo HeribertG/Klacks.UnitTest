@@ -7,7 +7,6 @@
 using FluentAssertions;
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.Handlers.PeriodClosing;
-using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
@@ -15,7 +14,6 @@ using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using System.Security.Claims;
 
 namespace Klacks.UnitTest.Application.Handlers.PeriodClosing;
 
@@ -58,7 +56,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
     [Test]
     public async Task Handle_ThrowsInvalidRequest_WhenReasonMissing()
     {
-        SetupAdminUser("admin-user");
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
         _lockLevelService.CanUnseal(Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
 
         var command = new ReopenPeriodByGroupCommand(
@@ -76,7 +74,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
     [Test]
     public async Task Handle_ThrowsInvalidRequest_WhenUserIsNotAdmin()
     {
-        SetupNonAdminUser();
+        PeriodClosingTestHelpers.GivenUserIsNotAdmin(_httpContextAccessor);
         _lockLevelService.CanUnseal(Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(false);
 
         var command = new ReopenPeriodByGroupCommand(
@@ -94,7 +92,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
     [Test]
     public async Task Handle_UnsealsAndWritesAuditLog_WhenAdminWithReason()
     {
-        SetupAdminUser("admin-user");
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
         _lockLevelService.CanUnseal(Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
         _workRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<CancellationToken>()).Returns(7);
         _breakRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<CancellationToken>()).Returns(1);
@@ -119,23 +117,4 @@ public class ReopenPeriodByGroupCommandHandlerTests
         await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>());
     }
 
-    private void SetupAdminUser(string userName)
-    {
-        var httpContext = new DefaultHttpContext();
-        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.Role, Roles.Admin),
-                new Claim(ClaimNames.IsAuthorised, "true"),
-                new Claim(ClaimTypes.NameIdentifier, userName)
-            ], "TestAuth"));
-        _httpContextAccessor.HttpContext.Returns(httpContext);
-    }
-
-    private void SetupNonAdminUser()
-    {
-        var httpContext = new DefaultHttpContext();
-        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Role, Roles.User)], "TestAuth"));
-        _httpContextAccessor.HttpContext.Returns(httpContext);
-    }
 }
