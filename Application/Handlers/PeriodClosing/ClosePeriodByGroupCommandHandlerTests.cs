@@ -52,7 +52,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     public async Task Handle_ThrowsInvalidRequest_WhenUserIsNotAdmin()
     {
         SetupNonAdminUser();
-        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), false, Arg.Any<bool>()).Returns(false);
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(false);
 
         var command = new ClosePeriodByGroupCommand(
             new DateOnly(2026, 1, 1),
@@ -73,7 +73,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     public async Task Handle_CallsSealByPeriod_WhenGroupIdIsNull_AndAdmin()
     {
         SetupAdminUser("admin-user");
-        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), true, Arg.Any<bool>()).Returns(true);
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
         _workRepository.SealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(10);
         _breakRepository.SealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(3);
 
@@ -102,7 +102,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     {
         var groupId = Guid.NewGuid();
         SetupAdminUser("admin-user");
-        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), true, Arg.Any<bool>()).Returns(true);
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
         _workRepository.SealByPeriodAndGroup(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), groupId, Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(5);
         _breakRepository.SealByPeriodAndGroup(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), groupId, Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(2);
 
