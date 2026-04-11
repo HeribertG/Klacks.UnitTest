@@ -1,3 +1,10 @@
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+/// <summary>
+/// Tests for TranscriptionEnhancerService using ILLMProviderFactory and IDictionaryService.
+/// </summary>
+namespace Klacks.UnitTest.Services.Assistant;
+
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
@@ -6,8 +13,6 @@ using Microsoft.Extensions.Logging;
 using SettingsConstants = Klacks.Api.Application.Constants.Settings;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 using TranscriptionConstants = Klacks.Api.Application.Constants.TranscriptionConstants;
-
-namespace Klacks.UnitTest.Services.Assistant;
 
 [TestFixture]
 public class TranscriptionEnhancerServiceTests
