@@ -10,6 +10,7 @@ using Klacks.Api.Application.Handlers.PeriodClosing;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     private IWorkLockLevelService _lockLevelService = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IPeriodAuditLogRepository _auditLogRepository = null!;
+    private IUnitOfWork _unitOfWork = null!;
     private ILogger<ClosePeriodByGroupCommandHandler> _logger = null!;
     private ClosePeriodByGroupCommandHandler _handler = null!;
 
@@ -37,7 +39,11 @@ public class ClosePeriodByGroupCommandHandlerTests
         _lockLevelService = Substitute.For<IWorkLockLevelService>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _auditLogRepository = Substitute.For<IPeriodAuditLogRepository>();
+        _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ClosePeriodByGroupCommandHandler>>();
+
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
+            .Returns(ci => ci.ArgAt<Func<Task<int>>>(0)());
 
         _handler = new ClosePeriodByGroupCommandHandler(
             _workRepository,
@@ -45,6 +51,7 @@ public class ClosePeriodByGroupCommandHandlerTests
             _lockLevelService,
             _httpContextAccessor,
             _auditLogRepository,
+            _unitOfWork,
             _logger);
     }
 
@@ -95,6 +102,8 @@ public class ClosePeriodByGroupCommandHandlerTests
                 log.AffectedCount == 13 &&
                 log.PerformedBy == "admin-user"),
             Arg.Any<CancellationToken>());
+
+        await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>());
     }
 
     [Test]
