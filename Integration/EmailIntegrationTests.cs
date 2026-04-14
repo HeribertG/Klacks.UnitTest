@@ -24,7 +24,6 @@ namespace Klacks.UnitTest.Integration
 
         [Test]
         [Category("Integration")]
-        [Ignore("Integration test - requires actual email server")]
         public async Task TestConnectionAsync_WithRealGmxServer_ShouldConnectSuccessfully()
         {
             // Arrange
