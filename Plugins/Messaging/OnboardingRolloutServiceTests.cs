@@ -69,7 +69,7 @@ public class OnboardingRolloutServiceTests
         _sendService.SendAsync(employees[0].ClientId, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(OnboardingSendResult.Success));
         _sendService.SendAsync(employees[1].ClientId, Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(OnboardingSendResult.NoPhone));
+            .Returns(Task.FromResult(OnboardingSendResult.NoContactChannel));
         _sendService.SendAsync(employees[2].ClientId, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(OnboardingSendResult.Success));
 

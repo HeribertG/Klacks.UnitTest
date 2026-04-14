@@ -89,7 +89,7 @@ public class OnboardingSendServiceTests
     }
 
     [Test]
-    public async Task SendAsync_Returns_NoPhone_When_Neither_Cell_Nor_Email_Present()
+    public async Task SendAsync_Returns_NoContactChannel_When_Neither_Cell_Nor_Email_Present()
     {
         var clientId = Guid.NewGuid();
         _employeeReader.GetEmployeeAsync(clientId, Arg.Any<CancellationToken>())
@@ -97,7 +97,7 @@ public class OnboardingSendServiceTests
 
         var result = await _sut.SendAsync(clientId, BotConfig);
 
-        result.Should().Be(OnboardingSendResult.NoPhone);
+        result.Should().Be(OnboardingSendResult.NoContactChannel);
     }
 
     [Test]
