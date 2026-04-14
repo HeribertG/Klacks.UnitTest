@@ -257,6 +257,6 @@ public class TranscriptionEnhancerServiceTests
 
         result.Should().Be("Enhanced");
         await _mockProviderFactory.Received(1).GetProviderForModelAsync(overrideModelId);
-        await _mockSettingsRepository.DidNotReceive().GetSetting(Arg.Any<string>());
+        await _mockSettingsRepository.DidNotReceive().GetSetting(SettingsConstants.ASSISTANT_TRANSCRIPTION_MODEL);
     }
 }
