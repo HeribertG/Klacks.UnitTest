@@ -68,6 +68,48 @@ public class DictionaryServiceTests
         await _repository.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task ApplyReplacementsAsync_ShouldReplacePhoneticVariantsCaseInsensitively()
+    {
+        var result = await _service.ApplyReplacementsAsync("Hallo Klaksi, kannst du Klags öffnen?");
+
+        result.Should().Be("Hallo Klacksy, kannst du Klacks öffnen?");
+    }
+
+    [Test]
+    public async Task ApplyReplacementsAsync_ShouldRespectWordBoundaries()
+    {
+        var result = await _service.ApplyReplacementsAsync("Klax-Bericht und Klaxonen");
+
+        result.Should().Be("Klacks-Bericht und Klaxonen");
+    }
+
+    [Test]
+    public async Task ApplyReplacementsAsync_ShouldReturnInputUnchanged_WhenNoVariantsMatch()
+    {
+        var result = await _service.ApplyReplacementsAsync("Guten Morgen!");
+
+        result.Should().Be("Guten Morgen!");
+    }
+
+    [Test]
+    public async Task ApplyReplacementsAsync_ShouldReturnEmptyString_WhenInputIsEmpty()
+    {
+        var result = await _service.ApplyReplacementsAsync(string.Empty);
+
+        result.Should().Be(string.Empty);
+    }
+
+    [Test]
+    public async Task InvalidateCache_ShouldForceReloadFromRepository_OnNextCall()
+    {
+        await _service.BuildContextAsync();
+        _service.InvalidateCache();
+        await _service.BuildContextAsync();
+
+        await _repository.Received(2).GetAllAsync(Arg.Any<CancellationToken>());
+    }
+
     [TearDown]
     public void TearDown()
     {
