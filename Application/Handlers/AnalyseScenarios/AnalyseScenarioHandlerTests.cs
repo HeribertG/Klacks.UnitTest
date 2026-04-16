@@ -9,6 +9,7 @@
 using Klacks.Api.Application.Commands.AnalyseScenarios;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.AnalyseScenarios;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.AnalyseScenarios;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
@@ -288,7 +289,7 @@ public class RejectAnalyseScenarioCommandHandlerTests
 {
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private DataBaseContext _context = null!;
+    private IAnalyseScenarioService _scenarioService = null!;
     private RejectAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -296,21 +297,10 @@ public class RejectAnalyseScenarioCommandHandlerTests
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-
-        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-        _context = new DataBaseContext(options, httpContextAccessor);
+        _scenarioService = Substitute.For<IAnalyseScenarioService>();
 
         var logger = Substitute.For<ILogger<RejectAnalyseScenarioCommandHandler>>();
-        _handler = new RejectAnalyseScenarioCommandHandler(_repository, _unitOfWork, _context, logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _context.Dispose();
+        _handler = new RejectAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
     }
 
     [Test]
@@ -350,7 +340,7 @@ public class DeleteAnalyseScenarioCommandHandlerTests
 {
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private DataBaseContext _context = null!;
+    private IAnalyseScenarioService _scenarioService = null!;
     private DeleteAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -358,21 +348,10 @@ public class DeleteAnalyseScenarioCommandHandlerTests
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-
-        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-        _context = new DataBaseContext(options, httpContextAccessor);
+        _scenarioService = Substitute.For<IAnalyseScenarioService>();
 
         var logger = Substitute.For<ILogger<DeleteAnalyseScenarioCommandHandler>>();
-        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _unitOfWork, _context, logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _context?.Dispose();
+        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
     }
 
     [Test]
