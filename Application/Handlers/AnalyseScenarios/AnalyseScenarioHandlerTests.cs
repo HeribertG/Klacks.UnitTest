@@ -350,6 +350,7 @@ public class DeleteAnalyseScenarioCommandHandlerTests
 {
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private DataBaseContext _context = null!;
     private DeleteAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -357,8 +358,21 @@ public class DeleteAnalyseScenarioCommandHandlerTests
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+        _context = new DataBaseContext(options, httpContextAccessor);
+
         var logger = Substitute.For<ILogger<DeleteAnalyseScenarioCommandHandler>>();
-        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _unitOfWork, logger);
+        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _unitOfWork, _context, logger);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _context?.Dispose();
     }
 
     [Test]
