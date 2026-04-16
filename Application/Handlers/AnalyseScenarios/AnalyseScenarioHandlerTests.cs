@@ -23,7 +23,7 @@ public class CreateAnalyseScenarioCommandHandlerTests
 {
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private DataBaseContext _context = null!;
+    private IAnalyseScenarioService _scenarioService = null!;
     private CreateAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -31,21 +31,10 @@ public class CreateAnalyseScenarioCommandHandlerTests
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-
-        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-        _context = new DataBaseContext(options, httpContextAccessor);
+        _scenarioService = Substitute.For<IAnalyseScenarioService>();
 
         var logger = Substitute.For<ILogger<CreateAnalyseScenarioCommandHandler>>();
-        _handler = new CreateAnalyseScenarioCommandHandler(_repository, _unitOfWork, _context, logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _context.Dispose();
+        _handler = new CreateAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
     }
 
     [Test]
@@ -227,7 +216,7 @@ public class AcceptAnalyseScenarioCommandHandlerTests
 {
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private DataBaseContext _context = null!;
+    private IAnalyseScenarioService _scenarioService = null!;
     private AcceptAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -235,21 +224,10 @@ public class AcceptAnalyseScenarioCommandHandlerTests
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-
-        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-        _context = new DataBaseContext(options, httpContextAccessor);
+        _scenarioService = Substitute.For<IAnalyseScenarioService>();
 
         var logger = Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>();
-        _handler = new AcceptAnalyseScenarioCommandHandler(_repository, _unitOfWork, _context, logger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _context.Dispose();
+        _handler = new AcceptAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
     }
 
     [Test]
