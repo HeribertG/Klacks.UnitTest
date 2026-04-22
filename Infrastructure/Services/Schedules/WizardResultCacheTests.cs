@@ -11,16 +11,31 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 public class WizardResultCacheTests
 {
     [Test]
-    public void Store_Then_TryGet_ReturnsScenario()
+    public void Store_Then_TryGet_ReturnsScenarioAndToken()
+    {
+        var cache = new WizardResultCache();
+        var jobId = Guid.NewGuid();
+        var scenario = new CoreScenario { Id = "s" };
+        var token = Guid.NewGuid();
+
+        cache.Store(jobId, scenario, token);
+
+        cache.TryGet(jobId, out var retrieved, out var analyseToken).Should().BeTrue();
+        retrieved.Should().BeSameAs(scenario);
+        analyseToken.Should().Be(token);
+    }
+
+    [Test]
+    public void Store_WithNullToken_ReturnsNullToken()
     {
         var cache = new WizardResultCache();
         var jobId = Guid.NewGuid();
         var scenario = new CoreScenario { Id = "s" };
 
-        cache.Store(jobId, scenario);
+        cache.Store(jobId, scenario, null);
 
-        cache.TryGet(jobId, out var retrieved).Should().BeTrue();
-        retrieved.Should().BeSameAs(scenario);
+        cache.TryGet(jobId, out _, out var analyseToken).Should().BeTrue();
+        analyseToken.Should().BeNull();
     }
 
     [Test]
@@ -28,8 +43,9 @@ public class WizardResultCacheTests
     {
         var cache = new WizardResultCache();
 
-        cache.TryGet(Guid.NewGuid(), out var scenario).Should().BeFalse();
+        cache.TryGet(Guid.NewGuid(), out var scenario, out var analyseToken).Should().BeFalse();
         scenario.Should().BeNull();
+        analyseToken.Should().BeNull();
     }
 
     [Test]
@@ -37,10 +53,10 @@ public class WizardResultCacheTests
     {
         var cache = new WizardResultCache();
         var jobId = Guid.NewGuid();
-        cache.Store(jobId, new CoreScenario { Id = "s" });
+        cache.Store(jobId, new CoreScenario { Id = "s" }, null);
 
         cache.Invalidate(jobId);
 
-        cache.TryGet(jobId, out _).Should().BeFalse();
+        cache.TryGet(jobId, out _, out _).Should().BeFalse();
     }
 }
