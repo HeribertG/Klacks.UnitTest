@@ -76,8 +76,9 @@ public class TimelineCalculationServiceTests
             Id = Guid.NewGuid(),
             WorkId = work.Id,
             Type = WorkChangeType.CorrectionStart,
-            StartTime = new TimeOnly(9, 0),
-            EndTime = new TimeOnly(9, 0)
+            ChangeTime = 1m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue
         };
 
         // Act
@@ -85,11 +86,12 @@ public class TimelineCalculationServiceTests
 
         // Assert
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(9, 0)));
+        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 0)));
         workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
 
         var correctionBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Correction);
-        correctionBlock.Should().NotBeNull();
+        correctionBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 0)));
+        correctionBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
     }
 
     [Test]
@@ -102,8 +104,9 @@ public class TimelineCalculationServiceTests
             Id = Guid.NewGuid(),
             WorkId = work.Id,
             Type = WorkChangeType.CorrectionEnd,
-            StartTime = new TimeOnly(15, 0),
-            EndTime = new TimeOnly(15, 0)
+            ChangeTime = 1m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue
         };
 
         // Act
@@ -112,7 +115,7 @@ public class TimelineCalculationServiceTests
         // Assert
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
         workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
-        workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(15, 0)));
+        workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(17, 0)));
     }
 
     [Test]
@@ -126,8 +129,9 @@ public class TimelineCalculationServiceTests
             Id = Guid.NewGuid(),
             WorkId = work.Id,
             Type = WorkChangeType.ReplacementStart,
-            StartTime = new TimeOnly(8, 0),
-            EndTime = new TimeOnly(12, 0),
+            ChangeTime = 4m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue,
             ReplaceClientId = replaceClientId
         };
 
@@ -245,8 +249,9 @@ public class TimelineCalculationServiceTests
             Id = Guid.NewGuid(),
             WorkId = work.Id,
             Type = WorkChangeType.ReplacementEnd,
-            StartTime = new TimeOnly(14, 0),
-            EndTime = new TimeOnly(16, 0),
+            ChangeTime = 2m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue,
             ReplaceClientId = null
         };
 
@@ -265,6 +270,51 @@ public class TimelineCalculationServiceTests
 
         // Assert
         blocks.Should().BeEmpty();
+    }
+
+    [Test]
+    public void CalculateScheduleBlocks_StackedBeforeShift_CorrectOrder()
+    {
+        // Arrange: Work 08:00-16:00, TravelStart=2h + Briefing=0.5h
+        // Expected: TravelStart 05:30-07:30, Briefing 07:30-08:00
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+        var travelStart = new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Type = WorkChangeType.TravelStart,
+            ChangeTime = 2m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue
+        };
+        var briefing = new WorkChange
+        {
+            Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            WorkId = work.Id,
+            Type = WorkChangeType.Briefing,
+            ChangeTime = 0.5m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue
+        };
+
+        // Act
+        var blocks = _service.CalculateScheduleBlocks([work], [briefing, travelStart], []);
+
+        // Assert
+        var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
+        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(5, 30)));
+
+        var correctionBlocks = blocks.Where(b => b.BlockType == ScheduleBlockType.Correction)
+            .OrderBy(b => b.Start).ToList();
+        correctionBlocks.Should().HaveCount(2);
+
+        // TravelStart outermost: 05:30-07:30
+        correctionBlocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(5, 30)));
+        correctionBlocks[0].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 30)));
+
+        // Briefing innermost: 07:30-08:00
+        correctionBlocks[1].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 30)));
+        correctionBlocks[1].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
     }
 
     [Test]
@@ -347,8 +397,9 @@ public class TimelineCalculationServiceTests
             Id = Guid.NewGuid(),
             WorkId = work.Id,
             Type = WorkChangeType.CorrectionStart,
-            StartTime = new TimeOnly(9, 0),
-            EndTime = new TimeOnly(9, 0)
+            ChangeTime = 1m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue
         };
 
         // Act
