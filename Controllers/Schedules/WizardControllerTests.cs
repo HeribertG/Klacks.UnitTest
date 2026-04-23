@@ -14,6 +14,7 @@ public class WizardControllerTests
 {
     private IWizardJobRunner _runner = null!;
     private IWizardApplyService _applyService = null!;
+    private IWizardBenchmarkService _benchmarkService = null!;
     private WizardController _sut = null!;
 
     [SetUp]
@@ -21,7 +22,8 @@ public class WizardControllerTests
     {
         _runner = Substitute.For<IWizardJobRunner>();
         _applyService = Substitute.For<IWizardApplyService>();
-        _sut = new WizardController(_runner, _applyService);
+        _benchmarkService = Substitute.For<IWizardBenchmarkService>();
+        _sut = new WizardController(_runner, _applyService, _benchmarkService);
     }
 
     [Test]
