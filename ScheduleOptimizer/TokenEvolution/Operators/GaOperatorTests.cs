@@ -198,4 +198,60 @@ public class GaOperatorTests
 
         result.Tokens.Should().BeEmpty();
     }
+
+    [Test]
+    public void TokenRepair_AddsTokenForUnderSuppliedSlot()
+    {
+        var date = new DateOnly(2026, 4, 20);
+        var shiftId = Guid.NewGuid();
+
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date,
+            PeriodUntil = date,
+            Agents = [MakeAgent("A")],
+            Shifts =
+            [
+                new CoreShift(shiftId.ToString(), "Shift-A", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+            ],
+        };
+
+        var scenario = new CoreScenario { Id = "s", Tokens = [] };
+
+        var sut = new TokenRepair(new TokenConstraintChecker());
+        var result = sut.Apply(new TokenOperatorContext(scenario, null, context, new Random(0)));
+
+        result.Tokens.Should().ContainSingle();
+        result.Tokens[0].ShiftRefId.Should().Be(shiftId);
+        result.Tokens[0].Date.Should().Be(date);
+        result.Tokens[0].AgentId.Should().Be("A");
+    }
+
+    [Test]
+    public void TokenRepair_PrefersUnderSupplyOverTokenScopedViolations()
+    {
+        var date = new DateOnly(2026, 4, 20);
+        var shiftId = Guid.NewGuid();
+        var tokenOnFreeDay = MakeToken("A", date);
+
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date,
+            PeriodUntil = date,
+            Agents = [MakeAgent("A"), MakeAgent("B")],
+            Shifts =
+            [
+                new CoreShift(shiftId.ToString(), "Shift-B", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+            ],
+            ScheduleCommands = [new CoreScheduleCommand("A", date, ScheduleCommandKeyword.Free)],
+        };
+
+        var scenario = new CoreScenario { Id = "s", Tokens = [tokenOnFreeDay] };
+
+        var sut = new TokenRepair(new TokenConstraintChecker());
+        var result = sut.Apply(new TokenOperatorContext(scenario, null, context, new Random(0)));
+
+        result.Tokens.Should().HaveCount(2);
+        result.Tokens.Should().Contain(t => t.ShiftRefId == shiftId && t.AgentId == "B");
+    }
 }

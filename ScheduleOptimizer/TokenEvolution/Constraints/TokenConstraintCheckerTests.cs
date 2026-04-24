@@ -276,4 +276,55 @@ public class TokenConstraintCheckerTests
         var checker = new TokenConstraintChecker();
         checker.CountViolations(scenario, context).Should().Be(checker.Check(scenario, context).Count);
     }
+
+    [Test]
+    public void Check_UnderSupply_ReportsOneViolationPerMissingSlot()
+    {
+        var date = new DateOnly(2026, 4, 20);
+        var shiftA = Guid.NewGuid();
+        var shiftB = Guid.NewGuid();
+
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date,
+            PeriodUntil = date,
+            Agents = [MakeAgent("A")],
+            Shifts =
+            [
+                new CoreShift(shiftA.ToString(), "Shift-A", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+                new CoreShift(shiftB.ToString(), "Shift-B", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+            ],
+        };
+        var scenario = new CoreScenario { Id = "s", Tokens = [] };
+
+        var result = new TokenConstraintChecker().Check(scenario, context);
+
+        result.Where(v => v.Kind == ViolationKind.UnderSupply).Should().HaveCount(2);
+        result.Where(v => v.Kind == ViolationKind.UnderSupply)
+            .Select(v => v.ShiftRefId)
+            .Should().BeEquivalentTo(new Guid?[] { shiftA, shiftB });
+    }
+
+    [Test]
+    public void Check_UnderSupply_NoViolation_WhenAllSlotsAreCovered()
+    {
+        var date = new DateOnly(2026, 4, 20);
+        var shiftA = Guid.NewGuid();
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date,
+            PeriodUntil = date,
+            Agents = [MakeAgent("A")],
+            Shifts =
+            [
+                new CoreShift(shiftA.ToString(), "Shift-A", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+            ],
+        };
+        var token = MakeToken("A", date) with { ShiftRefId = shiftA };
+        var scenario = new CoreScenario { Id = "s", Tokens = [token] };
+
+        var result = new TokenConstraintChecker().Check(scenario, context);
+
+        result.Should().NotContain(v => v.Kind == ViolationKind.UnderSupply);
+    }
 }

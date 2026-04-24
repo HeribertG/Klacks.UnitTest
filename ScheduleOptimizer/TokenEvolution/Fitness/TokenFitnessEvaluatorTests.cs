@@ -39,9 +39,25 @@ public class TokenFitnessEvaluatorTests
         };
     }
 
-    private static CoreShift MakeShift(DateOnly date)
+    private static CoreShift MakeShift(DateOnly date, Guid? id = null)
     {
-        return new CoreShift(Guid.NewGuid().ToString(), "FD", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0);
+        return new CoreShift((id ?? Guid.NewGuid()).ToString(), "FD", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0);
+    }
+
+    private static IList<(CoreShift Shift, CoreToken Token)> MakeMatchingPairs(
+        string agentId, DateOnly startDate, int count, int shiftTypeIndex = 0, decimal hours = 8)
+    {
+        var pairs = new List<(CoreShift Shift, CoreToken Token)>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var day = startDate.AddDays(i);
+            var shiftRefId = Guid.NewGuid();
+            var shift = MakeShift(day, shiftRefId);
+            var token = MakeToken(agentId, day, shiftTypeIndex, hours) with { ShiftRefId = shiftRefId };
+            pairs.Add((shift, token));
+        }
+
+        return pairs;
     }
 
     private static CoreToken MakeToken(string agentId, DateOnly date, int shiftTypeIndex = 0, decimal hours = 8)
@@ -66,18 +82,19 @@ public class TokenFitnessEvaluatorTests
     public void Evaluate_FillsAllFitnessStagesAndFitnessAggregate()
     {
         var date = new DateOnly(2026, 4, 20);
+        var pairs = MakeMatchingPairs("A", date, 5);
         var context = new CoreWizardContext
         {
             PeriodFrom = date,
             PeriodUntil = date.AddDays(4),
             Agents = [MakeAgent("A", fullTime: 40)],
-            Shifts = Enumerable.Range(0, 5).Select(i => MakeShift(date.AddDays(i))).ToList(),
+            Shifts = pairs.Select(p => p.Shift).ToList(),
         };
 
         var scenario = new CoreScenario
         {
             Id = "s",
-            Tokens = Enumerable.Range(0, 5).Select(i => MakeToken("A", date.AddDays(i))).ToList(),
+            Tokens = pairs.Select(p => p.Token).ToList(),
         };
 
         var sut = TokenFitnessEvaluator.Create(context);

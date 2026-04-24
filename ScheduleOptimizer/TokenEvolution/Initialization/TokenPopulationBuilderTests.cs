@@ -60,7 +60,10 @@ public class TokenPopulationBuilderTests
     public void BuildPopulation_GeneratesConfiguredPopulationSize()
     {
         var context = MakeSampleContext();
-        var builder = new TokenPopulationBuilder(new GreedyTokenStrategy(), new RandomTokenStrategy());
+        var builder = new TokenPopulationBuilder(
+            new CoverageFirstTokenStrategy(),
+            new GreedyTokenStrategy(),
+            new RandomTokenStrategy());
 
         var population = builder.BuildPopulation(context, populationSize: 10, rng: new Random(42));
 
@@ -69,19 +72,22 @@ public class TokenPopulationBuilderTests
     }
 
     [Test]
-    public void BuildPopulation_DefaultRatio_Uses20PercentGreedy()
+    public void BuildPopulation_DefaultRatios_Uses50PercentCoverageFirst_20PercentGreedy_30PercentRandom()
     {
         var context = MakeSampleContext();
+        var coverageInvocations = 0;
         var greedyInvocations = 0;
         var randomInvocations = 0;
+        var coverageFirst = new CountingStrategy(() => coverageInvocations++);
         var greedy = new CountingStrategy(() => greedyInvocations++);
         var random = new CountingStrategy(() => randomInvocations++);
-        var builder = new TokenPopulationBuilder(greedy, random);
+        var builder = new TokenPopulationBuilder(coverageFirst, greedy, random);
 
         builder.BuildPopulation(context, populationSize: 10, rng: new Random(0));
 
+        coverageInvocations.Should().Be(5);
         greedyInvocations.Should().Be(2);
-        randomInvocations.Should().Be(8);
+        randomInvocations.Should().Be(3);
     }
 
     [Test]
@@ -111,7 +117,10 @@ public class TokenPopulationBuilderTests
             SchedulingMaxConsecutiveDays = 6,
         };
 
-        var builder = new TokenPopulationBuilder(new GreedyTokenStrategy(), new RandomTokenStrategy());
+        var builder = new TokenPopulationBuilder(
+            new CoverageFirstTokenStrategy(),
+            new GreedyTokenStrategy(),
+            new RandomTokenStrategy());
 
         var population = builder.BuildPopulation(lockedContext, populationSize: 5, rng: new Random(0));
 
