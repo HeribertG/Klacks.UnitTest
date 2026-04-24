@@ -67,7 +67,7 @@ public class TimelineCalculationServiceTests
     }
 
     [Test]
-    public void CalculateScheduleBlocks_WithCorrectionStart_ChangesEffectiveStart()
+    public void CalculateScheduleBlocks_WithCorrectionStart_WorkBlockKeepsOriginalStart()
     {
         // Arrange
         var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
@@ -84,18 +84,19 @@ public class TimelineCalculationServiceTests
         // Act
         var blocks = _service.CalculateScheduleBlocks([work], [correction], []);
 
-        // Assert
+        // Assert: Work block stays at original times - no overlap with correction block
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 0)));
+        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
         workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
 
+        // Correction block precedes the work block
         var correctionBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Correction);
         correctionBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 0)));
         correctionBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
     }
 
     [Test]
-    public void CalculateScheduleBlocks_WithCorrectionEnd_ChangesEffectiveEnd()
+    public void CalculateScheduleBlocks_WithCorrectionEnd_WorkBlockKeepsOriginalEnd()
     {
         // Arrange
         var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
@@ -112,10 +113,15 @@ public class TimelineCalculationServiceTests
         // Act
         var blocks = _service.CalculateScheduleBlocks([work], [correction], []);
 
-        // Assert
+        // Assert: Work block stays at original times - no overlap with correction block
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
         workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
-        workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(17, 0)));
+        workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
+
+        // Correction block follows the work block
+        var correctionBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Correction);
+        correctionBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
+        correctionBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(17, 0)));
     }
 
     [Test]
@@ -273,6 +279,50 @@ public class TimelineCalculationServiceTests
     }
 
     [Test]
+    public void CalculateScheduleBlocks_CorrectionStart_NoFalseCollisionWithOwnWork()
+    {
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+        var correction = new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Type = WorkChangeType.CorrectionStart,
+            ChangeTime = 1m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue
+        };
+
+        var blocks = _service.CalculateScheduleBlocks([work], [correction], []);
+        var timeline = new ClientTimeline(work.ClientId);
+        timeline.AddBlocks(blocks.Where(b => b.ClientId == work.ClientId));
+        timeline.SortBlocks();
+
+        timeline.GetCollisions().Should().BeEmpty("work block and its own correction must not collide");
+    }
+
+    [Test]
+    public void CalculateScheduleBlocks_CorrectionEnd_NoFalseCollisionWithOwnWork()
+    {
+        var work = CreateWork(new TimeOnly(8, 0), new TimeOnly(16, 0));
+        var correction = new WorkChange
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Type = WorkChangeType.CorrectionEnd,
+            ChangeTime = 1m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue
+        };
+
+        var blocks = _service.CalculateScheduleBlocks([work], [correction], []);
+        var timeline = new ClientTimeline(work.ClientId);
+        timeline.AddBlocks(blocks.Where(b => b.ClientId == work.ClientId));
+        timeline.SortBlocks();
+
+        timeline.GetCollisions().Should().BeEmpty("work block and its own correction must not collide");
+    }
+
+    [Test]
     public void CalculateScheduleBlocks_StackedBeforeShift_CorrectOrder()
     {
         // Arrange: Work 08:00-16:00, TravelStart=2h + Briefing=0.5h
@@ -302,7 +352,7 @@ public class TimelineCalculationServiceTests
 
         // Assert
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(5, 30)));
+        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
 
         var correctionBlocks = blocks.Where(b => b.BlockType == ScheduleBlockType.Correction)
             .OrderBy(b => b.Start).ToList();
