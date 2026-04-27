@@ -71,7 +71,7 @@ public class LLMModelSyncServiceTests
             IsEnabled = true,
             ModelName = "GPT-3"
         };
-        _repo.GetModelsAsync(Arg.Any<bool>()).Returns([existingModel]);
+        _repo.GetModelsAsync(false).Returns([existingModel]);
 
         LLMModel? updated = null;
         _repo.UpdateModelAsync(Arg.Do<LLMModel>(m => updated = m))
@@ -103,7 +103,7 @@ public class LLMModelSyncServiceTests
             IsEnabled = false,
             ModelName = "GPT-3"
         };
-        _repo.GetModelsAsync(Arg.Any<bool>()).Returns([disabledModel]);
+        _repo.GetModelsAsync(false).Returns([disabledModel]);
 
         await _sut.SyncAllProvidersAsync();
 
