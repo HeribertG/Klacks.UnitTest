@@ -38,7 +38,7 @@ public class LLMModelSyncServiceTests
                 [new LLMModelDiscovery("gpt-5-new", "GPT-5 New")]));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
-        _repo.GetModelsAsync(Arg.Any<bool>()).Returns([]);
+        _repo.GetModelsAsync(false).Returns([]);
 
         LLMModel? inserted = null;
         _repo.CreateModelAsync(Arg.Do<LLMModel>(m => inserted = m))
@@ -119,7 +119,7 @@ public class LLMModelSyncServiceTests
         provider.GetAvailableModelsAsync().Returns(Task.FromResult<List<LLMModelDiscovery>?>(null));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
-        _repo.GetModelsAsync(Arg.Any<bool>()).Returns([]);
+        _repo.GetModelsAsync(false).Returns([]);
 
         await _sut.SyncAllProvidersAsync();
 
@@ -137,7 +137,7 @@ public class LLMModelSyncServiceTests
                 [new LLMModelDiscovery("gpt-5-new", "GPT-5 New")]));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
-        _repo.GetModelsAsync(Arg.Any<bool>()).Returns([]);
+        _repo.GetModelsAsync(false).Returns([]);
 
         _repo.CreateModelAsync(Arg.Any<LLMModel>())
              .Returns(c => c.Arg<LLMModel>());
