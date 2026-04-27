@@ -58,7 +58,7 @@ public class ClientGroupFilterServiceTests
     }
 
     [Test]
-    public async Task FilterClientsByGroupId_WithGroupFilter_IncludesClientsWithoutGroups()
+    public async Task FilterClientsByGroupId_WithGroupFilter_ExcludesClientsWithoutGroups()
     {
         // Arrange
         var groupId = Guid.NewGuid();
@@ -80,8 +80,7 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().HaveCount(1);
-        resultList.First().Name.Should().Be("Client without Group");
+        resultList.Should().BeEmpty();
     }
 
     [Test]
@@ -156,9 +155,9 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().HaveCount(2);
+        resultList.Should().HaveCount(1);
         resultList.Should().Contain(c => c.Name == "Client with Matching Group");
-        resultList.Should().Contain(c => c.Name == "Client without Group");
+        resultList.Should().NotContain(c => c.Name == "Client without Group");
         resultList.Should().NotContain(c => c.Name == "Client with Different Group");
     }
 
@@ -216,8 +215,8 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().HaveCount(2);
+        resultList.Should().HaveCount(1);
         resultList.Should().Contain(c => c.Name == "Client in Visible Root");
-        resultList.Should().Contain(c => c.Name == "Client without Group");
+        resultList.Should().NotContain(c => c.Name == "Client without Group");
     }
 }
