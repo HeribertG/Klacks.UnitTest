@@ -36,9 +36,13 @@ public class LLMModelSyncServiceTests
         provider.GetAvailableModelsAsync().Returns(
             Task.FromResult<List<LLMModelDiscovery>?>(
                 [new LLMModelDiscovery("gpt-5-new", "GPT-5 New")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(c =>
+            Task.FromResult(new LLMModelTestResult(c.Arg<string>(), c.Arg<string>(), true, null, 100)));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
         _repo.GetModelsAsync(false).Returns([]);
+        _repo.CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>())
+             .Returns(c => c.Arg<LLMSyncNotification>());
 
         LLMModel? inserted = null;
         _repo.CreateModelAsync(Arg.Do<LLMModel>(m => inserted = m))
@@ -60,8 +64,12 @@ public class LLMModelSyncServiceTests
         provider.ProviderName.Returns("OpenAI");
         provider.GetAvailableModelsAsync().Returns(
             Task.FromResult<List<LLMModelDiscovery>?>([new LLMModelDiscovery("gpt-4", "GPT-4")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(c =>
+            Task.FromResult(new LLMModelTestResult(c.Arg<string>(), c.Arg<string>(), true, null, 100)));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>())
+             .Returns(c => c.Arg<LLMSyncNotification>());
 
         var existingModel = new LLMModel
         {
@@ -92,6 +100,8 @@ public class LLMModelSyncServiceTests
         provider.ProviderName.Returns("OpenAI");
         provider.GetAvailableModelsAsync().Returns(
             Task.FromResult<List<LLMModelDiscovery>?>([new LLMModelDiscovery("gpt-4", "GPT-4")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(c =>
+            Task.FromResult(new LLMModelTestResult(c.Arg<string>(), c.Arg<string>(), true, null, 100)));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
 
@@ -117,6 +127,8 @@ public class LLMModelSyncServiceTests
         provider.ProviderId.Returns("azure");
         provider.ProviderName.Returns("Azure");
         provider.GetAvailableModelsAsync().Returns(Task.FromResult<List<LLMModelDiscovery>?>(null));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(c =>
+            Task.FromResult(new LLMModelTestResult(c.Arg<string>(), c.Arg<string>(), true, null, 100)));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
         _repo.GetModelsAsync(false).Returns([]);
@@ -135,6 +147,8 @@ public class LLMModelSyncServiceTests
         provider.GetAvailableModelsAsync().Returns(
             Task.FromResult<List<LLMModelDiscovery>?>(
                 [new LLMModelDiscovery("gpt-5-new", "GPT-5 New")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(c =>
+            Task.FromResult(new LLMModelTestResult(c.Arg<string>(), c.Arg<string>(), true, null, 100)));
 
         _factory.GetEnabledProvidersAsync().Returns([provider]);
         _repo.GetModelsAsync(false).Returns([]);
@@ -152,5 +166,85 @@ public class LLMModelSyncServiceTests
         savedNotification!.ProviderId.Should().Be("openai");
         savedNotification.NewModelsCount.Should().Be(1);
         savedNotification.NewModelNames.Should().Contain("GPT-5 New");
+    }
+
+    [Test]
+    public async Task SyncAllProvidersAsync_NewModel_PassesTest_InsertsEnabled()
+    {
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProviderId.Returns("openai");
+        provider.ProviderName.Returns("OpenAI");
+        provider.GetAvailableModelsAsync().Returns(
+            Task.FromResult<List<LLMModelDiscovery>?>([new LLMModelDiscovery("gpt-5", "GPT-5")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(
+            Task.FromResult(new LLMModelTestResult("gpt-5", "GPT-5", true, null, 200)));
+
+        _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.GetModelsAsync(false).Returns([]);
+        _repo.CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>())
+             .Returns(c => c.Arg<LLMSyncNotification>());
+
+        LLMModel? inserted = null;
+        _repo.CreateModelAsync(Arg.Do<LLMModel>(m => inserted = m))
+             .Returns(c => c.Arg<LLMModel>());
+
+        await _sut.SyncAllProvidersAsync();
+
+        inserted.Should().NotBeNull();
+        inserted!.IsEnabled.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task SyncAllProvidersAsync_NewModel_FailsTest_InsertsDisabled()
+    {
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProviderId.Returns("openai");
+        provider.ProviderName.Returns("OpenAI");
+        provider.GetAvailableModelsAsync().Returns(
+            Task.FromResult<List<LLMModelDiscovery>?>([new LLMModelDiscovery("gpt-oss", "GPT-OSS")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(
+            Task.FromResult(new LLMModelTestResult("gpt-oss", "GPT-OSS", false, "404 model not found", 150)));
+
+        _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.GetModelsAsync(false).Returns([]);
+        _repo.CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>())
+             .Returns(c => c.Arg<LLMSyncNotification>());
+
+        LLMModel? inserted = null;
+        _repo.CreateModelAsync(Arg.Do<LLMModel>(m => inserted = m))
+             .Returns(c => c.Arg<LLMModel>());
+
+        await _sut.SyncAllProvidersAsync();
+
+        inserted.Should().NotBeNull();
+        inserted!.IsEnabled.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task SyncAllProvidersAsync_NewModel_FailsTest_NotificationHasFailedCount()
+    {
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProviderId.Returns("openai");
+        provider.ProviderName.Returns("OpenAI");
+        provider.GetAvailableModelsAsync().Returns(
+            Task.FromResult<List<LLMModelDiscovery>?>([new LLMModelDiscovery("gpt-oss", "GPT-OSS")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(
+            Task.FromResult(new LLMModelTestResult("gpt-oss", "GPT-OSS", false, "404 model not found", 150)));
+
+        _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.GetModelsAsync(false).Returns([]);
+        _repo.CreateModelAsync(Arg.Any<LLMModel>()).Returns(c => c.Arg<LLMModel>());
+
+        LLMSyncNotification? notification = null;
+        _repo.CreateSyncNotificationAsync(Arg.Do<LLMSyncNotification>(n => notification = n))
+             .Returns(c => c.Arg<LLMSyncNotification>());
+
+        await _sut.SyncAllProvidersAsync();
+
+        notification.Should().NotBeNull();
+        notification!.FailedModelsCount.Should().Be(1);
+        notification.ModelTestResults.Should().HaveCount(1);
+        notification.ModelTestResults[0].Passed.Should().BeFalse();
+        notification.ModelTestResults[0].ErrorMessage.Should().Be("404 model not found");
     }
 }
