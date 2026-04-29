@@ -61,6 +61,7 @@ public class TokenPopulationBuilderTests
     {
         var context = MakeSampleContext();
         var builder = new TokenPopulationBuilder(
+            new Klacks.ScheduleOptimizer.TokenEvolution.Auction.AuctionTokenStrategy(),
             new CoverageFirstTokenStrategy(),
             new GreedyTokenStrategy(),
             new RandomTokenStrategy());
@@ -72,22 +73,25 @@ public class TokenPopulationBuilderTests
     }
 
     [Test]
-    public void BuildPopulation_DefaultRatios_Uses50PercentCoverageFirst_20PercentGreedy_30PercentRandom()
+    public void BuildPopulation_DefaultRatios_Uses50AuctionPlus30Coverage10Greedy10Random()
     {
         var context = MakeSampleContext();
+        var auctionInvocations = 0;
         var coverageInvocations = 0;
         var greedyInvocations = 0;
         var randomInvocations = 0;
+        var auction = new CountingStrategy(() => auctionInvocations++);
         var coverageFirst = new CountingStrategy(() => coverageInvocations++);
         var greedy = new CountingStrategy(() => greedyInvocations++);
         var random = new CountingStrategy(() => randomInvocations++);
-        var builder = new TokenPopulationBuilder(coverageFirst, greedy, random);
+        var builder = new TokenPopulationBuilder(auction, coverageFirst, greedy, random);
 
         builder.BuildPopulation(context, populationSize: 10, rng: new Random(0));
 
-        coverageInvocations.Should().Be(5);
-        greedyInvocations.Should().Be(2);
-        randomInvocations.Should().Be(3);
+        auctionInvocations.Should().Be(5);
+        coverageInvocations.Should().Be(3);
+        greedyInvocations.Should().Be(1);
+        randomInvocations.Should().Be(1);
     }
 
     [Test]
@@ -118,6 +122,7 @@ public class TokenPopulationBuilderTests
         };
 
         var builder = new TokenPopulationBuilder(
+            new Klacks.ScheduleOptimizer.TokenEvolution.Auction.AuctionTokenStrategy(),
             new CoverageFirstTokenStrategy(),
             new GreedyTokenStrategy(),
             new RandomTokenStrategy());

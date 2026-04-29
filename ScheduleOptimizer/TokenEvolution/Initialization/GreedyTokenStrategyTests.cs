@@ -103,7 +103,7 @@ public class GreedyTokenStrategyTests
     }
 
     [Test]
-    public void BuildScenario_DoesNotExceedFullTime()
+    public void BuildScenario_EnforcesFullSlotCoverage_EvenBeyondTarget()
     {
         var agent = MakeAgent("A", fullTime: 16);
         var date1 = new DateOnly(2026, 4, 20);
@@ -128,6 +128,6 @@ public class GreedyTokenStrategyTests
 
         var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
 
-        scenario.Tokens.Where(t => !t.IsLocked).Should().HaveCountLessThanOrEqualTo(2);
+        scenario.Tokens.Where(t => !t.IsLocked).Should().HaveCount(3);
     }
 }
