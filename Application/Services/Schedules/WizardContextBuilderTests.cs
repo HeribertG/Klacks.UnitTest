@@ -69,7 +69,7 @@ public class WizardContextBuilderTests
 
         _hardBuilder
             .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns(new HardConstraintResult([], [], [], []));
+            .Returns(new HardConstraintResult([], [], [], [], []));
 
         var request = new WizardContextRequest(
             PeriodFrom: new DateOnly(2026, 4, 20),
