@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Persistence;
+﻿using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Holidays;
 
@@ -25,7 +25,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = currentYear;
 
         // Assert
-        _holidaysListCalculator.CurrentYear.Should().Be(currentYear);
+        _holidaysListCalculator.CurrentYear.ShouldBe(currentYear);
     }
 
     [Test]
@@ -47,7 +47,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.Add(rule);
 
         // Assert
-        _holidaysListCalculator.Count.Should().Be(1);
+        _holidaysListCalculator.Count.ShouldBe(1);
     }
 
     [Test]
@@ -70,28 +70,28 @@ internal class HolidaysListCalculatorTests
         // Act & Assert for 2023
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 4, 9))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert for 2022
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 4, 17))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert for 1959
         _holidaysListCalculator.CurrentYear = 1959;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         
         // Debug: Check what date was actually calculated
         var actualEaster1959 = _holidaysListCalculator.CalculateEaster(1959);
         Console.WriteLine($"Calculated Easter 1959: {actualEaster1959}");
         
         _holidaysListCalculator.IsHoliday(actualEaster1959)
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -114,16 +114,16 @@ internal class HolidaysListCalculatorTests
         // Act & Assert for 2023
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 5, 28))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert for 2022
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 6, 5))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -146,23 +146,23 @@ internal class HolidaysListCalculatorTests
         // Act & Assert for 2023
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 6, 8))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert for 2022
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 6, 16))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert for 2018
         _holidaysListCalculator.CurrentYear = 2018;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2018, 5, 31))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -187,9 +187,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 12, 31))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -214,39 +214,39 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 5, 1))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
     public void IsLeapYear()
     {
         // Assert
-        _holidaysListCalculator.IsLeapYear(1852).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(1892).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(1912).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(1936).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(1968).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(1988).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(2020).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(2032).Should().BeTrue();
-        _holidaysListCalculator.IsLeapYear(2048).Should().BeTrue();
+        _holidaysListCalculator.IsLeapYear(1852).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(1892).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(1912).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(1936).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(1968).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(1988).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(2020).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(2032).ShouldBeTrue();
+        _holidaysListCalculator.IsLeapYear(2048).ShouldBeTrue();
     }
 
     [Test]
     public void IsNotLeapYear()
     {
         // Assert
-        _holidaysListCalculator.IsLeapYear(1851).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1853).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1855).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1857).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1859).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1861).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1865).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1866).Should().BeFalse();
-        _holidaysListCalculator.IsLeapYear(1867).Should().BeFalse();
+        _holidaysListCalculator.IsLeapYear(1851).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1853).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1855).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1857).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1859).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1861).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1865).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1866).ShouldBeFalse();
+        _holidaysListCalculator.IsLeapYear(1867).ShouldBeFalse();
     }
 
     [Test]
@@ -259,7 +259,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetDayOfYear(date);
 
         // Assert
-        result.Should().Be(1);
+        result.ShouldBe(1);
     }
 
     [Test]
@@ -272,7 +272,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetDayOfYear(date);
 
         // Assert
-        result.Should().Be(31);
+        result.ShouldBe(31);
     }
 
     [Test]
@@ -285,7 +285,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetDayOfYear(date);
 
         // Assert
-        result.Should().Be(59);
+        result.ShouldBe(59);
     }
 
     [Test]
@@ -298,7 +298,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetDayOfYear(date);
 
         // Assert
-        result.Should().Be(60);
+        result.ShouldBe(60);
     }
 
     [Test]
@@ -311,7 +311,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(52);
+        result.ShouldBe(52);
     }
 
     [Test]
@@ -324,7 +324,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(52);
+        result.ShouldBe(52);
     }
 
     [Test]
@@ -337,7 +337,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(1);
+        result.ShouldBe(1);
     }
 
     [Test]
@@ -350,7 +350,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(53);
+        result.ShouldBe(53);
     }
 
     [Test]
@@ -363,7 +363,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(2);
+        result.ShouldBe(2);
     }
 
     [Test]
@@ -376,7 +376,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(1);
+        result.ShouldBe(1);
     }
 
     [Test]
@@ -389,7 +389,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(2);
+        result.ShouldBe(2);
     }
 
     [Test]
@@ -402,7 +402,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(1);
+        result.ShouldBe(1);
     }
 
     [Test]
@@ -415,7 +415,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(1);
+        result.ShouldBe(1);
     }
 
     [Test]
@@ -428,7 +428,7 @@ internal class HolidaysListCalculatorTests
         var result = _holidaysListCalculator.GetIso8601WeekNumber(new DateOnly(date.Year, date.Month, date.Day));
 
         // Assert
-        result.Should().Be(52);
+        result.ShouldBe(52);
     }
 
     #region SubRule Tests
@@ -455,11 +455,11 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Should be postponed to Friday, 30 April
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2021, 4, 30))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2021, 5, 1))
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
     }
 
     [Test]
@@ -484,11 +484,11 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollte auf Montag, den 2. Mai verschoben werden
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 5, 2))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 5, 1))
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
     }
 
     [Test]
@@ -513,9 +513,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Samstag -> Freitag
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2021, 12, 24))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -540,9 +540,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 5, 2))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -567,9 +567,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 8, 31))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -594,9 +594,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 10, 16))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -621,9 +621,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollte auf dem ursprünglichen Datum bleiben
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 6, 15))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -666,11 +666,11 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(2);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(2);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 8, 17))
-            .Should().Be(HolidayStatus.OfficialHoliday); // Dienstag -> Donnerstag
+            .ShouldBe(HolidayStatus.OfficialHoliday); // Dienstag -> Donnerstag
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 8, 14))
-            .Should().Be(HolidayStatus.OfficialHoliday); // Mittwoch -> Montag
+            .ShouldBe(HolidayStatus.OfficialHoliday); // Mittwoch -> Montag
     }
 
     [Test]
@@ -695,9 +695,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 12, 14))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -722,9 +722,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Donnerstag -> +1 Tag (Freitag)
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 11, 24))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -749,9 +749,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollte auf dem ursprünglichen Datum bleiben
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 3, 15))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -776,9 +776,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollte in den nächsten Monat verschoben werden
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 10, 2))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -803,9 +803,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollte ins nächste Jahr verschoben werden
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 1, 1))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -830,9 +830,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollte in den vorherigen Monat verschoben werden
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 9, 29))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -857,9 +857,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 7, 14))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -884,11 +884,11 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollte nur um 1 Tag verschoben werden
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 12, 26))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 12, 27))
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
     }
 
     [Test]
@@ -913,11 +913,11 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         var holiday = _holidaysListCalculator.HolidayList[0];
-        holiday.CurrentDate.Should().Be(new DateOnly(2023, 11, 24));
+        holiday.CurrentDate.ShouldBe(new DateOnly(2023, 11, 24));
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 11, 24))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     #endregion
@@ -944,9 +944,9 @@ internal class HolidaysListCalculatorTests
         // Act & Assert for 2023
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 4, 7))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -969,9 +969,9 @@ internal class HolidaysListCalculatorTests
         // Act & Assert for 2023
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 4, 10))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     #endregion
@@ -1029,13 +1029,13 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(3);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(3);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 1, 1))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 5, 1))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 12, 25))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1066,11 +1066,11 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert - Sollten nach Datum sortiert sein
-        _holidaysListCalculator.HolidayList.Should().HaveCount(4);
-        _holidaysListCalculator.HolidayList[0].CurrentDate.Should().Be(new DateOnly(2023, 1, 1));
-        _holidaysListCalculator.HolidayList[1].CurrentDate.Should().Be(new DateOnly(2023, 5, 1));
-        _holidaysListCalculator.HolidayList[2].CurrentDate.Should().Be(new DateOnly(2023, 7, 4));
-        _holidaysListCalculator.HolidayList[3].CurrentDate.Should().Be(new DateOnly(2023, 12, 25));
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(4);
+        _holidaysListCalculator.HolidayList[0].CurrentDate.ShouldBe(new DateOnly(2023, 1, 1));
+        _holidaysListCalculator.HolidayList[1].CurrentDate.ShouldBe(new DateOnly(2023, 5, 1));
+        _holidaysListCalculator.HolidayList[2].CurrentDate.ShouldBe(new DateOnly(2023, 7, 4));
+        _holidaysListCalculator.HolidayList[3].CurrentDate.ShouldBe(new DateOnly(2023, 12, 25));
     }
 
     #endregion
@@ -1085,7 +1085,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().BeEmpty();
+        _holidaysListCalculator.HolidayList.ShouldBeEmpty();
     }
 
     [Test]
@@ -1110,8 +1110,8 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.Clear();
 
         // Assert
-        _holidaysListCalculator.Count.Should().Be(0);
-        _holidaysListCalculator.HolidayList.Should().BeEmpty();
+        _holidaysListCalculator.Count.ShouldBe(0);
+        _holidaysListCalculator.HolidayList.ShouldBeEmpty();
     }
 
     [Test]
@@ -1136,9 +1136,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         // Assert
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 2, 14))
-            .Should().Be(HolidayStatus.UnofficialHoliday);
+            .ShouldBe(HolidayStatus.UnofficialHoliday);
     }
 
     [Test]
@@ -1164,10 +1164,10 @@ internal class HolidaysListCalculatorTests
         var holidayInfo = _holidaysListCalculator.GetHolidayInfo(new DateOnly(2023, 7, 4));
 
         // Assert
-        holidayInfo.Should().NotBeNull();
-        holidayInfo!.CurrentName.Should().Be("Independence Day");
-        holidayInfo.CurrentDate.Should().Be(new DateOnly(2023, 7, 4));
-        holidayInfo.Officially.Should().BeTrue();
+        holidayInfo.ShouldNotBeNull();
+        holidayInfo!.CurrentName.ShouldBe("Independence Day");
+        holidayInfo.CurrentDate.ShouldBe(new DateOnly(2023, 7, 4));
+        holidayInfo.Officially.ShouldBeTrue();
     }
 
     [Test]
@@ -1193,29 +1193,27 @@ internal class HolidaysListCalculatorTests
         var holidayInfo = _holidaysListCalculator.GetHolidayInfo(new DateOnly(2023, 1, 2));
 
         // Assert
-        holidayInfo.Should().BeNull();
+        holidayInfo.ShouldBeNull();
     }
 
     [Test]
     public void ShouldCalculateCorrectDaysInMonth()
     {
         // Assert
-        _holidaysListCalculator.GetDaysInMonth(1, 2023).Should().Be(31); // Januar
-        _holidaysListCalculator.GetDaysInMonth(2, 2023).Should().Be(28); // Februar (kein Schaltjahr)
-        _holidaysListCalculator.GetDaysInMonth(2, 2024).Should().Be(29); // Februar (Schaltjahr)
-        _holidaysListCalculator.GetDaysInMonth(4, 2023).Should().Be(30); // April
+        _holidaysListCalculator.GetDaysInMonth(1, 2023).ShouldBe(31); // Januar
+        _holidaysListCalculator.GetDaysInMonth(2, 2023).ShouldBe(28); // Februar (kein Schaltjahr)
+        _holidaysListCalculator.GetDaysInMonth(2, 2024).ShouldBe(29); // Februar (Schaltjahr)
+        _holidaysListCalculator.GetDaysInMonth(4, 2023).ShouldBe(30); // April
     }
 
     [Test]
     public void ShouldThrowExceptionForInvalidMonth()
     {
         // Act
-        var act = () => _holidaysListCalculator.GetDaysInMonth(13, 2023);
-
         // Assert
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("Invalid month*")
-            .And.ParamName.Should().Be("month");
+        var ex = Should.Throw<ArgumentException>(() => { _holidaysListCalculator.GetDaysInMonth(13, 2023); });
+        ex.Message.ShouldStartWith("Invalid month");
+        ex.ParamName.ShouldBe("month");
     }
 
     [Test]
@@ -1223,10 +1221,10 @@ internal class HolidaysListCalculatorTests
     {
         // Act & Assert
         _holidaysListCalculator.CurrentYear = 2023;
-        _holidaysListCalculator.GetTotalDaysInCurrentYear().Should().Be(365);
+        _holidaysListCalculator.GetTotalDaysInCurrentYear().ShouldBe(365);
 
         _holidaysListCalculator.CurrentYear = 2024;
-        _holidaysListCalculator.GetTotalDaysInCurrentYear().Should().Be(366);
+        _holidaysListCalculator.GetTotalDaysInCurrentYear().ShouldBe(366);
     }
 
     #endregion
@@ -1255,25 +1253,25 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         var june15_2024 = new DateOnly(2024, 6, 15); // Saturday
-        june15_2024.DayOfWeek.Should().Be(DayOfWeek.Saturday);
+        june15_2024.DayOfWeek.ShouldBe(DayOfWeek.Saturday);
         
         // Should move to Monday (June 17)
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 6, 17))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(june15_2024)
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
 
         // Act & Assert for 2025 (June 15 = Sunday)
         _holidaysListCalculator.CurrentYear = 2025;
         _holidaysListCalculator.ComputeHolidays();
         var june15_2025 = new DateOnly(2025, 6, 15); // Sunday
-        june15_2025.DayOfWeek.Should().Be(DayOfWeek.Sunday);
+        june15_2025.DayOfWeek.ShouldBe(DayOfWeek.Sunday);
         
         // Should move to Tuesday (June 17)
         _holidaysListCalculator.IsHoliday(new DateOnly(2025, 6, 17))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(june15_2025)
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
     }
 
     [Test]
@@ -1297,13 +1295,13 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         var march17_2024 = new DateOnly(2024, 3, 17); // Sunday
-        march17_2024.DayOfWeek.Should().Be(DayOfWeek.Sunday);
+        march17_2024.DayOfWeek.ShouldBe(DayOfWeek.Sunday);
 
         // Assert - Should apply only first rule (+1 day = Monday March 18)
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 3, 18))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 3, 20)) // +3 days
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
     }
 
     [Test]
@@ -1327,25 +1325,25 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = 2021;
         _holidaysListCalculator.ComputeHolidays();
         var dec25_2021 = new DateOnly(2021, 12, 25);
-        dec25_2021.DayOfWeek.Should().Be(DayOfWeek.Saturday);
+        dec25_2021.DayOfWeek.ShouldBe(DayOfWeek.Saturday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2021, 12, 27)) // +2 days
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Test Sunday scenario (2022: Dec 25 = Sunday)  
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
         var dec25_2022 = new DateOnly(2022, 12, 25);
-        dec25_2022.DayOfWeek.Should().Be(DayOfWeek.Sunday);
+        dec25_2022.DayOfWeek.ShouldBe(DayOfWeek.Sunday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 12, 26)) // +1 day
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Test Monday scenario (2023: Dec 25 = Monday)
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
         var dec25_2023 = new DateOnly(2023, 12, 25);
-        dec25_2023.DayOfWeek.Should().Be(DayOfWeek.Monday);
+        dec25_2023.DayOfWeek.ShouldBe(DayOfWeek.Monday);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 12, 24)) // -1 day
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1369,23 +1367,23 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = 2020;
         _holidaysListCalculator.ComputeHolidays();
         var july4_2020 = new DateOnly(2020, 7, 4);
-        july4_2020.DayOfWeek.Should().Be(DayOfWeek.Saturday);
+        july4_2020.DayOfWeek.ShouldBe(DayOfWeek.Saturday);
 
         // Assert - Should apply only valid SA+1 rule
         _holidaysListCalculator.IsHoliday(new DateOnly(2020, 7, 5)) // +1 day
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(july4_2020)
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
 
         // Act - 2023: July 4 = Tuesday, should ignore TU+0 and apply WE+1 if it were Wednesday
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
         var july4_2023 = new DateOnly(2023, 7, 4);
-        july4_2023.DayOfWeek.Should().Be(DayOfWeek.Tuesday);
+        july4_2023.DayOfWeek.ShouldBe(DayOfWeek.Tuesday);
 
         // Assert - Should stay on original date since TU+0 is invalid
         _holidaysListCalculator.IsHoliday(july4_2023)
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1418,23 +1416,23 @@ internal class HolidaysListCalculatorTests
             {
                 // Should move back 1 day to Friday
                 _holidaysListCalculator.IsHoliday(goodFriday.AddDays(-1))
-                    .Should().Be(HolidayStatus.OfficialHoliday, $"Good Friday {goodFriday} (Saturday) in {year} should move to Friday");
+                    .ShouldBe(HolidayStatus.OfficialHoliday, $"Good Friday {goodFriday} (Saturday) in {year} should move to Friday");
                 _holidaysListCalculator.IsHoliday(goodFriday)
-                    .Should().Be(HolidayStatus.NotAHoliday, $"Original Good Friday {goodFriday} (Saturday) in {year} should not be holiday");
+                    .ShouldBe(HolidayStatus.NotAHoliday, $"Original Good Friday {goodFriday} (Saturday) in {year} should not be holiday");
             }
             else if (goodFriday.DayOfWeek == DayOfWeek.Sunday)
             {
                 // Should move forward 1 day to Monday
                 _holidaysListCalculator.IsHoliday(goodFriday.AddDays(1))
-                    .Should().Be(HolidayStatus.OfficialHoliday, $"Good Friday {goodFriday} (Sunday) in {year} should move to Monday");
+                    .ShouldBe(HolidayStatus.OfficialHoliday, $"Good Friday {goodFriday} (Sunday) in {year} should move to Monday");
                 _holidaysListCalculator.IsHoliday(goodFriday)
-                    .Should().Be(HolidayStatus.NotAHoliday, $"Original Good Friday {goodFriday} (Sunday) in {year} should not be holiday");
+                    .ShouldBe(HolidayStatus.NotAHoliday, $"Original Good Friday {goodFriday} (Sunday) in {year} should not be holiday");
             }
             else
             {
                 // Should stay on original date
                 _holidaysListCalculator.IsHoliday(goodFriday)
-                    .Should().Be(HolidayStatus.OfficialHoliday, $"Good Friday {goodFriday} ({goodFriday.DayOfWeek}) in {year} should stay on original date");
+                    .ShouldBe(HolidayStatus.OfficialHoliday, $"Good Friday {goodFriday} ({goodFriday.DayOfWeek}) in {year} should stay on original date");
             }
         }
     }
@@ -1460,13 +1458,13 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
         var nov11_2023 = new DateOnly(2023, 11, 11);
-        nov11_2023.DayOfWeek.Should().Be(DayOfWeek.Saturday);
+        nov11_2023.DayOfWeek.ShouldBe(DayOfWeek.Saturday);
 
         // Assert - Should apply SA+1 rule (move to Sunday)
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 11, 12))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(nov11_2023)
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
     }
 
     [Test]
@@ -1490,25 +1488,25 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = 2021;
         _holidaysListCalculator.ComputeHolidays();
         var jan15_2021 = new DateOnly(2021, 1, 15);
-        jan15_2021.DayOfWeek.Should().Be(DayOfWeek.Friday);
+        jan15_2021.DayOfWeek.ShouldBe(DayOfWeek.Friday);
 
         // Assert - Should apply FR+10 (move 10 days forward to January 25)
         _holidaysListCalculator.IsHoliday(new DateOnly(2021, 1, 25))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(jan15_2021)
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
 
         // Act - 2018: Jan 15 = Monday  
         _holidaysListCalculator.CurrentYear = 2018;
         _holidaysListCalculator.ComputeHolidays();
         var jan15_2018 = new DateOnly(2018, 1, 15);
-        jan15_2018.DayOfWeek.Should().Be(DayOfWeek.Monday);
+        jan15_2018.DayOfWeek.ShouldBe(DayOfWeek.Monday);
 
         // Assert - Should apply MO-7 (move 7 days back to January 8)
         _holidaysListCalculator.IsHoliday(new DateOnly(2018, 1, 8))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
         _holidaysListCalculator.IsHoliday(jan15_2018)
-            .Should().Be(HolidayStatus.NotAHoliday);
+            .ShouldBe(HolidayStatus.NotAHoliday);
     }
 
     #endregion
@@ -1530,7 +1528,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.AddRange(rules);
 
         // Assert
-        _holidaysListCalculator.Count.Should().Be(3);
+        _holidaysListCalculator.Count.ShouldBe(3);
     }
 
     [Test]
@@ -1553,9 +1551,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.Remove(1); // Entferne Labor Day
 
         // Assert
-        _holidaysListCalculator.Count.Should().Be(2);
+        _holidaysListCalculator.Count.ShouldBe(2);
         var remainingRule = _holidaysListCalculator.GetRule(1);
-        remainingRule?.Name?.En.Should().Be("Christmas");
+        remainingRule?.Name?.En.ShouldBe("Christmas");
     }
 
     [Test]
@@ -1569,7 +1567,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.Remove(-1); // Negative index
 
         // Assert
-        _holidaysListCalculator.Count.Should().Be(1); // Sollte unverändert bleiben
+        _holidaysListCalculator.Count.ShouldBe(1); // Sollte unverändert bleiben
     }
 
     [Test]
@@ -1588,9 +1586,9 @@ internal class HolidaysListCalculatorTests
         var retrievedRule = _holidaysListCalculator.GetRule(0);
 
         // Assert
-        retrievedRule.Should().NotBeNull();
-        retrievedRule!.Rule.Should().Be("07/04");
-        retrievedRule.Name?.En.Should().Be("Independence Day");
+        retrievedRule.ShouldNotBeNull();
+        retrievedRule!.Rule.ShouldBe("07/04");
+        retrievedRule.Name?.En.ShouldBe("Independence Day");
     }
 
     [Test]
@@ -1600,7 +1598,7 @@ internal class HolidaysListCalculatorTests
         var rule = _holidaysListCalculator.GetRule(0);
 
         // Assert
-        rule.Should().BeNull();
+        rule.ShouldBeNull();
     }
 
     #endregion
@@ -1617,9 +1615,9 @@ internal class HolidaysListCalculatorTests
         var formatted = _holidaysListCalculator.FormatDate(date);
 
         // Assert
-        formatted.Should().Contain("04");
-        formatted.Should().Contain("Jul");
-        formatted.Should().Contain("2023");
+        formatted.ShouldContain("04");
+        formatted.ShouldContain("Jul");
+        formatted.ShouldContain("2023");
     }
 
     #endregion
@@ -1646,21 +1644,21 @@ internal class HolidaysListCalculatorTests
         // Act & Assert 2023: Sep 1 (Fri) → next Mon = Sep 4
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 9, 4))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2022: Sep 1 (Thu) → next Mon = Sep 5
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 9, 5))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2024: Sep 1 (Sun) → next Mon = Sep 2
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 9, 2))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1683,21 +1681,21 @@ internal class HolidaysListCalculatorTests
         // Act & Assert 2023: Nov 1+21=Nov 22 (Wed) → next Thu = Nov 23
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 11, 23))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2022: Nov 22 (Tue) → next Thu = Nov 24
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 11, 24))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2024: Nov 22 (Fri) → next Thu = Nov 28
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 11, 28))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1720,21 +1718,21 @@ internal class HolidaysListCalculatorTests
         // Act & Assert 2023: Jan 15 (Sun) → next Mon = Jan 16
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 1, 16))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2024: Jan 15 (Mon) → stays Jan 15
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 1, 15))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2022: Jan 15 (Sat) → next Mon = Jan 17
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 1, 17))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1757,15 +1755,15 @@ internal class HolidaysListCalculatorTests
         // Act & Assert 2023: Apr 1 (Sat) → next Thu = Apr 6
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 4, 6))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2024: Apr 1 (Mon) → next Thu = Apr 4
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 4, 4))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1788,21 +1786,21 @@ internal class HolidaysListCalculatorTests
         // Act & Assert 2023: May 25 (Thu) → prev Mon = May 22
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 5, 22))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2022: May 25 (Wed) → prev Mon = May 23
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 5, 23))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2024: May 25 (Sat) → prev Mon = May 20
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 5, 20))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1825,21 +1823,21 @@ internal class HolidaysListCalculatorTests
         // Act & Assert 2023: Nov 16 (Thu) → next Wed = Nov 22
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
-        _holidaysListCalculator.HolidayList.Should().HaveCount(1);
+        _holidaysListCalculator.HolidayList.Count().ShouldBe(1);
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 11, 22))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2022: Nov 16 (Wed) → stays Nov 16
         _holidaysListCalculator.CurrentYear = 2022;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2022, 11, 16))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
 
         // Act & Assert 2024: Nov 16 (Sat) → next Wed = Nov 20
         _holidaysListCalculator.CurrentYear = 2024;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2024, 11, 20))
-            .Should().Be(HolidayStatus.OfficialHoliday);
+            .ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
     [Test]
@@ -1863,7 +1861,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.CurrentYear = 2023;
         _holidaysListCalculator.ComputeHolidays();
         _holidaysListCalculator.IsHoliday(new DateOnly(2023, 9, 1))
-            .Should().NotBe(HolidayStatus.OfficialHoliday);
+            .ShouldNotBe(HolidayStatus.OfficialHoliday);
     }
 
     #endregion
@@ -1888,10 +1886,10 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.Add(rule);
         _holidaysListCalculator.ComputeHolidays();
 
-        _holidaysListCalculator.HolidayList.Should().NotBeEmpty();
+        _holidaysListCalculator.HolidayList.ShouldNotBeEmpty();
         var holiday = _holidaysListCalculator.HolidayList[0];
-        holiday.CurrentDate.Year.Should().Be(2024);
-        holiday.CurrentDate.Month.Should().BeInRange(3, 5);
+        holiday.CurrentDate.Year.ShouldBe(2024);
+        holiday.CurrentDate.Month.ShouldBeInRange(3, 5);
     }
 
     [Test]
@@ -1924,10 +1922,10 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.Add(offsetRule);
         _holidaysListCalculator.ComputeHolidays();
 
-        _holidaysListCalculator.HolidayList.Should().HaveCountGreaterThanOrEqualTo(2);
+        _holidaysListCalculator.HolidayList.Count().ShouldBeGreaterThanOrEqualTo(2);
         var diff = _holidaysListCalculator.HolidayList[1].CurrentDate.DayNumber -
                    _holidaysListCalculator.HolidayList[0].CurrentDate.DayNumber;
-        diff.Should().Be(2);
+        diff.ShouldBe(2);
     }
 
     #endregion
@@ -1952,9 +1950,9 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.Add(rule);
         _holidaysListCalculator.ComputeHolidays();
 
-        _holidaysListCalculator.HolidayList.Should().NotBeEmpty();
+        _holidaysListCalculator.HolidayList.ShouldNotBeEmpty();
         var holiday = _holidaysListCalculator.HolidayList.First(h => h.CurrentDate.Year == 2026);
-        holiday.CurrentDate.Should().Be(new DateOnly(2026, 2, 17));
+        holiday.CurrentDate.ShouldBe(new DateOnly(2026, 2, 17));
     }
 
     [Test]
@@ -1976,7 +1974,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         var holiday = _holidaysListCalculator.HolidayList.First(h => h.CurrentDate.Year == 2024);
-        holiday.CurrentDate.Should().Be(new DateOnly(2024, 6, 10));
+        holiday.CurrentDate.ShouldBe(new DateOnly(2024, 6, 10));
     }
 
     [Test]
@@ -1998,7 +1996,7 @@ internal class HolidaysListCalculatorTests
         _holidaysListCalculator.ComputeHolidays();
 
         var holiday = _holidaysListCalculator.HolidayList.First(h => h.CurrentDate.Year == 2026);
-        holiday.CurrentDate.Should().Be(new DateOnly(2026, 2, 18));
+        holiday.CurrentDate.ShouldBe(new DateOnly(2026, 2, 18));
     }
 
     #endregion

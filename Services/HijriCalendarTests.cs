@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for the Tabular Islamic Calendar (Hijri to Gregorian) conversion.
@@ -24,9 +24,9 @@ internal class HijriCalendarTests
     {
         var result = HijriCalendar.HijriToGregorian(hijriYear, hijriMonth, hijriDay);
 
-        result.Year.Should().BeCloseTo(expectedYear, 0);
-        result.Month.Should().BeCloseTo(expectedMonth, 0);
-        result.Day.Should().BeCloseTo(expectedDay, 2);
+        result.Year.ShouldBe(expectedYear);
+        result.Month.ShouldBe(expectedMonth);
+        result.Day.ShouldBe(expectedDay);
     }
 
     [TestCase(1, 10, 2024)]
@@ -38,7 +38,7 @@ internal class HijriCalendarTests
     {
         var result = HijriCalendar.GetGregorianDateForHijriInYear(hijriDay, hijriMonth, gregorianYear);
 
-        result.Year.Should().Be(gregorianYear);
+        result.Year.ShouldBe(gregorianYear);
     }
 
     [Test]
@@ -48,7 +48,7 @@ internal class HijriCalendarTests
         var (hijriYear, hijriMonth, hijriDay) = HijriCalendar.GregorianToHijri(original);
         var roundTripped = HijriCalendar.HijriToGregorian(hijriYear, hijriMonth, hijriDay);
 
-        roundTripped.Should().Be(original);
+        roundTripped.ShouldBe(original);
     }
 
     [TestCase(2024)]
@@ -59,6 +59,6 @@ internal class HijriCalendarTests
     {
         var result = HijriCalendar.GetGregorianDateForHijriInYear(1, 10, year);
 
-        result.Year.Should().Be(year);
+        result.Year.ShouldBe(year);
     }
 }

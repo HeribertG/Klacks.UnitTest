@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit Tests fuer die AnalyseScenario-Handler (Create, List, Get, Accept, Reject, Delete).
@@ -55,9 +55,9 @@ public class CreateAnalyseScenarioCommandHandlerTests
         var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Token.Should().NotBe(Guid.Empty);
-        result.Name.Should().Be("Test Scenario");
+        result.ShouldNotBeNull();
+        result.Token.ShouldNotBe(Guid.Empty);
+        result.Name.ShouldBe("Test Scenario");
     }
 
     [Test]
@@ -78,7 +78,7 @@ public class CreateAnalyseScenarioCommandHandlerTests
         var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        result.Status.Should().Be((int)AnalyseScenarioStatus.Active);
+        result.Status.ShouldBe((int)AnalyseScenarioStatus.Active);
     }
 }
 
@@ -109,8 +109,8 @@ public class ListAnalyseScenariosQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeEmpty();
+        result.ShouldNotBeNull();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -142,10 +142,10 @@ public class ListAnalyseScenariosQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.Should().HaveCount(1);
-        result[0].Name.Should().Be("Scenario A");
-        result[0].Token.Should().Be(token);
-        result[0].Status.Should().Be((int)AnalyseScenarioStatus.Active);
+        result.Count().ShouldBe(1);
+        result[0].Name.ShouldBe("Scenario A");
+        result[0].Token.ShouldBe(token);
+        result[0].Status.ShouldBe((int)AnalyseScenarioStatus.Active);
     }
 }
 
@@ -175,7 +175,7 @@ public class GetAnalyseScenarioQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Test]
@@ -203,11 +203,11 @@ public class GetAnalyseScenarioQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result!.Id.Should().Be(scenarioId);
-        result.Name.Should().Be("Found Scenario");
-        result.Token.Should().Be(token);
-        result.Status.Should().Be((int)AnalyseScenarioStatus.Accepted);
+        result.ShouldNotBeNull();
+        result!.Id.ShouldBe(scenarioId);
+        result.Name.ShouldBe("Found Scenario");
+        result.Token.ShouldBe(token);
+        result.Status.ShouldBe((int)AnalyseScenarioStatus.Accepted);
     }
 }
 
@@ -242,8 +242,7 @@ public class AcceptAnalyseScenarioCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"AnalyseScenario with ID {scenarioId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe($"AnalyseScenario with ID {scenarioId} not found");
     }
 
     [Test]
@@ -293,8 +292,7 @@ public class RejectAnalyseScenarioCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"AnalyseScenario with ID {scenarioId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe($"AnalyseScenario with ID {scenarioId} not found");
     }
 
     [Test]
@@ -344,8 +342,7 @@ public class DeleteAnalyseScenarioCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"AnalyseScenario with ID {scenarioId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe($"AnalyseScenario with ID {scenarioId} not found");
     }
 
     [Test]
@@ -386,7 +383,7 @@ public class DeleteAnalyseScenarioCommandHandlerTests
         var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _repository.Received(1).Delete(scenarioId);
         await _unitOfWork.Received(1).CompleteAsync();
     }

@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Interfaces.Associations;
@@ -36,8 +36,19 @@ public class WizardContextBuilderTests
             .GetPeriodHoursAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
             .Returns(new Dictionary<Guid, PeriodHoursResource>());
 
+        _contractProvider
+            .GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData
+            {
+                MinPauseHours = 11,
+                MaxDailyHours = 10,
+                MaxConsecutiveDays = 6,
+                MaxOptimalGap = 2,
+                MaxWeeklyHours = 50,
+            });
+
         var agentBuilder = new WizardAgentSnapshotBuilder(_contractProvider);
-        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours);
+        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider);
     }
 
     [Test]
@@ -80,11 +91,11 @@ public class WizardContextBuilderTests
 
         var result = await _sut.BuildContextAsync(request, CancellationToken.None);
 
-        result.PeriodFrom.Should().Be(new DateOnly(2026, 4, 20));
-        result.PeriodUntil.Should().Be(new DateOnly(2026, 4, 22));
-        result.AnalyseToken.Should().Be(scenarioToken);
-        result.Agents.Should().HaveCount(1);
-        result.ContractDays.Should().HaveCount(3);
+        result.PeriodFrom.ShouldBe(new DateOnly(2026, 4, 20));
+        result.PeriodUntil.ShouldBe(new DateOnly(2026, 4, 22));
+        result.AnalyseToken.ShouldBe(scenarioToken);
+        result.Agents.Count().ShouldBe(1);
+        result.ContractDays.Count().ShouldBe(3);
     }
 
     [Test]
@@ -105,6 +116,6 @@ public class WizardContextBuilderTests
             AnalyseToken: null);
 
         var act = async () => await _sut.BuildContextAsync(request, cts.Token);
-        act.Should().ThrowAsync<OperationCanceledException>();
+        act.ShouldThrowAsync<OperationCanceledException>();
     }
 }

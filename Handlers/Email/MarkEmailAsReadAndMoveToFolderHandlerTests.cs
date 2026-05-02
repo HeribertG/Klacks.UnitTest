@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands.Email;
 using Klacks.Api.Application.Handlers.Email;
 using Klacks.Api.Domain.Interfaces;
@@ -50,8 +50,8 @@ public class MarkEmailAsReadCommandHandlerTests
         var result = await _handler.Handle(
             new MarkEmailAsReadCommand(emailId, true), CancellationToken.None);
 
-        result.Should().BeTrue();
-        email.IsRead.Should().BeTrue();
+        result.ShouldBeTrue();
+        email.IsRead.ShouldBeTrue();
         await _repository.Received(1).UpdateAsync(email);
         await _unitOfWork.Received(1).CompleteAsync();
         await _imapService.Received(1).SetReadFlagOnImapAsync(42, "INBOX", true, Arg.Any<CancellationToken>());
@@ -67,7 +67,7 @@ public class MarkEmailAsReadCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new MarkEmailAsReadCommand(emailId, true), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<ReceivedEmail>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
@@ -88,7 +88,7 @@ public class MarkEmailAsReadCommandHandlerTests
         await _handler.Handle(
             new MarkEmailAsReadCommand(emailId, false), CancellationToken.None);
 
-        email.IsRead.Should().BeFalse();
+        email.IsRead.ShouldBeFalse();
         await _imapService.Received(1).SetReadFlagOnImapAsync(99, "INBOX", false, Arg.Any<CancellationToken>());
     }
 
@@ -148,7 +148,7 @@ public class MoveEmailToFolderCommandHandlerTests
         var result = await _handler.Handle(
             new MoveEmailToFolderCommand(emailId, "Archive"), CancellationToken.None);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _repository.Received(1).MoveToFolderAsync(emailId, "Archive");
         await _unitOfWork.Received(1).CompleteAsync();
         await _imapService.Received(1).MoveEmailOnImapAsync(55, "INBOX", "Archive", Arg.Any<CancellationToken>());
@@ -163,7 +163,7 @@ public class MoveEmailToFolderCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new MoveEmailToFolderCommand(emailId, "Archive"), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().MoveToFolderAsync(Arg.Any<Guid>(), Arg.Any<string>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }

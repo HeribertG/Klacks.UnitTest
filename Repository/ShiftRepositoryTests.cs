@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Persistence;
+﻿using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.DTOs.Filter;
@@ -77,9 +77,9 @@ public class ShiftRepositoryTests
 
         // Assert
         var savedShift = await _context.Shift.FirstOrDefaultAsync(s => s.Id == cutOriginalShift.Id);
-        savedShift.Should().NotBeNull();
-        savedShift.OriginalId.Should().Be(originalShift.Id);
-        savedShift.Status.Should().Be(ShiftStatus.OriginalShift);
+        savedShift.ShouldNotBeNull();
+        savedShift.OriginalId.ShouldBe(originalShift.Id);
+        savedShift.Status.ShouldBe(ShiftStatus.OriginalShift);
     }
 
     [Test]
@@ -116,9 +116,9 @@ public class ShiftRepositoryTests
 
         // Assert
         var savedShift = await _context.Shift.FirstOrDefaultAsync(s => s.Id == readyToCutShift.Id);
-        savedShift.Should().NotBeNull();
-        savedShift.OriginalId.Should().Be(originalShift.Id);
-        savedShift.Status.Should().Be(ShiftStatus.SealedOrder);
+        savedShift.ShouldNotBeNull();
+        savedShift.OriginalId.ShouldBe(originalShift.Id);
+        savedShift.Status.ShouldBe(ShiftStatus.SealedOrder);
     }
 
     [Test]
@@ -157,9 +157,9 @@ public class ShiftRepositoryTests
         // Assert
         var savedCut = await _context.Shift.FirstOrDefaultAsync(s => s.Id == cutShift.Id);
         
-        savedCut.Should().NotBeNull();
-        savedCut.OriginalId.Should().Be(originalShift.Id);
-        savedCut.Status.Should().Be(ShiftStatus.SplitShift);
+        savedCut.ShouldNotBeNull();
+        savedCut.OriginalId.ShouldBe(originalShift.Id);
+        savedCut.Status.ShouldBe(ShiftStatus.SplitShift);
     }
 
 
@@ -213,9 +213,9 @@ public class ShiftRepositoryTests
             .Where(s => s.OriginalId == originalShift.Id)
             .ToListAsync();
 
-        allCutShifts.Should().HaveCount(2);
-        allCutShifts.Should().AllSatisfy(cut => cut.OriginalId.Should().Be(originalShift.Id));
-        allCutShifts.Should().AllSatisfy(cut => cut.Status.Should().Be(ShiftStatus.SplitShift));
+        allCutShifts.Count().ShouldBe(2);
+        foreach (var _item in allCutShifts) { _item.OriginalId.ShouldBe(originalShift.Id); };
+        foreach (var _item in allCutShifts) { _item.Status.ShouldBe(ShiftStatus.SplitShift); };
     }
 
     [Test]
@@ -271,9 +271,9 @@ public class ShiftRepositoryTests
 
             // Assert
             var savedShift = await _context.Shift.FirstOrDefaultAsync(s => s.Id == shift.Id);
-            savedShift.Should().NotBeNull();
-            savedShift.OriginalId.Should().Be(originalShift.Id, $"OriginalId should be preserved for status {status}");
-            savedShift.Status.Should().Be(status);
+            savedShift.ShouldNotBeNull();
+            savedShift.OriginalId.ShouldBe(originalShift.Id, $"OriginalId should be preserved for status {status}");
+            savedShift.Status.ShouldBe(status);
         }
     }
 
@@ -325,8 +325,8 @@ public class ShiftRepositoryTests
         var result = _repository.FilterShifts(filter).ToList();
 
         // Assert
-        result.Should().HaveCount(1);
-        result.First().Id.Should().Be(shift.Id);
+        result.Count().ShouldBe(1);
+        result.First().Id.ShouldBe(shift.Id);
     }
 
     [Test]
@@ -374,8 +374,8 @@ public class ShiftRepositoryTests
         var result = _repository.FilterShifts(filter).ToList();
 
         // Assert
-        result.Should().HaveCount(1);
-        result.First().Id.Should().Be(shiftWithoutGroup.Id);
+        result.Count().ShouldBe(1);
+        result.First().Id.ShouldBe(shiftWithoutGroup.Id);
     }
 
     [Test]
@@ -427,7 +427,7 @@ public class ShiftRepositoryTests
         var result = _repository.FilterShifts(filter).ToList();
 
         // Assert
-        result.Should().BeEmpty();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -507,10 +507,10 @@ public class ShiftRepositoryTests
         var result = _repository.FilterShifts(filter).ToList();
 
         // Assert
-        result.Should().HaveCount(2);
-        result.Should().Contain(s => s.Id == shiftWithMatchingGroup.Id);
-        result.Should().Contain(s => s.Id == shiftWithoutGroup.Id);
-        result.Should().NotContain(s => s.Id == shiftWithDifferentGroup.Id);
+        result.Count().ShouldBe(2);
+        result.ShouldContain(s => s.Id == shiftWithMatchingGroup.Id);
+        result.ShouldContain(s => s.Id == shiftWithoutGroup.Id);
+        result.ShouldNotContain(s => s.Id == shiftWithDifferentGroup.Id);
     }
 
     [TearDown]

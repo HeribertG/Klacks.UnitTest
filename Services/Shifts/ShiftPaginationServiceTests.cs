@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Infrastructure.Persistence;
@@ -51,12 +51,12 @@ public class ShiftPaginationServiceTests
         var result = await _paginationService.ApplyPaginationAsync(query, filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Shifts.Should().HaveCount(5);
-        result.MaxItems.Should().Be(10);
-        result.CurrentPage.Should().Be(0);
-        result.MaxPages.Should().Be(1); // 10 items, 5 per page = 2 pages (0-indexed)
-        result.FirstItemOnPage.Should().Be(0);
+        result.ShouldNotBeNull();
+        result.Shifts.Count().ShouldBe(5);
+        result.MaxItems.ShouldBe(10);
+        result.CurrentPage.ShouldBe(0);
+        result.MaxPages.ShouldBe(1); // 10 items, 5 per page = 2 pages (0-indexed)
+        result.FirstItemOnPage.ShouldBe(0);
     }
 
     [Test]
@@ -74,10 +74,10 @@ public class ShiftPaginationServiceTests
         var result = await _paginationService.ApplyPaginationAsync(query, filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Shifts.Should().BeEmpty();
-        result.MaxItems.Should().Be(0);
-        result.FirstItemOnPage.Should().Be(-1);
+        result.ShouldNotBeNull();
+        result.Shifts.ShouldBeEmpty();
+        result.MaxItems.ShouldBe(0);
+        result.FirstItemOnPage.ShouldBe(-1);
     }
 
     [Test]
@@ -99,10 +99,10 @@ public class ShiftPaginationServiceTests
         var result = await _paginationService.ApplyPaginationAsync(query, filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Shifts.Should().HaveCount(3);
-        result.CurrentPage.Should().Be(1);
-        result.FirstItemOnPage.Should().Be(3); // Should skip first 3 items
+        result.ShouldNotBeNull();
+        result.Shifts.Count().ShouldBe(3);
+        result.CurrentPage.ShouldBe(1);
+        result.FirstItemOnPage.ShouldBe(3); // Should skip first 3 items
     }
 
     [Test]
@@ -120,7 +120,7 @@ public class ShiftPaginationServiceTests
         var firstItem = _paginationService.CalculateFirstItem(filter, totalCount);
 
         // Assert
-        firstItem.Should().Be(10); // Page 2 with 5 items per page should start at item 10
+        firstItem.ShouldBe(10); // Page 2 with 5 items per page should start at item 10
     }
 
     [Test]
@@ -140,7 +140,7 @@ public class ShiftPaginationServiceTests
         var firstItem = _paginationService.CalculateFirstItem(filter, totalCount);
 
         // Assert
-        firstItem.Should().Be(10); // FirstItemOnLastPage (5) + NumberOfItemsPerPage (5)
+        firstItem.ShouldBe(10); // FirstItemOnLastPage (5) + NumberOfItemsPerPage (5)
     }
 
     [Test]
@@ -161,7 +161,7 @@ public class ShiftPaginationServiceTests
         var firstItem = _paginationService.CalculateFirstItem(filter, totalCount);
 
         // Assert
-        firstItem.Should().Be(5); // FirstItemOnLastPage (10) - NumberOfItemOnPreviousPage (5)
+        firstItem.ShouldBe(5); // FirstItemOnLastPage (10) - NumberOfItemOnPreviousPage (5)
     }
 
     [Test]
@@ -179,7 +179,7 @@ public class ShiftPaginationServiceTests
         var firstItem = _paginationService.CalculateFirstItem(filter, totalCount);
 
         // Assert
-        firstItem.Should().Be(0);
+        firstItem.ShouldBe(0);
     }
 
     [Test]
@@ -199,8 +199,8 @@ public class ShiftPaginationServiceTests
         var result = await _paginationService.ApplyPaginationAsync(query, filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.MaxPages.Should().Be(0);
+        result.ShouldNotBeNull();
+        result.MaxPages.ShouldBe(0);
     }
 
     [Test]
@@ -222,10 +222,10 @@ public class ShiftPaginationServiceTests
         var result = await _paginationService.ApplyPaginationAsync(query, filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Shifts.Should().HaveCount(1); // Only 1 item remaining on last page
-        result.MaxItems.Should().Be(7);
-        result.FirstItemOnPage.Should().Be(6);
+        result.ShouldNotBeNull();
+        result.Shifts.Count().ShouldBe(1); // Only 1 item remaining on last page
+        result.MaxItems.ShouldBe(7);
+        result.FirstItemOnPage.ShouldBe(6);
     }
 
     [Test]
@@ -246,7 +246,7 @@ public class ShiftPaginationServiceTests
         var firstItem = _paginationService.CalculateFirstItem(filter, totalCount);
 
         // Assert
-        firstItem.Should().Be(0); // Should not return negative value
+        firstItem.ShouldBe(0); // Should not return negative value
     }
 
     private async Task SeedTestShifts(int count)

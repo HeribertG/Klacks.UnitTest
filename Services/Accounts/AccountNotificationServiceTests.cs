@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Accounts;
 using Microsoft.Extensions.Logging;
@@ -35,7 +35,7 @@ public class AccountNotificationServiceTests
         var result = await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
         // Assert
-        result.Should().Be("OK");
+        result.ShouldBe("OK");
     }
 
     [Test]
@@ -48,7 +48,7 @@ public class AccountNotificationServiceTests
         var result = await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
         // Assert
-        result.Should().Be("Email configuration not available");
+        result.ShouldBe("Email configuration not available");
     }
 
     [Test]
@@ -58,9 +58,8 @@ public class AccountNotificationServiceTests
         string email = null;
 
         // Act & Assert
-        await FluentActions.Invoking(async () =>
-            await _notificationService.SendEmailAsync("Test Email", email, "This is a test message"))
-            .Should().ThrowAsync<ArgumentNullException>();
+        await Should.ThrowAsync<ArgumentNullException>(async () =>
+            await _notificationService.SendEmailAsync("Test Email", email, "This is a test message"));
     }
 
     [Test]
@@ -75,7 +74,7 @@ public class AccountNotificationServiceTests
         var result = await _notificationService.SendEmailAsync("Test Email", "test@example.com", "This is a test message");
 
         // Assert
-        result.Should().Contain("Email sending failed");
+        result.ShouldContain("Email sending failed");
     }
 
     [Test]

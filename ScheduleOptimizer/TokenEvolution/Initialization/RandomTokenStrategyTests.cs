@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 using NUnit.Framework;
@@ -65,8 +65,8 @@ public class RandomTokenStrategyTests
 
         var scenario = new RandomTokenStrategy().BuildScenario(context, new Random(42));
 
-        scenario.Tokens.Should().HaveCount(1);
-        scenario.Tokens[0].IsLocked.Should().BeTrue();
+        scenario.Tokens.Count().ShouldBe(1);
+        scenario.Tokens[0].IsLocked.ShouldBeTrue();
     }
 
     [Test]
@@ -86,9 +86,9 @@ public class RandomTokenStrategyTests
 
         var scenario = new RandomTokenStrategy().BuildScenario(context, new Random(42));
 
-        scenario.Tokens.Should().HaveCount(1);
-        scenario.Tokens[0].AgentId.Should().Be("A");
-        scenario.Tokens[0].IsLocked.Should().BeFalse();
+        scenario.Tokens.Count().ShouldBe(1);
+        scenario.Tokens[0].AgentId.ShouldBe("A");
+        scenario.Tokens[0].IsLocked.ShouldBeFalse();
     }
 
     [Test]
@@ -108,7 +108,7 @@ public class RandomTokenStrategyTests
 
         var scenario = new RandomTokenStrategy().BuildScenario(context, new Random(42));
 
-        scenario.Tokens.Should().BeEmpty();
+        scenario.Tokens.ShouldBeEmpty();
     }
 
     [Test]
@@ -129,7 +129,7 @@ public class RandomTokenStrategyTests
 
         var scenario = new RandomTokenStrategy().BuildScenario(context, new Random(42));
 
-        scenario.Tokens.Should().BeEmpty();
+        scenario.Tokens.ShouldBeEmpty();
     }
 
     [Test]
@@ -150,7 +150,7 @@ public class RandomTokenStrategyTests
 
         var scenario = new RandomTokenStrategy().BuildScenario(context, new Random(42));
 
-        scenario.Tokens.Should().BeEmpty();
+        scenario.Tokens.ShouldBeEmpty();
     }
 
     [Test]
@@ -170,15 +170,15 @@ public class RandomTokenStrategyTests
 
         var scenario = new RandomTokenStrategy().BuildScenario(context, new Random(42));
 
-        scenario.Tokens.Should().BeEmpty();
+        scenario.Tokens.ShouldBeEmpty();
     }
 
     [Test]
     public void ShiftTypeInference_FromStartTime_ClassifiesCorrectly()
     {
-        ShiftTypeInference.FromStartTime(new TimeOnly(6, 0)).Should().Be(0);
-        ShiftTypeInference.FromStartTime(new TimeOnly(14, 0)).Should().Be(1);
-        ShiftTypeInference.FromStartTime(new TimeOnly(22, 0)).Should().Be(2);
-        ShiftTypeInference.FromStartTime(new TimeOnly(2, 0)).Should().Be(2);
+        ShiftTypeInference.FromStartTime(new TimeOnly(6, 0)).ShouldBe(0);
+        ShiftTypeInference.FromStartTime(new TimeOnly(14, 0)).ShouldBe(1);
+        ShiftTypeInference.FromStartTime(new TimeOnly(22, 0)).ShouldBe(2);
+        ShiftTypeInference.FromStartTime(new TimeOnly(2, 0)).ShouldBe(2);
     }
 }

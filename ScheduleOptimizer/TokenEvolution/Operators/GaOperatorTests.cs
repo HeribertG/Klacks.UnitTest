@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Constraints;
 using Klacks.ScheduleOptimizer.TokenEvolution.Operators;
@@ -81,8 +81,10 @@ public class GaOperatorTests
         var sut = new TokenSwapMutation();
         var result = sut.Apply(new TokenOperatorContext(scenario, null, Ctx(MakeAgent("A"), MakeAgent("B")), new Random(0)));
 
-        result.Tokens.Should().HaveCount(2);
-        result.Tokens.Select(t => t.AgentId).Should().BeEquivalentTo(new[] { "A", "B" });
+        result.Tokens.Count().ShouldBe(2);
+        var agentIds = result.Tokens.Select(t => t.AgentId).ToList();
+        agentIds.ShouldContain("A");
+        agentIds.ShouldContain("B");
     }
 
     [Test]
@@ -98,8 +100,8 @@ public class GaOperatorTests
         var sut = new TokenSwapMutation();
         var result = sut.Apply(new TokenOperatorContext(scenario, null, Ctx(MakeAgent("A")), new Random(0)));
 
-        result.Tokens.Single().AgentId.Should().Be("A");
-        result.Tokens.Single().IsLocked.Should().BeTrue();
+        result.Tokens.Single().AgentId.ShouldBe("A");
+        result.Tokens.Single().IsLocked.ShouldBeTrue();
     }
 
     [Test]
@@ -116,7 +118,7 @@ public class GaOperatorTests
         var result = sut.Apply(new TokenOperatorContext(scenario, null, Ctx(MakeAgent("A")), new Random(0)));
 
         var distinctBlocks = result.Tokens.Select(t => t.BlockId).Distinct().Count();
-        distinctBlocks.Should().Be(2);
+        distinctBlocks.ShouldBe(2);
     }
 
     [Test]
@@ -136,7 +138,7 @@ public class GaOperatorTests
         var sut = new BlockMergeMutation();
         var result = sut.Apply(new TokenOperatorContext(scenario, null, Ctx(MakeAgent("A")), new Random(0)));
 
-        result.Tokens.Select(t => t.BlockId).Distinct().Should().HaveCount(1);
+        result.Tokens.Select(t => t.BlockId).Distinct().Count().ShouldBe(1);
     }
 
     [Test]
@@ -148,7 +150,7 @@ public class GaOperatorTests
         var sut = new ReassignMutation();
         var result = sut.Apply(new TokenOperatorContext(scenario, null, Ctx(MakeAgent("A"), MakeAgent("B")), new Random(0)));
 
-        result.Tokens.Single().AgentId.Should().Be("B");
+        result.Tokens.Single().AgentId.ShouldBe("B");
     }
 
     [Test]
@@ -172,7 +174,7 @@ public class GaOperatorTests
         var result = sut.Apply(new TokenOperatorContext(parentA, parentB, Ctx(MakeAgent("A")), new Random(0)));
 
         result.Tokens.Count(t => t.AgentId == "A" && t.Date == date && t.ShiftRefId == sharedShift)
-            .Should().Be(1);
+            .ShouldBe(1);
     }
 
     [Test]
@@ -196,7 +198,7 @@ public class GaOperatorTests
         var sut = new TokenRepair(new TokenConstraintChecker());
         var result = sut.Apply(new TokenOperatorContext(scenario, null, context, new Random(0)));
 
-        result.Tokens.Should().BeEmpty();
+        result.Tokens.ShouldBeEmpty();
     }
 
     [Test]
@@ -221,10 +223,10 @@ public class GaOperatorTests
         var sut = new TokenRepair(new TokenConstraintChecker());
         var result = sut.Apply(new TokenOperatorContext(scenario, null, context, new Random(0)));
 
-        result.Tokens.Should().ContainSingle();
-        result.Tokens[0].ShiftRefId.Should().Be(shiftId);
-        result.Tokens[0].Date.Should().Be(date);
-        result.Tokens[0].AgentId.Should().Be("A");
+        result.Tokens.ShouldHaveSingleItem();
+        result.Tokens[0].ShiftRefId.ShouldBe(shiftId);
+        result.Tokens[0].Date.ShouldBe(date);
+        result.Tokens[0].AgentId.ShouldBe("A");
     }
 
     [Test]
@@ -251,7 +253,7 @@ public class GaOperatorTests
         var sut = new TokenRepair(new TokenConstraintChecker());
         var result = sut.Apply(new TokenOperatorContext(scenario, null, context, new Random(0)));
 
-        result.Tokens.Should().HaveCount(2);
-        result.Tokens.Should().Contain(t => t.ShiftRefId == shiftId && t.AgentId == "B");
+        result.Tokens.Count().ShouldBe(2);
+        result.Tokens.ShouldContain(t => t.ShiftRefId == shiftId && t.AgentId == "B");
     }
 }

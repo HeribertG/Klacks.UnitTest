@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Fitness;
 using NUnit.Framework;
@@ -35,7 +35,7 @@ public class MotivationFormulaTests
 
         var motivation = MotivationFormula.Compute(agent, shiftId, 8m, []);
 
-        motivation.Should().BeGreaterThanOrEqualTo(0.5);
+        motivation.ShouldBeGreaterThanOrEqualTo(0.5);
     }
 
     [Test]
@@ -47,7 +47,7 @@ public class MotivationFormulaTests
 
         var motivation = MotivationFormula.Compute(agent, shiftId, 8m, preferences);
 
-        motivation.Should().Be(0);
+        motivation.ShouldBe(0);
     }
 
     [Test]
@@ -60,7 +60,7 @@ public class MotivationFormulaTests
         var motivationWithPreference = MotivationFormula.Compute(agent, shiftId, 8m, withPref);
         var motivationWithoutPreference = MotivationFormula.Compute(agent, shiftId, 8m, []);
 
-        motivationWithPreference.Should().BeGreaterThan(motivationWithoutPreference);
+        motivationWithPreference.ShouldBeGreaterThan(motivationWithoutPreference);
     }
 
     [Test]
@@ -70,7 +70,7 @@ public class MotivationFormulaTests
 
         var motivation = MotivationFormula.Compute(agent, Guid.NewGuid(), 8m, []);
 
-        motivation.Should().Be(0);
+        motivation.ShouldBe(0);
     }
 
     [Test]
@@ -83,6 +83,6 @@ public class MotivationFormulaTests
         var motivationEmpty = MotivationFormula.Compute(empty, shiftId, 8m, []);
         var motivationAlmostFull = MotivationFormula.Compute(almostFull, shiftId, 8m, []);
 
-        motivationEmpty.Should().BeGreaterThan(motivationAlmostFull);
+        motivationEmpty.ShouldBeGreaterThan(motivationAlmostFull);
     }
 }

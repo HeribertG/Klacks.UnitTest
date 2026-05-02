@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
@@ -86,11 +86,11 @@ public class DomainServiceFunctionalTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2, "Should return 2 active shifts");
-        shifts.Should().Contain(s => s.Name == "Active Shift");
-        shifts.Should().Contain(s => s.Name == "SearchString Test Shift");
-        shifts.Should().NotContain(s => s.Name == "Former Shift Test");
-        shifts.Should().NotContain(s => s.Name == "Future Shift");
+        shifts.Count().ShouldBe(2, "Should return 2 active shifts");
+        shifts.ShouldContain(s => s.Name == "Active Shift");
+        shifts.ShouldContain(s => s.Name == "SearchString Test Shift");
+        shifts.ShouldNotContain(s => s.Name == "Former Shift Test");
+        shifts.ShouldNotContain(s => s.Name == "Future Shift");
 
         Console.WriteLine($"Active filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
@@ -108,11 +108,11 @@ public class DomainServiceFunctionalTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2, "Should return 2 shifts containing 'Test'");
-        shifts.Should().Contain(s => s.Name == "Former Shift Test");
-        shifts.Should().Contain(s => s.Name == "SearchString Test Shift");
-        shifts.Should().NotContain(s => s.Name == "Active Shift");
-        shifts.Should().NotContain(s => s.Name == "Future Shift");
+        shifts.Count().ShouldBe(2, "Should return 2 shifts containing 'Test'");
+        shifts.ShouldContain(s => s.Name == "Former Shift Test");
+        shifts.ShouldContain(s => s.Name == "SearchString Test Shift");
+        shifts.ShouldNotContain(s => s.Name == "Active Shift");
+        shifts.ShouldNotContain(s => s.Name == "Future Shift");
 
         Console.WriteLine($"SearchString filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
@@ -129,9 +129,9 @@ public class DomainServiceFunctionalTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2, "Should return 2 shifts starting with 'F'");
-        shifts.Should().Contain(s => s.Name == "Former Shift Test");
-        shifts.Should().Contain(s => s.Name == "Future Shift");
+        shifts.Count().ShouldBe(2, "Should return 2 shifts starting with 'F'");
+        shifts.ShouldContain(s => s.Name == "Former Shift Test");
+        shifts.ShouldContain(s => s.Name == "Future Shift");
 
         Console.WriteLine($"First symbol search returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
@@ -147,8 +147,8 @@ public class DomainServiceFunctionalTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2, "Should return 2 shifts with Original status");
-        shifts.Should().OnlyContain(s => s.Status == ShiftStatus.OriginalOrder);
+        shifts.Count().ShouldBe(2, "Should return 2 shifts with Original status");
+        shifts.ShouldAllBe(s => s.Status == ShiftStatus.OriginalOrder);
 
         Console.WriteLine($"Original status filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
@@ -164,8 +164,8 @@ public class DomainServiceFunctionalTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2, "Should return 2 shifts with non-Original status");
-        shifts.Should().OnlyContain(s => s.Status != ShiftStatus.OriginalOrder);
+        shifts.Count().ShouldBe(2, "Should return 2 shifts with non-Original status");
+        shifts.ShouldAllBe(s => s.Status != ShiftStatus.OriginalOrder);
 
         Console.WriteLine($"Non-original status filter returned {shifts.Count} shifts: {string.Join(", ", shifts.Select(s => s.Name))}");
     }
@@ -181,9 +181,9 @@ public class DomainServiceFunctionalTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(4);
+        shifts.Count().ShouldBe(4);
         var names = shifts.Select(s => s.Name).ToList();
-        names.Should().BeInAscendingOrder("Names should be sorted in ascending order");
+        names.ShouldBeInOrder("Names should be sorted in ascending order");
 
         Console.WriteLine($"Name ascending sort returned: {string.Join(", ", names)}");
     }
@@ -199,9 +199,9 @@ public class DomainServiceFunctionalTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(4);
+        shifts.Count().ShouldBe(4);
         var names = shifts.Select(s => s.Name).ToList();
-        names.Should().BeInDescendingOrder("Names should be sorted in descending order");
+        names.ShouldBeInOrder(SortDirection.Descending, "Names should be sorted in descending order");
 
         Console.WriteLine($"Name descending sort returned: {string.Join(", ", names)}");
     }
@@ -256,14 +256,14 @@ public class DomainServiceFunctionalTests
         var results = finalQuery.ToList();
 
         // Assert
-        results.Should().HaveCount(1, "Should return 1 shift matching all criteria");
+        results.Count().ShouldBe(1, "Should return 1 shift matching all criteria");
         var result = results.First();
-        result.Name.Should().Be("Active Shift Test");
-        result.Status.Should().Be(ShiftStatus.OriginalShift);
+        result.Name.ShouldBe("Active Shift Test");
+        result.Status.ShouldBe(ShiftStatus.OriginalShift);
         
         // Verify it's active
         var isActive = result.FromDate <= today && (!result.UntilDate.HasValue || result.UntilDate.Value >= today);
-        isActive.Should().BeTrue();
+        isActive.ShouldBeTrue();
 
         Console.WriteLine($"Combined filters returned: {result.Name} with status {result.Status}");
     }
@@ -276,17 +276,17 @@ public class DomainServiceFunctionalTests
 
         // Act & Assert - Each filter should execute without exceptions
         var act1 = () => _dateRangeFilterService.ApplyDateRangeFilter(query, true, false, false).ToList();
-        act1.Should().NotThrow("DateRange filter should execute successfully");
+        act1.ShouldNotThrow("DateRange filter should execute successfully");
 
         // Use in-memory search logic instead of EF.Functions.Like
         var act2 = () => query.Where(s => s.Name.Contains("Test", StringComparison.OrdinalIgnoreCase)).ToList();
-        act2.Should().NotThrow("SearchString filter should execute successfully");
+        act2.ShouldNotThrow("SearchString filter should execute successfully");
 
         var act3 = () => _statusFilterService.ApplyStatusFilter(query, ShiftFilterType.Original).ToList();
-        act3.Should().NotThrow("Status filter should execute successfully");
+        act3.ShouldNotThrow("Status filter should execute successfully");
 
         var act4 = () => _sortingService.ApplySorting(query, "name", "asc").ToList();
-        act4.Should().NotThrow("Sorting should execute successfully");
+        act4.ShouldNotThrow("Sorting should execute successfully");
 
         Console.WriteLine("All domain service filters executed successfully without exceptions");
     }

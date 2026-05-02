@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Agent;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Conductor;
@@ -68,7 +68,7 @@ public class SlotAuctioneerTests
 
         var outcome = sut.Run(ctx, new Random(0));
 
-        outcome.Scenario.Tokens.Should().NotBeEmpty();
+        outcome.Scenario.Tokens.ShouldNotBeEmpty();
         var agentA = outcome.Scenario.Tokens.Where(t => t.AgentId == "A").OrderBy(t => t.Date).ToList();
         for (int i = 1; i < agentA.Count; i++)
         {
@@ -76,7 +76,7 @@ public class SlotAuctioneerTests
             if (!consecutive)
             {
                 ((agentA[i].Date.DayNumber - agentA[i - 1].Date.DayNumber) - 1)
-                    .Should().BeGreaterThanOrEqualTo(2,
+                    .ShouldBeGreaterThanOrEqualTo(2,
                         "MinRestDays must be respected between blocks");
             }
         }
@@ -103,7 +103,7 @@ public class SlotAuctioneerTests
         var run1 = MakeSut().Run(ctx, new Random(42));
         var run2 = MakeSut().Run(ctx, new Random(42));
 
-        run1.Scenario.Tokens.Select(t => $"{t.Date}|{t.AgentId}").Should().Equal(
+        run1.Scenario.Tokens.Select(t => $"{t.Date}|{t.AgentId}").ShouldBe(
             run2.Scenario.Tokens.Select(t => $"{t.Date}|{t.AgentId}"));
     }
 
@@ -129,9 +129,9 @@ public class SlotAuctioneerTests
 
         var outcome = sut.Run(ctx, new Random(0));
 
-        outcome.Scenario.Tokens.Should().BeEmpty();
-        outcome.Results.Should().HaveCount(1);
-        outcome.Results[0].Round.Should().Be(3);
-        outcome.Results[0].WinnerAgentId.Should().BeNull();
+        outcome.Scenario.Tokens.ShouldBeEmpty();
+        outcome.Results.Count().ShouldBe(1);
+        outcome.Results[0].Round.ShouldBe(3);
+        outcome.Results[0].WinnerAgentId.ShouldBeNull();
     }
 }

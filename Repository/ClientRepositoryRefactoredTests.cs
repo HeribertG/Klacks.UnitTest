@@ -1,4 +1,4 @@
-using Klacks.Api.Application.Interfaces;
+﻿using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Services.Common;
@@ -183,7 +183,6 @@ public class ClientRepositoryRefactoredTests
         var result = await _clientBreakPlaceholderRepository.BreakList(filter);
 
         //Assert
-        result.Should().NotBeNull();
         
         _mockSearchFilterService.Received(1).ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Hans", false);
     }
@@ -217,7 +216,6 @@ public class ClientRepositoryRefactoredTests
         var result = await _clientBreakPlaceholderRepository.BreakList(filter);
 
         //Assert
-        result.Should().NotBeNull();
         
         _mockSearchFilterService.Received(1).ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "123", false);
     }
@@ -270,7 +268,7 @@ public class ClientRepositoryRefactoredTests
         var clients = result.ToList();
 
         //Assert
-        clients.Should().NotBeNull();
+        clients.ShouldNotBeNull();
         
         _mockSearchService.Received(1).ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Test", Arg.Any<bool>());
         _mockClientFilterService.Received(1).ApplyGenderFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<int[]>());

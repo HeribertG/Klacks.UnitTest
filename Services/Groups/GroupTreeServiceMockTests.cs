@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces;
@@ -61,11 +61,11 @@ public class GroupTreeServiceMockTests
         var result = await _mockRepository.Get(newRoot.Id);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Lft.Should().Be(1);
-        result.Rgt.Should().Be(2);
-        result.Parent.Should().BeNull();
-        result.Root.Should().BeNull();
+        result.ShouldNotBeNull();
+        result.Lft.ShouldBe(1);
+        result.Rgt.ShouldBe(2);
+        result.Parent.ShouldBeNull();
+        result.Root.ShouldBeNull();
     }
 
     [Test]
@@ -111,11 +111,11 @@ public class GroupTreeServiceMockTests
         var result = await _mockRepository.Get(childId);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Parent.Should().Be(parentId);
-        result.Root.Should().Be(parentId);
-        result.Lft.Should().BeGreaterThan(parent.Lft);
-        result.Rgt.Should().BeLessThan(parent.Rgt);
+        result.ShouldNotBeNull();
+        result.Parent.ShouldBe(parentId);
+        result.Root.ShouldBe(parentId);
+        result.Lft.ShouldBeGreaterThan(parent.Lft);
+        result.Rgt.ShouldBeLessThan(parent.Rgt);
     }
 
     #endregion
@@ -139,8 +139,8 @@ public class GroupTreeServiceMockTests
         var result = await _mockRepository.GetChildren(parentId);
 
         // Assert
-        result.Should().HaveCount(2);
-        result.Should().AllSatisfy(c => c.Parent.Should().Be(parentId));
+        result.Count().ShouldBe(2);
+        foreach (var _item in result) { _item.Parent.ShouldBe(parentId); };
     }
 
     [Test]
@@ -156,9 +156,9 @@ public class GroupTreeServiceMockTests
         _mockRepository.GetNodeDepth(grandchildId).Returns(2);
 
         // Act & Assert
-        (await _mockRepository.GetNodeDepth(rootId)).Should().Be(0);
-        (await _mockRepository.GetNodeDepth(childId)).Should().Be(1);
-        (await _mockRepository.GetNodeDepth(grandchildId)).Should().Be(2);
+        (await _mockRepository.GetNodeDepth(rootId)).ShouldBe(0);
+        (await _mockRepository.GetNodeDepth(childId)).ShouldBe(1);
+        (await _mockRepository.GetNodeDepth(grandchildId)).ShouldBe(2);
     }
 
     [Test]
@@ -182,9 +182,9 @@ public class GroupTreeServiceMockTests
         var result = await _mockRepository.GetPath(grandchildId);
 
         // Assert
-        result.Should().HaveCount(3);
-        result.First().Name.Should().Be("Root");
-        result.Last().Name.Should().Be("Grandchild");
+        result.Count().ShouldBe(3);
+        result.First().Name.ShouldBe("Root");
+        result.Last().Name.ShouldBe("Grandchild");
     }
 
     #endregion
@@ -216,7 +216,7 @@ public class GroupTreeServiceMockTests
         var isValid = IsValidMove(parent, descendant);
 
         // Assert
-        isValid.Should().BeFalse();
+        isValid.ShouldBeFalse();
     }
 
     [Test]
@@ -243,7 +243,7 @@ public class GroupTreeServiceMockTests
         var isValid = IsValidMove(node1, node2);
 
         // Assert
-        isValid.Should().BeTrue();
+        isValid.ShouldBeTrue();
     }
 
     #endregion
@@ -261,7 +261,7 @@ public class GroupTreeServiceMockTests
         int width = CalculateTreeWidth(lft, rgt);
 
         // Assert
-        width.Should().Be(6); // rgt - lft + 1 = 8 - 3 + 1 = 6
+        width.ShouldBe(6); // rgt - lft + 1 = 8 - 3 + 1 = 6
     }
 
     [Test]
@@ -284,8 +284,8 @@ public class GroupTreeServiceMockTests
         var result = await _mockRepository.GetTree(rootId);
 
         // Assert
-        result.Should().HaveCount(5);
-        ValidateNestedSetIntegrity(result.ToList()).Should().BeTrue();
+        result.Count().ShouldBe(5);
+        ValidateNestedSetIntegrity(result.ToList()).ShouldBeTrue();
     }
 
     #endregion

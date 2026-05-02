@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Fitness;
 using NUnit.Framework;
@@ -100,9 +100,9 @@ public class TokenFitnessEvaluatorTests
         var sut = TokenFitnessEvaluator.Create(context);
         sut.Evaluate(scenario, context);
 
-        scenario.FitnessStage0.Should().Be(0);
-        scenario.FitnessStage1.Should().Be(1);
-        scenario.FitnessStage2.Should().BeInRange(0.99, 1.0);
+        scenario.FitnessStage0.ShouldBe(0);
+        scenario.FitnessStage1.ShouldBe(1);
+        scenario.FitnessStage2.ShouldBeInRange(0.99, 1.0);
     }
 
     [Test]
@@ -116,7 +116,7 @@ public class TokenFitnessEvaluatorTests
             new Dictionary<string, double>(),
             new List<CoreAgent>());
 
-        sut.Compare(a, b).Should().BeLessThan(0);
+        sut.Compare(a, b).ShouldBeLessThan(0);
     }
 
     [Test]
@@ -130,7 +130,7 @@ public class TokenFitnessEvaluatorTests
             new Dictionary<string, double>(),
             new List<CoreAgent>());
 
-        sut.Compare(a, b).Should().BeLessThan(0);
+        sut.Compare(a, b).ShouldBeLessThan(0);
     }
 
     [Test]
@@ -154,7 +154,7 @@ public class TokenFitnessEvaluatorTests
         var sut = TokenFitnessEvaluator.Create(context);
         sut.Evaluate(scenario, context);
 
-        scenario.FitnessStage1.Should().Be(1);
+        scenario.FitnessStage1.ShouldBe(1);
     }
 
     [Test]
@@ -174,7 +174,7 @@ public class TokenFitnessEvaluatorTests
         var sut = TokenFitnessEvaluator.Create(context);
         sut.Evaluate(scenario, context);
 
-        scenario.FitnessStage1.Should().Be(0);
+        scenario.FitnessStage1.ShouldBe(0);
     }
 
     [Test]
@@ -204,6 +204,6 @@ public class TokenFitnessEvaluatorTests
         sut.Evaluate(goodScenario, context);
         sut.Evaluate(blacklistedScenario, context);
 
-        blacklistedScenario.FitnessStage3.Should().BeLessThan(goodScenario.FitnessStage3);
+        blacklistedScenario.FitnessStage3.ShouldBeLessThan(goodScenario.FitnessStage3);
     }
 }

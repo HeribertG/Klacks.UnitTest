@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Services.RouteOptimization;
 using Microsoft.Extensions.Logging;
 
@@ -27,13 +27,13 @@ public class AntColonyOptimizerTests
         var route = optimizer.FindOptimalRoute(fixedStart: 0, fixedEnd: 0);
 
         // Assert
-        route.Should().HaveCount(5);
-        route[0].Should().Be(0, "route should start at Liebefeld (index 0)");
+        route.Count().ShouldBe(5);
+        route[0].ShouldBe(0, "route should start at Liebefeld (index 0)");
 
         var totalDistance = CalculateTotalDistance(route, distanceMatrix.Matrix, isRoundTrip: true);
         var zigzagDistance = CalculateZigzagDistance(distanceMatrix.Matrix);
 
-        totalDistance.Should().BeLessThan(zigzagDistance,
+        totalDistance.ShouldBeLessThan(zigzagDistance,
             $"optimized route ({totalDistance:F2} km) should be shorter than zigzag pattern ({zigzagDistance:F2} km)");
 
         LogRouteDetails(route, locations, distanceMatrix.Matrix, totalDistance);
@@ -54,7 +54,7 @@ public class AntColonyOptimizerTests
         var totalDistance = CalculateTotalDistance(route, distanceMatrix.Matrix, isRoundTrip: true);
         var optimalDistance = CalculateOptimalRouteDistance(distanceMatrix.Matrix);
 
-        totalDistance.Should().BeLessThanOrEqualTo(optimalDistance * 1.1,
+        totalDistance.ShouldBeLessThanOrEqualTo(optimalDistance * 1.1,
             $"route distance ({totalDistance:F2} km) should be within 10% of optimal ({optimalDistance:F2} km)");
     }
 
@@ -70,9 +70,9 @@ public class AntColonyOptimizerTests
         var route = optimizer.FindOptimalRoute();
 
         // Assert
-        route.Should().HaveCount(5);
-        route.Should().OnlyHaveUniqueItems();
-        route.Should().Contain(new[] { 0, 1, 2, 3, 4 });
+        route.Count().ShouldBe(5);
+        route.ShouldBeUnique();
+        foreach (var i in new[] { 0, 1, 2, 3, 4 }) { route.ShouldContain(i); }
 
         var totalDistance = CalculateTotalDistance(route, distanceMatrix.Matrix, isRoundTrip: false);
         TestContext.WriteLine($"Free route distance: {totalDistance:F2} km");
@@ -91,8 +91,8 @@ public class AntColonyOptimizerTests
         var route = optimizer.FindOptimalRoute(fixedStart: 0);
 
         // Assert
-        route.Should().HaveCount(5);
-        route[0].Should().Be(0, "route should start at index 0");
+        route.Count().ShouldBe(5);
+        route[0].ShouldBe(0, "route should start at index 0");
     }
 
     [Test]
@@ -107,9 +107,9 @@ public class AntColonyOptimizerTests
         var route = optimizer.FindOptimalRoute(fixedStart: 0, fixedEnd: 4);
 
         // Assert
-        route.Should().HaveCount(5);
-        route[0].Should().Be(0, "route should start at index 0");
-        route.Should().Contain(4, "route should contain endpoint index 4");
+        route.Count().ShouldBe(5);
+        route[0].ShouldBe(0, "route should start at index 0");
+        route.ShouldContain(4, "route should contain endpoint index 4");
     }
 
     [Test]
@@ -133,7 +133,7 @@ public class AntColonyOptimizerTests
         var avgDistance = distances.Average();
         var maxDeviation = distances.Max() - distances.Min();
 
-        maxDeviation.Should().BeLessThan(avgDistance * 0.15,
+        maxDeviation.ShouldBeLessThan(avgDistance * 0.15,
             $"route distances should not vary more than 15% (min: {distances.Min():F2}, max: {distances.Max():F2}, avg: {avgDistance:F2})");
 
         TestContext.WriteLine($"Distances over 5 runs: {string.Join(", ", distances.Select(d => $"{d:F2}"))}");
@@ -156,8 +156,8 @@ public class AntColonyOptimizerTests
         // Assert
         var elapsedTime = DateTime.UtcNow - startTime;
 
-        route.Should().HaveCount(10);
-        elapsedTime.Should().BeLessThan(TimeSpan.FromSeconds(30),
+        route.Count().ShouldBe(10);
+        elapsedTime.ShouldBeLessThan(TimeSpan.FromSeconds(30),
             "optimization should complete within 30 seconds for 10 locations");
 
         var totalDistance = CalculateTotalDistance(route, distanceMatrix.Matrix, isRoundTrip: true);
@@ -229,7 +229,7 @@ public class AntColonyOptimizerTests
             }
         }
 
-        consecutiveJumps.Should().BeLessThanOrEqualTo(1,
+        consecutiveJumps.ShouldBeLessThanOrEqualTo(1,
             "route should not have excessive back-and-forth jumps");
 
         LogRouteDetails(route, locations, distanceMatrix.Matrix,

@@ -1,11 +1,11 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for TelegramMessagingProvider.GetBotUsernameAsync including caching and invalid config handling.
 /// </summary>
 using System.Net;
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Plugin.Messaging.Infrastructure.Services.Providers;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -54,7 +54,7 @@ public class TelegramMessagingProviderBotUsernameTests
 
         var result = await _sut.GetBotUsernameAsync("{\"BotToken\":\"abc\"}");
 
-        result.Should().Be("klacks_bot");
+        result.ShouldBe("klacks_bot");
     }
 
     [Test]
@@ -69,17 +69,17 @@ public class TelegramMessagingProviderBotUsernameTests
         };
 
         await _sut.GetBotUsernameAsync("{\"BotToken\":\"abc\"}");
-        _handler.CallCount.Should().Be(1);
+        _handler.CallCount.ShouldBe(1);
 
         await _sut.GetBotUsernameAsync("{\"BotToken\":\"abc\"}");
-        _handler.CallCount.Should().Be(1);
+        _handler.CallCount.ShouldBe(1);
     }
 
     [Test]
     public async Task GetBotUsernameAsync_Returns_Null_On_Invalid_Config()
     {
         var result = await _sut.GetBotUsernameAsync("{}");
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     private sealed class FakeHttpMessageHandler : HttpMessageHandler

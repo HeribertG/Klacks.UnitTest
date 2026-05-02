@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Constants;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Infrastructure.Onnx;
 using NUnit.Framework;
@@ -22,9 +22,9 @@ public class OnnxEmbeddingProviderTests
 
         var embedding = await provider.EmbedAsync("show open shifts", CancellationToken.None);
 
-        embedding.Should().HaveCount(KnowledgeIndexConstants.EmbeddingDimension);
+        embedding.Count().ShouldBe(KnowledgeIndexConstants.EmbeddingDimension);
         var norm = Math.Sqrt(embedding.Sum(x => (double)x * x));
-        norm.Should().BeApproximately(1.0, 0.01);
+        norm.ShouldBe(1.0, 0.01);
     }
 
     [Test]
@@ -36,7 +36,7 @@ public class OnnxEmbeddingProviderTests
         var a = await provider.EmbedAsync("test query", CancellationToken.None);
         var b = await provider.EmbedAsync("test query", CancellationToken.None);
 
-        a.Should().BeEquivalentTo(b);
+        a.ShouldBeEquivalentTo(b);
     }
 
     [Test]
@@ -48,10 +48,10 @@ public class OnnxEmbeddingProviderTests
         var texts = new[] { "first text", "second text", "third text" };
         var embeddings = await provider.EmbedBatchAsync(texts, CancellationToken.None);
 
-        embeddings.Should().HaveCount(3);
+        embeddings.Count().ShouldBe(3);
         foreach (var emb in embeddings)
         {
-            emb.Should().HaveCount(KnowledgeIndexConstants.EmbeddingDimension);
+            emb.Count().ShouldBe(KnowledgeIndexConstants.EmbeddingDimension);
         }
     }
 
@@ -64,6 +64,6 @@ public class OnnxEmbeddingProviderTests
         var a = await provider.EmbedAsync("show open shifts", CancellationToken.None);
         var b = await provider.EmbedAsync("delete a user account", CancellationToken.None);
 
-        a.Should().NotBeEquivalentTo(b);
+        a.ShouldNotBe(b);
     }
 }

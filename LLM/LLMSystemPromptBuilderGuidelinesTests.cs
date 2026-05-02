@@ -1,9 +1,9 @@
-using Klacks.Api.Domain.Interfaces.Assistant;
+﻿using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using NUnit.Framework;
 using NSubstitute;
-using FluentAssertions;
+using Shouldly;
 
 namespace Klacks.UnitTest.LLM;
 
@@ -60,7 +60,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().Contain("user-123");
+        result.ShouldContain("user-123");
     }
 
     [Test]
@@ -74,8 +74,8 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().Contain("CanViewSettings");
-        result.Should().Contain("CanEditSettings");
+        result.ShouldContain("CanViewSettings");
+        result.ShouldContain("CanEditSettings");
     }
 
     [Test]
@@ -89,8 +89,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().NotContain("test_func",
-            "functions are passed separately as tools to the provider, not in the system prompt");
+        result.ShouldNotContain("test_func");
     }
 
     [Test]
@@ -105,7 +104,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context, soulPrompt);
 
         // Assert
-        result.Should().Contain("helpful planning assistant");
+        result.ShouldContain("helpful planning assistant");
     }
 
     [Test]
@@ -119,7 +118,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context, null);
 
         // Assert
-        result.Should().Contain("You are a helpful assistant.");
+        result.ShouldContain("You are a helpful assistant.");
     }
 
     [Test]
@@ -144,9 +143,8 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().Contain("Benutzerkontext");
-        result.Should().NotContain("Verfuegbare Funktionen",
-            "functions are passed separately as tools to the provider, not in the system prompt");
+        result.ShouldContain("Benutzerkontext");
+        result.ShouldNotContain("Verfuegbare Funktionen");
     }
 
     [Test]
@@ -166,7 +164,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().Contain("No settings permission");
+        result.ShouldContain("No settings permission");
     }
 
     [Test]
@@ -186,7 +184,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().Contain("View settings only");
+        result.ShouldContain("View settings only");
     }
 
     [Test]
@@ -200,7 +198,7 @@ public class LLMSystemPromptBuilderGuidelinesTests
         var result = await _builder.BuildSystemPromptAsync(context);
 
         // Assert
-        result.Should().NotContain("No settings permission");
-        result.Should().NotContain("View settings only");
+        result.ShouldNotContain("No settings permission");
+        result.ShouldNotContain("View settings only");
     }
 }

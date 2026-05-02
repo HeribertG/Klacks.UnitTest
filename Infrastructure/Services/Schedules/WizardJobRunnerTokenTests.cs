@@ -1,11 +1,11 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for the WizardJobRunner.MapTokens static method, verifying filtering of locked tokens
 /// and correct projection to WizardTokenDto.
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
@@ -51,13 +51,13 @@ public class WizardJobRunnerTokenTests
 
         var result = WizardJobRunner.MapTokens(tokens);
 
-        result.Should().HaveCount(1);
-        result[0].AgentId.Should().Be("agent-1");
-        result[0].ShiftId.Should().Be(shiftId.ToString());
-        result[0].Date.Should().Be("2026-04-22");
-        result[0].StartTime.Should().Be("06:00");
-        result[0].EndTime.Should().Be("14:00");
-        result[0].Hours.Should().Be(8m);
+        result.Count().ShouldBe(1);
+        result[0].AgentId.ShouldBe("agent-1");
+        result[0].ShiftId.ShouldBe(shiftId.ToString());
+        result[0].Date.ShouldBe("2026-04-22");
+        result[0].StartTime.ShouldBe("06:00");
+        result[0].EndTime.ShouldBe("14:00");
+        result[0].Hours.ShouldBe(8m);
     }
 
     [Test]
@@ -65,6 +65,6 @@ public class WizardJobRunnerTokenTests
     {
         var result = WizardJobRunner.MapTokens([]);
 
-        result.Should().BeEmpty();
+        result.ShouldBeEmpty();
     }
 }

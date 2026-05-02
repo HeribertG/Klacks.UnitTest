@@ -45,7 +45,7 @@ public class ClientTimelineTests
         var collisions = _timeline.GetCollisions();
 
         // Assert
-        collisions.Should().BeEmpty();
+        collisions.ShouldBeEmpty();
     }
 
     [Test]
@@ -65,9 +65,9 @@ public class ClientTimelineTests
         var collisions = _timeline.GetCollisions();
 
         // Assert
-        collisions.Should().HaveCount(1);
-        collisions[0].A.Should().Be(block1);
-        collisions[0].B.Should().Be(block2);
+        collisions.Count().ShouldBe(1);
+        collisions[0].A.ShouldBe(block1);
+        collisions[0].B.ShouldBe(block2);
     }
 
     [Test]
@@ -90,7 +90,7 @@ public class ClientTimelineTests
         var collisions = _timeline.GetCollisions();
 
         // Assert
-        collisions.Should().HaveCount(3);
+        collisions.Count().ShouldBe(3);
     }
 
     [Test]
@@ -113,7 +113,7 @@ public class ClientTimelineTests
         var collisions = _timeline.GetCollisions();
 
         // Assert
-        collisions.Should().BeEmpty();
+        collisions.ShouldBeEmpty();
     }
 
     [Test]
@@ -134,7 +134,7 @@ public class ClientTimelineTests
         var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
 
         // Assert
-        violations.Should().BeEmpty();
+        violations.ShouldBeEmpty();
     }
 
     [Test]
@@ -154,9 +154,9 @@ public class ClientTimelineTests
         var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
 
         // Assert
-        violations.Should().HaveCount(1);
-        violations[0].ActualRest.Should().Be(TimeSpan.FromHours(8));
-        violations[0].RequiredRest.Should().Be(TimeSpan.FromHours(11));
+        violations.Count().ShouldBe(1);
+        violations[0].ActualRest.ShouldBe(TimeSpan.FromHours(8));
+        violations[0].RequiredRest.ShouldBe(TimeSpan.FromHours(11));
     }
 
     [Test]
@@ -177,8 +177,8 @@ public class ClientTimelineTests
         var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
 
         // Assert
-        violations.Should().HaveCount(1);
-        violations[0].ActualRest.Should().Be(TimeSpan.FromHours(8));
+        violations.Count().ShouldBe(1);
+        violations[0].ActualRest.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -198,7 +198,7 @@ public class ClientTimelineTests
         var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
 
         // Assert
-        violations.Should().BeEmpty();
+        violations.ShouldBeEmpty();
     }
 
     [Test]
@@ -214,7 +214,7 @@ public class ClientTimelineTests
         var duration = _timeline.GetWorkDuration(BaseDate);
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(8));
+        duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -231,8 +231,8 @@ public class ClientTimelineTests
         var durationDay2 = _timeline.GetWorkDuration(BaseDate.AddDays(1));
 
         // Assert
-        durationDay1.Should().Be(TimeSpan.FromHours(2));
-        durationDay2.Should().Be(TimeSpan.FromHours(6));
+        durationDay1.ShouldBe(TimeSpan.FromHours(2));
+        durationDay2.ShouldBe(TimeSpan.FromHours(6));
     }
 
     [Test]
@@ -251,7 +251,7 @@ public class ClientTimelineTests
         var duration = _timeline.GetWorkDuration(BaseDate);
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(8));
+        duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -270,7 +270,7 @@ public class ClientTimelineTests
         var duration = _timeline.GetWorkDuration(BaseDate);
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(8));
+        duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -282,7 +282,7 @@ public class ClientTimelineTests
         var count = _timeline.GetConsecutiveWorkDays(BaseDate);
 
         // Assert
-        count.Should().Be(0);
+        count.ShouldBe(0);
     }
 
     [Test]
@@ -301,7 +301,7 @@ public class ClientTimelineTests
         var count = _timeline.GetConsecutiveWorkDays(BaseDate);
 
         // Assert
-        count.Should().Be(3);
+        count.ShouldBe(3);
     }
 
     [Test]
@@ -320,7 +320,7 @@ public class ClientTimelineTests
         var count = _timeline.GetConsecutiveWorkDays(BaseDate);
 
         // Assert
-        count.Should().Be(7);
+        count.ShouldBe(7);
     }
 
     [Test]
@@ -340,9 +340,9 @@ public class ClientTimelineTests
         var blocks = _timeline.GetBlocksForDate(BaseDate);
 
         // Assert
-        blocks.Should().HaveCount(2);
-        blocks.Should().Contain(nightBlock);
-        blocks.Should().Contain(dayBlock);
+        blocks.Count().ShouldBe(2);
+        blocks.ShouldContain(nightBlock);
+        blocks.ShouldContain(dayBlock);
     }
 
     [Test]
@@ -359,7 +359,7 @@ public class ClientTimelineTests
         var blocks = _timeline.GetBlocksForDate(BaseDate);
 
         // Assert
-        blocks.Should().BeEmpty();
+        blocks.ShouldBeEmpty();
     }
 
     [Test]
@@ -375,7 +375,7 @@ public class ClientTimelineTests
         var isWorking = _timeline.IsWorking(BaseDate.ToDateTime(new TimeOnly(12, 0)));
 
         // Assert
-        isWorking.Should().BeTrue();
+        isWorking.ShouldBeTrue();
     }
 
     [Test]
@@ -391,7 +391,7 @@ public class ClientTimelineTests
         var isWorking = _timeline.IsWorking(BaseDate.ToDateTime(new TimeOnly(18, 0)));
 
         // Assert
-        isWorking.Should().BeFalse();
+        isWorking.ShouldBeFalse();
     }
 
     [Test]
@@ -410,6 +410,6 @@ public class ClientTimelineTests
         var count = _timeline.GetConsecutiveWorkDaysBackward(BaseDate);
 
         // Assert
-        count.Should().Be(3);
+        count.ShouldBe(3);
     }
 }

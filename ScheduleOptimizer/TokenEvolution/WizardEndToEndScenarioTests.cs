@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution;
 using Klacks.ScheduleOptimizer.TokenEvolution.Constraints;
@@ -92,6 +92,6 @@ public class WizardEndToEndScenarioTests
             TestContext.Out.WriteLine($"  token: date={token.Date} shiftTypeIndex={token.ShiftTypeIndex} start={token.StartAt:HH:mm} end={token.EndAt:HH:mm} block={token.BlockId}");
         }
 
-        best.FitnessStage0.Should().Be(0, "minimal fixture should converge to feasibility");
+        best.FitnessStage0.ShouldBe(0, "minimal fixture should converge to feasibility");
     }
 }

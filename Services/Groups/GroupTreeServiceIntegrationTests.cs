@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.EntityFrameworkCore;
@@ -68,7 +68,7 @@ public class GroupTreeServiceIntegrationTests
         //   │   └── Grandchild (3,4)
         //   └── NewChild (6,7)
 
-        true.Should().BeTrue(); // Placeholder assertion
+        true.ShouldBeTrue(); // Placeholder assertion
     }
 
     [Test]
@@ -101,10 +101,10 @@ public class GroupTreeServiceIntegrationTests
         await repository.AddChildNode(parentId, newChild);
 
         // Assert
-        newChild.Lft.Should().Be(4); // Parent's original Rgt
-        newChild.Rgt.Should().Be(5);
-        newChild.Parent.Should().Be(parentId);
-        newChild.Root.Should().Be(parentId);
+        newChild.Lft.ShouldBe(4); // Parent's original Rgt
+        newChild.Rgt.ShouldBe(5);
+        newChild.Parent.ShouldBe(parentId);
+        newChild.Root.ShouldBe(parentId);
     }
 
     #endregion
@@ -126,7 +126,7 @@ public class GroupTreeServiceIntegrationTests
         // Initial: Root(1,10) -> Node1(2,5) + Node2(6,9)
         // Final: Root(1,10) -> Node1(2,9) -> Node2(3,6)
 
-        true.Should().BeTrue(); // Placeholder assertion
+        true.ShouldBeTrue(); // Placeholder assertion
     }
 
     #endregion
@@ -155,8 +155,8 @@ public class GroupTreeServiceIntegrationTests
 
         // Assert
         var deleted = await _context.Group.FindAsync(group.Id);
-        deleted.IsDeleted.Should().BeTrue();
-        deleted.DeletedTime.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(1));
+        deleted.IsDeleted.ShouldBeTrue();
+        deleted.DeletedTime.ShouldNotBeNull(); deleted.DeletedTime.Value.ShouldBe(DateTime.UtcNow, TimeSpan.FromSeconds(1));
     }
 
     #endregion
@@ -178,7 +178,7 @@ public class GroupTreeServiceIntegrationTests
         // - Process all children recursively
         // - Set node.Rgt = counter++
 
-        true.Should().BeTrue(); // Placeholder assertion
+        true.ShouldBeTrue(); // Placeholder assertion
     }
 
     #endregion

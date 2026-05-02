@@ -1,8 +1,8 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 namespace Klacks.UnitTest.Application.Klacksy;
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Application.Klacksy.Models;
 using NSubstitute;
@@ -29,9 +29,9 @@ public class NavigationTargetMatcherTests
 
         var result = _sut.Match("llm provider", "de", Array.Empty<string>());
 
-        result.TargetId.Should().Be("llm-provider");
-        result.Score.Should().Be(1.0);
-        result.IsFastPath.Should().BeTrue();
+        result.TargetId.ShouldBe("llm-provider");
+        result.Score.ShouldBe(1.0);
+        result.IsFastPath.ShouldBeTrue();
     }
 
     [Test]
@@ -42,8 +42,8 @@ public class NavigationTargetMatcherTests
 
         var result = _sut.Match("admin", "de", Array.Empty<string>());
 
-        result.TargetId.Should().BeNull();
-        result.Candidates.Should().BeEmpty();
+        result.TargetId.ShouldBeNull();
+        result.Candidates.ShouldBeEmpty();
     }
 
     [Test]
@@ -53,8 +53,8 @@ public class NavigationTargetMatcherTests
 
         var result = _sut.Match("unknown query here", "de", Array.Empty<string>());
 
-        result.TargetId.Should().BeNull();
-        result.Candidates.Should().BeEmpty();
+        result.TargetId.ShouldBeNull();
+        result.Candidates.ShouldBeEmpty();
     }
 
     [Test]
@@ -66,9 +66,9 @@ public class NavigationTargetMatcherTests
 
         var result = _sut.Match("foo bar", "de", Array.Empty<string>());
 
-        result.TargetId.Should().Be("t1");
-        result.Score.Should().Be(0.85);
-        result.Candidates.Should().HaveCount(1);
+        result.TargetId.ShouldBe("t1");
+        result.Score.ShouldBe(0.85);
+        result.Candidates.Count().ShouldBe(1);
     }
 
     [Test]
@@ -80,8 +80,8 @@ public class NavigationTargetMatcherTests
 
         var result = _sut.Match("foo bar baz qux", "de", Array.Empty<string>());
 
-        result.TargetId.Should().BeNull();
-        result.Candidates.Should().HaveCount(1);
-        result.Score.Should().BeApproximately(0.25, 0.001);
+        result.TargetId.ShouldBeNull();
+        result.Candidates.Count().ShouldBe(1);
+        result.Score.ShouldBe(0.25, 0.001);
     }
 }

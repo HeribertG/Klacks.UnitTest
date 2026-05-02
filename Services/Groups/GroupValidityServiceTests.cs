@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
 using Klacks.Api.Infrastructure.Persistence;
@@ -86,10 +86,10 @@ public class GroupValidityServiceTests
         var groups = await result.ToListAsync();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.Should().Contain(g => g.Id == activeGroupId);
-        groups.Should().NotContain(g => g.Id == expiredGroupId);
-        groups.Should().NotContain(g => g.Id == futureGroupId);
+        groups.Count().ShouldBe(1);
+        groups.ShouldContain(g => g.Id == activeGroupId);
+        groups.ShouldNotContain(g => g.Id == expiredGroupId);
+        groups.ShouldNotContain(g => g.Id == futureGroupId);
     }
 
     [Test]
@@ -142,10 +142,10 @@ public class GroupValidityServiceTests
         var groups = await result.ToListAsync();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.Should().Contain(g => g.Id == expiredGroupId);
-        groups.Should().NotContain(g => g.Id == activeGroupId);
-        groups.Should().NotContain(g => g.Id == futureGroupId);
+        groups.Count().ShouldBe(1);
+        groups.ShouldContain(g => g.Id == expiredGroupId);
+        groups.ShouldNotContain(g => g.Id == activeGroupId);
+        groups.ShouldNotContain(g => g.Id == futureGroupId);
     }
 
     [Test]
@@ -198,10 +198,10 @@ public class GroupValidityServiceTests
         var groups = await result.ToListAsync();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.Should().Contain(g => g.Id == futureGroupId);
-        groups.Should().NotContain(g => g.Id == activeGroupId);
-        groups.Should().NotContain(g => g.Id == expiredGroupId);
+        groups.Count().ShouldBe(1);
+        groups.ShouldContain(g => g.Id == futureGroupId);
+        groups.ShouldNotContain(g => g.Id == activeGroupId);
+        groups.ShouldNotContain(g => g.Id == expiredGroupId);
     }
 
     [Test]
@@ -241,9 +241,9 @@ public class GroupValidityServiceTests
         var groups = await result.ToListAsync();
 
         // Assert
-        groups.Should().HaveCount(2);
-        groups.Should().Contain(g => g.Id == group1Id);
-        groups.Should().Contain(g => g.Id == group2Id);
+        groups.Count().ShouldBe(2);
+        groups.ShouldContain(g => g.Id == group1Id);
+        groups.ShouldContain(g => g.Id == group2Id);
     }
 
     [Test]
@@ -274,7 +274,7 @@ public class GroupValidityServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().BeEmpty();
+        groups.ShouldBeEmpty();
     }
 
     [Test]
@@ -301,7 +301,7 @@ public class GroupValidityServiceTests
         var isActive = _validityService.IsGroupActive(activeGroup);
 
         // Assert
-        isActive.Should().BeTrue();
+        isActive.ShouldBeTrue();
     }
 
     [Test]
@@ -328,7 +328,7 @@ public class GroupValidityServiceTests
         var isActive = _validityService.IsGroupActive(expiredGroup);
 
         // Assert
-        isActive.Should().BeFalse();
+        isActive.ShouldBeFalse();
     }
 
     [Test]
@@ -351,7 +351,7 @@ public class GroupValidityServiceTests
         var isValid = _validityService.ValidateDateRange(testGroup);
 
         // Assert
-        isValid.Should().BeTrue();
+        isValid.ShouldBeTrue();
     }
 
     [Test]
@@ -374,6 +374,6 @@ public class GroupValidityServiceTests
         var isValid = _validityService.ValidateDateRange(testGroup);
 
         // Assert
-        isValid.Should().BeFalse();
+        isValid.ShouldBeFalse();
     }
 }

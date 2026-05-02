@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Fuzzy;
 using NUnit.Framework;
 
@@ -37,8 +37,8 @@ public class MamdaniInferenceEngineTests
     {
         var engine = BuildSimpleEngine();
         var result = engine.Infer(new Dictionary<string, double> { ["X"] = 1.0 });
-        result.FiredRules.Should().ContainSingle(a => a.RuleName == "RuleLow");
-        result.CrispOutput.Should().BeLessThan(0.5);
+        result.FiredRules.Count(a => a.RuleName == "RuleLow").ShouldBe(1);
+        result.CrispOutput.ShouldBeLessThan(0.5);
     }
 
     [Test]
@@ -46,8 +46,8 @@ public class MamdaniInferenceEngineTests
     {
         var engine = BuildSimpleEngine();
         var result = engine.Infer(new Dictionary<string, double> { ["X"] = 9.0 });
-        result.FiredRules.Should().ContainSingle(a => a.RuleName == "RuleHigh");
-        result.CrispOutput.Should().BeGreaterThan(0.5);
+        result.FiredRules.Count(a => a.RuleName == "RuleHigh").ShouldBe(1);
+        result.CrispOutput.ShouldBeGreaterThan(0.5);
     }
 
     [Test]
@@ -59,7 +59,7 @@ public class MamdaniInferenceEngineTests
         // For values in the gap, no rules activate.
         if (result.FiredRules.Count == 0)
         {
-            result.CrispOutput.Should().Be(0.0);
+            result.CrispOutput.ShouldBe(0.0);
         }
     }
 
@@ -82,7 +82,7 @@ public class MamdaniInferenceEngineTests
             ["IndexBonus"] = 0.0,
         });
 
-        result.FiredRules.Should().NotBeEmpty();
-        result.CrispOutput.Should().BeGreaterThan(0.0);
+        result.FiredRules.ShouldNotBeEmpty();
+        result.CrispOutput.ShouldBeGreaterThan(0.0);
     }
 }

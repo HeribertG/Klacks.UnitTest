@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -33,8 +33,8 @@ public class ClientMapperDebugTest
         var entity = _mapper.ToEntity(resource);
 
         // Assert
-        entity.Should().NotBeNull();
-        entity.Name.Should().Be("Test");
+        entity.ShouldNotBeNull();
+        entity.Name.ShouldBe("Test");
     }
 
     [Test]
@@ -57,8 +57,8 @@ public class ClientMapperDebugTest
         var resource = _mapper.ToResource(client);
 
         // Assert
-        resource.Should().NotBeNull();
-        resource.Name.Should().Be("Test");
+        resource.ShouldNotBeNull();
+        resource.Name.ShouldBe("Test");
     }
 
     [Test]
@@ -75,8 +75,8 @@ public class ClientMapperDebugTest
         var resource = _mapper.ToResource(client);
 
         // Assert
-        resource.Should().NotBeNull();
-        resource.Name.Should().Be("Test");
+        resource.ShouldNotBeNull();
+        resource.Name.ShouldBe("Test");
     }
 
     [Test]
@@ -109,10 +109,10 @@ public class ClientMapperDebugTest
         var resultResource = _mapper.ToResource(existingClient);
 
         // Assert
-        mappedEntity.Should().NotBeNull();
-        mappedEntity.Name.Should().Be("Test Client");
-        resultResource.Should().NotBeNull();
-        resultResource.Name.Should().Be("Test Client");
+        mappedEntity.ShouldNotBeNull();
+        mappedEntity.Name.ShouldBe("Test Client");
+        resultResource.ShouldNotBeNull();
+        resultResource.Name.ShouldBe("Test Client");
     }
 
     [Test]
@@ -141,8 +141,8 @@ public class ClientMapperDebugTest
         var entity = _mapper.ToEntity(resource);
 
         // Assert
-        entity.Should().NotBeNull();
-        entity.ClientContracts.Should().HaveCount(1);
+        entity.ShouldNotBeNull();
+        entity.ClientContracts.Count().ShouldBe(1);
     }
 
     [Test]
@@ -202,8 +202,8 @@ public class ClientMapperDebugTest
         var result = _mapper.ToResource(updatedClient);
 
         // Assert
-        client.Should().NotBeNull();
-        result.Should().NotBeNull();
-        result.Name.Should().Be("Test Client");
+        client.ShouldNotBeNull();
+        result.ShouldNotBeNull();
+        result.Name.ShouldBe("Test Client");
     }
 }

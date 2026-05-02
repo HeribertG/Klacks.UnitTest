@@ -1,7 +1,7 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using System.Security.Cryptography;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Infrastructure.Onnx;
 using NUnit.Framework;
 
@@ -35,7 +35,7 @@ public class ModelLoaderTests
 
         await loader.EnsureFileAsync(filePath, "https://example/model.onnx", hash, CancellationToken.None);
 
-        downloaded.Should().BeFalse();
+        downloaded.ShouldBeFalse();
     }
 
     [Test]
@@ -50,8 +50,8 @@ public class ModelLoaderTests
 
         await loader.EnsureFileAsync(filePath, "https://example/model.onnx", hash, CancellationToken.None);
 
-        downloaded.Should().BeTrue();
-        File.Exists(filePath).Should().BeTrue();
+        downloaded.ShouldBeTrue();
+        File.Exists(filePath).ShouldBeTrue();
     }
 
     [Test]
@@ -69,7 +69,7 @@ public class ModelLoaderTests
 
         await loader.EnsureFileAsync(filePath, "https://example/model.onnx", hash, CancellationToken.None);
 
-        downloaded.Should().BeTrue();
+        downloaded.ShouldBeTrue();
     }
 
     [Test]
@@ -83,8 +83,8 @@ public class ModelLoaderTests
 
         Func<Task> act = () => loader.EnsureFileAsync(filePath, "https://example/model.onnx", wrongHash, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        File.Exists(filePath).Should().BeFalse();
+        await act.ShouldThrowAsync<InvalidOperationException>();
+        File.Exists(filePath).ShouldBeFalse();
     }
 
     private sealed class StubHandler : HttpMessageHandler

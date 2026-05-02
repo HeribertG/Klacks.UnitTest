@@ -43,11 +43,11 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work], [], []);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].BlockType.Should().Be(ScheduleBlockType.Work);
-        blocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
-        blocks[0].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
-        blocks[0].Duration.Should().Be(TimeSpan.FromHours(8));
+        blocks.Count().ShouldBe(1);
+        blocks[0].BlockType.ShouldBe(ScheduleBlockType.Work);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        blocks[0].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(16, 0)));
+        blocks[0].Duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -60,10 +60,10 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work], [], []);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(22, 0)));
-        blocks[0].End.Should().Be(BaseDate.AddDays(1).ToDateTime(new TimeOnly(6, 0)));
-        blocks[0].Duration.Should().Be(TimeSpan.FromHours(8));
+        blocks.Count().ShouldBe(1);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(22, 0)));
+        blocks[0].End.ShouldBe(BaseDate.AddDays(1).ToDateTime(new TimeOnly(6, 0)));
+        blocks[0].Duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -86,13 +86,13 @@ public class TimelineCalculationServiceTests
 
         // Assert: Work block stays at original times - no overlap with correction block
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
-        workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
+        workBlock.Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        workBlock.End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(16, 0)));
 
         // Correction block precedes the work block
         var correctionBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Correction);
-        correctionBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 0)));
-        correctionBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        correctionBlock.Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(7, 0)));
+        correctionBlock.End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
     }
 
     [Test]
@@ -115,13 +115,13 @@ public class TimelineCalculationServiceTests
 
         // Assert: Work block stays at original times - no overlap with correction block
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
-        workBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
+        workBlock.Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        workBlock.End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(16, 0)));
 
         // Correction block follows the work block
         var correctionBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Correction);
-        correctionBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(16, 0)));
-        correctionBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(17, 0)));
+        correctionBlock.Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(16, 0)));
+        correctionBlock.End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(17, 0)));
     }
 
     [Test]
@@ -146,12 +146,12 @@ public class TimelineCalculationServiceTests
 
         // Assert
         var replacementBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Replacement);
-        replacementBlock.ClientId.Should().Be(replaceClientId);
-        replacementBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
-        replacementBlock.End.Should().Be(BaseDate.ToDateTime(new TimeOnly(12, 0)));
+        replacementBlock.ClientId.ShouldBe(replaceClientId);
+        replacementBlock.Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        replacementBlock.End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(12, 0)));
 
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(12, 0)));
+        workBlock.Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(12, 0)));
     }
 
     [Test]
@@ -173,11 +173,11 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([], [], [breakEntry]);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].BlockType.Should().Be(ScheduleBlockType.Break);
-        blocks[0].ClientId.Should().Be(clientId);
-        blocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(12, 0)));
-        blocks[0].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(13, 0)));
+        blocks.Count().ShouldBe(1);
+        blocks[0].BlockType.ShouldBe(ScheduleBlockType.Break);
+        blocks[0].ClientId.ShouldBe(clientId);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(12, 0)));
+        blocks[0].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(13, 0)));
     }
 
     [Test]
@@ -190,10 +190,10 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work], [], []);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(14, 0)));
-        blocks[0].End.Should().Be(BaseDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
-        blocks[0].Duration.Should().Be(TimeSpan.FromHours(10));
+        blocks.Count().ShouldBe(1);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(14, 0)));
+        blocks[0].End.ShouldBe(BaseDate.AddDays(1).ToDateTime(TimeOnly.MinValue));
+        blocks[0].Duration.ShouldBe(TimeSpan.FromHours(10));
     }
 
     [Test]
@@ -206,10 +206,10 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work], [], []);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].Start.Should().Be(BaseDate.ToDateTime(TimeOnly.MinValue));
-        blocks[0].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
-        blocks[0].Duration.Should().Be(TimeSpan.FromHours(8));
+        blocks.Count().ShouldBe(1);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(TimeOnly.MinValue));
+        blocks[0].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        blocks[0].Duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -223,8 +223,8 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work1, work2], [], []);
 
         // Assert
-        blocks.Should().HaveCount(2);
-        blocks.Should().AllSatisfy(b => b.BlockType.Should().Be(ScheduleBlockType.Work));
+        blocks.Count().ShouldBe(2);
+        foreach (var _item in blocks) { _item.BlockType.ShouldBe(ScheduleBlockType.Work); };
     }
 
     [Test]
@@ -238,11 +238,11 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work], [], []);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].SourceId.Should().Be(work.Id);
-        blocks[0].ClientId.Should().Be(clientId);
-        blocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 30)));
-        blocks[0].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(15, 45)));
+        blocks.Count().ShouldBe(1);
+        blocks[0].SourceId.ShouldBe(work.Id);
+        blocks[0].ClientId.ShouldBe(clientId);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(7, 30)));
+        blocks[0].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(15, 45)));
     }
 
     [Test]
@@ -265,7 +265,7 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work], [replacement], []);
 
         // Assert
-        blocks.Should().NotContain(b => b.BlockType == ScheduleBlockType.Replacement);
+        blocks.ShouldNotContain(b => b.BlockType == ScheduleBlockType.Replacement);
     }
 
     [Test]
@@ -275,7 +275,7 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([], [], []);
 
         // Assert
-        blocks.Should().BeEmpty();
+        blocks.ShouldBeEmpty();
     }
 
     [Test]
@@ -297,7 +297,7 @@ public class TimelineCalculationServiceTests
         timeline.AddBlocks(blocks.Where(b => b.ClientId == work.ClientId));
         timeline.SortBlocks();
 
-        timeline.GetCollisions().Should().BeEmpty("work block and its own correction must not collide");
+        timeline.GetCollisions().ShouldBeEmpty("work block and its own correction must not collide");
     }
 
     [Test]
@@ -319,7 +319,7 @@ public class TimelineCalculationServiceTests
         timeline.AddBlocks(blocks.Where(b => b.ClientId == work.ClientId));
         timeline.SortBlocks();
 
-        timeline.GetCollisions().Should().BeEmpty("work block and its own correction must not collide");
+        timeline.GetCollisions().ShouldBeEmpty("work block and its own correction must not collide");
     }
 
     [Test]
@@ -352,19 +352,19 @@ public class TimelineCalculationServiceTests
 
         // Assert
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        workBlock.Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
 
         var correctionBlocks = blocks.Where(b => b.BlockType == ScheduleBlockType.Correction)
             .OrderBy(b => b.Start).ToList();
-        correctionBlocks.Should().HaveCount(2);
+        correctionBlocks.Count().ShouldBe(2);
 
         // TravelStart outermost: 05:30-07:30
-        correctionBlocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(5, 30)));
-        correctionBlocks[0].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 30)));
+        correctionBlocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(5, 30)));
+        correctionBlocks[0].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(7, 30)));
 
         // Briefing innermost: 07:30-08:00
-        correctionBlocks[1].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(7, 30)));
-        correctionBlocks[1].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(8, 0)));
+        correctionBlocks[1].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(7, 30)));
+        correctionBlocks[1].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(8, 0)));
     }
 
     [Test]
@@ -386,10 +386,10 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([], [], [breakEntry]);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(23, 0)));
-        blocks[0].End.Should().Be(BaseDate.AddDays(1).ToDateTime(new TimeOnly(1, 0)));
-        blocks[0].Duration.Should().Be(TimeSpan.FromHours(2));
+        blocks.Count().ShouldBe(1);
+        blocks[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(23, 0)));
+        blocks[0].End.ShouldBe(BaseDate.AddDays(1).ToDateTime(new TimeOnly(1, 0)));
+        blocks[0].Duration.ShouldBe(TimeSpan.FromHours(2));
     }
 
     [Test]
@@ -411,8 +411,8 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([work], [], []);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].ShiftId.Should().Be(shiftId);
+        blocks.Count().ShouldBe(1);
+        blocks[0].ShiftId.ShouldBe(shiftId);
     }
 
     [Test]
@@ -433,8 +433,8 @@ public class TimelineCalculationServiceTests
         var blocks = _service.CalculateScheduleBlocks([], [], [breakEntry]);
 
         // Assert
-        blocks.Should().HaveCount(1);
-        blocks[0].ShiftId.Should().BeNull();
+        blocks.Count().ShouldBe(1);
+        blocks[0].ShiftId.ShouldBeNull();
     }
 
     [Test]
@@ -457,9 +457,9 @@ public class TimelineCalculationServiceTests
 
         // Assert
         var correctionBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Correction);
-        correctionBlock.ShiftId.Should().BeNull();
+        correctionBlock.ShiftId.ShouldBeNull();
 
         var workBlock = blocks.First(b => b.BlockType == ScheduleBlockType.Work);
-        workBlock.ShiftId.Should().NotBeNull();
+        workBlock.ShiftId.ShouldNotBeNull();
     }
 }

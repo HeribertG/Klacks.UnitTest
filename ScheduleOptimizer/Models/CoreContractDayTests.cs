@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 
@@ -21,8 +21,8 @@ public class CoreContractDayTests
             MaximumHoursPerDay: 8,
             ContractId: Guid.Parse("99999999-9999-9999-9999-999999999999"));
 
-        day.WorksOnDay.Should().BeTrue();
-        day.PerformsShiftWork.Should().BeFalse();
-        day.FullTimeShare.Should().Be(0.5);
+        day.WorksOnDay.ShouldBeTrue();
+        day.PerformsShiftWork.ShouldBeFalse();
+        day.FullTimeShare.ShouldBe(0.5);
     }
 }

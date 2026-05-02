@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Plugin.Contracts;
 using Klacks.Plugin.Messaging.Application.Constants;
 using Klacks.Plugin.Messaging.Application.Interfaces;
@@ -47,7 +47,7 @@ public class OnboardingRolloutServiceTests
         cts.CancelAfter(TimeSpan.FromSeconds(5));
         var sent = await _sut.ExecuteAsync("{\"BotToken\":\"t\"}", cts.Token);
 
-        sent.Should().Be(2);
+        sent.ShouldBe(2);
         await _sendService.Received(2).SendAsync(Arg.Any<Guid>(), "{\"BotToken\":\"t\"}", Arg.Any<CancellationToken>());
         await _settingsWriter.Received(1).SetSettingAsync(
             TelegramOnboardingConstants.RolloutCompletedSettingKey,
@@ -77,6 +77,6 @@ public class OnboardingRolloutServiceTests
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var sent = await _sut.ExecuteAsync("{}", cts.Token);
 
-        sent.Should().Be(2);
+        sent.ShouldBe(2);
     }
 }

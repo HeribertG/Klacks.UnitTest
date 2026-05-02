@@ -1,11 +1,11 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests verifying that CreateOrderExportQueryHandler persists an ExportLog entry on successful export.
 /// @param filter - Contains date range, format key and localization settings used to drive the export
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.DTOs.Exports;
 using Klacks.Api.Application.Handlers.Exports;
 using Klacks.Api.Application.Interfaces;
@@ -92,7 +92,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
 
         var result = await _handler.Handle(new CreateOrderExportQuery(filter), CancellationToken.None);
 
-        result.FileContent.Should().Equal(new byte[] { 1, 2, 3 });
+        result.FileContent.ShouldBe(new byte[] { 1, 2, 3 });
 
         await _exportLogRepository.Received(1).AddAsync(
             Arg.Is<ExportLog>(e =>

@@ -2,7 +2,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;

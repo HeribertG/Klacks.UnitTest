@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Infrastructure.Persistence;
@@ -54,10 +54,10 @@ public class ShiftGroupManagementServiceTests
             .Where(gi => gi.ShiftId == shiftId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(2);
-        groupItems.Should().Contain(gi => gi.GroupId == groupId1);
-        groupItems.Should().Contain(gi => gi.GroupId == groupId2);
-        groupItems.Should().AllSatisfy(gi => gi.ShiftId.Should().Be(shiftId));
+        groupItems.Count().ShouldBe(2);
+        groupItems.ShouldContain(gi => gi.GroupId == groupId1);
+        groupItems.ShouldContain(gi => gi.GroupId == groupId2);
+        foreach (var _item in groupItems) { _item.ShiftId.ShouldBe(shiftId); };
     }
 
     [Test]
@@ -89,9 +89,9 @@ public class ShiftGroupManagementServiceTests
             .Where(gi => gi.ShiftId == shiftId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(1);
-        groupItems.Should().Contain(gi => gi.GroupId == newGroupId);
-        groupItems.Should().NotContain(gi => gi.GroupId == oldGroupId);
+        groupItems.Count().ShouldBe(1);
+        groupItems.ShouldContain(gi => gi.GroupId == newGroupId);
+        groupItems.ShouldNotContain(gi => gi.GroupId == oldGroupId);
     }
 
     [Test]
@@ -133,10 +133,10 @@ public class ShiftGroupManagementServiceTests
             .Where(gi => gi.ShiftId == shiftId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(2);
-        groupItems.Should().Contain(gi => gi.GroupId == keepGroupId);
-        groupItems.Should().Contain(gi => gi.GroupId == addGroupId);
-        groupItems.Should().NotContain(gi => gi.GroupId == removeGroupId);
+        groupItems.Count().ShouldBe(2);
+        groupItems.ShouldContain(gi => gi.GroupId == keepGroupId);
+        groupItems.ShouldContain(gi => gi.GroupId == addGroupId);
+        groupItems.ShouldNotContain(gi => gi.GroupId == removeGroupId);
     }
 
     [Test]
@@ -177,7 +177,7 @@ public class ShiftGroupManagementServiceTests
             .Where(gi => gi.ShiftId == shiftId)
             .ToListAsync();
 
-        groupItems.Should().BeEmpty();
+        groupItems.ShouldBeEmpty();
     }
 
     [Test]
@@ -218,9 +218,9 @@ public class ShiftGroupManagementServiceTests
             .Where(gi => gi.ShiftId == shiftId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(2);
-        groupItems.Should().Contain(gi => gi.GroupId == groupId1);
-        groupItems.Should().Contain(gi => gi.GroupId == groupId2);
+        groupItems.Count().ShouldBe(2);
+        groupItems.ShouldContain(gi => gi.GroupId == groupId1);
+        groupItems.ShouldContain(gi => gi.GroupId == groupId2);
     }
 
     [Test]
@@ -240,9 +240,9 @@ public class ShiftGroupManagementServiceTests
             .Where(gi => gi.ShiftId == nonExistentShiftId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(1);
-        groupItems.First().GroupId.Should().Be(groupId1);
-        groupItems.First().ShiftId.Should().Be(nonExistentShiftId);
+        groupItems.Count().ShouldBe(1);
+        groupItems.First().GroupId.ShouldBe(groupId1);
+        groupItems.First().ShiftId.ShouldBe(nonExistentShiftId);
     }
 
     [Test]
@@ -263,8 +263,8 @@ public class ShiftGroupManagementServiceTests
             .ToListAsync();
 
         // Should handle duplicates gracefully (exact behavior depends on implementation)
-        groupItems.Should().NotBeEmpty();
-        groupItems.Should().AllSatisfy(gi => gi.GroupId.Should().Be(groupId));
+        groupItems.ShouldNotBeEmpty();
+        foreach (var _item in groupItems) { _item.GroupId.ShouldBe(groupId); };
     }
 
     [Test]
@@ -290,7 +290,7 @@ public class ShiftGroupManagementServiceTests
             .Where(gi => gi.ShiftId == shiftId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(100);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(1000); // Should complete within 1 second
+        groupItems.Count().ShouldBe(100);
+        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(1000); // Should complete within 1 second
     }
 }

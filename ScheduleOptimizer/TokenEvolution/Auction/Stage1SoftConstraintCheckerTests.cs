@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Controller;
 using NUnit.Framework;
@@ -79,9 +79,9 @@ public class Stage1SoftConstraintCheckerTests
 
         var verdict = sut.Check(agent, slot, assigned, EmptyContext());
 
-        verdict.Should().NotBeNull();
-        verdict!.Stage.Should().Be(1);
-        verdict.RuleName.Should().Be("MaxWorkDays");
+        verdict.ShouldNotBeNull();
+        verdict!.Stage.ShouldBe(1);
+        verdict.RuleName.ShouldBe("MaxWorkDays");
     }
 
     [Test]
@@ -95,8 +95,8 @@ public class Stage1SoftConstraintCheckerTests
 
         var verdict = sut.Check(agent, newSlot, assigned, EmptyContext());
 
-        verdict.Should().NotBeNull();
-        verdict!.RuleName.Should().Be("MinRestDays");
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("MinRestDays");
     }
 
     [Test]
@@ -110,7 +110,7 @@ public class Stage1SoftConstraintCheckerTests
 
         var verdict = sut.Check(agent, newSlot, assigned, EmptyContext());
 
-        verdict.Should().BeNull();
+        verdict.ShouldBeNull();
     }
 
     [Test]
@@ -130,6 +130,6 @@ public class Stage1SoftConstraintCheckerTests
 
         var verdict = sut.Check(agent, slot, assigned, EmptyContext());
 
-        verdict.Should().BeNull();
+        verdict.ShouldBeNull();
     }
 }

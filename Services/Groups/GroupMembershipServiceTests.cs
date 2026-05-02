@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
@@ -68,9 +68,9 @@ public class GroupMembershipServiceTests
             .Where(gi => gi.GroupId == groupId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(2);
-        groupItems.Should().Contain(gi => gi.ClientId == clientId1);
-        groupItems.Should().Contain(gi => gi.ClientId == clientId2);
+        groupItems.Count().ShouldBe(2);
+        groupItems.ShouldContain(gi => gi.ClientId == clientId1);
+        groupItems.ShouldContain(gi => gi.ClientId == clientId2);
     }
 
     [Test]
@@ -110,9 +110,9 @@ public class GroupMembershipServiceTests
             .Where(gi => gi.GroupId == groupId)
             .ToListAsync();
 
-        groupItems.Should().HaveCount(1);
-        groupItems.Should().Contain(gi => gi.ClientId == newClientId);
-        groupItems.Should().NotContain(gi => gi.ClientId == oldClientId);
+        groupItems.Count().ShouldBe(1);
+        groupItems.ShouldContain(gi => gi.ClientId == newClientId);
+        groupItems.ShouldNotContain(gi => gi.ClientId == oldClientId);
     }
 
     [Test]
@@ -140,9 +140,9 @@ public class GroupMembershipServiceTests
         var groupItem = await _context.GroupItem
             .FirstOrDefaultAsync(gi => gi.GroupId == groupId && gi.ClientId == clientId);
 
-        groupItem.Should().NotBeNull();
-        groupItem.GroupId.Should().Be(groupId);
-        groupItem.ClientId.Should().Be(clientId);
+        groupItem.ShouldNotBeNull();
+        groupItem.GroupId.ShouldBe(groupId);
+        groupItem.ClientId.ShouldBe(clientId);
     }
 
     [Test]
@@ -178,7 +178,7 @@ public class GroupMembershipServiceTests
         var removedItem = await _context.GroupItem
             .FirstOrDefaultAsync(gi => gi.GroupId == groupId && gi.ClientId == clientId);
 
-        removedItem.Should().BeNull();
+        removedItem.ShouldBeNull();
     }
 
     [Test]
@@ -221,7 +221,7 @@ public class GroupMembershipServiceTests
         // Assert
         // The service uses Include(gi => gi.Employee) but Employee entities don't exist in test
         // So we expect the service to return empty collection or handle null clients
-        members.Should().NotBeNull();
+        members.ShouldNotBeNull();
         // We can't test for specific client objects since they don't exist in the test database
     }
 
@@ -255,7 +255,7 @@ public class GroupMembershipServiceTests
         var isInGroup = await _membershipService.IsClientInGroupAsync(groupId, clientId);
 
         // Assert
-        isInGroup.Should().BeTrue();
+        isInGroup.ShouldBeTrue();
     }
 
     [Test]
@@ -280,7 +280,7 @@ public class GroupMembershipServiceTests
         var isInGroup = await _membershipService.IsClientInGroupAsync(groupId, clientId);
 
         // Assert
-        isInGroup.Should().BeFalse();
+        isInGroup.ShouldBeFalse();
     }
 
     [Test]
@@ -315,7 +315,7 @@ public class GroupMembershipServiceTests
         var memberCount = await _membershipService.GetGroupMemberCountAsync(groupId);
 
         // Assert
-        memberCount.Should().Be(3);
+        memberCount.ShouldBe(3);
     }
 
     [Test]
@@ -339,6 +339,6 @@ public class GroupMembershipServiceTests
         var memberCount = await _membershipService.GetGroupMemberCountAsync(groupId);
 
         // Assert
-        memberCount.Should().Be(0);
+        memberCount.ShouldBe(0);
     }
 }

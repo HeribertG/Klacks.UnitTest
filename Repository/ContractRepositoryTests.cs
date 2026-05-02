@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.CalendarSelections;
 using Klacks.Api.Infrastructure.Persistence;
@@ -81,11 +81,11 @@ public class ContractRepositoryTests
 
         // Assert
         var savedContract = await dbContext.Contract.FirstOrDefaultAsync(c => c.Id == contract.Id);
-        savedContract.Should().NotBeNull();
-        savedContract.Name.Should().Be("Test Contract");
-        savedContract.GuaranteedHours.Should().Be(160);
-        savedContract.MaximumHours.Should().Be(200);
-        savedContract.MinimumHours.Should().Be(120);
+        savedContract.ShouldNotBeNull();
+        savedContract.Name.ShouldBe("Test Contract");
+        savedContract.GuaranteedHours.ShouldBe(160);
+        savedContract.MaximumHours.ShouldBe(200);
+        savedContract.MinimumHours.ShouldBe(120);
     }
 
     [Test]
@@ -110,11 +110,11 @@ public class ContractRepositoryTests
         var result = await contractRepository.Get(contract.Id);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(contract.Id);
-        result.Name.Should().Be("Test Contract");
-        result.CalendarSelection.Should().NotBeNull();
-        result.CalendarSelection.Name.Should().Be("Test Calendar");
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(contract.Id);
+        result.Name.ShouldBe("Test Contract");
+        result.CalendarSelection.ShouldNotBeNull();
+        result.CalendarSelection.Name.ShouldBe("Test Calendar");
     }
 
     [Test]
@@ -152,10 +152,10 @@ public class ContractRepositoryTests
         var result = await contractRepository.List();
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-        result.Should().Contain(c => c.Name == "Contract 1");
-        result.Should().Contain(c => c.Name == "Contract 2");
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(2);
+        result.ShouldContain(c => c.Name == "Contract 1");
+        result.ShouldContain(c => c.Name == "Contract 2");
     }
 
     [Test]
@@ -184,9 +184,9 @@ public class ContractRepositoryTests
 
         // Assert
         var updatedContract = await dbContext.Contract.FirstOrDefaultAsync(c => c.Id == contract.Id);
-        updatedContract.Should().NotBeNull();
-        updatedContract.Name.Should().Be("Updated Contract");
-        updatedContract.GuaranteedHours.Should().Be(180);
+        updatedContract.ShouldNotBeNull();
+        updatedContract.Name.ShouldBe("Updated Contract");
+        updatedContract.GuaranteedHours.ShouldBe(180);
     }
 
     [Test]
@@ -212,16 +212,16 @@ public class ContractRepositoryTests
         await dbContext.SaveChangesAsync();
 
         // Assert
-        deletedContract.Should().NotBeNull();
-        deletedContract.Id.Should().Be(contract.Id);
+        deletedContract.ShouldNotBeNull();
+        deletedContract.Id.ShouldBe(contract.Id);
 
         // Verify soft delete
         var contractInDb = await dbContext.Contract
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(c => c.Id == contract.Id);
         
-        contractInDb.Should().NotBeNull();
-        contractInDb.IsDeleted.Should().BeTrue();
+        contractInDb.ShouldNotBeNull();
+        contractInDb.IsDeleted.ShouldBeTrue();
     }
 
     [Test]
@@ -234,7 +234,7 @@ public class ContractRepositoryTests
         var result = await contractRepository.Get(nonExistentId);
 
         // Assert
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Test]
@@ -247,6 +247,6 @@ public class ContractRepositoryTests
         var result = await contractRepository.Delete(nonExistentId);
 
         // Assert
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 }

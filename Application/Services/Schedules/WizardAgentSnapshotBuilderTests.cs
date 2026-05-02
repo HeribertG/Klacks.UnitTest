@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
@@ -56,9 +56,9 @@ public class WizardAgentSnapshotBuilderTests
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
-        result.Agents.Should().HaveCount(1);
-        result.ContractDays.Should().HaveCount(3);
-        result.ContractDays.Should().OnlyContain(d => d.AgentId == agentId.ToString());
+        result.Agents.Count().ShouldBe(1);
+        result.ContractDays.Count().ShouldBe(3);
+        result.ContractDays.ShouldAllBe(d => d.AgentId == agentId.ToString());
     }
 
     [Test]
@@ -95,12 +95,12 @@ public class WizardAgentSnapshotBuilderTests
             CancellationToken.None);
 
         var agent = result.Agents.Single();
-        agent.CurrentHours.Should().Be(12.5);
-        agent.FullTime.Should().Be(42);
-        agent.MaximumHours.Should().Be(45);
-        agent.MinimumHours.Should().Be(25);
-        agent.PerformsShiftWork.Should().BeFalse();
-        agent.WorkOnSaturday.Should().BeTrue();
+        agent.CurrentHours.ShouldBe(12.5);
+        agent.FullTime.ShouldBe(42);
+        agent.MaximumHours.ShouldBe(45);
+        agent.MinimumHours.ShouldBe(25);
+        agent.PerformsShiftWork.ShouldBeFalse();
+        agent.WorkOnSaturday.ShouldBeTrue();
     }
 
     [Test]
@@ -127,7 +127,7 @@ public class WizardAgentSnapshotBuilderTests
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
-        result.ContractDays.Single(d => d.Date == monday).WorksOnDay.Should().BeTrue();
-        result.ContractDays.Single(d => d.Date == sunday).WorksOnDay.Should().BeFalse();
+        result.ContractDays.Single(d => d.Date == monday).WorksOnDay.ShouldBeTrue();
+        result.ContractDays.Single(d => d.Date == sunday).WorksOnDay.ShouldBeFalse();
     }
 }

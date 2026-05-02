@@ -31,7 +31,7 @@ internal class GroupVisibilityServiceTests
         var result = await _groupVisibilityService.IsAdmin();
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _userService.Received(1).IsAdmin();
     }
 
@@ -45,7 +45,7 @@ internal class GroupVisibilityServiceTests
         var result = await _groupVisibilityService.IsAdmin();
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
         await _userService.Received(1).IsAdmin();
     }
 
@@ -60,7 +60,7 @@ internal class GroupVisibilityServiceTests
         var result = await _groupVisibilityService.ReadVisibleRootIdList();
 
         // Assert
-        result.Should().BeEmpty();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -104,9 +104,9 @@ internal class GroupVisibilityServiceTests
         var result = await _groupVisibilityService.ReadVisibleRootIdList();
 
         // Assert
-        result.Should().HaveCount(2);
-        result.Should().Contain(groupId1);
-        result.Should().Contain(groupId2);
+        result.Count().ShouldBe(2);
+        result.ShouldContain(groupId1);
+        result.ShouldContain(groupId2);
     }
 
     [Test]
@@ -120,7 +120,7 @@ internal class GroupVisibilityServiceTests
         var result = await _groupVisibilityService.ReadVisibleRootIdList();
 
         // Assert
-        result.Should().BeEmpty();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -162,10 +162,10 @@ internal class GroupVisibilityServiceTests
         var result = await _groupVisibilityService.ReadAdmins();
 
         // Assert
-        result.Should().HaveCount(2);
-        result.Should().Contain("admin-1");
-        result.Should().Contain("admin-2");
-        result.Should().NotContain("user-1");
+        result.Count().ShouldBe(2);
+        result.ShouldContain("admin-1");
+        result.ShouldContain("admin-2");
+        result.ShouldNotContain("user-1");
     }
 
     [Test]
@@ -236,13 +236,13 @@ internal class GroupVisibilityServiceTests
         var result = await _groupVisibilityService.ReviseAdminVisibility(initialList);
 
         // Assert
-        result.Should().NotBeEmpty();
+        result.ShouldNotBeEmpty();
 
-        result.Should().NotContain(gv => gv.AppUserId == adminUserId && gv.GroupId == groupId1);
+        result.ShouldNotContain(gv => gv.AppUserId == adminUserId && gv.GroupId == groupId1);
 
-        result.Should().Contain(gv => gv.AppUserId == regularUserId && gv.GroupId == groupId2);
+        result.ShouldContain(gv => gv.AppUserId == regularUserId && gv.GroupId == groupId2);
 
-        result.Should().Contain(gv => gv.AppUserId == adminUserId && gv.GroupId == rootGroupId);
+        result.ShouldContain(gv => gv.AppUserId == adminUserId && gv.GroupId == rootGroupId);
     }
 
     [SetUp]

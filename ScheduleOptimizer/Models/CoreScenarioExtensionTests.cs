@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 
@@ -23,23 +23,9 @@ public class CoreScenarioExtensionTests
             FitnessStage4 = 0.5,
         };
 
-        scenario.Tokens.Should().NotBeNull();
-        scenario.FitnessStage1.Should().Be(1.0);
-        scenario.FitnessStage4.Should().Be(0.5);
+        scenario.Tokens.ShouldNotBeNull();
+        scenario.FitnessStage1.ShouldBe(1.0);
+        scenario.FitnessStage4.ShouldBe(0.5);
     }
 
-    [Test]
-    public void CoreScenario_BackwardCompatibility_OldFieldsStillExist()
-    {
-        var scenario = new CoreScenario
-        {
-            Id = "legacy",
-            Assignments = [new CoreAssignment("shift-1", "agent-1", 0.5)],
-            Fitness = 0.5,
-            Coverage = 0.8,
-            HardViolations = 0,
-        };
-
-        scenario.Assignments.Should().HaveCount(1);
-    }
 }

@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Constants;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Services;
@@ -56,8 +56,8 @@ public class KnowledgeRetrievalServiceTests
 
         var result = await _service.RetrieveAsync("open shifts", [], false, 5, CancellationToken.None);
 
-        result.Candidates.Should().ContainSingle();
-        result.Candidates[0].Entry.SourceId.Should().Be("ListOpenShifts");
+        result.Candidates.ShouldHaveSingleItem();
+        result.Candidates[0].Entry.SourceId.ShouldBe("ListOpenShifts");
     }
 
     [Test]
@@ -78,7 +78,7 @@ public class KnowledgeRetrievalServiceTests
 
         var result = await _service.RetrieveAsync("query", [], false, 5, CancellationToken.None);
 
-        result.IsEmpty.Should().BeTrue();
+        result.IsEmpty.ShouldBeTrue();
     }
 
     [Test]
@@ -102,7 +102,7 @@ public class KnowledgeRetrievalServiceTests
     {
         var result = await _service.RetrieveAsync("   ", [], false, 5, CancellationToken.None);
 
-        result.IsEmpty.Should().BeTrue();
+        result.IsEmpty.ShouldBeTrue();
         await _repo.DidNotReceive().FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
@@ -120,8 +120,8 @@ public class KnowledgeRetrievalServiceTests
 
         var result = await _service.RetrieveAsync("query", [], false, 5, CancellationToken.None);
 
-        result.Candidates.Should().HaveCount(2);
-        result.Candidates[0].Entry.SourceId.Should().Be("LowScore");
-        result.Candidates[1].Entry.SourceId.Should().Be("HighScore");
+        result.Candidates.Count().ShouldBe(2);
+        result.Candidates[0].Entry.SourceId.ShouldBe("LowScore");
+        result.Candidates[1].Entry.SourceId.ShouldBe("HighScore");
     }
 }

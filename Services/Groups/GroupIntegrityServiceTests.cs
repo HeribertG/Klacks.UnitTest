@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Infrastructure.Services.Groups;
@@ -99,12 +99,12 @@ public class GroupIntegrityServiceTests
             .OrderBy(g => g.Lft)
             .ToListAsync();
 
-        repairedGroups.Should().HaveCount(3);
+        repairedGroups.Count().ShouldBe(3);
         
         // Root should have left=1 and right should be the highest value
         var repairedRoot = repairedGroups.First(g => g.Id == rootId);
-        repairedRoot.Lft.Should().BeGreaterThan(0);
-        repairedRoot.Rgt.Should().BeGreaterThan(repairedRoot.Lft);
+        repairedRoot.Lft.ShouldBeGreaterThan(0);
+        repairedRoot.Rgt.ShouldBeGreaterThan(repairedRoot.Lft);
     }
 
     [Test]
@@ -134,7 +134,7 @@ public class GroupIntegrityServiceTests
         var fixedGroup = await _context.Group
             .FirstOrDefaultAsync(g => g.Id == orphanedGroupId);
 
-        fixedGroup.Should().NotBeNull();
+        fixedGroup.ShouldNotBeNull();
         // The service should either fix the root reference or handle the orphaned group
         // Exact behavior depends on implementation
     }
@@ -173,7 +173,7 @@ public class GroupIntegrityServiceTests
         var isValid = await _integrityService.ValidateNestedSetIntegrityAsync(rootId);
 
         // Assert
-        isValid.Should().BeTrue();
+        isValid.ShouldBeTrue();
     }
 
     [Test]
@@ -212,7 +212,7 @@ public class GroupIntegrityServiceTests
         // Assert
         // The validation might be more lenient or the test data might not trigger the specific validation rule
         // Let's verify that validation runs without error
-        // isValid.Should().BeFalse(); // Commented out as the validation logic might be different
+        // isValid.ShouldBeFalse(); // Commented out as the validation logic might be different
         // Instead, just verify the method executes
         Assert.Pass("Validation completed without error");
     }
@@ -250,10 +250,10 @@ public class GroupIntegrityServiceTests
         var issues = await _integrityService.FindIntegrityIssuesAsync();
 
         // Assert
-        issues.Should().NotBeNull();
+        issues.ShouldNotBeNull();
         // The specific integrity checks might not detect these as issues
         // Let's just verify the method executes without error
-        // issues.Should().NotBeEmpty(); // Commented out as detection logic may vary
+        // issues.ShouldNotBeEmpty(); // Commented out as detection logic may vary
         Assert.Pass("Integrity check completed without error");
     }
 
@@ -277,7 +277,7 @@ public class GroupIntegrityServiceTests
         var validationErrors = _integrityService.ValidateGroupData(group);
 
         // Assert
-        validationErrors.Should().BeEmpty();
+        validationErrors.ShouldBeEmpty();
     }
 
     [Test]
@@ -299,7 +299,7 @@ public class GroupIntegrityServiceTests
         var validationErrors = _integrityService.ValidateGroupData(group);
 
         // Assert
-        validationErrors.Should().NotBeEmpty();
+        validationErrors.ShouldNotBeEmpty();
     }
 
     [Test]
@@ -325,8 +325,8 @@ public class GroupIntegrityServiceTests
         var orphans = await _integrityService.FindOrphanedGroupsAsync();
 
         // Assert
-        orphans.Should().NotBeNull();
-        orphans.Should().Contain(g => g.Id == orphanId);
+        orphans.ShouldNotBeNull();
+        orphans.ShouldContain(g => g.Id == orphanId);
     }
 
     [Test]
@@ -353,8 +353,8 @@ public class GroupIntegrityServiceTests
         var result = await _integrityService.PerformFullIntegrityCheckAsync();
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeOfType<GroupIntegrityReport>();
-        result.IsIntegrityValid.Should().BeTrue();
+        result.ShouldNotBeNull();
+        result.ShouldBeOfType<GroupIntegrityReport>();
+        result.IsIntegrityValid.ShouldBeTrue();
     }
 }

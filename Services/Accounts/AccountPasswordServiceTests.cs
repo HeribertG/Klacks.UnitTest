@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Accounts;
 using Klacks.Api.Domain.Models.Authentification;
@@ -60,8 +60,8 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeTrue();
     }
 
     [Test]
@@ -78,8 +78,8 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -105,8 +105,8 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -134,8 +134,8 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -155,7 +155,7 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _mockNotificationService.Received(1).SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>());
     }
 
@@ -168,7 +168,7 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
 
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
         await _mockNotificationService.DidNotReceive().SendEmailAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
     }
 
@@ -188,7 +188,7 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.ValidatePasswordResetTokenAsync(token);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -207,7 +207,7 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.ValidatePasswordResetTokenAsync(token);
 
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -235,7 +235,7 @@ public class AccountPasswordServiceTests
 
         var result = await _passwordService.ResetPasswordAsync(resetPasswordResource);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeTrue();
     }
 }

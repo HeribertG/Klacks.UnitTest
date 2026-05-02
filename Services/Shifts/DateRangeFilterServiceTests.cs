@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
 
@@ -52,7 +52,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsActiveShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -67,7 +67,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsActiveShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -82,7 +82,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsActiveShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -97,7 +97,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsActiveShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -112,7 +112,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsFormerShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -127,7 +127,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsFormerShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -142,7 +142,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsFormerShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -157,7 +157,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsFutureShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -172,7 +172,7 @@ public class DateRangeFilterServiceTests
         var result = _service.IsFutureShift(fromDate, untilDate);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -186,11 +186,11 @@ public class DateRangeFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(4); // Active Shift, Active No End, Starts Today, Ends Today
-        shifts.Should().Contain(s => s.Name == "Active Shift");
-        shifts.Should().Contain(s => s.Name == "Active No End");
-        shifts.Should().Contain(s => s.Name == "Starts Today");
-        shifts.Should().Contain(s => s.Name == "Ends Today");
+        shifts.Count().ShouldBe(4); // Active Shift, Active No End, Starts Today, Ends Today
+        shifts.ShouldContain(s => s.Name == "Active Shift");
+        shifts.ShouldContain(s => s.Name == "Active No End");
+        shifts.ShouldContain(s => s.Name == "Starts Today");
+        shifts.ShouldContain(s => s.Name == "Ends Today");
     }
 
     [Test]
@@ -204,8 +204,8 @@ public class DateRangeFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.Should().Contain(s => s.Name == "Former Shift");
+        shifts.Count().ShouldBe(1);
+        shifts.ShouldContain(s => s.Name == "Former Shift");
     }
 
     [Test]
@@ -219,8 +219,8 @@ public class DateRangeFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.Should().Contain(s => s.Name == "Future Shift");
+        shifts.Count().ShouldBe(1);
+        shifts.ShouldContain(s => s.Name == "Future Shift");
     }
 
     [Test]
@@ -234,7 +234,7 @@ public class DateRangeFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(_testShifts.Count);
+        shifts.Count().ShouldBe(_testShifts.Count);
     }
 
     [Test]
@@ -248,7 +248,7 @@ public class DateRangeFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().BeEmpty();
+        shifts.ShouldBeEmpty();
     }
 
     [Test]
@@ -262,7 +262,7 @@ public class DateRangeFilterServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(5); // All except Future Shift (4 active + 1 former)
-        shifts.Should().NotContain(s => s.Name == "Future Shift");
+        shifts.Count().ShouldBe(5); // All except Future Shift (4 active + 1 former)
+        shifts.ShouldNotContain(s => s.Name == "Future Shift");
     }
 }

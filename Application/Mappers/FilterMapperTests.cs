@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Results;
@@ -43,15 +43,15 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.FirstItemOnLastPage.Should().Be(10);
-        result.IsNextPage.Should().BeTrue();
-        result.IsPreviousPage.Should().BeFalse();
-        result.NumberOfItemsPerPage.Should().Be(20);
-        result.OrderBy.Should().Be("name");
-        result.RequiredPage.Should().Be(2);
-        result.SortOrder.Should().Be("asc");
-        result.SearchString.Should().Be("test");
+        result.ShouldNotBeNull();
+        result.FirstItemOnLastPage.ShouldBe(10);
+        result.IsNextPage.ShouldBe(true);
+        result.IsPreviousPage.ShouldBe(false);
+        result.NumberOfItemsPerPage.ShouldBe(20);
+        result.OrderBy.ShouldBe("name");
+        result.RequiredPage.ShouldBe(2);
+        result.SortOrder.ShouldBe("asc");
+        result.SearchString.ShouldBe("test");
     }
 
     [Test]
@@ -64,7 +64,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.Gender.Should().Be(GenderEnum.Male);
+        result.Gender.ShouldBe(GenderEnum.Male);
     }
 
     [Test]
@@ -77,7 +77,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.Gender.Should().Be(GenderEnum.Female);
+        result.Gender.ShouldBe(GenderEnum.Female);
     }
 
     [Test]
@@ -90,7 +90,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.Gender.Should().Be(GenderEnum.LegalEntity);
+        result.Gender.ShouldBe(GenderEnum.LegalEntity);
     }
 
     [Test]
@@ -103,7 +103,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.Gender.Should().BeNull();
+        result.Gender.ShouldBeNull();
     }
 
     [Test]
@@ -116,7 +116,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.AddressType.Should().Be(AddressTypeEnum.Workplace);
+        result.AddressType.ShouldBe(AddressTypeEnum.Workplace);
     }
 
     [Test]
@@ -129,7 +129,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.AddressType.Should().Be(AddressTypeEnum.InvoicingAddress);
+        result.AddressType.ShouldBe(AddressTypeEnum.InvoicingAddress);
     }
 
     [Test]
@@ -149,11 +149,11 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.IsActiveMember.Should().BeTrue();
-        result.IsFormerMember.Should().BeFalse();
-        result.IsFutureMember.Should().BeTrue();
-        result.MembershipStartDate.Should().Be(new DateOnly(2024, 1, 1));
-        result.MembershipEndDate.Should().Be(new DateOnly(2024, 12, 31));
+        result.IsActiveMember.ShouldBe(true);
+        result.IsFormerMember.ShouldBe(false);
+        result.IsFutureMember.ShouldBe(true);
+        result.MembershipStartDate.ShouldBe(new DateOnly(2024, 1, 1));
+        result.MembershipEndDate.ShouldBe(new DateOnly(2024, 12, 31));
     }
 
     [Test]
@@ -166,7 +166,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.MembershipStartDate.Should().BeNull();
+        result.MembershipStartDate.ShouldBeNull();
     }
 
     [Test]
@@ -179,7 +179,7 @@ public class FilterMapperTests
         var result = _mapper.ToClientSearchCriteria(filter);
 
         // Assert
-        result.HasAnnotation.Should().BeTrue();
+        result.HasAnnotation.ShouldBe(true);
     }
 
     #endregion
@@ -208,13 +208,13 @@ public class FilterMapperTests
         var result = _mapper.ToClientFilter(filter);
 
         // Assert
-        result.FilteredCantons.Should().HaveCount(2);
-        result.FilteredCantons.Should().Contain("ZH");
-        result.FilteredCantons.Should().Contain("BE");
-        result.Countries.Should().HaveCount(2);
-        result.Countries.Should().Contain("CH");
-        result.Countries.Should().Contain("DE");
-        result.FilteredStateToken.Should().HaveCount(2);
+        result.FilteredCantons.Count().ShouldBe(2);
+        result.FilteredCantons.ShouldContain("ZH");
+        result.FilteredCantons.ShouldContain("BE");
+        result.Countries.Count().ShouldBe(2);
+        result.Countries.ShouldContain("CH");
+        result.Countries.ShouldContain("DE");
+        result.FilteredStateToken.Count().ShouldBe(2);
     }
 
     #endregion
@@ -237,11 +237,11 @@ public class FilterMapperTests
         var result = _mapper.ToBreakFilter(filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.SearchString.Should().Be("test");
-        result.CurrentYear.Should().Be(2024);
-        result.OrderBy.Should().Be("date");
-        result.SortOrder.Should().Be("desc");
+        result.ShouldNotBeNull();
+        result.SearchString.ShouldBe("test");
+        result.CurrentYear.ShouldBe(2024);
+        result.OrderBy.ShouldBe("date");
+        result.SortOrder.ShouldBe("desc");
     }
 
     #endregion
@@ -264,11 +264,11 @@ public class FilterMapperTests
         var result = _mapper.ToPaginationParams(filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.PageIndex.Should().Be(3);
-        result.PageSize.Should().Be(25);
-        result.SortBy.Should().Be("name");
-        result.IsDescending.Should().BeTrue();
+        result.ShouldNotBeNull();
+        result.PageIndex.ShouldBe(3);
+        result.PageSize.ShouldBe(25);
+        result.SortBy.ShouldBe("name");
+        result.IsDescending.ShouldBeTrue();
     }
 
     [Test]
@@ -285,7 +285,7 @@ public class FilterMapperTests
         var result = _mapper.ToPaginationParams(filter);
 
         // Assert
-        result.PageSize.Should().Be(20);
+        result.PageSize.ShouldBe(20);
     }
 
     [Test]
@@ -301,7 +301,7 @@ public class FilterMapperTests
         var result = _mapper.ToPaginationParams(filter);
 
         // Assert
-        result.IsDescending.Should().BeFalse();
+        result.IsDescending.ShouldBeFalse();
     }
 
     #endregion
@@ -330,11 +330,11 @@ public class FilterMapperTests
         var result = _mapper.ToBaseTruncatedResult(pagedResult);
 
         // Assert
-        result.Should().NotBeNull();
-        result.MaxItems.Should().Be(100);
-        result.MaxPages.Should().Be(10);
-        result.CurrentPage.Should().Be(2);
-        result.FirstItemOnPage.Should().Be(11);
+        result.ShouldNotBeNull();
+        result.MaxItems.ShouldBe(100);
+        result.MaxPages.ShouldBe(10);
+        result.CurrentPage.ShouldBe(2);
+        result.FirstItemOnPage.ShouldBe(11);
     }
 
     [Test]
@@ -353,7 +353,7 @@ public class FilterMapperTests
         var result = _mapper.ToBaseTruncatedResult(pagedResult);
 
         // Assert
-        result.FirstItemOnPage.Should().Be(1);
+        result.FirstItemOnPage.ShouldBe(1);
     }
 
     #endregion

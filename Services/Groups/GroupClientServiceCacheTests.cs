@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Klacks.UnitTest.Services.Groups;
@@ -31,9 +31,9 @@ public class GroupClientServiceCacheTests
 
         var retrieved = _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> cachedValue);
 
-        retrieved.Should().BeTrue();
-        cachedValue.Should().NotBeNull();
-        cachedValue.Should().BeEquivalentTo(groupIds);
+        retrieved.ShouldBeTrue();
+        cachedValue.ShouldNotBeNull();
+        cachedValue.ShouldBeEquivalentTo(groupIds);
     }
 
     [Test]
@@ -43,8 +43,8 @@ public class GroupClientServiceCacheTests
 
         var retrieved = _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> cachedValue);
 
-        retrieved.Should().BeFalse();
-        cachedValue.Should().BeNull();
+        retrieved.ShouldBeFalse();
+        cachedValue.ShouldBeNull();
     }
 
     [Test]
@@ -59,9 +59,9 @@ public class GroupClientServiceCacheTests
 
         var retrieved = _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> cachedValue);
 
-        retrieved.Should().BeTrue();
-        cachedValue.Should().BeEquivalentTo(secondGroupIds);
-        cachedValue.Should().NotBeEquivalentTo(firstGroupIds);
+        retrieved.ShouldBeTrue();
+        cachedValue.ShouldBeEquivalentTo(secondGroupIds);
+        cachedValue.SetEquals(firstGroupIds).ShouldBeFalse();
     }
 
     [Test]
@@ -75,11 +75,11 @@ public class GroupClientServiceCacheTests
         _memoryCache.Set(key1, groupIds1, TimeSpan.FromMinutes(10));
         _memoryCache.Set(key2, groupIds2, TimeSpan.FromMinutes(10));
 
-        _memoryCache.TryGetValue(key1, out HashSet<Guid> cached1).Should().BeTrue();
-        _memoryCache.TryGetValue(key2, out HashSet<Guid> cached2).Should().BeTrue();
+        _memoryCache.TryGetValue(key1, out HashSet<Guid> cached1).ShouldBeTrue();
+        _memoryCache.TryGetValue(key2, out HashSet<Guid> cached2).ShouldBeTrue();
 
-        cached1.Should().BeEquivalentTo(groupIds1);
-        cached2.Should().BeEquivalentTo(groupIds2);
+        cached1.ShouldBeEquivalentTo(groupIds1);
+        cached2.ShouldBeEquivalentTo(groupIds2);
     }
 
     [Test]
@@ -95,8 +95,8 @@ public class GroupClientServiceCacheTests
 
         _memoryCache.Remove(key1);
 
-        _memoryCache.TryGetValue(key1, out HashSet<Guid> _).Should().BeFalse();
-        _memoryCache.TryGetValue(key2, out HashSet<Guid> _).Should().BeTrue();
+        _memoryCache.TryGetValue(key1, out HashSet<Guid> _).ShouldBeFalse();
+        _memoryCache.TryGetValue(key2, out HashSet<Guid> _).ShouldBeTrue();
     }
 
     [Test]
@@ -115,8 +115,8 @@ public class GroupClientServiceCacheTests
             memCache.Compact(1.0);
         }
 
-        _memoryCache.TryGetValue(key1, out HashSet<Guid> _).Should().BeFalse();
-        _memoryCache.TryGetValue(key2, out HashSet<Guid> _).Should().BeFalse();
+        _memoryCache.TryGetValue(key1, out HashSet<Guid> _).ShouldBeFalse();
+        _memoryCache.TryGetValue(key2, out HashSet<Guid> _).ShouldBeFalse();
     }
 
     [Test]
@@ -132,7 +132,7 @@ public class GroupClientServiceCacheTests
         var key1 = $"group_hierarchy_{string.Join("_", sortedIds1)}";
         var key2 = $"group_hierarchy_{string.Join("_", sortedIds2)}";
 
-        key1.Should().Be(key2);
+        key1.ShouldBe(key2);
     }
 
     [Test]
@@ -144,10 +144,10 @@ public class GroupClientServiceCacheTests
 
         _memoryCache.Set(cacheKey, groupIds, expiration);
 
-        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).Should().BeTrue();
+        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).ShouldBeTrue();
 
         Thread.Sleep(150);
 
-        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).Should().BeFalse();
+        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).ShouldBeFalse();
     }
 }

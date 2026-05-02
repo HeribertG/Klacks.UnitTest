@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Domain.Models.Schedules;
@@ -56,11 +56,11 @@ public class ShiftExpensesRepositoryTests
             .Include(s => s.ShiftExpenses)
             .FirstOrDefaultAsync(s => s.Id == shift.Id);
 
-        saved.Should().NotBeNull();
-        saved!.ShiftExpenses.Should().HaveCount(2);
-        saved.ShiftExpenses.Should().Contain(e => e.Description == "Fahrtkosten" && e.Amount == 25.50m);
-        saved.ShiftExpenses.Should().Contain(e => e.Description == "Verpflegung" && e.Taxable == false);
-        saved.ShiftExpenses.Should().OnlyContain(e => e.ShiftId == shift.Id);
+        saved.ShouldNotBeNull();
+        saved!.ShiftExpenses.Count().ShouldBe(2);
+        saved.ShiftExpenses.ShouldContain(e => e.Description == "Fahrtkosten" && e.Amount == 25.50m);
+        saved.ShiftExpenses.ShouldContain(e => e.Description == "Verpflegung" && e.Taxable == false);
+        saved.ShiftExpenses.ShouldAllBe(e => e.ShiftId == shift.Id);
     }
 
     [Test]
@@ -75,8 +75,8 @@ public class ShiftExpensesRepositoryTests
             .Include(s => s.ShiftExpenses)
             .FirstOrDefaultAsync(s => s.Id == shift.Id);
 
-        saved.Should().NotBeNull();
-        saved!.ShiftExpenses.Should().BeEmpty();
+        saved.ShouldNotBeNull();
+        saved!.ShiftExpenses.ShouldBeEmpty();
     }
 
     [Test]
@@ -107,9 +107,9 @@ public class ShiftExpensesRepositoryTests
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == shift.Id);
 
-        saved.Should().NotBeNull();
-        saved!.ShiftExpenses.Should().HaveCount(2);
-        saved.ShiftExpenses.Should().Contain(e => e.Description == "Parkgebühr");
+        saved.ShouldNotBeNull();
+        saved!.ShiftExpenses.Count().ShouldBe(2);
+        saved.ShiftExpenses.ShouldContain(e => e.Description == "Parkgebühr");
     }
 
     [Test]
@@ -140,9 +140,9 @@ public class ShiftExpensesRepositoryTests
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == shift.Id);
 
-        saved.Should().NotBeNull();
-        saved!.ShiftExpenses.Should().HaveCount(1);
-        saved.ShiftExpenses[0].Description.Should().Be("Fahrtkosten");
+        saved.ShouldNotBeNull();
+        saved!.ShiftExpenses.Count().ShouldBe(1);
+        saved.ShiftExpenses[0].Description.ShouldBe("Fahrtkosten");
     }
 
     [Test]
@@ -172,9 +172,9 @@ public class ShiftExpensesRepositoryTests
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == shift.Id);
 
-        saved.Should().NotBeNull();
-        saved!.ShiftExpenses.Should().HaveCount(1);
-        saved.ShiftExpenses[0].Amount.Should().Be(30.00m);
+        saved.ShouldNotBeNull();
+        saved!.ShiftExpenses.Count().ShouldBe(1);
+        saved.ShiftExpenses[0].Amount.ShouldBe(30.00m);
     }
 
     [Test]
@@ -192,9 +192,9 @@ public class ShiftExpensesRepositoryTests
 
         var loaded = await _repository.Get(shift.Id);
 
-        loaded.Should().NotBeNull();
-        loaded!.ShiftExpenses.Should().HaveCount(1);
-        loaded.ShiftExpenses[0].Description.Should().Be("Fahrtkosten");
+        loaded.ShouldNotBeNull();
+        loaded!.ShiftExpenses.Count().ShouldBe(1);
+        loaded.ShiftExpenses[0].Description.ShouldBe("Fahrtkosten");
     }
 
     private static Shift CreateShift()

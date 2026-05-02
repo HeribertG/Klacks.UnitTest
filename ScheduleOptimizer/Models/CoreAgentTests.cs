@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 
@@ -23,12 +23,12 @@ public class CoreAgentTests
             MaxWeeklyHours: 50,
             MaxOptimalGap: 2);
 
-        agent.FullTime.Should().Be(0);
-        agent.MaximumHours.Should().Be(0);
-        agent.MinimumHours.Should().Be(0);
-        agent.PerformsShiftWork.Should().BeTrue();
-        agent.WorkOnMonday.Should().BeTrue();
-        agent.WorkOnSunday.Should().BeFalse();
+        agent.FullTime.ShouldBe(0);
+        agent.MaximumHours.ShouldBe(0);
+        agent.MinimumHours.ShouldBe(0);
+        agent.PerformsShiftWork.ShouldBeTrue();
+        agent.WorkOnMonday.ShouldBeTrue();
+        agent.WorkOnSunday.ShouldBeFalse();
     }
 
     [Test]
@@ -58,7 +58,7 @@ public class CoreAgentTests
             WorkOnSunday = false,
         };
 
-        agent.FullTime.Should().Be(40);
-        agent.PerformsShiftWork.Should().BeFalse();
+        agent.FullTime.ShouldBe(40);
+        agent.PerformsShiftWork.ShouldBeFalse();
     }
 }

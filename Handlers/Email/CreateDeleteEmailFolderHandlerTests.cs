@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands.Email;
 using Klacks.Api.Application.Handlers.Email;
 using Klacks.Api.Domain.Constants;
@@ -42,7 +42,7 @@ public class CreateEmailFolderCommandHandlerTests
         var result = await _handler.Handle(
             new CreateEmailFolderCommand("Test", "TestFolder"), CancellationToken.None);
 
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _imapService.Received(1).CreateFolderOnImapAsync("TestFolder", Arg.Any<CancellationToken>());
         await _folderRepository.Received(1).AddAsync(Arg.Any<EmailFolder>());
         await _unitOfWork.Received(1).CompleteAsync();
@@ -65,7 +65,7 @@ public class CreateEmailFolderCommandHandlerTests
         await _handler.Handle(
             new CreateEmailFolderCommand("My Folder", "MyFolder"), CancellationToken.None);
 
-        callOrder.Should().ContainInOrder("imap", "db");
+        callOrder.ShouldBe(new[] {"imap", "db"});
     }
 
     [Test]
@@ -76,7 +76,7 @@ public class CreateEmailFolderCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new CreateEmailFolderCommand("Existing", "Existing"), CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>();
+        await act.ShouldThrowAsync<InvalidRequestException>();
         await _imapService.DidNotReceive().CreateFolderOnImapAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _folderRepository.DidNotReceive().AddAsync(Arg.Any<EmailFolder>());
     }
@@ -94,9 +94,9 @@ public class CreateEmailFolderCommandHandlerTests
         await _handler.Handle(
             new CreateEmailFolderCommand("Custom", "Custom"), CancellationToken.None);
 
-        capturedFolder.Should().NotBeNull();
-        capturedFolder!.IsSystem.Should().BeFalse();
-        capturedFolder.ImapFolderName.Should().Be("Custom");
+        capturedFolder.ShouldNotBeNull();
+        capturedFolder!.IsSystem.ShouldBeFalse();
+        capturedFolder.ImapFolderName.ShouldBe("Custom");
     }
 }
 
@@ -139,7 +139,7 @@ public class DeleteEmailFolderCommandHandlerTests
         var result = await _handler.Handle(
             new DeleteEmailFolderCommand(folderId), CancellationToken.None);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _imapService.Received(1).DeleteFolderOnImapAsync("Custom", Arg.Any<CancellationToken>());
         await _folderRepository.Received(1).DeleteAsync(folderId);
         await _unitOfWork.Received(1).CompleteAsync();
@@ -169,7 +169,7 @@ public class DeleteEmailFolderCommandHandlerTests
 
         await _handler.Handle(new DeleteEmailFolderCommand(folderId), CancellationToken.None);
 
-        callOrder.Should().ContainInOrder("moveEmails", "imapDelete");
+        callOrder.ShouldBe(new[] {"moveEmails", "imapDelete"});
         await _emailRepository.Received(1).BulkMoveFolderAsync("Custom", "Trash");
     }
 
@@ -189,7 +189,7 @@ public class DeleteEmailFolderCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new DeleteEmailFolderCommand(folderId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>();
+        await act.ShouldThrowAsync<InvalidRequestException>();
         await _imapService.DidNotReceive().DeleteFolderOnImapAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _folderRepository.DidNotReceive().DeleteAsync(Arg.Any<Guid>());
     }
@@ -203,7 +203,7 @@ public class DeleteEmailFolderCommandHandlerTests
         var result = await _handler.Handle(
             new DeleteEmailFolderCommand(folderId), CancellationToken.None);
 
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
         await _imapService.DidNotReceive().DeleteFolderOnImapAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }

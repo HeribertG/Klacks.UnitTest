@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
@@ -127,18 +127,18 @@ public class WizardHardConstraintBuilderTests
         var result = await _sut.BuildAsync(
             new[] { agentA, agentB }, from, until, scenarioToken, CancellationToken.None);
 
-        result.ScheduleCommands.Should().HaveCount(1);
-        result.ScheduleCommands[0].Keyword.Should().Be(ScheduleCommandKeyword.Free);
+        result.ScheduleCommands.Count().ShouldBe(1);
+        result.ScheduleCommands[0].Keyword.ShouldBe(ScheduleCommandKeyword.Free);
 
-        result.ShiftPreferences.Should().HaveCount(2);
-        result.ShiftPreferences.Should().ContainSingle(p => p.Kind == ShiftPreferenceKind.Preferred);
-        result.ShiftPreferences.Should().ContainSingle(p => p.Kind == ShiftPreferenceKind.Blacklist);
+        result.ShiftPreferences.Count().ShouldBe(2);
+        result.ShiftPreferences.Count(p => p.Kind == ShiftPreferenceKind.Preferred).ShouldBe(1);
+        result.ShiftPreferences.Count(p => p.Kind == ShiftPreferenceKind.Blacklist).ShouldBe(1);
 
-        result.BreakBlockers.Should().HaveCount(1);
-        result.BreakBlockers[0].Reason.Should().Be("Urlaub");
+        result.BreakBlockers.Count().ShouldBe(1);
+        result.BreakBlockers[0].Reason.ShouldBe("Urlaub");
 
-        result.LockedWorks.Should().HaveCount(1);
-        result.LockedWorks[0].TotalHours.Should().Be(8m);
+        result.LockedWorks.Count().ShouldBe(1);
+        result.LockedWorks[0].TotalHours.ShouldBe(8m);
     }
 
     [Test]
@@ -169,7 +169,7 @@ public class WizardHardConstraintBuilderTests
         var result = await _sut.BuildAsync(
             new[] { agent }, from, until, analyseToken: null, CancellationToken.None);
 
-        result.ScheduleCommands.Should().HaveCount(1);
-        result.ScheduleCommands[0].Keyword.Should().Be(ScheduleCommandKeyword.Free);
+        result.ScheduleCommands.Count().ShouldBe(1);
+        result.ScheduleCommands[0].Keyword.ShouldBe(ScheduleCommandKeyword.Free);
     }
 }

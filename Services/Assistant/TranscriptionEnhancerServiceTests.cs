@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for TranscriptionEnhancerService using ILLMProviderFactory and IDictionaryService.
@@ -54,7 +54,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        result.Should().Be(rawText);
+        result.ShouldBe(rawText);
     }
 
     [Test]
@@ -66,7 +66,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        result.Should().Be(rawText);
+        result.ShouldBe(rawText);
     }
 
     [Test]
@@ -79,7 +79,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        result.Should().Be(rawText);
+        result.ShouldBe(rawText);
     }
 
     [Test]
@@ -96,7 +96,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        result.Should().Be(rawText);
+        result.ShouldBe(rawText);
     }
 
     [Test]
@@ -112,7 +112,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        result.Should().Be(rawText);
+        result.ShouldBe(rawText);
     }
 
     [Test]
@@ -129,7 +129,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        result.Should().Be(enhancedText);
+        result.ShouldBe(enhancedText);
     }
 
     [Test]
@@ -147,8 +147,8 @@ public class TranscriptionEnhancerServiceTests
 
         await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        capturedRequest.Should().NotBeNull();
-        capturedRequest!.SystemPrompt.Should().Contain(dictionaryContext);
+        capturedRequest.ShouldNotBeNull();
+        capturedRequest!.SystemPrompt.ShouldContain(dictionaryContext);
     }
 
     [Test]
@@ -222,8 +222,8 @@ public class TranscriptionEnhancerServiceTests
 
         await _service.EnhanceTranscriptionAsync(rawText, "de");
 
-        capturedRequest.Should().NotBeNull();
-        capturedRequest!.Message.Should().Be(rawText);
+        capturedRequest.ShouldNotBeNull();
+        capturedRequest!.Message.ShouldBe(rawText);
     }
 
     [Test]
@@ -240,7 +240,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
 
-        result.Should().Be(paddedText.Trim());
+        result.ShouldBe(paddedText.Trim());
     }
 
     [Test]
@@ -257,7 +257,7 @@ public class TranscriptionEnhancerServiceTests
 
         var result = await _service.EnhanceTranscriptionAsync(rawText, "de", overrideModelId);
 
-        result.Should().Be("Enhanced");
+        result.ShouldBe("Enhanced");
         await _mockProviderFactory.Received(1).GetProviderForModelAsync(overrideModelId);
         await _mockSettingsRepository.DidNotReceive().GetSetting(SettingsConstants.ASSISTANT_TRANSCRIPTION_MODEL);
     }

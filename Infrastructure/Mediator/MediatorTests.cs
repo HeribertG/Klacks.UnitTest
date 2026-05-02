@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -36,7 +36,7 @@ public class MediatorTests
         var result = await _mediator.Send(request);
 
         // Assert
-        result.Should().Be("Handled: TestValue");
+        result.ShouldBe("Handled: TestValue");
     }
 
     [Test]
@@ -49,7 +49,7 @@ public class MediatorTests
         var result = await _mediator.Send(request);
 
         // Assert
-        result.Should().Be(Unit.Value);
+        result.ShouldBe(Unit.Value);
     }
 
     [Test]
@@ -62,10 +62,10 @@ public class MediatorTests
         var result = await _mediator.Send(request);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(42);
-        result.Name.Should().Be("Test");
-        result.ProcessedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(1));
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(42);
+        result.Name.ShouldBe("Test");
+        result.ProcessedAt.ShouldBe(DateTime.UtcNow, TimeSpan.FromSeconds(1));
     }
 
     [Test]
@@ -82,8 +82,7 @@ public class MediatorTests
         Func<Task> act = async () => await mediator.Send(request);
 
         // Assert
-        act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*No handler registered*");
+        Should.ThrowAsync<InvalidOperationException>(act).Result.Message.ShouldContain("No handler registered");
     }
 
     [Test]
@@ -96,7 +95,7 @@ public class MediatorTests
         Func<Task> act = async () => await _mediator.Send(request!);
 
         // Assert
-        act.Should().ThrowAsync<ArgumentNullException>();
+        act.ShouldThrowAsync<ArgumentNullException>();
     }
 
     [Test]
@@ -111,7 +110,7 @@ public class MediatorTests
         var result = await _mediator.Send(request, token);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -126,7 +125,7 @@ public class MediatorTests
         var result = await _mediator.Send(request, cts.Token);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -141,10 +140,10 @@ public class MediatorTests
         var results = await Task.WhenAll(requests.Select(r => _mediator.Send(r)));
 
         // Assert
-        results.Should().HaveCount(10);
+        results.Count().ShouldBe(10);
         for (int i = 0; i < 10; i++)
         {
-            results[i].Should().Be($"Handled: Value{i + 1}");
+            results[i].ShouldBe($"Handled: Value{i + 1}");
         }
     }
 
@@ -158,9 +157,9 @@ public class MediatorTests
         Func<Task> act = async () => await _mediator.Send(request);
 
         // Assert
-        await act.Should().ThrowAsync<Exception>()
-            .Where(e => e.Message.Contains("Handler intentionally failed") ||
-                        (e.InnerException != null && e.InnerException.Message.Contains("Handler intentionally failed")));
+        var ex = await Should.ThrowAsync<Exception>(act);
+        (ex.Message.Contains("Handler intentionally failed") ||
+                    (ex.InnerException != null && ex.InnerException.Message.Contains("Handler intentionally failed"))).ShouldBeTrue();
     }
 
     [Test]
@@ -175,8 +174,8 @@ public class MediatorTests
         stopwatch.Stop();
 
         // Assert
-        result.Should().Be("Async completed after 100ms");
-        stopwatch.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(90);
+        result.ShouldBe("Async completed after 100ms");
+        stopwatch.ElapsedMilliseconds.ShouldBeGreaterThanOrEqualTo(90);
     }
 }
 

@@ -1,10 +1,10 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for TimeBlockScheduler: midnight-crossing blocks, effective budget, arrival times, and block placement.
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Services.RouteOptimization;
 
 namespace Klacks.UnitTest.Services.RouteOptimization;
@@ -78,7 +78,7 @@ public class TimeBlockSchedulerTests
         var result = TimeBlockScheduler.SkipOverUnmovableBlocks(
             TimeOnly.Parse("12:30").ToTimeSpan().TotalSeconds, blocks);
 
-        result.Should().Be(TimeOnly.Parse("13:00").ToTimeSpan().TotalSeconds);
+        result.ShouldBe(TimeOnly.Parse("13:00").ToTimeSpan().TotalSeconds);
     }
 
     [Test]
@@ -90,7 +90,7 @@ public class TimeBlockSchedulerTests
 
         var result = TimeBlockScheduler.SkipOverUnmovableBlocks(timeBefore, blocks);
 
-        result.Should().Be(timeBefore);
+        result.ShouldBe(timeBefore);
     }
 
     [Test]
@@ -102,7 +102,7 @@ public class TimeBlockSchedulerTests
 
         var result = TimeBlockScheduler.SkipOverUnmovableBlocks(timeAfter, blocks);
 
-        result.Should().Be(timeAfter);
+        result.ShouldBe(timeAfter);
     }
 
     [Test]
@@ -115,7 +115,7 @@ public class TimeBlockSchedulerTests
         var result = TimeBlockScheduler.SkipOverUnmovableBlocks(timeInsideBlock, blocks);
 
         var expectedEnd = TimeOnly.Parse("01:00").ToTimeSpan().TotalSeconds + SecondsPerDay;
-        result.Should().Be(expectedEnd);
+        result.ShouldBe(expectedEnd);
     }
 
     [Test]
@@ -128,7 +128,7 @@ public class TimeBlockSchedulerTests
         var result = TimeBlockScheduler.SkipOverUnmovableBlocks(timeAtStart, blocks);
 
         var expectedEnd = TimeOnly.Parse("01:00").ToTimeSpan().TotalSeconds + SecondsPerDay;
-        result.Should().Be(expectedEnd);
+        result.ShouldBe(expectedEnd);
     }
 
     [Test]
@@ -140,7 +140,7 @@ public class TimeBlockSchedulerTests
 
         var result = TimeBlockScheduler.SkipOverUnmovableBlocks(timeBefore, blocks);
 
-        result.Should().Be(timeBefore);
+        result.ShouldBe(timeBefore);
     }
 
     [Test]
@@ -152,12 +152,12 @@ public class TimeBlockSchedulerTests
 
         var timeInNormal = TimeOnly.Parse("12:15").ToTimeSpan().TotalSeconds;
         var resultNormal = TimeBlockScheduler.SkipOverUnmovableBlocks(timeInNormal, blocks);
-        resultNormal.Should().Be(TimeOnly.Parse("12:30").ToTimeSpan().TotalSeconds);
+        resultNormal.ShouldBe(TimeOnly.Parse("12:30").ToTimeSpan().TotalSeconds);
 
         var timeInMidnight = TimeOnly.Parse("23:45").ToTimeSpan().TotalSeconds;
         var resultMidnight = TimeBlockScheduler.SkipOverUnmovableBlocks(timeInMidnight, blocks);
         var expectedMidnightEnd = TimeOnly.Parse("00:30").ToTimeSpan().TotalSeconds + SecondsPerDay;
-        resultMidnight.Should().Be(expectedMidnightEnd);
+        resultMidnight.ShouldBe(expectedMidnightEnd);
     }
 
     [Test]
@@ -167,7 +167,7 @@ public class TimeBlockSchedulerTests
 
         var result = TimeBlockScheduler.SkipOverUnmovableBlocks(time, new List<TimeBlock>());
 
-        result.Should().Be(time);
+        result.ShouldBe(time);
     }
 
     #endregion
@@ -186,7 +186,7 @@ public class TimeBlockSchedulerTests
         var budget = TimeSpan.FromHours(8).TotalSeconds;
         var result = TimeBlockScheduler.CalculateEffectiveBudget(budget, blocks);
 
-        result.Should().Be(budget - TimeSpan.FromMinutes(90).TotalSeconds);
+        result.ShouldBe(budget - TimeSpan.FromMinutes(90).TotalSeconds);
     }
 
     [Test]
@@ -197,7 +197,7 @@ public class TimeBlockSchedulerTests
         var budget = TimeSpan.FromHours(10).TotalSeconds;
         var result = TimeBlockScheduler.CalculateEffectiveBudget(budget, new List<TimeBlock> { midnightBlock });
 
-        result.Should().Be(budget - TimeSpan.FromHours(2).TotalSeconds);
+        result.ShouldBe(budget - TimeSpan.FromHours(2).TotalSeconds);
     }
 
     [Test]
@@ -208,7 +208,7 @@ public class TimeBlockSchedulerTests
 
         var result = TimeBlockScheduler.CalculateEffectiveBudget(budget, new List<TimeBlock> { block });
 
-        result.Should().Be(0);
+        result.ShouldBe(0);
     }
 
     #endregion
@@ -227,9 +227,9 @@ public class TimeBlockSchedulerTests
             dm, 0,
             TimeOnly.Parse("08:00").ToTimeSpan().TotalSeconds);
 
-        placed.Should().HaveCount(1);
-        placed[0].StartTimeSeconds.Should().Be(TimeOnly.Parse("12:00").ToTimeSpan().TotalSeconds);
-        placed[0].EndTimeSeconds.Should().Be(TimeOnly.Parse("13:00").ToTimeSpan().TotalSeconds);
+        placed.Count().ShouldBe(1);
+        placed[0].StartTimeSeconds.ShouldBe(TimeOnly.Parse("12:00").ToTimeSpan().TotalSeconds);
+        placed[0].EndTimeSeconds.ShouldBe(TimeOnly.Parse("13:00").ToTimeSpan().TotalSeconds);
     }
 
     [Test]
@@ -244,10 +244,10 @@ public class TimeBlockSchedulerTests
             dm, 0,
             TimeOnly.Parse("22:00").ToTimeSpan().TotalSeconds);
 
-        placed.Should().HaveCount(1);
-        placed[0].StartTimeSeconds.Should().Be(TimeOnly.Parse("23:00").ToTimeSpan().TotalSeconds);
-        placed[0].EndTimeSeconds.Should().Be(TimeOnly.Parse("01:00").ToTimeSpan().TotalSeconds + SecondsPerDay);
-        placed[0].EndTimeSeconds.Should().BeGreaterThan(placed[0].StartTimeSeconds);
+        placed.Count().ShouldBe(1);
+        placed[0].StartTimeSeconds.ShouldBe(TimeOnly.Parse("23:00").ToTimeSpan().TotalSeconds);
+        placed[0].EndTimeSeconds.ShouldBe(TimeOnly.Parse("01:00").ToTimeSpan().TotalSeconds + SecondsPerDay);
+        placed[0].EndTimeSeconds.ShouldBeGreaterThan(placed[0].StartTimeSeconds);
     }
 
     [Test]
@@ -263,7 +263,7 @@ public class TimeBlockSchedulerTests
             TimeOnly.Parse("22:00").ToTimeSpan().TotalSeconds);
 
         var duration = placed[0].EndTimeSeconds - placed[0].StartTimeSeconds;
-        duration.Should().Be(TimeSpan.FromHours(1).TotalSeconds);
+        duration.ShouldBe(TimeSpan.FromHours(1).TotalSeconds);
     }
 
     #endregion
@@ -281,8 +281,8 @@ public class TimeBlockSchedulerTests
             dm, new List<int> { 1, 2 }, 0, containerStart,
             new List<TimeBlock> { block });
 
-        arrivals.Should().HaveCount(2);
-        arrivals[0].Should().Be(containerStart + 300);
+        arrivals.Count().ShouldBe(2);
+        arrivals[0].ShouldBe(containerStart + 300);
     }
 
     [Test]
@@ -296,16 +296,16 @@ public class TimeBlockSchedulerTests
             dm, new List<int> { 1, 2 }, 0, containerStart,
             new List<TimeBlock> { block });
 
-        arrivals.Should().HaveCount(2);
+        arrivals.Count().ShouldBe(2);
 
         var firstArrival = arrivals[0];
-        firstArrival.Should().Be(containerStart + 300);
+        firstArrival.ShouldBe(containerStart + 300);
 
         var afterFirstStop = firstArrival + dm.Locations[1].TotalOnSiteTime.TotalSeconds;
         var midnightBlockEnd = TimeOnly.Parse("01:00").ToTimeSpan().TotalSeconds + SecondsPerDay;
         if (afterFirstStop >= TimeOnly.Parse("23:00").ToTimeSpan().TotalSeconds)
         {
-            arrivals[1].Should().BeGreaterThanOrEqualTo(midnightBlockEnd + 300);
+            arrivals[1].ShouldBeGreaterThanOrEqualTo(midnightBlockEnd + 300);
         }
     }
 
@@ -319,9 +319,9 @@ public class TimeBlockSchedulerTests
             dm, new List<int> { 1, 2 }, 0, containerStart,
             new List<TimeBlock>());
 
-        arrivals.Should().HaveCount(2);
-        arrivals[0].Should().Be(containerStart + 600);
-        arrivals[1].Should().Be(containerStart + 600 + dm.Locations[1].TotalOnSiteTime.TotalSeconds + 600);
+        arrivals.Count().ShouldBe(2);
+        arrivals[0].ShouldBe(containerStart + 600);
+        arrivals[1].ShouldBe(containerStart + 600 + dm.Locations[1].TotalOnSiteTime.TotalSeconds + 600);
     }
 
     #endregion

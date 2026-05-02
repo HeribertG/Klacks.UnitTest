@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests fuer AddressesController: Adress-Validierung via Geocoding, Missing-Fields-Pruefung
@@ -70,14 +70,14 @@ public class AddressesControllerTests
         var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.ShouldBeOfType<OkObjectResult>();
         var okResult = result.Result as OkObjectResult;
         var response = okResult!.Value as AddressValidationResponse;
-        response.Should().NotBeNull();
-        response!.IsValid.Should().BeTrue();
-        response.MatchType.Should().Be("exact");
-        response.Latitude.Should().Be(47.3769);
-        response.Longitude.Should().Be(8.5417);
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeTrue();
+        response.MatchType.ShouldBe("exact");
+        response.Latitude.ShouldBe(47.3769);
+        response.Longitude.ShouldBe(8.5417);
     }
 
     [Test]
@@ -114,13 +114,13 @@ public class AddressesControllerTests
         var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.ShouldBeOfType<OkObjectResult>();
         var okResult = result.Result as OkObjectResult;
         var response = okResult!.Value as AddressValidationResponse;
-        response.Should().NotBeNull();
-        response!.IsValid.Should().BeFalse();
-        response.MatchType.Should().Be("not_found");
-        response.Suggestions.Should().HaveCount(2);
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeFalse();
+        response.MatchType.ShouldBe("not_found");
+        response.Suggestions.Count().ShouldBe(2);
     }
 
     [Test]
@@ -139,12 +139,12 @@ public class AddressesControllerTests
         var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.ShouldBeOfType<OkObjectResult>();
         var okResult = result.Result as OkObjectResult;
         var response = okResult!.Value as AddressValidationResponse;
-        response.Should().NotBeNull();
-        response!.IsValid.Should().BeFalse();
-        response.MatchType.Should().Be("missing_fields");
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeFalse();
+        response.MatchType.ShouldBe("missing_fields");
     }
 
     [Test]
@@ -163,12 +163,12 @@ public class AddressesControllerTests
         var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.ShouldBeOfType<OkObjectResult>();
         var okResult = result.Result as OkObjectResult;
         var response = okResult!.Value as AddressValidationResponse;
-        response.Should().NotBeNull();
-        response!.IsValid.Should().BeFalse();
-        response.MatchType.Should().Be("missing_fields");
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeFalse();
+        response.MatchType.ShouldBe("missing_fields");
     }
 
     [Test]
@@ -221,12 +221,12 @@ public class AddressesControllerTests
         var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
 
         // Assert
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.ShouldBeOfType<OkObjectResult>();
         var okResult = result.Result as OkObjectResult;
         var response = okResult!.Value as AddressValidationResponse;
-        response.Should().NotBeNull();
-        response!.IsValid.Should().BeTrue();
-        response.MatchType.Should().Be("validation_error");
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeTrue();
+        response.MatchType.ShouldBe("validation_error");
     }
 
     [Test]
@@ -257,7 +257,7 @@ public class AddressesControllerTests
         var result = await _controller.Post(resource);
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        result.Result.ShouldBeOfType<BadRequestObjectResult>();
     }
 
     [Test]
@@ -289,7 +289,7 @@ public class AddressesControllerTests
         var result = await _controller.Put(resource);
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        result.Result.ShouldBeOfType<BadRequestObjectResult>();
     }
 
     [Test]
@@ -308,7 +308,7 @@ public class AddressesControllerTests
         var result = await _controller.Post(resource);
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        result.Result.ShouldBeOfType<BadRequestObjectResult>();
     }
 
     [Test]
@@ -328,6 +328,6 @@ public class AddressesControllerTests
         var result = await _controller.Put(resource);
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        result.Result.ShouldBeOfType<BadRequestObjectResult>();
     }
 }

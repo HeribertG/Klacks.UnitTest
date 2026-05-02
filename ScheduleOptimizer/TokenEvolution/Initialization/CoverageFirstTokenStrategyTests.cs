@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 using NUnit.Framework;
@@ -56,9 +56,9 @@ public class CoverageFirstTokenStrategyTests
 
         var scenario = new CoverageFirstTokenStrategy().BuildScenario(context, new Random(0));
 
-        scenario.Tokens.Should().HaveCount(3);
-        scenario.Tokens.Select(t => t.ShiftRefId).Distinct().Should().HaveCount(3);
-        scenario.Tokens.Select(t => t.AgentId).Distinct().Should().HaveCount(3);
+        scenario.Tokens.Count().ShouldBe(3);
+        scenario.Tokens.Select(t => t.ShiftRefId).Distinct().Count().ShouldBe(3);
+        scenario.Tokens.Select(t => t.AgentId).Distinct().Count().ShouldBe(3);
     }
 
     [Test]
@@ -80,7 +80,7 @@ public class CoverageFirstTokenStrategyTests
         var scenario = new CoverageFirstTokenStrategy().BuildScenario(context, new Random(0));
 
         scenario.Tokens.GroupBy(t => (t.AgentId, t.Date))
-            .Should().OnlyContain(g => g.Count() == 1);
+            .ShouldAllBe(g => g.Count() == 1);
     }
 
     [Test]
@@ -98,7 +98,7 @@ public class CoverageFirstTokenStrategyTests
 
         var scenario = new CoverageFirstTokenStrategy().BuildScenario(context, new Random(0));
 
-        scenario.Tokens.Should().BeEmpty();
+        scenario.Tokens.ShouldBeEmpty();
     }
 
     [Test]
@@ -122,7 +122,7 @@ public class CoverageFirstTokenStrategyTests
 
         var scenario = new CoverageFirstTokenStrategy().BuildScenario(context, new Random(0));
 
-        scenario.Tokens.Should().HaveCount(3);
-        scenario.Tokens.Select(t => t.Date).Distinct().Should().HaveCount(3);
+        scenario.Tokens.Count().ShouldBe(3);
+        scenario.Tokens.Select(t => t.Date).Distinct().Count().ShouldBe(3);
     }
 }

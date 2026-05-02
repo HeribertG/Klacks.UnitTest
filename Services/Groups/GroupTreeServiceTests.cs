@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Application.DTOs.Filter;
@@ -409,11 +409,11 @@ public class GroupTreeServiceTests
 
         // Assert
         var addedGroup = await _context.Group.FindAsync(newRoot.Id);
-        addedGroup.Should().NotBeNull();
-        addedGroup.Lft.Should().Be(13); // After existing max Rgt (12) + 1
-        addedGroup.Rgt.Should().Be(14);
-        addedGroup.Parent.Should().BeNull();
-        addedGroup.Root.Should().BeNull();
+        addedGroup.ShouldNotBeNull();
+        addedGroup.Lft.ShouldBe(13); // After existing max Rgt (12) + 1
+        addedGroup.Rgt.ShouldBe(14);
+        addedGroup.Parent.ShouldBeNull();
+        addedGroup.Root.ShouldBeNull();
     }
 
 
@@ -434,9 +434,7 @@ public class GroupTreeServiceTests
         };
 
         // Act & Assert
-        await FluentActions.Invoking(() => _groupRepository.Add(newChild))
-            .Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"Parent group with ID {invalidParentId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(() => _groupRepository.Add(newChild))).Message.ShouldBe($"Parent group with ID {invalidParentId} not found");
     }
 
 
@@ -453,9 +451,7 @@ public class GroupTreeServiceTests
         var invalidParentId = Guid.NewGuid();
 
         // Act & Assert
-        await FluentActions.Invoking(() => _groupRepository.MoveNode(child1.Id, invalidParentId))
-            .Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"New parent group with ID {invalidParentId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(() => _groupRepository.MoveNode(child1.Id, invalidParentId))).Message.ShouldBe($"New parent group with ID {invalidParentId} not found");
     }
 
     [Test]
@@ -466,9 +462,7 @@ public class GroupTreeServiceTests
         var grandchild1 = _testGroups.First(g => g.Name == "Grandchild Group 1");
 
         // Act & Assert - Trying to move parent to be child of its own descendant
-        await FluentActions.Invoking(() => _groupRepository.MoveNode(child1.Id, grandchild1.Id))
-            .Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("The new parent cannot be a descendant of the groupEntity to be moved");
+        (await Should.ThrowAsync<InvalidOperationException>(() => _groupRepository.MoveNode(child1.Id, grandchild1.Id))).Message.ShouldBe("The new parent cannot be a descendant of the groupEntity to be moved");
     }
 
     [Test]
@@ -479,9 +473,7 @@ public class GroupTreeServiceTests
         var child2 = _testGroups.First(g => g.Name == "Child Group 2");
 
         // Act & Assert
-        await FluentActions.Invoking(() => _groupRepository.MoveNode(invalidNodeId, child2.Id))
-            .Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"Group to be moved with ID {invalidNodeId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(() => _groupRepository.MoveNode(invalidNodeId, child2.Id))).Message.ShouldBe($"Group to be moved with ID {invalidNodeId} not found");
     }
 
 
@@ -530,14 +522,14 @@ public class GroupTreeServiceTests
         var repairedChild1 = await _context.Group.FindAsync(originalChild1.Id);
         var repairedGrandchild1 = await _context.Group.FindAsync(originalGrandchild1.Id);
 
-        repairedChild1.Parent.Should().Be(originalRoot.Id);
-        repairedGrandchild1.Parent.Should().Be(originalChild1.Id);
+        repairedChild1.Parent.ShouldBe(originalRoot.Id);
+        repairedGrandchild1.Parent.ShouldBe(originalChild1.Id);
 
         // Nested set values should be consistent
-        repairedRoot.Lft.Should().BeLessThan(repairedChild1.Lft);
-        repairedChild1.Lft.Should().BeLessThan(repairedGrandchild1.Lft);
-        repairedGrandchild1.Rgt.Should().BeLessThan(repairedChild1.Rgt);
-        repairedChild1.Rgt.Should().BeLessThan(repairedRoot.Rgt);
+        repairedRoot.Lft.ShouldBeLessThan(repairedChild1.Lft);
+        repairedChild1.Lft.ShouldBeLessThan(repairedGrandchild1.Lft);
+        repairedGrandchild1.Rgt.ShouldBeLessThan(repairedChild1.Rgt);
+        repairedChild1.Rgt.ShouldBeLessThan(repairedRoot.Rgt);
     }
 
     [Test]
@@ -566,7 +558,7 @@ public class GroupTreeServiceTests
         // Assert
         var fixedGroup = await _context.Group.FindAsync(orphanedGroup.Id);
         var expectedRoot = _testGroups.First(g => g.Name == "Root Group");
-        fixedGroup.Root.Should().Be(expectedRoot.Id);
+        fixedGroup.Root.ShouldBe(expectedRoot.Id);
     }
 
     [Test]
@@ -579,10 +571,10 @@ public class GroupTreeServiceTests
         var children = await _groupRepository.GetChildren(rootGroup.Id);
 
         // Assert
-        children.Should().HaveCount(2);
-        children.Should().Contain(g => g.Name == "Child Group 1");
-        children.Should().Contain(g => g.Name == "Child Group 2");
-        children.Should().NotContain(g => g.Name == "Grandchild Group 1"); // Should not include grandchildren
+        children.Count().ShouldBe(2);
+        children.ShouldContain(g => g.Name == "Child Group 1");
+        children.ShouldContain(g => g.Name == "Child Group 2");
+        children.ShouldNotContain(g => g.Name == "Grandchild Group 1"); // Should not include grandchildren
     }
 
     [Test]
@@ -599,9 +591,9 @@ public class GroupTreeServiceTests
         var grandchildDepth = await _groupRepository.GetNodeDepth(grandchildGroup.Id);
 
         // Assert
-        rootDepth.Should().Be(0);
-        childDepth.Should().Be(1);
-        grandchildDepth.Should().Be(2);
+        rootDepth.ShouldBe(0);
+        childDepth.ShouldBe(1);
+        grandchildDepth.ShouldBe(2);
     }
 
     [Test]
@@ -616,10 +608,10 @@ public class GroupTreeServiceTests
 
         // Assert
         // Note: GetPath query uses g.Root == node.Root which excludes the root itself when Root is set
-        pathList.Count.Should().BeGreaterThanOrEqualTo(2); // At least Child1 -> Grandchild1
-        pathList.Should().Contain(g => g.Name == "Child Group 1");
-        pathList.Should().Contain(g => g.Name == "Grandchild Group 1");
-        pathList.Should().BeInAscendingOrder(g => g.Lft);
+        pathList.Count().ShouldBeGreaterThanOrEqualTo(2); // At least Child1 -> Grandchild1
+        pathList.ShouldContain(g => g.Name == "Child Group 1");
+        pathList.ShouldContain(g => g.Name == "Grandchild Group 1");
+        pathList.Select(g => g.Lft).ShouldBeInOrder();
     }
 
     [Test]
@@ -633,11 +625,11 @@ public class GroupTreeServiceTests
         var treeList = tree.ToList();
 
         // Assert
-        treeList.Should().HaveCount(5); // Root + 2 children + 2 grandchildren
-        treeList.Should().NotContain(g => g.Name == "Second Root");
-        treeList.Should().Contain(g => g.Name == "Root Group");
-        treeList.Should().Contain(g => g.Name == "Child Group 1");
-        treeList.Should().Contain(g => g.Name == "Child Group 2");
+        treeList.Count().ShouldBe(5); // Root + 2 children + 2 grandchildren
+        treeList.ShouldNotContain(g => g.Name == "Second Root");
+        treeList.ShouldContain(g => g.Name == "Root Group");
+        treeList.ShouldContain(g => g.Name == "Child Group 1");
+        treeList.ShouldContain(g => g.Name == "Child Group 2");
     }
 
     [Test]
@@ -648,9 +640,9 @@ public class GroupTreeServiceTests
         var rootsList = roots.ToList();
 
         // Assert
-        rootsList.Should().HaveCount(2);
-        rootsList.Should().Contain(g => g.Name == "Root Group");
-        rootsList.Should().Contain(g => g.Name == "Second Root");
+        rootsList.Count().ShouldBe(2);
+        rootsList.ShouldContain(g => g.Name == "Root Group");
+        rootsList.ShouldContain(g => g.Name == "Second Root");
     }
 
     #endregion
@@ -708,7 +700,7 @@ public class GroupTreeServiceTests
         if (!children.Any())
         {
             // Leaf node should have Rgt = Lft + 1
-            parent.Rgt.Should().Be(parent.Lft + 1, $"Leaf node {parent.Name} should have Rgt = Lft + 1");
+            parent.Rgt.ShouldBe(parent.Lft + 1, $"Leaf node {parent.Name} should have Rgt = Lft + 1");
             return;
         }
 
@@ -716,10 +708,10 @@ public class GroupTreeServiceTests
 
         foreach (var child in children)
         {
-            child.Lft.Should().BeGreaterThanOrEqualTo(expectedLft, $"Child {child.Name} Lft should be >= {expectedLft}");
-            child.Lft.Should().BeLessThan(parent.Rgt, $"Child {child.Name} should be within parent {parent.Name} boundaries");
-            child.Rgt.Should().BeLessThan(parent.Rgt, $"Child {child.Name} should be within parent {parent.Name} boundaries");
-            child.Root.Should().Be(parent.Root ?? parent.Id, $"Child {child.Name} should have same root as parent {parent.Name}");
+            child.Lft.ShouldBeGreaterThanOrEqualTo(expectedLft, $"Child {child.Name} Lft should be >= {expectedLft}");
+            child.Lft.ShouldBeLessThan(parent.Rgt, $"Child {child.Name} should be within parent {parent.Name} boundaries");
+            child.Rgt.ShouldBeLessThan(parent.Rgt, $"Child {child.Name} should be within parent {parent.Name} boundaries");
+            child.Root.ShouldBe(parent.Root ?? parent.Id, $"Child {child.Name} should have same root as parent {parent.Name}");
 
             await VerifySubtreeIntegrity(allNodes, child);
             expectedLft = child.Rgt + 1;

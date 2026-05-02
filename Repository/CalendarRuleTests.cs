@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Handlers.Settings.CalendarRules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Settings.CalendarRules;
@@ -58,12 +58,12 @@ namespace Klacks.UnitTest.Repository
             //Act
             var result = await handler.Handle(query, default);
             //Assert
-            result.Should().NotBeNull();
-            result.CurrentPage.Should().Be(requiredPage);
+            result.ShouldNotBeNull();
+            result.CurrentPage.ShouldBe(requiredPage);
             if (requiredPage == 1)
-                result.FirstItemOnPage.Should().Be(0);
+                result.FirstItemOnPage.ShouldBe(0);
             else
-                result.FirstItemOnPage.Should().Be(numberOfItemsPerPage * (requiredPage));
+                result.FirstItemOnPage.ShouldBe(numberOfItemsPerPage * (requiredPage));
         }
 
         [SetUp]

@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
@@ -20,9 +20,9 @@ public class WizardResultCacheTests
 
         cache.Store(jobId, scenario, token);
 
-        cache.TryGet(jobId, out var retrieved, out var analyseToken).Should().BeTrue();
-        retrieved.Should().BeSameAs(scenario);
-        analyseToken.Should().Be(token);
+        cache.TryGet(jobId, out var retrieved, out var analyseToken).ShouldBeTrue();
+        retrieved.ShouldBeSameAs(scenario);
+        analyseToken.ShouldBe(token);
     }
 
     [Test]
@@ -34,8 +34,8 @@ public class WizardResultCacheTests
 
         cache.Store(jobId, scenario, null);
 
-        cache.TryGet(jobId, out _, out var analyseToken).Should().BeTrue();
-        analyseToken.Should().BeNull();
+        cache.TryGet(jobId, out _, out var analyseToken).ShouldBeTrue();
+        analyseToken.ShouldBeNull();
     }
 
     [Test]
@@ -43,9 +43,9 @@ public class WizardResultCacheTests
     {
         var cache = new WizardResultCache();
 
-        cache.TryGet(Guid.NewGuid(), out var scenario, out var analyseToken).Should().BeFalse();
-        scenario.Should().BeNull();
-        analyseToken.Should().BeNull();
+        cache.TryGet(Guid.NewGuid(), out var scenario, out var analyseToken).ShouldBeFalse();
+        scenario.ShouldBeNull();
+        analyseToken.ShouldBeNull();
     }
 
     [Test]
@@ -57,6 +57,6 @@ public class WizardResultCacheTests
 
         cache.Invalidate(jobId);
 
-        cache.TryGet(jobId, out _, out _).Should().BeFalse();
+        cache.TryGet(jobId, out _, out _).ShouldBeFalse();
     }
 }

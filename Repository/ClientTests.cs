@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Scripting;
+﻿using Klacks.Api.Infrastructure.Scripting;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Infrastructure.Interfaces;
@@ -136,8 +136,8 @@ internal class ClientTests
         //Act
         var result = await handler.Handle(query, default);
         //Assert
-        result.Should().NotBeNull();
-        result.Clients.Should().HaveCount(sum);
+        result.ShouldNotBeNull();
+        result.Clients.Count().ShouldBe(sum);
     }
 
     /// <summary>
@@ -183,9 +183,9 @@ internal class ClientTests
         //Act
         var result = await handler.Handle(query, default);
         //Assert
-        result.Should().NotBeNull();
-        result.Clients.Should().HaveCount(0);
-        result.FirstItemOnPage.Should().Be(-1);
+        result.ShouldNotBeNull();
+        result.Clients.Count().ShouldBe(0);
+        result.FirstItemOnPage.ShouldBe(-1);
     }
 
     /// <summary>
@@ -236,11 +236,11 @@ internal class ClientTests
         //Act
         var result = await handler.Handle(query, default);
         //Assert
-        result.Should().NotBeNull();
-        result.Clients.Should().HaveCount(maxItems);
-        result.MaxItems.Should().Be(returns.Clients!.Count());
-        result.CurrentPage.Should().Be(requiredPage);
-        result.FirstItemOnPage.Should().Be(numberOfItemsPerPage * (requiredPage));
+        result.ShouldNotBeNull();
+        result.Clients.Count().ShouldBe(maxItems);
+        result.MaxItems.ShouldBe(returns.Clients!.Count());
+        result.CurrentPage.ShouldBe(requiredPage);
+        result.FirstItemOnPage.ShouldBe(numberOfItemsPerPage * (requiredPage));
     }
 
     // [Test] - Disabled: Test moved to ClientSearchServiceTests
@@ -360,17 +360,17 @@ internal class ClientTests
     }) as IQueryable<Client>;
 
         // Assert
-        result1.Should().NotBeNull();
-        result1.Count().Should().Be(1);
-        result1.First().Name.Should().Be("M�ller");
+        result1.ShouldNotBeNull();
+        result1.Count().ShouldBe(1);
+        result1.First().Name.ShouldBe("M�ller");
 
-        result2.Should().NotBeNull();
-        result2.Count().Should().Be(1);
-        result2.First().Name.Should().Be("Schmidt");
+        result2.ShouldNotBeNull();
+        result2.Count().ShouldBe(1);
+        result2.First().Name.ShouldBe("Schmidt");
 
-        result3.Should().NotBeNull();
-        result3.Count().Should().Be(1);
-        result3.First().Name.Should().Be("Schneider");
+        result3.ShouldNotBeNull();
+        result3.Count().ShouldBe(1);
+        result3.First().Name.ShouldBe("Schneider");
     }
 
     [SetUp]

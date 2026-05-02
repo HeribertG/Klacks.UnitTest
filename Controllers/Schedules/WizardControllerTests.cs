@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Mvc;
@@ -43,8 +43,8 @@ public class WizardControllerTests
                 null),
             CancellationToken.None);
 
-        var ok = result.Result.Should().BeOfType<OkObjectResult>().Which;
-        ok.Value.Should().BeOfType<StartWizardResponse>().Which.JobId.Should().Be(expectedJobId);
+        var ok = result.Result.ShouldBeOfType<OkObjectResult>();
+        ok.Value.ShouldBeOfType<StartWizardResponse>().JobId.ShouldBe(expectedJobId);
     }
 
     [Test]
@@ -55,8 +55,8 @@ public class WizardControllerTests
 
         var result = _sut.Cancel(new CancelWizardRequest(jobId));
 
-        var ok = result.Result.Should().BeOfType<OkObjectResult>().Which;
-        ok.Value.Should().BeOfType<CancelWizardResponse>().Which.Cancelled.Should().BeTrue();
+        var ok = result.Result.ShouldBeOfType<OkObjectResult>();
+        ok.Value.ShouldBeOfType<CancelWizardResponse>().Cancelled.ShouldBeTrue();
     }
 
     [Test]
@@ -68,8 +68,8 @@ public class WizardControllerTests
 
         var result = await _sut.Apply(new ApplyWizardRequest(jobId), CancellationToken.None);
 
-        var ok = result.Result.Should().BeOfType<OkObjectResult>().Which;
-        ok.Value.Should().BeOfType<ApplyWizardResponse>().Which.CreatedWorkIds.Should().BeEquivalentTo(ids);
+        var ok = result.Result.ShouldBeOfType<OkObjectResult>();
+        ok.Value.ShouldBeOfType<ApplyWizardResponse>().CreatedWorkIds.ShouldBeEquivalentTo(ids);
     }
 
     [Test]
@@ -82,6 +82,6 @@ public class WizardControllerTests
 
         var result = await _sut.Apply(new ApplyWizardRequest(jobId), CancellationToken.None);
 
-        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        result.Result.ShouldBeOfType<NotFoundObjectResult>();
     }
 }

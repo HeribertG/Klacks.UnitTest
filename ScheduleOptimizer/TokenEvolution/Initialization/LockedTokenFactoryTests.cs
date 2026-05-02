@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 using NUnit.Framework;
@@ -35,11 +35,11 @@ public class LockedTokenFactoryTests
 
         var tokens = LockedTokenFactory.BuildLockedTokens(locked, maxConsecutiveDays: 6);
 
-        tokens.Should().HaveCount(2);
-        tokens[0].BlockId.Should().Be(tokens[1].BlockId);
-        tokens[0].PositionInBlock.Should().Be(0);
-        tokens[1].PositionInBlock.Should().Be(1);
-        tokens.Should().OnlyContain(t => t.IsLocked);
+        tokens.Count().ShouldBe(2);
+        tokens[0].BlockId.ShouldBe(tokens[1].BlockId);
+        tokens[0].PositionInBlock.ShouldBe(0);
+        tokens[1].PositionInBlock.ShouldBe(1);
+        tokens.ShouldAllBe(t => t.IsLocked);
     }
 
     [Test]
@@ -53,9 +53,9 @@ public class LockedTokenFactoryTests
 
         var tokens = LockedTokenFactory.BuildLockedTokens(locked, maxConsecutiveDays: 6);
 
-        tokens[0].BlockId.Should().NotBe(tokens[1].BlockId);
-        tokens[0].PositionInBlock.Should().Be(0);
-        tokens[1].PositionInBlock.Should().Be(0);
+        tokens[0].BlockId.ShouldNotBe(tokens[1].BlockId);
+        tokens[0].PositionInBlock.ShouldBe(0);
+        tokens[1].PositionInBlock.ShouldBe(0);
     }
 
     [Test]
@@ -72,7 +72,7 @@ public class LockedTokenFactoryTests
         var agentATokens = tokens.Where(t => t.AgentId == "agent-A").ToList();
         var agentBTokens = tokens.Where(t => t.AgentId == "agent-B").ToList();
 
-        agentATokens[0].BlockId.Should().NotBe(agentBTokens[0].BlockId);
+        agentATokens[0].BlockId.ShouldNotBe(agentBTokens[0].BlockId);
     }
 
     [Test]
@@ -85,10 +85,10 @@ public class LockedTokenFactoryTests
 
         var tokens = LockedTokenFactory.BuildLockedTokens(locked, maxConsecutiveDays: 6);
 
-        tokens.Should().HaveCount(8);
+        tokens.Count().ShouldBe(8);
         var firstBlock = tokens[0].BlockId;
         var firstBlockCount = tokens.Count(t => t.BlockId == firstBlock);
-        firstBlockCount.Should().BeLessThanOrEqualTo(6);
+        firstBlockCount.ShouldBeLessThanOrEqualTo(6);
     }
 
     [Test]
@@ -103,9 +103,9 @@ public class LockedTokenFactoryTests
 
         var tokens = LockedTokenFactory.BuildLockedTokens(locked, maxConsecutiveDays: 6);
 
-        tokens.Should().HaveCount(2);
-        tokens[0].BlockId.Should().Be(tokens[1].BlockId);
-        tokens[0].PositionInBlock.Should().Be(0);
-        tokens[1].PositionInBlock.Should().Be(1);
+        tokens.Count().ShouldBe(2);
+        tokens[0].BlockId.ShouldBe(tokens[1].BlockId);
+        tokens[0].PositionInBlock.ShouldBe(0);
+        tokens[1].PositionInBlock.ShouldBe(1);
     }
 }

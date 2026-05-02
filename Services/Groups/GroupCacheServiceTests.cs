@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Services.Groups;
 using Microsoft.Extensions.Caching.Memory;
 using NSubstitute;
@@ -39,13 +39,13 @@ public class GroupCacheServiceTests
         _memoryCache.Set(cacheKey1, testData1);
         _memoryCache.Set(cacheKey2, testData2);
 
-        _memoryCache.TryGetValue(cacheKey1, out HashSet<Guid> _).Should().BeTrue();
-        _memoryCache.TryGetValue(cacheKey2, out HashSet<Guid> _).Should().BeTrue();
+        _memoryCache.TryGetValue(cacheKey1, out HashSet<Guid> _).ShouldBeTrue();
+        _memoryCache.TryGetValue(cacheKey2, out HashSet<Guid> _).ShouldBeTrue();
 
         _groupCacheService.InvalidateGroupHierarchyCache();
 
-        _memoryCache.TryGetValue(cacheKey1, out HashSet<Guid> _).Should().BeFalse();
-        _memoryCache.TryGetValue(cacheKey2, out HashSet<Guid> _).Should().BeFalse();
+        _memoryCache.TryGetValue(cacheKey1, out HashSet<Guid> _).ShouldBeFalse();
+        _memoryCache.TryGetValue(cacheKey2, out HashSet<Guid> _).ShouldBeFalse();
     }
 
     [Test]
@@ -62,13 +62,13 @@ public class GroupCacheServiceTests
         _memoryCache.Set(cacheKey, testData);
         _memoryCache.Set(otherCacheKey, otherTestData);
 
-        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).Should().BeTrue();
-        _memoryCache.TryGetValue(otherCacheKey, out HashSet<Guid> _).Should().BeTrue();
+        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).ShouldBeTrue();
+        _memoryCache.TryGetValue(otherCacheKey, out HashSet<Guid> _).ShouldBeTrue();
 
         _groupCacheService.InvalidateGroupCache(groupId);
 
-        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).Should().BeFalse();
-        _memoryCache.TryGetValue(otherCacheKey, out HashSet<Guid> _).Should().BeTrue();
+        _memoryCache.TryGetValue(cacheKey, out HashSet<Guid> _).ShouldBeFalse();
+        _memoryCache.TryGetValue(otherCacheKey, out HashSet<Guid> _).ShouldBeTrue();
     }
 
     [Test]
@@ -78,7 +78,7 @@ public class GroupCacheServiceTests
 
         Action act = () => _groupCacheService.InvalidateGroupCache(groupId);
 
-        act.Should().NotThrow();
+        act.ShouldNotThrow();
     }
 
     [Test]
@@ -86,6 +86,6 @@ public class GroupCacheServiceTests
     {
         Action act = () => _groupCacheService.InvalidateGroupHierarchyCache();
 
-        act.Should().NotThrow();
+        act.ShouldNotThrow();
     }
 }

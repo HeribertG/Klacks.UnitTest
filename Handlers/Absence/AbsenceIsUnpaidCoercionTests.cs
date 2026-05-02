@@ -1,11 +1,11 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests that IsUnpaid is coerced to false unless HideInGantt and AppliesToContainer are both true.
 /// Covers both the rule logic directly and the POST/PUT handler invocation paths.
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Absences;
@@ -43,7 +43,7 @@ public class AbsenceIsUnpaidCoercionTests
             entity.IsUnpaid = false;
         }
 
-        entity.IsUnpaid.Should().Be(expected);
+        entity.IsUnpaid.ShouldBe(expected);
     }
 }
 
@@ -95,8 +95,8 @@ public class AbsencePostHandlerCoercionTests
 
         await _handler.Handle(command, CancellationToken.None);
 
-        captured.Should().NotBeNull();
-        captured!.IsUnpaid.Should().BeFalse();
+        captured.ShouldNotBeNull();
+        captured!.IsUnpaid.ShouldBeFalse();
     }
 
     [Test]
@@ -116,8 +116,8 @@ public class AbsencePostHandlerCoercionTests
 
         await _handler.Handle(command, CancellationToken.None);
 
-        captured.Should().NotBeNull();
-        captured!.IsUnpaid.Should().BeTrue();
+        captured.ShouldNotBeNull();
+        captured!.IsUnpaid.ShouldBeTrue();
     }
 }
 
@@ -176,7 +176,7 @@ public class AbsencePutHandlerCoercionTests
 
         await _handler.Handle(command, CancellationToken.None);
 
-        dbAbsence.IsUnpaid.Should().BeFalse();
+        dbAbsence.IsUnpaid.ShouldBeFalse();
     }
 
     [Test]
@@ -205,6 +205,6 @@ public class AbsencePutHandlerCoercionTests
 
         await _handler.Handle(command, CancellationToken.None);
 
-        dbAbsence.IsUnpaid.Should().BeTrue();
+        dbAbsence.IsUnpaid.ShouldBeTrue();
     }
 }

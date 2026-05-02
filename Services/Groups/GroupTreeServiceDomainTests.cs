@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
 using Microsoft.EntityFrameworkCore;
@@ -100,11 +100,11 @@ public class GroupTreeServiceDomainTests
         var result = await _treeService.AddRootNodeAsync(newRoot);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Lft.Should().Be(7); // After existing max Rgt (6) + 1
-        result.Rgt.Should().Be(8);
-        result.Parent.Should().BeNull();
-        result.Root.Should().BeNull();
+        result.ShouldNotBeNull();
+        result.Lft.ShouldBe(7); // After existing max Rgt (6) + 1
+        result.Rgt.ShouldBe(8);
+        result.Parent.ShouldBeNull();
+        result.Root.ShouldBeNull();
     }
 
     [Test]
@@ -125,11 +125,11 @@ public class GroupTreeServiceDomainTests
         var result = await _treeService.AddChildNodeAsync(parent.Id, newChild);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Parent.Should().Be(parent.Id);
-        result.Root.Should().Be(parent.Id);
-        result.Lft.Should().Be(parent.Rgt); // Would be inserted at parent's Rgt
-        result.Rgt.Should().Be(parent.Rgt + 1);
+        result.ShouldNotBeNull();
+        result.Parent.ShouldBe(parent.Id);
+        result.Root.ShouldBe(parent.Id);
+        result.Lft.ShouldBe(parent.Rgt); // Would be inserted at parent's Rgt
+        result.Rgt.ShouldBe(parent.Rgt + 1);
     }
 
     [Test]
@@ -147,9 +147,7 @@ public class GroupTreeServiceDomainTests
         };
 
         // Act & Assert
-        await FluentActions.Invoking(() => _treeService.AddChildNodeAsync(invalidParentId, newChild))
-            .Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"Parent group with ID {invalidParentId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(() => _treeService.AddChildNodeAsync(invalidParentId, newChild))).Message.ShouldBe($"Parent group with ID {invalidParentId} not found");
     }
 
     [Test]
@@ -163,7 +161,7 @@ public class GroupTreeServiceDomainTests
         int width = _treeService.CalculateTreeWidth(lft, rgt);
 
         // Assert
-        width.Should().Be(6); // 8 - 3 + 1 = 6
+        width.ShouldBe(6); // 8 - 3 + 1 = 6
     }
 
     [Test]
@@ -177,7 +175,7 @@ public class GroupTreeServiceDomainTests
         bool isValid = _treeService.ValidateTreeMovement(node1, node2);
 
         // Assert
-        isValid.Should().BeTrue();
+        isValid.ShouldBeTrue();
     }
 
     [Test]
@@ -191,7 +189,7 @@ public class GroupTreeServiceDomainTests
         bool isValid = _treeService.ValidateTreeMovement(parent, descendant);
 
         // Assert
-        isValid.Should().BeFalse();
+        isValid.ShouldBeFalse();
     }
 
     [Test]
@@ -202,9 +200,7 @@ public class GroupTreeServiceDomainTests
         var invalidParentId = Guid.NewGuid();
 
         // Act & Assert
-        await FluentActions.Invoking(() => _treeService.MoveNodeAsync(child.Id, invalidParentId))
-            .Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"New parent group with ID {invalidParentId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(() => _treeService.MoveNodeAsync(child.Id, invalidParentId))).Message.ShouldBe($"New parent group with ID {invalidParentId} not found");
     }
 
     [Test]
@@ -215,9 +211,7 @@ public class GroupTreeServiceDomainTests
         var child = await _context.Group.FirstAsync(g => g.Name == "Child Group");
 
         // Act & Assert
-        await FluentActions.Invoking(() => _treeService.MoveNodeAsync(root.Id, child.Id))
-            .Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("The new parent cannot be a descendant of the node to be moved");
+        (await Should.ThrowAsync<InvalidOperationException>(() => _treeService.MoveNodeAsync(root.Id, child.Id))).Message.ShouldBe("The new parent cannot be a descendant of the node to be moved");
     }
 
     [Test]
@@ -230,12 +224,12 @@ public class GroupTreeServiceDomainTests
         int width = await _treeService.DeleteNodeAsync(child.Id);
 
         // Assert
-        width.Should().Be(2); // Rgt(3) - Lft(2) + 1 = 2
+        width.ShouldBe(2); // Rgt(3) - Lft(2) + 1 = 2
         
         // Verify soft delete
         var deletedNode = await _context.Group.FindAsync(child.Id);
-        deletedNode.IsDeleted.Should().BeTrue();
-        deletedNode.DeletedTime.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(1));
+        deletedNode.IsDeleted.ShouldBeTrue();
+        deletedNode.DeletedTime.ShouldNotBeNull(); deletedNode.DeletedTime.Value.ShouldBe(DateTime.UtcNow, TimeSpan.FromSeconds(1));
     }
 
     [Test]
@@ -245,9 +239,7 @@ public class GroupTreeServiceDomainTests
         var invalidNodeId = Guid.NewGuid();
 
         // Act & Assert
-        await FluentActions.Invoking(() => _treeService.DeleteNodeAsync(invalidNodeId))
-            .Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"Group with ID {invalidNodeId} not found.");
+        (await Should.ThrowAsync<KeyNotFoundException>(() => _treeService.DeleteNodeAsync(invalidNodeId))).Message.ShouldBe($"Group with ID {invalidNodeId} not found.");
     }
 
     [Test]

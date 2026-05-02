@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
@@ -184,20 +184,20 @@ public class ShiftPerformanceIntegrationTests
         stopwatch.Stop();
 
         // Assert
-        result.Should().NotBeNull();
-        result.Shifts.Should().HaveCountLessThanOrEqualTo(20);
-        result.MaxItems.Should().BeGreaterThan(0);
+        result.ShouldNotBeNull();
+        result.Shifts.Count().ShouldBeLessThanOrEqualTo(20);
+        result.MaxItems.ShouldBeGreaterThan(0);
         
         // Verify all returned shifts are active
         var today = DateOnly.FromDateTime(DateTime.Now);
         foreach (var shift in result.Shifts)
         {
             var isActive = shift.FromDate <= today && (!shift.UntilDate.HasValue || shift.UntilDate.Value >= today);
-            isActive.Should().BeTrue($"Shift {shift.Name} should be active");
+            isActive.ShouldBeTrue($"Shift {shift.Name} should be active");
         }
 
         // Performance assertion
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(1000, "Query should complete within 1 second");
+        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(1000, "Query should complete within 1 second");
         
         Console.WriteLine($"Active filter query took {stopwatch.ElapsedMilliseconds}ms, returned {result.Shifts.Count} of {result.MaxItems} total items");
     }
@@ -220,19 +220,19 @@ public class ShiftPerformanceIntegrationTests
         stopwatch.Stop();
 
         // Assert
-        result.Should().NotBeNull();
-        result.Shifts.Should().HaveCountLessThanOrEqualTo(50);
+        result.ShouldNotBeNull();
+        result.Shifts.Count().ShouldBeLessThanOrEqualTo(50);
         
         // Verify date range results are active shifts
         var today = DateOnly.FromDateTime(DateTime.Now);
         foreach (var shift in result.Shifts)
         {
             var isActive = shift.FromDate <= today && (!shift.UntilDate.HasValue || shift.UntilDate.Value >= today);
-            isActive.Should().BeTrue($"Shift {shift.Name} should be active");
+            isActive.ShouldBeTrue($"Shift {shift.Name} should be active");
         }
 
         // Performance assertion
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(1000, "Date range query should complete within 1 second");
+        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(1000, "Date range query should complete within 1 second");
         
         Console.WriteLine($"Date range filter query took {stopwatch.ElapsedMilliseconds}ms, returned {result.Shifts.Count} of {result.MaxItems} total items");
     }
@@ -258,8 +258,8 @@ public class ShiftPerformanceIntegrationTests
         stopwatch.Stop();
 
         // Assert
-        result.Should().NotBeNull();
-        result.Shifts.Should().HaveCountLessThanOrEqualTo(25);
+        result.ShouldNotBeNull();
+        result.Shifts.Count().ShouldBeLessThanOrEqualTo(25);
         
         // Verify filters are applied correctly
         var today = DateOnly.FromDateTime(DateTime.Now);
@@ -267,21 +267,21 @@ public class ShiftPerformanceIntegrationTests
         {
             // Check active date range
             var isActive = shift.FromDate <= today && (!shift.UntilDate.HasValue || shift.UntilDate.Value >= today);
-            isActive.Should().BeTrue($"Shift {shift.Name} should be active");
+            isActive.ShouldBeTrue($"Shift {shift.Name} should be active");
             
             // Check status (not original)
-            shift.Status.Should().NotBe(ShiftStatus.OriginalOrder);
+            shift.Status.ShouldNotBe(ShiftStatus.OriginalOrder);
         }
 
         // Check sorting
         if (result.Shifts.Count > 1)
         {
             var names = result.Shifts.Select(s => s.Name).ToList();
-            names.Should().BeInAscendingOrder("Results should be sorted by name ascending");
+            names.ShouldBeInOrder("Results should be sorted by name ascending");
         }
 
         // Performance assertion
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(1500, "Combined filter query should complete within 1.5 seconds");
+        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(1500, "Combined filter query should complete within 1.5 seconds");
         
         Console.WriteLine($"Combined filter query took {stopwatch.ElapsedMilliseconds}ms, returned {result.Shifts.Count} of {result.MaxItems} total items");
     }
@@ -300,7 +300,7 @@ public class ShiftPerformanceIntegrationTests
         var queryString = query2.ToQueryString();
         
         // InMemoryDatabase returns a message instead of SQL, so we check for successful query building
-        queryString.Should().NotBeNullOrEmpty("Query should be built successfully");
+        queryString.ShouldNotBeNullOrEmpty("Query should be built successfully");
         
         // Now execute the query to verify it works
         var stopwatch = Stopwatch.StartNew();
@@ -308,9 +308,9 @@ public class ShiftPerformanceIntegrationTests
         stopwatch.Stop();
 
         // Assert execution results
-        results.Should().NotBeNull();
-        results.Should().HaveCountLessThanOrEqualTo(10);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(500);
+        results.ShouldNotBeNull();
+        results.Count().ShouldBeLessThanOrEqualTo(10);
+        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(500);
 
         Console.WriteLine($"Final query execution took {stopwatch.ElapsedMilliseconds}ms");
         Console.WriteLine($"Query composition successful with InMemoryDatabase");
@@ -355,14 +355,14 @@ public class ShiftPerformanceIntegrationTests
         Console.WriteLine($"In-Memory approach: {sw2.ElapsedMilliseconds}ms, Memory: {memoryAfter2 - memoryBefore2} bytes, Results: {filteredInMemory.Count}, Total loaded: {allShifts.Count}");
 
         // With InMemoryDatabase, memory patterns may not follow real database behavior, so we focus on execution success
-        queryableResult.Should().NotBeNull("IQueryable approach should execute successfully");
-        filteredInMemory.Should().NotBeNull("In-memory approach should execute successfully");
+        queryableResult.ShouldNotBeNull("IQueryable approach should execute successfully");
+        filteredInMemory.ShouldNotBeNull("In-memory approach should execute successfully");
         
         // Results should be similar (allowing for some variation due to pagination logic)
-        Math.Abs(queryableResult.Shifts.Count - filteredInMemory.Count).Should().BeLessThanOrEqualTo(5, "Results should be similar between approaches");
+        Math.Abs(queryableResult.Shifts.Count - filteredInMemory.Count).ShouldBeLessThanOrEqualTo(5, "Results should be similar between approaches");
         
         // Both approaches should complete reasonably quickly
-        sw1.ElapsedMilliseconds.Should().BeLessThan(1000, "IQueryable approach should be fast");
-        sw2.ElapsedMilliseconds.Should().BeLessThan(1000, "In-memory approach should be fast");
+        sw1.ElapsedMilliseconds.ShouldBeLessThan(1000, "IQueryable approach should be fast");
+        sw2.ElapsedMilliseconds.ShouldBeLessThan(1000, "In-memory approach should be fast");
     }
 }

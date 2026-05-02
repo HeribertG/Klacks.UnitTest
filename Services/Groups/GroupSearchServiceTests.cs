@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Schedules;
@@ -385,7 +385,7 @@ public class GroupSearchServiceTests
         var result = _groupRepository.FilterGroup(filter);
 
         // Assert
-        result.Count().Should().Be(_testGroups.Count);
+        result.Count().ShouldBe(_testGroups.Count);
     }
 
     [Test]
@@ -403,7 +403,7 @@ public class GroupSearchServiceTests
         var result = _groupRepository.FilterGroup(filter);
 
         // Assert
-        result.Count().Should().Be(_testGroups.Count);
+        result.Count().ShouldBe(_testGroups.Count);
     }
 
     [TestCase("management", 1, "Should find group by name case-insensitive")]
@@ -427,7 +427,7 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(expectedCount, description);
+        groups.Count().ShouldBe(expectedCount, description);
     }
 
     [Test]
@@ -446,8 +446,8 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.First().Name.Should().Be("Team Leaders");
+        groups.Count().ShouldBe(1);
+        groups.First().Name.ShouldBe("Team Leaders");
     }
 
     [Test]
@@ -468,8 +468,8 @@ public class GroupSearchServiceTests
         // Assert
         // The search is case-insensitive Contains, so "M" matches any group with 'm' in the name
         // Groups: Management, Managers, Team Leaders, Development, Frontend Team
-        groups.Count.Should().BeGreaterThan(0);
-        groups.Should().Contain(g => g.Name == "Management");
+        groups.Count.ShouldBeGreaterThan(0);
+        groups.ShouldContain(g => g.Name == "Management");
         
         // Let's use a character that's only in one group for a more specific test
         var filter2 = new GroupFilter { 
@@ -480,8 +480,8 @@ public class GroupSearchServiceTests
         };
         var result2 = _groupRepository.FilterGroup(filter2);
         var groups2 = result2.ToList();
-        groups2.Should().HaveCount(1);
-        groups2.First().Name.Should().Be("Executives");
+        groups2.Count().ShouldBe(1);
+        groups2.First().Name.ShouldBe("Executives");
     }
 
     [Test]
@@ -500,9 +500,9 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.First().Name.Should().Be("Development");
-        groups.First().Description.Should().Contain("Software");
+        groups.Count().ShouldBe(1);
+        groups.First().Name.ShouldBe("Development");
+        groups.First().Description.ShouldContain("Software");
     }
 
     [Test]
@@ -521,9 +521,9 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().NotContain(g => g.Name == "Legacy Support"); // Expired
-        groups.Should().NotContain(g => g.Name == "Innovation Lab"); // Future
-        groups.Should().Contain(g => g.Name == "Management"); // Active
+        groups.ShouldNotContain(g => g.Name == "Legacy Support"); // Expired
+        groups.ShouldNotContain(g => g.Name == "Innovation Lab"); // Future
+        groups.ShouldContain(g => g.Name == "Management"); // Active
     }
 
     [Test]
@@ -542,8 +542,8 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.First().Name.Should().Be("Legacy Support");
+        groups.Count().ShouldBe(1);
+        groups.First().Name.ShouldBe("Legacy Support");
     }
 
     [Test]
@@ -562,8 +562,8 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.First().Name.Should().Be("Innovation Lab");
+        groups.Count().ShouldBe(1);
+        groups.First().Name.ShouldBe("Innovation Lab");
     }
 
     [Test]
@@ -582,7 +582,7 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().BeEmpty();
+        groups.ShouldBeEmpty();
     }
 
     [Test]
@@ -601,7 +601,7 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(_testGroups.Count);
+        groups.Count().ShouldBe(_testGroups.Count);
     }
 
     [TestCase("name", "asc", "Development")]
@@ -625,7 +625,7 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.First().Name.Should().Be(expectedFirstName);
+        groups.First().Name.ShouldBe(expectedFirstName);
     }
 
     [Test]
@@ -646,7 +646,7 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().BeInAscendingOrder(g => g.ValidFrom);
+        groups.Select(g => g.ValidFrom).ShouldBeInOrder();
     }
 
     [Test]
@@ -671,7 +671,7 @@ public class GroupSearchServiceTests
         var groupsWithValidUntil = groups.Where(g => g.ValidUntil.HasValue).ToList();
         if (groupsWithValidUntil.Any())
         {
-            groupsWithValidUntil.Should().BeInDescendingOrder(g => g.ValidUntil);
+            groupsWithValidUntil.Select(g => g.ValidUntil).ShouldBeInOrder(SortDirection.Descending);
         }
     }
 
@@ -694,8 +694,8 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.First().Name.Should().Be("Management");
+        groups.Count().ShouldBe(1);
+        groups.First().Name.ShouldBe("Management");
     }
 
     [Test]
@@ -714,11 +714,11 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
+        groups.Count().ShouldBe(1);
         var managersGroup = groups.First();
-        managersGroup.GroupItems.Should().NotBeEmpty();
-        managersGroup.GroupItems.First().Client.Should().NotBeNull();
-        managersGroup.GroupItems.First().Client.Name.Should().Be("Müller");
+        managersGroup.GroupItems.ShouldNotBeEmpty();
+        managersGroup.GroupItems.First().Client.ShouldNotBeNull();
+        managersGroup.GroupItems.First().Client.Name.ShouldBe("Müller");
     }
 
     [Test]
@@ -737,8 +737,8 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.First().Name.Should().Be("Team Leaders");
+        groups.Count().ShouldBe(1);
+        groups.First().Name.ShouldBe("Team Leaders");
     }
 
     [Test]
@@ -757,8 +757,8 @@ public class GroupSearchServiceTests
         var groups = result.ToList();
 
         // Assert
-        groups.Should().HaveCount(1);
-        groups.First().Name.Should().Be("Team Leaders");
+        groups.Count().ShouldBe(1);
+        groups.First().Name.ShouldBe("Team Leaders");
     }
 
     [Test]
@@ -778,10 +778,10 @@ public class GroupSearchServiceTests
         var result = await _groupRepository.Truncated(filter);
 
         // Assert
-        result.Groups.Should().HaveCount(3);
-        result.MaxItems.Should().Be(_testGroups.Count);
-        result.CurrentPage.Should().Be(0);
-        result.FirstItemOnPage.Should().Be(0);
+        result.Groups.Count().ShouldBe(3);
+        result.MaxItems.ShouldBe(_testGroups.Count);
+        result.CurrentPage.ShouldBe(0);
+        result.FirstItemOnPage.ShouldBe(0);
     }
 
     [Test]
@@ -801,9 +801,9 @@ public class GroupSearchServiceTests
         var result = await _groupRepository.Truncated(filter);
 
         // Assert
-        result.Groups.Should().HaveCount(3);
-        result.CurrentPage.Should().Be(1);
-        result.FirstItemOnPage.Should().Be(3);
+        result.Groups.Count().ShouldBe(3);
+        result.CurrentPage.ShouldBe(1);
+        result.FirstItemOnPage.ShouldBe(3);
     }
 
     [Test]
@@ -823,8 +823,8 @@ public class GroupSearchServiceTests
         var result = await _groupRepository.Truncated(filter);
 
         // Assert
-        result.Groups.Should().HaveCount(2); // 8 total items, 3 per page = 2 remaining on last page
-        result.CurrentPage.Should().Be(2);
+        result.Groups.Count().ShouldBe(2); // 8 total items, 3 per page = 2 remaining on last page
+        result.CurrentPage.ShouldBe(2);
     }
     
     private static Expression<Func<T, bool>> CombineOr<T>(Expression<Func<T, bool>> left, Expression<Func<T, bool>> right)

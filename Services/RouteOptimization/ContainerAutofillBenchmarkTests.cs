@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Autoresearch benchmark for ContainerAutofillAlgorithm.
@@ -6,7 +6,7 @@
 /// Output: AUTOFILL_SCORE (lower = better, goal below 0.20).
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Services.RouteOptimization;
 
 namespace Klacks.UnitTest.Services.RouteOptimization;
@@ -91,7 +91,7 @@ public class ContainerAutofillBenchmarkTests
         TestContext.WriteLine($"speed_score={avgSpeed:F4} (weight={WEIGHT_SPEED})");
         TestContext.WriteLine($"AUTOFILL_SCORE: {compositeScore:F6}");
 
-        compositeScore.Should().BeLessThan(1.0, "composite score should be reasonable");
+        compositeScore.ShouldBeLessThan(1.0, "composite score should be reasonable");
     }
 
     [Test]
@@ -111,7 +111,7 @@ public class ContainerAutofillBenchmarkTests
         var fillRate = (double)route.Count / (n - 1);
         TestContext.WriteLine($"AUTOFILL_FILL_RATE: {fillRate:F4} ({route.Count}/{n - 1} shifts)");
 
-        fillRate.Should().BeGreaterThan(0.1, "at least 10% of shifts should be selected");
+        fillRate.ShouldBeGreaterThan(0.1, "at least 10% of shifts should be selected");
     }
 
     private static (string name, List<Location> locations, double[,] duration,

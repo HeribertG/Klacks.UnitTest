@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution;
 using NUnit.Framework;
@@ -70,9 +70,9 @@ public class TokenEvolutionLoopTests
         var sut = TokenEvolutionLoop.Create();
         var best = sut.Run(context, config);
 
-        best.Should().NotBeNull();
-        best.Tokens.Should().NotBeEmpty();
-        best.FitnessStage0.Should().Be(0);
+        best.ShouldNotBeNull();
+        best.Tokens.ShouldNotBeEmpty();
+        best.FitnessStage0.ShouldBe(0);
     }
 
     [Test]
@@ -87,7 +87,7 @@ public class TokenEvolutionLoopTests
         var sut = TokenEvolutionLoop.Create();
         var act = () => sut.Run(context, config, cancellationToken: cts.Token);
 
-        act.Should().Throw<OperationCanceledException>();
+        act.ShouldThrow<OperationCanceledException>();
     }
 
     [Test]
@@ -108,6 +108,6 @@ public class TokenEvolutionLoopTests
         TokenEvolutionLoop.Create().Run(context, config, progress);
 
         System.Threading.Thread.Sleep(200);
-        reports.Should().NotBeEmpty();
+        reports.ShouldNotBeEmpty();
     }
 }

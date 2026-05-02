@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Presentation.Controllers.UserBackend;
 using Microsoft.AspNetCore.Authorization;
@@ -21,8 +21,8 @@ public class InputBaseControllerAuthorizationTests
         var authorizeAttribute = methodInfo?.GetCustomAttribute<AuthorizeAttribute>();
 
         // Assert
-        authorizeAttribute.Should().NotBeNull();
-        authorizeAttribute!.Roles.Should().Be($"{Roles.Admin},{Roles.Authorised}");
+        authorizeAttribute.ShouldNotBeNull();
+        authorizeAttribute!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}");
     }
 
     [Test]
@@ -36,8 +36,8 @@ public class InputBaseControllerAuthorizationTests
         var authorizeAttribute = methodInfo?.GetCustomAttribute<AuthorizeAttribute>();
 
         // Assert
-        authorizeAttribute.Should().NotBeNull();
-        authorizeAttribute!.Roles.Should().Be($"{Roles.Admin},{Roles.Authorised}");
+        authorizeAttribute.ShouldNotBeNull();
+        authorizeAttribute!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}");
     }
 
     [Test]
@@ -51,8 +51,8 @@ public class InputBaseControllerAuthorizationTests
         var authorizeAttribute = methodInfo?.GetCustomAttribute<AuthorizeAttribute>();
 
         // Assert
-        authorizeAttribute.Should().NotBeNull();
-        authorizeAttribute!.Roles.Should().Be($"{Roles.Admin},{Roles.Authorised}");
+        authorizeAttribute.ShouldNotBeNull();
+        authorizeAttribute!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}");
     }
 
     [Test]
@@ -68,7 +68,7 @@ public class InputBaseControllerAuthorizationTests
         // Assert
         if (authorizeAttribute != null)
         {
-            authorizeAttribute.Roles.Should().BeNullOrEmpty("GET should only require JWT authentication, not specific roles");
+            authorizeAttribute.Roles.ShouldBeNullOrEmpty("GET should only require JWT authentication, not specific roles");
         }
     }
 
@@ -83,7 +83,7 @@ public class InputBaseControllerAuthorizationTests
         var httpPostAttribute = methodInfo?.GetCustomAttribute<HttpPostAttribute>();
 
         // Assert
-        httpPostAttribute.Should().NotBeNull();
+        httpPostAttribute.ShouldNotBeNull();
     }
 
     [Test]
@@ -97,7 +97,7 @@ public class InputBaseControllerAuthorizationTests
         var httpPutAttribute = methodInfo?.GetCustomAttribute<HttpPutAttribute>();
 
         // Assert
-        httpPutAttribute.Should().NotBeNull();
+        httpPutAttribute.ShouldNotBeNull();
     }
 
     [Test]
@@ -111,7 +111,7 @@ public class InputBaseControllerAuthorizationTests
         var httpDeleteAttribute = methodInfo?.GetCustomAttribute<HttpDeleteAttribute>();
 
         // Assert
-        httpDeleteAttribute.Should().NotBeNull();
+        httpDeleteAttribute.ShouldNotBeNull();
     }
 
     [Test]
@@ -125,6 +125,6 @@ public class InputBaseControllerAuthorizationTests
         var httpGetAttribute = methodInfo?.GetCustomAttribute<HttpGetAttribute>();
 
         // Assert
-        httpGetAttribute.Should().NotBeNull();
+        httpGetAttribute.ShouldNotBeNull();
     }
 }

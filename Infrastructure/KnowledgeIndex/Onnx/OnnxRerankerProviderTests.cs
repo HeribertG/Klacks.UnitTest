@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Constants;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Infrastructure.Onnx;
 using NUnit.Framework;
@@ -25,8 +25,8 @@ public class OnnxRerankerProviderTests
             ["Returns all open shifts for a client.", "Deletes a user account."],
             CancellationToken.None);
 
-        scores.Should().HaveCount(2);
-        scores[0].Should().BeGreaterThan(scores[1]);
+        scores.Count().ShouldBe(2);
+        scores[0].ShouldBeGreaterThan(scores[1]);
     }
 
     [Test]
@@ -40,10 +40,11 @@ public class OnnxRerankerProviderTests
             ["Creates a new employee.", "Lists all branches.", "Deletes a shift."],
             CancellationToken.None);
 
-        scores.Should().HaveCount(3);
+        scores.Count().ShouldBe(3);
         foreach (var score in scores)
         {
-            score.Should().BeGreaterThanOrEqualTo(0.0).And.BeLessThanOrEqualTo(1.0);
+            score.ShouldBeGreaterThanOrEqualTo(0.0);
+            score.ShouldBeLessThanOrEqualTo(1.0);
         }
     }
 
@@ -55,7 +56,7 @@ public class OnnxRerankerProviderTests
 
         var scores = await provider.ScoreAsync("test query", [], CancellationToken.None);
 
-        scores.Should().BeEmpty();
+        scores.ShouldBeEmpty();
     }
 
     [Test]
@@ -69,7 +70,7 @@ public class OnnxRerankerProviderTests
             ["Returns all open shifts for a client.", "Deletes a user account."],
             CancellationToken.None);
 
-        scores.Should().HaveCount(2);
-        scores[0].Should().BeGreaterThan(scores[1]);
+        scores.Count().ShouldBe(2);
+        scores[0].ShouldBeGreaterThan(scores[1]);
     }
 }

@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Plugin.Contracts;
 using Klacks.Plugin.Messaging.Application.Services;
 using Klacks.Plugin.Messaging.Domain.Enums;
@@ -38,14 +38,14 @@ public class TelegramOnboardingRedemptionServiceTests
 
         var result = await _sut.RedeemAsync("abc", "123");
 
-        result.Should().Be(OnboardingRedeemResult.TokenNotFound);
+        result.ShouldBe(OnboardingRedeemResult.TokenNotFound);
     }
 
     [Test]
     public async Task RedeemAsync_Returns_TokenNotFound_When_Token_Or_ChatId_Empty()
     {
-        (await _sut.RedeemAsync(string.Empty, "123")).Should().Be(OnboardingRedeemResult.TokenNotFound);
-        (await _sut.RedeemAsync("abc", string.Empty)).Should().Be(OnboardingRedeemResult.TokenNotFound);
+        (await _sut.RedeemAsync(string.Empty, "123")).ShouldBe(OnboardingRedeemResult.TokenNotFound);
+        (await _sut.RedeemAsync("abc", string.Empty)).ShouldBe(OnboardingRedeemResult.TokenNotFound);
     }
 
     [Test]
@@ -61,7 +61,7 @@ public class TelegramOnboardingRedemptionServiceTests
 
         var result = await _sut.RedeemAsync("abc", "123");
 
-        result.Should().Be(OnboardingRedeemResult.TokenExpired);
+        result.ShouldBe(OnboardingRedeemResult.TokenExpired);
     }
 
     [Test]
@@ -78,7 +78,7 @@ public class TelegramOnboardingRedemptionServiceTests
 
         var result = await _sut.RedeemAsync("abc", "123");
 
-        result.Should().Be(OnboardingRedeemResult.TokenAlreadyUsed);
+        result.ShouldBe(OnboardingRedeemResult.TokenAlreadyUsed);
     }
 
     [Test]
@@ -95,15 +95,15 @@ public class TelegramOnboardingRedemptionServiceTests
 
         var result = await _sut.RedeemAsync("abc", "999111");
 
-        result.Should().Be(OnboardingRedeemResult.Success);
+        result.ShouldBe(OnboardingRedeemResult.Success);
         await _contactRepo.Received(1).AddAsync(
             Arg.Is<MessengerContact>(c =>
                 c.ClientId == clientId
                 && c.Type == MessengerType.Telegram
                 && c.Value == "999111"),
             Arg.Any<CancellationToken>());
-        token.UsedAt.Should().NotBeNull();
-        token.RedeemedChatId.Should().Be("999111");
+        token.UsedAt.ShouldNotBeNull();
+        token.RedeemedChatId.ShouldBe("999111");
         await _unitOfWork.Received(1).CompleteAsync();
     }
 }

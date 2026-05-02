@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Results;
@@ -40,14 +40,14 @@ public class GroupMapperTests
         var result = _mapper.ToGroupResource(group);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(group.Id);
-        result.Name.Should().Be("Test Group");
-        result.Description.Should().Be("Test Description");
-        result.ValidFrom.Should().Be(new DateTime(2024, 1, 1));
-        result.ValidUntil.Should().Be(new DateTime(2024, 12, 31));
-        result.Lft.Should().Be(1);
-        result.Rgt.Should().Be(10);
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(group.Id);
+        result.Name.ShouldBe("Test Group");
+        result.Description.ShouldBe("Test Description");
+        result.ValidFrom.ShouldBe(new DateTime(2024, 1, 1));
+        result.ValidUntil.ShouldBe(new DateTime(2024, 12, 31));
+        result.Lft.ShouldBe(1);
+        result.Rgt.ShouldBe(10);
     }
 
     [Test]
@@ -65,10 +65,10 @@ public class GroupMapperTests
         var result = _mapper.ToGroupResources(groups);
 
         // Assert
-        result.Should().HaveCount(3);
-        result[0].Name.Should().Be("Group 1");
-        result[1].Name.Should().Be("Group 2");
-        result[2].Name.Should().Be("Group 3");
+        result.Count().ShouldBe(3);
+        result[0].Name.ShouldBe("Group 1");
+        result[1].Name.ShouldBe("Group 2");
+        result[2].Name.ShouldBe("Group 3");
     }
 
     [Test]
@@ -88,12 +88,12 @@ public class GroupMapperTests
         var result = _mapper.ToGroupEntity(resource);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(resource.Id);
-        result.Name.Should().Be("Test Group");
-        result.Description.Should().Be("Test Description");
-        result.ValidFrom.Should().Be(new DateTime(2024, 1, 1));
-        result.ValidUntil.Should().Be(new DateTime(2024, 12, 31));
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(resource.Id);
+        result.Name.ShouldBe("Test Group");
+        result.Description.ShouldBe("Test Description");
+        result.ValidFrom.ShouldBe(new DateTime(2024, 1, 1));
+        result.ValidUntil.ShouldBe(new DateTime(2024, 12, 31));
     }
 
     [Test]
@@ -112,11 +112,11 @@ public class GroupMapperTests
         var result = _mapper.ToSimpleGroupResource(group);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(group.Id);
-        result.Name.Should().Be("Simple Group");
-        result.Description.Should().Be("Simple Description");
-        result.ValidFrom.Should().Be(new DateTime(2024, 1, 1));
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(group.Id);
+        result.Name.ShouldBe("Simple Group");
+        result.Description.ShouldBe("Simple Description");
+        result.ValidFrom.ShouldBe(new DateTime(2024, 1, 1));
     }
 
     [Test]
@@ -136,12 +136,12 @@ public class GroupMapperTests
         var result = _mapper.ToGroupFromSimple(resource);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(resource.Id);
-        result.Name.Should().Be("Simple Group");
-        result.Description.Should().Be("Simple Description");
-        result.ValidFrom.Should().Be(new DateTime(2024, 1, 1));
-        result.ValidUntil.Should().Be(new DateTime(2024, 12, 31));
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(resource.Id);
+        result.Name.ShouldBe("Simple Group");
+        result.Description.ShouldBe("Simple Description");
+        result.ValidFrom.ShouldBe(new DateTime(2024, 1, 1));
+        result.ValidUntil.ShouldBe(new DateTime(2024, 12, 31));
     }
 
     [Test]
@@ -161,12 +161,12 @@ public class GroupMapperTests
         var result = _mapper.ToGroupItemResource(groupItem);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(groupItem.Id);
-        result.GroupId.Should().Be(groupItem.GroupId);
-        result.ClientId.Should().Be(groupItem.ClientId);
-        result.ValidFrom.Should().Be(new DateTime(2024, 1, 1));
-        result.ValidUntil.Should().Be(new DateTime(2024, 12, 31));
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(groupItem.Id);
+        result.GroupId.ShouldBe(groupItem.GroupId);
+        result.ClientId.ShouldBe(groupItem.ClientId);
+        result.ValidFrom.ShouldBe(new DateTime(2024, 1, 1));
+        result.ValidUntil.ShouldBe(new DateTime(2024, 12, 31));
     }
 
     [Test]
@@ -187,13 +187,13 @@ public class GroupMapperTests
         var result = _mapper.FromSummary(summary);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("Summary Group");
-        result.Description.Should().Be("Summary Description");
-        result.ValidFrom.Should().Be(new DateTime(2024, 1, 1));
-        result.ValidUntil.Should().Be(new DateTime(2024, 12, 31));
-        result.Lft.Should().Be(1);
-        result.Rgt.Should().Be(10);
+        result.ShouldNotBeNull();
+        result.Name.ShouldBe("Summary Group");
+        result.Description.ShouldBe("Summary Description");
+        result.ValidFrom.ShouldBe(new DateTime(2024, 1, 1));
+        result.ValidUntil.ShouldBe(new DateTime(2024, 12, 31));
+        result.Lft.ShouldBe(1);
+        result.Rgt.ShouldBe(10);
     }
 
     [Test]
@@ -217,14 +217,14 @@ public class GroupMapperTests
         var result = _mapper.SummaryToEntity(summary);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("Summary Group");
-        result.Description.Should().Be("Summary Description");
-        result.ValidFrom.Should().Be(new DateTime(2024, 1, 1));
-        result.ValidUntil.Should().Be(new DateTime(2024, 12, 31));
-        result.Lft.Should().Be(1);
-        result.Rgt.Should().Be(10);
-        result.IsDeleted.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Name.ShouldBe("Summary Group");
+        result.Description.ShouldBe("Summary Description");
+        result.ValidFrom.ShouldBe(new DateTime(2024, 1, 1));
+        result.ValidUntil.ShouldBe(new DateTime(2024, 12, 31));
+        result.Lft.ShouldBe(1);
+        result.Rgt.ShouldBe(10);
+        result.IsDeleted.ShouldBeFalse();
     }
 
     [Test]
@@ -249,11 +249,11 @@ public class GroupMapperTests
         var result = _mapper.ToTruncatedGroup(pagedResult);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Groups.Should().HaveCount(2);
-        result.MaxItems.Should().Be(50);
-        result.MaxPages.Should().Be(5);
-        result.CurrentPage.Should().Be(1);
+        result.ShouldNotBeNull();
+        result.Groups.Count().ShouldBe(2);
+        result.MaxItems.ShouldBe(50);
+        result.MaxPages.ShouldBe(5);
+        result.CurrentPage.ShouldBe(1);
     }
 
     [Test]
@@ -279,17 +279,17 @@ public class GroupMapperTests
         var result = _mapper.ToGroupSearchCriteria(filter);
 
         // Assert
-        result.Should().NotBeNull();
-        result.FirstItemOnLastPage.Should().Be(10);
-        result.IsNextPage.Should().BeTrue();
-        result.IsPreviousPage.Should().BeFalse();
-        result.NumberOfItemsPerPage.Should().Be(20);
-        result.OrderBy.Should().Be("name");
-        result.RequiredPage.Should().Be(2);
-        result.SortOrder.Should().Be("asc");
-        result.SearchString.Should().Be("test");
-        result.ActiveDateRange.Should().BeTrue();
-        result.FormerDateRange.Should().BeFalse();
-        result.FutureDateRange.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.FirstItemOnLastPage.ShouldBe(10);
+        result.IsNextPage.ShouldBe(true);
+        result.IsPreviousPage.ShouldBe(false);
+        result.NumberOfItemsPerPage.ShouldBe(20);
+        result.OrderBy.ShouldBe("name");
+        result.RequiredPage.ShouldBe(2);
+        result.SortOrder.ShouldBe("asc");
+        result.SearchString.ShouldBe("test");
+        result.ActiveDateRange.ShouldBeTrue();
+        result.FormerDateRange.ShouldBeFalse();
+        result.FutureDateRange.ShouldBeFalse();
     }
 }

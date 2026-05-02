@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Clients;
 using Klacks.Api.Infrastructure.Persistence;
@@ -96,11 +96,11 @@ public class ClientSearchServiceTests
         var result = _searchService.ApplyStandardSearch(baseQuery, new string[] { "müller", "hans" }, false);
 
         // Assert
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         var clients = result.ToList();
-        clients.Should().HaveCount(1);
-        clients.First().Name.Should().Be("Müller");
-        clients.First().FirstName.Should().Be("Hans");
+        clients.Count().ShouldBe(1);
+        clients.First().Name.ShouldBe("Müller");
+        clients.First().FirstName.ShouldBe("Hans");
     }
 
     [Test]
@@ -116,11 +116,11 @@ public class ClientSearchServiceTests
         var result = _searchService.ApplyStandardSearch(baseQuery, new string[] { "xyz", "ag" }, false);
 
         // Assert
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         var clients = result.ToList();
-        clients.Should().HaveCount(1);
-        clients.First().Name.Should().Be("Schmidt");
-        clients.First().Company.Should().Be("XYZ AG");
+        clients.Count().ShouldBe(1);
+        clients.First().Name.ShouldBe("Schmidt");
+        clients.First().Company.ShouldBe("XYZ AG");
     }
 
     [Test]
@@ -136,10 +136,10 @@ public class ClientSearchServiceTests
         var result = _searchService.ApplyStandardSearch(baseQuery, new string[] { "berg" }, true);
 
         // Assert
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         var clients = result.ToList();
-        clients.Should().HaveCount(1);
-        clients.First().Name.Should().Be("Schneider");
+        clients.Count().ShouldBe(1);
+        clients.First().Name.ShouldBe("Schneider");
     }
 
     [TearDown]

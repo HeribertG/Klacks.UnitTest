@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Commands.Breaks;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Validation.Schedules;
@@ -43,7 +43,7 @@ public class DeleteBreakCommandValidatorTests
         var result = await _validator.ValidateAsync(command);
 
         // Assert
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Test]
@@ -58,7 +58,7 @@ public class DeleteBreakCommandValidatorTests
         var result = await _validator.ValidateAsync(command);
 
         // Assert
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     [Test]
@@ -78,8 +78,8 @@ public class DeleteBreakCommandValidatorTests
         var result = await _validator.ValidateAsync(command);
 
         // Assert
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.ErrorMessage == "Cannot delete a sealed break entry.");
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage == "Cannot delete a sealed break entry.");
     }
 
     [Test]
@@ -99,7 +99,7 @@ public class DeleteBreakCommandValidatorTests
         var result = await _validator.ValidateAsync(command);
 
         // Assert
-        result.IsValid.Should().BeTrue();
+        result.IsValid.ShouldBeTrue();
     }
 
     private void SetupAdminUser()

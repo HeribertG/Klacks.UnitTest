@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Services.Groups;
 using Klacks.Api.Infrastructure.Interfaces;
@@ -84,11 +84,11 @@ public class GroupHierarchyServiceTests
         var result = await _hierarchyService.GetChildrenAsync(parentId);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-        result.Should().Contain(g => g.Id == childId1);
-        result.Should().Contain(g => g.Id == childId2);
-        result.Should().BeInAscendingOrder(g => g.Lft);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(2);
+        result.ShouldContain(g => g.Id == childId1);
+        result.ShouldContain(g => g.Id == childId2);
+        result.Select(g => g.Lft).ShouldBeInOrder();
     }
 
     [Test]
@@ -98,9 +98,8 @@ public class GroupHierarchyServiceTests
         var nonExistentParentId = Guid.NewGuid();
 
         // Act & Assert
-        await FluentActions.Invoking(async () => 
-            await _hierarchyService.GetChildrenAsync(nonExistentParentId))
-            .Should().ThrowAsync<KeyNotFoundException>();
+        await Should.ThrowAsync<KeyNotFoundException>(async () =>
+            await _hierarchyService.GetChildrenAsync(nonExistentParentId));
     }
 
     [Test]
@@ -124,8 +123,8 @@ public class GroupHierarchyServiceTests
         var result = await _hierarchyService.GetChildrenAsync(parentId);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeEmpty();
+        result.ShouldNotBeNull();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -172,9 +171,9 @@ public class GroupHierarchyServiceTests
         var grandChildDepth = await _hierarchyService.GetNodeDepthAsync(grandChildId);
 
         // Assert
-        rootDepth.Should().Be(0);
-        childDepth.Should().Be(1);
-        grandChildDepth.Should().Be(2);
+        rootDepth.ShouldBe(0);
+        childDepth.ShouldBe(1);
+        grandChildDepth.ShouldBe(2);
     }
 
     [Test]
@@ -184,9 +183,8 @@ public class GroupHierarchyServiceTests
         var nonExistentNodeId = Guid.NewGuid();
 
         // Act & Assert
-        await FluentActions.Invoking(async () => 
-            await _hierarchyService.GetNodeDepthAsync(nonExistentNodeId))
-            .Should().ThrowAsync<KeyNotFoundException>();
+        await Should.ThrowAsync<KeyNotFoundException>(async () =>
+            await _hierarchyService.GetNodeDepthAsync(nonExistentNodeId));
     }
 
     [Test]
@@ -231,11 +229,11 @@ public class GroupHierarchyServiceTests
         var path = await _hierarchyService.GetPathAsync(grandChildId);
 
         // Assert
-        path.Should().NotBeNull();
-        path.Should().HaveCount(3);
-        path.ElementAt(0).Id.Should().Be(rootId);
-        path.ElementAt(1).Id.Should().Be(childId);
-        path.ElementAt(2).Id.Should().Be(grandChildId);
+        path.ShouldNotBeNull();
+        path.Count().ShouldBe(3);
+        path.ElementAt(0).Id.ShouldBe(rootId);
+        path.ElementAt(1).Id.ShouldBe(childId);
+        path.ElementAt(2).Id.ShouldBe(grandChildId);
     }
 
     [Test]
@@ -280,10 +278,10 @@ public class GroupHierarchyServiceTests
         var roots = await _hierarchyService.GetRootsAsync();
 
         // Assert
-        roots.Should().NotBeNull();
+        roots.ShouldNotBeNull();
         // The GetRootsAsync method might return all groups without parent filtering
         // Let's just verify we get some roots and they include our root groups
-        roots.Should().Contain(g => g.Id == rootId1);
-        roots.Should().Contain(g => g.Id == rootId2);
+        roots.ShouldContain(g => g.Id == rootId1);
+        roots.ShouldContain(g => g.Id == rootId2);
     }
 }

@@ -1,4 +1,4 @@
-using Klacks.Api.Application.Handlers.Clients;
+﻿using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Clients;
 using NSubstitute;
@@ -47,7 +47,7 @@ internal class GetTruncatedListQueryTests
         //Act
         var result = await handler.Handle(query, default);
         //Assert
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         //Assert.Pass();
     }
 

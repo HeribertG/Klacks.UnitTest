@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
@@ -91,7 +91,7 @@ public class PutCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _clientRepository.Received(1).Put(Arg.Any<Client>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
@@ -144,8 +144,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("Only administrators can modify client contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
@@ -194,7 +193,7 @@ public class PutCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _clientRepository.Received(1).Put(Arg.Any<Client>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
@@ -245,8 +244,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("Only administrators can modify client groups");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client groups");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
@@ -319,7 +317,7 @@ public class PutCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _clientRepository.Received(1).Put(Arg.Any<Client>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
@@ -361,8 +359,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("Only administrators can modify client contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
     }
@@ -404,8 +401,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("Only administrators can modify client contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
     }
@@ -446,8 +442,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("Only administrators can modify client groups");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client groups");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
     }
@@ -471,7 +466,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
     }

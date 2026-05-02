@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /**
  * Unit tests for LLMModelSyncService, covering insert, disable, skip-if-already-disabled,
@@ -50,10 +50,10 @@ public class LLMModelSyncServiceTests
 
         await _sut.SyncAllProvidersAsync();
 
-        inserted.Should().NotBeNull();
-        inserted!.ApiModelId.Should().Be("gpt-5-new");
-        inserted.IsEnabled.Should().BeTrue();
-        inserted.ProviderId.Should().Be("openai");
+        inserted.ShouldNotBeNull();
+        inserted!.ApiModelId.ShouldBe("gpt-5-new");
+        inserted.IsEnabled.ShouldBeTrue();
+        inserted.ProviderId.ShouldBe("openai");
     }
 
     [Test]
@@ -87,9 +87,9 @@ public class LLMModelSyncServiceTests
 
         await _sut.SyncAllProvidersAsync();
 
-        updated.Should().NotBeNull();
-        updated!.ApiModelId.Should().Be("gpt-3");
-        updated.IsEnabled.Should().BeFalse();
+        updated.ShouldNotBeNull();
+        updated!.ApiModelId.ShouldBe("gpt-3");
+        updated.IsEnabled.ShouldBeFalse();
     }
 
     [Test]
@@ -162,10 +162,10 @@ public class LLMModelSyncServiceTests
 
         await _sut.SyncAllProvidersAsync();
 
-        savedNotification.Should().NotBeNull();
-        savedNotification!.ProviderId.Should().Be("openai");
-        savedNotification.NewModelsCount.Should().Be(1);
-        savedNotification.NewModelNames.Should().Contain("GPT-5 New");
+        savedNotification.ShouldNotBeNull();
+        savedNotification!.ProviderId.ShouldBe("openai");
+        savedNotification.NewModelsCount.ShouldBe(1);
+        savedNotification.NewModelNames.ShouldContain("GPT-5 New");
     }
 
     [Test]
@@ -190,8 +190,8 @@ public class LLMModelSyncServiceTests
 
         await _sut.SyncAllProvidersAsync();
 
-        inserted.Should().NotBeNull();
-        inserted!.IsEnabled.Should().BeTrue();
+        inserted.ShouldNotBeNull();
+        inserted!.IsEnabled.ShouldBeTrue();
     }
 
     [Test]
@@ -216,8 +216,8 @@ public class LLMModelSyncServiceTests
 
         await _sut.SyncAllProvidersAsync();
 
-        inserted.Should().NotBeNull();
-        inserted!.IsEnabled.Should().BeFalse();
+        inserted.ShouldNotBeNull();
+        inserted!.IsEnabled.ShouldBeFalse();
     }
 
     [Test]
@@ -241,10 +241,10 @@ public class LLMModelSyncServiceTests
 
         await _sut.SyncAllProvidersAsync();
 
-        notification.Should().NotBeNull();
-        notification!.FailedModelsCount.Should().Be(1);
-        notification.ModelTestResults.Should().HaveCount(1);
-        notification.ModelTestResults[0].Passed.Should().BeFalse();
-        notification.ModelTestResults[0].ErrorMessage.Should().Be("404 model not found");
+        notification.ShouldNotBeNull();
+        notification!.FailedModelsCount.ShouldBe(1);
+        notification.ModelTestResults.Count().ShouldBe(1);
+        notification.ModelTestResults[0].Passed.ShouldBeFalse();
+        notification.ModelTestResults[0].ErrorMessage.ShouldBe("404 model not found");
     }
 }

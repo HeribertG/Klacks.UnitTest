@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.CalendarSelections;
@@ -16,20 +16,20 @@ public class ContractTests
         var contract = new Contract();
 
         // Assert
-        contract.Id.Should().Be(Guid.Empty);
-        contract.Name.Should().BeEmpty();
-        contract.GuaranteedHours.Should().BeNull();
-        contract.MaximumHours.Should().BeNull();
-        contract.MinimumHours.Should().BeNull();
-        contract.FullTime.Should().BeNull();
-        contract.NightRate.Should().BeNull();
-        contract.HolidayRate.Should().BeNull();
-        contract.SaRate.Should().BeNull();
-        contract.SoRate.Should().BeNull();
-        contract.ValidFrom.Should().Be(default(DateTime));
-        contract.ValidUntil.Should().BeNull();
-        contract.CalendarSelectionId.Should().BeNull();
-        contract.CalendarSelection.Should().BeNull();
+        contract.Id.ShouldBe(Guid.Empty);
+        contract.Name.ShouldBeEmpty();
+        contract.GuaranteedHours.ShouldBeNull();
+        contract.MaximumHours.ShouldBeNull();
+        contract.MinimumHours.ShouldBeNull();
+        contract.FullTime.ShouldBeNull();
+        contract.NightRate.ShouldBeNull();
+        contract.HolidayRate.ShouldBeNull();
+        contract.SaRate.ShouldBeNull();
+        contract.SoRate.ShouldBeNull();
+        contract.ValidFrom.ShouldBe(default(DateTime));
+        contract.ValidUntil.ShouldBeNull();
+        contract.CalendarSelectionId.ShouldBeNull();
+        contract.CalendarSelection.ShouldBeNull();
     }
 
     [Test]
@@ -61,15 +61,15 @@ public class ContractTests
         };
 
         // Assert
-        contract.Id.Should().Be(id);
-        contract.Name.Should().Be(name);
-        contract.GuaranteedHours.Should().Be(guaranteedHours);
-        contract.MaximumHours.Should().Be(maxHours);
-        contract.MinimumHours.Should().Be(minHours);
-        contract.ValidFrom.Should().Be(validFrom);
-        contract.ValidUntil.Should().Be(validUntil);
-        contract.CalendarSelectionId.Should().Be(calendarSelectionId);
-        contract.CalendarSelection.Should().Be(calendarSelection);
+        contract.Id.ShouldBe(id);
+        contract.Name.ShouldBe(name);
+        contract.GuaranteedHours.ShouldBe(guaranteedHours);
+        contract.MaximumHours.ShouldBe(maxHours);
+        contract.MinimumHours.ShouldBe(minHours);
+        contract.ValidFrom.ShouldBe(validFrom);
+        contract.ValidUntil.ShouldBe(validUntil);
+        contract.CalendarSelectionId.ShouldBe(calendarSelectionId);
+        contract.CalendarSelection.ShouldBe(calendarSelection);
     }
 
     [Test]
@@ -79,7 +79,7 @@ public class ContractTests
         var contract = new Contract();
 
         // Assert
-        contract.Should().BeAssignableTo<BaseEntity>();
+        contract.ShouldBeAssignableTo<BaseEntity>();
     }
 
     [Test]
@@ -94,7 +94,7 @@ public class ContractTests
         };
 
         // Assert
-        contract.ValidUntil.Should().BeNull();
+        contract.ValidUntil.ShouldBeNull();
     }
 
     [Test]
@@ -109,9 +109,9 @@ public class ContractTests
         };
 
         // Assert
-        contract.GuaranteedHours.Should().Be(160.5m);
-        contract.MaximumHours.Should().Be(200.75m);
-        contract.MinimumHours.Should().Be(120.25m);
+        contract.GuaranteedHours.ShouldBe(160.5m);
+        contract.MaximumHours.ShouldBe(200.75m);
+        contract.MinimumHours.ShouldBe(120.25m);
     }
 
     [Test]
@@ -126,9 +126,9 @@ public class ContractTests
         };
 
         // Assert
-        contract.Name.Should().NotBeEmpty();
-        contract.ValidFrom.Should().BeAfter(DateTime.MinValue);
-        contract.CalendarSelectionId.Should().NotBe(Guid.Empty);
+        contract.Name.ShouldNotBeEmpty();
+        contract.ValidFrom.ShouldBeGreaterThan(DateTime.MinValue);
+        contract.CalendarSelectionId.ShouldNotBe(Guid.Empty);
     }
 
     [Test]
@@ -138,12 +138,12 @@ public class ContractTests
         var contract = new Contract();
 
         // Assert
-        contract.CreateTime.Should().BeNull();
-        contract.UpdateTime.Should().BeNull();
-        contract.DeletedTime.Should().BeNull();
-        contract.IsDeleted.Should().BeFalse();
-        contract.CurrentUserCreated.Should().Be(string.Empty);
-        contract.CurrentUserUpdated.Should().Be(string.Empty);
-        contract.CurrentUserDeleted.Should().Be(string.Empty);
+        contract.CreateTime.ShouldBeNull();
+        contract.UpdateTime.ShouldBeNull();
+        contract.DeletedTime.ShouldBeNull();
+        contract.IsDeleted.ShouldBeFalse();
+        contract.CurrentUserCreated.ShouldBe(string.Empty);
+        contract.CurrentUserUpdated.ShouldBe(string.Empty);
+        contract.CurrentUserDeleted.ShouldBe(string.Empty);
     }
 }

@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using NUnit.Framework;
 
@@ -17,8 +17,8 @@ public class WizardJobRegistryTests
 
         var cts = registry.Register(jobId, CancellationToken.None);
 
-        cts.Should().NotBeNull();
-        registry.IsRunning(jobId).Should().BeTrue();
+        cts.ShouldNotBeNull();
+        registry.IsRunning(jobId).ShouldBeTrue();
     }
 
     [Test]
@@ -30,8 +30,8 @@ public class WizardJobRegistryTests
 
         var cancelled = registry.TryCancel(jobId);
 
-        cancelled.Should().BeTrue();
-        cts.Token.IsCancellationRequested.Should().BeTrue();
+        cancelled.ShouldBeTrue();
+        cts.Token.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Test]
@@ -39,7 +39,7 @@ public class WizardJobRegistryTests
     {
         var registry = new WizardJobRegistry();
 
-        registry.TryCancel(Guid.NewGuid()).Should().BeFalse();
+        registry.TryCancel(Guid.NewGuid()).ShouldBeFalse();
     }
 
     [Test]
@@ -51,6 +51,6 @@ public class WizardJobRegistryTests
 
         registry.Remove(jobId);
 
-        registry.IsRunning(jobId).Should().BeFalse();
+        registry.IsRunning(jobId).ShouldBeFalse();
     }
 }

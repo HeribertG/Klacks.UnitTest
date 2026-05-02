@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Presentation.Controllers.UserBackend.Settings;
 using Klacks.Api.Application.DTOs.Settings;
@@ -65,9 +65,9 @@ namespace Klacks.UnitTest.Controllers.Settings
 
             // Assert
             var actionResult = result.Result;
-            actionResult.Should().BeOfType<OkObjectResult>();
+            actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
-            okResult.Value.Should().BeEquivalentTo(expectedResult);
+            okResult.Value.ShouldBeEquivalentTo(expectedResult);
         }
 
         [Test]
@@ -99,11 +99,11 @@ namespace Klacks.UnitTest.Controllers.Settings
 
             // Assert
             var actionResult = result.Result;
-            actionResult.Should().BeOfType<OkObjectResult>();
+            actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
             var emailResult = okResult.Value as EmailTestResult;
-            emailResult.Success.Should().BeFalse();
-            emailResult.Message.Should().Contain("Authentication failed");
+            emailResult.Success.ShouldBeFalse();
+            emailResult.Message.ShouldContain("Authentication failed");
         }
 
         [Test]
@@ -135,11 +135,11 @@ namespace Klacks.UnitTest.Controllers.Settings
 
             // Assert
             var actionResult = result.Result;
-            actionResult.Should().BeOfType<OkObjectResult>();
+            actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
             var emailResult = okResult.Value as EmailTestResult;
-            emailResult.Success.Should().BeFalse();
-            emailResult.Message.Should().Contain("timeout");
+            emailResult.Success.ShouldBeFalse();
+            emailResult.Message.ShouldContain("timeout");
         }
 
         [Test]
@@ -172,12 +172,12 @@ namespace Klacks.UnitTest.Controllers.Settings
             {
                 var result = await _controller.TestEmailConfiguration(request);
                 // If we get here, the controller handled the exception
-                result.Should().NotBeNull();
+                result.ShouldNotBeNull();
             }
             catch (Exception ex)
             {
                 // If we get here, the controller let the exception bubble up
-                ex.Message.Should().Contain("Service error");
+                ex.Message.ShouldContain("Service error");
             }
         }
 
@@ -234,10 +234,10 @@ namespace Klacks.UnitTest.Controllers.Settings
 
             // Assert
             var actionResult = result.Result;
-            actionResult.Should().BeOfType<OkObjectResult>();
+            actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
             var emailResult = okResult.Value as EmailTestResult;
-            emailResult.Success.Should().BeFalse();
+            emailResult.Success.ShouldBeFalse();
         }
     }
 }

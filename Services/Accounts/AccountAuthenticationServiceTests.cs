@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
@@ -54,8 +54,8 @@ public class AccountAuthenticationServiceTests
 
         var result = await _authenticationService.LogInUserAsync(email, password);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeTrue();
     }
 
     [Test]
@@ -68,8 +68,8 @@ public class AccountAuthenticationServiceTests
 
         var result = await _authenticationService.LogInUserAsync(email, password);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -83,8 +83,8 @@ public class AccountAuthenticationServiceTests
         var result1 = await _authenticationService.LogInUserAsync(null, password);
         var result2 = await _authenticationService.LogInUserAsync("", password);
 
-        result1.Success.Should().BeFalse();
-        result2.Success.Should().BeFalse();
+        result1.Success.ShouldBeFalse();
+        result2.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -98,8 +98,8 @@ public class AccountAuthenticationServiceTests
         var result1 = await _authenticationService.LogInUserAsync(email, null);
         var result2 = await _authenticationService.LogInUserAsync(email, "");
 
-        result1.Success.Should().BeFalse();
-        result2.Success.Should().BeFalse();
+        result1.Success.ShouldBeFalse();
+        result2.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -123,7 +123,7 @@ public class AccountAuthenticationServiceTests
 
         var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
 
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _mockAuthService.Received().GetUserFromAccessTokenAsync(refreshRequest.Token);
     }
 }

@@ -1,11 +1,11 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for DictionaryService context building from DB entries and caching.
 /// </summary>
 namespace Klacks.UnitTest.Services.Assistant;
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
@@ -44,9 +44,9 @@ public class DictionaryServiceTests
     {
         var result = await _service.BuildContextAsync();
 
-        result.Should().Contain("Klacks");
-        result.Should().Contain("FD");
-        result.Should().Contain("Frühdienst");
+        result.ShouldContain("Klacks");
+        result.ShouldContain("FD");
+        result.ShouldContain("Frühdienst");
     }
 
     [Test]
@@ -54,8 +54,8 @@ public class DictionaryServiceTests
     {
         var result = await _service.BuildContextAsync();
 
-        result.Should().Contain("Klax");
-        result.Should().Contain("Klaksi");
+        result.ShouldContain("Klax");
+        result.ShouldContain("Klaksi");
     }
 
     [Test]
@@ -64,7 +64,7 @@ public class DictionaryServiceTests
         var result1 = await _service.BuildContextAsync();
         var result2 = await _service.BuildContextAsync();
 
-        result1.Should().Be(result2);
+        result1.ShouldBe(result2);
         await _repository.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
     }
 
@@ -73,7 +73,7 @@ public class DictionaryServiceTests
     {
         var result = await _service.ApplyReplacementsAsync("Hallo Klaksi, kannst du Klags öffnen?");
 
-        result.Should().Be("Hallo Klacksy, kannst du Klacks öffnen?");
+        result.ShouldBe("Hallo Klacksy, kannst du Klacks öffnen?");
     }
 
     [Test]
@@ -81,7 +81,7 @@ public class DictionaryServiceTests
     {
         var result = await _service.ApplyReplacementsAsync("Klax-Bericht und Klaxonen");
 
-        result.Should().Be("Klacks-Bericht und Klaxonen");
+        result.ShouldBe("Klacks-Bericht und Klaxonen");
     }
 
     [Test]
@@ -89,7 +89,7 @@ public class DictionaryServiceTests
     {
         var result = await _service.ApplyReplacementsAsync("Guten Morgen!");
 
-        result.Should().Be("Guten Morgen!");
+        result.ShouldBe("Guten Morgen!");
     }
 
     [Test]
@@ -97,7 +97,7 @@ public class DictionaryServiceTests
     {
         var result = await _service.ApplyReplacementsAsync(string.Empty);
 
-        result.Should().Be(string.Empty);
+        result.ShouldBe(string.Empty);
     }
 
     [Test]

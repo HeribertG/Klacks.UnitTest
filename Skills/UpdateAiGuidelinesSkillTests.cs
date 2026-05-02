@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for UpdateAiGuidelinesSkill, which upserts AI guidelines via IGlobalAgentRuleRepository.
@@ -9,7 +9,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using NUnit.Framework;
 using NSubstitute;
-using FluentAssertions;
+using Shouldly;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -60,7 +60,7 @@ public class UpdateAiGuidelinesSkillTests
 
         var result = await _skill.ExecuteAsync(_context, parameters);
 
-        result.Success.Should().BeTrue();
+        result.Success.ShouldBeTrue();
         await _repository.Received(1).UpsertRuleAsync(
             GlobalAgentRuleNames.AiGuidelines,
             "- New rule 1\n- New rule 2",
@@ -81,8 +81,8 @@ public class UpdateAiGuidelinesSkillTests
 
         var result = await _skill.ExecuteAsync(_context, parameters);
 
-        result.Success.Should().BeTrue();
-        result.Message.Should().Contain(content.Length.ToString());
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain(content.Length.ToString());
     }
 
     [Test]
@@ -92,6 +92,6 @@ public class UpdateAiGuidelinesSkillTests
 
         var act = () => _skill.ExecuteAsync(_context, parameters);
 
-        act.Should().ThrowAsync<ArgumentException>().WithMessage("*guidelines*");
+        (act.ShouldThrowAsync<ArgumentException>()).Result.Message.ShouldContain("guidelines");
     }
 }

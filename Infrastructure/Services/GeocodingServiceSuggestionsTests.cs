@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for GeocodingService.GetAddressSuggestionsAsync: Nominatim response parsing,
@@ -70,13 +70,13 @@ public class GeocodingServiceSuggestionsTests
         var result = await _service.GetAddressSuggestionsAsync("Bahnhofstrasse", "8001", "Zürich", "CH");
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(3);
-        result[0].DisplayName.Should().Be("Bahnhofstrasse, 8001 Zürich, Switzerland");
-        result[0].Latitude.Should().Be(47.3769);
-        result[0].Longitude.Should().Be(8.5417);
-        result[1].Latitude.Should().Be(47.3780);
-        result[2].Latitude.Should().Be(47.3790);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(3);
+        result[0].DisplayName.ShouldBe("Bahnhofstrasse, 8001 Zürich, Switzerland");
+        result[0].Latitude.ShouldBe(47.3769);
+        result[0].Longitude.ShouldBe(8.5417);
+        result[1].Latitude.ShouldBe(47.3780);
+        result[2].Latitude.ShouldBe(47.3790);
     }
 
     [Test]
@@ -112,10 +112,10 @@ public class GeocodingServiceSuggestionsTests
         var result = await _service.GetAddressSuggestionsAsync("Nonexistent", "8001", "Zürich", "CH");
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(1);
-        result[0].DisplayName.Should().Be("8001 Zürich, Switzerland");
-        callCount.Should().BeGreaterThanOrEqualTo(2);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(1);
+        result[0].DisplayName.ShouldBe("8001 Zürich, Switzerland");
+        callCount.ShouldBeGreaterThanOrEqualTo(2);
     }
 
     [Test]
@@ -143,10 +143,10 @@ public class GeocodingServiceSuggestionsTests
         var result2 = await _service.GetAddressSuggestionsAsync("Bahnhofstrasse", "8001", "Zürich", "CH");
 
         // Assert
-        result1.Should().HaveCount(1);
-        result2.Should().HaveCount(1);
-        result1[0].DisplayName.Should().Be(result2[0].DisplayName);
-        callCount.Should().Be(1);
+        result1.Count().ShouldBe(1);
+        result2.Count().ShouldBe(1);
+        result1[0].DisplayName.ShouldBe(result2[0].DisplayName);
+        callCount.ShouldBe(1);
     }
 
     [Test]
@@ -159,8 +159,8 @@ public class GeocodingServiceSuggestionsTests
         var result = await _service.GetAddressSuggestionsAsync("Bahnhofstrasse", "8001", "Zürich", "CH");
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeEmpty();
+        result.ShouldNotBeNull();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -176,8 +176,8 @@ public class GeocodingServiceSuggestionsTests
         var result = await _service.GetAddressSuggestionsAsync("Bahnhofstrasse", "8001", "Zürich", "CH");
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeEmpty();
+        result.ShouldNotBeNull();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -198,8 +198,8 @@ public class GeocodingServiceSuggestionsTests
         await _service.GetAddressSuggestionsAsync("Bahnhofstrasse", "8001", "Zürich", "CH", limit: 3);
 
         // Assert
-        capturedUrl.Should().NotBeNull();
-        capturedUrl.Should().Contain("limit=3");
+        capturedUrl.ShouldNotBeNull();
+        capturedUrl.ShouldContain("limit=3");
     }
 
     private class MockHttpMessageHandler : HttpMessageHandler

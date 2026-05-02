@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -20,8 +20,8 @@ public class ServiceCollectionExtensionsTests
         // Assert
         using var provider = services.BuildServiceProvider();
         var mediator = provider.GetService<IMediator>();
-        mediator.Should().NotBeNull();
-        mediator.Should().BeOfType<Klacks.Api.Infrastructure.Mediator.Mediator>();
+        mediator.ShouldNotBeNull();
+        mediator.ShouldBeOfType<Klacks.Api.Infrastructure.Mediator.Mediator>();
     }
 
     [Test]
@@ -36,7 +36,7 @@ public class ServiceCollectionExtensionsTests
         // Assert
         using var provider = services.BuildServiceProvider();
         var handler = provider.GetService<IRequestHandler<RegistrationTestRequest, string>>();
-        handler.Should().NotBeNull();
+        handler.ShouldNotBeNull();
     }
 
     [Test]
@@ -53,7 +53,7 @@ public class ServiceCollectionExtensionsTests
         // Assert
         using var provider = services.BuildServiceProvider();
         var mediator = provider.GetService<IMediator>();
-        mediator.Should().NotBeNull();
+        mediator.ShouldNotBeNull();
     }
 
     [Test]
@@ -70,7 +70,7 @@ public class ServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var behaviorType = typeof(IPipelineBehavior<RegistrationTestRequest, string>);
         var behaviors = provider.GetServices(behaviorType);
-        behaviors.Should().ContainSingle();
+        behaviors.ShouldHaveSingleItem();
     }
 
     [Test]
@@ -93,9 +93,9 @@ public class ServiceCollectionExtensionsTests
         }
 
         // Assert
-        mediator1.Should().NotBeNull();
-        mediator2.Should().NotBeNull();
-        mediator1.Should().NotBeSameAs(mediator2);
+        mediator1.ShouldNotBeNull();
+        mediator2.ShouldNotBeNull();
+        mediator1.ShouldNotBeSameAs(mediator2);
     }
 
     [Test]
@@ -118,9 +118,9 @@ public class ServiceCollectionExtensionsTests
         }
 
         // Assert
-        handler1.Should().NotBeNull();
-        handler2.Should().NotBeNull();
-        handler1.Should().NotBeSameAs(handler2);
+        handler1.ShouldNotBeNull();
+        handler2.ShouldNotBeNull();
+        handler1.ShouldNotBeSameAs(handler2);
     }
 
     [Test]
@@ -137,7 +137,7 @@ public class ServiceCollectionExtensionsTests
         var result = await mediator.Send(request);
 
         // Assert
-        result.Should().Be("Processed: Integration Test");
+        result.ShouldBe("Processed: Integration Test");
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for GetAiGuidelinesSkill, which retrieves AI guidelines via IGlobalAgentRuleRepository.
@@ -9,7 +9,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using NUnit.Framework;
 using NSubstitute;
-using FluentAssertions;
+using Shouldly;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -42,8 +42,8 @@ public class GetAiGuidelinesSkillTests
 
         var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>());
 
-        result.Success.Should().BeTrue();
-        result.Message.Should().Contain("No AI guidelines");
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("No AI guidelines");
         await _repository.Received(1).GetRuleAsync(GlobalAgentRuleNames.AiGuidelines, Arg.Any<CancellationToken>());
     }
 
@@ -63,8 +63,8 @@ public class GetAiGuidelinesSkillTests
 
         var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>());
 
-        result.Success.Should().BeTrue();
-        result.Message.Should().Contain("No AI guidelines");
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("No AI guidelines");
     }
 
     [Test]
@@ -83,8 +83,8 @@ public class GetAiGuidelinesSkillTests
 
         var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>());
 
-        result.Success.Should().BeTrue();
-        result.Message.Should().Contain("characters");
-        result.Data.Should().NotBeNull();
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("characters");
+        result.Data.ShouldNotBeNull();
     }
 }

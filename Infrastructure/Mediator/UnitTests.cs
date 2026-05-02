@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Infrastructure.Mediator;
 using NUnit.Framework;
 
@@ -15,7 +15,7 @@ public class UnitTests
         var unit2 = Unit.Value;
 
         // Assert
-        unit1.Should().Be(unit2);
+        unit1.ShouldBe(unit2);
     }
 
     [Test]
@@ -26,8 +26,8 @@ public class UnitTests
         var unit2 = new Unit();
 
         // Act & Assert
-        unit1.Equals(unit2).Should().BeTrue();
-        unit1.Equals(Unit.Value).Should().BeTrue();
+        unit1.Equals(unit2).ShouldBeTrue();
+        unit1.Equals(Unit.Value).ShouldBeTrue();
     }
 
     [Test]
@@ -38,7 +38,7 @@ public class UnitTests
         object? obj = "not a unit";
 
         // Act & Assert
-        unit.Equals(obj).Should().BeFalse();
+        unit.Equals(obj).ShouldBeFalse();
     }
 
     [Test]
@@ -49,7 +49,7 @@ public class UnitTests
         object? nullObj = null;
 
         // Act & Assert
-        unit.Equals(nullObj).Should().BeFalse();
+        unit.Equals(nullObj).ShouldBeFalse();
     }
 
     [Test]
@@ -59,7 +59,7 @@ public class UnitTests
         var unit = Unit.Value;
 
         // Act & Assert
-        unit.GetHashCode().Should().Be(0);
+        unit.GetHashCode().ShouldBe(0);
     }
 
     [Test]
@@ -70,7 +70,7 @@ public class UnitTests
         var unit2 = new Unit();
 
         // Act & Assert
-        unit1.CompareTo(unit2).Should().Be(0);
+        unit1.CompareTo(unit2).ShouldBe(0);
     }
 
     [Test]
@@ -81,7 +81,7 @@ public class UnitTests
         object obj = new Unit();
 
         // Act & Assert
-        unit.CompareTo(obj).Should().Be(0);
+        unit.CompareTo(obj).ShouldBe(0);
     }
 
     [Test]
@@ -92,7 +92,7 @@ public class UnitTests
         var unit2 = new Unit();
 
         // Act & Assert
-        (unit1 == unit2).Should().BeTrue();
+        (unit1 == unit2).ShouldBeTrue();
     }
 
     [Test]
@@ -103,7 +103,7 @@ public class UnitTests
         var unit2 = new Unit();
 
         // Act & Assert
-        (unit1 != unit2).Should().BeFalse();
+        (unit1 != unit2).ShouldBeFalse();
     }
 
     [Test]
@@ -113,7 +113,7 @@ public class UnitTests
         var unit = Unit.Value;
 
         // Act & Assert
-        unit.ToString().Should().Be("()");
+        unit.ToString().ShouldBe("()");
     }
 
     [Test]
@@ -123,7 +123,7 @@ public class UnitTests
         var result = await Unit.Task;
 
         // Assert
-        result.Should().Be(Unit.Value);
+        result.ShouldBe(Unit.Value);
     }
 
     [Test]
@@ -134,7 +134,7 @@ public class UnitTests
         var task2 = Unit.Task;
 
         // Assert
-        task1.Should().BeSameAs(task2);
+        task1.ShouldBeSameAs(task2);
     }
 
     [Test]
@@ -144,6 +144,6 @@ public class UnitTests
         var task = Unit.Task;
 
         // Assert
-        task.IsCompleted.Should().BeTrue();
+        task.IsCompleted.ShouldBeTrue();
     }
 }

@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Services.Shifts;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
@@ -149,7 +149,7 @@ public class ShiftSearchServiceTests
         var result = _searchService.ApplySearchFilter(query, "", false);
 
         // Assert
-        result.Should().BeEquivalentTo(query);
+        result.ShouldBeEquivalentTo(query);
     }
 
     [Test]
@@ -162,7 +162,7 @@ public class ShiftSearchServiceTests
         var result = _searchService.ApplySearchFilter(query, null, false);
 
         // Assert
-        result.Should().BeEquivalentTo(query);
+        result.ShouldBeEquivalentTo(query);
     }
 
     [Test]
@@ -175,7 +175,7 @@ public class ShiftSearchServiceTests
         var result = _searchService.ApplySearchFilter(query, "   ", false);
 
         // Assert
-        result.Should().BeEquivalentTo(query);
+        result.ShouldBeEquivalentTo(query);
     }
 
     [TestCase("morning", 1, "Should find shift by name case-insensitive")]
@@ -194,7 +194,7 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(expectedCount, description);
+        shifts.Count().ShouldBe(expectedCount, description);
     }
 
     [Test]
@@ -209,8 +209,8 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2);
-        shifts.Should().AllSatisfy(s => s.Client.Name.Should().Be("Müller"));
+        shifts.Count().ShouldBe(2);
+        foreach (var s in shifts) { s.Client.Name.ShouldBe("Müller"); }
     }
 
     [Test]
@@ -225,7 +225,7 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(0);
+        shifts.Count().ShouldBe(0);
     }
 
     [Test]
@@ -240,9 +240,9 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.First().Client.FirstName.Should().Be("Anna");
-        shifts.First().Name.Should().Be("Evening Shift");
+        shifts.Count().ShouldBe(1);
+        shifts.First().Client.FirstName.ShouldBe("Anna");
+        shifts.First().Name.ShouldBe("Evening Shift");
     }
 
     [Test]
@@ -257,8 +257,8 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2);
-        shifts.Should().AllSatisfy(s => s.Client.Company.Should().Contain("ABC"));
+        shifts.Count().ShouldBe(2);
+        foreach (var s in shifts) { s.Client.Company.ShouldContain("ABC"); }
     }
 
     [Test]
@@ -273,8 +273,8 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.First().Name.Should().Be("Morning Shift");
+        shifts.Count().ShouldBe(1);
+        shifts.First().Name.ShouldBe("Morning Shift");
     }
 
     [Test]
@@ -289,9 +289,9 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2);
-        shifts.Should().Contain(s => s.Name == "Evening Shift");
-        shifts.Should().Contain(s => s.Name == "EmptyShift");
+        shifts.Count().ShouldBe(2);
+        shifts.ShouldContain(s => s.Name == "Evening Shift");
+        shifts.ShouldContain(s => s.Name == "EmptyShift");
     }
 
     [Test]
@@ -306,8 +306,8 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.First().Name.Should().Be("Morning Shift");
+        shifts.Count().ShouldBe(1);
+        shifts.First().Name.ShouldBe("Morning Shift");
     }
 
     [Test]
@@ -322,9 +322,9 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2);
-        shifts.Should().Contain(s => s.Name == "Morning Shift");
-        shifts.Should().Contain(s => s.Name == "Evening Shift");
+        shifts.Count().ShouldBe(2);
+        shifts.ShouldContain(s => s.Name == "Morning Shift");
+        shifts.ShouldContain(s => s.Name == "Evening Shift");
     }
 
     [Test]
@@ -339,10 +339,10 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(3);
-        shifts.Should().Contain(s => s.Name == "Morning Shift");
-        shifts.Should().Contain(s => s.Name == "Evening Shift");
-        shifts.Should().Contain(s => s.Name == "Night Shift");
+        shifts.Count().ShouldBe(3);
+        shifts.ShouldContain(s => s.Name == "Morning Shift");
+        shifts.ShouldContain(s => s.Name == "Evening Shift");
+        shifts.ShouldContain(s => s.Name == "Night Shift");
     }
 
     [Test]
@@ -357,7 +357,7 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(0);
+        shifts.Count().ShouldBe(0);
     }
 
     [Test]
@@ -372,8 +372,8 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.First().Name.Should().Be("Morning Shift");
+        shifts.Count().ShouldBe(1);
+        shifts.First().Name.ShouldBe("Morning Shift");
     }
 
     [Test]
@@ -388,8 +388,8 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.First().Name.Should().Be("Morning Shift");
+        shifts.Count().ShouldBe(1);
+        shifts.First().Name.ShouldBe("Morning Shift");
     }
 
     [Test]
@@ -404,9 +404,9 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(2);
-        shifts.Should().Contain(s => s.Name == "EmptyShift");
-        shifts.Should().Contain(s => s.Name == "Evening Shift");
+        shifts.Count().ShouldBe(2);
+        shifts.ShouldContain(s => s.Name == "EmptyShift");
+        shifts.ShouldContain(s => s.Name == "Evening Shift");
     }
 
     [Test]
@@ -421,9 +421,9 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.First().Name.Should().Be("EmptyShift");
-        shifts.First().Description.Should().Be("");
+        shifts.Count().ShouldBe(1);
+        shifts.First().Name.ShouldBe("EmptyShift");
+        shifts.First().Description.ShouldBe("");
     }
 
     [Test]
@@ -438,7 +438,7 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(0);
+        shifts.Count().ShouldBe(0);
     }
 
     [Test]
@@ -453,11 +453,11 @@ public class ShiftSearchServiceTests
         var result2 = _searchService.ApplyExactSearch(query, new[] { "hans" }, true);
 
         // Assert
-        result1.Should().HaveCount(1);
-        result1.First().Name.Should().Be("Morning Shift");
+        result1.Count().ShouldBe(1);
+        result1.First().Name.ShouldBe("Morning Shift");
 
-        result2.Should().HaveCount(2);
-        result2.Should().AllSatisfy(s => s.Client.FirstName.Should().Be("Hans"));
+        result2.Count().ShouldBe(2);
+        foreach (var s in result2) { s.Client.FirstName.ShouldBe("Hans"); }
     }
 
     [Test]
@@ -472,9 +472,9 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(1);
-        shifts.First().Client.FirstName.Should().Be("Anna");
-        shifts.First().Client.Company.Should().Contain("XYZ");
+        shifts.Count().ShouldBe(1);
+        shifts.First().Client.FirstName.ShouldBe("Anna");
+        shifts.First().Client.Company.ShouldContain("XYZ");
     }
 
     [Test]
@@ -489,6 +489,6 @@ public class ShiftSearchServiceTests
         var shifts = result.ToList();
 
         // Assert
-        shifts.Should().HaveCount(3);
+        shifts.Count().ShouldBe(3);
     }
 }

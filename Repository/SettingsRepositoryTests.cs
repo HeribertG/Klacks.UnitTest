@@ -1,8 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Repositories;
@@ -42,9 +42,9 @@ namespace Klacks.UnitTest.Repository
 
             // Assert
             var result = await TestDbContext.Settings.FirstOrDefaultAsync(s => s.Type == "outgoingserver");
-            result.Should().NotBeNull();
-            result.Type.Should().Be("outgoingserver");
-            result.Value.Should().Be("mail.gmx.net");
+            result.ShouldNotBeNull();
+            result.Type.ShouldBe("outgoingserver");
+            result.Value.ShouldBe("mail.gmx.net");
         }
 
         [Test]
@@ -67,28 +67,28 @@ namespace Klacks.UnitTest.Repository
             var result = await TestDbContext.Settings.ToListAsync();
 
             // Assert
-            result.Should().NotBeNull();
-            result.Should().HaveCount(5);
+            result.ShouldNotBeNull();
+            result.Count().ShouldBe(5);
             
             var serverSetting = result.FirstOrDefault(s => s.Type == "outgoingserver");
-            serverSetting.Should().NotBeNull();
-            serverSetting.Value.Should().Be("mail.gmx.net");
+            serverSetting.ShouldNotBeNull();
+            serverSetting.Value.ShouldBe("mail.gmx.net");
 
             var portSetting = result.FirstOrDefault(s => s.Type == "outgoingserverPort");
-            portSetting.Should().NotBeNull();
-            portSetting.Value.Should().Be("587");
+            portSetting.ShouldNotBeNull();
+            portSetting.Value.ShouldBe("587");
 
             var sslSetting = result.FirstOrDefault(s => s.Type == "enabledSSL");
-            sslSetting.Should().NotBeNull();
-            sslSetting.Value.Should().Be("true");
+            sslSetting.ShouldNotBeNull();
+            sslSetting.Value.ShouldBe("true");
 
             var authSetting = result.FirstOrDefault(s => s.Type == "authenticationType");
-            authSetting.Should().NotBeNull();
-            authSetting.Value.Should().Be("LOGIN");
+            authSetting.ShouldNotBeNull();
+            authSetting.Value.ShouldBe("LOGIN");
 
             var usernameSetting = result.FirstOrDefault(s => s.Type == "outgoingserverUsername");
-            usernameSetting.Should().NotBeNull();
-            usernameSetting.Value.Should().Be("hgasparoli@gmx.ch");
+            usernameSetting.ShouldNotBeNull();
+            usernameSetting.Value.ShouldBe("hgasparoli@gmx.ch");
         }
 
         [Test]
@@ -112,8 +112,8 @@ namespace Klacks.UnitTest.Repository
 
             // Assert
             var updatedSetting = await TestDbContext.Settings.FirstOrDefaultAsync(s => s.Type == "outgoingserver");
-            updatedSetting.Should().NotBeNull();
-            updatedSetting.Value.Should().Be("mail.gmx.net");
+            updatedSetting.ShouldNotBeNull();
+            updatedSetting.Value.ShouldBe("mail.gmx.net");
         }
 
         [Test]
@@ -136,7 +136,7 @@ namespace Klacks.UnitTest.Repository
 
             // Assert
             var deletedSetting = await TestDbContext.Settings.FirstOrDefaultAsync(s => s.Type == "tempEmailSetting");
-            deletedSetting.Should().BeNull();
+            deletedSetting.ShouldBeNull();
         }
 
         #endregion
@@ -166,13 +166,13 @@ namespace Klacks.UnitTest.Repository
             var emailConfig = BuildEmailConfigFromSettings(allSettings);
 
             // Assert
-            emailConfig.Should().NotBeNull();
-            emailConfig["outgoingserver"].Should().Be("mail.gmx.net");
-            emailConfig["outgoingserverPort"].Should().Be("587");
-            emailConfig["enabledSSL"].Should().Be("true");
-            emailConfig["authenticationType"].Should().Be("LOGIN");
-            emailConfig["outgoingserverUsername"].Should().Be("hgasparoli@gmx.ch");
-            emailConfig["replyTo"].Should().Be("hgasparoli@gmx.ch");
+            emailConfig.ShouldNotBeNull();
+            emailConfig["outgoingserver"].ShouldBe("mail.gmx.net");
+            emailConfig["outgoingserverPort"].ShouldBe("587");
+            emailConfig["enabledSSL"].ShouldBe("true");
+            emailConfig["authenticationType"].ShouldBe("LOGIN");
+            emailConfig["outgoingserverUsername"].ShouldBe("hgasparoli@gmx.ch");
+            emailConfig["replyTo"].ShouldBe("hgasparoli@gmx.ch");
         }
 
         [Test]
@@ -193,10 +193,10 @@ namespace Klacks.UnitTest.Repository
             var emailConfig = BuildEmailConfigFromSettings(allSettings);
 
             // Assert
-            emailConfig.Should().NotBeNull();
-            emailConfig.Should().HaveCount(2);
-            emailConfig["outgoingserver"].Should().Be("mail.gmx.net");
-            emailConfig["outgoingserverPort"].Should().Be("587");
+            emailConfig.ShouldNotBeNull();
+            emailConfig.Count().ShouldBe(2);
+            emailConfig["outgoingserver"].ShouldBe("mail.gmx.net");
+            emailConfig["outgoingserverPort"].ShouldBe("587");
         }
 
         #endregion
@@ -228,8 +228,8 @@ namespace Klacks.UnitTest.Repository
 
             // Assert
             var executionTime = DateTime.Now - startTime;
-            result.Should().HaveCount(1000);
-            executionTime.TotalMilliseconds.Should().BeLessThan(5000); // Should complete within 5 seconds
+            result.Count().ShouldBe(1000);
+            executionTime.TotalMilliseconds.ShouldBeLessThan(5000); // Should complete within 5 seconds
         }
 
         #endregion

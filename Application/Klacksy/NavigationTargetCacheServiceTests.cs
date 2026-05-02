@@ -1,8 +1,8 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 namespace Klacks.UnitTest.Application.Klacksy;
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Klacksy;
 using NUnit.Framework;
 
@@ -21,8 +21,8 @@ public class NavigationTargetCacheServiceTests
         """);
         var sut = new NavigationTargetCacheService(tempFile, pluginFolder: null);
 
-        sut.FindBySynonym("ki anbieter", "de").Should().HaveCount(1);
-        sut.FindBySynonym("unknown", "de").Should().BeEmpty();
-        sut.GetById("llm-provider").Should().NotBeNull();
+        sut.FindBySynonym("ki anbieter", "de").Count().ShouldBe(1);
+        sut.FindBySynonym("unknown", "de").ShouldBeEmpty();
+        sut.GetById("llm-provider").ShouldNotBeNull();
     }
 }

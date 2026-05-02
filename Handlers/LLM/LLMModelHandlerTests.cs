@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Interfaces;
@@ -128,7 +128,7 @@ public class UpdateLLMModelCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(new PutCommand<LLMModel>(updated), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().SetDefaultModelAsync(Arg.Any<string>());
     }
 }

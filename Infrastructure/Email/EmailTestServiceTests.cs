@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Email;
+﻿using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Application.DTOs.Settings;
 using Microsoft.Extensions.Logging;
 
@@ -38,8 +38,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Missing required fields");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Missing required fields");
         }
 
         [Test]
@@ -61,8 +61,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Missing required fields");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Missing required fields");
         }
 
         [Test]
@@ -84,8 +84,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Invalid port number");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Invalid port number");
         }
 
         [Test]
@@ -107,8 +107,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Missing required fields");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Missing required fields");
         }
 
         [Test]
@@ -130,8 +130,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Missing required fields");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Missing required fields");
         }
 
         #endregion
@@ -157,9 +157,9 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Authentication required");
-            result.Message.Should().Contain("LOGIN");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Authentication required");
+            result.Message.ShouldContain("LOGIN");
         }
 
         [Test]
@@ -181,8 +181,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Authentication required");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Authentication required");
         }
 
         [Test]
@@ -204,8 +204,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Authentication required");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Authentication required");
         }
 
         [Test]
@@ -227,8 +227,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Authentication required");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Authentication required");
         }
 
         [Test]
@@ -250,8 +250,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Authentication required");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Authentication required");
         }
 
         [Test]
@@ -273,8 +273,8 @@ namespace Klacks.UnitTest.Infrastructure.Email
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Missing required fields");
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldContain("Missing required fields");
         }
 
         #endregion
@@ -361,7 +361,7 @@ namespace Klacks.UnitTest.Infrastructure.Email
 
             // Assert
             // Should parse the port successfully after trimming
-            result.Message.Should().NotContain("Invalid port number");
+            result.Message.ShouldNotContain("Invalid port number");
         }
 
         [Test]

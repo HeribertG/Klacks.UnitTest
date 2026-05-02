@@ -26,7 +26,7 @@ public class ScheduleBlockShiftIdTests
             BaseDate.ToDateTime(new TimeOnly(16, 0)));
 
         // Assert
-        block.ShiftId.Should().BeNull();
+        block.ShiftId.ShouldBeNull();
     }
 
     [Test]
@@ -45,7 +45,7 @@ public class ScheduleBlockShiftIdTests
             shiftId);
 
         // Assert
-        block.ShiftId.Should().Be(shiftId);
+        block.ShiftId.ShouldBe(shiftId);
     }
 
     [Test]
@@ -61,7 +61,7 @@ public class ScheduleBlockShiftIdTests
             null);
 
         // Assert
-        block.ShiftId.Should().BeNull();
+        block.ShiftId.ShouldBeNull();
     }
 
     [Test]
@@ -76,8 +76,8 @@ public class ScheduleBlockShiftIdTests
             BaseDate.ToDateTime(new TimeOnly(13, 0)));
 
         // Assert
-        block.ShiftId.Should().BeNull();
-        block.BlockType.Should().Be(ScheduleBlockType.Break);
+        block.ShiftId.ShouldBeNull();
+        block.BlockType.ShouldBe(ScheduleBlockType.Break);
     }
 
     [Test]
@@ -93,14 +93,14 @@ public class ScheduleBlockShiftIdTests
         var block = new ScheduleBlock(sourceId, ScheduleBlockType.Work, ClientId, start, end, shiftId);
 
         // Assert
-        block.SourceId.Should().Be(sourceId);
-        block.BlockType.Should().Be(ScheduleBlockType.Work);
-        block.ClientId.Should().Be(ClientId);
-        block.Start.Should().Be(start);
-        block.End.Should().Be(end);
-        block.ShiftId.Should().Be(shiftId);
-        block.Duration.Should().Be(TimeSpan.FromHours(8));
-        block.OwnerDate.Should().Be(BaseDate);
+        block.SourceId.ShouldBe(sourceId);
+        block.BlockType.ShouldBe(ScheduleBlockType.Work);
+        block.ClientId.ShouldBe(ClientId);
+        block.Start.ShouldBe(start);
+        block.End.ShouldBe(end);
+        block.ShiftId.ShouldBe(shiftId);
+        block.Duration.ShouldBe(TimeSpan.FromHours(8));
+        block.OwnerDate.ShouldBe(BaseDate);
     }
 
     [Test]
@@ -123,6 +123,6 @@ public class ScheduleBlockShiftIdTests
         var gap = block1.GapTo(block2);
 
         // Assert
-        gap.Should().Be(TimeSpan.FromHours(2));
+        gap.ShouldBe(TimeSpan.FromHours(2));
     }
 }

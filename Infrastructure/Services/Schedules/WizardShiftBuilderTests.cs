@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
@@ -56,8 +56,8 @@ public class WizardShiftBuilderTests
 
         var result = await _sut.BuildAsync(null, monday, monday, CancellationToken.None);
 
-        result.Should().HaveCount(1);
-        result[0].RequiredAssignments.Should().Be(1);
+        result.Count().ShouldBe(1);
+        result[0].RequiredAssignments.ShouldBe(1);
     }
 
     [Test]
@@ -83,10 +83,10 @@ public class WizardShiftBuilderTests
 
         var result = await _sut.BuildAsync(null, monday, monday, CancellationToken.None);
 
-        result.Should().HaveCount(3);
-        result.Should().OnlyContain(s => s.Id == shiftId.ToString());
-        result.Should().OnlyContain(s => s.Date == "2026-04-20");
-        result.Should().OnlyContain(s => s.RequiredAssignments == 1);
+        result.Count().ShouldBe(3);
+        result.ShouldAllBe(s => s.Id == shiftId.ToString());
+        result.ShouldAllBe(s => s.Date == "2026-04-20");
+        result.ShouldAllBe(s => s.RequiredAssignments == 1);
     }
 
     [Test]
@@ -113,8 +113,8 @@ public class WizardShiftBuilderTests
 
         var result = await _sut.BuildAsync(null, monday, tuesday, CancellationToken.None);
 
-        result.Should().HaveCount(6);
-        result.Where(s => s.Date == "2026-04-20").Should().HaveCount(3);
-        result.Where(s => s.Date == "2026-04-21").Should().HaveCount(3);
+        result.Count().ShouldBe(6);
+        result.Where(s => s.Date == "2026-04-20").Count().ShouldBe(3);
+        result.Where(s => s.Date == "2026-04-21").Count().ShouldBe(3);
     }
 }

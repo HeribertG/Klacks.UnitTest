@@ -61,7 +61,7 @@ public class ScheduleBoardTests
         var collisions = _board.GetAllCollisions();
 
         // Assert
-        collisions.Should().HaveCount(2);
+        collisions.Count().ShouldBe(2);
     }
 
     [Test]
@@ -77,7 +77,7 @@ public class ScheduleBoardTests
         var collisions = _board.GetAllCollisions();
 
         // Assert
-        collisions.Should().BeEmpty();
+        collisions.ShouldBeEmpty();
     }
 
     [Test]
@@ -91,7 +91,7 @@ public class ScheduleBoardTests
         var count = _board.GetStaffCount(BaseDate.ToDateTime(new TimeOnly(14, 0)));
 
         // Assert
-        count.Should().Be(0);
+        count.ShouldBe(0);
     }
 
     [Test]
@@ -105,7 +105,7 @@ public class ScheduleBoardTests
         var count = _board.GetStaffCount(BaseDate.ToDateTime(new TimeOnly(12, 0)));
 
         // Assert
-        count.Should().Be(1);
+        count.ShouldBe(1);
     }
 
     [Test]
@@ -123,7 +123,7 @@ public class ScheduleBoardTests
         var count = _board.GetStaffCount(BaseDate.ToDateTime(new TimeOnly(12, 0)));
 
         // Assert
-        count.Should().Be(3);
+        count.ShouldBe(3);
     }
 
     [Test]
@@ -142,7 +142,7 @@ public class ScheduleBoardTests
 
         // Assert
         var meaningfulPeriods = periods.Where(p => p.Start < p.End).ToList();
-        meaningfulPeriods.Should().BeEmpty();
+        meaningfulPeriods.ShouldBeEmpty();
     }
 
     [Test]
@@ -161,9 +161,9 @@ public class ScheduleBoardTests
 
         // Assert
         var meaningfulPeriods = periods.Where(p => p.Start < p.End).ToList();
-        meaningfulPeriods.Should().HaveCount(1);
-        meaningfulPeriods[0].Start.Should().Be(BaseDate.ToDateTime(new TimeOnly(12, 0)));
-        meaningfulPeriods[0].End.Should().Be(BaseDate.ToDateTime(new TimeOnly(14, 0)));
+        meaningfulPeriods.Count().ShouldBe(1);
+        meaningfulPeriods[0].Start.ShouldBe(BaseDate.ToDateTime(new TimeOnly(12, 0)));
+        meaningfulPeriods[0].End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(14, 0)));
     }
 
     [Test]
@@ -186,7 +186,7 @@ public class ScheduleBoardTests
         var periods = _board.GetUnderstaffedPeriods(from, to, minStaff: 2);
 
         // Assert
-        periods.Count.Should().BeLessThanOrEqualTo(100);
+        periods.Count().ShouldBeLessThanOrEqualTo(100);
     }
 
     [Test]
@@ -200,12 +200,12 @@ public class ScheduleBoardTests
         var coverage = _board.GetHourlyCoverage(BaseDate);
 
         // Assert
-        coverage.Should().HaveCount(24);
-        coverage[7].Should().Be(0);
-        coverage[8].Should().Be(1);
-        coverage[12].Should().Be(1);
-        coverage[15].Should().Be(1);
-        coverage[16].Should().Be(0);
+        coverage.Count().ShouldBe(24);
+        coverage[7].ShouldBe(0);
+        coverage[8].ShouldBe(1);
+        coverage[12].ShouldBe(1);
+        coverage[15].ShouldBe(1);
+        coverage[16].ShouldBe(0);
     }
 
     [Test]
@@ -223,10 +223,10 @@ public class ScheduleBoardTests
             BaseDate, BaseDate, TimeSpan.FromHours(10));
 
         // Assert
-        violations.Should().HaveCount(1);
-        violations[0].ClientId.Should().Be(clientId);
-        violations[0].Date.Should().Be(BaseDate);
-        violations[0].Duration.Should().Be(TimeSpan.FromHours(12));
+        violations.Count().ShouldBe(1);
+        violations[0].ClientId.ShouldBe(clientId);
+        violations[0].Date.ShouldBe(BaseDate);
+        violations[0].Duration.ShouldBe(TimeSpan.FromHours(12));
     }
 
     [Test]
@@ -244,7 +244,7 @@ public class ScheduleBoardTests
             BaseDate, BaseDate, TimeSpan.FromHours(10));
 
         // Assert
-        violations.Should().BeEmpty();
+        violations.ShouldBeEmpty();
     }
 
     [Test]
@@ -266,9 +266,9 @@ public class ScheduleBoardTests
             BaseDate, BaseDate.AddDays(6), maxConsecutiveDays: 6);
 
         // Assert
-        violations.Should().HaveCount(1);
-        violations[0].ClientId.Should().Be(clientId);
-        violations[0].ConsecutiveDays.Should().Be(7);
+        violations.Count().ShouldBe(1);
+        violations[0].ClientId.ShouldBe(clientId);
+        violations[0].ConsecutiveDays.ShouldBe(7);
     }
 
     [Test]
@@ -290,7 +290,7 @@ public class ScheduleBoardTests
             BaseDate, BaseDate.AddDays(5), maxConsecutiveDays: 6);
 
         // Assert
-        violations.Should().BeEmpty();
+        violations.ShouldBeEmpty();
     }
 
     [Test]
@@ -321,7 +321,7 @@ public class ScheduleBoardTests
         var violations = _board.GetAllRestViolations(TimeSpan.FromHours(11));
 
         // Assert
-        violations.Should().HaveCount(2);
+        violations.Count().ShouldBe(2);
     }
 
     [Test]
@@ -335,7 +335,7 @@ public class ScheduleBoardTests
         var timeline2 = _board.GetOrCreateTimeline(clientId);
 
         // Assert
-        timeline1.Should().BeSameAs(timeline2);
+        timeline1.ShouldBeSameAs(timeline2);
     }
 
     [Test]
@@ -356,6 +356,6 @@ public class ScheduleBoardTests
         _board.SortAllTimelines();
 
         // Assert
-        timeline.Blocks[0].Start.Should().BeBefore(timeline.Blocks[1].Start);
+        timeline.Blocks[0].Start.ShouldBeLessThan(timeline.Blocks[1].Start);
     }
 }

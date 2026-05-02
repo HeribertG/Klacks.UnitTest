@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 
@@ -20,10 +20,10 @@ public class CoreBlockTests
             LastDate: new DateOnly(2026, 4, 25),
             DayCount: 5);
 
-        block.Id.Should().Be(blockId);
-        block.AgentId.Should().Be("agent-007");
-        block.FirstDate.Should().Be(new DateOnly(2026, 4, 21));
-        block.LastDate.Should().Be(new DateOnly(2026, 4, 25));
-        block.DayCount.Should().Be(5);
+        block.Id.ShouldBe(blockId);
+        block.AgentId.ShouldBe("agent-007");
+        block.FirstDate.ShouldBe(new DateOnly(2026, 4, 21));
+        block.LastDate.ShouldBe(new DateOnly(2026, 4, 25));
+        block.DayCount.ShouldBe(5);
     }
 }

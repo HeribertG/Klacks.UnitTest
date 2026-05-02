@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
@@ -56,10 +56,10 @@ public class AccountManagementServiceTests
 
         var result = await _managementService.GetUserListAsync();
 
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-        result.First().FirstName.Should().Be("John");
-        result.First().LastName.Should().Be("Doe");
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(2);
+        result.First().FirstName.ShouldBe("John");
+        result.First().LastName.ShouldBe("Doe");
     }
 
     [Test]
@@ -77,9 +77,9 @@ public class AccountManagementServiceTests
 
         var result = await _managementService.ChangeRoleUserAsync(changeRole);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
-        result.Messages.Should().Contain("Role changed successfully");
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeTrue();
+        result.Messages.ShouldContain("Role changed successfully");
     }
 
     [Test]
@@ -97,9 +97,9 @@ public class AccountManagementServiceTests
 
         var result = await _managementService.ChangeRoleUserAsync(changeRole);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
-        result.Messages.Should().Contain("User not found");
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
+        result.Messages.ShouldContain("User not found");
     }
 
     [Test]
@@ -111,9 +111,9 @@ public class AccountManagementServiceTests
 
         var result = await _managementService.DeleteAccountUserAsync(userId);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
-        result.Messages.Should().Contain("User deleted successfully");
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeTrue();
+        result.Messages.ShouldContain("User deleted successfully");
     }
 
     [Test]
@@ -125,8 +125,8 @@ public class AccountManagementServiceTests
 
         var result = await _managementService.DeleteAccountUserAsync(userId);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
-        result.Messages.Should().Contain("User not found");
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
+        result.Messages.ShouldContain("User not found");
     }
 }

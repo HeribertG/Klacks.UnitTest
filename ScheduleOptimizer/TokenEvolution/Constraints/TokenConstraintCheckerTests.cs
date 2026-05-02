@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Constraints;
 using NUnit.Framework;
@@ -68,7 +68,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().BeEmpty();
+        result.ShouldBeEmpty();
     }
 
     [Test]
@@ -86,7 +86,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().ContainSingle(v => v.Kind == ViolationKind.WorkOnDayViolation);
+        result.Count(v => v.Kind == ViolationKind.WorkOnDayViolation).ShouldBe(1);
     }
 
     [Test]
@@ -103,7 +103,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().ContainSingle(v => v.Kind == ViolationKind.PerformsShiftWorkViolation);
+        result.Count(v => v.Kind == ViolationKind.PerformsShiftWorkViolation).ShouldBe(1);
     }
 
     [Test]
@@ -121,7 +121,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().ContainSingle(v => v.Kind == ViolationKind.PerDayKeywordViolation);
+        result.Count(v => v.Kind == ViolationKind.PerDayKeywordViolation).ShouldBe(1);
     }
 
     [Test]
@@ -139,7 +139,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().ContainSingle(v => v.Kind == ViolationKind.BreakBlockerViolation);
+        result.Count(v => v.Kind == ViolationKind.BreakBlockerViolation).ShouldBe(1);
     }
 
     [Test]
@@ -162,7 +162,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().ContainSingle(v => v.Kind == ViolationKind.MaxConsecutiveDays);
+        result.Count(v => v.Kind == ViolationKind.MaxConsecutiveDays).ShouldBe(1);
     }
 
     [Test]
@@ -187,7 +187,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().ContainSingle(v => v.Kind == ViolationKind.MinPauseHours);
+        result.Count(v => v.Kind == ViolationKind.MinPauseHours).ShouldBe(1);
     }
 
     [Test]
@@ -211,7 +211,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().Contain(v => v.Kind == ViolationKind.MaxDailyHours);
+        result.ShouldContain(v => v.Kind == ViolationKind.MaxDailyHours);
     }
 
     [Test]
@@ -232,7 +232,7 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().ContainSingle(v => v.Kind == ViolationKind.MaximumHoursExceeded);
+        result.Count(v => v.Kind == ViolationKind.MaximumHoursExceeded).ShouldBe(1);
     }
 
     [Test]
@@ -251,13 +251,10 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Select(v => v.Kind).Distinct()
-            .Should().Contain(new[]
-            {
-                ViolationKind.WorkOnDayViolation,
-                ViolationKind.PerformsShiftWorkViolation,
-                ViolationKind.PerDayKeywordViolation,
-            });
+        var kinds = result.Select(v => v.Kind).ToList();
+        kinds.ShouldContain(ViolationKind.WorkOnDayViolation);
+        kinds.ShouldContain(ViolationKind.PerformsShiftWorkViolation);
+        kinds.ShouldContain(ViolationKind.PerDayKeywordViolation);
     }
 
     [Test]
@@ -274,7 +271,7 @@ public class TokenConstraintCheckerTests
         var scenario = new CoreScenario { Id = "s", Tokens = [MakeToken("A", date)] };
 
         var checker = new TokenConstraintChecker();
-        checker.CountViolations(scenario, context).Should().Be(checker.Check(scenario, context).Count);
+        checker.CountViolations(scenario, context).ShouldBe(checker.Check(scenario, context).Count);
     }
 
     [Test]
@@ -299,10 +296,10 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Where(v => v.Kind == ViolationKind.UnderSupply).Should().HaveCount(2);
+        result.Where(v => v.Kind == ViolationKind.UnderSupply).Count().ShouldBe(2);
         result.Where(v => v.Kind == ViolationKind.UnderSupply)
-            .Select(v => v.ShiftRefId)
-            .Should().BeEquivalentTo(new Guid?[] { shiftA, shiftB });
+            .Select(v => v.ShiftRefId).ToArray()
+            .ShouldBeEquivalentTo(new Guid?[] { shiftA, shiftB });
     }
 
     [Test]
@@ -325,6 +322,6 @@ public class TokenConstraintCheckerTests
 
         var result = new TokenConstraintChecker().Check(scenario, context);
 
-        result.Should().NotContain(v => v.Kind == ViolationKind.UnderSupply);
+        result.ShouldNotContain(v => v.Kind == ViolationKind.UnderSupply);
     }
 }

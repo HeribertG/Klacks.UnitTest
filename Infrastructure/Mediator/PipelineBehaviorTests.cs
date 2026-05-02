@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -26,10 +26,10 @@ public class PipelineBehaviorTests
         await mediator.Send(request);
 
         // Assert
-        executionOrder.Should().HaveCount(3);
-        executionOrder[0].Should().Be("Behavior:Before");
-        executionOrder[1].Should().Be("Handler");
-        executionOrder[2].Should().Be("Behavior:After");
+        executionOrder.Count().ShouldBe(3);
+        executionOrder[0].ShouldBe("Behavior:Before");
+        executionOrder[1].ShouldBe("Handler");
+        executionOrder[2].ShouldBe("Behavior:After");
     }
 
     [Test]
@@ -48,7 +48,7 @@ public class PipelineBehaviorTests
         var result = await mediator.Send(request);
 
         // Assert
-        result.Should().Be("Modified: Original");
+        result.ShouldBe("Modified: Original");
     }
 
     [Test]
@@ -69,8 +69,8 @@ public class PipelineBehaviorTests
         var result = await mediator.Send(request);
 
         // Assert
-        result.Should().Be("Short-circuited");
-        handlerCalled.Should().BeFalse();
+        result.ShouldBe("Short-circuited");
+        handlerCalled.ShouldBeFalse();
     }
 
     [Test]
@@ -93,7 +93,7 @@ public class PipelineBehaviorTests
         await mediator.Send(request);
 
         // Assert
-        executionOrder.Should().ContainInOrder("First:Before", "Second:Before", "Third:Before", "Handler", "Third:After", "Second:After", "First:After");
+        executionOrder.ShouldBe(new[] {"First:Before", "Second:Before", "Third:Before", "Handler", "Third:After", "Second:After", "First:After"});
     }
 
     [Test]
@@ -112,9 +112,9 @@ public class PipelineBehaviorTests
         Func<Task> act = async () => await mediator.Send(request);
 
         // Assert
-        await act.Should().ThrowAsync<Exception>()
-            .Where(e => e.Message.Contains("Behavior failed") ||
-                        (e.InnerException != null && e.InnerException.Message.Contains("Behavior failed")));
+        var ex = await Should.ThrowAsync<Exception>(act);
+        (ex.Message.Contains("Behavior failed") ||
+                    (ex.InnerException != null && ex.InnerException.Message.Contains("Behavior failed"))).ShouldBeTrue();
     }
 
     [Test]
@@ -132,7 +132,7 @@ public class PipelineBehaviorTests
         var result = await mediator.Send(request);
 
         // Assert
-        result.Should().Be("Direct execution");
+        result.ShouldBe("Direct execution");
     }
 }
 

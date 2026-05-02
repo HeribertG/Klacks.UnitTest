@@ -1,4 +1,4 @@
-using Klacks.Api.Domain.Services.Clients;
+﻿using Klacks.Api.Domain.Services.Clients;
 
 namespace Klacks.UnitTest.Services.Clients
 {
@@ -40,11 +40,11 @@ namespace Klacks.UnitTest.Services.Clients
             var result = _service.CreateGenderList(male, female, legalEntity, intersexuality);
 
             // Assert
-            result.Should().HaveCount(4); // All 4 gender values: Male, Female, Intersexuality, LegalEntity
-            result.Should().Contain((int)GenderEnum.Male);
-            result.Should().Contain((int)GenderEnum.Female);
-            result.Should().Contain((int)GenderEnum.Intersexuality);
-            result.Should().Contain((int)GenderEnum.LegalEntity);
+            result.Count().ShouldBe(4); // All 4 gender values: Male, Female, Intersexuality, LegalEntity
+            result.ShouldContain((int)GenderEnum.Male);
+            result.ShouldContain((int)GenderEnum.Female);
+            result.ShouldContain((int)GenderEnum.Intersexuality);
+            result.ShouldContain((int)GenderEnum.LegalEntity);
         }
 
         [Test]
@@ -60,8 +60,8 @@ namespace Klacks.UnitTest.Services.Clients
             var result = _service.CreateGenderList(male, female, legalEntity, intersexuality);
 
             // Assert
-            result.Should().HaveCount(1);
-            result.Should().Contain((int)GenderEnum.Intersexuality);
+            result.Count().ShouldBe(1);
+            result.ShouldContain((int)GenderEnum.Intersexuality);
         }
 
         [Test]
@@ -77,7 +77,7 @@ namespace Klacks.UnitTest.Services.Clients
             var result = _service.CreateGenderList(male, female, legalEntity, intersexuality);
 
             // Assert
-            result.Should().BeEmpty();
+            result.ShouldBeEmpty();
         }
 
         [Test]
@@ -90,7 +90,7 @@ namespace Klacks.UnitTest.Services.Clients
             var result = _service.ApplyEntityTypeFilter(query, true, true, true);
 
             // Assert
-            result.Should().HaveCount(5);
+            result.Count().ShouldBe(5);
         }
 
         [Test]
@@ -103,7 +103,7 @@ namespace Klacks.UnitTest.Services.Clients
             var result = _service.ApplyEntityTypeFilter(query, false, false, false);
 
             // Assert
-            result.Should().BeEmpty();
+            result.ShouldBeEmpty();
         }
                 
         [Test]
@@ -119,7 +119,7 @@ namespace Klacks.UnitTest.Services.Clients
             var result = _service.CreateGenderList(male, female, legalEntity, intersexuality);
 
             // Assert
-            result.Should().BeEmpty();
+            result.ShouldBeEmpty();
         }
 
         [Test]
@@ -135,11 +135,11 @@ namespace Klacks.UnitTest.Services.Clients
             var result = _service.CreateGenderList(male, female, legalEntity, intersexuality);
 
             // Assert
-            result.Should().HaveCount(2); // Male and LegalEntity
-            result.Should().Contain((int)GenderEnum.Male);
-            result.Should().Contain((int)GenderEnum.LegalEntity);
-            result.Should().NotContain((int)GenderEnum.Female);
-            result.Should().NotContain((int)GenderEnum.Intersexuality);
+            result.Count().ShouldBe(2); // Male and LegalEntity
+            result.ShouldContain((int)GenderEnum.Male);
+            result.ShouldContain((int)GenderEnum.LegalEntity);
+            result.ShouldNotContain((int)GenderEnum.Female);
+            result.ShouldNotContain((int)GenderEnum.Intersexuality);
         }
     }
 }

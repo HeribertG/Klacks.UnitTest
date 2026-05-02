@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Schedules;
@@ -26,7 +26,7 @@ public class WorkLockLevelServiceTests
         // Act & Assert
         foreach (var level in levels)
         {
-            _service.CanModifyWork(level, isAdmin: true).Should().BeTrue();
+            _service.CanModifyWork(level, isAdmin: true).ShouldBeTrue();
         }
     }
 
@@ -37,7 +37,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanModifyWork(WorkLockLevel.None, isAdmin: false);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -50,7 +50,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanModifyWork(level, isAdmin: false);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -60,7 +60,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanSeal(WorkLockLevel.None, WorkLockLevel.Confirmed, isAdmin: false, isAuthorised: false);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -70,7 +70,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanSeal(WorkLockLevel.None, WorkLockLevel.Approved, isAdmin: false, isAuthorised: false);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -80,7 +80,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanSeal(WorkLockLevel.None, WorkLockLevel.Closed, isAdmin: false, isAuthorised: false);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -92,7 +92,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanSeal(currentLevel, WorkLockLevel.Approved, isAdmin: false, isAuthorised: true);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -102,7 +102,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanSeal(WorkLockLevel.None, WorkLockLevel.Closed, isAdmin: false, isAuthorised: true);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -118,7 +118,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanSeal(currentLevel, targetLevel, isAdmin: true, isAuthorised: false);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -128,7 +128,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanSeal(WorkLockLevel.Confirmed, WorkLockLevel.Confirmed, isAdmin: true, isAuthorised: true);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -138,7 +138,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanUnseal(WorkLockLevel.Confirmed, isAdmin: false, isAuthorised: false);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -148,7 +148,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanUnseal(WorkLockLevel.Approved, isAdmin: false, isAuthorised: false);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -158,7 +158,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanUnseal(WorkLockLevel.Approved, isAdmin: false, isAuthorised: true);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -168,7 +168,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanUnseal(WorkLockLevel.Closed, isAdmin: false, isAuthorised: true);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -181,7 +181,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanUnseal(level, isAdmin: true, isAuthorised: false);
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -191,7 +191,7 @@ public class WorkLockLevelServiceTests
         var result = _service.CanUnseal(WorkLockLevel.None, isAdmin: true, isAuthorised: true);
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -204,10 +204,10 @@ public class WorkLockLevelServiceTests
         _service.Seal(entity, WorkLockLevel.Confirmed, "testuser", isAdmin: false, isAuthorised: false);
 
         // Assert
-        entity.LockLevel.Should().Be(WorkLockLevel.Confirmed);
-        entity.SealedBy.Should().Be("testuser");
-        entity.SealedAt.Should().NotBeNull();
-        entity.SealedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+        entity.LockLevel.ShouldBe(WorkLockLevel.Confirmed);
+        entity.SealedBy.ShouldBe("testuser");
+        entity.SealedAt.ShouldNotBeNull();
+        entity.SealedAt.Value.ShouldBe(DateTime.UtcNow, TimeSpan.FromSeconds(5));
     }
 
     [Test]
@@ -220,7 +220,7 @@ public class WorkLockLevelServiceTests
         var act = () => _service.Seal(entity, WorkLockLevel.Closed, "testuser", isAdmin: false, isAuthorised: false);
 
         // Assert
-        act.Should().Throw<InvalidRequestException>();
+        act.ShouldThrow<InvalidRequestException>();
     }
 
     [Test]
@@ -233,7 +233,7 @@ public class WorkLockLevelServiceTests
         var act = () => _service.Seal(entity, WorkLockLevel.Confirmed, "testuser", isAdmin: true, isAuthorised: true);
 
         // Assert
-        act.Should().Throw<InvalidRequestException>();
+        act.ShouldThrow<InvalidRequestException>();
     }
 
     [Test]
@@ -246,9 +246,9 @@ public class WorkLockLevelServiceTests
         _service.Seal(entity, WorkLockLevel.Approved, "admin", isAdmin: true, isAuthorised: false);
 
         // Assert
-        entity.LockLevel.Should().Be(WorkLockLevel.Approved);
-        entity.SealedBy.Should().Be("admin");
-        entity.SealedAt.Should().NotBeNull();
+        entity.LockLevel.ShouldBe(WorkLockLevel.Approved);
+        entity.SealedBy.ShouldBe("admin");
+        entity.SealedAt.ShouldNotBeNull();
     }
 
     [Test]
@@ -267,9 +267,9 @@ public class WorkLockLevelServiceTests
         _service.Unseal(entity, isAdmin: false, isAuthorised: false);
 
         // Assert
-        entity.LockLevel.Should().Be(WorkLockLevel.None);
-        entity.SealedAt.Should().BeNull();
-        entity.SealedBy.Should().BeNull();
+        entity.LockLevel.ShouldBe(WorkLockLevel.None);
+        entity.SealedAt.ShouldBeNull();
+        entity.SealedBy.ShouldBeNull();
     }
 
     [Test]
@@ -282,7 +282,7 @@ public class WorkLockLevelServiceTests
         var act = () => _service.Unseal(entity, isAdmin: false, isAuthorised: false);
 
         // Assert
-        act.Should().Throw<InvalidRequestException>();
+        act.ShouldThrow<InvalidRequestException>();
     }
 
     [Test]
@@ -295,7 +295,7 @@ public class WorkLockLevelServiceTests
         var act = () => _service.Unseal(entity, isAdmin: true, isAuthorised: true);
 
         // Assert
-        act.Should().Throw<InvalidRequestException>();
+        act.ShouldThrow<InvalidRequestException>();
     }
 
     [Test]
@@ -314,8 +314,8 @@ public class WorkLockLevelServiceTests
         _service.Unseal(entity, isAdmin: true, isAuthorised: false);
 
         // Assert
-        entity.LockLevel.Should().Be(WorkLockLevel.None);
-        entity.SealedAt.Should().BeNull();
-        entity.SealedBy.Should().BeNull();
+        entity.LockLevel.ShouldBe(WorkLockLevel.None);
+        entity.SealedAt.ShouldBeNull();
+        entity.SealedBy.ShouldBeNull();
     }
 }

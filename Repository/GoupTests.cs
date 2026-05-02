@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Scripting;
+﻿using Klacks.Api.Infrastructure.Scripting;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Groups;
@@ -148,8 +148,8 @@ internal class GoupTests
         var result = await handler.Handle(command, default);
 
         //Assert
-        result.Should().NotBeNull();
-        result!.GroupItems.Count.Should().Be(7);
+        result.ShouldNotBeNull();
+        result!.GroupItems.Count().ShouldBe(7);
     }
 
     [SetUp]

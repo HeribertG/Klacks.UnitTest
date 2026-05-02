@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Services.Schedules;
 using NUnit.Framework;
 
@@ -16,7 +16,7 @@ public class ContainerWorkTimeCalculatorTests
     {
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(
             T(10), T(18), Array.Empty<(TimeOnly, TimeOnly)>());
-        result.Should().Be(8.0m);
+        result.ShouldBe(8.0m);
     }
 
     [Test]
@@ -24,7 +24,7 @@ public class ContainerWorkTimeCalculatorTests
     {
         var breaks = new[] { (T(12), T(13)) };
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(T(10), T(18), breaks);
-        result.Should().Be(7.0m);
+        result.ShouldBe(7.0m);
     }
 
     [Test]
@@ -32,15 +32,15 @@ public class ContainerWorkTimeCalculatorTests
     {
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(
             T(22), T(6), Array.Empty<(TimeOnly, TimeOnly)>());
-        result.Should().Be(8.0m);
+        result.ShouldBe(8.0m);
     }
 
     [Test]
     public void EnvelopeCrossesMidnight_UnpaidBreakAfterMidnight()
     {
-        var breaks = new[] { (T(0, 0), T(0, 30)) };
+        var breaks = new[] { (T(0), T(0, 30)) };
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(T(22), T(6), breaks);
-        result.Should().Be(7.5m);
+        result.ShouldBe(7.5m);
     }
 
     [Test]
@@ -48,7 +48,7 @@ public class ContainerWorkTimeCalculatorTests
     {
         var breaks = new[] { (T(23, 30), T(0, 15)) };
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(T(22), T(6), breaks);
-        result.Should().Be(7.25m);
+        result.ShouldBe(7.25m);
     }
 
     [Test]
@@ -56,7 +56,7 @@ public class ContainerWorkTimeCalculatorTests
     {
         var breaks = new[] { (T(10), T(11)) };
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(T(22), T(6), breaks);
-        result.Should().Be(8.0m);
+        result.ShouldBe(8.0m);
     }
 
     [Test]
@@ -64,7 +64,7 @@ public class ContainerWorkTimeCalculatorTests
     {
         var breaks = new[] { (T(10), T(14)), (T(14), T(18)), (T(10), T(18)) };
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(T(10), T(18), breaks);
-        result.Should().Be(0.0m);
+        result.ShouldBe(0.0m);
     }
 
     [Test]
@@ -72,7 +72,7 @@ public class ContainerWorkTimeCalculatorTests
     {
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(
             T(0), T(0), Array.Empty<(TimeOnly, TimeOnly)>());
-        result.Should().Be(24.0m);
+        result.ShouldBe(24.0m);
     }
 
     [Test]
@@ -80,7 +80,7 @@ public class ContainerWorkTimeCalculatorTests
     {
         var breaks = new[] { (T(12), T(13)) };
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(T(0), T(0), breaks);
-        result.Should().Be(23.0m);
+        result.ShouldBe(23.0m);
     }
 
     [Test]
@@ -88,6 +88,6 @@ public class ContainerWorkTimeCalculatorTests
     {
         var breaks = new[] { (T(12), T(12)) };
         var result = ContainerWorkTimeCalculator.CalculatePaidHours(T(10), T(18), breaks);
-        result.Should().Be(8.0m);
+        result.ShouldBe(8.0m);
     }
 }

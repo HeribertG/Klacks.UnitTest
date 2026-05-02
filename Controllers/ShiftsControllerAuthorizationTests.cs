@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Authorization;
@@ -21,8 +21,8 @@ public class ShiftsControllerAuthorizationTests
         var authorizeAttribute = methodInfo?.GetCustomAttribute<AuthorizeAttribute>();
 
         // Assert
-        authorizeAttribute.Should().NotBeNull("PostBatchCuts should require authorization");
-        authorizeAttribute!.Roles.Should().Be($"{Roles.Admin},{Roles.Authorised}",
+        authorizeAttribute.ShouldNotBeNull("PostBatchCuts should require authorization");
+        authorizeAttribute!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}",
             "Only Admin and Authorised users should be able to perform batch cuts");
     }
 
@@ -37,8 +37,8 @@ public class ShiftsControllerAuthorizationTests
         var authorizeAttribute = methodInfo?.GetCustomAttribute<AuthorizeAttribute>();
 
         // Assert
-        authorizeAttribute.Should().NotBeNull("PostResetCuts should require authorization");
-        authorizeAttribute!.Roles.Should().Be($"{Roles.Admin},{Roles.Authorised}",
+        authorizeAttribute.ShouldNotBeNull("PostResetCuts should require authorization");
+        authorizeAttribute!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}",
             "Only Admin and Authorised users should be able to reset cuts");
     }
 
@@ -55,7 +55,7 @@ public class ShiftsControllerAuthorizationTests
         // Assert
         if (authorizeAttribute != null)
         {
-            authorizeAttribute.Roles.Should().BeNullOrEmpty(
+            authorizeAttribute.Roles.ShouldBeNullOrEmpty(
                 "GetResetDateRange should only require JWT authentication, not specific roles");
         }
     }
@@ -73,7 +73,7 @@ public class ShiftsControllerAuthorizationTests
         // Assert
         if (authorizeAttribute != null)
         {
-            authorizeAttribute.Roles.Should().BeNullOrEmpty(
+            authorizeAttribute.Roles.ShouldBeNullOrEmpty(
                 "GetCutList should only require JWT authentication, not specific roles");
         }
     }
@@ -91,7 +91,7 @@ public class ShiftsControllerAuthorizationTests
         // Assert
         if (authorizeAttribute != null)
         {
-            authorizeAttribute.Roles.Should().BeNullOrEmpty(
+            authorizeAttribute.Roles.ShouldBeNullOrEmpty(
                 "GetSimpleList should only require JWT authentication, not specific roles");
         }
     }
@@ -107,8 +107,8 @@ public class ShiftsControllerAuthorizationTests
         var httpPostAttribute = methodInfo?.GetCustomAttribute<HttpPostAttribute>();
 
         // Assert
-        httpPostAttribute.Should().NotBeNull();
-        httpPostAttribute!.Template.Should().Be("Cuts/Batch");
+        httpPostAttribute.ShouldNotBeNull();
+        httpPostAttribute!.Template.ShouldBe("Cuts/Batch");
     }
 
     [Test]
@@ -122,8 +122,8 @@ public class ShiftsControllerAuthorizationTests
         var httpPostAttribute = methodInfo?.GetCustomAttribute<HttpPostAttribute>();
 
         // Assert
-        httpPostAttribute.Should().NotBeNull();
-        httpPostAttribute!.Template.Should().Be("Cuts/Reset");
+        httpPostAttribute.ShouldNotBeNull();
+        httpPostAttribute!.Template.ShouldBe("Cuts/Reset");
     }
 
     [Test]
@@ -137,8 +137,8 @@ public class ShiftsControllerAuthorizationTests
         var httpGetAttribute = methodInfo?.GetCustomAttribute<HttpGetAttribute>();
 
         // Assert
-        httpGetAttribute.Should().NotBeNull();
-        httpGetAttribute!.Template.Should().Be("Cuts/Reset/DateRange/{originalId}");
+        httpGetAttribute.ShouldNotBeNull();
+        httpGetAttribute!.Template.ShouldBe("Cuts/Reset/DateRange/{originalId}");
     }
 
     [Test]
@@ -148,8 +148,8 @@ public class ShiftsControllerAuthorizationTests
         var baseType = typeof(ShiftsController).BaseType;
 
         // Assert
-        baseType.Should().NotBeNull();
-        baseType!.Name.Should().Be("InputBaseController`1",
+        baseType.ShouldNotBeNull();
+        baseType!.Name.ShouldBe("InputBaseController`1",
             "ShiftsController should inherit authorization from InputBaseController");
     }
 }

@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Application.DTOs.Settings;
 using Microsoft.Extensions.Logging;
@@ -44,7 +44,7 @@ namespace Klacks.UnitTest.Integration
             // Assert
             // Note: This test will fail without real credentials
             // but demonstrates how to test against real servers
-            result.Should().NotBeNull();
+            result.ShouldNotBeNull();
         }
 
         [Test]
@@ -70,10 +70,10 @@ namespace Klacks.UnitTest.Integration
 
             // Assert
             var executionTime = DateTime.Now - startTime;
-            result.Success.Should().BeFalse();
+            result.Success.ShouldBeFalse();
             
             // Should not take significantly longer than the timeout + some buffer
-            executionTime.TotalMilliseconds.Should().BeLessThan(35000); // 30s minimum timeout + 5s buffer
+            executionTime.TotalMilliseconds.ShouldBeLessThan(35000); // 30s minimum timeout + 5s buffer
         }
 
         [Test]
@@ -136,7 +136,7 @@ namespace Klacks.UnitTest.Integration
                 var result = await _emailTestService.TestConnectionAsync(request);
 
                 // Assert
-                result.Success.Should().BeFalse();
+                result.Success.ShouldBeFalse();
                 // Each provider should have specific error handling
                 // (This will vary based on actual server responses)
             }
@@ -170,10 +170,10 @@ namespace Klacks.UnitTest.Integration
             var results = await Task.WhenAll(tasks);
 
             // Assert
-            results.Should().HaveCount(numberOfConcurrentRequests);
-            results.Should().OnlyContain(r => r != null);
+            results.Count().ShouldBe(numberOfConcurrentRequests);
+            results.ShouldAllBe(r => r != null);
             // All should fail due to fake servers, but should not crash
-            results.Should().OnlyContain(r => !r.Success);
+            results.ShouldAllBe(r => !r.Success);
         }
 
         [Test]
@@ -197,7 +197,7 @@ namespace Klacks.UnitTest.Integration
             for (int i = 0; i < numberOfCalls; i++)
             {
                 var result = await _emailTestService.TestConnectionAsync(request);
-                result.Should().NotBeNull();
+                result.ShouldNotBeNull();
             }
 
             // Assert
@@ -226,9 +226,9 @@ namespace Klacks.UnitTest.Integration
             var result = await _emailTestService.TestConnectionAsync(request);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Message.Should().NotBeNullOrEmpty();
-            result.ErrorDetails.Should().NotBeNullOrEmpty();
+            result.Success.ShouldBeFalse();
+            result.Message.ShouldNotBeNullOrEmpty();
+            result.ErrorDetails.ShouldNotBeNullOrEmpty();
         }
     }
 }

@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Fuzzy;
 using NUnit.Framework;
 
@@ -13,14 +13,14 @@ public class RuleBaseLoaderTests
     public void LoadDefault_ParsesEmbeddedRules()
     {
         var rules = RuleBaseLoader.LoadDefault();
-        rules.Should().NotBeEmpty();
-        rules.Should().HaveCountGreaterThanOrEqualTo(30);
-        rules.Should().AllSatisfy(r =>
+        rules.ShouldNotBeEmpty();
+        rules.Count().ShouldBeGreaterThanOrEqualTo(30);
+        foreach (var r in rules)
         {
-            r.Name.Should().NotBeNullOrEmpty();
-            r.Antecedents.Should().NotBeEmpty();
-            r.ConsequentVariable.Should().Be("BidScore");
-        });
+            r.Name.ShouldNotBeNullOrEmpty();
+            r.Antecedents.ShouldNotBeEmpty();
+            r.ConsequentVariable.ShouldBe("BidScore");
+        }
     }
 
     [Test]
@@ -28,7 +28,7 @@ public class RuleBaseLoaderTests
     {
         var json = "[{\"name\":\"R\",\"if\":[],\"then\":{\"var\":\"BidScore\",\"is\":\"Low\"}}]";
         Action act = () => RuleBaseLoader.Parse(json);
-        act.Should().Throw<InvalidOperationException>();
+        act.ShouldThrow<InvalidOperationException>();
     }
 
     [Test]
@@ -36,6 +36,6 @@ public class RuleBaseLoaderTests
     {
         var json = "[{\"if\":[{\"var\":\"X\",\"is\":\"Low\"}],\"then\":{\"var\":\"BidScore\",\"is\":\"Low\"}}]";
         Action act = () => RuleBaseLoader.Parse(json);
-        act.Should().Throw<InvalidOperationException>();
+        act.ShouldThrow<InvalidOperationException>();
     }
 }

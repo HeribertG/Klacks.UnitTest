@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Commands.Settings.Branch;
 using Klacks.Api.Application.Queries.Settings.Branch;
 using Klacks.Api.Domain.Models.Settings;
@@ -58,9 +58,9 @@ public class BranchControllerTests
         var result = await controller.GetBranchListAsync();
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-        result.Should().BeEquivalentTo(expectedBranches);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(2);
+        result.ShouldBeEquivalentTo(expectedBranches);
     }
 
     [Test]
@@ -73,8 +73,7 @@ public class BranchControllerTests
 
         // Act & Assert
         var act = async () => await controller.GetBranchListAsync();
-        await act.Should().ThrowAsync<Exception>()
-            .WithMessage("Database error");
+        (await Should.ThrowAsync<Exception>(act)).Message.ShouldContain("Database error");
     }
 
     [Test]
@@ -98,9 +97,9 @@ public class BranchControllerTests
         var result = await controller.GetBranch(branchId);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Value.Should().NotBeNull();
-        result.Value.Should().BeEquivalentTo(expectedBranch);
+        result.ShouldNotBeNull();
+        result.Value.ShouldNotBeNull();
+        result.Value.ShouldBeEquivalentTo(expectedBranch);
     }
 
     [Test]
@@ -115,7 +114,7 @@ public class BranchControllerTests
         var result = await controller.GetBranch(branchId);
 
         // Assert
-        result.Result.Should().BeOfType<NotFoundResult>();
+        result.Result.ShouldBeOfType<NotFoundResult>();
     }
 
     [Test]
@@ -146,12 +145,12 @@ public class BranchControllerTests
         var result = await controller.AddBranch(newBranch);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().NotBeEmpty();
-        result.Name.Should().Be(newBranch.Name);
-        result.Address.Should().Be(newBranch.Address);
-        result.Phone.Should().Be(newBranch.Phone);
-        result.Email.Should().Be(newBranch.Email);
+        result.ShouldNotBeNull();
+        result.Id.ShouldNotBe(Guid.Empty);
+        result.Name.ShouldBe(newBranch.Name);
+        result.Address.ShouldBe(newBranch.Address);
+        result.Phone.ShouldBe(newBranch.Phone);
+        result.Email.ShouldBe(newBranch.Email);
     }
 
     [Test]
@@ -170,8 +169,7 @@ public class BranchControllerTests
 
         // Act & Assert
         var act = async () => await controller.AddBranch(newBranch);
-        await act.Should().ThrowAsync<Exception>()
-            .WithMessage("Database error");
+        (await Should.ThrowAsync<Exception>(act)).Message.ShouldContain("Database error");
     }
 
     [Test]
@@ -194,8 +192,8 @@ public class BranchControllerTests
         var result = await controller.PutBranch(updateBranch);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeEquivalentTo(updateBranch);
+        result.ShouldNotBeNull();
+        result.ShouldBeEquivalentTo(updateBranch);
     }
 
     [Test]
@@ -215,8 +213,7 @@ public class BranchControllerTests
 
         // Act & Assert
         var act = async () => await controller.PutBranch(updateBranch);
-        await act.Should().ThrowAsync<Exception>()
-            .WithMessage("Update failed");
+        (await Should.ThrowAsync<Exception>(act)).Message.ShouldContain("Update failed");
     }
 
     [Test]
@@ -232,7 +229,7 @@ public class BranchControllerTests
         var result = await controller.DeleteBranch(branchId);
 
         // Assert
-        result.Should().BeOfType<NoContentResult>();
+        result.ShouldBeOfType<NoContentResult>();
         await mockMediator.Received(1).Send(Arg.Any<IRequest<Unit>>(), Arg.Any<CancellationToken>());
     }
 
@@ -248,8 +245,7 @@ public class BranchControllerTests
 
         // Act & Assert
         var act = async () => await controller.DeleteBranch(branchId);
-        await act.Should().ThrowAsync<Exception>()
-            .WithMessage("Delete failed");
+        (await Should.ThrowAsync<Exception>(act)).Message.ShouldContain("Delete failed");
     }
 
     [Test]

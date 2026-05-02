@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Presentation.Attributes;
 using NUnit.Framework;
 
@@ -14,9 +14,9 @@ public class ExposesEndpointAttributeTests
     {
         var attr = new ExposesEndpointAttribute("GET", "/api/backend/shifts/{id}");
 
-        attr.HttpMethod.Should().Be("GET");
-        attr.RouteTemplate.Should().Be("/api/backend/shifts/{id}");
-        attr.EndpointKey.Should().Be("GET /api/backend/shifts/{id}");
+        attr.HttpMethod.ShouldBe("GET");
+        attr.RouteTemplate.ShouldBe("/api/backend/shifts/{id}");
+        attr.EndpointKey.ShouldBe("GET /api/backend/shifts/{id}");
     }
 
     [Test]
@@ -24,8 +24,8 @@ public class ExposesEndpointAttributeTests
     {
         var attr = new ExposesEndpointAttribute("post", "/api/backend/employees");
 
-        attr.HttpMethod.Should().Be("POST");
-        attr.EndpointKey.Should().Be("POST /api/backend/employees");
+        attr.HttpMethod.ShouldBe("POST");
+        attr.EndpointKey.ShouldBe("POST /api/backend/employees");
     }
 
     [Test]
@@ -35,7 +35,7 @@ public class ExposesEndpointAttributeTests
             .Cast<AttributeUsageAttribute>()
             .Single();
 
-        usage.AllowMultiple.Should().BeTrue();
+        usage.AllowMultiple.ShouldBeTrue();
     }
 
     [Test]
@@ -45,6 +45,6 @@ public class ExposesEndpointAttributeTests
             .Cast<AttributeUsageAttribute>()
             .Single();
 
-        (usage.ValidOn & AttributeTargets.Class).Should().Be(AttributeTargets.Class);
+        (usage.ValidOn & AttributeTargets.Class).ShouldBe(AttributeTargets.Class);
     }
 }

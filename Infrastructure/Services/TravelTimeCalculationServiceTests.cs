@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for TravelTimeCalculationService: API key validation, coordinate resolution, and Haversine fallback.
@@ -64,7 +64,7 @@ public class TravelTimeCalculationServiceTests
         var result = await _service.IsApiKeyConfiguredAsync();
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -83,7 +83,7 @@ public class TravelTimeCalculationServiceTests
         var result = await _service.IsApiKeyConfiguredAsync();
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -104,7 +104,7 @@ public class TravelTimeCalculationServiceTests
         var result = await _service.IsApiKeyConfiguredAsync();
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -152,9 +152,9 @@ public class TravelTimeCalculationServiceTests
         var result = await _service.CalculateTravelTimeAsync(from, to, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result!.Value.TotalMinutes.Should().BeGreaterThan(60);
-        result.Value.TotalMinutes.Should().BeLessThan(300);
+        result.ShouldNotBeNull();
+        result!.Value.TotalMinutes.ShouldBeGreaterThan(60);
+        result.Value.TotalMinutes.ShouldBeLessThan(300);
     }
 
     [Test]
@@ -168,7 +168,7 @@ public class TravelTimeCalculationServiceTests
         var result = await _service.CalculateTravelTimeAsync(from, to, CancellationToken.None);
 
         // Assert
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Test]
@@ -190,7 +190,7 @@ public class TravelTimeCalculationServiceTests
         var result = await _service.CalculateTravelTimeAsync(from, to, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _geocodingService.Received(1).GeocodeAddressAsync("Bahnhofstrasse 1, 8001 Zürich", "CH");
         await _geocodingService.Received(1).GeocodeAddressAsync("Bundesplatz 1, 3003 Bern", "CH");
     }
@@ -216,8 +216,8 @@ public class TravelTimeCalculationServiceTests
         var result = await _service.CalculateTravelTimeAsync(addr, addr, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result!.Value.TotalSeconds.Should().BeLessThan(1);
+        result.ShouldNotBeNull();
+        result!.Value.TotalSeconds.ShouldBeLessThan(1);
     }
 
     [Test]
@@ -235,6 +235,6 @@ public class TravelTimeCalculationServiceTests
         var result2 = await _service.CalculateTravelTimeAsync(from, to, CancellationToken.None);
 
         // Assert
-        result1.Should().Be(result2);
+        result1.ShouldBe(result2);
     }
 }

@@ -1,4 +1,4 @@
-using Klacks.Api.Application.Interfaces;
+﻿using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Staffs;
@@ -53,8 +53,8 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().HaveCount(1);
-        resultList.First().Name.Should().Be("Client with Group");
+        resultList.Count().ShouldBe(1);
+        resultList.First().Name.ShouldBe("Client with Group");
     }
 
     [Test]
@@ -80,7 +80,7 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().BeEmpty();
+        resultList.ShouldBeEmpty();
     }
 
     [Test]
@@ -110,7 +110,7 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().BeEmpty();
+        resultList.ShouldBeEmpty();
     }
 
     [Test]
@@ -155,10 +155,10 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().HaveCount(1);
-        resultList.Should().Contain(c => c.Name == "Client with Matching Group");
-        resultList.Should().NotContain(c => c.Name == "Client without Group");
-        resultList.Should().NotContain(c => c.Name == "Client with Different Group");
+        resultList.Count().ShouldBe(1);
+        resultList.ShouldContain(c => c.Name == "Client with Matching Group");
+        resultList.ShouldNotContain(c => c.Name == "Client without Group");
+        resultList.ShouldNotContain(c => c.Name == "Client with Different Group");
     }
 
     [Test]
@@ -178,7 +178,7 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().HaveCount(2);
+        resultList.Count().ShouldBe(2);
     }
 
     [Test]
@@ -215,8 +215,8 @@ public class ClientGroupFilterServiceTests
         var resultList = result.ToList();
 
         // Assert
-        resultList.Should().HaveCount(1);
-        resultList.Should().Contain(c => c.Name == "Client in Visible Root");
-        resultList.Should().NotContain(c => c.Name == "Client without Group");
+        resultList.Count().ShouldBe(1);
+        resultList.ShouldContain(c => c.Name == "Client in Visible Root");
+        resultList.ShouldNotContain(c => c.Name == "Client without Group");
     }
 }

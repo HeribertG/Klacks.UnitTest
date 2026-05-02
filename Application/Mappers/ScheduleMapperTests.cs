@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -37,9 +37,9 @@ public class ScheduleMapperTests
         var result = _mapper.ToShiftResource(shift);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(shift.Id);
-        result.Name.Should().Be("Morning Shift");
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(shift.Id);
+        result.Name.ShouldBe("Morning Shift");
     }
 
     [Test]
@@ -67,10 +67,10 @@ public class ScheduleMapperTests
         var result = _mapper.ToShiftResource(shift);
 
         // Assert
-        result.Groups.Should().HaveCount(1);
-        result.Groups[0].Id.Should().Be(group.Id);
-        result.Groups[0].Name.Should().Be("Team A");
-        result.Groups[0].Description.Should().Be("First Team");
+        result.Groups.Count().ShouldBe(1);
+        result.Groups[0].Id.ShouldBe(group.Id);
+        result.Groups[0].Name.ShouldBe("Team A");
+        result.Groups[0].Description.ShouldBe("First Team");
     }
 
     [Test]
@@ -99,19 +99,19 @@ public class ScheduleMapperTests
         var result = _mapper.CloneShift(originalShift);
 
         // Assert
-        result.Id.Should().Be(Guid.Empty);
-        result.Name.Should().Be("Original Shift");
-        result.Abbreviation.Should().Be("OS");
-        result.Description.Should().Be("Original Description");
-        result.StartShift.Should().Be(new TimeOnly(8, 0));
-        result.EndShift.Should().Be(new TimeOnly(16, 0));
-        result.FromDate.Should().Be(new DateOnly(2024, 1, 1));
-        result.ClientId.Should().Be(originalShift.ClientId);
-        result.IsMonday.Should().BeTrue();
-        result.IsTuesday.Should().BeTrue();
-        result.GroupItems.Should().HaveCount(1);
-        result.GroupItems[0].Id.Should().Be(Guid.Empty);
-        result.GroupItems[0].ShiftId.Should().Be(Guid.Empty);
+        result.Id.ShouldBe(Guid.Empty);
+        result.Name.ShouldBe("Original Shift");
+        result.Abbreviation.ShouldBe("OS");
+        result.Description.ShouldBe("Original Description");
+        result.StartShift.ShouldBe(new TimeOnly(8, 0));
+        result.EndShift.ShouldBe(new TimeOnly(16, 0));
+        result.FromDate.ShouldBe(new DateOnly(2024, 1, 1));
+        result.ClientId.ShouldBe(originalShift.ClientId);
+        result.IsMonday.ShouldBeTrue();
+        result.IsTuesday.ShouldBeTrue();
+        result.GroupItems.Count().ShouldBe(1);
+        result.GroupItems[0].Id.ShouldBe(Guid.Empty);
+        result.GroupItems[0].ShiftId.ShouldBe(Guid.Empty);
     }
 
     [Test]
@@ -131,11 +131,11 @@ public class ScheduleMapperTests
         var result = _mapper.ToRouteInfoResource(routeInfo);
 
         // Assert
-        result.Should().NotBeNull();
-        result.TotalDistanceKm.Should().Be(15.5);
-        result.EstimatedTravelTime.Should().Be("30 min");
-        result.StartBase.Should().Be("Zurich");
-        result.EndBase.Should().Be("Bern");
+        result.ShouldNotBeNull();
+        result.TotalDistanceKm.ShouldBe(15.5);
+        result.EstimatedTravelTime.ShouldBe("30 min");
+        result.StartBase.ShouldBe("Zurich");
+        result.EndBase.ShouldBe("Bern");
     }
 
     [Test]
@@ -153,10 +153,10 @@ public class ScheduleMapperTests
         var result = _mapper.ToRouteLocationResource(location);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Latitude.Should().Be(47.3769);
-        result.Longitude.Should().Be(8.5417);
-        result.Name.Should().Be("Zurich");
+        result.ShouldNotBeNull();
+        result.Latitude.ShouldBe(47.3769);
+        result.Longitude.ShouldBe(8.5417);
+        result.Name.ShouldBe("Zurich");
     }
 
     [Test]
@@ -184,11 +184,11 @@ public class ScheduleMapperTests
         var result = _mapper.ToContainerTemplateResource(template);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(template.Id);
-        result.ContainerId.Should().Be(template.ContainerId);
-        result.FromTime.Should().Be(new TimeOnly(8, 0));
-        result.UntilTime.Should().Be(new TimeOnly(17, 0));
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(template.Id);
+        result.ContainerId.ShouldBe(template.ContainerId);
+        result.FromTime.ShouldBe(new TimeOnly(8, 0));
+        result.UntilTime.ShouldBe(new TimeOnly(17, 0));
     }
 
     [Test]
@@ -209,9 +209,9 @@ public class ScheduleMapperTests
 
         var result = _mapper.ToShiftResource(shift);
 
-        result.DefaultExpenses.Should().HaveCount(2);
-        result.DefaultExpenses.Should().Contain(e => e.Description == "Fahrtkosten" && e.Amount == 25.50m && e.Taxable);
-        result.DefaultExpenses.Should().Contain(e => e.Description == "Verpflegung" && e.Amount == 10.00m && !e.Taxable);
+        result.DefaultExpenses.Count().ShouldBe(2);
+        result.DefaultExpenses.ShouldContain(e => e.Description == "Fahrtkosten" && e.Amount == 25.50m && e.Taxable);
+        result.DefaultExpenses.ShouldContain(e => e.Description == "Verpflegung" && e.Amount == 10.00m && !e.Taxable);
     }
 
     [Test]
@@ -227,7 +227,7 @@ public class ScheduleMapperTests
 
         var result = _mapper.ToShiftResource(shift);
 
-        result.DefaultExpenses.Should().BeEmpty();
+        result.DefaultExpenses.ShouldBeEmpty();
     }
 
     [Test]
@@ -247,9 +247,9 @@ public class ScheduleMapperTests
 
         var result = _mapper.ToShiftEntity(resource);
 
-        result.ShiftExpenses.Should().HaveCount(1);
-        result.ShiftExpenses[0].Amount.Should().Be(15m);
-        result.ShiftExpenses[0].Description.Should().Be("Taxi");
+        result.ShiftExpenses.Count().ShouldBe(1);
+        result.ShiftExpenses[0].Amount.ShouldBe(15m);
+        result.ShiftExpenses[0].Description.ShouldBe("Taxi");
     }
 
     [Test]
@@ -269,10 +269,10 @@ public class ScheduleMapperTests
 
         var result = _mapper.CloneShift(originalShift);
 
-        result.ShiftExpenses.Should().HaveCount(1);
-        result.ShiftExpenses[0].Id.Should().Be(Guid.Empty);
-        result.ShiftExpenses[0].ShiftId.Should().Be(Guid.Empty);
-        result.ShiftExpenses[0].Amount.Should().Be(20m);
-        result.ShiftExpenses[0].Description.Should().Be("Parking");
+        result.ShiftExpenses.Count().ShouldBe(1);
+        result.ShiftExpenses[0].Id.ShouldBe(Guid.Empty);
+        result.ShiftExpenses[0].ShiftId.ShouldBe(Guid.Empty);
+        result.ShiftExpenses[0].Amount.ShouldBe(20m);
+        result.ShiftExpenses[0].Description.ShouldBe("Parking");
     }
 }

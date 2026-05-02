@@ -1,10 +1,10 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for ClosePeriodByGroupCommandHandler: permission check, group-aware sealing, and audit log writing.
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.Handlers.PeriodClosing;
 using Klacks.Api.Domain.Enums;
@@ -67,8 +67,7 @@ public class ClosePeriodByGroupCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("*permission*");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("permission");
 
         await _workRepository.DidNotReceive().SealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _auditLogRepository.DidNotReceive().AddAsync(Arg.Any<PeriodAuditLog>(), Arg.Any<CancellationToken>());
@@ -90,7 +89,7 @@ public class ClosePeriodByGroupCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.Should().Be(13);
+        result.ShouldBe(13);
 
         await _auditLogRepository.Received(1).AddAsync(
             Arg.Is<PeriodAuditLog>(log =>
@@ -121,7 +120,7 @@ public class ClosePeriodByGroupCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.Should().Be(7);
+        result.ShouldBe(7);
 
         await _workRepository.DidNotReceive().SealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 

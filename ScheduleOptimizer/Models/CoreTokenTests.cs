@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 
@@ -26,14 +26,14 @@ public class CoreTokenTests
             ShiftRefId: Guid.Parse("22222222-2222-2222-2222-222222222222"),
             AgentId: "agent-007");
 
-        token.WorkIds.Should().HaveCount(2);
-        token.ShiftTypeIndex.Should().Be(0);
-        token.Date.Should().Be(new DateOnly(2026, 4, 21));
-        token.TotalHours.Should().Be(8.5m);
-        token.PositionInBlock.Should().Be(2);
-        token.IsLocked.Should().BeFalse();
-        token.LocationContext.Should().Be("office-01");
-        token.AgentId.Should().Be("agent-007");
+        token.WorkIds.Count().ShouldBe(2);
+        token.ShiftTypeIndex.ShouldBe(0);
+        token.Date.ShouldBe(new DateOnly(2026, 4, 21));
+        token.TotalHours.ShouldBe(8.5m);
+        token.PositionInBlock.ShouldBe(2);
+        token.IsLocked.ShouldBeFalse();
+        token.LocationContext.ShouldBe("office-01");
+        token.AgentId.ShouldBe("agent-007");
     }
 
     [Test]
@@ -53,7 +53,7 @@ public class CoreTokenTests
             ShiftRefId: Guid.NewGuid(),
             AgentId: "agent-008");
 
-        token.LocationContext.Should().BeNull();
-        token.IsLocked.Should().BeTrue();
+        token.LocationContext.ShouldBeNull();
+        token.IsLocked.ShouldBeTrue();
     }
 }

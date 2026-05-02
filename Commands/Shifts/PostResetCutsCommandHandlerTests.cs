@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;
@@ -81,8 +81,8 @@ public class PostResetCutsCommandHandlerTests
         var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(3);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(3);
 
         await _shiftCutFacade.Received(1).ResetCutsAsync(originalId, newStartDate);
     }
@@ -103,8 +103,7 @@ public class PostResetCutsCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage($"No SealedOrder found for OriginalId {originalId}");
+        (await Should.ThrowAsync<InvalidOperationException>(act)).Message.ShouldBe($"No SealedOrder found for OriginalId {originalId}");
     }
 
     [Test]
@@ -123,8 +122,8 @@ public class PostResetCutsCommandHandlerTests
         var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeEmpty();
+        result.ShouldNotBeNull();
+        result.ShouldBeEmpty();
 
         await _shiftCutFacade.Received(1).ResetCutsAsync(originalId, newStartDate);
     }

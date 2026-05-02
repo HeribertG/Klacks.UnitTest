@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Fitness;
 using NUnit.Framework;
@@ -62,7 +62,7 @@ public class MaxPossibleCalculatorTests
 
         var result = new MaxPossibleCalculator().ComputeForAll(context);
 
-        result["A"].Should().Be(8);
+        result["A"].ShouldBe(8);
     }
 
     [Test]
@@ -81,7 +81,7 @@ public class MaxPossibleCalculatorTests
 
         var result = new MaxPossibleCalculator().ComputeForAll(context);
 
-        result["A"].Should().Be(8);
+        result["A"].ShouldBe(8);
     }
 
     [Test]
@@ -104,7 +104,7 @@ public class MaxPossibleCalculatorTests
 
         var result = new MaxPossibleCalculator().ComputeForAll(context);
 
-        result["A"].Should().Be(12);
+        result["A"].ShouldBe(12);
     }
 
     [Test]
@@ -124,6 +124,6 @@ public class MaxPossibleCalculatorTests
 
         var result = new MaxPossibleCalculator().ComputeForAll(context);
 
-        result["A"].Should().Be(16);
+        result["A"].ShouldBe(16);
     }
 }

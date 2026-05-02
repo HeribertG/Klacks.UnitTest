@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Presentation.Controllers.UserBackend;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -22,13 +22,13 @@ public class BreakPlaceholdersControllerAuthorizationTests
         var authorizeAttributes = methodInfo?.GetCustomAttributes<AuthorizeAttribute>(inherit: false).ToList();
 
         // Assert
-        authorizeAttributes.Should().NotBeNull();
-        authorizeAttributes.Should().HaveCount(1, "Post should have exactly one Authorize attribute");
+        authorizeAttributes.ShouldNotBeNull();
+        authorizeAttributes.Count().ShouldBe(1, "Post should have exactly one Authorize attribute");
 
         var authorizeAttribute = authorizeAttributes![0];
-        authorizeAttribute.AuthenticationSchemes.Should().Be(JwtBearerDefaults.AuthenticationScheme,
+        authorizeAttribute.AuthenticationSchemes.ShouldBe(JwtBearerDefaults.AuthenticationScheme,
             "Post should use JWT authentication");
-        authorizeAttribute.Roles.Should().BeNullOrEmpty(
+        authorizeAttribute.Roles.ShouldBeNullOrEmpty(
             "Post should not require specific roles - any authenticated JWT user can create breaks");
     }
 
@@ -43,13 +43,13 @@ public class BreakPlaceholdersControllerAuthorizationTests
         var authorizeAttributes = methodInfo?.GetCustomAttributes<AuthorizeAttribute>(inherit: false).ToList();
 
         // Assert
-        authorizeAttributes.Should().NotBeNull();
-        authorizeAttributes.Should().HaveCount(1, "Put should have exactly one Authorize attribute");
+        authorizeAttributes.ShouldNotBeNull();
+        authorizeAttributes.Count().ShouldBe(1, "Put should have exactly one Authorize attribute");
 
         var authorizeAttribute = authorizeAttributes![0];
-        authorizeAttribute.AuthenticationSchemes.Should().Be(JwtBearerDefaults.AuthenticationScheme,
+        authorizeAttribute.AuthenticationSchemes.ShouldBe(JwtBearerDefaults.AuthenticationScheme,
             "Put should use JWT authentication");
-        authorizeAttribute.Roles.Should().BeNullOrEmpty(
+        authorizeAttribute.Roles.ShouldBeNullOrEmpty(
             "Put should not require specific roles - any authenticated JWT user can update breaks");
     }
 
@@ -64,13 +64,13 @@ public class BreakPlaceholdersControllerAuthorizationTests
         var authorizeAttributes = methodInfo?.GetCustomAttributes<AuthorizeAttribute>(inherit: false).ToList();
 
         // Assert
-        authorizeAttributes.Should().NotBeNull();
-        authorizeAttributes.Should().HaveCount(1, "Delete should have exactly one Authorize attribute");
+        authorizeAttributes.ShouldNotBeNull();
+        authorizeAttributes.Count().ShouldBe(1, "Delete should have exactly one Authorize attribute");
 
         var authorizeAttribute = authorizeAttributes![0];
-        authorizeAttribute.AuthenticationSchemes.Should().Be(JwtBearerDefaults.AuthenticationScheme,
+        authorizeAttribute.AuthenticationSchemes.ShouldBe(JwtBearerDefaults.AuthenticationScheme,
             "Delete should use JWT authentication");
-        authorizeAttribute.Roles.Should().BeNullOrEmpty(
+        authorizeAttribute.Roles.ShouldBeNullOrEmpty(
             "Delete should not require specific roles - any authenticated JWT user can delete breaks");
     }
 
@@ -86,13 +86,13 @@ public class BreakPlaceholdersControllerAuthorizationTests
             .GetMethod("Post", BindingFlags.Public | BindingFlags.Instance);
 
         // Act & Assert
-        derivedMethod.Should().NotBeNull();
-        baseMethod.Should().NotBeNull();
+        derivedMethod.ShouldNotBeNull();
+        baseMethod.ShouldNotBeNull();
 
-        derivedMethod!.DeclaringType.Should().Be(typeof(BreakPlaceholdersController),
+        derivedMethod!.DeclaringType.ShouldBe(typeof(BreakPlaceholdersController),
             "BreakPlaceholdersController.Post should override InputBaseController.Post");
 
-        derivedMethod.GetBaseDefinition().Should().BeSameAs(baseMethod,
+        derivedMethod.GetBaseDefinition().ShouldBeSameAs(baseMethod,
             "BreakPlaceholdersController.Post should properly override the base method");
     }
 
@@ -108,13 +108,13 @@ public class BreakPlaceholdersControllerAuthorizationTests
             .GetMethod("Put", BindingFlags.Public | BindingFlags.Instance);
 
         // Act & Assert
-        derivedMethod.Should().NotBeNull();
-        baseMethod.Should().NotBeNull();
+        derivedMethod.ShouldNotBeNull();
+        baseMethod.ShouldNotBeNull();
 
-        derivedMethod!.DeclaringType.Should().Be(typeof(BreakPlaceholdersController),
+        derivedMethod!.DeclaringType.ShouldBe(typeof(BreakPlaceholdersController),
             "BreakPlaceholdersController.Put should override InputBaseController.Put");
 
-        derivedMethod.GetBaseDefinition().Should().BeSameAs(baseMethod,
+        derivedMethod.GetBaseDefinition().ShouldBeSameAs(baseMethod,
             "BreakPlaceholdersController.Put should properly override the base method");
     }
 
@@ -130,13 +130,13 @@ public class BreakPlaceholdersControllerAuthorizationTests
             .GetMethod("Delete", BindingFlags.Public | BindingFlags.Instance);
 
         // Act & Assert
-        derivedMethod.Should().NotBeNull();
-        baseMethod.Should().NotBeNull();
+        derivedMethod.ShouldNotBeNull();
+        baseMethod.ShouldNotBeNull();
 
-        derivedMethod!.DeclaringType.Should().Be(typeof(BreakPlaceholdersController),
+        derivedMethod!.DeclaringType.ShouldBe(typeof(BreakPlaceholdersController),
             "BreakPlaceholdersController.Delete should override InputBaseController.Delete");
 
-        derivedMethod.GetBaseDefinition().Should().BeSameAs(baseMethod,
+        derivedMethod.GetBaseDefinition().ShouldBeSameAs(baseMethod,
             "BreakPlaceholdersController.Delete should properly override the base method");
     }
 
@@ -151,7 +151,7 @@ public class BreakPlaceholdersControllerAuthorizationTests
         var httpPostAttribute = methodInfo?.GetCustomAttribute<HttpPostAttribute>();
 
         // Assert
-        httpPostAttribute.Should().NotBeNull();
+        httpPostAttribute.ShouldNotBeNull();
     }
 
     [Test]
@@ -165,7 +165,7 @@ public class BreakPlaceholdersControllerAuthorizationTests
         var httpPutAttribute = methodInfo?.GetCustomAttribute<HttpPutAttribute>();
 
         // Assert
-        httpPutAttribute.Should().NotBeNull();
+        httpPutAttribute.ShouldNotBeNull();
     }
 
     [Test]
@@ -179,7 +179,7 @@ public class BreakPlaceholdersControllerAuthorizationTests
         var httpDeleteAttribute = methodInfo?.GetCustomAttribute<HttpDeleteAttribute>();
 
         // Assert
-        httpDeleteAttribute.Should().NotBeNull();
+        httpDeleteAttribute.ShouldNotBeNull();
     }
 
     [Test]
@@ -189,8 +189,8 @@ public class BreakPlaceholdersControllerAuthorizationTests
         var baseType = typeof(BreakPlaceholdersController).BaseType;
 
         // Assert
-        baseType.Should().NotBeNull();
-        baseType!.Name.Should().Be("InputBaseController`1",
+        baseType.ShouldNotBeNull();
+        baseType!.Name.ShouldBe("InputBaseController`1",
             "BreakPlaceholdersController should inherit from InputBaseController");
     }
 
@@ -207,7 +207,7 @@ public class BreakPlaceholdersControllerAuthorizationTests
         // Assert
         if (authorizeAttribute != null)
         {
-            authorizeAttribute.Roles.Should().BeNullOrEmpty(
+            authorizeAttribute.Roles.ShouldBeNullOrEmpty(
                 "GetClientList should only require JWT authentication, not specific roles");
         }
     }

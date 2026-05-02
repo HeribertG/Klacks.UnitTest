@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Scripting;
+﻿using Klacks.Api.Infrastructure.Scripting;
 
 namespace Klacks.UnitTest.BasicScriptInterpreter
 {
@@ -34,7 +34,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: true, allowExternal: false);
 
             // Assert - Compilation successful
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
 
@@ -57,19 +57,19 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var result = context.Execute();
 
             // Assert
-            result.Success.Should().BeTrue();
+            result.Success.ShouldBeTrue();
 
             if (actualMessage != null)
             {
-                actualMessage.Should().NotBeEmpty();
-                actualType.Should().Be(1);
-                actualMessage.Should().Be(expectedResult);
+                actualMessage.ShouldNotBeEmpty();
+                actualType.ShouldBe(1);
+                actualMessage.ShouldBe(expectedResult);
             }
 
             if (actualDebugPrint != null)
             {
-                actualDebugPrint.Should().NotBeEmpty();
-                actualDebugPrint.Should().Be(expectedResult);
+                actualDebugPrint.ShouldNotBeEmpty();
+                actualDebugPrint.ShouldBe(expectedResult);
             }
         }
 
@@ -88,7 +88,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert - Compilation successful
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             // Act - First execution with values 100, 10
             compiledScript.SetExternalValue("betrag", 100.0);
@@ -100,7 +100,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context1.Execute();
 
             // Assert
-            result1.Should().Be("90");
+            result1.ShouldBe("90");
 
             // Act - Second execution with different values 200, 25
             compiledScript.SetExternalValue("betrag", 200.0);
@@ -112,7 +112,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context2.Execute();
 
             // Assert
-            result2.Should().Be("150");
+            result2.ShouldBe("150");
         }
 
         [Test]
@@ -129,7 +129,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var cts = new CancellationTokenSource();
             cts.Cancel();
@@ -140,8 +140,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var result = context.Execute(cts.Token);
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Error.Should().NotBeNull();
+            result.Success.ShouldBeFalse();
+            result.Error.ShouldNotBeNull();
         }
 
         [Test]
@@ -158,7 +158,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
 
@@ -166,9 +166,9 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var result = context.Execute();
 
             // Assert
-            result.Success.Should().BeFalse();
-            result.Error.Should().NotBeNull();
-            result.Error!.Description.Should().Contain("recursion");
+            result.Success.ShouldBeFalse();
+            result.Error.ShouldNotBeNull();
+            result.Error!.Description.ShouldContain("recursion");
         }
 
         [Test]
@@ -187,7 +187,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -197,8 +197,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("10000");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("10000");
         }
 
         [Test]
@@ -221,7 +221,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -231,8 +231,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("10000");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("10000");
         }
 
         [Test]
@@ -249,7 +249,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -259,8 +259,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("1000");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("1000");
         }
 
         [Test]
@@ -277,7 +277,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -287,8 +287,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("1000");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("1000");
         }
 
         [Test]
@@ -315,7 +315,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -325,8 +325,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("1000");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("1000");
         }
 
         [Test]
@@ -348,7 +348,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -358,8 +358,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("100");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("100");
         }
 
         [Test]
@@ -381,7 +381,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -391,8 +391,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("6765");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("6765");
         }
 
         [Test]
@@ -411,7 +411,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -421,8 +421,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().NotBeNullOrEmpty();
+            execResult.Success.ShouldBeTrue();
+            result.ShouldNotBeNullOrEmpty();
         }
 
         [Test]
@@ -447,7 +447,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             int? evenCount = null;
@@ -462,9 +462,9 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            evenCount.Should().Be(50);
-            oddCount.Should().Be(50);
+            execResult.Success.ShouldBeTrue();
+            evenCount.ShouldBe(50);
+            oddCount.ShouldBe(50);
         }
 
         [Test]
@@ -487,7 +487,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -497,8 +497,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("10100");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("10100");
         }
 
         [Test]
@@ -513,7 +513,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             // Act & Assert - Run 100 times with different values
             for (int i = 1; i <= 100; i++)
@@ -525,8 +525,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
 
                 var execResult = context.Execute();
 
-                execResult.Success.Should().BeTrue();
-                result.Should().Be((i * i).ToString());
+                execResult.Success.ShouldBeTrue();
+                result.ShouldBe((i * i).ToString());
             }
         }
 
@@ -546,7 +546,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var cts = new CancellationTokenSource();
             var context = new ScriptExecutionContext(compiledScript);
@@ -557,8 +557,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute(cts.Token);
 
             // Assert
-            execResult.Success.Should().BeFalse();
-            execResult.Error.Should().NotBeNull();
+            execResult.Success.ShouldBeFalse();
+            execResult.Error.ShouldNotBeNull();
         }
 
         [TestCase(100)]
@@ -580,7 +580,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -594,10 +594,10 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             stopwatch.Stop();
 
             // Assert
-            execResult.Success.Should().BeTrue();
+            execResult.Success.ShouldBeTrue();
             var expectedSum = (long)iterations * (iterations + 1) / 2;
-            result.Should().Be(expectedSum.ToString());
-            stopwatch.ElapsedMilliseconds.Should().BeLessThan(5000);
+            result.ShouldBe(expectedSum.ToString());
+            stopwatch.ElapsedMilliseconds.ShouldBeLessThan(5000);
         }
 
         [Test]
@@ -616,7 +616,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -626,8 +626,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().NotBeNullOrEmpty();
+            execResult.Success.ShouldBeTrue();
+            result.ShouldNotBeNullOrEmpty();
         }
 
         [Test]
@@ -646,7 +646,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -656,8 +656,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().NotBeNullOrEmpty();
+            execResult.Success.ShouldBeTrue();
+            result.ShouldNotBeNullOrEmpty();
         }
 
         [Test]
@@ -676,7 +676,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -686,8 +686,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("2046");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("2046");
         }
 
         [Test]
@@ -706,7 +706,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -716,8 +716,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("xxxxxxxxxx");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("xxxxxxxxxx");
         }
 
         [Test]
@@ -748,7 +748,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -758,8 +758,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("294");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("294");
         }
 
         [Test]
@@ -786,7 +786,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             ";
 
             var compiledScript = CompiledScript.Compile(script);
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -796,8 +796,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("2550");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("2550");
         }
 
         #region FOR Loop Tests
@@ -820,7 +820,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -830,8 +830,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("15");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("15");
         }
 
         [Test]
@@ -852,7 +852,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -862,8 +862,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("30");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("30");
         }
 
         [Test]
@@ -888,7 +888,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -898,8 +898,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("9");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("9");
         }
 
         [Test]
@@ -920,7 +920,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -930,8 +930,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("500500");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("500500");
         }
 
         #endregion
@@ -956,7 +956,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -966,8 +966,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be(expectedResult);
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe(expectedResult);
         }
 
         #endregion
@@ -989,7 +989,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -999,8 +999,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("1");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("1");
         }
 
         [Test]
@@ -1018,7 +1018,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1028,8 +1028,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("True");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("True");
         }
 
         [Test]
@@ -1047,7 +1047,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1057,7 +1057,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
+            execResult.Success.ShouldBeTrue();
         }
 
         [Test]
@@ -1074,7 +1074,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1084,8 +1084,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("True");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("True");
         }
 
         [Test]
@@ -1096,7 +1096,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1106,8 +1106,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("3");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("3");
         }
 
         [Test]
@@ -1118,7 +1118,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1128,8 +1128,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("True");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("True");
         }
 
         [Test]
@@ -1140,7 +1140,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1150,8 +1150,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("True");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("True");
         }
 
         [Test]
@@ -1162,7 +1162,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1172,8 +1172,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("6");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("6");
         }
 
         #endregion
@@ -1190,7 +1190,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1198,8 +1198,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
 
             var execResult = context.Execute();
 
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("∞");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("∞");
         }
 
         [Test]
@@ -1212,7 +1212,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
         }
 
         [Test]
@@ -1228,15 +1228,15 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
             context.Message += (type, msg) => result = msg;
 
             var execResult = context.Execute();
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("42");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("42");
         }
 
         #endregion
@@ -1251,7 +1251,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1261,8 +1261,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be(Math.Sin(1).ToString());
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe(Math.Sin(1).ToString());
         }
 
         [Test]
@@ -1273,7 +1273,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1283,8 +1283,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be(Math.Cos(1).ToString());
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe(Math.Cos(1).ToString());
         }
 
         [Test]
@@ -1295,7 +1295,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1305,8 +1305,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be(Math.Tan(1).ToString());
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe(Math.Tan(1).ToString());
         }
 
         [Test]
@@ -1317,7 +1317,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1327,8 +1327,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be(Math.Atan(1).ToString());
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe(Math.Atan(1).ToString());
         }
 
         #endregion
@@ -1348,7 +1348,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             var messages = new List<(int type, string msg)>();
@@ -1358,11 +1358,11 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            messages.Should().HaveCount(3);
-            messages[0].Should().Be((1, "first"));
-            messages[1].Should().Be((2, "second"));
-            messages[2].Should().Be((3, "third"));
+            execResult.Success.ShouldBeTrue();
+            messages.Count().ShouldBe(3);
+            messages[0].ShouldBe((1, "first"));
+            messages[1].ShouldBe((2, "second"));
+            messages[2].ShouldBe((3, "third"));
         }
 
         #endregion
@@ -1390,7 +1390,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1400,8 +1400,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("120");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("120");
         }
 
         #endregion
@@ -1420,7 +1420,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             compiledScript.SetExternalValue("external_value", 42);
             var context = new ScriptExecutionContext(compiledScript);
@@ -1431,8 +1431,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("42");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("42");
         }
 
         [Test]
@@ -1447,7 +1447,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             compiledScript.SetExternalValue("name", "Claude");
             var context = new ScriptExecutionContext(compiledScript);
@@ -1458,8 +1458,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("Claude");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("Claude");
         }
 
         [Test]
@@ -1475,7 +1475,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             compiledScript.SetExternalValue("a", 10.0);
             compiledScript.SetExternalValue("b", 32.0);
@@ -1487,8 +1487,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("42");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("42");
         }
 
         [Test]
@@ -1506,7 +1506,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             compiledScript.SetExternalValue("price", 9.99);
             compiledScript.SetExternalValue("quantity", 3.0);
@@ -1518,8 +1518,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("29.97");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("29.97");
         }
 
         #endregion
@@ -1535,7 +1535,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script, optionExplicit: false, allowExternal: false);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1545,8 +1545,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("186");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("186");
         }
 
         [Test]
@@ -1571,7 +1571,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1581,8 +1581,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("25.9");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("25.9");
         }
 
         #endregion
@@ -1596,7 +1596,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1605,7 +1605,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Left(\"Hello\", 3)", "Hel")]
@@ -1615,7 +1615,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1624,7 +1624,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Right(\"Hello\", 3)", "llo")]
@@ -1634,7 +1634,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1643,7 +1643,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Mid(\"Hello World\", 7, 5)", "World")]
@@ -1653,7 +1653,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1662,7 +1662,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint InStr(\"Hello World\", \"World\")", "7")]
@@ -1672,7 +1672,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1681,7 +1681,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Replace(\"Hello World\", \"World\", \"Universe\")", "Hello Universe")]
@@ -1690,7 +1690,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1699,7 +1699,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Trim(\"  Hello  \")", "Hello")]
@@ -1708,7 +1708,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1717,7 +1717,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint UCase(\"hello\")", "HELLO")]
@@ -1726,7 +1726,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1735,7 +1735,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         #endregion
@@ -1749,7 +1749,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1758,7 +1758,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Sqr(4)", "2")]
@@ -1768,7 +1768,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1777,7 +1777,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Round(3.14159, 2)", "3.14")]
@@ -1787,7 +1787,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1796,7 +1796,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Round(3.14159)", "3")]
@@ -1804,7 +1804,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1813,7 +1813,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [Test]
@@ -1830,7 +1830,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
                 end if
             ";
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.Message += (type, msg) => result = msg;
@@ -1839,7 +1839,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be("OK");
+            result.ShouldBe("OK");
         }
 
         [TestCase("debugprint Log(1)", "0")]
@@ -1848,7 +1848,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1857,7 +1857,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         [TestCase("debugprint Sgn(-5)", "-1")]
@@ -1867,7 +1867,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
         {
             // Arrange
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.DebugPrint += msg => result = msg;
@@ -1876,7 +1876,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be(expected);
+            result.ShouldBe(expected);
         }
 
         #endregion
@@ -1900,7 +1900,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1910,8 +1910,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("42");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("42");
         }
 
         [Test]
@@ -1935,7 +1935,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1945,8 +1945,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("1");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("1");
         }
 
         [Test]
@@ -1963,7 +1963,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
         }
 
         [Test]
@@ -1987,7 +1987,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -1997,8 +1997,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("25");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("25");
         }
 
         [Test]
@@ -2023,7 +2023,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -2033,8 +2033,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("15");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("15");
         }
 
         [Test]
@@ -2061,7 +2061,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -2071,8 +2071,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("5");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("5");
         }
 
         [Test]
@@ -2101,7 +2101,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -2111,8 +2111,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("B");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("B");
         }
 
         [Test]
@@ -2140,7 +2140,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var compiledScript = CompiledScript.Compile(script);
 
             // Assert
-            compiledScript.HasError.Should().BeFalse();
+            compiledScript.HasError.ShouldBeFalse();
 
             var context = new ScriptExecutionContext(compiledScript);
             string? result = null;
@@ -2150,8 +2150,8 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("small");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("small");
         }
 
         #endregion
@@ -2173,7 +2173,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.Message += (type, msg) => result = msg;
@@ -2182,7 +2182,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be("first");
+            result.ShouldBe("first");
         }
 
         [Test]
@@ -2200,7 +2200,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.Message += (type, msg) => result = msg;
@@ -2209,7 +2209,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be("second");
+            result.ShouldBe("second");
         }
 
         [Test]
@@ -2229,7 +2229,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.Message += (type, msg) => result = msg;
@@ -2238,7 +2238,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be("other");
+            result.ShouldBe("other");
         }
 
         [Test]
@@ -2256,7 +2256,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.Message += (type, msg) => result = msg;
@@ -2265,7 +2265,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be("low");
+            result.ShouldBe("low");
         }
 
         [Test]
@@ -2285,7 +2285,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
                 End Select
             ";
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.Message += (type, msg) => result = msg;
@@ -2294,7 +2294,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be("letter B");
+            result.ShouldBe("letter B");
         }
 
         [Test]
@@ -2315,7 +2315,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
                 output 1, result
             ";
             var compiled = CompiledScript.Compile(script);
-            compiled.HasError.Should().BeFalse();
+            compiled.HasError.ShouldBeFalse();
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
             context.Message += (type, msg) => result = msg;
@@ -2324,7 +2324,7 @@ namespace Klacks.UnitTest.BasicScriptInterpreter
             context.Execute();
 
             // Assert
-            result.Should().Be("none");
+            result.ShouldBe("none");
         }
 
         #endregion
@@ -2351,7 +2351,7 @@ output 1, result
             var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
 
             // Assert
-            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+            compiled.HasError.ShouldBeFalse($"Compilation failed: {compiled.Error?.Description}");
 
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
@@ -2361,8 +2361,8 @@ output 1, result
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("1");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("1");
         }
 
         [Test]
@@ -2392,7 +2392,7 @@ output 1, result
             var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
 
             // Assert
-            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+            compiled.HasError.ShouldBeFalse($"Compilation failed: {compiled.Error?.Description}");
 
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
@@ -2402,8 +2402,8 @@ output 1, result
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("5");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("5");
         }
 
         [Test]
@@ -2426,7 +2426,7 @@ output 1, result
             var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
 
             // Assert
-            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+            compiled.HasError.ShouldBeFalse($"Compilation failed: {compiled.Error?.Description}");
 
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
@@ -2436,8 +2436,8 @@ output 1, result
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("42");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("42");
         }
 
         [Test]
@@ -2457,7 +2457,7 @@ output 1, result
             var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
 
             // Assert
-            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+            compiled.HasError.ShouldBeFalse($"Compilation failed: {compiled.Error?.Description}");
 
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
@@ -2469,9 +2469,9 @@ output 1, result
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("10");
-            debugOutput.Should().Be("x = 5");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("10");
+            debugOutput.ShouldBe("x = 5");
         }
 
         [Test]
@@ -2498,7 +2498,7 @@ output 1, r
             var compiled = CompiledScript.Compile(script, optionExplicit: false, allowExternal: true);
 
             // Assert
-            compiled.HasError.Should().BeFalse($"Compilation failed: {compiled.Error?.Description}");
+            compiled.HasError.ShouldBeFalse($"Compilation failed: {compiled.Error?.Description}");
 
             var context = new ScriptExecutionContext(compiled);
             string? result = null;
@@ -2510,11 +2510,11 @@ output 1, r
             var execResult = context.Execute();
 
             // Assert
-            execResult.Success.Should().BeTrue();
-            result.Should().Be("10");
-            debugOutputs.Should().HaveCount(2);
-            debugOutputs[0].Should().Be("Input: 5");
-            debugOutputs[1].Should().Be("Output: 10");
+            execResult.Success.ShouldBeTrue();
+            result.ShouldBe("10");
+            debugOutputs.Count().ShouldBe(2);
+            debugOutputs[0].ShouldBe("Input: 5");
+            debugOutputs[1].ShouldBe("Output: 10");
         }
 
         #endregion

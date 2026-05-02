@@ -1,11 +1,11 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for DeepgramSttProvider WebSocket message parsing.
 /// </summary>
 namespace Klacks.UnitTest.Services.Assistant.Providers;
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Stt;
 using NUnit.Framework;
@@ -24,7 +24,7 @@ public class DeepgramSttProviderTests
     [Test]
     public void ProviderId_ShouldBeDeepgram()
     {
-        _provider.ProviderId.Should().Be(SttProviderConstants.Deepgram);
+        _provider.ProviderId.ShouldBe(SttProviderConstants.Deepgram);
     }
 
     [Test]
@@ -34,10 +34,10 @@ public class DeepgramSttProviderTests
 
         var result = DeepgramSttProvider.ParseResult(json);
 
-        result.Should().NotBeNull();
-        result!.Text.Should().Be("Hallo Welt");
-        result.IsFinal.Should().BeTrue();
-        result.Confidence.Should().BeApproximately(0.95f, 0.01f);
+        result.ShouldNotBeNull();
+        result!.Text.ShouldBe("Hallo Welt");
+        result.IsFinal.ShouldBeTrue();
+        result.Confidence.ShouldBe(0.95f, 0.01f);
     }
 
     [Test]
@@ -47,9 +47,9 @@ public class DeepgramSttProviderTests
 
         var result = DeepgramSttProvider.ParseResult(json);
 
-        result.Should().NotBeNull();
-        result!.Text.Should().Be("Hal");
-        result.IsFinal.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result!.Text.ShouldBe("Hal");
+        result.IsFinal.ShouldBeFalse();
     }
 
     [Test]
@@ -59,7 +59,7 @@ public class DeepgramSttProviderTests
 
         var result = DeepgramSttProvider.ParseResult(json);
 
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 
     [Test]
@@ -69,6 +69,6 @@ public class DeepgramSttProviderTests
 
         var result = DeepgramSttProvider.ParseResult(json);
 
-        result.Should().BeNull();
+        result.ShouldBeNull();
     }
 }

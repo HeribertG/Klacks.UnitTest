@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Settings;
@@ -54,9 +54,9 @@ public class MacroManagementServiceTests
         await _context.SaveChangesAsync();
 
         var result = await _context.Macro.FindAsync(macro.Id);
-        result.Should().NotBeNull();
-        result.Name.Should().Be("TestMacro");
-        result.Content.Should().Be("TestContent");
+        result.ShouldNotBeNull();
+        result.Name.ShouldBe("TestMacro");
+        result.Content.ShouldBe("TestContent");
     }
 
     [Test]
@@ -81,8 +81,8 @@ public class MacroManagementServiceTests
         await _context.SaveChangesAsync();
 
         var result = await _context.Macro.FindAsync(macro.Id);
-        result.Name.Should().Be("UpdatedName");
-        result.Content.Should().Be("UpdatedContent");
+        result.Name.ShouldBe("UpdatedName");
+        result.Content.ShouldBe("UpdatedContent");
     }
 
     [Test]
@@ -104,8 +104,8 @@ public class MacroManagementServiceTests
         await _context.SaveChangesAsync();
 
         var result = await _context.Macro.IgnoreQueryFilters().FirstOrDefaultAsync(m => m.Id == macro.Id);
-        result.Should().NotBeNull();
-        result.IsDeleted.Should().BeTrue();
+        result.ShouldNotBeNull();
+        result.IsDeleted.ShouldBeTrue();
     }
 
     [Test]
@@ -125,9 +125,9 @@ public class MacroManagementServiceTests
 
         var result = await _service.GetMacroAsync(macro.Id);
 
-        result.Should().NotBeNull();
-        result.Id.Should().Be(macro.Id);
-        result.Name.Should().Be("TestMacro");
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(macro.Id);
+        result.Name.ShouldBe("TestMacro");
     }
 
     [Test]
@@ -135,8 +135,7 @@ public class MacroManagementServiceTests
     {
         var nonExistingId = Guid.NewGuid();
 
-        await _service.Invoking(s => s.GetMacroAsync(nonExistingId))
-            .Should().ThrowAsync<InvalidOperationException>();
+        await Should.ThrowAsync<InvalidOperationException>(() => _service.GetMacroAsync(nonExistingId));
     }
 
     [Test]
@@ -154,10 +153,10 @@ public class MacroManagementServiceTests
 
         var result = await _service.GetMacroListAsync();
 
-        result.Should().HaveCount(3);
-        result.Should().Contain(m => m.Name == "Macro1");
-        result.Should().Contain(m => m.Name == "Macro2");
-        result.Should().Contain(m => m.Name == "Macro3");
+        result.Count().ShouldBe(3);
+        result.ShouldContain(m => m.Name == "Macro1");
+        result.ShouldContain(m => m.Name == "Macro2");
+        result.ShouldContain(m => m.Name == "Macro3");
     }
 
     [Test]
@@ -177,7 +176,7 @@ public class MacroManagementServiceTests
 
         var result = await _service.MacroExistsAsync(macro.Id);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -187,6 +186,6 @@ public class MacroManagementServiceTests
 
         var result = await _service.MacroExistsAsync(nonExistingId);
 
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 }

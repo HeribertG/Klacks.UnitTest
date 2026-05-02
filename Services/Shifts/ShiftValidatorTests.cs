@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
@@ -77,7 +77,7 @@ public class ShiftValidatorTests
         Func<Task> act = async () => await _validator.EnsureNoOriginalShiftCopyExists(originalShiftId, _shiftRepository);
 
         // Assert
-        await act.Should().NotThrowAsync();
+        await act.ShouldNotThrowAsync();
     }
 
     [Test]
@@ -115,8 +115,7 @@ public class ShiftValidatorTests
         Func<Task> act = async () => await _validator.EnsureNoOriginalShiftCopyExists(originalShiftId, _shiftRepository);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage($"An OriginalShift copy already exists for OriginalId={originalShiftId}. Cannot create duplicate copy.");
+        (await Should.ThrowAsync<InvalidOperationException>(act)).Message.ShouldBe($"An OriginalShift copy already exists for OriginalId={originalShiftId}. Cannot create duplicate copy.");
     }
 
     [Test]
@@ -166,7 +165,7 @@ public class ShiftValidatorTests
         Func<Task> act = async () => await _validator.EnsureNoOriginalShiftCopyExists(originalShiftId, _shiftRepository);
 
         // Assert
-        await act.Should().NotThrowAsync();
+        await act.ShouldNotThrowAsync();
     }
 
     [Test]
@@ -216,6 +215,6 @@ public class ShiftValidatorTests
         Func<Task> act = async () => await _validator.EnsureNoOriginalShiftCopyExists(originalShiftId1, _shiftRepository);
 
         // Assert
-        await act.Should().NotThrowAsync();
+        await act.ShouldNotThrowAsync();
     }
 }

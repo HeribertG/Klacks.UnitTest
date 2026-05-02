@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for the Chinese lunisolar calendar (Lunar to Gregorian) conversion.
@@ -22,7 +22,7 @@ internal class LunarCalendarTests
     {
         var result = LunarCalendar.GetGregorianDateForLunarInYear(lunarDay, lunarMonth, gregorianYear);
 
-        result.Should().Be(new DateOnly(expectedYear, expectedMonth, expectedDay));
+        result.ShouldBe(new DateOnly(expectedYear, expectedMonth, expectedDay));
     }
 
     [TestCase(5, 5, 2024, 2024, 6, 10)]
@@ -33,23 +33,19 @@ internal class LunarCalendarTests
     {
         var result = LunarCalendar.GetGregorianDateForLunarInYear(lunarDay, lunarMonth, gregorianYear);
 
-        result.Should().Be(new DateOnly(expectedYear, expectedMonth, expectedDay));
+        result.ShouldBe(new DateOnly(expectedYear, expectedMonth, expectedDay));
     }
 
     [Test]
     public void GetGregorianDateForLunarInYear_OutOfRange_ShouldThrow()
     {
-        var act = () => LunarCalendar.GetGregorianDateForLunarInYear(1, 1, 2019);
-
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        Should.Throw<ArgumentOutOfRangeException>(() => LunarCalendar.GetGregorianDateForLunarInYear(1, 1, 2019));
     }
 
     [Test]
     public void GetGregorianDateForLunarInYear_OutOfRangeHigh_ShouldThrow()
     {
-        var act = () => LunarCalendar.GetGregorianDateForLunarInYear(1, 1, 2051);
-
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        Should.Throw<ArgumentOutOfRangeException>(() => LunarCalendar.GetGregorianDateForLunarInYear(1, 1, 2051));
     }
 
     [TestCase(2020)]
@@ -58,8 +54,6 @@ internal class LunarCalendarTests
     [TestCase(2050)]
     public void GetGregorianDateForLunarInYear_AllSupportedYears_ShouldNotThrow(int year)
     {
-        var act = () => LunarCalendar.GetGregorianDateForLunarInYear(1, 1, year);
-
-        act.Should().NotThrow();
+        Should.NotThrow(() => { LunarCalendar.GetGregorianDateForLunarInYear(1, 1, year); });
     }
 }

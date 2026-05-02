@@ -1,4 +1,4 @@
-using Klacks.Api.Application.Commands;
+﻿using Klacks.Api.Application.Commands;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.CalendarSelections;
 using Klacks.Api.Application.Interfaces;
@@ -51,9 +51,9 @@ internal class CalendarSelectionTest
         var resultPost = await handlerPost.Handle(queryPost, default);
 
         //Assert Post
-        resultPost.Should().NotBeNull();
-        resultPost!.SelectedCalendars.Should().NotBeNull();
-        resultPost.SelectedCalendars.Should().HaveCount(fakeCalendarSelection.SelectedCalendars.Count);
+        resultPost.ShouldNotBeNull();
+        resultPost!.SelectedCalendars.ShouldNotBeNull();
+        resultPost.SelectedCalendars.Count().ShouldBe(fakeCalendarSelection.SelectedCalendars.Count);
 
         //Arrange Get
         var id = resultPost.Id;
@@ -67,9 +67,9 @@ internal class CalendarSelectionTest
         var resultGet = await handlerGet.Handle(queryGet, default);
 
         //Assert Get
-        resultGet.Should().NotBeNull();
-        resultGet!.SelectedCalendars.Should().NotBeNull();
-        resultGet.SelectedCalendars.Should().HaveCount(fakeCalendarSelection.SelectedCalendars.Count);
+        resultGet.ShouldNotBeNull();
+        resultGet!.SelectedCalendars.ShouldNotBeNull();
+        resultGet.SelectedCalendars.Count().ShouldBe(fakeCalendarSelection.SelectedCalendars.Count);
 
         //Arrange Put
         var fakeCalendarSelectionUpdate = resultGet!;
@@ -89,9 +89,9 @@ internal class CalendarSelectionTest
         var resultPut = await handlerPut.Handle(queryPut, default);
 
         //Assert Put
-        resultPut.Should().NotBeNull();
-        resultPut!.SelectedCalendars.Should().NotBeNull();
-        resultPut.SelectedCalendars.Should().HaveCount(fakeCalendarSelectionUpdate.SelectedCalendars.Count);
+        resultPut.ShouldNotBeNull();
+        resultPut!.SelectedCalendars.ShouldNotBeNull();
+        resultPut.SelectedCalendars.Count().ShouldBe(fakeCalendarSelectionUpdate.SelectedCalendars.Count);
 
         //Arrange Delete
         var queryDelete = new DeleteCommand<CalendarSelectionResource>(resultPut.Id);
@@ -104,14 +104,14 @@ internal class CalendarSelectionTest
         var resultDelete = await handlerDelete.Handle(queryDelete, default);
 
         //Assert Delete
-        resultDelete.Should().NotBeNull();
+        resultDelete.ShouldNotBeNull();
 
         var repositorySelectedCalendar = new SelectedCalendarRepository(dbContext, _selectedCalendarLogger);
 
         foreach (var item in resultDelete!.SelectedCalendars)
         {
             var res = await repositorySelectedCalendar.Get(item.Id);
-            res.Should().BeNull();
+            res.ShouldBeNull();
         }
     }
 

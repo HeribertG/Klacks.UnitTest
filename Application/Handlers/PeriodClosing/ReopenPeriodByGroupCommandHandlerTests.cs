@@ -1,10 +1,10 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for ReopenPeriodByGroupCommandHandler: reason validation, permission check, and audit log writing.
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.Handlers.PeriodClosing;
 using Klacks.Api.Domain.Enums;
@@ -67,8 +67,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("*reason*");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("reason");
     }
 
     [Test]
@@ -85,8 +84,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("*permission*");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("permission");
     }
 
     [Test]
@@ -105,7 +103,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.Should().Be(8);
+        result.ShouldBe(8);
 
         await _auditLogRepository.Received(1).AddAsync(
             Arg.Is<PeriodAuditLog>(log =>

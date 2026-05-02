@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 
@@ -17,14 +17,14 @@ public class ConstraintInputsTests
             Date: new DateOnly(2026, 4, 21),
             Keyword: ScheduleCommandKeyword.Free);
 
-        cmd.AgentId.Should().Be("agent-007");
-        cmd.Keyword.Should().Be(ScheduleCommandKeyword.Free);
+        cmd.AgentId.ShouldBe("agent-007");
+        cmd.Keyword.ShouldBe(ScheduleCommandKeyword.Free);
     }
 
     [Test]
     public void ScheduleCommandKeyword_HasAllEightExpectedValues()
     {
-        Enum.GetValues<ScheduleCommandKeyword>().Should().BeEquivalentTo(new[]
+        Enum.GetValues<ScheduleCommandKeyword>().ShouldBeEquivalentTo(new[]
         {
             ScheduleCommandKeyword.Free,
             ScheduleCommandKeyword.NotFree,
@@ -45,7 +45,7 @@ public class ConstraintInputsTests
             ShiftRefId: Guid.NewGuid(),
             Kind: ShiftPreferenceKind.Preferred);
 
-        pref.Kind.Should().Be(ShiftPreferenceKind.Preferred);
+        pref.Kind.ShouldBe(ShiftPreferenceKind.Preferred);
     }
 
     [Test]
@@ -57,8 +57,8 @@ public class ConstraintInputsTests
             UntilInclusive: new DateOnly(2026, 4, 25),
             Reason: "Vacation");
 
-        blocker.UntilInclusive.Should().Be(new DateOnly(2026, 4, 25));
-        blocker.Reason.Should().Be("Vacation");
+        blocker.UntilInclusive.ShouldBe(new DateOnly(2026, 4, 25));
+        blocker.Reason.ShouldBe("Vacation");
     }
 
     [Test]
@@ -75,7 +75,7 @@ public class ConstraintInputsTests
             ShiftRefId: Guid.NewGuid(),
             LocationContext: "store-9");
 
-        locked.WorkId.Should().Be("work-existing-1");
-        locked.ShiftTypeIndex.Should().Be(1);
+        locked.WorkId.ShouldBe("work-existing-1");
+        locked.ShiftTypeIndex.ShouldBe(1);
     }
 }

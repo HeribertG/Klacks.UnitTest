@@ -1,8 +1,8 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using System.Net;
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Plugin.Contracts;
 using Klacks.Plugin.Messaging.Application.Services;
 using Klacks.Plugin.Messaging.Domain.Enums;
@@ -71,7 +71,7 @@ public class OnboardingSendServiceTests
 
         var result = await _sut.SendAsync(clientId, BotConfig);
 
-        result.Should().Be(OnboardingSendResult.NotEmployee);
+        result.ShouldBe(OnboardingSendResult.NotEmployee);
     }
 
     [Test]
@@ -85,7 +85,7 @@ public class OnboardingSendServiceTests
 
         var result = await _sut.SendAsync(clientId, BotConfig);
 
-        result.Should().Be(OnboardingSendResult.AlreadyLinked);
+        result.ShouldBe(OnboardingSendResult.AlreadyLinked);
     }
 
     [Test]
@@ -97,7 +97,7 @@ public class OnboardingSendServiceTests
 
         var result = await _sut.SendAsync(clientId, BotConfig);
 
-        result.Should().Be(OnboardingSendResult.NoContactChannel);
+        result.ShouldBe(OnboardingSendResult.NoContactChannel);
     }
 
     [Test]
@@ -111,7 +111,7 @@ public class OnboardingSendServiceTests
 
         var result = await _sut.SendAsync(clientId, BotConfig);
 
-        result.Should().Be(OnboardingSendResult.Success);
+        result.ShouldBe(OnboardingSendResult.Success);
         await _tokenRepo.Received(1).InvalidateAllForClientAsync(clientId, Arg.Any<CancellationToken>());
         await _tokenRepo.Received(1).AddAsync(Arg.Any<TelegramOnboardingToken>(), Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).CompleteAsync();
@@ -131,7 +131,7 @@ public class OnboardingSendServiceTests
 
         var result = await _sut.SendAsync(clientId, BotConfig);
 
-        result.Should().Be(OnboardingSendResult.SendFailed);
+        result.ShouldBe(OnboardingSendResult.SendFailed);
     }
 
     private sealed class StubGetMeHandler : HttpMessageHandler

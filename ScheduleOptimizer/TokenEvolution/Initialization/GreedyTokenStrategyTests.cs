@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 using NUnit.Framework;
@@ -64,8 +64,8 @@ public class GreedyTokenStrategyTests
 
         var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
 
-        scenario.Tokens.Should().NotBeEmpty();
-        scenario.Tokens.Should().OnlyContain(t => t.AgentId == "FT");
+        scenario.Tokens.ShouldNotBeEmpty();
+        scenario.Tokens.ShouldAllBe(t => t.AgentId == "FT");
     }
 
     [Test]
@@ -98,8 +98,8 @@ public class GreedyTokenStrategyTests
 
         var scenario = new GreedyTokenStrategy().BuildScenario(context, new Random(0));
 
-        scenario.Tokens.Should().HaveCount(1);
-        scenario.Tokens[0].IsLocked.Should().BeTrue();
+        scenario.Tokens.Count().ShouldBe(1);
+        scenario.Tokens[0].IsLocked.ShouldBeTrue();
     }
 
     [Test]
@@ -128,6 +128,6 @@ public class GreedyTokenStrategyTests
 
         var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
 
-        scenario.Tokens.Where(t => !t.IsLocked).Should().HaveCount(3);
+        scenario.Tokens.Where(t => !t.IsLocked).Count().ShouldBe(3);
     }
 }

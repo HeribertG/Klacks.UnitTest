@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -54,9 +54,9 @@ public class GetResetDateRangeQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result.EarliestResetDate.Should().Be(fromDate);
-        result.UntilDate.Should().Be(untilDate);
+        result.ShouldNotBeNull();
+        result.EarliestResetDate.ShouldBe(fromDate);
+        result.UntilDate.ShouldBe(untilDate);
 
         await _shiftRepository.Received(1).GetSealedOrder(originalId);
     }
@@ -85,9 +85,9 @@ public class GetResetDateRangeQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.Should().NotBeNull();
-        result.EarliestResetDate.Should().Be(fromDate);
-        result.UntilDate.Should().BeNull();
+        result.ShouldNotBeNull();
+        result.EarliestResetDate.ShouldBe(fromDate);
+        result.UntilDate.ShouldBeNull();
     }
 
     [Test]
@@ -104,8 +104,7 @@ public class GetResetDateRangeQueryHandlerTests
         Func<Task> act = async () => await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage($"SealedOrder with OriginalId {originalId} not found");
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe($"SealedOrder with OriginalId {originalId} not found");
     }
 
 
@@ -132,6 +131,6 @@ public class GetResetDateRangeQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.EarliestResetDate.Should().Be(fromDate);
+        result.EarliestResetDate.ShouldBe(fromDate);
     }
 }

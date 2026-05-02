@@ -1,5 +1,4 @@
-using FluentAssertions;
-using FluentAssertions.Specialized;
+﻿using Shouldly;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
@@ -70,8 +69,8 @@ public class AccountRegistrationServiceTests
 
         var result = await _registrationService.RegisterUserAsync(user, password);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeTrue();
     }
 
     [Test]
@@ -96,8 +95,8 @@ public class AccountRegistrationServiceTests
 
         var result = await _registrationService.RegisterUserAsync(newUser, password);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -116,8 +115,8 @@ public class AccountRegistrationServiceTests
 
         var result = await _registrationService.RegisterUserAsync(user, password);
 
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Success.ShouldBeFalse();
     }
 
     [Test]
@@ -127,9 +126,8 @@ public class AccountRegistrationServiceTests
         
         // This will throw NullReferenceException in the actual implementation
         // when trying to access user.Email, which is expected behavior
-        await FluentActions.Invoking(async () => 
-            await _registrationService.RegisterUserAsync(null, password))
-            .Should().ThrowAsync<NullReferenceException>();
+        await Should.ThrowAsync<NullReferenceException>(async () =>
+            await _registrationService.RegisterUserAsync(null, password));
     }
 
     [Test]
@@ -145,7 +143,7 @@ public class AccountRegistrationServiceTests
         var result1 = await _registrationService.RegisterUserAsync(user, null);
         var result2 = await _registrationService.RegisterUserAsync(user, "");
 
-        result1.Success.Should().BeFalse();
-        result2.Success.Should().BeFalse();
+        result1.Success.ShouldBeFalse();
+        result2.Success.ShouldBeFalse();
     }
 }

@@ -1,8 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Application.DTOs.Settings;
@@ -50,13 +50,13 @@ namespace Klacks.UnitTest.Services.Settings
             var emailConfig = BuildEmailTestRequest(emailSettings);
 
             // Assert
-            emailConfig.Should().NotBeNull();
-            emailConfig.Server.Should().Be("mail.gmx.net");
-            emailConfig.Port.Should().Be("587");
-            emailConfig.Username.Should().Be("hgasparoli@gmx.ch");
-            emailConfig.Password.Should().Be("password123");
-            emailConfig.EnableSSL.Should().BeTrue();
-            emailConfig.AuthenticationType.Should().Be("LOGIN");
+            emailConfig.ShouldNotBeNull();
+            emailConfig.Server.ShouldBe("mail.gmx.net");
+            emailConfig.Port.ShouldBe("587");
+            emailConfig.Username.ShouldBe("hgasparoli@gmx.ch");
+            emailConfig.Password.ShouldBe("password123");
+            emailConfig.EnableSSL.ShouldBeTrue();
+            emailConfig.AuthenticationType.ShouldBe("LOGIN");
         }
 
         [Test]
@@ -79,7 +79,7 @@ namespace Klacks.UnitTest.Services.Settings
             var isValid = ValidateEmailConfiguration(emailConfig);
 
             // Assert
-            isValid.Should().BeTrue();
+            isValid.ShouldBeTrue();
         }
 
         [Test]
@@ -99,7 +99,7 @@ namespace Klacks.UnitTest.Services.Settings
             var isValid = ValidateEmailConfiguration(emailConfig);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         [Test]
@@ -120,7 +120,7 @@ namespace Klacks.UnitTest.Services.Settings
             var isValid = ValidateEmailConfiguration(emailConfig);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         [Test]
@@ -144,9 +144,9 @@ namespace Klacks.UnitTest.Services.Settings
                 var emailConfig = BuildEmailTestRequest(settings);
 
                 // Assert
-                emailConfig.Server.Should().Be(test.Server);
-                emailConfig.Port.Should().Be(test.Port);
-                emailConfig.EnableSSL.Should().Be(test.SSL);
+                emailConfig.Server.ShouldBe(test.Server);
+                emailConfig.Port.ShouldBe(test.Port);
+                emailConfig.EnableSSL.ShouldBe(test.SSL);
             }
         }
 

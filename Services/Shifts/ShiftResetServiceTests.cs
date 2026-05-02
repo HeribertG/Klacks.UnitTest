@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
@@ -55,14 +55,14 @@ public class ShiftResetServiceTests
         var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Status.Should().Be(ShiftStatus.OriginalShift);
-        result.FromDate.Should().Be(newStartDate);
-        result.UntilDate.Should().Be(sealedOrder.UntilDate);
-        result.ParentId.Should().BeNull();
-        result.RootId.Should().BeNull();
-        result.Lft.Should().BeNull();
-        result.Rgt.Should().BeNull();
+        result.ShouldNotBeNull();
+        result.Status.ShouldBe(ShiftStatus.OriginalShift);
+        result.FromDate.ShouldBe(newStartDate);
+        result.UntilDate.ShouldBe(sealedOrder.UntilDate);
+        result.ParentId.ShouldBeNull();
+        result.RootId.ShouldBeNull();
+        result.Lft.ShouldBeNull();
+        result.Rgt.ShouldBeNull();
 
         await _shiftRepository.Received(1).Add(Arg.Is<Shift>(s => s.Status == ShiftStatus.OriginalShift));
     }
@@ -87,7 +87,7 @@ public class ShiftResetServiceTests
         var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
 
         // Assert
-        result.OriginalId.Should().Be(sealedOrderId);
+        result.OriginalId.ShouldBe(sealedOrderId);
     }
 
     [Test]
@@ -116,7 +116,7 @@ public class ShiftResetServiceTests
         var result = await _service.CreateNewOriginalShiftFromSealedOrderAsync(sealedOrder, newStartDate);
 
         // Assert
-        result.GroupItems.Should().HaveCount(1);
+        result.GroupItems.Count().ShouldBe(1);
     }
 
     [Test]
@@ -149,9 +149,9 @@ public class ShiftResetServiceTests
         _service.CloseExistingSplitShifts(shifts, closeDate);
 
         // Assert
-        splitShift1.UntilDate.Should().Be(closeDate);
-        splitShift2.UntilDate.Should().Be(closeDate);
-        originalShift.UntilDate.Should().Be(new DateOnly(2025, 12, 31));
+        splitShift1.UntilDate.ShouldBe(closeDate);
+        splitShift2.UntilDate.ShouldBe(closeDate);
+        originalShift.UntilDate.ShouldBe(new DateOnly(2025, 12, 31));
     }
 
     [Test]
@@ -173,7 +173,7 @@ public class ShiftResetServiceTests
         _service.CloseExistingSplitShifts(shifts, closeDate);
 
         // Assert
-        originalShift.UntilDate.Should().Be(originalUntilDate);
+        originalShift.UntilDate.ShouldBe(originalUntilDate);
     }
 
     [Test]
@@ -195,7 +195,7 @@ public class ShiftResetServiceTests
         _service.CloseExistingSplitShifts(shifts, closeDate);
 
         // Assert
-        sealedOrder.UntilDate.Should().Be(originalUntilDate);
+        sealedOrder.UntilDate.ShouldBe(originalUntilDate);
     }
 
     [Test]
@@ -209,7 +209,7 @@ public class ShiftResetServiceTests
         Action act = () => _service.CloseExistingSplitShifts(shifts, closeDate);
 
         // Assert
-        act.Should().NotThrow();
+        act.ShouldNotThrow();
     }
 
     [Test]
@@ -242,8 +242,8 @@ public class ShiftResetServiceTests
         _service.CloseExistingSplitShifts(shifts, closeDate);
 
         // Assert
-        splitShift.UntilDate.Should().Be(closeDate);
-        originalShift.UntilDate.Should().Be(new DateOnly(2025, 12, 31));
-        sealedOrder.UntilDate.Should().Be(new DateOnly(2025, 12, 31));
+        splitShift.UntilDate.ShouldBe(closeDate);
+        originalShift.UntilDate.ShouldBe(new DateOnly(2025, 12, 31));
+        sealedOrder.UntilDate.ShouldBe(new DateOnly(2025, 12, 31));
     }
 }

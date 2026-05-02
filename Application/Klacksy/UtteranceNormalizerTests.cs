@@ -1,8 +1,8 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 namespace Klacks.UnitTest.Application.Klacksy;
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Klacksy;
 using NUnit.Framework;
 
@@ -23,23 +23,23 @@ public class UtteranceNormalizerTests
     public void Normalize_strips_wake_words_and_fillers(string raw, string locale, string expected, bool stripped)
     {
         var result = _sut.Normalize(raw, locale);
-        result.Normalized.Should().Be(expected);
-        result.WakeWordStripped.Should().Be(stripped);
-        result.Original.Should().Be(raw);
+        result.Normalized.ShouldBe(expected);
+        result.WakeWordStripped.ShouldBe(stripped);
+        result.Original.ShouldBe(raw);
     }
 
     [Test]
     public void Normalize_flags_empty_after_stripping()
     {
         var result = _sut.Normalize("Klacksy", "de");
-        result.IsEmptyAfterNormalization.Should().BeTrue();
+        result.IsEmptyAfterNormalization.ShouldBeTrue();
     }
 
     [Test]
     public void Normalize_preserves_non_wake_word_input()
     {
         var result = _sut.Normalize("wo ist die Einstellung", "de");
-        result.Normalized.Should().Be("wo ist die einstellung");
-        result.WakeWordStripped.Should().BeFalse();
+        result.Normalized.ShouldBe("wo ist die einstellung");
+        result.WakeWordStripped.ShouldBeFalse();
     }
 }

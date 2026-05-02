@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -203,12 +203,12 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(18, 0));
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-        result.Should().NotContain(s => s.IsSporadic);
-        result.Should().Contain(s => s.Name == "Regular Shift Monday");
-        result.Should().Contain(s => s.Name == "Another Regular Shift");
-        result.Should().NotContain(s => s.Name == "Sporadic Shift Monday");
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(2);
+        result.ShouldNotContain(s => s.IsSporadic);
+        result.ShouldContain(s => s.Name == "Regular Shift Monday");
+        result.ShouldContain(s => s.Name == "Another Regular Shift");
+        result.ShouldNotContain(s => s.Name == "Sporadic Shift Monday");
     }
 
     [Test]
@@ -312,9 +312,9 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(18, 0));
 
         // Assert
-        result.Should().NotContain(s => s.ShiftType == ShiftType.IsContainer);
-        result.Should().Contain(s => s.Name == "Regular Shift");
-        result.Should().NotContain(s => s.Name == "Another Container");
+        result.ShouldNotContain(s => s.ShiftType == ShiftType.IsContainer);
+        result.ShouldContain(s => s.Name == "Regular Shift");
+        result.ShouldNotContain(s => s.Name == "Another Container");
     }
 
     [Test]
@@ -442,10 +442,10 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(18, 0));
 
         // Assert
-        result.Should().NotContain(s => s.Status < ShiftStatus.OriginalShift);
-        result.Should().NotContain(s => s.Name == "Original Order Shift");
-        result.Should().Contain(s => s.Name == "Original Shift");
-        result.Should().Contain(s => s.Name == "Split Shift");
+        result.ShouldNotContain(s => s.Status < ShiftStatus.OriginalShift);
+        result.ShouldNotContain(s => s.Name == "Original Order Shift");
+        result.ShouldContain(s => s.Name == "Original Shift");
+        result.ShouldContain(s => s.Name == "Split Shift");
     }
 
     [Test]
@@ -548,9 +548,9 @@ public class ContainerAvailableTasksServiceTests
             searchString: "Alpha");
 
         // Assert
-        result.Should().HaveCount(1);
-        result.Should().Contain(s => s.Name == "Shift Alpha");
-        result.Should().NotContain(s => s.Name == "Shift Beta");
+        result.Count().ShouldBe(1);
+        result.ShouldContain(s => s.Name == "Shift Alpha");
+        result.ShouldNotContain(s => s.Name == "Shift Beta");
     }
 
     [Test]
@@ -670,9 +670,9 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(18, 0));
 
         // Assert
-        result.Should().NotContain(s => s.Id == usedShift.Id);
-        result.Should().NotContain(s => s.Name == "Used Shift");
-        result.Should().Contain(s => s.Name == "Available Shift");
+        result.ShouldNotContain(s => s.Id == usedShift.Id);
+        result.ShouldNotContain(s => s.Name == "Used Shift");
+        result.ShouldContain(s => s.Name == "Available Shift");
     }
 
     [Test]
@@ -808,9 +808,9 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(12, 0));
 
         // Assert
-        result.Should().Contain(s => s.Name == "Normal Shift Inside");
-        result.Should().NotContain(s => s.Name == "Normal Shift Partially Outside");
-        result.Should().NotContain(s => s.Name == "Normal Shift Completely Outside");
+        result.ShouldContain(s => s.Name == "Normal Shift Inside");
+        result.ShouldNotContain(s => s.Name == "Normal Shift Partially Outside");
+        result.ShouldNotContain(s => s.Name == "Normal Shift Completely Outside");
     }
 
     [Test]
@@ -972,10 +972,10 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(12, 0));
 
         // Assert
-        result.Should().Contain(s => s.Name == "TimeRange Shift Overlapping Start");
-        result.Should().Contain(s => s.Name == "TimeRange Shift Overlapping End");
-        result.Should().Contain(s => s.Name == "TimeRange Shift Inside");
-        result.Should().NotContain(s => s.Name == "TimeRange Shift No Overlap");
+        result.ShouldContain(s => s.Name == "TimeRange Shift Overlapping Start");
+        result.ShouldContain(s => s.Name == "TimeRange Shift Overlapping End");
+        result.ShouldContain(s => s.Name == "TimeRange Shift Inside");
+        result.ShouldNotContain(s => s.Name == "TimeRange Shift No Overlap");
     }
 
     [Test]
@@ -1082,8 +1082,8 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(12, 0));
 
         // Assert
-        result.Should().Contain(s => s.Name == "Shift Ending At Boundary");
-        result.Should().NotContain(s => s.Name == "Shift After Boundary");
+        result.ShouldContain(s => s.Name == "Shift Ending At Boundary");
+        result.ShouldNotContain(s => s.Name == "Shift After Boundary");
     }
 
     [Test]
@@ -1190,8 +1190,8 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(22, 0));
 
         // Assert
-        result.Should().Contain(s => s.Name == "Regular Shift");
-        result.Should().NotContain(s => s.Name == "Night Shift Crossing Midnight");
+        result.ShouldContain(s => s.Name == "Regular Shift");
+        result.ShouldNotContain(s => s.Name == "Night Shift Crossing Midnight");
     }
 
     [Test]
@@ -1323,9 +1323,9 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(6, 0));
 
         // Assert
-        result.Should().Contain(s => s.Name == "Shift In Late Night");
-        result.Should().Contain(s => s.Name == "Shift In Early Morning");
-        result.Should().NotContain(s => s.Name == "Shift Outside Timeframe");
+        result.ShouldContain(s => s.Name == "Shift In Late Night");
+        result.ShouldContain(s => s.Name == "Shift In Early Morning");
+        result.ShouldNotContain(s => s.Name == "Shift Outside Timeframe");
     }
 
     [Test]
@@ -1461,8 +1461,8 @@ public class ContainerAvailableTasksServiceTests
             untilTime: new TimeOnly(6, 0));
 
         // Assert
-        result.Should().Contain(s => s.Name == "TimeRange Shift Overlapping Start");
-        result.Should().Contain(s => s.Name == "TimeRange Shift Overlapping End");
-        result.Should().NotContain(s => s.Name == "TimeRange Shift No Overlap");
+        result.ShouldContain(s => s.Name == "TimeRange Shift Overlapping Start");
+        result.ShouldContain(s => s.Name == "TimeRange Shift Overlapping End");
+        result.ShouldNotContain(s => s.Name == "TimeRange Shift No Overlap");
     }
 }

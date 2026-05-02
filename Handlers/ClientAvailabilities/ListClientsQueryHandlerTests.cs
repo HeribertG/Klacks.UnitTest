@@ -1,10 +1,10 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for the ListClientsQueryHandler: paging, mapping, and base query delegation.
 /// </summary>
 /// <param name="_baseQueryService">Mock for the central ClientBaseQueryService</param>
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Application.Handlers.ClientAvailabilities;
@@ -85,8 +85,8 @@ public class ListClientsQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.TotalCount.Should().Be(5);
-        result.Clients.Should().HaveCount(2);
+        result.TotalCount.ShouldBe(5);
+        result.Clients.Count().ShouldBe(2);
     }
 
     [Test]
@@ -103,9 +103,9 @@ public class ListClientsQueryHandlerTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        result.Clients.Should().HaveCount(1);
-        result.Clients[0].Name.Should().Be("Client0");
-        result.Clients[0].FirstName.Should().Be("First0");
+        result.Clients.Count().ShouldBe(1);
+        result.Clients[0].Name.ShouldBe("Client0");
+        result.Clients[0].FirstName.ShouldBe("First0");
     }
 
     [Test]

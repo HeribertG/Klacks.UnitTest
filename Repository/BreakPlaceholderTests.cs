@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Scripting;
+﻿using Klacks.Api.Infrastructure.Scripting;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.BreakPlaceholders;
 using Klacks.Api.Application.Interfaces;
@@ -69,9 +69,9 @@ internal class BreakPlaceholderTests
         var (result, totalCount) = await handler.Handle(query, default);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Count().Should().Be(500);
-        totalCount.Should().Be(500);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(500);
+        totalCount.ShouldBe(500);
 
         var tmpBreakPlaceholders = new List<Klacks.Api.Application.DTOs.Schedules.BreakPlaceholderResource>();
 
@@ -83,8 +83,8 @@ internal class BreakPlaceholderTests
             }
         }
 
-        tmpBreakPlaceholders.Should().NotBeNull();
-        tmpBreakPlaceholders.Count().Should().Be(200);
+        tmpBreakPlaceholders.ShouldNotBeNull();
+        tmpBreakPlaceholders.Count().ShouldBe(200);
     }
 
     [Test]
@@ -121,9 +121,9 @@ internal class BreakPlaceholderTests
         var (result, totalCount) = await handler.Handle(query, default);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Count().Should().Be(100);
-        totalCount.Should().Be(500);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(100);
+        totalCount.ShouldBe(500);
     }
 
     [Test]
@@ -160,9 +160,9 @@ internal class BreakPlaceholderTests
         var (result, totalCount) = await handler.Handle(query, default);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Count().Should().Be(50);
-        totalCount.Should().Be(500);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(50);
+        totalCount.ShouldBe(500);
     }
 
     [Test]
@@ -202,10 +202,10 @@ internal class BreakPlaceholderTests
 
         // Assert
         stopwatch.Stop();
-        result.Should().NotBeNull();
-        result.Count().Should().Be(100);
-        totalCount.Should().Be(5000);
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(1000);
+        result.ShouldNotBeNull();
+        result.Count().ShouldBe(100);
+        totalCount.ShouldBe(5000);
+        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(1000);
     }
 
     [SetUp]

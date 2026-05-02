@@ -1,10 +1,10 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Tests for the GetScheduleEntriesQueryHandler: SearchString pass-through to WorkFilter.
 /// </summary>
 /// <param name="_workRepository">Mock for the Work repository with WorkList method</param>
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.DTOs.Filter;
 using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Application.Handlers.ScheduleEntries;
@@ -78,7 +78,7 @@ public class GetScheduleEntriesQueryHandlerTests
         }
 
         // Assert
-        capturedFilter.Should().NotBeNull();
-        capturedFilter!.SearchString.Should().Be("test");
+        capturedFilter.ShouldNotBeNull();
+        capturedFilter!.SearchString.ShouldBe("test");
     }
 }

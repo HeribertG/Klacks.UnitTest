@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Autoresearch-Benchmark fuer den ACO-Algorithmus und den Full-Autofill-Pipeline.
@@ -6,7 +6,7 @@
 /// Ausgabe: AUTORESEARCH_SCORE (niedriger = besser, Ziel < 0.30).
 /// </summary>
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Domain.Services.RouteOptimization;
 using Microsoft.Extensions.Logging;
 
@@ -98,7 +98,7 @@ public class AutoresearchBenchmarkTests
         TestContext.WriteLine($"speed_score={speedScore:F4} (weight={WEIGHT_SPEED})");
         TestContext.WriteLine($"AUTORESEARCH_SCORE: {compositeScore:F6}");
 
-        compositeScore.Should().BeLessThan(1.0, "composite score should be reasonable");
+        compositeScore.ShouldBeLessThan(1.0, "composite score should be reasonable");
     }
 
     [Test]
@@ -118,7 +118,7 @@ public class AutoresearchBenchmarkTests
         TestContext.WriteLine($"AUTORESEARCH_LARGE_TIME_MS: {sw.Elapsed.TotalMilliseconds:F0}");
         TestContext.WriteLine($"AUTORESEARCH_LARGE_DISTANCE: {distance:F2}");
 
-        route.Should().HaveCount(25);
+        route.Count().ShouldBe(25);
     }
 
     [Test]
@@ -140,7 +140,7 @@ public class AutoresearchBenchmarkTests
         TestContext.WriteLine($"AUTORESEARCH_BEST_RATIO: {ratio:F6}");
         TestContext.WriteLine($"best={bestDistance:F4}km optimal={optimalDistance:F4}km");
 
-        ratio.Should().BeLessThan(1.15, "best distance should be within 15% of optimal");
+        ratio.ShouldBeLessThan(1.15, "best distance should be within 15% of optimal");
     }
 
     private (string Name, List<Location> Locations, double OptimalDistance) CreateSmallScenario()

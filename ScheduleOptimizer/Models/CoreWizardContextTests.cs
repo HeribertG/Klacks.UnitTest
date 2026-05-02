@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 
@@ -31,9 +31,9 @@ public class CoreWizardContextTests
             AnalyseToken = null,
         };
 
-        ctx.PeriodFrom.Should().Be(new DateOnly(2026, 4, 21));
-        ctx.PeriodUntil.Should().Be(new DateOnly(2026, 5, 21));
-        ctx.AnalyseToken.Should().BeNull();
+        ctx.PeriodFrom.ShouldBe(new DateOnly(2026, 4, 21));
+        ctx.PeriodUntil.ShouldBe(new DateOnly(2026, 5, 21));
+        ctx.AnalyseToken.ShouldBeNull();
     }
 
     [Test]
@@ -47,6 +47,6 @@ public class CoreWizardContextTests
             AnalyseToken = token,
         };
 
-        ctx.AnalyseToken.Should().Be(token);
+        ctx.AnalyseToken.ShouldBe(token);
     }
 }

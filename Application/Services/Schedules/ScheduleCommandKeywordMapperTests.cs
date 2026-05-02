@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
@@ -20,16 +20,16 @@ public class ScheduleCommandKeywordMapperTests
     [TestCase("-NIGHT", ScheduleCommandKeyword.NoNight)]
     public void TryMap_ReturnsCorrectEnum(string input, ScheduleCommandKeyword expected)
     {
-        ScheduleCommandKeywordMapper.TryMap(input, out var result).Should().BeTrue();
-        result.Should().Be(expected);
+        ScheduleCommandKeywordMapper.TryMap(input, out var result).ShouldBeTrue();
+        result.ShouldBe(expected);
     }
 
     [TestCase("free")]
     [TestCase(" FREE ")]
     public void TryMap_IsCaseInsensitiveAndTrims(string input)
     {
-        ScheduleCommandKeywordMapper.TryMap(input, out var result).Should().BeTrue();
-        result.Should().Be(ScheduleCommandKeyword.Free);
+        ScheduleCommandKeywordMapper.TryMap(input, out var result).ShouldBeTrue();
+        result.ShouldBe(ScheduleCommandKeyword.Free);
     }
 
     [TestCase("")]
@@ -38,6 +38,6 @@ public class ScheduleCommandKeywordMapperTests
     [TestCase("FREEZE")]
     public void TryMap_ReturnsFalseForUnknown(string? input)
     {
-        ScheduleCommandKeywordMapper.TryMap(input, out _).Should().BeFalse();
+        ScheduleCommandKeywordMapper.TryMap(input, out _).ShouldBeFalse();
     }
 }

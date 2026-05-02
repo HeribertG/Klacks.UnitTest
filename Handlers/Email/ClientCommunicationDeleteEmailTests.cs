@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Application.DTOs.Staffs;
@@ -69,7 +69,7 @@ public class ClientDeleteReassignEmailTests
         await _handler.Handle(
             new DeleteCommand<ClientResource>(clientId), CancellationToken.None);
 
-        callOrder.Should().ContainInOrder("unitOfWork", "reassign");
+        callOrder.ShouldBe(new[] {"unitOfWork", "reassign"});
     }
 
     [Test]
@@ -81,7 +81,7 @@ public class ClientDeleteReassignEmailTests
         Func<Task> act = async () => await _handler.Handle(
             new DeleteCommand<ClientResource>(clientId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _emailAssignmentService.DidNotReceive().ReassignOrphanedEmailsAsync();
     }
 }
@@ -151,7 +151,7 @@ public class CommunicationDeleteReassignEmailTests
         await _handler.Handle(
             new DeleteCommand<CommunicationResource>(commId), CancellationToken.None);
 
-        callOrder.Should().ContainInOrder("unitOfWork", "reassign");
+        callOrder.ShouldBe(new[] {"unitOfWork", "reassign"});
     }
 
     [Test]
@@ -163,7 +163,7 @@ public class CommunicationDeleteReassignEmailTests
         Func<Task> act = async () => await _handler.Handle(
             new DeleteCommand<CommunicationResource>(commId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _emailAssignmentService.DidNotReceive().ReassignOrphanedEmailsAsync();
     }
 }

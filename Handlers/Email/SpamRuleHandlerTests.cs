@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands.Email;
 using Klacks.Api.Application.Handlers.Email;
 using Klacks.Api.Domain.Enums;
@@ -40,7 +40,7 @@ public class CreateSpamRuleCommandHandlerTests
         var result = await _handler.Handle(
             new CreateSpamRuleCommand(SpamRuleType.SenderContains, "spam@test.com"), CancellationToken.None);
 
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _repository.Received(1).AddAsync(Arg.Is<SpamRule>(r =>
             r.RuleType == SpamRuleType.SenderContains &&
             r.Pattern == "spam@test.com" &&
@@ -62,7 +62,7 @@ public class CreateSpamRuleCommandHandlerTests
         var result = await _handler.Handle(
             new CreateSpamRuleCommand(SpamRuleType.SenderDomain, "test.com"), CancellationToken.None);
 
-        result.Should().NotBeNull();
+        result.ShouldNotBeNull();
         await _repository.Received(1).AddAsync(Arg.Is<SpamRule>(r => r.SortOrder == 6));
     }
 }
@@ -94,7 +94,7 @@ public class DeleteSpamRuleCommandHandlerTests
 
         var result = await _handler.Handle(new DeleteSpamRuleCommand(ruleId), CancellationToken.None);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _repository.Received(1).DeleteAsync(ruleId);
         await _unitOfWork.Received(1).CompleteAsync();
         _reclassificationTrigger.Received(1).TriggerReclassification();
@@ -139,10 +139,10 @@ public class UpdateSpamRuleCommandHandlerTests
             new UpdateSpamRuleCommand(ruleId, SpamRuleType.SenderDomain, "new.com", true, 2),
             CancellationToken.None);
 
-        result.Should().NotBeNull();
-        rule.RuleType.Should().Be(SpamRuleType.SenderDomain);
-        rule.Pattern.Should().Be("new.com");
-        rule.SortOrder.Should().Be(2);
+        result.ShouldNotBeNull();
+        rule.RuleType.ShouldBe(SpamRuleType.SenderDomain);
+        rule.Pattern.ShouldBe("new.com");
+        rule.SortOrder.ShouldBe(2);
         await _repository.Received(1).UpdateAsync(rule);
         await _unitOfWork.Received(1).CompleteAsync();
         _reclassificationTrigger.Received(1).TriggerReclassification();
@@ -158,7 +158,7 @@ public class UpdateSpamRuleCommandHandlerTests
             new UpdateSpamRuleCommand(ruleId, SpamRuleType.SenderContains, "test", true, 1),
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<SpamRule>());
         _reclassificationTrigger.DidNotReceive().TriggerReclassification();
     }

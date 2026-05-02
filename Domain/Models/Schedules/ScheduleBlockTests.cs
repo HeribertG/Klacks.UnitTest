@@ -1,4 +1,4 @@
-using Klacks.Api.Domain.Models.Schedules;
+﻿using Klacks.Api.Domain.Models.Schedules;
 
 namespace Klacks.UnitTest.Domain.Models.Schedules;
 
@@ -28,7 +28,7 @@ public class ScheduleBlockTests
         var duration = block.Duration;
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(8));
+        duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -41,7 +41,7 @@ public class ScheduleBlockTests
         var duration = block.Duration;
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(8));
+        duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -54,7 +54,7 @@ public class ScheduleBlockTests
         var duration = block.Duration;
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(2.5));
+        duration.ShouldBe(TimeSpan.FromHours(2.5));
     }
 
     [Test]
@@ -67,7 +67,7 @@ public class ScheduleBlockTests
         var ownerDate = block.OwnerDate;
 
         // Assert
-        ownerDate.Should().Be(BaseDate);
+        ownerDate.ShouldBe(BaseDate);
     }
 
     [Test]
@@ -80,7 +80,7 @@ public class ScheduleBlockTests
         var ownerDate = block.OwnerDate;
 
         // Assert
-        ownerDate.Should().Be(BaseDate);
+        ownerDate.ShouldBe(BaseDate);
     }
 
     [Test]
@@ -93,7 +93,7 @@ public class ScheduleBlockTests
         var touches = block.TouchesDate(BaseDate);
 
         // Assert
-        touches.Should().BeTrue();
+        touches.ShouldBeTrue();
     }
 
     [Test]
@@ -107,7 +107,7 @@ public class ScheduleBlockTests
         var touches = block.TouchesDate(nextDay);
 
         // Assert
-        touches.Should().BeTrue();
+        touches.ShouldBeTrue();
     }
 
     [Test]
@@ -121,7 +121,7 @@ public class ScheduleBlockTests
         var touches = block.TouchesDate(otherDay);
 
         // Assert
-        touches.Should().BeFalse();
+        touches.ShouldBeFalse();
     }
 
     [Test]
@@ -135,7 +135,7 @@ public class ScheduleBlockTests
         var touches = block.TouchesDate(twoDaysLater);
 
         // Assert
-        touches.Should().BeFalse();
+        touches.ShouldBeFalse();
     }
 
     [Test]
@@ -148,7 +148,7 @@ public class ScheduleBlockTests
         var duration = block.GetDurationOnDate(BaseDate);
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(8));
+        duration.ShouldBe(TimeSpan.FromHours(8));
     }
 
     [Test]
@@ -161,7 +161,7 @@ public class ScheduleBlockTests
         var duration = block.GetDurationOnDate(BaseDate);
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(2));
+        duration.ShouldBe(TimeSpan.FromHours(2));
     }
 
     [Test]
@@ -175,7 +175,7 @@ public class ScheduleBlockTests
         var duration = block.GetDurationOnDate(nextDay);
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(6));
+        duration.ShouldBe(TimeSpan.FromHours(6));
     }
 
     [Test]
@@ -189,7 +189,7 @@ public class ScheduleBlockTests
         var duration = block.GetDurationOnDate(otherDay);
 
         // Assert
-        duration.Should().Be(TimeSpan.Zero);
+        duration.ShouldBe(TimeSpan.Zero);
     }
 
     [Test]
@@ -203,7 +203,7 @@ public class ScheduleBlockTests
         var overlaps = block1.Overlaps(block2);
 
         // Assert
-        overlaps.Should().BeTrue();
+        overlaps.ShouldBeTrue();
     }
 
     [Test]
@@ -217,7 +217,7 @@ public class ScheduleBlockTests
         var overlaps = block1.Overlaps(block2);
 
         // Assert
-        overlaps.Should().BeFalse();
+        overlaps.ShouldBeFalse();
     }
 
     [Test]
@@ -231,7 +231,7 @@ public class ScheduleBlockTests
         var overlaps = block1.Overlaps(block2);
 
         // Assert
-        overlaps.Should().BeFalse();
+        overlaps.ShouldBeFalse();
     }
 
     [Test]
@@ -248,7 +248,7 @@ public class ScheduleBlockTests
         var overlaps = nightBlock.Overlaps(morningBlock);
 
         // Assert
-        overlaps.Should().BeTrue();
+        overlaps.ShouldBeTrue();
     }
 
     [Test]
@@ -262,7 +262,7 @@ public class ScheduleBlockTests
         var overlapDuration = block1.OverlapDuration(block2);
 
         // Assert
-        overlapDuration.Should().Be(TimeSpan.FromHours(2));
+        overlapDuration.ShouldBe(TimeSpan.FromHours(2));
     }
 
     [Test]
@@ -276,7 +276,7 @@ public class ScheduleBlockTests
         var overlapDuration = block1.OverlapDuration(block2);
 
         // Assert
-        overlapDuration.Should().Be(TimeSpan.Zero);
+        overlapDuration.ShouldBe(TimeSpan.Zero);
     }
 
     [Test]
@@ -290,7 +290,7 @@ public class ScheduleBlockTests
         var gap = block1.GapTo(block2);
 
         // Assert
-        gap.Should().Be(TimeSpan.FromHours(2));
+        gap.ShouldBe(TimeSpan.FromHours(2));
     }
 
     [Test]
@@ -304,7 +304,7 @@ public class ScheduleBlockTests
         var gap = block1.GapTo(block2);
 
         // Assert
-        gap.Should().Be(TimeSpan.Zero);
+        gap.ShouldBe(TimeSpan.Zero);
     }
 
     [Test]
@@ -318,7 +318,7 @@ public class ScheduleBlockTests
         var gap = block1.GapTo(block2);
 
         // Assert
-        gap.Should().Be(TimeSpan.Zero);
+        gap.ShouldBe(TimeSpan.Zero);
     }
 
     [TestCase(14, 0, 22, 0, 8)]
@@ -335,6 +335,6 @@ public class ScheduleBlockTests
         var duration = block.Duration;
 
         // Assert
-        duration.Should().Be(TimeSpan.FromHours(expectedHours));
+        duration.ShouldBe(TimeSpan.FromHours(expectedHours));
     }
 }

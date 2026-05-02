@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Domain.Services.Clients;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.EntityFrameworkCore;
@@ -126,7 +126,7 @@ public class ClientSearchServiceTests
         var result = _searchService.ApplySearchFilter(query, "", false);
 
         // Assert
-        result.Should().BeEquivalentTo(query);
+        result.ShouldBeEquivalentTo(query);
     }
 
     [Test]
@@ -139,7 +139,7 @@ public class ClientSearchServiceTests
         var result = _searchService.ApplySearchFilter(query, null, false);
 
         // Assert
-        result.Should().BeEquivalentTo(query);
+        result.ShouldBeEquivalentTo(query);
     }
 
     [TestCase("müller", 1, "Should find client by last name case-insensitive")]
@@ -160,7 +160,7 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(expectedCount, description);
+        clients.Count().ShouldBe(expectedCount, description);
     }
 
     [Test]
@@ -175,9 +175,9 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().Name.Should().Be("Müller");
-        clients.First().FirstName.Should().Be("Hans");
+        clients.Count().ShouldBe(1);
+        clients.First().Name.ShouldBe("Müller");
+        clients.First().FirstName.ShouldBe("Hans");
     }
 
     [Test]
@@ -192,9 +192,9 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().Name.Should().Be("Müller");
-        clients.First().Company.Should().Be("ABC GmbH");
+        clients.Count().ShouldBe(1);
+        clients.First().Name.ShouldBe("Müller");
+        clients.First().Company.ShouldBe("ABC GmbH");
     }
 
     [Test]
@@ -209,8 +209,8 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1); // Only Müller starts with M
-        clients.First().Name.Should().Be("Müller");
+        clients.Count().ShouldBe(1); // Only Müller starts with M
+        clients.First().Name.ShouldBe("Müller");
     }
 
     [Test]
@@ -225,8 +225,8 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().Addresses.Should().Contain(a => a.City.ToLower().Contains("berlin"));
+        clients.Count().ShouldBe(1);
+        clients.First().Addresses.ShouldContain(a => a.City.ToLower().Contains("berlin"));
     }
 
     [Test]
@@ -241,7 +241,7 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(0);
+        clients.Count().ShouldBe(0);
     }
 
     [Test]
@@ -256,9 +256,9 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().IdNumber.Should().Be(idNumber);
-        clients.First().Name.Should().Be("Müller");
+        clients.Count().ShouldBe(1);
+        clients.First().IdNumber.ShouldBe(idNumber);
+        clients.First().Name.ShouldBe("Müller");
     }
 
     [Test]
@@ -268,7 +268,7 @@ public class ClientSearchServiceTests
         var result = _searchService.IsNumericSearch("12345");
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -278,7 +278,7 @@ public class ClientSearchServiceTests
         var result = _searchService.IsNumericSearch("abc123");
 
         // Assert
-        result.Should().BeFalse();
+        result.ShouldBeFalse();
     }
 
     [Test]
@@ -288,7 +288,7 @@ public class ClientSearchServiceTests
         var result = _searchService.IsNumericSearch("  12345  ");
 
         // Assert
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
     }
 
     [Test]
@@ -301,7 +301,7 @@ public class ClientSearchServiceTests
         var result = _searchService.ParseSearchString(searchString);
 
         // Assert
-        result.Should().BeEquivalentTo(new[] { "hans", "peter" });
+        result.ShouldBeEquivalentTo(new[] { "hans", "peter" });
     }
 
     [Test]
@@ -316,9 +316,9 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().Company.Should().Be("Empty Name Co");
-        clients.First().FirstName.Should().BeNull(); // Verify null handling
+        clients.Count().ShouldBe(1);
+        clients.First().Company.ShouldBe("Empty Name Co");
+        clients.First().FirstName.ShouldBeNull(); // Verify null handling
     }
 
     [Test]
@@ -333,9 +333,9 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().Name.Should().Be("EmptyFirstName");
-        clients.First().FirstName.Should().BeNull(); // Verify null handling
+        clients.Count().ShouldBe(1);
+        clients.First().Name.ShouldBe("EmptyFirstName");
+        clients.First().FirstName.ShouldBeNull(); // Verify null handling
     }
 
     [Test] 
@@ -350,8 +350,8 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().Company.Should().Be("Tech Solutions");
+        clients.Count().ShouldBe(1);
+        clients.First().Company.ShouldBe("Tech Solutions");
     }
 
     [Test]
@@ -366,9 +366,9 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(1);
-        clients.First().FirstName.Should().Be("John");
-        clients.First().Name.Should().Be("Johnson");
+        clients.Count().ShouldBe(1);
+        clients.First().FirstName.ShouldBe("John");
+        clients.First().Name.ShouldBe("Johnson");
     }
 
     [Test]
@@ -383,6 +383,6 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
 
         // Assert
-        clients.Should().HaveCount(0);
+        clients.Count().ShouldBe(0);
     }
 }

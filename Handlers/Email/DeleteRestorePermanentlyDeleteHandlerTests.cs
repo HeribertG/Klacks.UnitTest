@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.Commands.Email;
 using Klacks.Api.Application.Handlers.Email;
 using Klacks.Api.Domain.Constants;
@@ -51,7 +51,7 @@ public class DeleteReceivedEmailCommandHandlerTests
         var result = await _handler.Handle(
             new DeleteReceivedEmailCommand(emailId), CancellationToken.None);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _repository.Received(1).MoveToFolderAsync(emailId, "Trash");
         await _unitOfWork.Received(1).CompleteAsync();
         await _imapService.Received(1).MoveEmailOnImapAsync(42, "INBOX", "Trash", Arg.Any<CancellationToken>());
@@ -66,8 +66,7 @@ public class DeleteReceivedEmailCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new DeleteReceivedEmailCommand(emailId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("No trash folder configured.");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("No trash folder configured.");
         await _repository.DidNotReceive().MoveToFolderAsync(Arg.Any<Guid>(), Arg.Any<string>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
@@ -82,7 +81,7 @@ public class DeleteReceivedEmailCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new DeleteReceivedEmailCommand(emailId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().MoveToFolderAsync(Arg.Any<Guid>(), Arg.Any<string>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
@@ -150,7 +149,7 @@ public class RestoreEmailCommandHandlerTests
         var result = await _handler.Handle(
             new RestoreEmailCommand(emailId), CancellationToken.None);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _repository.Received(1).MoveToFolderAsync(emailId, "INBOX");
         await _unitOfWork.Received(1).CompleteAsync();
         await _imapService.Received(1).MoveEmailOnImapAsync(55, "Trash", "INBOX", Arg.Any<CancellationToken>());
@@ -169,7 +168,7 @@ public class RestoreEmailCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new RestoreEmailCommand(emailId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().MoveToFolderAsync(Arg.Any<Guid>(), Arg.Any<string>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
@@ -237,7 +236,7 @@ public class PermanentlyDeleteEmailCommandHandlerTests
         var result = await _handler.Handle(
             new PermanentlyDeleteEmailCommand(emailId), CancellationToken.None);
 
-        result.Should().BeTrue();
+        result.ShouldBeTrue();
         await _repository.Received(1).DeleteAsync(emailId);
         await _unitOfWork.Received(1).CompleteAsync();
         await _imapService.Received(1).DeleteEmailOnImapAsync(100, "Trash", Arg.Any<CancellationToken>());
@@ -252,7 +251,7 @@ public class PermanentlyDeleteEmailCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new PermanentlyDeleteEmailCommand(emailId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().DeleteAsync(Arg.Any<Guid>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
@@ -273,8 +272,7 @@ public class PermanentlyDeleteEmailCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new PermanentlyDeleteEmailCommand(emailId), CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidRequestException>()
-            .WithMessage("Only emails in trash can be permanently deleted.");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only emails in trash can be permanently deleted.");
         await _repository.DidNotReceive().DeleteAsync(Arg.Any<Guid>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }

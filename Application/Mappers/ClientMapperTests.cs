@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
@@ -40,12 +40,12 @@ public class ClientMapperTests
         var result = _mapper.ToListItemResource(client);
 
         // Assert
-        result.Should().NotBeNull();
-        result.FirstName.Should().Be("John");
-        result.Name.Should().Be("Doe");
-        result.Company.Should().Be("Test Company");
-        result.IdNumber.Should().Be(12345);
-        result.IsDeleted.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.FirstName.ShouldBe("John");
+        result.Name.ShouldBe("Doe");
+        result.Company.ShouldBe("Test Company");
+        result.IdNumber.ShouldBe(12345);
+        result.IsDeleted.ShouldBeFalse();
     }
 
     [Test]
@@ -63,10 +63,10 @@ public class ClientMapperTests
         var result = _mapper.ToListItemResources(clients);
 
         // Assert
-        result.Should().HaveCount(3);
-        result[0].FirstName.Should().Be("John");
-        result[1].FirstName.Should().Be("Jane");
-        result[2].FirstName.Should().Be("Bob");
+        result.Count().ShouldBe(3);
+        result[0].FirstName.ShouldBe("John");
+        result[1].FirstName.ShouldBe("Jane");
+        result[2].FirstName.ShouldBe("Bob");
     }
 
     [Test]
@@ -89,14 +89,14 @@ public class ClientMapperTests
         var result = _mapper.ToResource(client);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(clientId);
-        result.FirstName.Should().Be("John");
-        result.Name.Should().Be("Doe");
-        result.Company.Should().Be("Test Company");
-        result.Gender.Should().Be(GenderEnum.Male);
-        result.IdNumber.Should().Be(12345);
-        result.LegalEntity.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(clientId);
+        result.FirstName.ShouldBe("John");
+        result.Name.ShouldBe("Doe");
+        result.Company.ShouldBe("Test Company");
+        result.Gender.ShouldBe(GenderEnum.Male);
+        result.IdNumber.ShouldBe(12345);
+        result.LegalEntity.ShouldBeFalse();
     }
 
     [Test]
@@ -118,14 +118,14 @@ public class ClientMapperTests
         var result = _mapper.ToEntity(resource);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(resource.Id);
-        result.FirstName.Should().Be("John");
-        result.Name.Should().Be("Doe");
-        result.Company.Should().Be("Test Company");
-        result.Gender.Should().Be(GenderEnum.Male);
-        result.IdNumber.Should().Be(12345);
-        result.LegalEntity.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.Id.ShouldBe(resource.Id);
+        result.FirstName.ShouldBe("John");
+        result.Name.ShouldBe("Doe");
+        result.Company.ShouldBe("Test Company");
+        result.Gender.ShouldBe(GenderEnum.Male);
+        result.IdNumber.ShouldBe(12345);
+        result.LegalEntity.ShouldBeFalse();
     }
 
     [Test]
@@ -150,11 +150,11 @@ public class ClientMapperTests
         var result = _mapper.ToTruncatedClient(pagedResult);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Clients.Should().HaveCount(2);
-        result.MaxItems.Should().Be(50);
-        result.MaxPages.Should().Be(5);
-        result.CurrentPage.Should().Be(1);
+        result.ShouldNotBeNull();
+        result.Clients.Count().ShouldBe(2);
+        result.MaxItems.ShouldBe(50);
+        result.MaxPages.ShouldBe(5);
+        result.CurrentPage.ShouldBe(1);
     }
 
     [Test]
@@ -180,11 +180,11 @@ public class ClientMapperTests
         var result = _mapper.ToTruncatedResource(truncatedClient);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Clients.Should().HaveCount(2);
-        result.Editor.Should().Be("admin");
-        result.MaxItems.Should().Be(100);
-        result.MaxPages.Should().Be(10);
+        result.ShouldNotBeNull();
+        result.Clients.Count().ShouldBe(2);
+        result.Editor.ShouldBe("admin");
+        result.MaxItems.ShouldBe(100);
+        result.MaxPages.ShouldBe(10);
     }
 
     [Test]
@@ -203,9 +203,9 @@ public class ClientMapperTests
         var result = _mapper.ToImageResource(clientImage);
 
         // Assert
-        result.Should().NotBeNull();
-        result.ImageData.Should().Be(Convert.ToBase64String(imageData));
-        result.ContentType.Should().Be("image/png");
+        result.ShouldNotBeNull();
+        result.ImageData.ShouldBe(Convert.ToBase64String(imageData));
+        result.ContentType.ShouldBe("image/png");
     }
 
     [Test]
@@ -223,7 +223,7 @@ public class ClientMapperTests
         var result = _mapper.ToImageResource(clientImage);
 
         // Assert
-        result.ImageData.Should().BeEmpty();
+        result.ImageData.ShouldBeEmpty();
     }
 
     [Test]
@@ -241,9 +241,9 @@ public class ClientMapperTests
         var result = _mapper.ToImageEntity(resource);
 
         // Assert
-        result.Should().NotBeNull();
-        result.ImageData.Should().BeEquivalentTo(imageData);
-        result.ContentType.Should().Be("image/png");
+        result.ShouldNotBeNull();
+        result.ImageData.ShouldBeEquivalentTo(imageData);
+        result.ContentType.ShouldBe("image/png");
     }
 
     [Test]
@@ -265,13 +265,13 @@ public class ClientMapperTests
         var result = _mapper.FromSummary(summary);
 
         // Assert
-        result.Should().NotBeNull();
-        result.FirstName.Should().Be("John");
-        result.Name.Should().Be("Doe");
-        result.Company.Should().Be("Test Company");
-        result.Gender.Should().Be(GenderEnum.Male);
-        result.IdNumber.Should().Be(12345);
-        result.IsDeleted.Should().BeFalse();
+        result.ShouldNotBeNull();
+        result.FirstName.ShouldBe("John");
+        result.Name.ShouldBe("Doe");
+        result.Company.ShouldBe("Test Company");
+        result.Gender.ShouldBe(GenderEnum.Male);
+        result.IdNumber.ShouldBe(12345);
+        result.IsDeleted.ShouldBeFalse();
     }
 
     [Test]
@@ -289,7 +289,7 @@ public class ClientMapperTests
         var result = _mapper.FromSummary(summary);
 
         // Assert
-        result.IdNumber.Should().Be(0);
+        result.IdNumber.ShouldBe(0);
     }
 
     [Test]
@@ -307,8 +307,8 @@ public class ClientMapperTests
         var result = _mapper.ToGroupItemResource(groupItem);
 
         // Assert
-        result.GroupName.Should().BeEmpty();
-        result.Description.Should().BeEmpty();
+        result.GroupName.ShouldBeEmpty();
+        result.Description.ShouldBeEmpty();
     }
 
     [Test]
@@ -328,9 +328,9 @@ public class ClientMapperTests
         var result = _mapper.ToGroupItemResource(groupItem);
 
         // Assert
-        result.Should().NotBeNull();
-        result.GroupId.Should().Be(groupItem.GroupId);
-        result.GroupName.Should().Be("Test Group");
-        result.Description.Should().Be("Test Description");
+        result.ShouldNotBeNull();
+        result.GroupId.ShouldBe(groupItem.GroupId);
+        result.GroupName.ShouldBe("Test Group");
+        result.Description.ShouldBe("Test Description");
     }
 }

@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
-using FluentAssertions;
+using Shouldly;
 using Klacks.Api.Application.DTOs.Settings;
 using NSubstitute;
 using NUnit.Framework;
@@ -27,7 +27,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = System.Text.RegularExpressions.Regex.IsMatch(email, emailRegex);
 
             // Assert
-            isValid.Should().BeTrue();
+            isValid.ShouldBeTrue();
         }
 
         [Test]
@@ -41,7 +41,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = System.Text.RegularExpressions.Regex.IsMatch(email, emailRegex);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         [Test]
@@ -55,7 +55,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = System.Text.RegularExpressions.Regex.IsMatch(email, emailRegex);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         [Test]
@@ -69,7 +69,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = System.Text.RegularExpressions.Regex.IsMatch(email, emailRegex);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         [Test]
@@ -83,7 +83,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = System.Text.RegularExpressions.Regex.IsMatch(email, emailRegex);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         #endregion
@@ -118,13 +118,13 @@ namespace Klacks.UnitTest.Frontend
             };
 
             // Assert
-            emailConfig.server.Should().Be("mail.gmx.net");
-            emailConfig.port.Should().Be("587");
-            emailConfig.enableSSL.Should().Be("true");
-            emailConfig.authType.Should().Be("LOGIN");
-            emailConfig.username.Should().Be("hgasparoli@gmx.ch");
-            emailConfig.password.Should().Be("password123");
-            emailConfig.replyTo.Should().Be("hgasparoli@gmx.ch");
+            emailConfig.server.ShouldBe("mail.gmx.net");
+            emailConfig.port.ShouldBe("587");
+            emailConfig.enableSSL.ShouldBe("true");
+            emailConfig.authType.ShouldBe("LOGIN");
+            emailConfig.username.ShouldBe("hgasparoli@gmx.ch");
+            emailConfig.password.ShouldBe("password123");
+            emailConfig.replyTo.ShouldBe("hgasparoli@gmx.ch");
         }
 
         [Test]
@@ -138,9 +138,9 @@ namespace Klacks.UnitTest.Frontend
             };
 
             // Act & Assert
-            testResult.Success.Should().BeTrue();
-            testResult.Message.Should().Contain("Test email sent successfully");
-            testResult.Message.Should().Contain("hgasparoli@gmx.ch");
+            testResult.Success.ShouldBeTrue();
+            testResult.Message.ShouldContain("Test email sent successfully");
+            testResult.Message.ShouldContain("hgasparoli@gmx.ch");
         }
 
         [Test]
@@ -155,9 +155,9 @@ namespace Klacks.UnitTest.Frontend
             };
 
             // Act & Assert
-            testResult.Success.Should().BeFalse();
-            testResult.Message.Should().Contain("Authentication failed");
-            testResult.ErrorDetails.Should().Contain("SMTP server requires");
+            testResult.Success.ShouldBeFalse();
+            testResult.Message.ShouldContain("Authentication failed");
+            testResult.ErrorDetails.ShouldContain("SMTP server requires");
         }
 
         #endregion
@@ -182,7 +182,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = ValidateEmailForm(formData);
 
             // Assert
-            isValid.Should().BeTrue();
+            isValid.ShouldBeTrue();
         }
 
         [Test]
@@ -203,7 +203,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = ValidateEmailForm(formData);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         [Test]
@@ -224,7 +224,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = ValidateEmailForm(formData);
 
             // Assert
-            isValid.Should().BeFalse();
+            isValid.ShouldBeFalse();
         }
 
         [Test]
@@ -245,7 +245,7 @@ namespace Klacks.UnitTest.Frontend
             var isValid = ValidateEmailForm(formData);
 
             // Assert
-            isValid.Should().BeTrue();
+            isValid.ShouldBeTrue();
         }
 
         #endregion

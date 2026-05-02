@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using Shouldly;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Presentation.Controllers.UserBackend.Associations;
@@ -63,11 +63,11 @@ public class ContractsControllerTests
         var result = await controller.GetContracts();
 
         // Assert
-        result.Should().BeOfType<ActionResult<IEnumerable<ContractResource>>>();
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var contracts = okResult.Value.Should().BeAssignableTo<IEnumerable<ContractResource>>().Subject;
-        contracts.Should().HaveCount(2);
-        contracts.Should().BeEquivalentTo(expectedContracts);
+        result.ShouldBeOfType<ActionResult<IEnumerable<ContractResource>>>();
+        var okResult = result.Result.ShouldBeOfType<OkObjectResult>();
+        var contracts = okResult.Value.ShouldBeAssignableTo<IEnumerable<ContractResource>>();
+        contracts.Count().ShouldBe(2);
+        contracts.ShouldBeEquivalentTo(expectedContracts);
     }
 
     [Test]
@@ -80,8 +80,7 @@ public class ContractsControllerTests
 
         // Act & Assert
         var act = async () => await controller.GetContracts();
-        await act.Should().ThrowAsync<Exception>()
-            .WithMessage("Database error");
+        (await Should.ThrowAsync<Exception>(act)).Message.ShouldContain("Database error");
     }
 
     [Test]
@@ -107,10 +106,10 @@ public class ContractsControllerTests
         var result = await controller.Get(contractId);
 
         // Assert
-        result.Should().BeOfType<ActionResult<ContractResource>>();
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
-        contract.Should().BeEquivalentTo(expectedContract);
+        result.ShouldBeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.ShouldBeOfType<OkObjectResult>();
+        var contract = okResult.Value.ShouldBeOfType<ContractResource>();
+        contract.ShouldBeEquivalentTo(expectedContract);
     }
 
     [Test]
@@ -145,10 +144,10 @@ public class ContractsControllerTests
         var result = await controller.Post(newContract);
 
         // Assert
-        result.Should().BeOfType<ActionResult<ContractResource>>();
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
-        contract.Should().BeEquivalentTo(createdContract);
+        result.ShouldBeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.ShouldBeOfType<OkObjectResult>();
+        var contract = okResult.Value.ShouldBeOfType<ContractResource>();
+        contract.ShouldBeEquivalentTo(createdContract);
     }
 
     [Test]
@@ -173,10 +172,10 @@ public class ContractsControllerTests
         var result = await controller.Put(updateContract);
 
         // Assert
-        result.Should().BeOfType<ActionResult<ContractResource>>();
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
-        contract.Should().BeEquivalentTo(updateContract);
+        result.ShouldBeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.ShouldBeOfType<OkObjectResult>();
+        var contract = okResult.Value.ShouldBeOfType<ContractResource>();
+        contract.ShouldBeEquivalentTo(updateContract);
     }
 
     [Test]
@@ -197,10 +196,10 @@ public class ContractsControllerTests
         var result = await controller.Delete(contractId);
 
         // Assert
-        result.Should().BeOfType<ActionResult<ContractResource>>();
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var contract = okResult.Value.Should().BeOfType<ContractResource>().Subject;
-        contract.Id.Should().Be(contractId);
+        result.ShouldBeOfType<ActionResult<ContractResource>>();
+        var okResult = result.Result.ShouldBeOfType<OkObjectResult>();
+        var contract = okResult.Value.ShouldBeOfType<ContractResource>();
+        contract.Id.ShouldBe(contractId);
     }
 
     [Test]

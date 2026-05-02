@@ -1,6 +1,6 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using FluentAssertions;
+using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 using NUnit.Framework;
@@ -68,8 +68,8 @@ public class TokenPopulationBuilderTests
 
         var population = builder.BuildPopulation(context, populationSize: 10, rng: new Random(42));
 
-        population.Should().HaveCount(10);
-        population.Should().OnlyContain(s => s.Tokens.Count > 0);
+        population.Count().ShouldBe(10);
+        population.ShouldAllBe(s => s.Tokens.Count > 0);
     }
 
     [Test]
@@ -88,10 +88,10 @@ public class TokenPopulationBuilderTests
 
         builder.BuildPopulation(context, populationSize: 10, rng: new Random(0));
 
-        auctionInvocations.Should().Be(5);
-        coverageInvocations.Should().Be(3);
-        greedyInvocations.Should().Be(1);
-        randomInvocations.Should().Be(1);
+        auctionInvocations.ShouldBe(5);
+        coverageInvocations.ShouldBe(3);
+        greedyInvocations.ShouldBe(1);
+        randomInvocations.ShouldBe(1);
     }
 
     [Test]
@@ -129,8 +129,7 @@ public class TokenPopulationBuilderTests
 
         var population = builder.BuildPopulation(lockedContext, populationSize: 5, rng: new Random(0));
 
-        population.Should()
-            .OnlyContain(s => s.Tokens.Any(t => t.IsLocked && t.WorkIds.Contains("locked-1")));
+        population.ShouldAllBe(s => s.Tokens.Any(t => t.IsLocked && t.WorkIds.Contains("locked-1")));
     }
 
     private sealed class CountingStrategy : ITokenPopulationStrategy

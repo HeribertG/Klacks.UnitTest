@@ -1,5 +1,5 @@
-using NUnit.Framework;
-using FluentAssertions;
+﻿using NUnit.Framework;
+using Shouldly;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 
@@ -31,10 +31,10 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Should().HaveCount(3);
-        response.Suggestions![0].Should().Be("Show all clients");
-        response.Suggestions![1].Should().Be("Create new client");
-        response.Suggestions![2].Should().Be("Go to dashboard");
+        response.Suggestions.Count().ShouldBe(3);
+        response.Suggestions![0].ShouldBe("Show all clients");
+        response.Suggestions![1].ShouldBe("Create new client");
+        response.Suggestions![2].ShouldBe("Go to dashboard");
     }
 
     [Test]
@@ -44,8 +44,8 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Message.Should().Be("Here is your answer.");
-        response.Message.Should().NotContain("[SUGGESTIONS:");
+        response.Message.ShouldBe("Here is your answer.");
+        response.Message.ShouldNotContain("[SUGGESTIONS:");
     }
 
     [Test]
@@ -55,8 +55,8 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Should().BeEmpty();
-        response.Message.Should().Be(content);
+        response.Suggestions.ShouldBeEmpty();
+        response.Message.ShouldBe(content);
     }
 
     [Test]
@@ -64,8 +64,8 @@ public class LLMResponseBuilderTests
     {
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", string.Empty);
 
-        response.Suggestions.Should().BeEmpty();
-        response.Message.Should().BeEmpty();
+        response.Suggestions.ShouldBeEmpty();
+        response.Message.ShouldBeEmpty();
     }
 
     [Test]
@@ -75,7 +75,7 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Should().HaveCount(4);
+        response.Suggestions.Count().ShouldBe(4);
     }
 
     [Test]
@@ -85,7 +85,7 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Should().BeEmpty();
+        response.Suggestions.ShouldBeEmpty();
     }
 
     [Test]
@@ -93,7 +93,7 @@ public class LLMResponseBuilderTests
     {
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-42", "Hello");
 
-        response.ConversationId.Should().Be("conv-42");
+        response.ConversationId.ShouldBe("conv-42");
     }
 
     [Test]
@@ -101,9 +101,9 @@ public class LLMResponseBuilderTests
     {
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", "Hello");
 
-        response.Usage.Should().NotBeNull();
-        response.Usage!.InputTokens.Should().Be(10);
-        response.Usage!.OutputTokens.Should().Be(20);
+        response.Usage.ShouldNotBeNull();
+        response.Usage!.InputTokens.ShouldBe(10);
+        response.Usage!.OutputTokens.ShouldBe(20);
     }
 
     [Test]
@@ -111,8 +111,8 @@ public class LLMResponseBuilderTests
     {
         var response = _builder.BuildErrorResponse("Something went wrong.");
 
-        response.Suggestions.Should().BeEmpty();
-        response.Message.Should().Contain("Something went wrong.");
+        response.Suggestions.ShouldBeEmpty();
+        response.Message.ShouldContain("Something went wrong.");
     }
 
     [Test]
@@ -122,7 +122,7 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Should().HaveCount(3);
-        response.Message.Should().Be("Your data is ready.");
+        response.Suggestions.Count().ShouldBe(3);
+        response.Message.ShouldBe("Your data is ready.");
     }
 }
