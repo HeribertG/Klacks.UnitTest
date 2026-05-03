@@ -1,10 +1,10 @@
 ﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Shouldly;
-using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Fuzzy;
+using Klacks.ScheduleOptimizer.Common.Fuzzy;
 using NUnit.Framework;
 
-namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution.Auction.Fuzzy;
+namespace Klacks.UnitTest.ScheduleOptimizer.Common.Fuzzy;
 
 [TestFixture]
 public class RuleBaseLoaderTests

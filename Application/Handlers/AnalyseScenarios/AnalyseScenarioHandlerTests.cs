@@ -225,9 +225,10 @@ public class AcceptAnalyseScenarioCommandHandlerTests
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
+        var softeningRepository = Substitute.For<Klacks.Api.Domain.Interfaces.IWorkSofteningRepository>();
 
         var logger = Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>();
-        _handler = new AcceptAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
+        _handler = new AcceptAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, softeningRepository, logger);
     }
 
     [Test]

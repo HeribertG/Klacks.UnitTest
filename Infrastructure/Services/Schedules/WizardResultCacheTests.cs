@@ -20,7 +20,7 @@ public class WizardResultCacheTests
 
         cache.Store(jobId, scenario, token);
 
-        cache.TryGet(jobId, out var retrieved, out var analyseToken).ShouldBeTrue();
+        cache.TryGet(jobId, out var retrieved, out var analyseToken, out _).ShouldBeTrue();
         retrieved.ShouldBeSameAs(scenario);
         analyseToken.ShouldBe(token);
     }
@@ -34,7 +34,7 @@ public class WizardResultCacheTests
 
         cache.Store(jobId, scenario, null);
 
-        cache.TryGet(jobId, out _, out var analyseToken).ShouldBeTrue();
+        cache.TryGet(jobId, out _, out var analyseToken, out _).ShouldBeTrue();
         analyseToken.ShouldBeNull();
     }
 
@@ -43,7 +43,7 @@ public class WizardResultCacheTests
     {
         var cache = new WizardResultCache();
 
-        cache.TryGet(Guid.NewGuid(), out var scenario, out var analyseToken).ShouldBeFalse();
+        cache.TryGet(Guid.NewGuid(), out var scenario, out var analyseToken, out _).ShouldBeFalse();
         scenario.ShouldBeNull();
         analyseToken.ShouldBeNull();
     }
@@ -57,6 +57,6 @@ public class WizardResultCacheTests
 
         cache.Invalidate(jobId);
 
-        cache.TryGet(jobId, out _, out _).ShouldBeFalse();
+        cache.TryGet(jobId, out _, out _, out _).ShouldBeFalse();
     }
 }
