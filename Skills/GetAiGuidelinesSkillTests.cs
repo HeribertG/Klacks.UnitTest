@@ -43,7 +43,7 @@ public class GetAiGuidelinesSkillTests
         var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>());
 
         result.Success.ShouldBeTrue();
-        result.Message.ShouldContain("No AI guidelines");
+        result.Message!.ShouldContain("No AI guidelines");
         await _repository.Received(1).GetRuleAsync(GlobalAgentRuleNames.AiGuidelines, Arg.Any<CancellationToken>());
     }
 
@@ -64,7 +64,7 @@ public class GetAiGuidelinesSkillTests
         var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>());
 
         result.Success.ShouldBeTrue();
-        result.Message.ShouldContain("No AI guidelines");
+        result.Message!.ShouldContain("No AI guidelines");
     }
 
     [Test]
@@ -84,7 +84,7 @@ public class GetAiGuidelinesSkillTests
         var result = await _skill.ExecuteAsync(_context, new Dictionary<string, object>());
 
         result.Success.ShouldBeTrue();
-        result.Message.ShouldContain("characters");
+        result.Message!.ShouldContain("characters");
         result.Data.ShouldNotBeNull();
     }
 }

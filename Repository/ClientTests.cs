@@ -1,4 +1,4 @@
-﻿using Klacks.Api.Infrastructure.Scripting;
+using Klacks.Api.Infrastructure.Scripting;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Infrastructure.Interfaces;
@@ -137,7 +137,7 @@ internal class ClientTests
         var result = await handler.Handle(query, default);
         //Assert
         result.ShouldNotBeNull();
-        result.Clients.Count().ShouldBe(sum);
+        result.Clients!.Count().ShouldBe(sum);
     }
 
     /// <summary>
@@ -184,7 +184,7 @@ internal class ClientTests
         var result = await handler.Handle(query, default);
         //Assert
         result.ShouldNotBeNull();
-        result.Clients.Count().ShouldBe(0);
+        result.Clients!.Count().ShouldBe(0);
         result.FirstItemOnPage.ShouldBe(-1);
     }
 
@@ -237,7 +237,7 @@ internal class ClientTests
         var result = await handler.Handle(query, default);
         //Assert
         result.ShouldNotBeNull();
-        result.Clients.Count().ShouldBe(maxItems);
+        result.Clients!.Count().ShouldBe(maxItems);
         result.MaxItems.ShouldBe(returns.Clients!.Count());
         result.CurrentPage.ShouldBe(requiredPage);
         result.FirstItemOnPage.ShouldBe(numberOfItemsPerPage * (requiredPage));
@@ -339,7 +339,7 @@ internal class ClientTests
             .AsQueryable();
 
         // Test 1: Suche nach "m�ller hans"
-        var result1 = method.Invoke(repository, new object[] {
+        var result1 = method!.Invoke(repository, new object[] {
         new string[] { "m�ller", "hans" },
         false,
         baseQuery

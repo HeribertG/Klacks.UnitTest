@@ -303,9 +303,9 @@ namespace Klacks.UnitTest.Infrastructure.Email
             _mockLogger.Received().Log(
                 LogLevel.Information,
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString().Contains("SecureSocketOptions=SslOnConnect")),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception, string>>()
+                Arg.Is<object>(o => o.ToString()!.Contains("SecureSocketOptions=SslOnConnect")),
+                Arg.Any<Exception?>(),
+                Arg.Any<Func<object, Exception?, string>>()
             );
         }
 
@@ -331,9 +331,9 @@ namespace Klacks.UnitTest.Infrastructure.Email
             _mockLogger.Received().Log(
                 LogLevel.Information,
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString().Contains("SecureSocketOptions=StartTls")),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception, string>>()
+                Arg.Is<object>(o => o.ToString()!.Contains("SecureSocketOptions=StartTls")),
+                Arg.Any<Exception?>(),
+                Arg.Any<Func<object, Exception?, string>>()
             );
         }
 
@@ -386,9 +386,9 @@ namespace Klacks.UnitTest.Infrastructure.Email
             _mockLogger.Received().Log(
                 LogLevel.Information,
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString().Contains("Connecting to SMTP server")),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception, string>>()
+                Arg.Is<object>(o => o.ToString()!.Contains("Connecting to SMTP server")),
+                Arg.Any<Exception?>(),
+                Arg.Any<Func<object, Exception?, string>>()
             );
         }
 

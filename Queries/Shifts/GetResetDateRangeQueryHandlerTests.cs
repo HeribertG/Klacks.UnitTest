@@ -46,7 +46,7 @@ public class GetResetDateRangeQueryHandlerTests
             UntilDate = untilDate
         };
 
-        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult(sealedOrder)!);
+        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult<Shift?>(sealedOrder));
 
         var query = new GetResetDateRangeQuery(originalId);
 
@@ -77,7 +77,7 @@ public class GetResetDateRangeQueryHandlerTests
             UntilDate = null
         };
 
-        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult(sealedOrder)!);
+        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult<Shift?>(sealedOrder));
 
         var query = new GetResetDateRangeQuery(originalId);
 
@@ -96,7 +96,7 @@ public class GetResetDateRangeQueryHandlerTests
         // Arrange
         var originalId = Guid.NewGuid();
 
-        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult<Shift>(null!));
+        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult<Shift?>(null));
 
         var query = new GetResetDateRangeQuery(originalId);
 
@@ -123,7 +123,7 @@ public class GetResetDateRangeQueryHandlerTests
             UntilDate = new DateOnly(2025, 12, 31)
         };
 
-        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult(sealedOrder)!);
+        _shiftRepository.GetSealedOrder(originalId).Returns(Task.FromResult<Shift?>(sealedOrder));
 
         var query = new GetResetDateRangeQuery(originalId);
 

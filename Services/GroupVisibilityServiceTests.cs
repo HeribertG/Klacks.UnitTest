@@ -226,8 +226,8 @@ internal class GroupVisibilityServiceTests
         };
 
 
-        _userManager.FindByIdAsync(adminUserId).Returns(Task.FromResult(adminUser));
-        _userManager.FindByIdAsync(regularUserId).Returns(Task.FromResult(regularUser));
+        _userManager.FindByIdAsync(adminUserId).Returns(Task.FromResult<AppUser?>(adminUser));
+        _userManager.FindByIdAsync(regularUserId).Returns(Task.FromResult<AppUser?>(regularUser));
         _userManager.GetRolesAsync(adminUser).Returns(Task.FromResult<IList<string>>(new List<string> { Roles.Admin }));
         _userManager.GetRolesAsync(regularUser).Returns(Task.FromResult<IList<string>>(new List<string> { "User" }));
         _userManager.GetUsersInRoleAsync(Roles.Admin).Returns(Task.FromResult<IList<AppUser>>(new List<AppUser> { adminUser }));

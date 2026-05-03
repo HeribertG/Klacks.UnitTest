@@ -16,9 +16,9 @@ namespace Klacks.UnitTest.Controllers;
 [TestFixture]
 public class ContractsControllerTests
 {
-    private IMediator mockMediator;
-    private ILogger<ContractsController> mockLogger;
-    private ContractsController controller;
+    private IMediator mockMediator = null!;
+    private ILogger<ContractsController> mockLogger = null!;
+    private ContractsController controller = null!;
 
     [SetUp]
     public void Setup()
@@ -66,7 +66,7 @@ public class ContractsControllerTests
         result.ShouldBeOfType<ActionResult<IEnumerable<ContractResource>>>();
         var okResult = result.Result.ShouldBeOfType<OkObjectResult>();
         var contracts = okResult.Value.ShouldBeAssignableTo<IEnumerable<ContractResource>>();
-        contracts.Count().ShouldBe(2);
+        contracts!.Count().ShouldBe(2);
         contracts.ShouldBeEquivalentTo(expectedContracts);
     }
 

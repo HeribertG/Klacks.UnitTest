@@ -366,7 +366,7 @@ public class GroupSearchServiceTests
         _context.SaveChanges();
 
         // Setup mock visibility service to return null to trigger the fallback in ReadAllNodes
-        _mockGroupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult<List<Guid>>(null));
+        _mockGroupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult<List<Guid>>(null!));
     }
 
     [Test]
@@ -392,8 +392,8 @@ public class GroupSearchServiceTests
     public void FilterBySearchString_WithNullString_ShouldReturnOriginalQuery()
     {
         // Arrange
-        var filter = new GroupFilter { 
-            SearchString = null,
+        var filter = new GroupFilter {
+            SearchString = null!,
             ActiveDateRange = true,
             FormerDateRange = true,
             FutureDateRange = true
@@ -718,7 +718,7 @@ public class GroupSearchServiceTests
         var managersGroup = groups.First();
         managersGroup.GroupItems.ShouldNotBeEmpty();
         managersGroup.GroupItems.First().Client.ShouldNotBeNull();
-        managersGroup.GroupItems.First().Client.Name.ShouldBe("Müller");
+        managersGroup.GroupItems.First().Client!.Name.ShouldBe("Müller");
     }
 
     [Test]

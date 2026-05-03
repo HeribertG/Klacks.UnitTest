@@ -64,7 +64,7 @@ public class AccountAuthenticationServiceTests
         var email = "test@example.com";
         var password = "WrongPassword";
 
-        _mockAuthService.ValidateCredentialsAsync(email, password).Returns((false, (AppUser)null));
+        _mockAuthService.ValidateCredentialsAsync(email, password).Returns((false, (AppUser?)null));
 
         var result = await _authenticationService.LogInUserAsync(email, password);
 
@@ -77,10 +77,10 @@ public class AccountAuthenticationServiceTests
     {
         var password = "ValidPassword123!";
 
-        _mockAuthService.ValidateCredentialsAsync(null, password).Returns((false, (AppUser)null));
-        _mockAuthService.ValidateCredentialsAsync("", password).Returns((false, (AppUser)null));
+        _mockAuthService.ValidateCredentialsAsync(null!, password).Returns((false, (AppUser?)null));
+        _mockAuthService.ValidateCredentialsAsync("", password).Returns((false, (AppUser?)null));
 
-        var result1 = await _authenticationService.LogInUserAsync(null, password);
+        var result1 = await _authenticationService.LogInUserAsync(null!, password);
         var result2 = await _authenticationService.LogInUserAsync("", password);
 
         result1.Success.ShouldBeFalse();
@@ -92,10 +92,10 @@ public class AccountAuthenticationServiceTests
     {
         var email = "test@example.com";
 
-        _mockAuthService.ValidateCredentialsAsync(email, null).Returns((false, (AppUser)null));
-        _mockAuthService.ValidateCredentialsAsync(email, "").Returns((false, (AppUser)null));
+        _mockAuthService.ValidateCredentialsAsync(email, null!).Returns((false, (AppUser?)null));
+        _mockAuthService.ValidateCredentialsAsync(email, "").Returns((false, (AppUser?)null));
 
-        var result1 = await _authenticationService.LogInUserAsync(email, null);
+        var result1 = await _authenticationService.LogInUserAsync(email, null!);
         var result2 = await _authenticationService.LogInUserAsync(email, "");
 
         result1.Success.ShouldBeFalse();

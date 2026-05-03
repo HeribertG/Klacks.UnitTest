@@ -81,7 +81,7 @@ public class MacroManagementServiceTests
         await _context.SaveChangesAsync();
 
         var result = await _context.Macro.FindAsync(macro.Id);
-        result.Name.ShouldBe("UpdatedName");
+        result!.Name.ShouldBe("UpdatedName");
         result.Content.ShouldBe("UpdatedContent");
     }
 

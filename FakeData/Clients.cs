@@ -153,7 +153,7 @@ namespace Klacks.UnitTest.FakeData
             var truncatedClient = TruncatedClient();
             return new TruncatedClientResource
             {
-                Clients = truncatedClient.Clients.Select(c => new ClientListItemResource
+                Clients = truncatedClient.Clients!.Select(c => new ClientListItemResource
                 {
                     Id = c.Id.ToString(),
                     IdNumber = c.IdNumber,

@@ -55,11 +55,11 @@ public class AccountNotificationServiceTests
     public async Task SendEmailAsync_WithNullEmail_ShouldThrowException()
     {
         // Arrange
-        string email = null;
+        string? email = null;
 
         // Act & Assert
         await Should.ThrowAsync<ArgumentNullException>(async () =>
-            await _notificationService.SendEmailAsync("Test Email", email, "This is a test message"));
+            await _notificationService.SendEmailAsync("Test Email", email!, "This is a test message"));
     }
 
     [Test]
@@ -91,9 +91,9 @@ public class AccountNotificationServiceTests
         _mockLogger.Received(1).Log(
             Microsoft.Extensions.Logging.LogLevel.Information,
             Arg.Any<Microsoft.Extensions.Logging.EventId>(),
-            Arg.Is<object>(v => v.ToString().Contains("Attempting to send email to")),
-            Arg.Any<Exception>(),
-            Arg.Any<Func<object, Exception, string>>());
+            Arg.Is<object>(v => v.ToString()!.Contains("Attempting to send email to")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     [Test]
@@ -110,8 +110,8 @@ public class AccountNotificationServiceTests
         _mockLogger.Received(1).Log(
             Microsoft.Extensions.Logging.LogLevel.Information,
             Arg.Any<Microsoft.Extensions.Logging.EventId>(),
-            Arg.Is<object>(v => v.ToString().Contains("Email sent successfully")),
-            Arg.Any<Exception>(),
-            Arg.Any<Func<object, Exception, string>>());
+            Arg.Is<object>(v => v.ToString()!.Contains("Email sent successfully")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 }

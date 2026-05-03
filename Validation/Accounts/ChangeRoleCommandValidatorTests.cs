@@ -101,7 +101,7 @@ public class ChangeRoleCommandValidatorTests
         };
         var command = new ChangeRoleCommand(changeRole);
 
-        _httpContextAccessor.HttpContext.Returns((HttpContext)null);
+        _httpContextAccessor.HttpContext.Returns((HttpContext?)null);
 
         var result = await _validator.ValidateAsync(command);
 

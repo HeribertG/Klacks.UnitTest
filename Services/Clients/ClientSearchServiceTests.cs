@@ -136,7 +136,7 @@ public class ClientSearchServiceTests
         var query = _context.Client.AsQueryable();
 
         // Act
-        var result = _searchService.ApplySearchFilter(query, null, false);
+        var result = _searchService.ApplySearchFilter(query, null!, false);
 
         // Assert
         result.ShouldBeEquivalentTo(query);

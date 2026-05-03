@@ -151,7 +151,7 @@ public class ClientMapperTests
 
         // Assert
         result.ShouldNotBeNull();
-        result.Clients.Count().ShouldBe(2);
+        result.Clients!.Count().ShouldBe(2);
         result.MaxItems.ShouldBe(50);
         result.MaxPages.ShouldBe(5);
         result.CurrentPage.ShouldBe(1);
@@ -181,7 +181,7 @@ public class ClientMapperTests
 
         // Assert
         result.ShouldNotBeNull();
-        result.Clients.Count().ShouldBe(2);
+        result.Clients!.Count().ShouldBe(2);
         result.Editor.ShouldBe("admin");
         result.MaxItems.ShouldBe(100);
         result.MaxPages.ShouldBe(10);

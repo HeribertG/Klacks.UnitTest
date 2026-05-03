@@ -11,7 +11,6 @@ namespace Klacks.UnitTest.Services.Groups;
 [TestFixture]
 public class GroupTreeServiceMockTests
 {
-    private IGroupTreeService _groupTreeService;
     private IGroupRepository _mockRepository;
     private ILogger<IGroupTreeService> _mockLogger;
 

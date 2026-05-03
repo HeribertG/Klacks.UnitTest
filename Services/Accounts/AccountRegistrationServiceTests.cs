@@ -56,8 +56,8 @@ public class AccountRegistrationServiceTests
         };
         var password = "ValidPassword123!";
 
-        _mockUserManagementService.FindUserByEmailAsync(user.Email).Returns((AppUser)null);
-        _mockUserManagementService.RegisterUserAsync(user, password).Returns((true, null));
+        _mockUserManagementService.FindUserByEmailAsync(user.Email).Returns((AppUser?)null);
+        _mockUserManagementService.RegisterUserAsync(user, password).Returns((true, (Microsoft.AspNetCore.Identity.IdentityResult?)null));
         _mockRefreshTokenService.CalculateTokenExpiryTime().Returns(DateTime.UtcNow.AddHours(1));
         _mockAccountAuthService.SetAuthenticatedResultAsync(Arg.Any<AuthenticatedResult>(), user, Arg.Any<DateTime>())
             .Returns(args => 
@@ -110,8 +110,8 @@ public class AccountRegistrationServiceTests
         };
         var password = "weak";
 
-        _mockUserManagementService.FindUserByEmailAsync(user.Email).Returns((AppUser)null);
-        _mockUserManagementService.RegisterUserAsync(user, password).Returns((false, null));
+        _mockUserManagementService.FindUserByEmailAsync(user.Email).Returns((AppUser?)null);
+        _mockUserManagementService.RegisterUserAsync(user, password).Returns((false, (Microsoft.AspNetCore.Identity.IdentityResult?)null));
 
         var result = await _registrationService.RegisterUserAsync(user, password);
 
@@ -127,7 +127,7 @@ public class AccountRegistrationServiceTests
         // This will throw NullReferenceException in the actual implementation
         // when trying to access user.Email, which is expected behavior
         await Should.ThrowAsync<NullReferenceException>(async () =>
-            await _registrationService.RegisterUserAsync(null, password));
+            await _registrationService.RegisterUserAsync(null!, password));
     }
 
     [Test]
@@ -140,7 +140,7 @@ public class AccountRegistrationServiceTests
             UserName = "newuser@example.com"
         };
 
-        var result1 = await _registrationService.RegisterUserAsync(user, null);
+        var result1 = await _registrationService.RegisterUserAsync(user, null!);
         var result2 = await _registrationService.RegisterUserAsync(user, "");
 
         result1.Success.ShouldBeFalse();

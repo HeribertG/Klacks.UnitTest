@@ -33,8 +33,6 @@ public class ClientRepositoryRefactoredTests
     private IClientWorkFilterService _mockWorkFilterService;
     private IClientValidator _mockClientValidator;
     private IWorkMacroService _mockWorkMacroService;
-    private IPeriodHoursService _mockPeriodHoursService;
-    private IHttpContextAccessor _mockHttpContextAccessorForWork;
 
     [SetUp]
     public async Task SetUp()
@@ -177,7 +175,7 @@ public class ClientRepositoryRefactoredTests
 
         _mockSearchService.IsNumericSearch("Hans").Returns(false);
         _mockSearchService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), "Hans", false)
-            .Returns(testClients.Where(c => c.FirstName.Contains("Hans")));
+            .Returns(testClients.Where(c => c.FirstName!.Contains("Hans")));
 
         //Act
         var result = await _clientBreakPlaceholderRepository.BreakList(filter);

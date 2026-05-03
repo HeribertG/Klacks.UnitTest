@@ -82,7 +82,7 @@ public class UpdateAiGuidelinesSkillTests
         var result = await _skill.ExecuteAsync(_context, parameters);
 
         result.Success.ShouldBeTrue();
-        result.Message.ShouldContain(content.Length.ToString());
+        result.Message!.ShouldContain(content.Length.ToString());
     }
 
     [Test]

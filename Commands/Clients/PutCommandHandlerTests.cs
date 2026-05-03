@@ -84,8 +84,8 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
-        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -138,7 +138,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -186,8 +186,8 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
-        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -238,7 +238,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -310,8 +310,8 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
-        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -353,7 +353,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -395,7 +395,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -436,7 +436,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult(existingClient));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -460,7 +460,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client>(null!));
+        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(null));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 

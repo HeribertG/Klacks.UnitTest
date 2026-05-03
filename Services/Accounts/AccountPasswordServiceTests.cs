@@ -74,7 +74,7 @@ public class AccountPasswordServiceTests
             Password = "NewPassword123!"
         };
 
-        _mockUserManagementService.FindUserByEmailAsync(changePasswordResource.Email).Returns((AppUser)null);
+        _mockUserManagementService.FindUserByEmailAsync(changePasswordResource.Email).Returns((AppUser?)null);
 
         var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
 
@@ -101,7 +101,7 @@ public class AccountPasswordServiceTests
 
         _mockUserManagementService.FindUserByEmailAsync(changePasswordResource.Email).Returns(testUser);
         _mockAuthService.ValidateCredentialsAsync(changePasswordResource.Email, changePasswordResource.OldPassword)
-            .Returns((false, (AppUser)null));
+            .Returns((false, (AppUser?)null));
 
         var result = await _passwordService.ChangePasswordAsync(changePasswordResource);
 
@@ -164,7 +164,7 @@ public class AccountPasswordServiceTests
     {
         var email = "nonexistent@example.com";
 
-        _mockUserManagementService.FindUserByEmailAsync(email).Returns((AppUser)null);
+        _mockUserManagementService.FindUserByEmailAsync(email).Returns((AppUser?)null);
 
         var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
 

@@ -49,7 +49,7 @@ public class AccountManagementServiceTests
         _mockUserManagementService.GetUserListAsync().Returns(users.Select(u => new UserResource
         {
             Id = u.Id,
-            Email = u.Email,
+            Email = u.Email!,
             FirstName = u.FirstName,
             LastName = u.LastName
         }).ToList());

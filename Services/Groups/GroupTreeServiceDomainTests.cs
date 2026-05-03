@@ -228,7 +228,7 @@ public class GroupTreeServiceDomainTests
         
         // Verify soft delete
         var deletedNode = await _context.Group.FindAsync(child.Id);
-        deletedNode.IsDeleted.ShouldBeTrue();
+        deletedNode!.IsDeleted.ShouldBeTrue();
         deletedNode.DeletedTime.ShouldNotBeNull(); deletedNode.DeletedTime.Value.ShouldBe(DateTime.UtcNow, TimeSpan.FromSeconds(1));
     }
 
@@ -259,6 +259,6 @@ public class GroupTreeServiceDomainTests
             default,
             default,
             default,
-            default);
+            default!);
     }
 }

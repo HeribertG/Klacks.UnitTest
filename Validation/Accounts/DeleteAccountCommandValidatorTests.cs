@@ -76,7 +76,7 @@ public class DeleteAccountCommandValidatorTests
         var targetUserId = Guid.NewGuid();
         var command = new DeleteAccountCommand(targetUserId);
 
-        _httpContextAccessor.HttpContext.Returns((HttpContext)null);
+        _httpContextAccessor.HttpContext.Returns((HttpContext?)null);
 
         var result = await _validator.ValidateAsync(command);
 

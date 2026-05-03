@@ -31,7 +31,7 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Count().ShouldBe(3);
+        response.Suggestions!.Count().ShouldBe(3);
         response.Suggestions![0].ShouldBe("Show all clients");
         response.Suggestions![1].ShouldBe("Create new client");
         response.Suggestions![2].ShouldBe("Go to dashboard");
@@ -75,7 +75,7 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Count().ShouldBe(4);
+        response.Suggestions!.Count().ShouldBe(4);
     }
 
     [Test]
@@ -122,7 +122,7 @@ public class LLMResponseBuilderTests
 
         var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
 
-        response.Suggestions.Count().ShouldBe(3);
+        response.Suggestions!.Count().ShouldBe(3);
         response.Message.ShouldBe("Your data is ready.");
     }
 }

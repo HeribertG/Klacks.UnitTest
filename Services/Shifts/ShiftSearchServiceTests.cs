@@ -159,7 +159,7 @@ public class ShiftSearchServiceTests
         var query = _context.Shift.AsQueryable();
 
         // Act
-        var result = _searchService.ApplySearchFilter(query, null, false);
+        var result = _searchService.ApplySearchFilter(query, null!, false);
 
         // Assert
         result.ShouldBeEquivalentTo(query);
@@ -210,7 +210,7 @@ public class ShiftSearchServiceTests
 
         // Assert
         shifts.Count().ShouldBe(2);
-        foreach (var s in shifts) { s.Client.Name.ShouldBe("Müller"); }
+        foreach (var s in shifts) { s.Client!.Name.ShouldBe("Müller"); }
     }
 
     [Test]
@@ -241,7 +241,7 @@ public class ShiftSearchServiceTests
 
         // Assert
         shifts.Count().ShouldBe(1);
-        shifts.First().Client.FirstName.ShouldBe("Anna");
+        shifts.First().Client!.FirstName.ShouldBe("Anna");
         shifts.First().Name.ShouldBe("Evening Shift");
     }
 
@@ -258,7 +258,7 @@ public class ShiftSearchServiceTests
 
         // Assert
         shifts.Count().ShouldBe(2);
-        foreach (var s in shifts) { s.Client.Company.ShouldContain("ABC"); }
+        foreach (var s in shifts) { s.Client!.Company!.ShouldContain("ABC"); }
     }
 
     [Test]
@@ -457,7 +457,7 @@ public class ShiftSearchServiceTests
         result1.First().Name.ShouldBe("Morning Shift");
 
         result2.Count().ShouldBe(2);
-        foreach (var s in result2) { s.Client.FirstName.ShouldBe("Hans"); }
+        foreach (var s in result2) { s.Client!.FirstName.ShouldBe("Hans"); }
     }
 
     [Test]
@@ -473,8 +473,8 @@ public class ShiftSearchServiceTests
 
         // Assert
         shifts.Count().ShouldBe(1);
-        shifts.First().Client.FirstName.ShouldBe("Anna");
-        shifts.First().Client.Company.ShouldContain("XYZ");
+        shifts.First().Client!.FirstName.ShouldBe("Anna");
+        shifts.First().Client!.Company!.ShouldContain("XYZ");
     }
 
     [Test]

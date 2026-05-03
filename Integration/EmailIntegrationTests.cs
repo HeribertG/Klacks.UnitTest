@@ -99,9 +99,9 @@ namespace Klacks.UnitTest.Integration
             _mockLogger.DidNotReceive().Log(
                 Arg.Any<LogLevel>(),
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString().Contains("supersecretpassword")),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception, string>>()
+                Arg.Is<object>(o => o.ToString()!.Contains("supersecretpassword")),
+                Arg.Any<Exception?>(),
+                Arg.Any<Func<object, Exception?, string>>()
             );
         }
 

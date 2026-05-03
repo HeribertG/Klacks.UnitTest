@@ -276,17 +276,17 @@ namespace Klacks.UnitTest.Frontend
 
         private class EmailFormData
         {
-            public string OutgoingServer { get; set; }
+            public string OutgoingServer { get; set; } = string.Empty;
 
-            public string OutgoingServerPort { get; set; }
+            public string OutgoingServerPort { get; set; } = string.Empty;
 
-            public string EnabledSSL { get; set; }
+            public string EnabledSSL { get; set; } = string.Empty;
 
-            public string AuthenticationType { get; set; }
+            public string AuthenticationType { get; set; } = string.Empty;
 
-            public string OutgoingServerUsername { get; set; }
+            public string OutgoingServerUsername { get; set; } = string.Empty;
 
-            public string OutgoingServerPassword { get; set; }
+            public string OutgoingServerPassword { get; set; } = string.Empty;
         }
 
         #endregion

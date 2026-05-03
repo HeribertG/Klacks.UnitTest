@@ -155,7 +155,7 @@ public class GroupTreeServiceIntegrationTests
 
         // Assert
         var deleted = await _context.Group.FindAsync(group.Id);
-        deleted.IsDeleted.ShouldBeTrue();
+        deleted!.IsDeleted.ShouldBeTrue();
         deleted.DeletedTime.ShouldNotBeNull(); deleted.DeletedTime.Value.ShouldBe(DateTime.UtcNow, TimeSpan.FromSeconds(1));
     }
 

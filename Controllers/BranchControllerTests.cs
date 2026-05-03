@@ -15,9 +15,9 @@ namespace Klacks.UnitTest.Controllers;
 [TestFixture]
 public class BranchControllerTests
 {
-    private IMediator mockMediator;
-    private ILogger<BranchController> mockLogger;
-    private BranchController controller;
+    private IMediator mockMediator = null!;
+    private ILogger<BranchController> mockLogger = null!;
+    private BranchController controller = null!;
 
     [SetUp]
     public void Setup()
@@ -108,7 +108,7 @@ public class BranchControllerTests
         // Arrange
         var branchId = Guid.NewGuid();
         mockMediator.Send(Arg.Any<GetQuery>())
-            .Returns((Branch?)null);
+            .Returns(Task.FromResult<Branch>(null!));
 
         // Act
         var result = await controller.GetBranch(branchId);

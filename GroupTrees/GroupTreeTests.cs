@@ -480,7 +480,7 @@ public class GroupTreeTests
         {
             Name = "Child1",
             ValidFrom = DateTime.Now,
-            Parent = root.Id,
+            Parent = root!.Id,
             GroupItems = new List<GroupItemResource>()
         };
 
@@ -504,7 +504,7 @@ public class GroupTreeTests
         {
             Name = "GrandChild1",
             ValidFrom = DateTime.Now,
-            Parent = child1.Id,
+            Parent = child1!.Id,
             GroupItems = new List<GroupItemResource>()
         };
 
@@ -514,8 +514,8 @@ public class GroupTreeTests
         // Datenbank-Objekte abrufen, um interne Werte zu prüfen
         var rootNode = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == root.Id);
         var child1Node = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == child1.Id);
-        var child2Node = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == child2.Id);
-        var grandChild1Node = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == grandChild1.Id);
+        var child2Node = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == child2!.Id);
+        var grandChild1Node = await _dbContext.Group.FirstOrDefaultAsync(g => g.Id == grandChild1!.Id);
 
         // Überprüfe Parent-Beziehungen
         Assert.That(child1Node!.Parent, Is.EqualTo(rootNode!.Id));

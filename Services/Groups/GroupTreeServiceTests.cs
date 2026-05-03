@@ -522,11 +522,11 @@ public class GroupTreeServiceTests
         var repairedChild1 = await _context.Group.FindAsync(originalChild1.Id);
         var repairedGrandchild1 = await _context.Group.FindAsync(originalGrandchild1.Id);
 
-        repairedChild1.Parent.ShouldBe(originalRoot.Id);
-        repairedGrandchild1.Parent.ShouldBe(originalChild1.Id);
+        repairedChild1!.Parent.ShouldBe(originalRoot.Id);
+        repairedGrandchild1!.Parent.ShouldBe(originalChild1.Id);
 
         // Nested set values should be consistent
-        repairedRoot.Lft.ShouldBeLessThan(repairedChild1.Lft);
+        repairedRoot!.Lft.ShouldBeLessThan(repairedChild1.Lft);
         repairedChild1.Lft.ShouldBeLessThan(repairedGrandchild1.Lft);
         repairedGrandchild1.Rgt.ShouldBeLessThan(repairedChild1.Rgt);
         repairedChild1.Rgt.ShouldBeLessThan(repairedRoot.Rgt);
@@ -558,7 +558,7 @@ public class GroupTreeServiceTests
         // Assert
         var fixedGroup = await _context.Group.FindAsync(orphanedGroup.Id);
         var expectedRoot = _testGroups.First(g => g.Name == "Root Group");
-        fixedGroup.Root.ShouldBe(expectedRoot.Id);
+        fixedGroup!.Root.ShouldBe(expectedRoot.Id);
     }
 
     [Test]

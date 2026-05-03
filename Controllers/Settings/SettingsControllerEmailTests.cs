@@ -16,10 +16,10 @@ namespace Klacks.UnitTest.Controllers.Settings
     [TestFixture]
     public class SettingsControllerEmailTests
     {
-        private GeneralSettingsController _controller;
-        private IEmailTestService _mockEmailTestService;
-        private ILogger<GeneralSettingsController> _mockLogger;
-        private IMediator _mockMediator;
+        private GeneralSettingsController _controller = null!;
+        private IEmailTestService _mockEmailTestService = null!;
+        private ILogger<GeneralSettingsController> _mockLogger = null!;
+        private IMediator _mockMediator = null!;
 
         [SetUp]
         public void SetUp()
@@ -67,7 +67,7 @@ namespace Klacks.UnitTest.Controllers.Settings
             var actionResult = result.Result;
             actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
-            okResult.Value.ShouldBeEquivalentTo(expectedResult);
+            okResult!.Value.ShouldBeEquivalentTo(expectedResult);
         }
 
         [Test]
@@ -101,8 +101,8 @@ namespace Klacks.UnitTest.Controllers.Settings
             var actionResult = result.Result;
             actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
-            var emailResult = okResult.Value as EmailTestResult;
-            emailResult.Success.ShouldBeFalse();
+            var emailResult = okResult!.Value as EmailTestResult;
+            emailResult!.Success.ShouldBeFalse();
             emailResult.Message.ShouldContain("Authentication failed");
         }
 
@@ -137,8 +137,8 @@ namespace Klacks.UnitTest.Controllers.Settings
             var actionResult = result.Result;
             actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
-            var emailResult = okResult.Value as EmailTestResult;
-            emailResult.Success.ShouldBeFalse();
+            var emailResult = okResult!.Value as EmailTestResult;
+            emailResult!.Success.ShouldBeFalse();
             emailResult.Message.ShouldContain("timeout");
         }
 
@@ -236,8 +236,8 @@ namespace Klacks.UnitTest.Controllers.Settings
             var actionResult = result.Result;
             actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
-            var emailResult = okResult.Value as EmailTestResult;
-            emailResult.Success.ShouldBeFalse();
+            var emailResult = okResult!.Value as EmailTestResult;
+            emailResult!.Success.ShouldBeFalse();
         }
     }
 }

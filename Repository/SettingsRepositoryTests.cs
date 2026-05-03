@@ -14,8 +14,6 @@ namespace Klacks.UnitTest.Repository
     [TestFixture]
     public class SettingsRepositoryTests : BaseRepositoryTest
     {
-        private ISettingsRepository _settingsRepository;
-
         [SetUp]
         public void SetUp()
         {
