@@ -154,9 +154,8 @@ public class HarmonizerBenchmarkTests
     {
         var scorer = new HarmonyScorer();
         var domainValidator = new DomainAwareReplaceValidator(availability: null);
-        var bitmapValidator = new BitmapReplaceValidator();
         var fitness = new HarmonyFitnessEvaluator(scorer);
-        var stochasticMutation = new StochasticBitmapMutation(bitmapValidator);
+        var stochasticMutation = new StochasticBitmapMutation(domainValidator);
         var config = new HarmonizerEvolutionConfig(
             PopulationSize: 6,
             MaxGenerations: 6,
