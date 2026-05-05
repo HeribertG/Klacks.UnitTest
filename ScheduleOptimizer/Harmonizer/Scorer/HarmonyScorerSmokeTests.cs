@@ -35,25 +35,49 @@ public class HarmonyScorerSmokeTests
     }
 
     [Test]
-    public void Score_UniformEarlyBlocks_OutScoresChaoticBlocks()
+    public void Score_RotatedBlocks_OutScoreSingleTypeBlocks()
     {
-        var uniform = BuildSingleRowBitmap(14, day => day % 7 < 4 ? CellSymbol.Early : CellSymbol.Free);
-        var chaotic = BuildSingleRowBitmap(14, day => day switch
+        // Two equally-uniform plans (same block sizes, same rest periods) — the only
+        // difference is shift-type rotation: rotated cycles E→L→N across blocks while
+        // singleType keeps all blocks Early. The new ShiftTypeRotation feature must
+        // reward rotated higher.
+        var rotated = BuildSingleRowBitmap(28, day => (day / 7) switch
         {
-            0 => CellSymbol.Early,
-            2 => CellSymbol.Night,
-            5 => CellSymbol.Late,
-            6 => CellSymbol.Early,
-            9 => CellSymbol.Night,
-            12 => CellSymbol.Late,
+            0 when day % 7 < 4 => CellSymbol.Early,
+            1 when day % 7 < 4 => CellSymbol.Late,
+            2 when day % 7 < 4 => CellSymbol.Night,
+            3 when day % 7 < 4 => CellSymbol.Early,
+            _ => CellSymbol.Free,
+        });
+        var singleType = BuildSingleRowBitmap(28, day => day % 7 < 4 ? CellSymbol.Early : CellSymbol.Free);
+        var scorer = new HarmonyScorer();
+
+        var rotatedScore = scorer.Score(rotated, 0).Score;
+        var singleTypeScore = scorer.Score(singleType, 0).Score;
+
+        rotatedScore.ShouldBeGreaterThan(singleTypeScore);
+    }
+
+    [Test]
+    public void Score_RestPeriodVariance_LowersScore()
+    {
+        // Two plans with the same shift symbols and equal block sizes; only the rest
+        // periods between blocks differ. The plan with uniform rest gaps must score
+        // higher than the one with widely varying rests.
+        var uniformRest = BuildSingleRowBitmap(20, day => (day % 5 < 3) ? CellSymbol.Early : CellSymbol.Free);
+        var unevenRest = BuildSingleRowBitmap(20, day => day switch
+        {
+            0 or 1 or 2 => CellSymbol.Early,
+            5 or 6 or 7 => CellSymbol.Early,
+            14 or 15 or 16 => CellSymbol.Early,
             _ => CellSymbol.Free,
         });
         var scorer = new HarmonyScorer();
 
-        var uniformScore = scorer.Score(uniform, 0).Score;
-        var chaoticScore = scorer.Score(chaotic, 0).Score;
+        var uniformRestScore = scorer.Score(uniformRest, 0).Features.RestUniformity;
+        var unevenRestScore = scorer.Score(unevenRest, 0).Features.RestUniformity;
 
-        uniformScore.ShouldBeGreaterThan(chaoticScore);
+        uniformRestScore.ShouldBeGreaterThan(unevenRestScore);
     }
 
     [Test]
