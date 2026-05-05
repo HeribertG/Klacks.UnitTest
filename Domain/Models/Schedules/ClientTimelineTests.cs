@@ -324,6 +324,43 @@ public class ClientTimelineTests
     }
 
     [Test]
+    public void GetConsecutiveWorkDays_NightShiftSpilloverDoesNotInflateRun()
+    {
+        // Arrange: 3 consecutive night shifts 23:00 -> 07:00 next day.
+        // Each shift's spillover touches the next calendar day, but only the
+        // anchor day (workday) should count toward consecutive-days.
+        for (var i = 0; i < 3; i++)
+        {
+            var date = BaseDate.AddDays(i);
+            _timeline.AddBlock(CreateWorkBlock(
+                date.ToDateTime(new TimeOnly(23, 0)),
+                date.AddDays(1).ToDateTime(new TimeOnly(7, 0))));
+        }
+
+        // Act
+        var count = _timeline.GetConsecutiveWorkDays(BaseDate);
+
+        // Assert: 3 shift anchors -> 3 consecutive work days (not 4 with spillover).
+        count.ShouldBe(3);
+    }
+
+    [Test]
+    public void GetConsecutiveWorkDays_GapAfterNightShift_StreakBreaks()
+    {
+        // Arrange: night shift Mon 23:00 -> Tue 07:00, then no work Tue/Wed.
+        // Spillover into Tue should NOT extend the streak past the anchor.
+        _timeline.AddBlock(CreateWorkBlock(
+            BaseDate.ToDateTime(new TimeOnly(23, 0)),
+            BaseDate.AddDays(1).ToDateTime(new TimeOnly(7, 0))));
+
+        // Act
+        var count = _timeline.GetConsecutiveWorkDays(BaseDate);
+
+        // Assert
+        count.ShouldBe(1);
+    }
+
+    [Test]
     public void GetBlocksForDate_IncludesNightShiftFromPreviousDay()
     {
         // Arrange
