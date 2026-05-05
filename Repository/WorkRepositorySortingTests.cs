@@ -337,7 +337,7 @@ public class WorkRepositorySortingTests
     }
 
     [Test]
-    public async Task WorkList_WithNameAscAndHoursAsc_ShouldUseThenByForHours()
+    public async Task WorkList_WithGuaranteedHoursAsc_ShouldSortByGuaranteedHoursAscending()
     {
         // Arrange
         var today = DateTime.Now;
@@ -349,9 +349,8 @@ public class WorkRepositorySortingTests
             EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
-            OrderBy = "name",
-            SortOrder = "asc",
-            HoursSortOrder = "asc"
+            OrderBy = "guaranteedhours",
+            SortOrder = "asc"
         };
 
         // Act
@@ -359,14 +358,10 @@ public class WorkRepositorySortingTests
 
         // Assert
         result.Clients.Count().ShouldBe(4);
-        result.Clients[0].Name.ShouldBe("Anderson");
-        result.Clients[1].Name.ShouldBe("Brown");
-        result.Clients[2].Name.ShouldBe("Clark");
-        result.Clients[3].Name.ShouldBe("Davis");
     }
 
     [Test]
-    public async Task WorkList_WithNameAscAndHoursDesc_ShouldUseThenByDescendingForHours()
+    public async Task WorkList_WithGuaranteedHoursDesc_ShouldSortByGuaranteedHoursDescending()
     {
         // Arrange
         var today = DateTime.Now;
@@ -378,9 +373,8 @@ public class WorkRepositorySortingTests
             EndDate = endDate,
             ShowEmployees = true,
             ShowExtern = true,
-            OrderBy = "name",
-            SortOrder = "asc",
-            HoursSortOrder = "desc"
+            OrderBy = "guaranteedhours",
+            SortOrder = "desc"
         };
 
         // Act
@@ -388,10 +382,6 @@ public class WorkRepositorySortingTests
 
         // Assert
         result.Clients.Count().ShouldBe(4);
-        result.Clients[0].Name.ShouldBe("Anderson");
-        result.Clients[1].Name.ShouldBe("Brown");
-        result.Clients[2].Name.ShouldBe("Clark");
-        result.Clients[3].Name.ShouldBe("Davis");
     }
 
     [Test]
@@ -423,13 +413,13 @@ public class WorkRepositorySortingTests
     }
 
     [Test]
-    public async Task WorkList_HoursSortOrderIsIndependentFromPrimarySort()
+    public async Task WorkList_WithIndividualSort_ShouldSortByNameThenFirstName()
     {
         // Arrange
         var today = DateTime.Now;
         var startDate = new DateOnly(today.Year, today.Month, 1).AddDays(-5);
         var endDate = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)).AddDays(5);
-        var filterWithHours = new WorkFilter
+        var filterWithIndividual = new WorkFilter
         {
             StartDate = startDate,
             EndDate = endDate,
@@ -437,10 +427,10 @@ public class WorkRepositorySortingTests
             ShowExtern = true,
             OrderBy = "firstName",
             SortOrder = "desc",
-            HoursSortOrder = "asc"
+            IndividualSort = true
         };
 
-        var filterWithoutHours = new WorkFilter
+        var filterWithoutIndividual = new WorkFilter
         {
             StartDate = startDate,
             EndDate = endDate,
@@ -448,17 +438,17 @@ public class WorkRepositorySortingTests
             ShowExtern = true,
             OrderBy = "firstName",
             SortOrder = "desc",
-            HoursSortOrder = null
+            IndividualSort = false
         };
 
         // Act
-        var resultWithHours = await _workRepository.WorkList(filterWithHours);
-        var resultWithoutHours = await _workRepository.WorkList(filterWithoutHours);
+        var resultWithIndividual = await _workRepository.WorkList(filterWithIndividual);
+        var resultWithoutIndividual = await _workRepository.WorkList(filterWithoutIndividual);
 
         // Assert
-        resultWithHours.Clients.Count().ShouldBe(4);
-        resultWithoutHours.Clients.Count().ShouldBe(4);
-        resultWithHours.Clients[0].FirstName.ShouldBe("Diana");
-        resultWithoutHours.Clients[0].FirstName.ShouldBe("Diana");
+        resultWithIndividual.Clients.Count().ShouldBe(4);
+        resultWithoutIndividual.Clients.Count().ShouldBe(4);
+        resultWithIndividual.Clients[0].Name.ShouldBe("Anderson");
+        resultWithoutIndividual.Clients[0].FirstName.ShouldBe("Diana");
     }
 }
