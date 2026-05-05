@@ -108,7 +108,7 @@ public class HarmonyScorerSmokeTests
 
     private static HarmonyBitmap BuildSingleRowBitmap(int days, Func<int, CellSymbol> dayToSymbol)
     {
-        var agent = new BitmapAgent("agent-1", "Test Agent", 100m, new HashSet<CellSymbol>());
+        var agent = new BitmapAgent("agent-1", "Test Agent", 0m, new HashSet<CellSymbol>());
         var startDate = new DateOnly(2026, 1, 1);
         var assignments = new List<BitmapAssignment>();
         for (var d = 0; d < days; d++)
