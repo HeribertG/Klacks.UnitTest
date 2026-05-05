@@ -142,6 +142,42 @@ public class WizardHardConstraintBuilderTests
     }
 
     [Test]
+    public async Task BuildAsync_BreakBlocker_CarriesWorkTimeIntoHours()
+    {
+        var agent = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+
+        var absenceId = Guid.NewGuid();
+        _context.Absence.Add(new Absence
+        {
+            Id = absenceId,
+            Name = new MultiLanguage { De = "Krank" },
+        });
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            CurrentDate = new DateOnly(2026, 4, 21),
+            AbsenceId = absenceId,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(17, 0),
+            WorkTime = 8.5m,
+            AnalyseToken = null,
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, from, until, analyseToken: null, CancellationToken.None);
+
+        result.BreakBlockers.Count().ShouldBe(1);
+        result.BreakBlockers[0].Hours.ShouldBe(8.5m);
+        result.BreakBlockers[0].FromInclusive.ShouldBe(new DateOnly(2026, 4, 21));
+        result.BreakBlockers[0].UntilInclusive.ShouldBe(new DateOnly(2026, 4, 21));
+        result.BreakBlockers[0].Reason.ShouldBe("Krank");
+    }
+
+    [Test]
     public async Task BuildAsync_FiltersScheduleCommandsForMainScenario_WhenAnalyseTokenIsNull()
     {
         var agent = Guid.NewGuid();

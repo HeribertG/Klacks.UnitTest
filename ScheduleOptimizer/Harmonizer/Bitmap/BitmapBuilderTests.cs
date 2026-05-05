@@ -91,6 +91,44 @@ public class BitmapBuilderTests
     }
 
     [Test]
+    public void Build_BreakDominatesCollidingWork_AndForcesLock()
+    {
+        var workId = Guid.NewGuid();
+        var breakId = Guid.NewGuid();
+        var assignments = new List<BitmapAssignment>
+        {
+            new("agent-0", Day0, CellSymbol.Early, Guid.NewGuid(), [workId], false,
+                Day0.ToDateTime(new TimeOnly(6, 0)), Day0.ToDateTime(new TimeOnly(14, 0)), 8m),
+            new("agent-0", Day0, CellSymbol.Break, Guid.Empty, [breakId], true,
+                default, default, 8m),
+        };
+
+        var bitmap = BitmapBuilder.Build(BuildInput(rows: 1, days: 1, assignments));
+
+        var cell = bitmap.GetCell(0, 0);
+        cell.Symbol.ShouldBe(CellSymbol.Break);
+        cell.IsLocked.ShouldBeTrue();
+        cell.WorkIds.ShouldContain(breakId);
+        cell.Hours.ShouldBe(16m);
+    }
+
+    [Test]
+    public void Build_BreakOnly_IsLockedAndCarriesBreakHours()
+    {
+        var breakId = Guid.NewGuid();
+        var assignment = new BitmapAssignment(
+            "agent-0", Day0, CellSymbol.Break, Guid.Empty, [breakId], true,
+            default, default, 7.6m);
+
+        var bitmap = BitmapBuilder.Build(BuildInput(rows: 1, days: 1, [assignment]));
+
+        var cell = bitmap.GetCell(0, 0);
+        cell.Symbol.ShouldBe(CellSymbol.Break);
+        cell.IsLocked.ShouldBeTrue();
+        cell.Hours.ShouldBe(7.6m);
+    }
+
+    [Test]
     public void Build_AssignmentForUnknownAgentOrOutOfRangeDate_IsIgnored()
     {
         var assignments = new List<BitmapAssignment>

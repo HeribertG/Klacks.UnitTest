@@ -96,6 +96,35 @@ public class RowFeatureExtractorTests
         features.BlockSizeUniformity.ShouldBeLessThan(0.5);
     }
 
+    [Test]
+    public void Extract_BreakIsTreatedLikeFree_ForBlockScanning()
+    {
+        var bitmap = BuildRow(new[] { CellSymbol.Early, CellSymbol.Early, CellSymbol.Break, CellSymbol.Late, CellSymbol.Late });
+
+        var features = RowFeatureExtractor.Extract(bitmap, 0);
+
+        features.WorkBlockCount.ShouldBe(2);
+    }
+
+    [Test]
+    public void Extract_BreakHoursContributeToTargetHoursDeviation()
+    {
+        var startDate = new DateOnly(2026, 1, 1);
+        var agent = new BitmapAgent("agent-0", "A", TargetHours: 24m, new HashSet<CellSymbol>());
+        var input = new BitmapInput([agent], startDate, startDate.AddDays(2), []);
+        var bitmap = BitmapBuilder.Build(input);
+
+        bitmap.SetCell(0, 0, new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            startDate.ToDateTime(new TimeOnly(7, 0)), startDate.ToDateTime(new TimeOnly(15, 0)), 8m));
+        bitmap.SetCell(0, 1, new Cell(CellSymbol.Break, null, [Guid.NewGuid()], true, default, default, 8m));
+        bitmap.SetCell(0, 2, new Cell(CellSymbol.Late, Guid.NewGuid(), [Guid.NewGuid()], false,
+            startDate.AddDays(2).ToDateTime(new TimeOnly(14, 0)), startDate.AddDays(2).ToDateTime(new TimeOnly(22, 0)), 8m));
+
+        var features = RowFeatureExtractor.Extract(bitmap, 0);
+
+        features.TargetHoursDeviation.ShouldBe(0.0);
+    }
+
     private static HarmonyBitmap BuildRow(IReadOnlyList<CellSymbol> symbols)
     {
         var startDate = new DateOnly(2026, 1, 1);
@@ -107,13 +136,14 @@ public class RowFeatureExtractorTests
             {
                 continue;
             }
+            var isBreak = symbols[d] == CellSymbol.Break;
             assignments.Add(new BitmapAssignment(
                 agent.Id,
                 startDate.AddDays(d),
                 symbols[d],
-                Guid.NewGuid(),
+                isBreak ? Guid.Empty : Guid.NewGuid(),
                 [Guid.NewGuid()],
-                false));
+                isBreak));
         }
         var input = new BitmapInput(
             [agent],

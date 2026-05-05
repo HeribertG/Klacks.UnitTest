@@ -132,6 +132,58 @@ public class DomainAwareReplaceValidatorTests
     }
 
     [Test]
+    public void IsValid_BreakCellOnReceivingSide_Rejected()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 3);
+        bitmap.SetCell(0, 1, new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            Day0.AddDays(1).ToDateTime(new TimeOnly(7, 0)), Day0.AddDays(1).ToDateTime(new TimeOnly(15, 0)), 8m));
+        bitmap.SetCell(1, 1, new Cell(CellSymbol.Break, null, [Guid.NewGuid()], true, default, default, 8m));
+
+        var validator = new DomainAwareReplaceValidator(null);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 1)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsValid_BreakInterruptsConsecutiveRun_Accepted()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 6, agentBuilder: (id, idx) => new BitmapAgent(
+            id, id, 100m, new HashSet<CellSymbol>(), MaxConsecutiveDays: idx == 1 ? 3 : 0));
+        var workCell = (DateOnly d) => new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            d.ToDateTime(new TimeOnly(7, 0)), d.ToDateTime(new TimeOnly(15, 0)), 8m);
+
+        bitmap.SetCell(1, 0, workCell(Day0));
+        bitmap.SetCell(1, 1, workCell(Day0.AddDays(1)));
+        bitmap.SetCell(1, 2, new Cell(CellSymbol.Break, null, [Guid.NewGuid()], true, default, default, 8m));
+        bitmap.SetCell(1, 4, workCell(Day0.AddDays(4)));
+        bitmap.SetCell(0, 3, workCell(Day0.AddDays(3)));
+
+        var validator = new DomainAwareReplaceValidator(null);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 3)).ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsValid_BreakHoursDoNotCountTowardWeeklyMax()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 7, agentBuilder: (id, idx) => new BitmapAgent(
+            id, id, 100m, new HashSet<CellSymbol>(), MaxWeeklyHours: idx == 1 ? 40m : 0m));
+        var workCell = (DateOnly d) => new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            d.ToDateTime(new TimeOnly(7, 0)), d.ToDateTime(new TimeOnly(15, 0)), 8m);
+
+        bitmap.SetCell(1, 0, workCell(Day0));
+        bitmap.SetCell(1, 1, workCell(Day0.AddDays(1)));
+        bitmap.SetCell(1, 2, workCell(Day0.AddDays(2)));
+        bitmap.SetCell(1, 3, workCell(Day0.AddDays(3)));
+        bitmap.SetCell(1, 4, new Cell(CellSymbol.Break, null, [Guid.NewGuid()], true, default, default, 8m));
+        bitmap.SetCell(0, 5, workCell(Day0.AddDays(5)));
+
+        var validator = new DomainAwareReplaceValidator(null);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 5)).ShouldBeTrue();
+    }
+
+    [Test]
     public void IsValid_NormalSwap_Accepted()
     {
         var bitmap = BuildBitmap(rows: 2, days: 3);
