@@ -66,6 +66,55 @@ public class HarmonyBitmapPngRendererTests
     }
 
     [Test]
+    public void Render_SymbolCells_DrawDistinctlyAgainstBackground()
+    {
+        var bitmap = BuildBitmap(rowCount: 1, dayCount: 4, configure: cells =>
+        {
+            cells[0, 0] = new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false, default, default, 8m);
+            cells[0, 1] = new Cell(CellSymbol.Late, Guid.NewGuid(), [Guid.NewGuid()], false, default, default, 8m);
+            cells[0, 2] = new Cell(CellSymbol.Night, Guid.NewGuid(), [Guid.NewGuid()], false, default, default, 8m);
+            cells[0, 3] = new Cell(CellSymbol.Other, Guid.NewGuid(), [Guid.NewGuid()], false, default, default, 8m);
+        });
+        var options = HarmonyBitmapPngRenderOptions.Default;
+        var renderer = new HarmonyBitmapPngRenderer(options);
+
+        var bytes = renderer.Render(bitmap);
+
+        using var ms = new MemoryStream(bytes);
+        using var decoded = SKBitmap.Decode(ms);
+        decoded.ShouldNotBeNull();
+
+        for (var d = 0; d < 4; d++)
+        {
+            var cellOriginX = options.HeaderLeft + (d * options.CellSize);
+            var cellOriginY = options.HeaderTop;
+            var fillReference = decoded.GetPixel(cellOriginX + 3, cellOriginY + 3);
+            var maxDistance = 0;
+            for (var dy = 4; dy < options.CellSize - 4; dy++)
+            {
+                for (var dx = 4; dx < options.CellSize - 4; dx++)
+                {
+                    var px = decoded.GetPixel(cellOriginX + dx, cellOriginY + dy);
+                    var distance = ColorDistance(fillReference, px);
+                    if (distance > maxDistance)
+                    {
+                        maxDistance = distance;
+                    }
+                }
+            }
+            maxDistance.ShouldBeGreaterThan(150, $"day {d}: at least one symbol pixel must be highly distinct from fill background");
+        }
+    }
+
+    private static int ColorDistance(SKColor a, SKColor b)
+    {
+        var dr = a.Red - b.Red;
+        var dg = a.Green - b.Green;
+        var db = a.Blue - b.Blue;
+        return Math.Abs(dr) + Math.Abs(dg) + Math.Abs(db);
+    }
+
+    [Test]
     public void Render_AllSymbolKinds_ProducesPng()
     {
         var bitmap = BuildBitmap(rowCount: 2, dayCount: 6, configure: cells =>
