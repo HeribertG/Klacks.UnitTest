@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Shouldly;
+using Klacks.Api.Application.DTOs.Schedules.Wizard;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Microsoft.AspNetCore.Mvc;
