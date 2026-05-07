@@ -4,12 +4,12 @@ using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
 using Klacks.ScheduleOptimizer.Harmonizer.Evolution;
 using Klacks.ScheduleOptimizer.Harmonizer.Scorer;
-using Klacks.ScheduleOptimizer.Wizard3.Mutations;
-using Klacks.ScheduleOptimizer.Wizard3.Validation;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Validation;
 using NUnit.Framework;
 using Shouldly;
 
-namespace Klacks.UnitTest.ScheduleOptimizer.Wizard3;
+namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer;
 
 [TestFixture]
 public class BatchEvaluatorTests

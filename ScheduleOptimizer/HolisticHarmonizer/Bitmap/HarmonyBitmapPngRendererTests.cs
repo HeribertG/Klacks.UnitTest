@@ -2,13 +2,13 @@
 
 using System.IO;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
-using Klacks.ScheduleOptimizer.Wizard3.Bitmap;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Bitmap;
 using NUnit.Framework;
 using Shouldly;
 using SkiaSharp;
 using HarmonyBitmapType = Klacks.ScheduleOptimizer.Harmonizer.Bitmap.HarmonyBitmap;
 
-namespace Klacks.UnitTest.ScheduleOptimizer.Wizard3.Bitmap;
+namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer.Bitmap;
 
 [TestFixture]
 public class HarmonyBitmapPngRendererTests

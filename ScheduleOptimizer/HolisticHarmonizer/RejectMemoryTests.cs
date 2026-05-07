@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using Klacks.ScheduleOptimizer.Wizard3.Loop;
-using Klacks.ScheduleOptimizer.Wizard3.Mutations;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Loop;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using NUnit.Framework;
 using Shouldly;
 
-namespace Klacks.UnitTest.ScheduleOptimizer.Wizard3;
+namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer;
 
 [TestFixture]
 public class RejectMemoryTests
