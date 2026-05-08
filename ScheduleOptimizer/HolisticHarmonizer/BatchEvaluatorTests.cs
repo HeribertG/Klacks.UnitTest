@@ -4,6 +4,7 @@ using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
 using Klacks.ScheduleOptimizer.Harmonizer.Evolution;
 using Klacks.ScheduleOptimizer.Harmonizer.Scorer;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Committee;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Validation;
 using NUnit.Framework;
@@ -89,11 +90,56 @@ public class BatchEvaluatorTests
         }
     }
 
+    [Test]
+    public void Evaluate_CommitteeVetoesHardValidStep_RejectsWithCommitteeVetoReason()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 2);
+        bitmap.SetCell(0, 0, new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], IsLocked: false));
+        bitmap.SetCell(1, 0, new Cell(CellSymbol.Late, Guid.NewGuid(), [Guid.NewGuid()], IsLocked: false));
+
+        var alwaysVetoCommittee = new ConstraintAgentCommittee(new IConstraintAgent[]
+        {
+            new AlwaysVetoAgent("Stub-A", "first reason"),
+            new AlwaysVetoAgent("Stub-B", "second reason"),
+        });
+        var validator = new PlanMutationValidator(new DomainAwareReplaceValidator(null));
+        var fitness = new HarmonyFitnessEvaluator(new HarmonyScorer());
+        var evaluator = new BatchEvaluator(validator, fitness, alwaysVetoCommittee);
+
+        var batch = new MutationBatch(
+            Guid.NewGuid(),
+            "consolidate_block",
+            LlmIteration: 0,
+            Steps: [new PlanCellSwap(0, 0, 1, 0, "valid hard, but committee blocks")]);
+
+        var result = evaluator.Evaluate(bitmap, batch);
+
+        result.Result.ShouldBe(BatchAcceptance.Rejected);
+        result.AppliedSteps.Count.ShouldBe(0);
+        result.Rejections.Count.ShouldBe(1);
+        result.Rejections.Single().Reason.ShouldBe(PlanMutationRejectionReason.CommitteeVeto);
+        result.Rejections.Single().Detail.ShouldContain("Stub-A");
+        result.Rejections.Single().Detail.ShouldContain("Stub-B");
+    }
+
     private static BatchEvaluator BuildEvaluator()
     {
         var validator = new PlanMutationValidator(new DomainAwareReplaceValidator(null));
         var fitness = new HarmonyFitnessEvaluator(new HarmonyScorer());
         return new BatchEvaluator(validator, fitness);
+    }
+
+    private sealed class AlwaysVetoAgent : IConstraintAgent
+    {
+        private readonly string _reason;
+        public AlwaysVetoAgent(string name, string reason)
+        {
+            Name = name;
+            _reason = reason;
+        }
+        public string Name { get; }
+        public ConstraintAgentVerdict Evaluate(HarmonyBitmap before, PlanCellSwap swap)
+            => new(Name, ConstraintAgentVote.Veto, _reason);
     }
 
     private static HarmonyBitmap BuildBitmap(int rows, int days)
