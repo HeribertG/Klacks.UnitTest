@@ -40,7 +40,28 @@ public class BatchEvaluatorTests
     }
 
     [Test]
-    public void Evaluate_CrossDaySwap_ReturnsRejected()
+    public void Evaluate_CrossDaySwapWithCoverageMismatch_ReturnsHardConstraintViolation()
+    {
+        // rowA day0 has work, rowB day1 is free (default Free) → coverage would change → reject.
+        var bitmap = BuildBitmap(rows: 2, days: 3);
+        bitmap.SetCell(0, 0, new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], IsLocked: false));
+
+        var evaluator = BuildEvaluator();
+        var batch = new MutationBatch(
+            Guid.NewGuid(),
+            "consolidate_block",
+            LlmIteration: 0,
+            Steps: [new PlanCellSwap(0, 0, 1, 1, "cross-day work↔free")]);
+
+        var result = evaluator.Evaluate(bitmap, batch);
+
+        result.Result.ShouldBe(BatchAcceptance.Rejected);
+        result.Rejections.Single().Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+        result.Rejections.Single().Detail.ShouldContain("coverage");
+    }
+
+    [Test]
+    public void Evaluate_CrossDaySwapCoverageNeutralBothFree_ReturnsNoEffect()
     {
         var bitmap = BuildBitmap(rows: 2, days: 3);
         var evaluator = BuildEvaluator();
@@ -48,12 +69,37 @@ public class BatchEvaluatorTests
             Guid.NewGuid(),
             "consolidate_block",
             LlmIteration: 0,
-            Steps: [new PlanCellSwap(0, 0, 1, 1, "cross-day swap")]);
+            Steps: [new PlanCellSwap(0, 0, 1, 1, "cross-day free↔free")]);
 
         var result = evaluator.Evaluate(bitmap, batch);
 
         result.Result.ShouldBe(BatchAcceptance.Rejected);
-        result.Rejections.Single().Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+        result.Rejections.Single().Reason.ShouldBe(PlanMutationRejectionReason.NoEffect);
+    }
+
+    [Test]
+    public void Evaluate_CrossDaySwapDifferentWorkSymbols_PassesValidator()
+    {
+        // rowA day0 = Early, rowB day1 = Late — both work, different shift types.
+        // Hard validator now admits cross-day; committee may still veto, but the rejection
+        // reason in this minimal setup should NOT be HardConstraintViolation or NoEffect.
+        var bitmap = BuildBitmap(rows: 2, days: 3);
+        bitmap.SetCell(0, 0, new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], IsLocked: false));
+        bitmap.SetCell(1, 1, new Cell(CellSymbol.Late, Guid.NewGuid(), [Guid.NewGuid()], IsLocked: false));
+
+        var evaluator = BuildEvaluator();
+        var batch = new MutationBatch(
+            Guid.NewGuid(),
+            "consolidate_block",
+            LlmIteration: 0,
+            Steps: [new PlanCellSwap(0, 0, 1, 1, "cross-day work↔work")]);
+
+        var result = evaluator.Evaluate(bitmap, batch);
+
+        // No hard rejection. Result is either Accepted, PartiallyAccepted, or WouldDegrade
+        // depending on the score. Either way, no rejection records with HardConstraintViolation.
+        result.Rejections.Where(r => r.Reason == PlanMutationRejectionReason.HardConstraintViolation).ShouldBeEmpty();
+        result.Rejections.Where(r => r.Reason == PlanMutationRejectionReason.NoEffect).ShouldBeEmpty();
     }
 
     [Test]

@@ -38,6 +38,23 @@ public class ConstraintAgentCommitteeTests
     }
 
     [Test]
+    public void Evaluate_SoloVetoWithoutCoalition_StillApproves()
+    {
+        // Single agent objecting alone is downgraded to a hint — needs at least
+        // VetoCoalitionThreshold (=2) coordinated vetoes to actually block a swap.
+        var committee = new ConstraintAgentCommittee(new IConstraintAgent[]
+        {
+            new FakeAgent("A", ConstraintAgentVote.Abstain),
+            new FakeAgent("B", ConstraintAgentVote.Veto, "lone objection"),
+            new FakeAgent("C", ConstraintAgentVote.Abstain),
+            new FakeAgent("D", ConstraintAgentVote.Abstain),
+            new FakeAgent("E", ConstraintAgentVote.Abstain),
+        });
+        var decision = committee.Evaluate(StubBitmap, StubSwap);
+        decision.Approved.ShouldBeTrue();
+    }
+
+    [Test]
     public void Evaluate_TieVote_ReturnsApproved()
     {
         var committee = new ConstraintAgentCommittee(new IConstraintAgent[]
