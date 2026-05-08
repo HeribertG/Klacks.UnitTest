@@ -5,6 +5,7 @@
 /// </summary>
 /// <param name="context">In-memory EF context seeded with contracts and works</param>
 using Shouldly;
+using Klacks.Api.Application.Handlers.Dashboard;
 using Klacks.Api.Application.Queries.Dashboard;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Staffs;
@@ -172,5 +173,29 @@ public class GetResourceMonitorQueryHandlerTests
         var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
 
         result.DailyData.First(d => d.Date == new DateOnly(2026, 2, 2)).ShouldHours.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Handle_InactiveContract_NotCounted()
+    {
+        var contractId = Guid.NewGuid();
+        await _context.Contract.AddAsync(new Contract
+        {
+            Id = contractId, GuaranteedHours = 40, PaymentInterval = PaymentInterval.Weekly,
+            WorkOnMonday = true, WorkOnTuesday = true, WorkOnWednesday = true,
+            WorkOnThursday = true, WorkOnFriday = true,
+            WorkOnSaturday = false, WorkOnSunday = false,
+            ValidFrom = new DateTime(2026, 1, 1)
+        });
+        await _context.ClientContract.AddAsync(new ClientContract
+        {
+            Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), ContractId = contractId,
+            FromDate = new DateOnly(2026, 1, 1), UntilDate = null, IsActive = false
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
+
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5)).ShouldHours.ShouldBe(0.0);
     }
 }
