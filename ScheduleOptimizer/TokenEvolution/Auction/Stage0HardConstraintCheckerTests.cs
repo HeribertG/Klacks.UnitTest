@@ -458,6 +458,61 @@ public class Stage0HardConstraintCheckerTests
     }
 
     [Test]
+    public void Check_MaxConsecutiveDays_BoundaryNightShiftCrossDayCountsTwoDays()
+    {
+        // Boundary night shift on Apr 30 22:00 → May 1 07:00 occupies BOTH Apr 30 and May 1
+        // (cross-midnight semantics). With 5 in-period works May 1-5, the run becomes
+        // Apr 30 + (May 1 spillover from boundary) + May 2-5 = at least 6 days, plus the candidate
+        // anchor — pushing total > 6 cap → veto on a candidate Saturday (May 2 onwards).
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent(sat: true, sun: true);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 5, 1),
+            PeriodUntil = new DateOnly(2026, 5, 31),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            BoundaryExistingWorkBlockers = new List<CoreExistingWorkBlocker>
+            {
+                new(
+                    AgentId: "A",
+                    Date: new DateOnly(2026, 4, 30),
+                    StartAt: new DateOnly(2026, 4, 30).ToDateTime(new TimeOnly(22, 0)),
+                    EndAt: new DateOnly(2026, 5, 1).ToDateTime(new TimeOnly(7, 0))),
+            },
+        };
+
+        // Plan already has May 2-5 assigned (4 days). Candidate slot for May 6 should be vetoed
+        // because the run is: Apr 30 (boundary) + May 1 (spillover) + May 2-5 (4 in-period) +
+        // May 6 (candidate) = 7 days > cap 6.
+        var assigned = new List<CoreToken>();
+        for (var i = 1; i < 5; i++)
+        {
+            var date = ctx.PeriodFrom.AddDays(i);
+            assigned.Add(new CoreToken(
+                WorkIds: [],
+                ShiftTypeIndex: 0,
+                Date: date,
+                TotalHours: 8m,
+                StartAt: date.ToDateTime(new TimeOnly(8, 0)),
+                EndAt: date.ToDateTime(new TimeOnly(16, 0)),
+                BlockId: Guid.NewGuid(),
+                PositionInBlock: 0,
+                IsLocked: false,
+                LocationContext: null,
+                ShiftRefId: Guid.NewGuid(),
+                AgentId: "A"));
+        }
+
+        var saturdaySlot = MakeShift(new DateOnly(2026, 5, 6), "08:00", "16:00", hours: 8);
+
+        var verdict = sut.Check(agent, saturdaySlot, assigned, ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("MaxConsecutiveDays");
+    }
+
+    [Test]
     public void Check_MaxConsecutiveDays_BoundaryBreakStopsRunWalk()
     {
         // Same in-period 5-day streak but the boundary day directly before the period (Sun 4/19) has

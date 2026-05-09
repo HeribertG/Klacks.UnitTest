@@ -324,11 +324,14 @@ public class ClientTimelineTests
     }
 
     [Test]
-    public void GetConsecutiveWorkDays_NightShiftSpilloverDoesNotInflateRun()
+    public void GetConsecutiveWorkDays_NightShiftSpilloverExtendsRun()
     {
-        // Arrange: 3 consecutive night shifts 23:00 -> 07:00 next day.
-        // Each shift's spillover touches the next calendar day, but only the
-        // anchor day (workday) should count toward consecutive-days.
+        // Arrange: 3 consecutive night shifts Mon 23:00 → Tue 07:00, Tue 23:00 → Wed 07:00,
+        // Wed 23:00 → Thu 07:00. Each shift occupies its anchor day AND spills into the next
+        // calendar day. Walking from Mon: Mon (anchor) → Tue (anchor + Mon spillover) →
+        // Wed (anchor + Tue spillover) → Thu (Wed spillover only) → no further work → stop.
+        // = 4 consecutive occupied days. This matches the human "no real free day in between"
+        // semantics — a night-shift recovery morning is not a free day.
         for (var i = 0; i < 3; i++)
         {
             var date = BaseDate.AddDays(i);
@@ -340,15 +343,16 @@ public class ClientTimelineTests
         // Act
         var count = _timeline.GetConsecutiveWorkDays(BaseDate);
 
-        // Assert: 3 shift anchors -> 3 consecutive work days (not 4 with spillover).
-        count.ShouldBe(3);
+        // Assert: 3 anchors + 1 spillover into Thu = 4 consecutive occupied days.
+        count.ShouldBe(4);
     }
 
     [Test]
-    public void GetConsecutiveWorkDays_GapAfterNightShift_StreakBreaks()
+    public void GetConsecutiveWorkDays_GapAfterNightShift_IncludesSpilloverDay()
     {
-        // Arrange: night shift Mon 23:00 -> Tue 07:00, then no work Tue/Wed.
-        // Spillover into Tue should NOT extend the streak past the anchor.
+        // Arrange: single night shift Mon 23:00 → Tue 07:00, then no further work.
+        // Tue is occupied by the spillover from Mon's night shift, even though Tue has no
+        // anchor block. Walking from Mon: Mon (anchor) → Tue (spillover) → Wed (free) → stop.
         _timeline.AddBlock(CreateWorkBlock(
             BaseDate.ToDateTime(new TimeOnly(23, 0)),
             BaseDate.AddDays(1).ToDateTime(new TimeOnly(7, 0))));
@@ -356,8 +360,8 @@ public class ClientTimelineTests
         // Act
         var count = _timeline.GetConsecutiveWorkDays(BaseDate);
 
-        // Assert
-        count.ShouldBe(1);
+        // Assert: 1 anchor + 1 spillover day = 2 occupied days.
+        count.ShouldBe(2);
     }
 
     [Test]
