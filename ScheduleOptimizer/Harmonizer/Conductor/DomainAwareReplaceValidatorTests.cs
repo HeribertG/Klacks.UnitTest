@@ -201,6 +201,98 @@ public class DomainAwareReplaceValidatorTests
         validator.IsValid(bitmap, new ReplaceMove(0, 1, 1)).ShouldBeTrue();
     }
 
+    [Test]
+    public void IsValid_BoundaryAssignmentExtendsConsecutiveRun_Rejected()
+    {
+        // Bitmap covers 5 days starting at Day0. agent-1 has cap=3 and works on day 1+2 (2 in-period days).
+        // Two boundary works on Day0-2 and Day0-1 (immediately before the bitmap) extend the streak.
+        // Swapping work onto agent-1 day 0 from agent-0 would make: boundary[Day0-2, Day0-1] + day0 + day1 + day2
+        // = 5 consecutive working days, exceeding the cap of 3 → reject.
+        var bitmap = BuildBitmap(rows: 2, days: 5, agentBuilder: (id, idx) => new BitmapAgent(
+            id,
+            id,
+            100m,
+            new HashSet<CellSymbol>(),
+            MaxConsecutiveDays: idx == 1 ? 3 : 0));
+        var workCell = (DateOnly d) => new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            d.ToDateTime(new TimeOnly(7, 0)), d.ToDateTime(new TimeOnly(15, 0)), 8m);
+        bitmap.SetCell(1, 1, workCell(Day0.AddDays(1)));
+        bitmap.SetCell(1, 2, workCell(Day0.AddDays(2)));
+        bitmap.SetCell(0, 0, workCell(Day0));
+
+        var boundary = new List<BitmapAssignment>
+        {
+            new("agent-1", Day0.AddDays(-2), CellSymbol.Early, Guid.NewGuid(),
+                [Guid.NewGuid()], IsLocked: true,
+                StartAt: Day0.AddDays(-2).ToDateTime(new TimeOnly(7, 0)),
+                EndAt: Day0.AddDays(-2).ToDateTime(new TimeOnly(15, 0)), Hours: 8m),
+            new("agent-1", Day0.AddDays(-1), CellSymbol.Early, Guid.NewGuid(),
+                [Guid.NewGuid()], IsLocked: true,
+                StartAt: Day0.AddDays(-1).ToDateTime(new TimeOnly(7, 0)),
+                EndAt: Day0.AddDays(-1).ToDateTime(new TimeOnly(15, 0)), Hours: 8m),
+        };
+
+        var validator = new DomainAwareReplaceValidator(null, boundary);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 0)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsValid_NoBoundaryAssignment_ConsecutiveRunStaysWithinBitmap()
+    {
+        // Same in-period setup but no boundary entries → streak walk stops at bitmap edge → run = 3
+        // (= cap exactly), no rejection from MaxConsecutiveDays.
+        var bitmap = BuildBitmap(rows: 2, days: 5, agentBuilder: (id, idx) => new BitmapAgent(
+            id,
+            id,
+            100m,
+            new HashSet<CellSymbol>(),
+            MaxConsecutiveDays: idx == 1 ? 3 : 0));
+        var workCell = (DateOnly d) => new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            d.ToDateTime(new TimeOnly(7, 0)), d.ToDateTime(new TimeOnly(15, 0)), 8m);
+        bitmap.SetCell(1, 1, workCell(Day0.AddDays(1)));
+        bitmap.SetCell(1, 2, workCell(Day0.AddDays(2)));
+        bitmap.SetCell(0, 0, workCell(Day0));
+
+        var validator = new DomainAwareReplaceValidator(null);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 0)).ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsValid_BoundaryAssignmentExtendsMinPauseCheck_Rejected()
+    {
+        // agent-1 has min-pause = 11h. A late shift on the day BEFORE the bitmap (boundary, ending 22:00)
+        // would be too close to an early shift placed on day 0 (starting 06:00) — gap = 8h < 11h → reject.
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: (id, idx) => new BitmapAgent(
+            id,
+            id,
+            100m,
+            new HashSet<CellSymbol>(),
+            MinPauseHours: idx == 1 ? 11m : 0m));
+
+        bitmap.SetCell(0, 0, new Cell(
+            CellSymbol.Early,
+            Guid.NewGuid(),
+            [Guid.NewGuid()],
+            false,
+            Day0.ToDateTime(new TimeOnly(6, 0)),
+            Day0.ToDateTime(new TimeOnly(14, 0)),
+            8m));
+
+        var boundary = new List<BitmapAssignment>
+        {
+            new("agent-1", Day0.AddDays(-1), CellSymbol.Late, Guid.NewGuid(),
+                [Guid.NewGuid()], IsLocked: true,
+                StartAt: Day0.AddDays(-1).ToDateTime(new TimeOnly(14, 0)),
+                EndAt: Day0.AddDays(-1).ToDateTime(new TimeOnly(22, 0)), Hours: 8m),
+        };
+
+        var validator = new DomainAwareReplaceValidator(null, boundary);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 0)).ShouldBeFalse();
+    }
+
     private static HarmonyBitmap BuildBitmap(int rows, int days, Func<string, int, BitmapAgent>? agentBuilder = null)
     {
         agentBuilder ??= (id, _) => new BitmapAgent(id, id, 100m, new HashSet<CellSymbol>());

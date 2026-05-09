@@ -248,6 +248,80 @@ public class ConstraintAgentTests
         return bitmap;
     }
 
+    [Test]
+    public void Consecutive_BoundaryWorkExtendsRunLengthAcrossBitmapEdge_Vetoes()
+    {
+        // rowA: cap=3, day0=Free, day1=Work, day2=Work. Boundary entry on Day0-1 (just before bitmap)
+        // is a Work. Swap moves Work onto rowA day0 → run after = boundary[Day0-1] + day0 + day1 + day2
+        // = 4 days, exceeds cap of 3 → veto.
+        // rowB starts with the work cell that will move to rowA day0.
+        var bitmap = BuildBitmapNDays(
+            days: 3,
+            row0: (target: 0m, max: 3, cells: new[] { FreeCell, WorkCell(CellSymbol.Early, 8m), WorkCell(CellSymbol.Early, 8m) }),
+            row1: (target: 0m, max: 3, cells: new[] { WorkCell(CellSymbol.Late, 8m), FreeCell, FreeCell }));
+
+        var boundary = new List<BitmapAssignment>
+        {
+            new("a-0", Day0.AddDays(-1), CellSymbol.Early, Guid.NewGuid(),
+                [Guid.NewGuid()], IsLocked: true,
+                StartAt: Day0.AddDays(-1).ToDateTime(new TimeOnly(7, 0)),
+                EndAt: Day0.AddDays(-1).ToDateTime(new TimeOnly(15, 0)), Hours: 8m),
+        };
+
+        var verdict = new ConsecutiveConstraintAgent(boundary).Evaluate(bitmap, new PlanCellSwap(0, 0, 1, 0, "test"));
+        verdict.Vote.ShouldBe(ConstraintAgentVote.Veto);
+    }
+
+    [Test]
+    public void Consecutive_NoBoundary_BackwardCompatibleWithParameterlessConstructor()
+    {
+        // Same in-period setup as the legacy test. Without boundary the run after = 3 (= cap exactly),
+        // hits the cap → veto. Confirms the parameterless constructor still works for existing callers.
+        var bitmap = BuildBitmapNDays(
+            days: 3,
+            row0: (target: 0m, max: 3, cells: new[] { FreeCell, WorkCell(CellSymbol.Early, 8m), WorkCell(CellSymbol.Early, 8m) }),
+            row1: (target: 0m, max: 3, cells: new[] { WorkCell(CellSymbol.Late, 8m), FreeCell, FreeCell }));
+
+        var verdict = new ConsecutiveConstraintAgent().Evaluate(bitmap, new PlanCellSwap(0, 0, 1, 0, "test"));
+        verdict.Vote.ShouldBe(ConstraintAgentVote.Veto);
+    }
+
+    [Test]
+    public void Pause_BoundaryNightOnDayBeforeBitmap_VetoesEarlyShiftOnDay0()
+    {
+        // rowA day0 = Free (will receive an Early via swap). The previous day (Day0-1, boundary) had
+        // a Night shift. Swapping an Early onto rowA day0 introduces Night→Early transition across
+        // the period boundary → veto.
+        // rowB day0 = Early (will move onto rowA day0).
+        var bitmap = BuildBitmap(
+            (target: 0m, day0: FreeCell, day1: FreeCell),
+            (target: 0m, day0: WorkCell(CellSymbol.Early, 8m), day1: FreeCell));
+
+        var boundary = new List<BitmapAssignment>
+        {
+            new("a-0", Day0.AddDays(-1), CellSymbol.Night, Guid.NewGuid(),
+                [Guid.NewGuid()], IsLocked: true,
+                StartAt: Day0.AddDays(-1).ToDateTime(new TimeOnly(22, 0)),
+                EndAt: Day0.ToDateTime(new TimeOnly(6, 0)), Hours: 8m),
+        };
+
+        var verdict = new PauseConstraintAgent(boundary).Evaluate(bitmap, new PlanCellSwap(0, 0, 1, 0, "test"));
+        verdict.Vote.ShouldBe(ConstraintAgentVote.Veto);
+    }
+
+    [Test]
+    public void Pause_NoBoundary_DefaultConstructorAbstainsWithoutTransition()
+    {
+        // Same setup minus the boundary night → no rough transition introduced → abstain.
+        // Confirms the parameterless constructor stays backward-compatible.
+        var bitmap = BuildBitmap(
+            (target: 0m, day0: FreeCell, day1: FreeCell),
+            (target: 0m, day0: WorkCell(CellSymbol.Early, 8m), day1: FreeCell));
+
+        var verdict = new PauseConstraintAgent().Evaluate(bitmap, new PlanCellSwap(0, 0, 1, 0, "test"));
+        verdict.Vote.ShouldBe(ConstraintAgentVote.Abstain);
+    }
+
     private static HarmonyBitmap BuildBitmapWithPrefs(
         (CellSymbol[] prefs, Cell day0, Cell day1) row0,
         (CellSymbol[] prefs, Cell day0, Cell day1) row1)

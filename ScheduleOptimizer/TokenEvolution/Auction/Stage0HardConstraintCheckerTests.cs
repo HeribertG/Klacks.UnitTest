@@ -327,4 +327,185 @@ public class Stage0HardConstraintCheckerTests
         verdict.ShouldNotBeNull();
         verdict!.RuleName.ShouldBe("MinPauseHours");
     }
+
+    [Test]
+    public void Check_MinPauseHours_VetoesAgainstBoundaryLockedWork()
+    {
+        // Mirror of Check_MinPauseHours_VetoesAgainstLockedWork but the locked night shift sits one
+        // day BEFORE the period (boundary context). The validator must still reject the early shift
+        // on day 1 of the period because the rest gap (07:00 - 22:00 = 9h) is below the 11h minimum.
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var nightDate = new DateOnly(2026, 4, 16);
+        var dayDate = new DateOnly(2026, 4, 17);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = dayDate,
+            PeriodUntil = new DateOnly(2026, 4, 26),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            SchedulingMinPauseHours = 11,
+            BoundaryLockedWorks = new List<CoreLockedWork>
+            {
+                new(
+                    WorkId: "W1",
+                    AgentId: "A",
+                    Date: nightDate,
+                    ShiftTypeIndex: 2,
+                    TotalHours: 9m,
+                    StartAt: nightDate.ToDateTime(new TimeOnly(22, 0)),
+                    EndAt: dayDate.ToDateTime(new TimeOnly(7, 0)),
+                    ShiftRefId: Guid.NewGuid(),
+                    LocationContext: null),
+            },
+        };
+
+        var daySlot = MakeShift(dayDate, "07:00", "15:00", hours: 8);
+
+        var verdict = sut.Check(agent, daySlot, [], ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("MinPauseHours");
+    }
+
+    [Test]
+    public void Check_MinPauseHours_VetoesAgainstBoundaryExistingWorkBlocker()
+    {
+        // Same boundary scenario but using BoundaryExistingWorkBlockers (unlocked existing work
+        // outside the period) instead of locked. Validator must still reject the early shift.
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var nightDate = new DateOnly(2026, 4, 16);
+        var dayDate = new DateOnly(2026, 4, 17);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = dayDate,
+            PeriodUntil = new DateOnly(2026, 4, 26),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            SchedulingMinPauseHours = 11,
+            BoundaryExistingWorkBlockers = new List<CoreExistingWorkBlocker>
+            {
+                new(
+                    AgentId: "A",
+                    Date: nightDate,
+                    StartAt: nightDate.ToDateTime(new TimeOnly(22, 0)),
+                    EndAt: dayDate.ToDateTime(new TimeOnly(7, 0))),
+            },
+        };
+
+        var daySlot = MakeShift(dayDate, "07:00", "15:00", hours: 8);
+
+        var verdict = sut.Check(agent, daySlot, [], ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("MinPauseHours");
+    }
+
+    [Test]
+    public void Check_MaxConsecutiveDays_CountsBoundaryLockedWorkTowardRunLength()
+    {
+        // Period is Mon-Sun (4/20 - 4/26). Two boundary locked works on Sat 4/18 + Sun 4/19 already
+        // exist outside the period. In-period assigned works fill Mon-Fri 4/20-4/24 (5 days).
+        // Adding a slot on Sat 4/25 would push the cross-period streak to 8 days; cap is 6 → veto.
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent(sat: true, sun: true);
+        var saturday = new DateOnly(2026, 4, 25);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 4, 20),
+            PeriodUntil = new DateOnly(2026, 4, 26),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            BoundaryLockedWorks = new List<CoreLockedWork>
+            {
+                new("W-prev1", "A", new DateOnly(2026, 4, 18), 0, 8m,
+                    new DateOnly(2026, 4, 18).ToDateTime(new TimeOnly(8, 0)),
+                    new DateOnly(2026, 4, 18).ToDateTime(new TimeOnly(16, 0)),
+                    Guid.NewGuid(), null),
+                new("W-prev2", "A", new DateOnly(2026, 4, 19), 0, 8m,
+                    new DateOnly(2026, 4, 19).ToDateTime(new TimeOnly(8, 0)),
+                    new DateOnly(2026, 4, 19).ToDateTime(new TimeOnly(16, 0)),
+                    Guid.NewGuid(), null),
+            },
+        };
+
+        var assigned = new List<CoreToken>();
+        for (var i = 0; i < 5; i++)
+        {
+            var date = ctx.PeriodFrom.AddDays(i);
+            assigned.Add(new CoreToken(
+                WorkIds: [],
+                ShiftTypeIndex: 0,
+                Date: date,
+                TotalHours: 8m,
+                StartAt: date.ToDateTime(new TimeOnly(8, 0)),
+                EndAt: date.ToDateTime(new TimeOnly(16, 0)),
+                BlockId: Guid.NewGuid(),
+                PositionInBlock: 0,
+                IsLocked: false,
+                LocationContext: null,
+                ShiftRefId: Guid.NewGuid(),
+                AgentId: "A"));
+        }
+
+        var saturdaySlot = MakeShift(saturday, "08:00", "16:00", hours: 8);
+
+        var verdict = sut.Check(agent, saturdaySlot, assigned, ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("MaxConsecutiveDays");
+    }
+
+    [Test]
+    public void Check_MaxConsecutiveDays_BoundaryBreakStopsRunWalk()
+    {
+        // Same in-period 5-day streak but the boundary day directly before the period (Sun 4/19) has
+        // a Break, which means there's no work assignment in BoundaryLockedWorks/ExistingWorkBlockers
+        // for that date. The walk must therefore stop at the period start: streak stays 6 (5 in-period
+        // + 1 Saturday slot under test) and is exactly at the cap → no veto.
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent(sat: true, sun: true);
+        var saturday = new DateOnly(2026, 4, 25);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 4, 20),
+            PeriodUntil = new DateOnly(2026, 4, 26),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            BoundaryBreakBlockers = new List<CoreBreakBlocker>
+            {
+                new("A", new DateOnly(2026, 4, 19), new DateOnly(2026, 4, 19), "Vacation", 8m),
+            },
+        };
+
+        var assigned = new List<CoreToken>();
+        for (var i = 0; i < 5; i++)
+        {
+            var date = ctx.PeriodFrom.AddDays(i);
+            assigned.Add(new CoreToken(
+                WorkIds: [],
+                ShiftTypeIndex: 0,
+                Date: date,
+                TotalHours: 8m,
+                StartAt: date.ToDateTime(new TimeOnly(8, 0)),
+                EndAt: date.ToDateTime(new TimeOnly(16, 0)),
+                BlockId: Guid.NewGuid(),
+                PositionInBlock: 0,
+                IsLocked: false,
+                LocationContext: null,
+                ShiftRefId: Guid.NewGuid(),
+                AgentId: "A"));
+        }
+
+        var saturdaySlot = MakeShift(saturday, "08:00", "16:00", hours: 8);
+
+        var verdict = sut.Check(agent, saturdaySlot, assigned, ctx);
+
+        // 6 consecutive days = exactly the cap → MaxConsecutiveDays passes.
+        if (verdict is not null)
+        {
+            verdict.RuleName.ShouldNotBe("MaxConsecutiveDays");
+        }
+    }
 }
