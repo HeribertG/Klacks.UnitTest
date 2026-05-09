@@ -107,6 +107,42 @@ public class MoveCandidatePoolTests
     }
 
     [Test]
+    public void Generate_DropsMaxConsecutiveViolation_LiveRunReproduction()
+    {
+        // Reproduces a live-run observation 2026-05-09: ConsolidateBlock generator emitted a
+        // gap-fill swap that should have been hard-rejected because the receiving row would
+        // exceed MaxConsecutiveDays after the swap. If the pool's validator pass agrees with
+        // the engine's evaluator pass on the same bitmap+validator, this candidate must NOT
+        // surface. If this test passes the bug must be elsewhere (likely the strict-filter
+        // letting through a step whose mirrored coordinates are not in the pool).
+        var agents = new List<BitmapAgent>
+        {
+            new("agent-0", "Koch, Coline", TargetHours: 100m, PreferredShiftSymbols: new HashSet<CellSymbol>(), MaxConsecutiveDays: 6),
+            new("agent-1", "Thomas, Jana", TargetHours: 100m, PreferredShiftSymbols: new HashSet<CellSymbol>()),
+        };
+        var input = new BitmapInput(agents, Day0, Day0.AddDays(9), []);
+        var bitmap = BitmapBuilder.Build(input);
+
+        // Row 0: work for days 0..5 (6 consec, at the cap), free day 6 (gap), work 7..9.
+        // Adding work on day 6 via swap would extend the run to 10 -> MaxConsec violation.
+        for (var d = 0; d <= 5; d++) bitmap.SetCell(0, d, Work(CellSymbol.Early));
+        for (var d = 7; d <= 9; d++) bitmap.SetCell(0, d, Work(CellSymbol.Early));
+
+        // Row 1: works on day 6 -> qualifies as the "partner with work" the generator picks.
+        bitmap.SetCell(1, 6, Work(CellSymbol.Late));
+
+        var pool = new MoveCandidatePool(
+            BuildValidator(),
+            new[] { (IMoveCandidateGenerator)new ConsolidateBlockCandidateGenerator() });
+
+        var result = pool.Generate(bitmap, HolisticIntent.ConsolidateBlock);
+
+        result.ShouldBeEmpty(
+            "the only structural candidate (row 0 gap-fill on day 6 with row 1 partner) " +
+            "would push row 0 to 10 consecutive days and must be hard-rejected by the pool");
+    }
+
+    [Test]
     public void Generate_SortsByExpectedBenefitDescending()
     {
         var bitmap = BuildBitmap(rows: 4, days: 2);
