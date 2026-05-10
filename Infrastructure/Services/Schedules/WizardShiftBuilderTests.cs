@@ -54,7 +54,7 @@ public class WizardShiftBuilderTests
         });
         await _context.SaveChangesAsync();
 
-        var result = await _sut.BuildAsync(null, monday, monday, CancellationToken.None);
+        var result = await _sut.BuildAsync(null, monday, monday, null, CancellationToken.None);
 
         result.Count().ShouldBe(1);
         result[0].RequiredAssignments.ShouldBe(1);
@@ -81,7 +81,7 @@ public class WizardShiftBuilderTests
         });
         await _context.SaveChangesAsync();
 
-        var result = await _sut.BuildAsync(null, monday, monday, CancellationToken.None);
+        var result = await _sut.BuildAsync(null, monday, monday, null, CancellationToken.None);
 
         result.Count().ShouldBe(3);
         result.ShouldAllBe(s => s.Id == shiftId.ToString());
@@ -111,7 +111,7 @@ public class WizardShiftBuilderTests
         });
         await _context.SaveChangesAsync();
 
-        var result = await _sut.BuildAsync(null, monday, tuesday, CancellationToken.None);
+        var result = await _sut.BuildAsync(null, monday, tuesday, null, CancellationToken.None);
 
         result.Count().ShouldBe(6);
         result.Where(s => s.Date == "2026-04-20").Count().ShouldBe(3);
