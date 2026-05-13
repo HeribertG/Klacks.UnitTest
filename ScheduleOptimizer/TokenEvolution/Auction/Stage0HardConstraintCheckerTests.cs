@@ -96,6 +96,130 @@ public class Stage0HardConstraintCheckerTests
     }
 
     [Test]
+    public void Check_OnlyEarlyKeyword_VetoesLateSlot()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var date = new DateOnly(2026, 5, 11);
+        var lateSlot = MakeShift(date, "15:00", "23:00", hours: 8);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 5, 1),
+            PeriodUntil = new DateOnly(2026, 5, 31),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            ScheduleCommands = new List<CoreScheduleCommand>
+            {
+                new("A", date, ScheduleCommandKeyword.OnlyEarly),
+            },
+        };
+
+        var verdict = sut.Check(agent, lateSlot, [], ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("KeywordOnlyEarly");
+    }
+
+    [Test]
+    public void Check_OnlyEarlyKeyword_AcceptsEarlySlot()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var date = new DateOnly(2026, 5, 11);
+        var earlySlot = MakeShift(date, "07:00", "15:00", hours: 8);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 5, 1),
+            PeriodUntil = new DateOnly(2026, 5, 31),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            ScheduleCommands = new List<CoreScheduleCommand>
+            {
+                new("A", date, ScheduleCommandKeyword.OnlyEarly),
+            },
+        };
+
+        var verdict = sut.Check(agent, earlySlot, [], ctx);
+
+        verdict.ShouldBeNull();
+    }
+
+    [Test]
+    public void Check_OnlyLateKeyword_VetoesEarlySlot()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var date = new DateOnly(2026, 5, 11);
+        var earlySlot = MakeShift(date, "07:00", "15:00", hours: 8);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 5, 1),
+            PeriodUntil = new DateOnly(2026, 5, 31),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            ScheduleCommands = new List<CoreScheduleCommand>
+            {
+                new("A", date, ScheduleCommandKeyword.OnlyLate),
+            },
+        };
+
+        var verdict = sut.Check(agent, earlySlot, [], ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("KeywordOnlyLate");
+    }
+
+    [Test]
+    public void Check_OnlyNightKeyword_VetoesEarlySlot()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var date = new DateOnly(2026, 5, 11);
+        var earlySlot = MakeShift(date, "07:00", "15:00", hours: 8);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 5, 1),
+            PeriodUntil = new DateOnly(2026, 5, 31),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            ScheduleCommands = new List<CoreScheduleCommand>
+            {
+                new("A", date, ScheduleCommandKeyword.OnlyNight),
+            },
+        };
+
+        var verdict = sut.Check(agent, earlySlot, [], ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("KeywordOnlyNight");
+    }
+
+    [Test]
+    public void Check_NoEarlyKeyword_VetoesEarlySlot()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var date = new DateOnly(2026, 5, 11);
+        var earlySlot = MakeShift(date, "07:00", "15:00", hours: 8);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 5, 1),
+            PeriodUntil = new DateOnly(2026, 5, 31),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            ScheduleCommands = new List<CoreScheduleCommand>
+            {
+                new("A", date, ScheduleCommandKeyword.NoEarly),
+            },
+        };
+
+        var verdict = sut.Check(agent, earlySlot, [], ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("KeywordNoEarly");
+    }
+
+    [Test]
     public void Check_OverlappingShiftSameDay_Vetoes()
     {
         var sut = new Stage0HardConstraintChecker();
