@@ -1,18 +1,16 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for WorkMacroService.ProcessWorkChangeMacroAsync, covering proportional surcharge
-/// calculation for duration-only WorkChange entries and macro-based calculation for time-range types.
+/// Tests for WorkMacroService — verifies macro routing for WorkChange entries.
+/// Effective time computation is tested in WorkChangeEffectiveTimeServiceTests.
 /// </summary>
-
 using Klacks.Api.Domain.Enums;
-using Klacks.Api.Domain.Interfaces.Macros;
-using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
-using Microsoft.AspNetCore.Http;
+using Klacks.Api.Domain.Interfaces.Schedules;
+using Klacks.Api.Domain.Interfaces.Macros;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -32,13 +30,12 @@ public class WorkMacroServiceTests
     private WorkMacroService _sut = null!;
 
     [SetUp]
-    public void Setup()
+    public void SetUp()
     {
         var options = new DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        _context = new DataBaseContext(options, httpContextAccessor);
+        _context = new DataBaseContext(options, null!);
 
         _shiftRepository = Substitute.For<IShiftRepository>();
         _macroDataProvider = Substitute.For<IMacroDataProvider>();
@@ -54,197 +51,117 @@ public class WorkMacroServiceTests
     }
 
     [TearDown]
-    public void TearDown()
-    {
-        _context.Dispose();
-    }
+    public void TearDown() => _context.Dispose();
 
     [Test]
-    public async Task ProcessWorkChangeMacroAsync_DurationOnly_ProportionalSurcharge()
+    public async Task ProcessWorkChangeMacroAsync_WithMacro_SetsSurchargesFromMacroResult()
     {
-        var shiftId = Guid.NewGuid();
-        var work = new Work
-        {
-            Id = Guid.NewGuid(),
-            ShiftId = shiftId,
-            WorkTime = 8m,
-            Surcharges = 0.8m,
-            StartTime = new TimeOnly(6, 0),
-            EndTime = new TimeOnly(14, 0),
-        };
-        await _context.Work.AddAsync(work);
-        await _context.SaveChangesAsync();
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
+
+        var macroData = new MacroData();
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), work)
+            .Returns(macroData);
+        _macroCompilationService.CompileAndExecuteAsync(macroId, macroData)
+            .Returns(new MacroExecutionResult(true, 0.42m));
 
         var workChange = new WorkChange
         {
-            Id = Guid.NewGuid(),
-            WorkId = work.Id,
-            Type = WorkChangeType.CorrectionEnd,
-            ChangeTime = 1m / 3m,
-            StartTime = TimeOnly.MinValue,
-            EndTime = TimeOnly.MinValue,
-            Surcharges = 0m,
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.CorrectionEnd, ChangeTime = 0.25m,
+            StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MinValue,
         };
 
         await _sut.ProcessWorkChangeMacroAsync(workChange);
 
-        var expected = Math.Round((1m / 3m) / 8m * 0.8m, 2);
-        workChange.Surcharges.ShouldBe(expected);
+        workChange.Surcharges.ShouldBe(0.42m);
+        await _macroCompilationService.Received(1).CompileAndExecuteAsync(macroId, macroData);
     }
 
     [Test]
-    public async Task ProcessWorkChangeMacroAsync_DurationOnly_ZeroSurchargeWhenWorkHasNone()
+    public async Task ProcessWorkChangeMacroAsync_DurationOnly_WithMacro_MacroIsCalled()
     {
-        var shiftId = Guid.NewGuid();
-        var work = new Work
-        {
-            Id = Guid.NewGuid(),
-            ShiftId = shiftId,
-            WorkTime = 8m,
-            Surcharges = 0m,
-            StartTime = new TimeOnly(6, 0),
-            EndTime = new TimeOnly(14, 0),
-        };
-        await _context.Work.AddAsync(work);
-        await _context.SaveChangesAsync();
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid(), surcharges: 0.8m);
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
+
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), work)
+            .Returns(new MacroData());
+        _macroCompilationService.CompileAndExecuteAsync(macroId, Arg.Any<MacroData>())
+            .Returns(new MacroExecutionResult(true, 0.1m));
 
         var workChange = new WorkChange
         {
-            Id = Guid.NewGuid(),
-            WorkId = work.Id,
-            Type = WorkChangeType.CorrectionEnd,
-            ChangeTime = 0.5m,
-            StartTime = TimeOnly.MinValue,
-            EndTime = TimeOnly.MinValue,
-            Surcharges = 0.2m,
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.ReplacementEnd, ChangeTime = 0.25m,
+            StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MinValue,
         };
 
         await _sut.ProcessWorkChangeMacroAsync(workChange);
 
-        workChange.Surcharges.ShouldBe(0m);
+        await _macroCompilationService.Received(1).CompileAndExecuteAsync(macroId, Arg.Any<MacroData>());
+        workChange.Surcharges.ShouldBe(0.1m);
     }
 
     [Test]
-    public async Task ProcessWorkChangeMacroAsync_DurationOnly_ZeroWhenWorkTimeIsZero()
+    public async Task ProcessWorkChangeMacroAsync_NoMacroOnShift_SurchargesUnchanged()
     {
-        var shiftId = Guid.NewGuid();
-        var work = new Work
-        {
-            Id = Guid.NewGuid(),
-            ShiftId = shiftId,
-            WorkTime = 0m,
-            Surcharges = 1m,
-            StartTime = new TimeOnly(6, 0),
-            EndTime = new TimeOnly(6, 0),
-        };
-        await _context.Work.AddAsync(work);
-        await _context.SaveChangesAsync();
+        var work = await AddWorkAsync(shiftMacroId: null);
 
         var workChange = new WorkChange
         {
-            Id = Guid.NewGuid(),
-            WorkId = work.Id,
-            Type = WorkChangeType.TravelEnd,
-            ChangeTime = 0.5m,
-            StartTime = TimeOnly.MinValue,
-            EndTime = TimeOnly.MinValue,
-            Surcharges = 0m,
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.CorrectionEnd, ChangeTime = 0.25m,
+            Surcharges = 0.99m,
+            StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MinValue,
         };
 
-        await Should.NotThrowAsync(() => _sut.ProcessWorkChangeMacroAsync(workChange));
-        workChange.Surcharges.ShouldBe(0m);
+        await _sut.ProcessWorkChangeMacroAsync(workChange);
+
+        workChange.Surcharges.ShouldBe(0.99m);
+        await _macroCompilationService.DidNotReceive()
+            .CompileAndExecuteAsync(Arg.Any<Guid>(), Arg.Any<MacroData>());
     }
 
     [Test]
-    public async Task ProcessWorkChangeMacroAsync_TimeRangeType_UsesMacroNotProportional()
+    public async Task ProcessWorkChangeMacroAsync_TravelWithin_MacroIsCalled()
     {
-        var macroId = Guid.NewGuid();
-        var shiftId = Guid.NewGuid();
-        var work = new Work
-        {
-            Id = Guid.NewGuid(),
-            ShiftId = shiftId,
-            WorkTime = 8m,
-            Surcharges = 0.8m,
-            StartTime = new TimeOnly(6, 0),
-            EndTime = new TimeOnly(14, 0),
-        };
-        await _context.Work.AddAsync(work);
-        await _context.SaveChangesAsync();
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
 
-        var shift = new Shift
-        {
-            Id = shiftId,
-            MacroId = macroId,
-            Name = "TestShift",
-            Abbreviation = "TS",
-        };
-        _shiftRepository.Get(shiftId).Returns(Task.FromResult<Shift?>(shift));
-        _macroDataProvider
-            .GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), Arg.Any<Work>())
-            .Returns(Task.FromResult(new MacroData()));
-        _macroCompilationService
-            .CompileAndExecuteAsync(macroId, Arg.Any<MacroData>())
-            .Returns(Task.FromResult(new MacroExecutionResult(true, 0.5m)));
+        var macroData = new MacroData();
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), work)
+            .Returns(macroData);
+        _macroCompilationService.CompileAndExecuteAsync(macroId, macroData)
+            .Returns(new MacroExecutionResult(true, 0.5m));
 
         var workChange = new WorkChange
         {
-            Id = Guid.NewGuid(),
-            WorkId = work.Id,
-            Type = WorkChangeType.TravelWithin,
-            ChangeTime = 0m,
-            StartTime = new TimeOnly(8, 0),
-            EndTime = new TimeOnly(9, 0),
-            Surcharges = 0m,
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.TravelWithin, ChangeTime = 0.25m,
+            StartTime = new TimeOnly(8, 0), EndTime = new TimeOnly(8, 15),
         };
 
         await _sut.ProcessWorkChangeMacroAsync(workChange);
 
         workChange.Surcharges.ShouldBe(0.5m);
-        await _macroCompilationService.Received(1).CompileAndExecuteAsync(macroId, Arg.Any<MacroData>());
+        await _macroCompilationService.Received(1).CompileAndExecuteAsync(macroId, macroData);
     }
 
-    [Test]
-    public async Task ProcessWorkChangeMacroAsync_DurationOnly_ProportionalEvenWithMacroAssigned()
+    private async Task<Work> AddWorkAsync(Guid? shiftMacroId, decimal surcharges = 0m)
     {
-        var macroId = Guid.NewGuid();
         var shiftId = Guid.NewGuid();
         var work = new Work
         {
-            Id = Guid.NewGuid(),
-            ShiftId = shiftId,
-            WorkTime = 8m,
-            Surcharges = 2m,
-            StartTime = new TimeOnly(6, 0),
-            EndTime = new TimeOnly(14, 0),
+            Id = Guid.NewGuid(), ShiftId = shiftId, ClientId = Guid.NewGuid(),
+            WorkTime = 8m, Surcharges = surcharges,
+            StartTime = new TimeOnly(7, 0), EndTime = new TimeOnly(15, 0),
+            CurrentDate = DateOnly.FromDateTime(DateTime.Today),
         };
-        await _context.Work.AddAsync(work);
+        _context.Work.Add(work);
         await _context.SaveChangesAsync();
 
-        var shift = new Shift
-        {
-            Id = shiftId,
-            MacroId = macroId,
-            Name = "TestShift",
-            Abbreviation = "TS",
-        };
-        _shiftRepository.Get(shiftId).Returns(Task.FromResult<Shift?>(shift));
-
-        var workChange = new WorkChange
-        {
-            Id = Guid.NewGuid(),
-            WorkId = work.Id,
-            Type = WorkChangeType.Briefing,
-            ChangeTime = 0.5m,
-            StartTime = TimeOnly.MinValue,
-            EndTime = TimeOnly.MinValue,
-            Surcharges = 0m,
-        };
-
-        await _sut.ProcessWorkChangeMacroAsync(workChange);
-
-        var expected = Math.Round(0.5m / 8m * 2m, 2);
-        workChange.Surcharges.ShouldBe(expected);
-        await _macroCompilationService.DidNotReceive().CompileAndExecuteAsync(Arg.Any<Guid>(), Arg.Any<MacroData>());
+        var shift = new Shift { Id = shiftId, MacroId = shiftMacroId };
+        _shiftRepository.Get(shiftId).Returns(shift);
+        return work;
     }
 }
