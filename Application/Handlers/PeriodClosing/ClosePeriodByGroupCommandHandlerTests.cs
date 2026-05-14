@@ -7,6 +7,7 @@
 using Shouldly;
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.Handlers.PeriodClosing;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
@@ -25,6 +26,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     private IWorkLockLevelService _lockLevelService = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IPeriodAuditLogRepository _auditLogRepository = null!;
+    private ISealedDayRepository _sealedDayRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<ClosePeriodByGroupCommandHandler> _logger = null!;
     private ClosePeriodByGroupCommandHandler _handler = null!;
@@ -37,6 +39,9 @@ public class ClosePeriodByGroupCommandHandlerTests
         _lockLevelService = Substitute.For<IWorkLockLevelService>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _auditLogRepository = Substitute.For<IPeriodAuditLogRepository>();
+        _sealedDayRepository = Substitute.For<ISealedDayRepository>();
+        _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay>());
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ClosePeriodByGroupCommandHandler>>();
 
@@ -49,6 +54,7 @@ public class ClosePeriodByGroupCommandHandlerTests
             _lockLevelService,
             _httpContextAccessor,
             _auditLogRepository,
+            _sealedDayRepository,
             _unitOfWork,
             _logger);
     }
@@ -89,14 +95,15 @@ public class ClosePeriodByGroupCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.ShouldBe(13);
+        // 10 work + 3 break + 31 SealedDay rows (Jan 2026 has 31 days)
+        result.ShouldBe(44);
 
         await _auditLogRepository.Received(1).AddAsync(
             Arg.Is<PeriodAuditLog>(log =>
                 log.Action == PeriodAuditAction.Seal &&
                 log.GroupId == null &&
                 log.Reason == "Monthly close" &&
-                log.AffectedCount == 13 &&
+                log.AffectedCount == 44 &&
                 log.PerformedBy == "admin-user"),
             Arg.Any<CancellationToken>());
 
@@ -120,7 +127,8 @@ public class ClosePeriodByGroupCommandHandlerTests
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
-        result.ShouldBe(7);
+        // 5 work + 2 break + 31 SealedDay rows (Jan 2026 has 31 days)
+        result.ShouldBe(38);
 
         await _workRepository.DidNotReceive().SealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 
@@ -128,7 +136,7 @@ public class ClosePeriodByGroupCommandHandlerTests
             Arg.Is<PeriodAuditLog>(log =>
                 log.Action == PeriodAuditAction.Seal &&
                 log.GroupId == groupId &&
-                log.AffectedCount == 7),
+                log.AffectedCount == 38),
             Arg.Any<CancellationToken>());
     }
 

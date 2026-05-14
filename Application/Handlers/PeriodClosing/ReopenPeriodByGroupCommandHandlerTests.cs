@@ -7,6 +7,7 @@
 using Shouldly;
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.Handlers.PeriodClosing;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
@@ -25,6 +26,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
     private IWorkLockLevelService _lockLevelService = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IPeriodAuditLogRepository _auditLogRepository = null!;
+    private ISealedDayRepository _sealedDayRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<ReopenPeriodByGroupCommandHandler> _logger = null!;
     private ReopenPeriodByGroupCommandHandler _handler = null!;
@@ -37,6 +39,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
         _lockLevelService = Substitute.For<IWorkLockLevelService>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _auditLogRepository = Substitute.For<IPeriodAuditLogRepository>();
+        _sealedDayRepository = Substitute.For<ISealedDayRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ReopenPeriodByGroupCommandHandler>>();
 
@@ -49,6 +52,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
             _lockLevelService,
             _httpContextAccessor,
             _auditLogRepository,
+            _sealedDayRepository,
             _unitOfWork,
             _logger);
     }
