@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Unit tests verifying that CreateOrderExportQueryHandler persists an ExportLog entry on successful export.
-/// @param filter - Contains date range, format key and localization settings used to drive the export
+/// @param filter - Contains the order ids, format key and localization settings used to drive the export
 /// </summary>
 
 using Shouldly;
@@ -50,7 +50,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
         _formatter.FileExtension.Returns(".csv");
         _formatter.Format(Arg.Any<OrderExportData>(), Arg.Any<ExportOptions>()).Returns(new byte[] { 1, 2, 3 });
 
-        _dataLoader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _dataLoader.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
             .Returns(new OrderExportData
             {
                 Orders = [],
@@ -83,8 +83,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
     {
         var filter = new OrderExportFilter
         {
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 1, 31),
+            OrderIds = [Guid.NewGuid()],
             Format = "csv",
             Language = "de",
             CurrencyCode = "EUR"
