@@ -19,6 +19,7 @@ public class PlanStepExecutorTests
 {
     private IAgentPlanRepository _planRepository = null!;
     private ISkillExecutor _skillExecutor = null!;
+    private IAssistantNotificationService _notificationService = null!;
     private PlanStepExecutor _sut = null!;
 
     [SetUp]
@@ -26,7 +27,12 @@ public class PlanStepExecutorTests
     {
         _planRepository = Substitute.For<IAgentPlanRepository>();
         _skillExecutor = Substitute.For<ISkillExecutor>();
-        _sut = new PlanStepExecutor(_planRepository, _skillExecutor, NullLogger<PlanStepExecutor>.Instance);
+        _notificationService = Substitute.For<IAssistantNotificationService>();
+        _sut = new PlanStepExecutor(
+            _planRepository,
+            _skillExecutor,
+            _notificationService,
+            NullLogger<PlanStepExecutor>.Instance);
     }
 
     private static SkillExecutionContext CreateSkillContext() => new()
