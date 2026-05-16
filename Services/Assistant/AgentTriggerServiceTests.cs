@@ -16,6 +16,7 @@ namespace Klacks.UnitTest.Services.Assistant;
 public class AgentTriggerServiceTests
 {
     private IAgentTriggerRateLimiter _rateLimiter = null!;
+    private IAgentTriggerPreferenceService _preferenceService = null!;
     private IAssistantNotificationService _notificationService = null!;
     private AgentTriggerService _sut = null!;
 
@@ -23,8 +24,10 @@ public class AgentTriggerServiceTests
     public void Setup()
     {
         _rateLimiter = Substitute.For<IAgentTriggerRateLimiter>();
+        _preferenceService = Substitute.For<IAgentTriggerPreferenceService>();
         _notificationService = Substitute.For<IAssistantNotificationService>();
-        _sut = new AgentTriggerService(_rateLimiter, _notificationService,
+        _preferenceService.IsAllowed(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _sut = new AgentTriggerService(_rateLimiter, _preferenceService, _notificationService,
             NullLogger<AgentTriggerService>.Instance);
     }
 
@@ -62,6 +65,20 @@ public class AgentTriggerServiceTests
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a", "user-b" });
         _rateLimiter.ShouldFire("user-a", Arg.Any<string>()).Returns(true);
         _rateLimiter.ShouldFire("user-b", Arg.Any<string>()).Returns(false);
+
+        await _sut.OnEventAsync(MakeEvent());
+
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_MutedByPreference_SkipsThatUser()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a", "user-b" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _preferenceService.IsAllowed("user-a", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _preferenceService.IsAllowed("user-b", Arg.Any<string>(), Arg.Any<string>()).Returns(false);
 
         await _sut.OnEventAsync(MakeEvent());
 
