@@ -7,6 +7,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -94,8 +95,8 @@ public class UnstaffedShift7dDetectorTests
 
         var events = (await _sut.DetectAsync()).Cast<UnstaffedShiftTriggerEvent>().ToList();
 
-        Assert.That(events.Single(e => e.DaysUntil == 1).Severity, Is.EqualTo("high"));
-        Assert.That(events.Single(e => e.DaysUntil == 5).Severity, Is.EqualTo("medium"));
+        Assert.That(events.Single(e => e.DaysUntil == 1).Severity, Is.EqualTo(AgentTriggerSeverity.High));
+        Assert.That(events.Single(e => e.DaysUntil == 5).Severity, Is.EqualTo(AgentTriggerSeverity.Medium));
     }
 
     [Test]

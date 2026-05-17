@@ -6,6 +6,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -56,15 +57,15 @@ public class ContractExpiringSoonDetectorTests
 
         _repo.GetExpiringBetweenAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<ClientContract> { contract });
-        _repo.GetContractsForClientAsync(clientId, Arg.Any<CancellationToken>())
-            .Returns(new List<ClientContract> { contract });
+        _repo.GetContractsForClientsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ClientContract> { contract }.ToLookup(c => c.ClientId));
 
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Has.Count.EqualTo(1));
         var expiring = events.Single() as ContractExpiringSoonTriggerEvent;
         Assert.That(expiring!.DaysUntilExpiry, Is.EqualTo(5));
-        Assert.That(expiring.Severity, Is.EqualTo("high"));
+        Assert.That(expiring.Severity, Is.EqualTo(AgentTriggerSeverity.High));
     }
 
     [Test]
@@ -78,8 +79,8 @@ public class ContractExpiringSoonDetectorTests
 
         _repo.GetExpiringBetweenAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<ClientContract> { expiringContract });
-        _repo.GetContractsForClientAsync(clientId, Arg.Any<CancellationToken>())
-            .Returns(new List<ClientContract> { expiringContract, followUp });
+        _repo.GetContractsForClientsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ClientContract> { expiringContract, followUp }.ToLookup(c => c.ClientId));
 
         var events = await _sut.DetectAsync();
 
@@ -95,12 +96,12 @@ public class ContractExpiringSoonDetectorTests
 
         _repo.GetExpiringBetweenAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<ClientContract> { contract });
-        _repo.GetContractsForClientAsync(clientId, Arg.Any<CancellationToken>())
-            .Returns(new List<ClientContract> { contract });
+        _repo.GetContractsForClientsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ClientContract> { contract }.ToLookup(c => c.ClientId));
 
         var events = await _sut.DetectAsync();
 
         var expiring = events.Single() as ContractExpiringSoonTriggerEvent;
-        Assert.That(expiring!.Severity, Is.EqualTo("medium"));
+        Assert.That(expiring!.Severity, Is.EqualTo(AgentTriggerSeverity.Medium));
     }
 }

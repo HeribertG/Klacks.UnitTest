@@ -7,6 +7,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -83,7 +84,7 @@ public class TargetHoursDriftDetectorTests
         Assert.That(events, Has.Count.EqualTo(1));
         var drift = events.Single() as TargetHoursDriftTriggerEvent;
         Assert.That(drift!.DriftHours, Is.EqualTo(-30m));
-        Assert.That(drift.Severity, Is.EqualTo("high"));
+        Assert.That(drift.Severity, Is.EqualTo(AgentTriggerSeverity.High));
     }
 
     [Test]

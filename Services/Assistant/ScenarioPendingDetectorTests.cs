@@ -7,6 +7,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -88,6 +89,6 @@ public class ScenarioPendingDetectorTests
         Assert.That(events, Has.Count.EqualTo(1));
         var pending = events.Single() as ScenarioPendingTriggerEvent;
         Assert.That(pending!.HoursPending, Is.GreaterThanOrEqualTo(72));
-        Assert.That(pending.Severity, Is.EqualTo("medium"));
+        Assert.That(pending.Severity, Is.EqualTo(AgentTriggerSeverity.Medium));
     }
 }
