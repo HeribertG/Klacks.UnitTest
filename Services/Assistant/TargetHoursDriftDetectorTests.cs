@@ -55,7 +55,7 @@ public class TargetHoursDriftDetectorTests
         _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Client> { client });
         _workRepository.GetPeriodHoursForClients(
-            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, PeriodHoursResource>
             {
                 [client.Id] = new() { Hours = 152, GuaranteedHours = 160 }
@@ -73,7 +73,7 @@ public class TargetHoursDriftDetectorTests
         _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Client> { client });
         _workRepository.GetPeriodHoursForClients(
-            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, PeriodHoursResource>
             {
                 [client.Id] = new() { Hours = 130, GuaranteedHours = 160 }
@@ -94,7 +94,7 @@ public class TargetHoursDriftDetectorTests
         _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Client> { client });
         _workRepository.GetPeriodHoursForClients(
-            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, PeriodHoursResource>
             {
                 [client.Id] = new() { Hours = 100, GuaranteedHours = 0 }
