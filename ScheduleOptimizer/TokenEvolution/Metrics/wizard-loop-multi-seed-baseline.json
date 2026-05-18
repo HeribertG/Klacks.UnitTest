@@ -1,0 +1,28 @@
+{
+  "BernFiveFullTimeHomogeneous": {
+    "RunCount": 5,
+    "CoverageMean": 1.2150537634408602,
+    "CoverageStdDev": 0.013169299692382666,
+    "TargetReachedMean": 0.8,
+    "TargetReachedStdDev": 0,
+    "SlotGiniMean": 0.014881355505482191,
+    "SlotGiniStdDev": 0.005263211590922185,
+    "ShiftTypeEntropyMean": 1.4827398699395968,
+    "ShiftTypeEntropyStdDev": 0.039423850840285345,
+    "MaxConsecutiveBlockLenMean": 6,
+    "MaxConsecutiveBlockLenMax": 6
+  },
+  "HeterogeneousMix": {
+    "RunCount": 5,
+    "CoverageMean": 1.1827956989247312,
+    "CoverageStdDev": 0.018624202231923397,
+    "TargetReachedMean": 1,
+    "TargetReachedStdDev": 0,
+    "SlotGiniMean": 0.039248577354284914,
+    "SlotGiniStdDev": 0.008492022619238558,
+    "ShiftTypeEntropyMean": 1.1361556377771707,
+    "ShiftTypeEntropyStdDev": 0.24855237181324805,
+    "MaxConsecutiveBlockLenMean": 6,
+    "MaxConsecutiveBlockLenMax": 6
+  }
+}

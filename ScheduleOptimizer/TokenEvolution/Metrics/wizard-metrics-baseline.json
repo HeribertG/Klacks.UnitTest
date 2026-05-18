@@ -1,0 +1,26 @@
+{
+  "BernFiveFullTimeHomogeneous": {
+    "CoveragePercent": 0.8172043010752689,
+    "TargetReachedPercent": 0,
+    "SlotGini": 0.18947368421052632,
+    "ShiftTypeEntropyAvg": 1.4972544667055683,
+    "Stage1EscalationCount": 13,
+    "MaxConsecutiveBlockLen": 6
+  },
+  "HeterogeneousMix": {
+    "CoveragePercent": 0.8172043010752689,
+    "TargetReachedPercent": 0.4,
+    "SlotGini": 0.18947368421052632,
+    "ShiftTypeEntropyAvg": 1.4972544667055683,
+    "Stage1EscalationCount": 13,
+    "MaxConsecutiveBlockLen": 6
+  },
+  "BoundaryWithPriorWorks": {
+    "CoveragePercent": 0.5952380952380952,
+    "TargetReachedPercent": 0,
+    "SlotGini": 0.13333333333333333,
+    "ShiftTypeEntropyAvg": 1.4716022614097977,
+    "Stage1EscalationCount": 4,
+    "MaxConsecutiveBlockLen": 5
+  }
+}
