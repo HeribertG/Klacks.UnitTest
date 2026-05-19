@@ -26,8 +26,15 @@ public class PeriodCloseDueDetectorTests
     {
         _groupRepository = Substitute.For<IGroupRepository>();
         _sealedDayRepository = Substitute.For<ISealedDayRepository>();
-        _sut = new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository,
-            NullLogger<PeriodCloseDueDetector>.Instance);
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+    }
+
+    private PeriodCloseDueDetector CreateSut(DateOnly today)
+    {
+        var tp = Substitute.For<TimeProvider>();
+        tp.GetUtcNow().Returns(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        return new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository,
+            NullLogger<PeriodCloseDueDetector>.Instance, tp);
     }
 
     private static Group MakeGroup(PaymentInterval interval, string name = "Bern") => new()
@@ -62,13 +69,7 @@ public class PeriodCloseDueDetectorTests
     [Test]
     public async Task DetectAsync_MonthlyGroup_NotInWindow_Skips()
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (today.Day >= 25)
-        {
-            // last week of month — month-end is within the 3-day warn window; skip this assertion
-            Assert.Ignore("Calendar day is in warn window — covered by other test.");
-        }
-
+        // SetUp date is 2026-01-10, which is 21 days before month-end — outside the 3-day warn window
         _groupRepository.List().Returns(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
 
         var events = await _sut.DetectAsync();
@@ -79,13 +80,11 @@ public class PeriodCloseDueDetectorTests
     [Test]
     public async Task DetectAsync_MonthlyGroup_AlreadySealedAtEnd_Skips()
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (today.Day < 25) Assert.Ignore("Calendar day not near month-end.");
-
         var group = MakeGroup(PaymentInterval.Monthly);
         _groupRepository.List().Returns(new List<Group> { group });
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), group.Id, Arg.Any<CancellationToken>())
             .Returns(new List<SealedDay> { new() { Id = Guid.NewGuid() } });
+        _sut = CreateSut(new DateOnly(2026, 1, 28));
 
         var events = await _sut.DetectAsync();
 
