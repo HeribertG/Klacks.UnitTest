@@ -19,7 +19,7 @@ using NSubstitute;
 
 namespace Klacks.UnitTest.Handlers.Dashboard;
 
-[TestFixture, Ignore("Pre-existing API drift: ResourceMonitorDayResource was renamed (MaxCount/DienstCount/AbsenzHours). Tests still reference ActualHours/ShouldHours — needs separate fix.")]
+[TestFixture]
 public class GetResourceMonitorQueryHandlerTests
 {
     private DataBaseContext _context = null!;
@@ -73,8 +73,8 @@ public class GetResourceMonitorQueryHandlerTests
 
         var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
 
-        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5)).MaxCount.ShouldBe(8.0, 0.01);
-        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 3)).MaxCount.ShouldBe(0);
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5)).MaxCount.ShouldBe(1.0);
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 3)).MaxCount.ShouldBe(0.0);
     }
 
     [Test]
@@ -100,12 +100,12 @@ public class GetResourceMonitorQueryHandlerTests
 
         var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
 
-        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 3)).MaxCount.ShouldBe(6.0, 0.01);
-        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 4)).MaxCount.ShouldBe(6.0, 0.01);
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 3)).MaxCount.ShouldBe(Math.Round(6.0 / 7.0, 2), 0.005);
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 4)).MaxCount.ShouldBe(Math.Round(6.0 / 7.0, 2), 0.005);
     }
 
     [Test]
-    public async Task Handle_MonthlyContract_ConvertsToWeeklyCorrectly()
+    public async Task Handle_MonthlyContract_CountsAsOneEmployeeOnWorkdays()
     {
         var contractId = Guid.NewGuid();
         await _context.Contract.AddAsync(new Contract
@@ -128,25 +128,25 @@ public class GetResourceMonitorQueryHandlerTests
         var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
 
         var monday = result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5));
-        monday.MaxCount.ShouldBeInRange(7.5, 8.5);
+        monday.MaxCount.ShouldBe(1.0);
     }
 
     [Test]
-    public async Task Handle_ActualHours_SumsWorkTimePerDay()
+    public async Task Handle_DienstCount_CountsActiveShiftsPerDay()
     {
-        var shiftId = Guid.NewGuid();
-        await _context.Work.AddRangeAsync(new[]
+        await _context.Shift.AddRangeAsync(new[]
         {
-            new Work { Id = Guid.NewGuid(), ShiftId = shiftId, ClientId = Guid.NewGuid(), CurrentDate = new DateOnly(2026, 3, 15), WorkTime = 8 },
-            new Work { Id = Guid.NewGuid(), ShiftId = shiftId, ClientId = Guid.NewGuid(), CurrentDate = new DateOnly(2026, 3, 15), WorkTime = 6 },
-            new Work { Id = Guid.NewGuid(), ShiftId = shiftId, ClientId = Guid.NewGuid(), CurrentDate = new DateOnly(2026, 3, 16), WorkTime = 7 },
+            new Shift { Id = Guid.NewGuid(), FromDate = new DateOnly(2026, 1, 1), IsMonday = true },
+            new Shift { Id = Guid.NewGuid(), FromDate = new DateOnly(2026, 1, 1), IsMonday = true },
+            new Shift { Id = Guid.NewGuid(), FromDate = new DateOnly(2026, 1, 1), IsTuesday = true },
         });
         await _context.SaveChangesAsync();
 
         var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
 
-        result.DailyData.First(d => d.Date == new DateOnly(2026, 3, 15)).DienstCount.ShouldBe(14.0, 0.01);
-        result.DailyData.First(d => d.Date == new DateOnly(2026, 3, 16)).DienstCount.ShouldBe(7.0, 0.01);
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5)).DienstCount.ShouldBe(2.0);
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 6)).DienstCount.ShouldBe(1.0);
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 4)).DienstCount.ShouldBe(0.0);
     }
 
     [Test]
