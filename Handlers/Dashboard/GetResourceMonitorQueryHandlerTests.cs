@@ -198,4 +198,87 @@ public class GetResourceMonitorQueryHandlerTests
 
         result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5)).MaxCount.ShouldBe(0.0);
     }
+
+    [Test]
+    public async Task Handle_EmployeeWithoutContract_UsesSettingsDefaultsPattern()
+    {
+        await _context.Client.AddAsync(new Client
+        {
+            Id = Guid.NewGuid(), Name = "NoContract", Type = EntityTypeEnum.Employee
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
+
+        var monday = result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5));
+        var saturday = result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 3));
+        monday.TotalCount.ShouldBe(1.0);
+        monday.WunschCount.ShouldBe(1.0);
+        monday.MaxCount.ShouldBe(1.0);
+        saturday.TotalCount.ShouldBe(1.0);
+        saturday.WunschCount.ShouldBe(0.0);
+        saturday.MaxCount.ShouldBe(0.0);
+    }
+
+    [Test]
+    public async Task Handle_CustomerType_IsNotCountedAsEmployee()
+    {
+        await _context.Client.AddAsync(new Client
+        {
+            Id = Guid.NewGuid(), Name = "Acme Inc.", Type = EntityTypeEnum.Customer
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
+
+        result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5)).TotalCount.ShouldBe(0.0);
+    }
+
+    [Test]
+    public async Task Handle_MischformContractFlaggedZero_FallsBackToSettings()
+    {
+        var clientId = Guid.NewGuid();
+        var contractId = Guid.NewGuid();
+
+        await _context.Client.AddAsync(new Client { Id = clientId, Name = "Mischform", Type = EntityTypeEnum.Employee });
+        await _context.Contract.AddAsync(new Contract
+        {
+            Id = contractId, GuaranteedHours = 40, PaymentInterval = PaymentInterval.Weekly,
+            WorkOnMonday = false, WorkOnTuesday = false, WorkOnWednesday = false,
+            WorkOnThursday = false, WorkOnFriday = false,
+            WorkOnSaturday = false, WorkOnSunday = false,
+            ValidFrom = new DateTime(2026, 1, 1)
+        });
+        await _context.ClientContract.AddAsync(new ClientContract
+        {
+            Id = Guid.NewGuid(), ClientId = clientId, ContractId = contractId,
+            FromDate = new DateOnly(2026, 1, 1), UntilDate = null, IsActive = true
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
+
+        var monday = result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 5));
+        monday.TotalCount.ShouldBe(1.0);
+        monday.MaxCount.ShouldBe(1.0);
+    }
+
+    [Test]
+    public async Task Handle_SettingsOverrideDefaults_AppliedToNoContractEmployee()
+    {
+        await _context.Client.AddAsync(new Client
+        {
+            Id = Guid.NewGuid(), Name = "NoContract", Type = EntityTypeEnum.Employee
+        });
+        await _context.Settings.AddRangeAsync(
+            new Klacks.Api.Domain.Models.Settings.Settings { Id = Guid.NewGuid(), Type = "SCHEDULING_DEFAULT_WORK_ON_SATURDAY", Value = "true" },
+            new Klacks.Api.Domain.Models.Settings.Settings { Id = Guid.NewGuid(), Type = "SCHEDULING_DEFAULT_WORK_ON_SUNDAY",   Value = "true" });
+        await _context.SaveChangesAsync();
+
+        var result = await _handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
+
+        var saturday = result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 3));
+        saturday.WunschCount.ShouldBe(Math.Round(5.0 / 7.0, 2), 0.005);
+        saturday.MaxCount.ShouldBe(Math.Round(6.0 / 7.0, 2), 0.005);
+    }
 }
