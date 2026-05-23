@@ -69,6 +69,22 @@ public class NavigationTargetMatcherTests
         result.TargetId.ShouldBe("t1");
         result.Score.ShouldBe(0.85);
         result.Candidates.Count().ShouldBe(1);
+        result.IsFastPath.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Match_returns_no_fast_path_when_token_overlap_just_below_threshold()
+    {
+        var target = new NavigationTarget { TargetId = "t1", Route = "/t1", LabelKey = "x" };
+        _cache.FindBySynonym("foo", "de").Returns(new[] { target });
+        _cache.FindBySynonym("bar", "de").Returns(new[] { target });
+        _cache.FindBySynonym(Arg.Is<string>(s => s != "foo" && s != "bar"), "de")
+            .Returns(Array.Empty<NavigationTarget>());
+
+        var result = _sut.Match("foo bar baz", "de", Array.Empty<string>());
+
+        result.Score.ShouldBe(2.0 / 3.0, 0.001);
+        result.IsFastPath.ShouldBeFalse();
     }
 
     [Test]
