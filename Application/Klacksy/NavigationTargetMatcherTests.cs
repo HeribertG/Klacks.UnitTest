@@ -100,4 +100,80 @@ public class NavigationTargetMatcherTests
         result.Candidates.Count().ShouldBe(1);
         result.Score.ShouldBe(0.25, 0.001);
     }
+
+    [Test]
+    public void Match_returns_fuzzy_candidate_when_typo_is_close_to_a_synonym()
+    {
+        var target = new NavigationTarget
+        {
+            TargetId = "schedule",
+            Route = "/workplace/schedule",
+            LabelKey = "nav.schedule",
+            Synonyms = new Dictionary<string, string[]>
+            {
+                ["de"] = new[] { "einsatzplan", "schichtplan", "dienstplan" },
+            },
+        };
+        _cache.FindBySynonym(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Array.Empty<NavigationTarget>());
+        _cache.FindBySynonymAnyLocale(Arg.Any<string>())
+            .Returns(Array.Empty<NavigationTarget>());
+        _cache.All.Returns(new[] { target });
+
+        var result = _sut.Match("einsatplan", "de", Array.Empty<string>());
+
+        result.TargetId.ShouldBe("schedule");
+        result.Score.ShouldBeGreaterThan(0.6);
+        result.Candidates.Count().ShouldBe(1);
+    }
+
+    [Test]
+    public void Match_skips_fuzzy_target_when_user_lacks_permission()
+    {
+        var target = new NavigationTarget
+        {
+            TargetId = "schedule",
+            Route = "/workplace/schedule",
+            LabelKey = "nav.schedule",
+            RequiredPermission = "CanViewSchedule",
+            Synonyms = new Dictionary<string, string[]>
+            {
+                ["de"] = new[] { "einsatzplan" },
+            },
+        };
+        _cache.FindBySynonym(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Array.Empty<NavigationTarget>());
+        _cache.FindBySynonymAnyLocale(Arg.Any<string>())
+            .Returns(Array.Empty<NavigationTarget>());
+        _cache.All.Returns(new[] { target });
+
+        var result = _sut.Match("einsatplan", "de", Array.Empty<string>());
+
+        result.TargetId.ShouldBeNull();
+        result.Candidates.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Match_fuzzy_returns_nothing_when_no_synonym_is_similar_enough()
+    {
+        var target = new NavigationTarget
+        {
+            TargetId = "schedule",
+            Route = "/workplace/schedule",
+            LabelKey = "nav.schedule",
+            Synonyms = new Dictionary<string, string[]>
+            {
+                ["de"] = new[] { "einsatzplan" },
+            },
+        };
+        _cache.FindBySynonym(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Array.Empty<NavigationTarget>());
+        _cache.FindBySynonymAnyLocale(Arg.Any<string>())
+            .Returns(Array.Empty<NavigationTarget>());
+        _cache.All.Returns(new[] { target });
+
+        var result = _sut.Match("completely unrelated query", "de", Array.Empty<string>());
+
+        result.TargetId.ShouldBeNull();
+    }
 }

@@ -50,7 +50,7 @@ public class ContextAssemblyPipelineTests
     [Test]
     public async Task AssembleSoulAndMemoryPromptAsync_IncludesWorldModelBlock()
     {
-        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello");
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
         Assert.That(result, Does.Contain(OntologyText));
     }
@@ -58,7 +58,7 @@ public class ContextAssemblyPipelineTests
     [Test]
     public async Task AssembleSoulAndMemoryPromptAsync_PlacesOntologyBetweenIdentityAndMemory()
     {
-        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello");
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
         var identityIdx = result.IndexOf(IdentityText, StringComparison.Ordinal);
         var ontologyIdx = result.IndexOf(OntologyText, StringComparison.Ordinal);
@@ -72,7 +72,7 @@ public class ContextAssemblyPipelineTests
     [Test]
     public async Task AssembleSoulAndMemoryPromptAsync_CallsOntologyServiceWithConfiguredTokenBudget()
     {
-        await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello");
+        await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
         _ontology.Received(1).RenderWorldModelBlock(ExpectedOntologyTokenBudget);
     }
@@ -82,10 +82,33 @@ public class ContextAssemblyPipelineTests
     {
         _ontology.RenderWorldModelBlock(Arg.Any<int>()).Returns(string.Empty);
 
-        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello");
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
         Assert.That(result, Does.Not.Contain("WORLD MODEL"));
         Assert.That(result, Does.Contain(IdentityText));
         Assert.That(result, Does.Contain(MemoryText));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_SkipsSentimentAndMemory_ForShortUtterance()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "ja");
+
+        Assert.That(result, Does.Contain(IdentityText));
+        Assert.That(result, Does.Contain(OntologyText));
+        Assert.That(result, Does.Not.Contain(MemoryText));
+        await _sentiment.DidNotReceive().AnalyzeSentimentAsync(Arg.Any<string>());
+        await _memory.DidNotReceive().RetrieveRelevantMemoriesAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_RunsSentimentAndMemory_ForLongerUtterance()
+    {
+        await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "please show me my open shifts for tomorrow");
+
+        await _sentiment.Received(1).AnalyzeSentimentAsync(Arg.Any<string>());
+        await _memory.Received(1).RetrieveRelevantMemoriesAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }
