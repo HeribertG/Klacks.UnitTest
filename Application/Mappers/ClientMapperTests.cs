@@ -23,6 +23,23 @@ public class ClientMapperTests
     }
 
     [Test]
+    public void ToEntity_IgnoresIdNumber_SoDatabaseSequenceOwnsIt()
+    {
+        // id_number is assigned exclusively by the DB sequence; a POST payload must never set it.
+        var resource = new ClientResource
+        {
+            Id = Guid.NewGuid(),
+            FirstName = "Heribert",
+            Name = "Gasparoli",
+            IdNumber = 2671
+        };
+
+        var entity = _mapper.ToEntity(resource);
+
+        entity.IdNumber.ShouldBe(0);
+    }
+
+    [Test]
     public void ToListItemResource_ValidClient_MapsBasicProperties()
     {
         // Arrange
