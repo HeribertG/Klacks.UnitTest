@@ -141,7 +141,8 @@ public class ClientMapperTests
         result.Name.ShouldBe("Doe");
         result.Company.ShouldBe("Test Company");
         result.Gender.ShouldBe(GenderEnum.Male);
-        result.IdNumber.ShouldBe(12345);
+        // id_number is never mapped from the resource; the DB sequence owns it.
+        result.IdNumber.ShouldBe(0);
         result.LegalEntity.ShouldBeFalse();
     }
 
