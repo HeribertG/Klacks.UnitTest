@@ -125,4 +125,55 @@ public class LLMResponseBuilderTests
         response.Suggestions!.Count().ShouldBe(3);
         response.Message.ShouldBe("Your data is ready.");
     }
+
+    [Test]
+    public void BuildSuccessResponse_WithDateRepliesBlock_ReturnsDateModeAndLabel()
+    {
+        var content = "Please enter the birthdate. [REPLIES:date \"Date of birth\"]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.SuggestedReplies.ShouldNotBeNull();
+        response.SuggestedReplies!.SelectionMode.ShouldBe("date");
+        response.SuggestedReplies.Prompt.ShouldBe("Date of birth");
+        response.SuggestedReplies.Options.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithDateRepliesBlock_RemovesBlockFromMessage()
+    {
+        var content = "Please enter the birthdate. [REPLIES:date \"Date of birth\"]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.Message.ShouldBe("Please enter the birthdate.");
+        response.Message.ShouldNotContain("[REPLIES:");
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithSingleRepliesBlock_StillWorksAfterDateSupport()
+    {
+        var content = "Choose a gender. [REPLIES:single \"Male\" | \"Female\" | \"Other\"]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.SuggestedReplies.ShouldNotBeNull();
+        response.SuggestedReplies!.SelectionMode.ShouldBe("single");
+        response.SuggestedReplies.Options.Count.ShouldBe(3);
+        response.Message.ShouldNotContain("[REPLIES:");
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithMultiRepliesBlock_StillWorksAfterDateSupport()
+    {
+        var content = "Select items. [REPLIES:multi:Pick one \"Alpha=a\" | \"Beta=b\"]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.SuggestedReplies.ShouldNotBeNull();
+        response.SuggestedReplies!.SelectionMode.ShouldBe("multi");
+        response.SuggestedReplies.Options.Count.ShouldBe(2);
+        response.SuggestedReplies.Options[0].Label.ShouldBe("Alpha");
+        response.SuggestedReplies.Options[0].Value.ShouldBe("a");
+    }
 }
