@@ -7,8 +7,11 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Models.Staffs;
 
 namespace Klacks.UnitTest.Skills;
@@ -19,7 +22,15 @@ public class CreateEmployeeSkillTests
     private IClientRepository _clientRepository = null!;
     private IClientSearchRepository _searchRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICountryResolver _countryResolver = null!;
     private CreateEmployeeSkill _skill = null!;
+
+    private static Countries MakeCountry(string abbr, string prefix, string nameDe, string nameEn) => new()
+    {
+        Abbreviation = abbr,
+        Prefix = prefix,
+        Name = new MultiLanguage { De = nameDe, En = nameEn }
+    };
 
     [SetUp]
     public void Setup()
@@ -27,7 +38,18 @@ public class CreateEmployeeSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _skill = new CreateEmployeeSkill(_clientRepository, _searchRepository, _unitOfWork);
+        _countryResolver = Substitute.For<ICountryResolver>();
+
+        var ch = MakeCountry("CH", "+41", "Schweiz", "Switzerland");
+        var de = MakeCountry("DE", "+49", "Deutschland", "Germany");
+
+        _countryResolver.ResolveAsync("CH", Arg.Any<CancellationToken>()).Returns(ch);
+        _countryResolver.ResolveAsync("DE", Arg.Any<CancellationToken>()).Returns(de);
+        _countryResolver.ResolveAsync(Arg.Is<string?>(s => string.IsNullOrWhiteSpace(s)), Arg.Any<CancellationToken>())
+            .Returns((Countries?)null);
+        _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns(ch);
+
+        _skill = new CreateEmployeeSkill(_clientRepository, _searchRepository, _unitOfWork, _countryResolver);
     }
 
     private static SkillExecutionContext Ctx() => new()

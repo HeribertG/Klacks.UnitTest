@@ -9,6 +9,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ public class UpdateClientSkillTests
     private IClientRepository _clientRepository = null!;
     private IClientSearchRepository _searchRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICountryResolver _countryResolver = null!;
     private UpdateClientSkill _skill = null!;
 
     [SetUp]
@@ -29,8 +31,9 @@ public class UpdateClientSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _countryResolver = Substitute.For<ICountryResolver>();
         _skill = new UpdateClientSkill(
-            _clientRepository, _searchRepository, _unitOfWork, Substitute.For<ILogger<UpdateClientSkill>>());
+            _clientRepository, _searchRepository, _unitOfWork, Substitute.For<ILogger<UpdateClientSkill>>(), _countryResolver);
     }
 
     private static SkillExecutionContext Ctx() => new()
