@@ -65,6 +65,7 @@ public class CreateEmployeeSkillTests
         ["firstName"] = "Heribert",
         ["lastName"] = "Gasparoli",
         ["gender"] = "Male",
+        ["memberSince"] = "2026-05-29",
         ["street"] = "Bahnhofstrasse 1",
         ["zip"] = "3097",
         ["city"] = "Liebefeld",
@@ -79,7 +80,8 @@ public class CreateEmployeeSkillTests
         {
             ["firstName"] = "Heribert",
             ["lastName"] = "Gasparoli",
-            ["gender"] = "Male"
+            ["gender"] = "Male",
+            ["memberSince"] = "2026-05-29"
         };
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
@@ -140,6 +142,7 @@ public class CreateEmployeeSkillTests
             ["firstName"] = "Heribert",
             ["lastName"] = "Gasparoli",
             ["gender"] = "Male",
+            ["memberSince"] = "2026-05-29",
             ["proceedWithoutContact"] = true
         };
 
@@ -174,6 +177,49 @@ public class CreateEmployeeSkillTests
         Assert.That(captured.Communications.Any(c => c.Type == CommunicationTypeEnum.PrivateMail), Is.True);
         Assert.That(captured.Communications.Any(c => c.Type == CommunicationTypeEnum.PrivateCellPhone), Is.True);
         Assert.That(captured.Membership, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenMemberSinceMissing()
+    {
+        var parameters = CompleteParameters();
+        parameters.Remove("memberSince");
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("memberSince"));
+        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenMemberSinceUnparseable()
+    {
+        var parameters = CompleteParameters();
+        parameters["memberSince"] = "not-a-date";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("memberSince"));
+        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
+    }
+
+    [Test]
+    public async Task SetsMembershipValidFromFromMemberSince()
+    {
+        Client? captured = null;
+        await _clientRepository.Add(Arg.Do<Client>(c => captured = c));
+        var parameters = CompleteParameters();
+        parameters["memberSince"] = "2026-07-01";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(captured, Is.Not.Null);
+        Assert.That(captured!.Membership, Is.Not.Null);
+        Assert.That(captured.Membership!.ValidFrom.Date, Is.EqualTo(new DateTime(2026, 7, 1)));
     }
 
     [TestCase("", "CH")]
