@@ -9,6 +9,7 @@ namespace Klacks.UnitTest.Application.Handlers.Klacksy;
 using Klacks.Api.Application.Handlers.Klacksy;
 using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Application.Klacksy.Models;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using NSubstitute;
 using NUnit.Framework;
@@ -44,7 +45,7 @@ public class UpdateNavigationTargetSynonymsCommandHandlerTests
 
         await _synonymRepository.Received(1).ReplaceForTargetLanguageAsync(
             "absence", "de", Arg.Is<IEnumerable<string>>(k => k.SequenceEqual(new[] { "abwesenheit", "fehlzeit" })),
-            Arg.Any<CancellationToken>());
+            SynonymSources.User, Arg.Any<CancellationToken>());
 
         _cache.Received(1).Invalidate();
     }
@@ -59,7 +60,7 @@ public class UpdateNavigationTargetSynonymsCommandHandlerTests
         Should.Throw<KeyNotFoundException>(() => _handler.Handle(command, CancellationToken.None));
 
         await _synonymRepository.DidNotReceive().ReplaceForTargetLanguageAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IEnumerable<string>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -75,6 +76,6 @@ public class UpdateNavigationTargetSynonymsCommandHandlerTests
 
         result.ShouldBeTrue();
         await _synonymRepository.Received(1).ReplaceForTargetLanguageAsync(
-            "absence", "ar", Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+            "absence", "ar", Arg.Any<IEnumerable<string>>(), SynonymSources.User, Arg.Any<CancellationToken>());
     }
 }

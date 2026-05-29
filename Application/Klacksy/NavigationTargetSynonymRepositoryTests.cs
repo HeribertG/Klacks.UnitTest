@@ -6,6 +6,7 @@
 /// </summary>
 namespace Klacks.UnitTest.Application.Klacksy;
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Assistant;
@@ -70,7 +71,7 @@ public class NavigationTargetSynonymRepositoryTests
         });
         await _context.SaveChangesAsync();
 
-        await _repository.ReplaceForTargetLanguageAsync("absence", "de", new[] { "fehlzeit", "urlaub" });
+        await _repository.ReplaceForTargetLanguageAsync("absence", "de", new[] { "fehlzeit", "urlaub" }, SynonymSources.Seed);
 
         var allWithDeleted = await _context.NavigationTargetSynonyms
             .IgnoreQueryFilters()
@@ -96,7 +97,7 @@ public class NavigationTargetSynonymRepositoryTests
         });
         await _context.SaveChangesAsync();
 
-        await _repository.ReplaceForTargetLanguageAsync("t1", "fr", Array.Empty<string>());
+        await _repository.ReplaceForTargetLanguageAsync("t1", "fr", Array.Empty<string>(), SynonymSources.Seed);
 
         var active = await _repository.GetAllAsync();
         active.ShouldBeEmpty();
