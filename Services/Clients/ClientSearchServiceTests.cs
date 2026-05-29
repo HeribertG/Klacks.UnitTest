@@ -385,4 +385,58 @@ public class ClientSearchServiceTests
         // Assert
         clients.Count().ShouldBe(0);
     }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithSemicolonSeparatedNumbers_ShouldReturnTrue()
+    {
+        var result = _searchService.IsMultipleNumericSearch("12345;67890");
+        result.ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithSingleNumber_ShouldReturnFalse()
+    {
+        var result = _searchService.IsMultipleNumericSearch("12345");
+        result.ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithNonNumericParts_ShouldReturnFalse()
+    {
+        var result = _searchService.IsMultipleNumericSearch("123;abc");
+        result.ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithWhitespace_ShouldReturnTrue()
+    {
+        var result = _searchService.IsMultipleNumericSearch(" 12345 ; 67890 ");
+        result.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ApplyMultipleIdNumberSearch_ShouldFindAllMatchingClients()
+    {
+        var query = _context.Client.AsQueryable();
+        var idNumbers = new[] { 12345, 67890 };
+
+        var result = _searchService.ApplyMultipleIdNumberSearch(query, idNumbers);
+        var clients = result.ToList();
+
+        clients.Count.ShouldBe(2);
+        clients.ShouldContain(c => c.IdNumber == 12345);
+        clients.ShouldContain(c => c.IdNumber == 67890);
+    }
+
+    [Test]
+    public void ApplyMultipleIdNumberSearch_WithThreeIds_ShouldFindAllThree()
+    {
+        var query = _context.Client.AsQueryable();
+        var idNumbers = new[] { 12345, 67890, 11111 };
+
+        var result = _searchService.ApplyMultipleIdNumberSearch(query, idNumbers);
+        var clients = result.ToList();
+
+        clients.Count.ShouldBe(3);
+    }
 }

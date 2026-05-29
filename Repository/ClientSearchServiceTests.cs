@@ -38,6 +38,7 @@ public class ClientSearchServiceTests
                 Name = "Müller",
                 FirstName = "Hans",
                 Company = "ABC GmbH",
+                IdNumber = 1001,
                 Addresses = new List<Address>
                 {
                     new Address {
@@ -53,6 +54,7 @@ public class ClientSearchServiceTests
                 Name = "Schmidt",
                 FirstName = "Peter",
                 Company = "XYZ AG",
+                IdNumber = 1002,
                 Addresses = new List<Address>
                 {
                     new Address {
@@ -68,6 +70,7 @@ public class ClientSearchServiceTests
                 Name = "Schneider",
                 FirstName = "Maria",
                 Company = "DEF GmbH",
+                IdNumber = 1003,
                 Addresses = new List<Address>
                 {
                     new Address {
@@ -140,6 +143,63 @@ public class ClientSearchServiceTests
         var clients = result.ToList();
         clients.Count().ShouldBe(1);
         clients.First().Name.ShouldBe("Schneider");
+    }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithSemicolonSeparatedIntegers_ReturnsTrue()
+    {
+        _searchService.IsMultipleNumericSearch("1001;1002").ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithSingleNumber_ReturnsFalse()
+    {
+        _searchService.IsMultipleNumericSearch("1001").ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithNonNumericPart_ReturnsFalse()
+    {
+        _searchService.IsMultipleNumericSearch("1001;abc").ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsMultipleNumericSearch_WithWhitespaceAroundNumbers_ReturnsTrue()
+    {
+        _searchService.IsMultipleNumericSearch(" 1001 ; 1002 ").ShouldBeTrue();
+    }
+
+    [Test]
+    public void ApplyMultipleIdNumberSearch_WithTwoIds_FindsBothClients()
+    {
+        var baseQuery = _dbContext.Client.AsNoTracking().AsQueryable();
+        var result = _searchService.ApplyMultipleIdNumberSearch(baseQuery, new[] { 1001, 1002 });
+        var clients = result.ToList();
+
+        clients.Count.ShouldBe(2);
+        clients.ShouldContain(c => c.Name == "Müller");
+        clients.ShouldContain(c => c.Name == "Schmidt");
+    }
+
+    [Test]
+    public void ApplyMultipleIdNumberSearch_WithAllThreeIds_FindsAllClients()
+    {
+        var baseQuery = _dbContext.Client.AsNoTracking().AsQueryable();
+        var result = _searchService.ApplyMultipleIdNumberSearch(baseQuery, new[] { 1001, 1002, 1003 });
+        var clients = result.ToList();
+
+        clients.Count.ShouldBe(3);
+    }
+
+    [Test]
+    public void ApplyMultipleIdNumberSearch_WithNonExistentId_ReturnsOnlyExisting()
+    {
+        var baseQuery = _dbContext.Client.AsNoTracking().AsQueryable();
+        var result = _searchService.ApplyMultipleIdNumberSearch(baseQuery, new[] { 1001, 9999 });
+        var clients = result.ToList();
+
+        clients.Count.ShouldBe(1);
+        clients.First().Name.ShouldBe("Müller");
     }
 
     [TearDown]
