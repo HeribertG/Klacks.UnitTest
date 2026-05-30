@@ -450,4 +450,105 @@ public class ClientTimelineTests
         // Assert
         count.ShouldBe(3);
     }
+
+    private static readonly DateOnly MondayAnchor = new(2026, 3, 2);
+
+    [Test]
+    public void GetWeeklyWorkDuration_FiveEightHourDays_Returns40()
+    {
+        // Arrange
+        for (var i = 0; i < 5; i++)
+        {
+            var date = MondayAnchor.AddDays(i);
+            _timeline.AddBlock(CreateWorkBlock(
+                date.ToDateTime(new TimeOnly(8, 0)),
+                date.ToDateTime(new TimeOnly(16, 0))));
+        }
+
+        // Act
+        var duration = _timeline.GetWeeklyWorkDuration(MondayAnchor);
+
+        // Assert
+        duration.ShouldBe(TimeSpan.FromHours(40));
+    }
+
+    [Test]
+    public void GetWeeklyWorkDuration_BreakExcludedFromWeeklyTotal()
+    {
+        // Arrange
+        _timeline.AddBlock(CreateWorkBlock(
+            MondayAnchor.ToDateTime(new TimeOnly(8, 0)),
+            MondayAnchor.ToDateTime(new TimeOnly(16, 0))));
+        var breakDay = MondayAnchor.AddDays(1);
+        _timeline.AddBlock(CreateBreakBlock(
+            breakDay.ToDateTime(new TimeOnly(8, 0)),
+            breakDay.ToDateTime(new TimeOnly(16, 0))));
+
+        // Act
+        var duration = _timeline.GetWeeklyWorkDuration(MondayAnchor);
+
+        // Assert
+        duration.ShouldBe(TimeSpan.FromHours(8));
+    }
+
+    [Test]
+    public void GetRestDayCount_FiveWorkDays_ReturnsTwoRestDays()
+    {
+        // Arrange
+        for (var i = 0; i < 5; i++)
+        {
+            var date = MondayAnchor.AddDays(i);
+            _timeline.AddBlock(CreateWorkBlock(
+                date.ToDateTime(new TimeOnly(8, 0)),
+                date.ToDateTime(new TimeOnly(16, 0))));
+        }
+
+        // Act
+        var restDays = _timeline.GetRestDayCount(MondayAnchor);
+
+        // Assert
+        restDays.ShouldBe(2);
+    }
+
+    [Test]
+    public void GetRestDayCount_SevenWorkDays_ReturnsZeroRestDays()
+    {
+        // Arrange
+        for (var i = 0; i < 7; i++)
+        {
+            var date = MondayAnchor.AddDays(i);
+            _timeline.AddBlock(CreateWorkBlock(
+                date.ToDateTime(new TimeOnly(8, 0)),
+                date.ToDateTime(new TimeOnly(16, 0))));
+        }
+
+        // Act
+        var restDays = _timeline.GetRestDayCount(MondayAnchor);
+
+        // Assert
+        restDays.ShouldBe(0);
+    }
+
+    [Test]
+    public void GetRestDayCount_BreakDayCountsAsRest()
+    {
+        // Arrange
+        for (var i = 0; i < 6; i++)
+        {
+            var date = MondayAnchor.AddDays(i);
+            _timeline.AddBlock(CreateWorkBlock(
+                date.ToDateTime(new TimeOnly(8, 0)),
+                date.ToDateTime(new TimeOnly(16, 0))));
+        }
+        var breakDay = MondayAnchor.AddDays(6);
+        _timeline.AddBlock(CreateBreakBlock(
+            breakDay.ToDateTime(new TimeOnly(8, 0)),
+            breakDay.ToDateTime(new TimeOnly(16, 0))));
+
+        // Act
+        var restDays = _timeline.GetRestDayCount(MondayAnchor);
+
+        // Assert
+        restDays.ShouldBe(1);
+    }
 }
