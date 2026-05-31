@@ -2,17 +2,18 @@
 
 /// <summary>
 /// Unit tests for the thin find_replacement skill: it resolves the shift (errors when missing),
-/// validates the analyseToken, delegates to IFindReplacementService and projects the result.
-/// Candidate selection / ranking logic is covered by FindReplacementServiceTests.
+/// validates the analyseToken, dispatches FindReplacementQuery and projects the result. Candidate
+/// selection / ranking logic is covered by FindReplacementQueryHandlerTests.
 /// </summary>
 
 using System.Text.Json;
 using Klacks.Api.Application.DTOs.Schedules;
-using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -24,7 +25,7 @@ public class FindReplacementSkillTests
     private static readonly DateOnly Date = new(2026, 3, 10);
 
     private IShiftRepository _shiftRepo = null!;
-    private IFindReplacementService _service = null!;
+    private IMediator _mediator = null!;
 
     [SetUp]
     public void Setup()
@@ -38,10 +39,8 @@ public class FindReplacementSkillTests
             EndShift = new TimeOnly(6, 0)
         });
 
-        _service = Substitute.For<IFindReplacementService>();
-        _service.FindAsync(
-                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
-                Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _mediator = Substitute.For<IMediator>();
+        _mediator.Send(Arg.Any<FindReplacementQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ReplacementSearchResult(
                 new List<ReplacementCandidate> { new(Guid.NewGuid(), "Cara", false, []) },
                 new List<ExcludedCandidate> { new(Guid.NewGuid(), "Anna", "absent") }));
@@ -55,7 +54,7 @@ public class FindReplacementSkillTests
         UserPermissions = new List<string> { "CanViewShifts" }
     };
 
-    private FindReplacementSkill Skill() => new(_shiftRepo, _service);
+    private FindReplacementSkill Skill() => new(_shiftRepo, _mediator);
 
     private static Dictionary<string, object> Params() => new()
     {
@@ -68,7 +67,7 @@ public class FindReplacementSkillTests
         => JsonSerializer.SerializeToElement(result.Data);
 
     [Test]
-    public async Task DelegatesToService_AndProjects()
+    public async Task DispatchesQuery_AndProjects()
     {
         var result = await Skill().ExecuteAsync(Ctx(), Params());
 
@@ -78,8 +77,10 @@ public class FindReplacementSkillTests
         data.GetProperty("ExcludedCount").GetInt32().ShouldBe(1);
         data.GetProperty("ShiftName").GetString().ShouldBe("Night");
 
-        await _service.Received(1).FindAsync(
-            ShiftId, Date, new TimeOnly(22, 0), new TimeOnly(6, 0), GroupId, (Guid?)null, Arg.Any<CancellationToken>());
+        await _mediator.Received(1).Send(
+            Arg.Is<FindReplacementQuery>(q =>
+                q.ShiftId == ShiftId && q.GroupId == GroupId && q.StartTime == new TimeOnly(22, 0)),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

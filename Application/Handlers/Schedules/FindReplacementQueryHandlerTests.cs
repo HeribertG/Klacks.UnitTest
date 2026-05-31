@@ -1,15 +1,16 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for FindReplacementService: hard-exclusion on collision / rest-time / blacklist /
+/// Unit tests for FindReplacementQueryHandler: hard-exclusion on collision / rest-time / blacklist /
 /// absence, soft-ranking by aggregate findings (less headroom -> lower rank), preferred-first ordering.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
-using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -18,10 +19,10 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.UnitTest.TestHelpers;
 
-namespace Klacks.UnitTest.Application.Services.Schedules;
+namespace Klacks.UnitTest.Application.Handlers.Schedules;
 
 [TestFixture]
-public class FindReplacementServiceTests
+public class FindReplacementQueryHandlerTests
 {
     private static readonly Guid ShiftId = Guid.NewGuid();
     private static readonly Guid GroupId = Guid.NewGuid();
@@ -33,7 +34,7 @@ public class FindReplacementServiceTests
     private IPreCommitConflictChecker _checker = null!;
     private IClientShiftPreferenceRepository _prefRepo = null!;
     private IScheduleEntriesService _scheduleEntries = null!;
-    private FindReplacementService _service = null!;
+    private FindReplacementQueryHandler _handler = null!;
 
     [SetUp]
     public void Setup()
@@ -48,7 +49,7 @@ public class FindReplacementServiceTests
         _scheduleEntries = Substitute.For<IScheduleEntriesService>();
         SetOnLeave();
 
-        _service = new FindReplacementService(_clientRepo, _checker, _prefRepo, _scheduleEntries);
+        _handler = new FindReplacementQueryHandler(_clientRepo, _checker, _prefRepo, _scheduleEntries);
     }
 
     private void SetMembers(params Client[] members)
@@ -68,7 +69,7 @@ public class FindReplacementServiceTests
         => _prefRepo.GetByShiftIdAsync(ShiftId, Arg.Any<CancellationToken>()).Returns(prefs.ToList());
 
     private Task<ReplacementSearchResult> Find()
-        => _service.FindAsync(ShiftId, Date, Start, End, GroupId, null, CancellationToken.None);
+        => _handler.Handle(new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null), CancellationToken.None);
 
     private static Client Member(Guid id, string name) => new() { Id = id, Name = name, FirstName = string.Empty };
 

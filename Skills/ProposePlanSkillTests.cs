@@ -7,12 +7,12 @@
 /// </summary>
 
 using System.Text.Json;
+using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
-using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Skills;
-using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -23,15 +23,13 @@ public class ProposePlanSkillTests
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid ShiftId = Guid.NewGuid();
 
-    private IProposePlanService _service = null!;
+    private IMediator _mediator = null!;
 
     [SetUp]
     public void Setup()
     {
-        _service = Substitute.For<IProposePlanService>();
-        _service.ProposeAsync(
-                Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<IReadOnlyList<PlacementInput>>(), Arg.Any<CancellationToken>())
+        _mediator = Substitute.For<IMediator>();
+        _mediator.Send(Arg.Any<ProposePlanCommand>(), Arg.Any<CancellationToken>())
             .Returns(new ProposePlanOutcome(
                 Guid.NewGuid(), Guid.NewGuid(), "Proposal 02.03.26 – 08.03.26",
                 new List<PlacementInput> { new(ClientId, ShiftId, new DateOnly(2026, 3, 3)) },
@@ -47,7 +45,7 @@ public class ProposePlanSkillTests
         UserPermissions = new List<string> { "CanEditShifts" }
     };
 
-    private ProposePlanSkill Skill() => new(_service);
+    private ProposePlanSkill Skill() => new(_mediator);
 
     private static Dictionary<string, object> Params(string placementsJson) => new()
     {
@@ -73,9 +71,8 @@ public class ProposePlanSkillTests
         data.GetProperty("WrittenCount").GetInt32().ShouldBe(1);
         data.GetProperty("ScenarioName").GetString().ShouldBe("Proposal 02.03.26 – 08.03.26");
 
-        await _service.Received(1).ProposeAsync(
-            Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-            Arg.Is<IReadOnlyList<PlacementInput>>(p => p.Count == 1 && p[0].ClientId == ClientId),
+        await _mediator.Received(1).Send(
+            Arg.Is<ProposePlanCommand>(c => c.Placements.Count == 1 && c.Placements[0].ClientId == ClientId),
             Arg.Any<CancellationToken>());
     }
 
