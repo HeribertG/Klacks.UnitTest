@@ -76,7 +76,7 @@ public class CoverAbsenceCommandHandlerTests
     private void SetReplacement(Guid? candidateId = null)
     {
         var eligible = candidateId.HasValue
-            ? new List<ReplacementCandidate> { new(candidateId.Value, "Bob", false, []) }
+            ? new List<ReplacementCandidate> { new(candidateId.Value, "Bob", false, [], 0m) }
             : new List<ReplacementCandidate>();
         _mediator.Send(Arg.Any<FindReplacementQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ReplacementSearchResult(eligible, []));

@@ -12,6 +12,7 @@ using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Queries.Schedules;
+using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -36,6 +37,7 @@ public class FindReplacementQueryHandlerTests
     private IClientShiftPreferenceRepository _prefRepo = null!;
     private IScheduleEntriesService _scheduleEntries = null!;
     private IClientAvailabilityRepository _availabilityRepo = null!;
+    private IPeriodHoursService _periodHours = null!;
     private FindReplacementQueryHandler _handler = null!;
 
     [SetUp]
@@ -52,9 +54,22 @@ public class FindReplacementQueryHandlerTests
         SetOnLeave();
         _availabilityRepo = Substitute.For<IClientAvailabilityRepository>();
         SetAvailability();
+        _periodHours = Substitute.For<IPeriodHoursService>();
+        _periodHours.GetPeriodBoundariesAsync(Arg.Any<DateOnly>())
+            .Returns((new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31)));
+        SetPeriodHours();
 
-        _handler = new FindReplacementQueryHandler(_clientRepo, _checker, _prefRepo, _scheduleEntries, _availabilityRepo);
+        _handler = new FindReplacementQueryHandler(
+            _clientRepo, _checker, _prefRepo, _scheduleEntries, _availabilityRepo, _periodHours);
     }
+
+    private void SetPeriodHours(Dictionary<Guid, PeriodHoursResource>? byClient = null)
+        => _periodHours.GetPeriodHoursAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
+            .Returns(byClient ?? new Dictionary<Guid, PeriodHoursResource>());
+
+    private static PeriodHoursResource Hours(decimal target, decimal worked)
+        => new() { GuaranteedHours = target, Hours = worked };
 
     private void SetAvailability(params ClientAvailability[] entries)
         => _availabilityRepo.GetByDateRange(Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
@@ -225,6 +240,80 @@ public class FindReplacementQueryHandlerTests
 
         result.Eligible.Single().ClientId.ShouldBe(a);
         result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task UnderTargetCandidate_RanksAboveCloserToTarget()
+    {
+        var under = Guid.NewGuid();
+        var nearTarget = Guid.NewGuid();
+        SetMembers(Member(nearTarget, "Nora"), Member(under, "Udo"));
+        SetPeriodHours(new Dictionary<Guid, PeriodHoursResource>
+        {
+            [under] = Hours(target: 160m, worked: 40m),       // deficit 120
+            [nearTarget] = Hours(target: 160m, worked: 120m)  // deficit 40
+        });
+
+        var result = await Find();
+
+        result.Eligible[0].ClientId.ShouldBe(under);
+        result.Eligible[0].TargetHoursDeficit.ShouldBe(120m);
+        result.Eligible[1].ClientId.ShouldBe(nearTarget);
+    }
+
+    [Test]
+    public async Task FewerSoftConflicts_OutranksLargerDeficit()
+    {
+        var clean = Guid.NewGuid();
+        var soft = Guid.NewGuid();
+        SetMembers(Member(clean, "Cara"), Member(soft, "Sven"));
+        SetConflicts(Conflict(soft, ScheduleValidationType.Warning, "schedule.error-list.weekly-overtime"));
+        SetPeriodHours(new Dictionary<Guid, PeriodHoursResource>
+        {
+            [clean] = Hours(target: 160m, worked: 150m), // small deficit 10, but no soft conflict
+            [soft] = Hours(target: 160m, worked: 0m)     // large deficit 160, but has a soft conflict
+        });
+
+        var result = await Find();
+
+        // Soft-conflict count is the higher-priority tiebreaker; the clean candidate wins.
+        result.Eligible[0].ClientId.ShouldBe(clean);
+        result.Eligible[1].ClientId.ShouldBe(soft);
+    }
+
+    [Test]
+    public async Task NoTargetData_DeficitNeutral_FallsBackToName()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        SetMembers(Member(b, "Bob"), Member(a, "Ann"));
+        // No period-hours entries at all -> both deficit 0 -> alphabetical fallback.
+
+        var result = await Find();
+
+        result.Eligible[0].TargetHoursDeficit.ShouldBe(0m);
+        result.Eligible[0].ClientId.ShouldBe(a);
+        result.Eligible[1].ClientId.ShouldBe(b);
+    }
+
+    [Test]
+    public async Task NoTarget_WorkedHours_SortBelowNoTargetIdle()
+    {
+        var idle = Guid.NewGuid();
+        var busy = Guid.NewGuid();
+        SetMembers(Member(busy, "Bea"), Member(idle, "Ida"));
+        SetPeriodHours(new Dictionary<Guid, PeriodHoursResource>
+        {
+            [idle] = Hours(target: 0m, worked: 0m),   // deficit 0
+            [busy] = Hours(target: 0m, worked: 30m)   // deficit -30 (already loaded) -> ranks lower
+        });
+
+        var result = await Find();
+
+        result.Eligible[0].ClientId.ShouldBe(idle);
+        result.Eligible[0].TargetHoursDeficit.ShouldBe(0m);
+        result.Eligible[1].ClientId.ShouldBe(busy);
+        result.Eligible[1].TargetHoursDeficit.ShouldBe(-30m);
     }
 
     [Test]

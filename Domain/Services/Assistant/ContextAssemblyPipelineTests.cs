@@ -20,6 +20,8 @@ public class ContextAssemblyPipelineTests
     private const string MemoryText = "[MEMORIES]\n- user prefers Bern group.";
     private const int ExpectedOntologyTokenBudget = 1500;
 
+    private const string SchedulingMarker = "[SCHEDULING CONTEXT]";
+
     private IIdentityContextProvider _identity = null!;
     private IKlacksOntologyService _ontology = null!;
     private IMemoryRetrievalService _memory = null!;
@@ -43,7 +45,7 @@ public class ContextAssemblyPipelineTests
             .Returns(new SentimentResult(SentimentMood.Neutral, 0f));
 
         _sut = new ContextAssemblyPipeline(
-            _identity, _ontology, _memory, _sentiment,
+            _identity, _ontology, _memory, _sentiment, new RuleContextProvider(),
             NullLogger<ContextAssemblyPipeline>.Instance);
     }
 
@@ -110,5 +112,44 @@ public class ContextAssemblyPipelineTests
         await _sentiment.Received(1).AnalyzeSentimentAsync(Arg.Any<string>());
         await _memory.Received(1).RetrieveRelevantMemoriesAsync(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_InjectsSchedulingNudge_WhenSchedulingSkillInScope()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "cover Anna's absence next week", null, new[] { "cover_absence", "get_user_context" });
+
+        Assert.That(result, Does.Contain(SchedulingMarker));
+        var ontologyIdx = result.IndexOf(OntologyText, StringComparison.Ordinal);
+        var nudgeIdx = result.IndexOf(SchedulingMarker, StringComparison.Ordinal);
+        Assert.That(nudgeIdx, Is.GreaterThan(ontologyIdx));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoSchedulingNudge_WhenNoSchedulingSkillInScope()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "what is my name and email address", null, new[] { "get_user_context", "search_employees" });
+
+        Assert.That(result, Does.Not.Contain(SchedulingMarker));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoSchedulingNudge_WhenNoSkillsPassed()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
+
+        Assert.That(result, Does.Not.Contain(SchedulingMarker));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_InjectsSchedulingNudge_EvenForShortUtterance()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "ok", null, new[] { "place_work" });
+
+        Assert.That(result, Does.Contain(SchedulingMarker));
+        Assert.That(result, Does.Not.Contain(MemoryText));
     }
 }

@@ -42,7 +42,7 @@ public class FindReplacementSkillTests
         _mediator = Substitute.For<IMediator>();
         _mediator.Send(Arg.Any<FindReplacementQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ReplacementSearchResult(
-                new List<ReplacementCandidate> { new(Guid.NewGuid(), "Cara", false, []) },
+                new List<ReplacementCandidate> { new(Guid.NewGuid(), "Cara", false, [], 0m) },
                 new List<ExcludedCandidate> { new(Guid.NewGuid(), "Anna", "absent") }));
     }
 
