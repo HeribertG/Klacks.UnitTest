@@ -2,9 +2,10 @@
 
 /// <summary>
 /// Unit tests for the shift-lifecycle skills + delete handler: update_shift patches only the supplied
-/// fields (times/weekdays survive when only the name is changed) and refuses shifts with cuts;
-/// delete_shift refuses cuts and active works and otherwise soft-deletes; the new Shift delete handler
-/// soft-deletes via the repository.
+/// fields (times/weekdays survive when only the name is changed); for a cut parent it refuses
+/// structural edits and propagates metadata-only changes across the whole cut group; delete_shift
+/// refuses cuts (redirecting to the cut editor) and active works and otherwise soft-deletes; the new
+/// Shift delete handler soft-deletes via the repository.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -80,7 +81,7 @@ public class ShiftLifecycleTests
     }
 
     [Test]
-    public async Task Update_ShiftWithCuts_Refuses()
+    public async Task Update_CutParent_StructuralEdit_Refuses()
     {
         var repo = Substitute.For<IShiftRepository>();
         repo.Get(ShiftId).Returns(ExistingShift(lft: 1, rgt: 6));
@@ -90,12 +91,49 @@ public class ShiftLifecycleTests
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
             ["shiftId"] = ShiftId.ToString(),
-            ["name"] = "X"
+            ["startTime"] = "09:00"
         });
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("cuts");
+        result.Message.ShouldContain("cut editor");
         await mediator.DidNotReceive().Send(Arg.Any<PutCommand<ShiftResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Update_CutParent_MetadataOnly_PropagatesAcrossGroup()
+    {
+        var originalId = Guid.NewGuid();
+        var parent = ExistingShift(lft: 1, rgt: 6);
+        parent.OriginalId = originalId;
+
+        var cutA = new Shift { Id = Guid.NewGuid(), Name = "DayShift", Abbreviation = "DAY", OriginalId = originalId, Status = ShiftStatus.SplitShift, StartShift = new TimeOnly(8, 0), EndShift = new TimeOnly(12, 0), Lft = 2, Rgt = 3 };
+        var cutB = new Shift { Id = Guid.NewGuid(), Name = "DayShift", Abbreviation = "DAY", OriginalId = originalId, Status = ShiftStatus.SplitShift, StartShift = new TimeOnly(12, 0), EndShift = new TimeOnly(16, 0), Lft = 4, Rgt = 5 };
+
+        var repo = Substitute.For<IShiftRepository>();
+        repo.Get(ShiftId).Returns(parent);
+        repo.CutList(originalId, Arg.Any<DateOnly?>(), Arg.Any<bool>())
+            .Returns(new List<Shift> { cutA, cutB });
+
+        var mediator = Substitute.For<IMediator>();
+        var captured = new List<ShiftResource>();
+        mediator.Send(Arg.Do<PutCommand<ShiftResource>>(c => captured.Add(c.Resource)), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<ShiftResource>)ci[0]).Resource);
+
+        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["shiftId"] = ShiftId.ToString(),
+            ["name"] = "NightShift"
+        });
+
+        result.Success.ShouldBeTrue();
+        // Parent + 2 cuts all renamed; cut times preserved (structure untouched).
+        captured.Count.ShouldBe(3);
+        captured.ShouldAllBe(r => r.Name == "NightShift");
+        captured.ShouldContain(r => r.Id == cutA.Id && r.StartShift == new TimeOnly(8, 0));
+        captured.ShouldContain(r => r.Id == cutB.Id && r.EndShift == new TimeOnly(16, 0));
+        captured.ShouldContain(r => r.Id == ShiftId);
     }
 
     [Test]
