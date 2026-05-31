@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for FindReplacementQueryHandler: hard-exclusion on collision / rest-time / blacklist /
-/// absence, soft-ranking by aggregate findings (less headroom -> lower rank), preferred-first ordering.
+/// absence / explicit unavailability, soft-ranking by aggregate findings (less headroom -> lower rank),
+/// preferred-first ordering.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Notifications;
@@ -34,6 +35,7 @@ public class FindReplacementQueryHandlerTests
     private IPreCommitConflictChecker _checker = null!;
     private IClientShiftPreferenceRepository _prefRepo = null!;
     private IScheduleEntriesService _scheduleEntries = null!;
+    private IClientAvailabilityRepository _availabilityRepo = null!;
     private FindReplacementQueryHandler _handler = null!;
 
     [SetUp]
@@ -48,9 +50,23 @@ public class FindReplacementQueryHandlerTests
             .Returns(new List<ClientShiftPreference>());
         _scheduleEntries = Substitute.For<IScheduleEntriesService>();
         SetOnLeave();
+        _availabilityRepo = Substitute.For<IClientAvailabilityRepository>();
+        SetAvailability();
 
-        _handler = new FindReplacementQueryHandler(_clientRepo, _checker, _prefRepo, _scheduleEntries);
+        _handler = new FindReplacementQueryHandler(_clientRepo, _checker, _prefRepo, _scheduleEntries, _availabilityRepo);
     }
+
+    private void SetAvailability(params ClientAvailability[] entries)
+        => _availabilityRepo.GetByDateRange(Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(entries.ToList());
+
+    private static ClientAvailability Unavailable(Guid clientId, int hour) => new()
+    {
+        ClientId = clientId,
+        Date = Date,
+        Hour = hour,
+        IsAvailable = false
+    };
 
     private void SetMembers(params Client[] members)
         => _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
@@ -155,6 +171,60 @@ public class FindReplacementQueryHandlerTests
 
         result.Eligible.Single().ClientId.ShouldBe(free);
         result.Excluded.Single().Reason.ShouldBe("absent");
+    }
+
+    [Test]
+    public async Task ExplicitlyUnavailableInShiftHour_IsExcluded()
+    {
+        var blocked = Guid.NewGuid();
+        var free = Guid.NewGuid();
+        SetMembers(Member(blocked, "Bea"), Member(free, "Cara"));
+        SetAvailability(Unavailable(blocked, 22));
+
+        var result = await Find();
+
+        result.Eligible.Single().ClientId.ShouldBe(free);
+        result.Excluded.Single().ClientId.ShouldBe(blocked);
+        result.Excluded.Single().Reason.ShouldBe("unavailable");
+    }
+
+    [Test]
+    public async Task UnavailableOutsideShiftHours_IsNotExcluded()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetAvailability(Unavailable(a, 12));
+
+        var result = await Find();
+
+        result.Eligible.Single().ClientId.ShouldBe(a);
+        result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task UnavailableNextDayHour_IsNotExcluded_DocumentedV1Limitation()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetAvailability(Unavailable(a, 2));
+
+        var result = await Find();
+
+        result.Eligible.Single().ClientId.ShouldBe(a);
+        result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task AvailableRecordOnly_IsNotExcluded()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetAvailability(new ClientAvailability { ClientId = a, Date = Date, Hour = 22, IsAvailable = true });
+
+        var result = await Find();
+
+        result.Eligible.Single().ClientId.ShouldBe(a);
+        result.Excluded.ShouldBeEmpty();
     }
 
     [Test]
