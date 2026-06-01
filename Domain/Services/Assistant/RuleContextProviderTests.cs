@@ -7,6 +7,7 @@
 /// always-on "never assume fixed numbers" ontology rule).
 /// </summary>
 
+using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Assistant;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -63,5 +64,56 @@ public class RuleContextProviderTests
         result.ShouldNotContain("11");
         result.ShouldNotContain("50");
         result.ShouldContain("never assume fixed numbers");
+    }
+
+    [Test]
+    public void IsSchedulingContext_MatchesCuratedSetCaseInsensitive()
+    {
+        _sut.IsSchedulingContext(new[] { "Cover_Absence" }).ShouldBeTrue();
+        _sut.IsSchedulingContext(new[] { "get_user_context" }).ShouldBeFalse();
+        _sut.IsSchedulingContext(null).ShouldBeFalse();
+    }
+
+    [Test]
+    public void ScopedClientPolicy_AppendsTightlyScopedBlock_AdditiveToNudge()
+    {
+        var policy = new SchedulingPolicy(
+            MinRestHours: TimeSpan.FromHours(11),
+            MaxDailyHours: TimeSpan.FromHours(9),
+            MaxConsecutiveDays: 5,
+            MaxWeeklyHours: TimeSpan.FromHours(42),
+            MinRestDays: 2);
+
+        var result = _sut.BuildSchedulingRulePack(new[] { "find_replacement" }, policy);
+
+        // Additive: the nudge MUST still be present.
+        result.ShouldContain("[SCHEDULING CONTEXT]");
+        result.ShouldContain("get_scheduling_defaults");
+        // Per-client block with the concrete resolved numbers.
+        result.ShouldContain("[SELECTED-CLIENT EFFECTIVE LIMITS]");
+        result.ShouldContain("9h");
+        result.ShouldContain("42h");
+        result.ShouldContain("5");
+        // Tight scoping so the model cannot read these as global.
+        result.ShouldContain("ONLY to the client currently open");
+        result.ShouldContain("do not transfer");
+    }
+
+    [Test]
+    public void NonSchedulingContext_WithPolicy_StillEmpty()
+    {
+        var policy = new SchedulingPolicy(
+            TimeSpan.FromHours(11), TimeSpan.FromHours(10), 6, TimeSpan.FromHours(50), 2);
+
+        _sut.BuildSchedulingRulePack(new[] { "get_user_context" }, policy).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void SchedulingContext_NoPolicy_OnlyNudge_NoClientBlock()
+    {
+        var result = _sut.BuildSchedulingRulePack(new[] { "cover_absence" }, scopedClientPolicy: null);
+
+        result.ShouldContain("[SCHEDULING CONTEXT]");
+        result.ShouldNotContain("[SELECTED-CLIENT EFFECTIVE LIMITS]");
     }
 }
