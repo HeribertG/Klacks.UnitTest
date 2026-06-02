@@ -10,6 +10,7 @@ using System.Text.Json;
 using Klacks.Api.Application.Commands.Qualifications;
 using Klacks.Api.Application.Handlers.Qualifications;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Assistant;
@@ -37,9 +38,9 @@ public class QualificationCatalogTests
         var uow = Substitute.For<IUnitOfWork>();
         var handler = new CreateQualificationCommandHandler(repo, uow);
 
-        var id = await handler.Handle(new CreateQualificationCommand("First aid", null), CancellationToken.None);
+        var id = await handler.Handle(new CreateQualificationCommand(new MultiLanguage { De = "First aid" }, null), CancellationToken.None);
 
-        await repo.Received(1).Add(Arg.Is<Qualification>(q => q.Name == "First aid"));
+        await repo.Received(1).Add(Arg.Is<Qualification>(q => q.Name.De == "First aid"));
         await uow.Received(1).CompleteAsync();
         id.ShouldNotBe(Guid.Empty);
     }
@@ -47,13 +48,13 @@ public class QualificationCatalogTests
     [Test]
     public async Task CreateHandler_ExistingName_ReturnsExisting_NoAdd()
     {
-        var existing = new Qualification { Id = Guid.NewGuid(), Name = "First aid" };
+        var existing = new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "First aid" } };
         var repo = Substitute.For<IQualificationRepository>();
         repo.GetByNameAsync("First aid", Arg.Any<CancellationToken>()).Returns(existing);
         var uow = Substitute.For<IUnitOfWork>();
         var handler = new CreateQualificationCommandHandler(repo, uow);
 
-        var id = await handler.Handle(new CreateQualificationCommand("First aid", null), CancellationToken.None);
+        var id = await handler.Handle(new CreateQualificationCommand(new MultiLanguage { De = "First aid" }, null), CancellationToken.None);
 
         id.ShouldBe(existing.Id);
         await repo.DidNotReceive().Add(Arg.Any<Qualification>());
@@ -70,7 +71,7 @@ public class QualificationCatalogTests
 
         result.Success.ShouldBeTrue();
         await mediator.Received(1).Send(
-            Arg.Is<CreateQualificationCommand>(c => c.Name == "Forklift"), Arg.Any<CancellationToken>());
+            Arg.Is<CreateQualificationCommand>(c => c.Name.De == "Forklift"), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -79,8 +80,8 @@ public class QualificationCatalogTests
         var repo = Substitute.For<IQualificationRepository>();
         repo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<Qualification>
         {
-            new() { Id = Guid.NewGuid(), Name = "First aid", Description = "Basic" },
-            new() { Id = Guid.NewGuid(), Name = "Forklift" }
+            new() { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "First aid" }, Description = new MultiLanguage { De = "Basic" } },
+            new() { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Forklift" } }
         });
         var skill = new ListQualificationsSkill(repo);
 
@@ -89,6 +90,6 @@ public class QualificationCatalogTests
         result.Success.ShouldBeTrue();
         var data = JsonSerializer.SerializeToElement(result.Data);
         data.GetProperty("Count").GetInt32().ShouldBe(2);
-        data.GetProperty("Qualifications")[0].GetProperty("Name").GetString().ShouldBe("First aid");
+        data.GetProperty("Qualifications")[0].GetProperty("Name").GetProperty("de").GetString().ShouldBe("First aid");
     }
 }

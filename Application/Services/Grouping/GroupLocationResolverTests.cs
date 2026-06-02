@@ -20,7 +20,6 @@ public class GroupLocationResolverTests
     private IGroupRepository _groupRepository = null!;
     private IGroupPlaceClassifier _classifier = null!;
     private IGroupGeocoder _geocoder = null!;
-    private IUnitOfWork _unitOfWork = null!;
     private GroupLocationResolver _resolver = null!;
 
     [SetUp]
@@ -29,9 +28,10 @@ public class GroupLocationResolverTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _classifier = Substitute.For<IGroupPlaceClassifier>();
         _geocoder = Substitute.For<IGroupGeocoder>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
-        _resolver = new GroupLocationResolver(_groupRepository, _classifier, _geocoder, _unitOfWork);
+        _resolver = new GroupLocationResolver(_groupRepository, _classifier, _geocoder);
         _groupRepository.GetPath(GroupId).Returns(new List<Group>());
+        _groupRepository.SetCoordinatesAsync(Arg.Any<Guid>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
+            .Returns(true);
     }
 
     private void HaveGroup(string name, double? lat = null, double? lon = null)
@@ -52,8 +52,7 @@ public class GroupLocationResolverTests
 
         result.Outcome.ShouldBe(GroupLocationResolveOutcome.Resolved);
         result.Latitude.ShouldBe(47.13);
-        await _groupRepository.Received(1).Put(Arg.Is<Group>(g => g.Latitude == 47.13 && g.Longitude == 7.25));
-        await _unitOfWork.Received(1).CompleteAsync();
+        await _groupRepository.Received(1).SetCoordinatesAsync(GroupId, 47.13, 7.25, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -67,7 +66,7 @@ public class GroupLocationResolverTests
 
         result.Outcome.ShouldBe(GroupLocationResolveOutcome.NotAPlace);
         await _geocoder.DidNotReceive().GeocodeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await _groupRepository.DidNotReceive().Put(Arg.Any<Group>());
+        await _groupRepository.DidNotReceive().SetCoordinatesAsync(Arg.Any<Guid>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -81,7 +80,7 @@ public class GroupLocationResolverTests
 
         result.Outcome.ShouldBe(GroupLocationResolveOutcome.NotAPlace);
         await _geocoder.DidNotReceive().GeocodeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await _groupRepository.DidNotReceive().Put(Arg.Any<Group>());
+        await _groupRepository.DidNotReceive().SetCoordinatesAsync(Arg.Any<Guid>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -96,7 +95,7 @@ public class GroupLocationResolverTests
         var result = await _resolver.ResolveAsync(GroupId);
 
         result.Outcome.ShouldBe(GroupLocationResolveOutcome.GeocodeFailed);
-        await _groupRepository.DidNotReceive().Put(Arg.Any<Group>());
+        await _groupRepository.DidNotReceive().SetCoordinatesAsync(Arg.Any<Guid>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

@@ -36,6 +36,20 @@ namespace Klacks.UnitTest.Mocks
             return group;
         }
 
+        public async Task<bool> SetCoordinatesAsync(Guid groupId, double latitude, double longitude, CancellationToken cancellationToken = default)
+        {
+            var group = await context.Group.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+            if (group == null)
+            {
+                return false;
+            }
+
+            group.Latitude = latitude;
+            group.Longitude = longitude;
+            await context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
         public async Task<Group> AddChildNode(Guid parentId, Group newGroup)
         {
             var parent = await context.Group
