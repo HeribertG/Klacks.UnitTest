@@ -142,7 +142,8 @@ internal class GoupTests
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository, clientFilterRepository);
         var command = new PostCommand<GroupResource>(group);
-        var handler = new PostCommandHandler(groupRepository, _groupMapper, unitOfWork, _logger);
+        var groupGeocodingQueue = Substitute.For<IGroupGeocodingQueue>();
+        var handler = new PostCommandHandler(groupRepository, _groupMapper, groupGeocodingQueue, unitOfWork, _logger);
 
         //Act
         var result = await handler.Handle(command, default);

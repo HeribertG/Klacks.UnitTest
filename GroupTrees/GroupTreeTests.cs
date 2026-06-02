@@ -73,6 +73,7 @@ public class GroupTreeTests
         _postHandler = new PostCommandHandler(
             _groupRepository,
             _mapper,
+            Substitute.For<IGroupGeocodingQueue>(),
             _unitOfWork,
             postHandlerLogger);
 
