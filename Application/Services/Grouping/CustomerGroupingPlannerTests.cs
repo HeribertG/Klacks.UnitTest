@@ -91,6 +91,54 @@ public class CustomerGroupingPlannerTests
         proposal.Unassigned.ShouldBeEmpty();
     }
 
+    [Test]
+    public async Task BuildProposal_NearestCityInOtherCanton_RetiresOldCantonToo()
+    {
+        var cantonBs = Guid.NewGuid();
+        var cityBasel = Guid.NewGuid();
+        var cantonBl = Guid.NewGuid();
+        var cityReinach = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = cantonBs, Name = "BS", Root = cantonBs, Lft = 1, Rgt = 4 },
+            new() { Id = cityBasel, Name = "Basel", Root = cantonBs, Lft = 2, Rgt = 3, Latitude = 47.56, Longitude = 7.59 },
+            new() { Id = cantonBl, Name = "BL", Root = cantonBl, Lft = 1, Rgt = 4 },
+            new() { Id = cityReinach, Name = "Reinach BL", Root = cantonBl, Lft = 2, Rgt = 3, Latitude = 47.49, Longitude = 7.59 }
+        });
+        var customer = Customer("Edi", "Roth", 47.49, 7.59, new[] { cantonBs });
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(cityReinach);
+        assignment.RetireGroupIds.ShouldContain(cantonBs);
+    }
+
+    [Test]
+    public async Task BuildProposal_CantonWithoutOwnGeocodedCity_IsStillRetired()
+    {
+        var region = Guid.NewGuid();
+        var cantonWithCity = Guid.NewGuid();
+        var city = Guid.NewGuid();
+        var cantonWithoutCity = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = region, Name = "Region", Root = region, Lft = 1, Rgt = 8 },
+            new() { Id = cantonWithCity, Name = "A", Root = region, Lft = 2, Rgt = 5 },
+            new() { Id = city, Name = "CityA", Root = region, Lft = 3, Rgt = 4, Latitude = 47.0, Longitude = 8.0 },
+            new() { Id = cantonWithoutCity, Name = "B", Root = region, Lft = 6, Rgt = 7 }
+        });
+        var customer = Customer("Fritz", "Keller", 47.0, 8.0, new[] { cantonWithoutCity });
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(city);
+        assignment.RetireGroupIds.ShouldContain(cantonWithoutCity);
+    }
+
     private void SetCustomers(params Client[] customers)
     {
         _clientRepository
