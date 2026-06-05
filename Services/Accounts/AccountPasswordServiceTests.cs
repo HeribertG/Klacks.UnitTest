@@ -3,6 +3,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Accounts;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Models.Settings;
+using Klacks.Api.Domain.Security;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Application.DTOs.Registrations;
 using Microsoft.Extensions.Logging;
@@ -149,14 +150,28 @@ public class AccountPasswordServiceTests
             UserName = email
         };
 
+        string? capturedMessage = null;
         _mockUserManagementService.FindUserByEmailAsync(email).Returns(testUser);
         _mockUserManagementService.UpdateUserAsync(Arg.Any<AppUser>()).Returns((true, null));
-        _mockNotificationService.SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>()).Returns("true");
+        _mockNotificationService.SendEmailAsync(Arg.Any<string>(), email, Arg.Do<string>(m => capturedMessage = m)).Returns("true");
 
         var result = await _passwordService.GeneratePasswordResetTokenAsync(email);
 
         result.ShouldBeTrue();
         await _mockNotificationService.Received(1).SendEmailAsync(Arg.Any<string>(), email, Arg.Any<string>());
+
+        capturedMessage.ShouldNotBeNull();
+        var rawToken = ExtractTokenFromMessage(capturedMessage!);
+        testUser.PasswordResetToken.ShouldBe(PasswordResetTokenHasher.Hash(rawToken));
+        testUser.PasswordResetToken.ShouldNotBe(rawToken);
+    }
+
+    private static string ExtractTokenFromMessage(string message)
+    {
+        const string marker = "token=";
+        var start = message.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
+        var end = message.IndexOf('"', start);
+        return message.Substring(start, end - start);
     }
 
     [Test]
@@ -180,7 +195,7 @@ public class AccountPasswordServiceTests
         {
             Id = Guid.NewGuid().ToString(),
             Email = "test@example.com",
-            PasswordResetToken = token,
+            PasswordResetToken = PasswordResetTokenHasher.Hash(token),
             PasswordResetTokenExpires = DateTime.UtcNow.AddHours(1)
         };
 
@@ -199,7 +214,7 @@ public class AccountPasswordServiceTests
         {
             Id = Guid.NewGuid().ToString(),
             Email = "test@example.com",
-            PasswordResetToken = token,
+            PasswordResetToken = PasswordResetTokenHasher.Hash(token),
             PasswordResetTokenExpires = DateTime.UtcNow.AddHours(-1) // Expired
         };
 
@@ -225,7 +240,7 @@ public class AccountPasswordServiceTests
         {
             Id = Guid.NewGuid().ToString(),
             Email = "test@example.com",
-            PasswordResetToken = token,
+            PasswordResetToken = PasswordResetTokenHasher.Hash(token),
             PasswordResetTokenExpires = DateTime.UtcNow.AddHours(1)
         };
 
