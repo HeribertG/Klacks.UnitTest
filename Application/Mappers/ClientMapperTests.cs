@@ -351,4 +351,55 @@ public class ClientMapperTests
         result.GroupName.ShouldBe("Test Group");
         result.Description.ShouldBe("Test Description");
     }
+
+    [Test]
+    public void ToResource_MapsClientQualifications()
+    {
+        // Arrange
+        var qualificationId = Guid.NewGuid();
+        var client = new Client { Id = Guid.NewGuid(), FirstName = "John", Name = "Doe" };
+        client.Qualifications.Add(new ClientQualification
+        {
+            Id = Guid.NewGuid(),
+            ClientId = client.Id,
+            QualificationId = qualificationId,
+            Level = QualificationLevel.Advanced,
+            ValidUntil = new DateOnly(2030, 6, 15)
+        });
+
+        // Act
+        var result = _mapper.ToResource(client);
+
+        // Assert
+        result.Qualifications.Count.ShouldBe(1);
+        var mapped = result.Qualifications.First();
+        mapped.QualificationId.ShouldBe(qualificationId);
+        mapped.Level.ShouldBe(QualificationLevel.Advanced);
+        mapped.ValidUntil.ShouldBe(new DateOnly(2030, 6, 15));
+    }
+
+    [Test]
+    public void ToEntity_MapsClientQualifications_AndIgnoresNavigation()
+    {
+        // Arrange
+        var qualificationId = Guid.NewGuid();
+        var resource = new ClientResource { Id = Guid.NewGuid(), FirstName = "John", Name = "Doe" };
+        resource.Qualifications.Add(new ClientQualificationResource
+        {
+            QualificationId = qualificationId,
+            Level = QualificationLevel.Basic,
+            ValidUntil = new DateOnly(2031, 1, 1)
+        });
+
+        // Act
+        var entity = _mapper.ToEntity(resource);
+
+        // Assert
+        entity.Qualifications.Count.ShouldBe(1);
+        var mapped = entity.Qualifications.First();
+        mapped.QualificationId.ShouldBe(qualificationId);
+        mapped.Level.ShouldBe(QualificationLevel.Basic);
+        mapped.ValidUntil.ShouldBe(new DateOnly(2031, 1, 1));
+        mapped.Qualification.ShouldBeNull();
+    }
 }
