@@ -124,6 +124,90 @@ public class AddressesControllerTests
     }
 
     [Test]
+    public async Task Validate_CityOnlyMatchWithStreet_ReturnsInvalidWithSuggestions()
+    {
+        // Arrange: street is present but geocoding only matched the city (city_only). This must
+        // surface as invalid with suggestions, mirroring AddressGeocodingValidator used on save,
+        // so the interactive toast can offer corrections instead of a suggestion-less rejection.
+        var resource = new AddressResource
+        {
+            Street = "ZZ Unverifiable Street 99999",
+            Zip = "8001",
+            City = "Zürich",
+            Country = "CH"
+        };
+
+        _mockGeocodingService.ValidateExactAddressAsync(
+            resource.Street, resource.Zip, resource.City, "CH")
+            .Returns(new GeocodingValidationResult
+            {
+                Found = true,
+                ExactMatch = false,
+                Latitude = 47.3769,
+                Longitude = 8.5417,
+                ReturnedAddress = "Zürich, Switzerland",
+                MatchType = "city_only"
+            });
+
+        var suggestions = new List<AddressSuggestion>
+        {
+            new() { Latitude = 47.37, Longitude = 8.54, DisplayName = "Zürich, Switzerland" }
+        };
+
+        _mockGeocodingService.GetAddressSuggestionsAsync(
+            resource.Street, resource.Zip, resource.City, "CH", Arg.Any<int>())
+            .Returns(suggestions);
+
+        // Act
+        var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
+
+        // Assert
+        result.Result.ShouldBeOfType<OkObjectResult>();
+        var okResult = result.Result as OkObjectResult;
+        var response = okResult!.Value as AddressValidationResponse;
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeFalse();
+        response.MatchType.ShouldBe("city_only");
+        response.Suggestions.Count().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Validate_CityOnlyMatchWithoutStreet_ReturnsValid()
+    {
+        // Arrange: no street given, only zip+city. A city-level match is acceptable here because
+        // there is no street to verify (mirrors AddressGeocodingValidator's !hasStreet branch).
+        var resource = new AddressResource
+        {
+            Street = string.Empty,
+            Zip = "8001",
+            City = "Zürich",
+            Country = "CH"
+        };
+
+        _mockGeocodingService.ValidateExactAddressAsync(
+            resource.Street, resource.Zip, resource.City, "CH")
+            .Returns(new GeocodingValidationResult
+            {
+                Found = true,
+                ExactMatch = false,
+                Latitude = 47.3769,
+                Longitude = 8.5417,
+                ReturnedAddress = "Zürich, Switzerland",
+                MatchType = "city_only"
+            });
+
+        // Act
+        var result = await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
+
+        // Assert
+        result.Result.ShouldBeOfType<OkObjectResult>();
+        var okResult = result.Result as OkObjectResult;
+        var response = okResult!.Value as AddressValidationResponse;
+        response.ShouldNotBeNull();
+        response!.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
     public async Task Validate_MissingCity_ReturnsOkWithIsValidFalse()
     {
         // Arrange
@@ -290,6 +374,38 @@ public class AddressesControllerTests
 
         // Assert
         result.Result.ShouldBeOfType<BadRequestObjectResult>();
+    }
+
+    [Test]
+    public async Task Post_CityOnlyMatchWithStreet_StaysLenientAndDoesNotReturnBadRequest()
+    {
+        // Direct address Post keeps the lenient geocoding behaviour: a city-only match (street
+        // present) is accepted, unlike the strict interactive /Validate pre-check used during
+        // client save. This pins the deliberate scoping of the exactness gate to /Validate only.
+        var resource = new AddressResource
+        {
+            Street = "ZZ Unverifiable Street 99999",
+            Zip = "8001",
+            City = "Zürich",
+            Country = "CH"
+        };
+
+        _mockGeocodingService.ValidateExactAddressAsync(
+            resource.Street, resource.Zip, resource.City, "CH")
+            .Returns(new GeocodingValidationResult
+            {
+                Found = true,
+                ExactMatch = false,
+                Latitude = 47.3769,
+                Longitude = 8.5417,
+                MatchType = "city_only"
+            });
+
+        // Act
+        var result = await _controller.Post(resource);
+
+        // Assert
+        result.Result.ShouldNotBeOfType<BadRequestObjectResult>();
     }
 
     [Test]
