@@ -152,4 +152,23 @@ public class ContextAssemblyPipelineTests
         Assert.That(result, Does.Contain(SchedulingMarker));
         Assert.That(result, Does.Not.Contain(MemoryText));
     }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_OmitsWorldModel_OnConversationalTurn_WhenNoDomainSkillContext()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "thanks, that is good to know", hasDomainSkillContext: false);
+
+        Assert.That(result, Does.Not.Contain(OntologyText));
+        Assert.That(result, Does.Contain(IdentityText));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_KeepsWorldModel_WhenSchedulingSkill_DespiteNoDomainSkillContext()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "ok do it now please", null, new[] { "place_work" }, hasDomainSkillContext: false);
+
+        Assert.That(result, Does.Contain(OntologyText));
+    }
 }
