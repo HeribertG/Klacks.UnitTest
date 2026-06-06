@@ -120,10 +120,39 @@ public class AccountAuthenticationServiceTests
 
         _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
         _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
+        _mockRefreshTokenService.RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns("new-refresh-token");
 
         var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
 
         result.ShouldNotBeNull();
         await _mockAuthService.Received().GetUserFromAccessTokenAsync(refreshRequest.Token);
+    }
+
+    [Test]
+    public async Task RefreshTokenAsync_WithValidToken_ShouldRotateInsteadOfRecreate()
+    {
+        var refreshRequest = new RefreshRequestResource
+        {
+            Token = "valid-jwt-token",
+            RefreshToken = "old-refresh-token"
+        };
+
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "test@example.com",
+            UserName = "test@example.com"
+        };
+
+        _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
+        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
+        _mockRefreshTokenService.RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns("new-refresh-token");
+
+        var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
+
+        result.RefreshToken.ShouldBe("new-refresh-token");
+        await _mockRefreshTokenService.Received(1).RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken);
+        await _mockRefreshTokenService.DidNotReceive().CreateRefreshTokenAsync(Arg.Any<string>());
+        await _mockRefreshTokenService.DidNotReceive().RemoveAllUserRefreshTokensAsync(Arg.Any<string>());
     }
 }
