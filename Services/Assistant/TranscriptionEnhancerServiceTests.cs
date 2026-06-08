@@ -12,6 +12,7 @@ using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
 using SettingsConstants = Klacks.Api.Application.Constants.Settings;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using LLMModel = Klacks.Api.Domain.Models.Assistant.LLMModel;
 using TranscriptionConstants = Klacks.Api.Application.Constants.TranscriptionConstants;
 
 [TestFixture]
@@ -20,6 +21,7 @@ public class TranscriptionEnhancerServiceTests
     private ILLMProviderFactory _mockProviderFactory;
     private IDictionaryService _mockDictionaryService;
     private ISettingsRepository _mockSettingsRepository;
+    private ILLMRepository _mockLlmRepository;
     private ILogger<TranscriptionEnhancerService> _mockLogger;
     private ILLMProvider _mockProvider;
     private TranscriptionEnhancerService _service;
@@ -30,6 +32,7 @@ public class TranscriptionEnhancerServiceTests
         _mockProviderFactory = Substitute.For<ILLMProviderFactory>();
         _mockDictionaryService = Substitute.For<IDictionaryService>();
         _mockSettingsRepository = Substitute.For<ISettingsRepository>();
+        _mockLlmRepository = Substitute.For<ILLMRepository>();
         _mockLogger = Substitute.For<ILogger<TranscriptionEnhancerService>>();
         _mockProvider = Substitute.For<ILLMProvider>();
 
@@ -43,6 +46,7 @@ public class TranscriptionEnhancerServiceTests
             _mockProviderFactory,
             _mockDictionaryService,
             _mockSettingsRepository,
+            _mockLlmRepository,
             _mockLogger);
     }
 
@@ -260,5 +264,29 @@ public class TranscriptionEnhancerServiceTests
         result.ShouldBe("Enhanced");
         await _mockProviderFactory.Received(1).GetProviderForModelAsync(overrideModelId);
         await _mockSettingsRepository.DidNotReceive().GetSetting(SettingsConstants.ASSISTANT_TRANSCRIPTION_MODEL);
+    }
+
+    [Test]
+    public async Task EnhanceTranscriptionAsync_SendsApiModelIdToProvider_NotInternalModelId()
+    {
+        var rawText = "some text";
+        var internalModelId = "gemini-3-1-flash-lite";
+        var apiModelId = "gemini-3.1-flash-lite";
+        var setting = new SettingsModel { Type = SettingsConstants.ASSISTANT_TRANSCRIPTION_MODEL, Value = internalModelId };
+        LLMProviderRequest? capturedRequest = null;
+
+        _mockSettingsRepository.GetSetting(SettingsConstants.ASSISTANT_TRANSCRIPTION_MODEL)
+            .Returns(Task.FromResult<SettingsModel?>(setting));
+        _mockProviderFactory.GetProviderForModelAsync(internalModelId).Returns(_mockProvider);
+        _mockLlmRepository.GetModelByIdAsync(internalModelId)
+            .Returns(Task.FromResult<LLMModel?>(new LLMModel { ModelId = internalModelId, ApiModelId = apiModelId }));
+        _mockProvider
+            .ProcessAsync(Arg.Do<LLMProviderRequest>(r => capturedRequest = r))
+            .Returns(new LLMProviderResponse { Success = true, Content = "Some text." });
+
+        await _service.EnhanceTranscriptionAsync(rawText, "en");
+
+        capturedRequest.ShouldNotBeNull();
+        capturedRequest!.ModelId.ShouldBe(apiModelId);
     }
 }
