@@ -35,7 +35,7 @@ public class TranscriptionEnhancerServiceTests
 
         _mockProvider.IsEnabled.Returns(true);
         _mockDictionaryService.BuildContextAsync(Arg.Any<CancellationToken>()).Returns(string.Empty);
-        _mockDictionaryService.ApplyReplacementsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _mockDictionaryService.ApplyReplacementsAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(x => Task.FromResult((string)x[0]));
         _mockSettingsRepository.GetSetting(Arg.Any<string>()).Returns(Task.FromResult<SettingsModel?>(null));
 

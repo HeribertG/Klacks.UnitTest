@@ -8,6 +8,7 @@ namespace Klacks.UnitTest.Services.Assistant;
 using Shouldly;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant.Phonetics;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -36,7 +37,11 @@ public class DictionaryServiceTests
             new TranscriptionDictionaryEntry { CorrectTerm = "FD", Category = "shift", Description = "Frühdienst" },
         ]);
 
-        _service = new DictionaryService(_repository, _cache, _logger);
+        var encoderFactory = new PhoneticEncoderFactory();
+        var configProvider = Substitute.For<IPhoneticConfigProvider>();
+        configProvider.GetForLocale(Arg.Any<string?>()).Returns(new PhoneticConfig { Enabled = false });
+
+        _service = new DictionaryService(_repository, _cache, encoderFactory, configProvider, _logger);
     }
 
     [Test]
