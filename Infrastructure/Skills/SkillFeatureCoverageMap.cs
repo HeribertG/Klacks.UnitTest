@@ -1,0 +1,145 @@
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+/// <summary>
+/// Curated Klacksy feature-coverage decisions for every API controller in Klacks.Api.
+/// Each controller is either covered (value lists the chat skills exposing the feature)
+/// or excluded (value explains why no chat skill is required, or documents a known gap
+/// with its roadmap reference). SkillFeatureCoverageGuardTests fails for any controller
+/// missing from this map, forcing an explicit coverage decision for every new feature.
+/// </summary>
+
+namespace Klacks.UnitTest.Infrastructure.Skills;
+
+public static class SkillFeatureCoverageMap
+{
+    public const string CoveredPrefix = "covered: ";
+    public const string ExcludedPrefix = "excluded: ";
+
+    private const string GapRoadmapSuffix = "), planned phase A3 (roadmap 2026-06-10)";
+    private const string FloorPlanDeferred = "FloorPlan: feature unfinished, skills deferred (2026-06-10)";
+
+    public static readonly IReadOnlyDictionary<string, string> Decisions = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["AgentAutonomyController"] = Covered("get_autonomy_level", "set_autonomy_level"),
+        ["AgentMemoriesController"] = Covered("get_ai_memories", "add_ai_memory", "update_ai_memory", "delete_ai_memory"),
+        ["AgentPlansController"] = Excluded("Klacksy assistant infrastructure: persisted planner runs; plans are initiated via the propose_plan skill"),
+        ["AgentSoulController"] = Covered("get_ai_soul", "update_ai_soul"),
+        ["AgentTriggerPreferencesController"] = Excluded("Klacksy assistant self-configuration: per-user trigger mute/snooze managed in the assistant settings UI; heartbeat tuning is exposed via configure_heartbeat"),
+        ["AgentsController"] = Excluded("Klacksy assistant administration (agent registry), assistant infrastructure"),
+        ["ChatController"] = Excluded("Klacksy chat pipeline itself: the host that executes skills, covering it with skills would be circular"),
+        ["CustomSttProviderController"] = Excluded("voice STT provider plumbing; configuration visibility via get_speech_settings"),
+        ["DocsController"] = Excluded("serves embedded assistant documentation, internal infrastructure"),
+        ["EvalController"] = Excluded("Klacksy evaluation harness, developer tooling"),
+        ["GlobalRulesController"] = Covered("get_ai_guidelines", "update_ai_guidelines"),
+        ["KlacksyTrainingController"] = Excluded("Klacksy training and knowledge ingestion, assistant infrastructure"),
+        ["ModelSyncController"] = Excluded("admin-only LLM model catalog synchronization; day-to-day model management is covered by the llm model skills"),
+        ["ModelsController"] = Covered("list_llm_models", "create_llm_model", "update_llm_model", "delete_llm_model"),
+        ["ProvidersController"] = Covered("list_llm_providers", "create_llm_provider", "update_llm_provider", "delete_llm_provider"),
+        ["SkillCoverageController"] = Excluded("Klacksy skill introspection endpoint, assistant infrastructure"),
+        ["SkillProposalsController"] = Covered("review_skill_suggestions"),
+        ["SkillsController"] = Covered("list_agent_skills", "create_agent_skill", "update_agent_skill", "delete_agent_skill"),
+        ["SttController"] = Excluded("voice audio streaming pipeline, not chat-addressable; settings covered by get_speech_settings"),
+        ["TranscriptionController"] = Excluded("voice audio streaming pipeline, not chat-addressable; settings covered by get_speech_settings"),
+        ["TranscriptionDictionaryController"] = Covered("list_transcription_dictionary_entries", "add_transcription_dictionary_entry", "update_transcription_dictionary_entry", "delete_transcription_dictionary_entry"),
+        ["TtsController"] = Excluded("voice audio streaming pipeline, not chat-addressable; settings covered by get_speech_settings"),
+        ["UsageController"] = Gap("LLM usage analytics"),
+
+        ["DatabaseController"] = Excluded("internal database maintenance endpoint, not a user-facing feature"),
+
+        ["FeaturePluginController"] = Gap("feature plugins"),
+
+        ["ClientShiftPreferencesController"] = Covered("set_shift_preferences"),
+        ["ContractsController"] = Covered("list_contracts", "get_contract_details", "create_contract", "update_contract", "delete_contract", "assign_contract_to_client", "assign_contract_by_name"),
+        ["GroupItemsController"] = Covered("add_client_to_group", "add_client_to_group_by_name", "remove_client_from_group"),
+        ["GroupVisibilitiesController"] = Covered("set_user_group_scope"),
+        ["GroupsController"] = Covered("list_groups", "list_groups_hierarchical", "create_group", "update_group", "delete_group", "set_group_location"),
+        ["MembershipsController"] = Covered("list_client_memberships", "update_membership"),
+
+        ["AccountsController"] = Covered("create_user", "delete_system_user", "list_system_users", "assign_user_permissions", "get_user_permissions"),
+        ["IdentityProvidersController"] = Covered("list_identity_providers", "create_identity_provider", "update_identity_provider", "delete_identity_provider"),
+        ["OAuth2Controller"] = Excluded("auth infrastructure: browser redirect flow, not chat-addressable"),
+
+        ["BaseController"] = Excluded("base class for API controllers, no own endpoints"),
+        ["DashboardController"] = Covered("get_dashboard_summary", "get_client_locations_overview", "interpret_resource_monitor"),
+        ["LanguageConfigController"] = Covered("list_languages", "install_language_pack", "uninstall_language_pack"),
+        ["LoadFileController"] = Excluded("binary file upload/download infrastructure, not chat-addressable"),
+        ["RouteOptimizationController"] = Gap("route optimization; geographic grouping is covered by propose_customer_grouping/apply_customer_grouping but route planning itself is not"),
+        ["ScheduleChangesController"] = Gap("schedule change history; rollback_my_last_change/verify_my_last_action only cover the assistant's own session"),
+        ["TranslationController"] = Covered("get_translation_status"),
+        ["UpdateController"] = Excluded("auto-update deployment infrastructure, not a Klacksy domain feature"),
+        ["VersionController"] = Covered("get_system_info"),
+
+        ["CalendarSelectionsController"] = Gap("calendar selection management"),
+        ["SelectedCalendarsController"] = Gap("calendar selection management"),
+
+        ["EmailFoldersController"] = Covered("list_email_folders"),
+        ["ReceivedEmailController"] = Covered("list_emails", "read_email"),
+        ["SpamRulesController"] = Covered("get_spam_filter_settings", "update_spam_filter_settings"),
+
+        ["OrderExportController"] = Covered("list_sealed_orders", "list_recent_exports", "open_order_export"),
+
+        ["FloorPlanWorkMarkersController"] = Excluded(FloorPlanDeferred),
+        ["FloorPlansController"] = Excluded(FloorPlanDeferred),
+
+        ["PeriodClosingController"] = Covered("close_period", "reopen_period", "approve_day", "revoke_day_approval", "generate_period_summary"),
+
+        ["ReportTemplatesController"] = Covered("list_report_templates"),
+        ["ScheduleReportController"] = Covered("email_schedule_to_client"),
+
+        ["ClientSortPreferencesController"] = Excluded("per-user UI sort preference persistence, not meaningful as a chat skill"),
+
+        ["AbsenceDetailsController"] = Covered("search_client_absences", "cover_absence", "find_replacement"),
+        ["AbsencesController"] = Covered("create_absence", "update_absence", "delete_absence", "list_absence_types"),
+        ["AnalyseScenariosController"] = Covered("list_scenarios", "evaluate_scenario", "accept_scenario", "reject_scenario"),
+        ["AutoWizardController"] = Covered("start_autowizard"),
+        ["BreakPlaceholdersController"] = Gap("break placeholder planning"),
+        ["BreaksController"] = Covered("add_break", "delete_break"),
+        ["ContainerLocksController"] = Excluded("schedule grid concurrency locking between UI sessions, not chat-addressable"),
+        ["ContainersController"] = Gap("container templates"),
+        ["ExpensesController"] = Covered("list_expenses", "add_expense", "update_expense", "delete_expense"),
+        ["HarmonizerController"] = Covered("start_wizard2"),
+        ["HolisticHarmonizerController"] = Covered("start_wizard3"),
+        ["ScheduleCommandsController"] = Covered("add_schedule_command"),
+        ["ScheduleNotesController"] = Covered("list_schedule_notes", "add_schedule_note", "delete_schedule_note"),
+        ["ShiftsController"] = Covered("create_shift", "update_shift", "delete_shift", "set_shift_required_qualification", "search_shifts", "get_shift_details"),
+        ["WizardController"] = Covered("start_wizard1", "list_open_wizard_jobs", "cancel_wizard_job"),
+        ["WorkChangesController"] = Covered("add_workchange"),
+        ["WorksController"] = Covered("place_work", "delete_work", "confirm_work", "unconfirm_work", "read_schedule_state"),
+
+        ["SchedulingRulesController"] = Covered("list_scheduling_rules", "create_scheduling_rule", "update_scheduling_rule", "delete_scheduling_rule", "get_scheduling_defaults", "update_scheduling_defaults"),
+
+        ["BranchController"] = Covered("list_branches", "create_branch", "update_branch", "delete_branch"),
+        ["CalendarRulesController"] = Covered("import_calendar_rules", "validate_calendar_rule", "list_holidays_for_period", "validate_holiday_overlap"),
+        ["CountriesController"] = Covered("list_countries"),
+        ["GeneralSettingsController"] = Covered("get_general_settings", "update_general_settings", "get_email_settings", "update_email_settings", "get_imap_settings", "update_imap_settings", "get_owner_address", "update_owner_address", "get_work_settings", "update_work_settings", "get_deepl_settings", "update_deepl_settings", "get_web_search_settings", "update_web_search_settings", "test_smtp_connection", "test_imap_connection"),
+        ["MacrosController"] = Covered("list_macros", "create_macro", "update_macro", "delete_macro"),
+        ["PostcodeChController"] = Covered("lookup_location"),
+        ["QualificationController"] = Covered("create_qualification", "update_qualification", "delete_qualification", "list_qualifications", "set_client_qualification"),
+        ["StatesController"] = Covered("list_states"),
+
+        ["AddressesController"] = Covered("create_employee", "update_client", "validate_address"),
+        ["AnnotationsController"] = Covered("add_client_note"),
+        ["AssignedGroupsController"] = Covered("add_client_to_group", "remove_client_from_group", "set_user_group_scope"),
+        ["ClientAvailabilitiesController"] = Covered("list_client_availabilities", "set_client_availability"),
+        ["ClientsController"] = Covered("search_employees", "get_client_details", "create_employee", "update_client", "delete_client", "update_client_birthdate", "update_client_gender"),
+        ["CommunicationsController"] = Covered("add_client_email", "add_client_phone"),
+
+        ["BaseWebController"] = Excluded("base class for MVC web controllers, no own endpoints"),
+        ["PasswordResetController"] = Excluded("anonymous password reset web flow, auth infrastructure"),
+    };
+
+    private static string Covered(params string[] skillNames)
+    {
+        return CoveredPrefix + string.Join(", ", skillNames);
+    }
+
+    private static string Excluded(string reason)
+    {
+        return ExcludedPrefix + reason;
+    }
+
+    private static string Gap(string area)
+    {
+        return ExcludedPrefix + "gap (" + area + GapRoadmapSuffix;
+    }
+}

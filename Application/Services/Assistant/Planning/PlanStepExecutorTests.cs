@@ -8,6 +8,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Application.Services.Assistant.Planning;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,6 +20,9 @@ public class PlanStepExecutorTests
 {
     private IAgentPlanRepository _planRepository = null!;
     private ISkillExecutor _skillExecutor = null!;
+    private ISkillRegistry _skillRegistry = null!;
+    private ISkillRiskClassifier _riskClassifier = null!;
+    private IAgentAutonomyPreferenceRepository _autonomyRepository = null!;
     private IAssistantNotificationService _notificationService = null!;
     private PlanStepExecutor _sut = null!;
 
@@ -27,10 +31,19 @@ public class PlanStepExecutorTests
     {
         _planRepository = Substitute.For<IAgentPlanRepository>();
         _skillExecutor = Substitute.For<ISkillExecutor>();
+        _skillRegistry = Substitute.For<ISkillRegistry>();
+        _riskClassifier = Substitute.For<ISkillRiskClassifier>();
+        _autonomyRepository = Substitute.For<IAgentAutonomyPreferenceRepository>();
+        _skillRegistry.GetSkillByName(Arg.Any<string>()).Returns((SkillDescriptor?)null);
+        _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((AgentAutonomyPreferenceRow?)null);
         _notificationService = Substitute.For<IAssistantNotificationService>();
         _sut = new PlanStepExecutor(
             _planRepository,
             _skillExecutor,
+            _skillRegistry,
+            _riskClassifier,
+            _autonomyRepository,
             _notificationService,
             NullLogger<PlanStepExecutor>.Instance);
     }
@@ -192,5 +205,64 @@ public class PlanStepExecutorTests
                 i.SkillName == "assign_contract_to_client" &&
                 (string)i.Parameters["clientId"] == "client-42"),
             Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_FullyAutonomous_RunsNonReversibleStepsWithoutPause()
+    {
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "skill_safe", new(), null, true),
+            new PlanStep(2, "skill_destructive", new(), null, false)
+        });
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.FullyAutonomous });
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        await _skillExecutor.Received(2).ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_SensitiveStep_PausesEvenAtFullyAutonomous()
+    {
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "delete_system_user", new(), null, true)
+        });
+        var context = CreateSkillContext();
+        var descriptor = new SkillDescriptor(
+            "delete_system_user", "desc", SkillCategory.Crud, [], [], [], null);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillRegistry.GetSkillByName("delete_system_user").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Sensitive);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.FullyAutonomous });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.PausedForApproval));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_StepInvocations_BypassChatAutonomyGate()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_a", new(), null, true) });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        await _skillExecutor.Received(1).ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c => c.BypassAutonomyGate), Arg.Any<CancellationToken>());
     }
 }
