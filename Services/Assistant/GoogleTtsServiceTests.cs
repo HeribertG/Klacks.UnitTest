@@ -10,7 +10,6 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
-using LLMProvider = Klacks.Api.Domain.Models.Assistant.LLMProvider;
 
 [TestFixture]
 public class GoogleTtsServiceTests
@@ -44,13 +43,13 @@ public class GoogleTtsServiceTests
         }
     }
 
-    private ILLMRepository _llmRepository = null!;
+    private ITtsApiKeyResolver _apiKeyResolver = null!;
     private ILogger<GoogleTtsService> _logger = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _llmRepository = Substitute.For<ILLMRepository>();
+        _apiKeyResolver = Substitute.For<ITtsApiKeyResolver>();
         _logger = Substitute.For<ILogger<GoogleTtsService>>();
     }
 
@@ -63,8 +62,8 @@ public class GoogleTtsServiceTests
 
     private void GivenKey(string apiKey)
     {
-        _llmRepository.GetProviderByIdAsync(GoogleTtsConstants.LlmProviderId)
-            .Returns(Task.FromResult<LLMProvider?>(new LLMProvider { ProviderId = GoogleTtsConstants.LlmProviderId, ApiKey = apiKey }));
+        _apiKeyResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(string.IsNullOrWhiteSpace(apiKey) ? null : apiKey));
     }
 
     private static string AudioJson(byte[] audio)
@@ -78,7 +77,7 @@ public class GoogleTtsServiceTests
         var audio = new byte[] { 5, 6, 7, 8 };
         var handler = new CapturingHandler(HttpStatusCode.OK, AudioJson(audio));
         GivenKey("AIza-test-key");
-        var service = new GoogleTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new GoogleTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         var result = await service.SynthesizeAsync("Hallo", "de-DE-Neural2-C", "de");
 
@@ -94,7 +93,7 @@ public class GoogleTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, AudioJson(new byte[] { 1 }));
         GivenKey("AIza-test");
-        var service = new GoogleTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new GoogleTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await service.SynthesizeAsync("text", TtsProviderConstants.AutoVoice, "de");
 
@@ -107,7 +106,7 @@ public class GoogleTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, AudioJson(System.Array.Empty<byte>()));
         GivenKey(string.Empty);
-        var service = new GoogleTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new GoogleTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await Should.ThrowAsync<InvalidOperationException>(async () =>
             await service.SynthesizeAsync("text", TtsProviderConstants.AutoVoice, "de"));
@@ -116,7 +115,7 @@ public class GoogleTtsServiceTests
     [Test]
     public async Task GetVoicesAsync_ReturnsCuratedVoicesWithLanguageCode()
     {
-        var service = new GoogleTtsService(Substitute.For<IHttpClientFactory>(), _llmRepository, _logger);
+        var service = new GoogleTtsService(Substitute.For<IHttpClientFactory>(), _apiKeyResolver, _logger);
 
         var voices = await service.GetVoicesAsync();
 

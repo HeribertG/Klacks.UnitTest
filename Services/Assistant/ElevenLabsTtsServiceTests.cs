@@ -8,7 +8,6 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
-using LLMProvider = Klacks.Api.Domain.Models.Assistant.LLMProvider;
 
 [TestFixture]
 public class ElevenLabsTtsServiceTests
@@ -33,13 +32,13 @@ public class ElevenLabsTtsServiceTests
         }
     }
 
-    private ILLMRepository _llmRepository = null!;
+    private ITtsApiKeyResolver _apiKeyResolver = null!;
     private ILogger<ElevenLabsTtsService> _logger = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _llmRepository = Substitute.For<ILLMRepository>();
+        _apiKeyResolver = Substitute.For<ITtsApiKeyResolver>();
         _logger = Substitute.For<ILogger<ElevenLabsTtsService>>();
     }
 
@@ -52,8 +51,8 @@ public class ElevenLabsTtsServiceTests
 
     private void GivenKey(string apiKey)
     {
-        _llmRepository.GetProviderByIdAsync(ElevenLabsTtsConstants.LlmProviderId)
-            .Returns(Task.FromResult<LLMProvider?>(new LLMProvider { ProviderId = ElevenLabsTtsConstants.LlmProviderId, ApiKey = apiKey }));
+        _apiKeyResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(string.IsNullOrWhiteSpace(apiKey) ? null : apiKey));
     }
 
     [Test]
@@ -62,7 +61,7 @@ public class ElevenLabsTtsServiceTests
         var audio = new byte[] { 1, 2, 3 };
         var handler = new CapturingHandler(HttpStatusCode.OK, audio);
         GivenKey("xi-test-key");
-        var service = new ElevenLabsTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new ElevenLabsTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         var result = await service.SynthesizeAsync("Hallo", "pNInz6obpgDQGcFmaJgB", "de");
 
@@ -76,7 +75,7 @@ public class ElevenLabsTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, new byte[] { 9 });
         GivenKey("xi-test");
-        var service = new ElevenLabsTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new ElevenLabsTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await service.SynthesizeAsync("text", "de-DE-ConradNeural", "de");
 
@@ -88,7 +87,7 @@ public class ElevenLabsTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, System.Array.Empty<byte>());
         GivenKey(string.Empty);
-        var service = new ElevenLabsTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new ElevenLabsTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await Should.ThrowAsync<InvalidOperationException>(async () =>
             await service.SynthesizeAsync("text", TtsProviderConstants.AutoVoice, "de"));
@@ -97,7 +96,7 @@ public class ElevenLabsTtsServiceTests
     [Test]
     public async Task GetVoicesAsync_ReturnsCuratedVoices()
     {
-        var service = new ElevenLabsTtsService(Substitute.For<IHttpClientFactory>(), _llmRepository, _logger);
+        var service = new ElevenLabsTtsService(Substitute.For<IHttpClientFactory>(), _apiKeyResolver, _logger);
 
         var voices = await service.GetVoicesAsync();
 

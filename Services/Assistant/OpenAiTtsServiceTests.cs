@@ -9,7 +9,6 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
-using LLMProvider = Klacks.Api.Domain.Models.Assistant.LLMProvider;
 
 [TestFixture]
 public class OpenAiTtsServiceTests
@@ -40,13 +39,13 @@ public class OpenAiTtsServiceTests
         }
     }
 
-    private ILLMRepository _llmRepository = null!;
+    private ITtsApiKeyResolver _apiKeyResolver = null!;
     private ILogger<OpenAiTtsService> _logger = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _llmRepository = Substitute.For<ILLMRepository>();
+        _apiKeyResolver = Substitute.For<ITtsApiKeyResolver>();
         _logger = Substitute.For<ILogger<OpenAiTtsService>>();
     }
 
@@ -59,8 +58,8 @@ public class OpenAiTtsServiceTests
 
     private void GivenKey(string apiKey)
     {
-        _llmRepository.GetProviderByIdAsync(OpenAiTtsConstants.LlmProviderId)
-            .Returns(Task.FromResult<LLMProvider?>(new LLMProvider { ProviderId = OpenAiTtsConstants.LlmProviderId, ApiKey = apiKey }));
+        _apiKeyResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>(string.IsNullOrWhiteSpace(apiKey) ? null : apiKey));
     }
 
     [Test]
@@ -69,7 +68,7 @@ public class OpenAiTtsServiceTests
         var audio = new byte[] { 1, 2, 3, 4 };
         var handler = new CapturingHandler(HttpStatusCode.OK, audio);
         GivenKey("sk-test-key");
-        var service = new OpenAiTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new OpenAiTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         var result = await service.SynthesizeAsync("Hallo Welt", "nova", "de");
 
@@ -86,7 +85,7 @@ public class OpenAiTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, new byte[] { 9 });
         GivenKey("sk-test");
-        var service = new OpenAiTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new OpenAiTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await service.SynthesizeAsync("text", "de-DE-ConradNeural", "de");
 
@@ -99,7 +98,7 @@ public class OpenAiTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, new byte[] { 9 });
         GivenKey("sk-test");
-        var service = new OpenAiTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new OpenAiTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await service.SynthesizeAsync("text", TtsProviderConstants.AutoVoice, "de");
 
@@ -112,7 +111,7 @@ public class OpenAiTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, System.Array.Empty<byte>());
         GivenKey(string.Empty);
-        var service = new OpenAiTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new OpenAiTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await Should.ThrowAsync<InvalidOperationException>(async () =>
             await service.SynthesizeAsync("text", TtsProviderConstants.AutoVoice, "de"));
@@ -123,7 +122,7 @@ public class OpenAiTtsServiceTests
     {
         var handler = new CapturingHandler(HttpStatusCode.BadRequest, System.Array.Empty<byte>());
         GivenKey("sk-test");
-        var service = new OpenAiTtsService(FactoryReturning(handler), _llmRepository, _logger);
+        var service = new OpenAiTtsService(FactoryReturning(handler), _apiKeyResolver, _logger);
 
         await Should.ThrowAsync<InvalidOperationException>(async () =>
             await service.SynthesizeAsync("text", "nova", "de"));
@@ -132,7 +131,7 @@ public class OpenAiTtsServiceTests
     [Test]
     public async Task GetVoicesAsync_ReturnsOpenAiVoiceSet()
     {
-        var service = new OpenAiTtsService(Substitute.For<IHttpClientFactory>(), _llmRepository, _logger);
+        var service = new OpenAiTtsService(Substitute.For<IHttpClientFactory>(), _apiKeyResolver, _logger);
 
         var voices = await service.GetVoicesAsync();
 
