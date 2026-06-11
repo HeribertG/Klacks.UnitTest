@@ -1,6 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
-using Klacks.Api.Application.Skills.Generic;
+using Klacks.Api.Domain.Services.Assistant;
 using NUnit.Framework;
 using Shouldly;
 
