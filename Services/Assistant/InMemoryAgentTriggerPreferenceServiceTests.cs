@@ -21,50 +21,50 @@ public class InMemoryAgentTriggerPreferenceServiceTests
     }
 
     [Test]
-    public void Defaults_AllowAnyLowOrHigherEvent()
+    public async Task Defaults_AllowAnyLowOrHigherEvent()
     {
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Low), Is.True);
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.True);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Low), Is.True);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.True);
     }
 
     [Test]
-    public void Mute_BlocksAllSeverities()
+    public async Task Mute_BlocksAllSeverities()
     {
-        _sut.Mute("u1", AgentTriggerKinds.UnstaffedShift, true);
+        await _sut.MuteAsync("u1", AgentTriggerKinds.UnstaffedShift, true);
 
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.False);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.False);
     }
 
     [Test]
-    public void Snooze_Future_BlocksUntilReached()
+    public async Task Snooze_Future_BlocksUntilReached()
     {
-        _sut.Snooze("u1", AgentTriggerKinds.UnstaffedShift, DateTime.UtcNow.AddHours(2));
+        await _sut.SnoozeAsync("u1", AgentTriggerKinds.UnstaffedShift, DateTime.UtcNow.AddHours(2));
 
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.False);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.False);
     }
 
     [Test]
-    public void Snooze_Past_ClearsBlock()
+    public async Task Snooze_Past_ClearsBlock()
     {
-        _sut.Snooze("u1", AgentTriggerKinds.UnstaffedShift, DateTime.UtcNow.AddHours(-1));
+        await _sut.SnoozeAsync("u1", AgentTriggerKinds.UnstaffedShift, DateTime.UtcNow.AddHours(-1));
 
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Low), Is.True);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Low), Is.True);
     }
 
     [Test]
-    public void SetMinimumSeverity_BlocksLowerEvents()
+    public async Task SetMinimumSeverity_BlocksLowerEvents()
     {
-        _sut.SetMinimumSeverity("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High);
+        await _sut.SetMinimumSeverityAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High);
 
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Low), Is.False);
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Medium), Is.False);
-        Assert.That(_sut.IsAllowed("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.True);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Low), Is.False);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.Medium), Is.False);
+        Assert.That(await _sut.IsAllowedAsync("u1", AgentTriggerKinds.UnstaffedShift, AgentTriggerSeverity.High), Is.True);
     }
 
     [Test]
     public void SetMinimumSeverity_UnknownValueThrows()
     {
-        Assert.Throws<ArgumentException>(() =>
-            _sut.SetMinimumSeverity("u1", AgentTriggerKinds.UnstaffedShift, "extreme"));
+        Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.SetMinimumSeverityAsync("u1", AgentTriggerKinds.UnstaffedShift, "extreme"));
     }
 }

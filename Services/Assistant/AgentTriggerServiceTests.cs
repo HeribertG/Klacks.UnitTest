@@ -26,7 +26,7 @@ public class AgentTriggerServiceTests
         _rateLimiter = Substitute.For<IAgentTriggerRateLimiter>();
         _preferenceService = Substitute.For<IAgentTriggerPreferenceService>();
         _notificationService = Substitute.For<IAssistantNotificationService>();
-        _preferenceService.IsAllowed(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _sut = new AgentTriggerService(_rateLimiter, _preferenceService, _notificationService,
             NullLogger<AgentTriggerService>.Instance);
     }
@@ -77,8 +77,8 @@ public class AgentTriggerServiceTests
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a", "user-b" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-        _preferenceService.IsAllowed("user-a", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-        _preferenceService.IsAllowed("user-b", Arg.Any<string>(), Arg.Any<string>()).Returns(false);
+        _preferenceService.IsAllowedAsync("user-a", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _preferenceService.IsAllowedAsync("user-b", Arg.Any<string>(), Arg.Any<string>()).Returns(false);
 
         await _sut.OnEventAsync(MakeEvent());
 

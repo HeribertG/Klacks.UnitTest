@@ -42,7 +42,8 @@ internal class GetTruncatedListQueryTests
             .Returns(Task.FromResult(lastChangeMetaData));
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(clientFilterRepositoryMock, clientRepositoryMock, _clientMapper, _filterMapper, logger);
+        var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+        var handler = new GetTruncatedListQueryHandler(clientFilterRepositoryMock, clientRepositoryMock, _clientMapper, _filterMapper, httpContextAccessor, logger);
 
         //Act
         var result = await handler.Handle(query, default);

@@ -19,6 +19,7 @@ public class PageExplainSkillRoutesTests
     [TestCase("/workplace/period-closing", "explain_page_period_closing")]
     [TestCase("/workplace/inbox", "explain_page_inbox")]
     [TestCase("/workplace/settings", "explain_page_settings_overview")]
+    [TestCase("/workplace/profile", "explain_page_profile")]
     public void ResolveSkillName_ExactRoute_ReturnsSkill(string route, string expected)
     {
         PageExplainSkillRoutes.ResolveSkillName(route).ShouldBe(expected);

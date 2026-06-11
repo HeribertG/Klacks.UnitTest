@@ -132,7 +132,7 @@ internal class ClientTests
 
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, _httpContextAccessor, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -179,7 +179,7 @@ internal class ClientTests
             clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, _httpContextAccessor, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert
@@ -232,7 +232,7 @@ internal class ClientTests
             clientFilterService, membershipFilterService, searchService, sortingService);
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
-        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, logger);
+        var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, _httpContextAccessor, logger);
         //Act
         var result = await handler.Handle(query, default);
         //Assert

@@ -192,7 +192,7 @@ internal class GoupTests
         filter.Female = false;
         filter.LegalEntity = false;
         var logger = Substitute.For<ILogger<Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler>>();
-        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientFilterRepository, clientRepository, _clientMapper, _filterMapper, logger);
+        var handler = new Klacks.Api.Application.Handlers.Clients.GetTruncatedListQueryHandler(clientFilterRepository, clientRepository, _clientMapper, _filterMapper, Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>(), logger);
 
         var group = new GroupResource();
         group.Name = $"FakeName{index}";

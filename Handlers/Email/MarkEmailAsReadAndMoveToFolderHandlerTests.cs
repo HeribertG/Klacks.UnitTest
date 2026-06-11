@@ -15,6 +15,8 @@ namespace Klacks.UnitTest.Handlers.Email;
 [TestFixture]
 public class MarkEmailAsReadCommandHandlerTests
 {
+    private const string TestUserId = "user-1";
+
     private IReceivedEmailRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IEmailNotificationService _notificationService = null!;
@@ -48,14 +50,14 @@ public class MarkEmailAsReadCommandHandlerTests
         _repository.GetByIdAsync(emailId).Returns(email);
 
         var result = await _handler.Handle(
-            new MarkEmailAsReadCommand(emailId, true), CancellationToken.None);
+            new MarkEmailAsReadCommand(emailId, true, TestUserId), CancellationToken.None);
 
         result.ShouldBeTrue();
         email.IsRead.ShouldBeTrue();
         await _repository.Received(1).UpdateAsync(email);
         await _unitOfWork.Received(1).CompleteAsync();
         await _imapService.Received(1).SetReadFlagOnImapAsync(42, "INBOX", true, Arg.Any<CancellationToken>());
-        await _notificationService.Received(1).NotifyReadStateChangedAsync(emailId, true, "INBOX");
+        await _notificationService.Received(1).NotifyReadStateChangedAsync(TestUserId, emailId, true, "INBOX");
     }
 
     [Test]
@@ -65,7 +67,7 @@ public class MarkEmailAsReadCommandHandlerTests
         _repository.GetByIdAsync(emailId).Returns((ReceivedEmail?)null);
 
         Func<Task> act = async () => await _handler.Handle(
-            new MarkEmailAsReadCommand(emailId, true), CancellationToken.None);
+            new MarkEmailAsReadCommand(emailId, true, TestUserId), CancellationToken.None);
 
         await act.ShouldThrowAsync<KeyNotFoundException>();
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<ReceivedEmail>());
@@ -86,7 +88,7 @@ public class MarkEmailAsReadCommandHandlerTests
         _repository.GetByIdAsync(emailId).Returns(email);
 
         await _handler.Handle(
-            new MarkEmailAsReadCommand(emailId, false), CancellationToken.None);
+            new MarkEmailAsReadCommand(emailId, false, TestUserId), CancellationToken.None);
 
         email.IsRead.ShouldBeFalse();
         await _imapService.Received(1).SetReadFlagOnImapAsync(99, "INBOX", false, Arg.Any<CancellationToken>());
@@ -106,10 +108,10 @@ public class MarkEmailAsReadCommandHandlerTests
         _repository.GetByIdAsync(emailId).Returns(email);
 
         await _handler.Handle(
-            new MarkEmailAsReadCommand(emailId, true), CancellationToken.None);
+            new MarkEmailAsReadCommand(emailId, true, TestUserId), CancellationToken.None);
 
         await _imapService.Received(1).SetReadFlagOnImapAsync(1337, "Sent", true, Arg.Any<CancellationToken>());
-        await _notificationService.Received(1).NotifyReadStateChangedAsync(emailId, true, "Sent");
+        await _notificationService.Received(1).NotifyReadStateChangedAsync(TestUserId, emailId, true, "Sent");
     }
 }
 
