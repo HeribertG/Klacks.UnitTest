@@ -98,6 +98,39 @@ public class KnowledgeIndexSynchronizerTests
     }
 
     [Test]
+    public async Task SyncAsync_EmbeddingTextIncludesTriggerKeywordsAndSynonyms()
+    {
+        var descriptor = new SkillDescriptor(
+            "explain_page_dashboard", "Explains the dashboard page.", SkillCategory.System,
+            [], [], [], null)
+        {
+            TriggerKeywords = new[] { "abdeckung", "bestätigung" },
+            Synonyms = new Dictionary<string, List<string>>
+            {
+                ["de"] = ["was sehe ich hier"],
+                ["fr"] = ["tableau de bord"]
+            }
+        };
+
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new float[][] { new float[384] });
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _embeddings, _repo);
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _repo.Received(1).UpsertAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                list.Count == 1 &&
+                list[0].Text.Contains("Keywords: abdeckung, bestätigung") &&
+                list[0].Text.Contains("Synonyms: was sehe ich hier, tableau de bord")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task SyncAsync_SkillWithMultiplePermissions_UsesFirstPermission()
     {
         var descriptor = new SkillDescriptor(
