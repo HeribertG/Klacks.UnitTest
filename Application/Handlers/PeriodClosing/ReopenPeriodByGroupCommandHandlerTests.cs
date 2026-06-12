@@ -92,6 +92,31 @@ public class ReopenPeriodByGroupCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_PassesAuthorisedRoleFlagToCanUnseal_WhenUserHasAuthorisedRole()
+    {
+        PeriodClosingTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        _lockLevelService.CanUnseal(WorkLockLevel.Closed, false, true).Returns(true);
+        _workRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<CancellationToken>()).Returns(5);
+        _breakRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<CancellationToken>()).Returns(2);
+
+        var command = new ReopenPeriodByGroupCommand(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            null,
+            "Customer correction");
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.ShouldBe(7);
+
+        _lockLevelService.Received(1).CanUnseal(WorkLockLevel.Closed, false, true);
+
+        await _auditLogRepository.Received(1).AddAsync(
+            Arg.Is<PeriodAuditLog>(log => log.PerformedBy == "authorised-user"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Handle_UnsealsAndWritesAuditLog_WhenAdminWithReason()
     {
         PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");

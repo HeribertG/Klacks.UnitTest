@@ -111,6 +111,30 @@ public class ClosePeriodByGroupCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_PassesAuthorisedRoleFlagToCanSeal_WhenUserHasAuthorisedRole()
+    {
+        PeriodClosingTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        _lockLevelService.CanSeal(WorkLockLevel.None, WorkLockLevel.Closed, false, true).Returns(true);
+
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            null,
+            "Monthly close");
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // 0 work + 0 break + 31 SealedDay rows (Jan 2026 has 31 days)
+        result.ShouldBe(31);
+
+        _lockLevelService.Received(1).CanSeal(WorkLockLevel.None, WorkLockLevel.Closed, false, true);
+
+        await _auditLogRepository.Received(1).AddAsync(
+            Arg.Is<PeriodAuditLog>(log => log.PerformedBy == "authorised-user"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Handle_CallsSealByPeriodAndGroup_WhenGroupIdIsProvided()
     {
         var groupId = Guid.NewGuid();
