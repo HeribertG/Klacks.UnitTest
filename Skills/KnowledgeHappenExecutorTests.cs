@@ -1,8 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Klacks.Api.Application.Skills.Generic;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -16,7 +18,9 @@ public class KnowledgeHappenExecutorTests
     public void Setup()
     {
         _memoryRepository = Substitute.For<IAgentMemoryRepository>();
-        _sut = new KnowledgeHappenExecutor(_memoryRepository);
+        _sut = new KnowledgeHappenExecutor(
+            _memoryRepository,
+            Substitute.For<ILogger<KnowledgeHappenExecutor>>());
     }
 
     [Test]
@@ -142,5 +146,42 @@ public class KnowledgeHappenExecutorTests
         var serialized = System.Text.Json.JsonSerializer.Serialize(result.Data);
         Assert.That(serialized, Does.Contain("A year-wide Gantt chart."));
         Assert.That(serialized, Does.Contain("Header, row header, surface, mask."));
+    }
+
+    [Test]
+    public async Task PageHappen_WithInternalNameInProse_IsSanitized()
+    {
+        _memoryRepository.GetByKeyAsync("explain_page_shifts", Arg.Any<CancellationToken>())
+            .Returns(new AgentMemory
+            {
+                Key = "explain_page_shifts",
+                Content = "# Shifts\nEine SealedOrder erzeugt eine OriginalShift."
+            });
+
+        var result = await _sut.ExecuteAsync(new KnowledgeHappenConfig { MemoryKey = "explain_page_shifts" });
+
+        var serialized = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        Assert.That(serialized, Does.Not.Contain("SealedOrder"));
+        Assert.That(serialized, Does.Not.Contain("OriginalShift"));
+        Assert.That(serialized, Does.Contain("versiegelte Bestellung"));
+        Assert.That(serialized, Does.Contain("planbare Schicht"));
+    }
+
+    [Test]
+    public async Task LifecycleHappen_IsExemptFromSanitization()
+    {
+        _memoryRepository.GetByKeyAsync(SkillNames.ExplainShiftLifecycle, Arg.Any<CancellationToken>())
+            .Returns(new AgentMemory
+            {
+                Key = SkillNames.ExplainShiftLifecycle,
+                Content = "Eine SealedOrder erzeugt eine OriginalShift."
+            });
+
+        var result = await _sut.ExecuteAsync(
+            new KnowledgeHappenConfig { MemoryKey = SkillNames.ExplainShiftLifecycle });
+
+        var serialized = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        Assert.That(serialized, Does.Contain("SealedOrder"));
+        Assert.That(serialized, Does.Contain("OriginalShift"));
     }
 }

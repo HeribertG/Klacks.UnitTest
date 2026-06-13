@@ -118,23 +118,10 @@ public class NavigateToSkillTests
     }
 
     [Test]
-    public async Task NavigationToExplainablePage_InstructsFollowUpExplainCall()
+    public async Task NavigationToExplainablePage_KeepsPlainMessage_KnowledgeInjectionLivesInExecutor()
     {
         _catalog.GetByPageKey("new-shift").Returns(MakeEntry("new-shift", "/workplace/new-shift", hasEntityParam: false));
         var parameters = new Dictionary<string, object> { ["page"] = "new-shift" };
-
-        var result = await _skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("explain_page_shifts"));
-        Assert.That(result.Message, Does.Contain("level=elements"));
-    }
-
-    [Test]
-    public async Task NavigationToPageWithoutExplainSkill_KeepsPlainMessage()
-    {
-        _catalog.GetByPageKey("floor-plan").Returns(MakeEntry("floor-plan", "/workplace/floor-plan", hasEntityParam: false));
-        var parameters = new Dictionary<string, object> { ["page"] = "floor-plan" };
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
