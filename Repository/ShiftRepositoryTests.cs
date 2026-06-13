@@ -278,6 +278,71 @@ public class ShiftRepositoryTests
     }
 
     [Test]
+    public async Task CopyRequiredQualificationsAsync_CopiesActiveQualificationsToTarget()
+    {
+        // Arrange
+        var sourceShiftId = Guid.NewGuid();
+        var targetShiftId = Guid.NewGuid();
+        var qualificationA = Guid.NewGuid();
+        var qualificationB = Guid.NewGuid();
+
+        _context.ShiftRequiredQualification.AddRange(
+            new ShiftRequiredQualification
+            {
+                Id = Guid.NewGuid(),
+                ShiftId = sourceShiftId,
+                QualificationId = qualificationA,
+                IsMandatory = true,
+                MinLevel = QualificationLevel.Advanced,
+            },
+            new ShiftRequiredQualification
+            {
+                Id = Guid.NewGuid(),
+                ShiftId = sourceShiftId,
+                QualificationId = qualificationB,
+                IsMandatory = false,
+                MinLevel = QualificationLevel.Basic,
+            });
+        await _context.SaveChangesAsync();
+
+        // Act
+        await _repository.CopyRequiredQualificationsAsync(sourceShiftId, targetShiftId);
+        await _context.SaveChangesAsync();
+
+        // Assert
+        var copied = await _context.ShiftRequiredQualification
+            .Where(q => q.ShiftId == targetShiftId)
+            .ToListAsync();
+
+        copied.Count.ShouldBe(2);
+        copied.ShouldContain(q => q.QualificationId == qualificationA && q.IsMandatory && q.MinLevel == QualificationLevel.Advanced);
+        copied.ShouldContain(q => q.QualificationId == qualificationB && !q.IsMandatory && q.MinLevel == QualificationLevel.Basic);
+
+        var sourceStillIntact = await _context.ShiftRequiredQualification
+            .Where(q => q.ShiftId == sourceShiftId)
+            .CountAsync();
+        sourceStillIntact.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task CopyRequiredQualificationsAsync_WithNoSourceQualifications_AddsNothing()
+    {
+        // Arrange
+        var sourceShiftId = Guid.NewGuid();
+        var targetShiftId = Guid.NewGuid();
+
+        // Act
+        await _repository.CopyRequiredQualificationsAsync(sourceShiftId, targetShiftId);
+        await _context.SaveChangesAsync();
+
+        // Assert
+        var copied = await _context.ShiftRequiredQualification
+            .Where(q => q.ShiftId == targetShiftId)
+            .CountAsync();
+        copied.ShouldBe(0);
+    }
+
+    [Test]
     public void FilterShifts_WithGroupFilter_IncludesShiftsWithMatchingGroup()
     {
         // Arrange
