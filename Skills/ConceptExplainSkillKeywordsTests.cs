@@ -45,6 +45,12 @@ public class ConceptExplainSkillKeywordsTests
     [TestCase("Was zeigt der Posteingang?", "explain_page_inbox")]
     [TestCase("Erkläre mir die Schichtvorlage", "explain_shift_container")]
     [TestCase("erkläre mir die Dienste", "explain_page_shifts")]
+    [TestCase("erkläre mir die Adressen", "explain_page_employees")]
+    [TestCase("Was ist die Adressverwaltung?", "explain_page_employees")]
+    [TestCase("erkläre mir die Gruppe", "explain_page_groups")]
+    [TestCase("Wie funktioniert der Periodenabschluss?", "explain_page_period_closing")]
+    [TestCase("Was sind die Einstellungen?", "explain_page_settings_overview")]
+    [TestCase("Erkläre mir mein Profil", "explain_page_profile")]
     public void PageAndConceptPhrases_ResolveTheirExplainSkill(string message, string expectedSkill)
     {
         var result = ConceptExplainSkillKeywords.ResolveSkillNames(message);
