@@ -182,10 +182,11 @@ public class ClientGroupFilterServiceTests
     }
 
     [Test]
-    public async Task FilterClientsByGroupId_WithoutGroupFilter_AndNotAdmin_FiltersBasedOnVisibleRoots()
+    public async Task FilterClientsByGroupId_WithoutGroupFilter_AndNotAdmin_KeepsVisibleRootsAndGrouplessClients()
     {
         // Arrange
         var rootGroupId = Guid.NewGuid();
+        var otherGroupId = Guid.NewGuid();
         var clients = new List<Client>
         {
             new Client
@@ -202,6 +203,15 @@ public class ClientGroupFilterServiceTests
                 Id = Guid.NewGuid(),
                 Name = "Client without Group",
                 GroupItems = new List<GroupItem>()
+            },
+            new Client
+            {
+                Id = Guid.NewGuid(),
+                Name = "Client in Other Group",
+                GroupItems = new List<GroupItem>
+                {
+                    new GroupItem { Id = Guid.NewGuid(), GroupId = otherGroupId }
+                }
             }
         }.AsQueryable();
 
@@ -214,9 +224,11 @@ public class ClientGroupFilterServiceTests
         var result = await _service.FilterClientsByGroupId(null, clients);
         var resultList = result.ToList();
 
-        // Assert
-        resultList.Count().ShouldBe(1);
+        // Assert: clients in a visible group stay, group-less clients stay visible
+        // (consistent with the schedule view), clients in non-visible groups are excluded.
+        resultList.Count().ShouldBe(2);
         resultList.ShouldContain(c => c.Name == "Client in Visible Root");
-        resultList.ShouldNotContain(c => c.Name == "Client without Group");
+        resultList.ShouldContain(c => c.Name == "Client without Group");
+        resultList.ShouldNotContain(c => c.Name == "Client in Other Group");
     }
 }

@@ -99,6 +99,103 @@ public class ClientRepositoryQualificationsTests
         saved!.Qualifications.Count.ShouldBe(0);
     }
 
+    [Test]
+    public async Task Put_WithEmptyGroupItems_PreservesExistingGroups()
+    {
+        var client = await SeedClientWithGroupsAsync(Guid.NewGuid());
+        var groupId = client.GroupItems.First().GroupId;
+
+        var updated = CopyClient(client);
+        // Partial save: no group items carried over → existing groups must be preserved.
+
+        await _repository.Put(updated);
+        await _context.SaveChangesAsync();
+
+        var activeGroups = await _context.GroupItem
+            .Where(gi => gi.ClientId == client.Id && !gi.IsDeleted)
+            .AsNoTracking()
+            .ToListAsync();
+
+        activeGroups.Count.ShouldBe(1);
+        activeGroups.First().GroupId.ShouldBe(groupId);
+    }
+
+    [Test]
+    public async Task Put_WithSameGroupId_KeepsRowWithoutRotation()
+    {
+        var client = await SeedClientWithGroupsAsync(Guid.NewGuid());
+        var originalRowId = client.GroupItems.First().Id;
+        var groupId = client.GroupItems.First().GroupId;
+
+        var updated = CopyClient(client);
+        updated.GroupItems.Add(new GroupItem { GroupId = groupId, ClientId = client.Id });
+
+        await _repository.Put(updated);
+        await _context.SaveChangesAsync();
+
+        var allRows = await _context.GroupItem
+            .IgnoreQueryFilters()
+            .Where(gi => gi.ClientId == client.Id)
+            .AsNoTracking()
+            .ToListAsync();
+
+        allRows.Count.ShouldBe(1);
+        allRows.Single().Id.ShouldBe(originalRowId);
+        allRows.Single().IsDeleted.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task Put_RemoveOneOfTwoGroups_DeletesOnlyThatGroup()
+    {
+        var keptGroupId = Guid.NewGuid();
+        var removedGroupId = Guid.NewGuid();
+        var client = await SeedClientWithGroupsAsync(keptGroupId, removedGroupId);
+
+        var updated = CopyClient(client);
+        updated.GroupItems.Add(new GroupItem { GroupId = keptGroupId, ClientId = client.Id });
+
+        await _repository.Put(updated);
+        await _context.SaveChangesAsync();
+
+        var activeGroups = await _context.GroupItem
+            .Where(gi => gi.ClientId == client.Id && !gi.IsDeleted)
+            .AsNoTracking()
+            .ToListAsync();
+
+        activeGroups.Count.ShouldBe(1);
+        activeGroups.Single().GroupId.ShouldBe(keptGroupId);
+    }
+
+    private async Task<Client> SeedClientWithGroupsAsync(params Guid[] groupIds)
+    {
+        var client = new Client
+        {
+            Id = Guid.NewGuid(),
+            Name = "Tester",
+            FirstName = "Group",
+            Gender = GenderEnum.Female,
+            IdNumber = 2
+        };
+        foreach (var groupId in groupIds)
+        {
+            // Seed the referenced Group too: ClientRepository.Put reloads group items via
+            // .Include(c => c.GroupItems).ThenInclude(gi => gi.Group), which the InMemory
+            // provider only materialises when the related Group row exists.
+            _context.Set<Group>().Add(new Group { Id = groupId, Name = "G" });
+            client.GroupItems.Add(new GroupItem
+            {
+                Id = Guid.NewGuid(),
+                GroupId = groupId,
+                ClientId = client.Id
+            });
+        }
+
+        await _repository.Add(client);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+        return client;
+    }
+
     private async Task<Client> SeedClientWithQualificationAsync(QualificationLevel level)
     {
         var client = new Client
