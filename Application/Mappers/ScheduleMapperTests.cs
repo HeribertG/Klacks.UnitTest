@@ -1,7 +1,10 @@
 using Shouldly;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Domain.Common;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Models.Staffs;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Application.Mappers;
@@ -274,5 +277,64 @@ public class ScheduleMapperTests
         result.ShiftExpenses[0].ShiftId.ShouldBe(Guid.Empty);
         result.ShiftExpenses[0].Amount.ShouldBe(20m);
         result.ShiftExpenses[0].Description.ShouldBe("Parking");
+    }
+
+    [Test]
+    public void ToWorkScheduleClientResource_ClientWithQualifications_MapsEmojiNameLevelAndExpiry()
+    {
+        var qualificationId = Guid.NewGuid();
+        var name = new MultiLanguage { De = "Erste Hilfe", En = "First Aid" };
+        var client = new Client
+        {
+            Id = Guid.NewGuid(),
+            Name = "Müller",
+            FirstName = "Hans",
+            Qualifications = new List<ClientQualification>
+            {
+                new ClientQualification
+                {
+                    QualificationId = qualificationId,
+                    Level = QualificationLevel.Advanced,
+                    ValidUntil = new DateOnly(2030, 1, 1),
+                    Qualification = new Qualification { Emoji = "🚑", Name = name }
+                }
+            }
+        };
+
+        var result = _mapper.ToWorkScheduleClientResource(client);
+
+        result.Qualifications.Count.ShouldBe(1);
+        var mapped = result.Qualifications[0];
+        mapped.QualificationId.ShouldBe(qualificationId);
+        mapped.Emoji.ShouldBe("🚑");
+        mapped.Level.ShouldBe(QualificationLevel.Advanced);
+        mapped.ValidUntil.ShouldBe(new DateOnly(2030, 1, 1));
+        mapped.Name.De.ShouldBe("Erste Hilfe");
+        mapped.Name.En.ShouldBe("First Aid");
+    }
+
+    [Test]
+    public void ToWorkScheduleClientResource_QualificationWithoutMaster_FallsBackToEmptyNameAndNullEmoji()
+    {
+        var client = new Client
+        {
+            Id = Guid.NewGuid(),
+            Qualifications = new List<ClientQualification>
+            {
+                new ClientQualification
+                {
+                    QualificationId = Guid.NewGuid(),
+                    Level = QualificationLevel.Basic,
+                    Qualification = null
+                }
+            }
+        };
+
+        var result = _mapper.ToWorkScheduleClientResource(client);
+
+        result.Qualifications.Count.ShouldBe(1);
+        result.Qualifications[0].Emoji.ShouldBeNull();
+        result.Qualifications[0].Name.ShouldNotBeNull();
+        result.Qualifications[0].Name.IsEmpty.ShouldBeTrue();
     }
 }

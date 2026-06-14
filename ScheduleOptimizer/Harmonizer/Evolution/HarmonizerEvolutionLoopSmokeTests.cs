@@ -49,7 +49,19 @@ public class HarmonizerEvolutionLoopSmokeTests
         result.Best.Bitmap.GetCell(0, 0).ShouldBe(lockedCell);
     }
 
-    private static HarmonizerEvolutionLoop BuildLoop(int seedSeed)
+    [Test]
+    public void Run_MaxRuntimeExpired_ReturnsSeedResultGracefully()
+    {
+        var seedBitmap = BuildChaoticBitmap();
+        var loop = BuildLoop(seedSeed: 5, maxRuntime: TimeSpan.Zero);
+
+        var result = loop.Run(seedBitmap);
+
+        result.Best.ShouldNotBeNull();
+        result.GenerationFitness.Count.ShouldBe(1);
+    }
+
+    private static HarmonizerEvolutionLoop BuildLoop(int seedSeed, TimeSpan? maxRuntime = null)
     {
         var scorer = new HarmonyScorer();
         var validator = new BitmapReplaceValidator();
@@ -62,7 +74,8 @@ public class HarmonizerEvolutionLoopSmokeTests
             TournamentSize: 3,
             StochasticMutationsPerOffspring: 2,
             StagnationGenerations: 4,
-            Seed: seedSeed);
+            Seed: seedSeed,
+            MaxRuntime: maxRuntime);
 
         Func<int, HarmonizerConductor> conductorFactory = rowCount =>
         {

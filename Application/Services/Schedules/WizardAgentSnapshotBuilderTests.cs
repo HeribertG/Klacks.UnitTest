@@ -104,6 +104,112 @@ public class WizardAgentSnapshotBuilderTests
     }
 
     [Test]
+    public async Task BuildAsync_PreservesCallerAgentOrder()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var thirdId = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 20);
+
+        var contractData = new EffectiveContractData
+        {
+            HasActiveContract = true,
+            ContractId = Guid.NewGuid(),
+            WorkOnMonday = true,
+        };
+
+        _contractProvider
+            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new Dictionary<Guid, EffectiveContractData>
+            {
+                [thirdId] = contractData,
+                [firstId] = contractData,
+                [secondId] = contractData,
+            });
+
+        var result = await _sut.BuildAsync(
+            new[] { firstId, secondId, thirdId }, date, date,
+            new Dictionary<Guid, double>(),
+            CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(
+            new[] { firstId.ToString(), secondId.ToString(), thirdId.ToString() });
+    }
+
+    [Test]
+    public async Task BuildAsync_ContractStartsMidPeriod_UsesFirstActiveDayAsAgentBasis()
+    {
+        var agentId = Guid.NewGuid();
+        var from = new DateOnly(2026, 6, 1);
+        var until = new DateOnly(2026, 6, 7);
+        var contractStart = new DateOnly(2026, 6, 6);
+
+        var fallbackData = new EffectiveContractData
+        {
+            HasActiveContract = false,
+        };
+
+        var contractData = new EffectiveContractData
+        {
+            HasActiveContract = true,
+            ContractId = Guid.NewGuid(),
+            FullTime = 40,
+            GuaranteedHours = 160,
+            PerformsShiftWork = true,
+            WorkOnMonday = true,
+            WorkOnTuesday = true,
+            WorkOnWednesday = true,
+            WorkOnThursday = true,
+            WorkOnFriday = true,
+            WorkOnSaturday = true,
+            WorkOnSunday = true,
+        };
+
+        _contractProvider
+            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(ci => new Dictionary<Guid, EffectiveContractData>
+            {
+                [agentId] = ci.Arg<DateOnly>() >= contractStart ? contractData : fallbackData,
+            });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, from, until,
+            new Dictionary<Guid, double>(),
+            CancellationToken.None);
+
+        var agent = result.Agents.Single();
+        agent.PerformsShiftWork.ShouldBeTrue();
+        agent.GuaranteedHours.ShouldBe(160);
+        agent.WorkOnMonday.ShouldBeTrue();
+
+        result.ContractDays.Single(d => d.Date == new DateOnly(2026, 6, 1)).WorksOnDay.ShouldBeFalse();
+        result.ContractDays.Single(d => d.Date == new DateOnly(2026, 6, 5)).WorksOnDay.ShouldBeFalse();
+        result.ContractDays.Single(d => d.Date == contractStart).WorksOnDay.ShouldBeTrue();
+        result.ContractDays.Single(d => d.Date == until).WorksOnDay.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task BuildAsync_AgentWithoutAnyActiveContract_IsExcluded()
+    {
+        var agentId = Guid.NewGuid();
+        var date = new DateOnly(2026, 6, 1);
+
+        _contractProvider
+            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new Dictionary<Guid, EffectiveContractData>
+            {
+                [agentId] = new EffectiveContractData { HasActiveContract = false },
+            });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, date, date.AddDays(2),
+            new Dictionary<Guid, double>(),
+            CancellationToken.None);
+
+        result.Agents.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task BuildAsync_WorksOnDay_RespectsContractFlags()
     {
         var agentId = Guid.NewGuid();

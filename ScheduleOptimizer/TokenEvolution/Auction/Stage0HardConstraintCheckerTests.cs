@@ -71,6 +71,55 @@ public class Stage0HardConstraintCheckerTests
     }
 
     [Test]
+    public void Check_ContractDayNotActive_VetoesEvenOnWorkableWeekday()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent();
+        var monday = new DateOnly(2026, 4, 20);
+        var slot = MakeShift(monday);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = monday,
+            PeriodUntil = monday.AddDays(6),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            ContractDays = new[]
+            {
+                new CoreContractDay(agent.Id, monday, WorksOnDay: false, PerformsShiftWork: true, FullTimeShare: 1, MaximumHoursPerDay: 10, ContractId: Guid.Empty),
+            },
+        };
+
+        var verdict = sut.Check(agent, slot, [], ctx);
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("ContractDay");
+    }
+
+    [Test]
+    public void Check_ContractDayActive_OverridesStaticWeekdayFlag()
+    {
+        var sut = new Stage0HardConstraintChecker();
+        var agent = MakeAgent(sat: false);
+        var saturday = new DateOnly(2026, 4, 25);
+        var slot = MakeShift(saturday);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = new DateOnly(2026, 4, 20),
+            PeriodUntil = new DateOnly(2026, 4, 26),
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+            ContractDays = new[]
+            {
+                new CoreContractDay(agent.Id, saturday, WorksOnDay: true, PerformsShiftWork: true, FullTimeShare: 1, MaximumHoursPerDay: 10, ContractId: Guid.Empty),
+            },
+        };
+
+        var verdict = sut.Check(agent, slot, [], ctx);
+
+        verdict.ShouldBeNull();
+    }
+
+    [Test]
     public void Check_FreeKeyword_VetoesSlot()
     {
         var sut = new Stage0HardConstraintChecker();

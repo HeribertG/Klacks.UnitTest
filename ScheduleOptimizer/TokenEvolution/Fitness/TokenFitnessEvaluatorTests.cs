@@ -206,4 +206,93 @@ public class TokenFitnessEvaluatorTests
 
         blacklistedScenario.FitnessStage3.ShouldBeLessThan(goodScenario.FitnessStage3);
     }
+
+    private static CoreScenario MakeTwoBlockScenario(string agentId, DateOnly start, int firstBlockType, int secondBlockType)
+    {
+        var tokens = new List<CoreToken>();
+        for (var i = 0; i < 3; i++)
+        {
+            tokens.Add(MakeToken(agentId, start.AddDays(i), firstBlockType));
+        }
+
+        // Two rest days, then the second block.
+        for (var i = 5; i < 8; i++)
+        {
+            tokens.Add(MakeToken(agentId, start.AddDays(i), secondBlockType));
+        }
+
+        return new CoreScenario { Id = Guid.NewGuid().ToString(), Tokens = tokens };
+    }
+
+    [Test]
+    public void Evaluate_BlockRotation_RepeatedTypeScoresWorseThanCycleRotation()
+    {
+        var start = new DateOnly(2026, 4, 20);
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = start,
+            PeriodUntil = start.AddDays(7),
+            Agents = [MakeAgent("A", fullTime: 48)],
+        };
+
+        var rotated = MakeTwoBlockScenario("A", start, firstBlockType: 0, secondBlockType: 1);
+        var repeated = MakeTwoBlockScenario("A", start, firstBlockType: 0, secondBlockType: 0);
+
+        var sut = TokenFitnessEvaluator.Create(context);
+        sut.Evaluate(rotated, context);
+        sut.Evaluate(repeated, context);
+
+        repeated.FitnessStage3.ShouldBeLessThan(rotated.FitnessStage3);
+    }
+
+    [Test]
+    public void Evaluate_BlockRotation_NonShiftWorkerIsExempt()
+    {
+        var start = new DateOnly(2026, 4, 20);
+        var agent = MakeAgent("A", fullTime: 48) with { PerformsShiftWork = false };
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = start,
+            PeriodUntil = start.AddDays(7),
+            Agents = [agent],
+        };
+
+        var rotated = MakeTwoBlockScenario("A", start, firstBlockType: 0, secondBlockType: 1);
+        var repeated = MakeTwoBlockScenario("A", start, firstBlockType: 0, secondBlockType: 0);
+
+        var sut = TokenFitnessEvaluator.Create(context);
+        sut.Evaluate(rotated, context);
+        sut.Evaluate(repeated, context);
+
+        repeated.FitnessStage3.ShouldBe(rotated.FitnessStage3);
+    }
+
+    [Test]
+    public void Evaluate_WithinBlockBackwardTransition_IsPenalized()
+    {
+        var start = new DateOnly(2026, 4, 20);
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = start,
+            PeriodUntil = start.AddDays(1),
+            Agents = [MakeAgent("A", fullTime: 16)],
+        };
+
+        var forward = new CoreScenario
+        {
+            Id = "forward",
+            Tokens = [MakeToken("A", start, 0), MakeToken("A", start.AddDays(1), 1)],
+        };
+        var backward = new CoreScenario
+        {
+            Id = "backward",
+            Tokens = [MakeToken("A", start, 1), MakeToken("A", start.AddDays(1), 0)],
+        };
+
+        var sut = TokenFitnessEvaluator.Create(context);
+        sut.Evaluate(forward, context);
+        sut.Evaluate(backward, context);
+
+        backward.FitnessStage3.ShouldBeLessThan(forward.FitnessStage3);
+    }
 }

@@ -1,28 +1,32 @@
 {
   "BernFiveFullTimeHomogeneous": {
     "RunCount": 5,
-    "CoverageMean": 1.217204301075269,
-    "CoverageStdDev": 0.008996344371334139,
-    "TargetReachedMean": 0.8400000000000001,
-    "TargetReachedStdDev": 0.08944271909999157,
-    "SlotGiniMean": 0.01484918047330716,
-    "SlotGiniStdDev": 0.005239681943700143,
-    "ShiftTypeEntropyMean": 1.4799865818335483,
-    "ShiftTypeEntropyStdDev": 0.040126676356110134,
-    "MaxConsecutiveBlockLenMean": 6,
-    "MaxConsecutiveBlockLenMax": 6
+    "CoverageMean": 1.0709677419354837,
+    "CoverageStdDev": 0.051343382306723986,
+    "TargetReachedMean": 0.52,
+    "TargetReachedStdDev": 0.10954451150103321,
+    "SlotGiniMean": 0.04111324290171446,
+    "SlotGiniStdDev": 0.00603530083444425,
+    "ShiftTypeEntropyMean": 1.4532634669797084,
+    "ShiftTypeEntropyStdDev": 0.042121966880739097,
+    "MaxConsecutiveBlockLenMean": 5.2,
+    "MaxConsecutiveBlockLenMax": 6,
+    "RosterFidelityInversionMean": 0.45999999999999996,
+    "RosterFidelityInversionStdDev": 0.2073644135332772
   },
   "HeterogeneousMix": {
     "RunCount": 5,
-    "CoverageMean": 1.1806451612903226,
-    "CoverageStdDev": 0.020683208668463793,
+    "CoverageMean": 0.956989247311828,
+    "CoverageStdDev": 0,
     "TargetReachedMean": 1,
     "TargetReachedStdDev": 0,
-    "SlotGiniMean": 0.036367163830669555,
-    "SlotGiniStdDev": 0.008895829590433682,
-    "ShiftTypeEntropyMean": 1.1682027392739625,
-    "ShiftTypeEntropyStdDev": 0.26156773669713457,
-    "MaxConsecutiveBlockLenMean": 6,
-    "MaxConsecutiveBlockLenMax": 6
+    "SlotGiniMean": 0.13303370786516852,
+    "SlotGiniStdDev": 0.004019897487640066,
+    "ShiftTypeEntropyMean": 1.0854160556399586,
+    "ShiftTypeEntropyStdDev": 0.0009089770629595167,
+    "MaxConsecutiveBlockLenMean": 5,
+    "MaxConsecutiveBlockLenMax": 5,
+    "RosterFidelityInversionMean": 0.25999999999999995,
+    "RosterFidelityInversionStdDev": 0.0547722557505166
   }
 }

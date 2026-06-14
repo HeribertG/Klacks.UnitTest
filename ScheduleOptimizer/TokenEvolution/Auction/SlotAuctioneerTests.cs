@@ -108,6 +108,30 @@ public class SlotAuctioneerTests
     }
 
     [Test]
+    public void Run_TieOnScore_TopRosterPositionWinsOverAlphabeticalId()
+    {
+        var sut = MakeSut();
+
+        // "Z-top" sits at roster position 0 but sorts alphabetically AFTER "A-bottom".
+        // With identical bids the roster position must decide, not the agent id.
+        var agents = new[] { MakeAgent("Z-top"), MakeAgent("A-bottom") };
+        var d0 = new DateOnly(2026, 4, 20);
+        var ctx = new CoreWizardContext
+        {
+            PeriodFrom = d0,
+            PeriodUntil = d0,
+            Agents = agents,
+            Shifts = new[] { MakeShift(d0, "S1") },
+            SchedulingMaxConsecutiveDays = 6,
+            SchedulingMaxDailyHours = 10,
+        };
+
+        var outcome = sut.Run(ctx, new Random(0));
+
+        outcome.Results[0].WinnerAgentId.ShouldBe("Z-top");
+    }
+
+    [Test]
     public void Run_AllSlotsBlockedByStage0_LeavesSlotsUnassigned()
     {
         var sut = MakeSut();

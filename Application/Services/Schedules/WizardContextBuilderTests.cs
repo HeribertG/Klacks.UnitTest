@@ -99,6 +99,117 @@ public class WizardContextBuilderTests
     }
 
     [Test]
+    public async Task BuildContextAsync_DefaultOrder_ReshapesByGuaranteedHoursDescending()
+    {
+        var lowHoursFirst = Guid.NewGuid();
+        var highHoursSecond = Guid.NewGuid();
+        var midHoursThird = Guid.NewGuid();
+
+        SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal>
+        {
+            [lowHoursFirst] = 10,
+            [highHoursSecond] = 40,
+            [midHoursThird] = 25,
+        });
+
+        var request = new WizardContextRequest(
+            PeriodFrom: new DateOnly(2026, 4, 20),
+            PeriodUntil: new DateOnly(2026, 4, 20),
+            AgentIds: new[] { lowHoursFirst, highHoursSecond, midHoursThird },
+            ShiftIds: null,
+            AnalyseToken: null,
+            AgentOrderIsUserDefined: false);
+
+        var result = await _sut.BuildContextAsync(request, CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(
+            new[] { highHoursSecond.ToString(), midHoursThird.ToString(), lowHoursFirst.ToString() });
+    }
+
+    [Test]
+    public async Task BuildContextAsync_UserDefinedOrder_KeepsRequestOrderVerbatim()
+    {
+        var lowHoursFirst = Guid.NewGuid();
+        var highHoursSecond = Guid.NewGuid();
+
+        SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal>
+        {
+            [lowHoursFirst] = 10,
+            [highHoursSecond] = 40,
+        });
+
+        var request = new WizardContextRequest(
+            PeriodFrom: new DateOnly(2026, 4, 20),
+            PeriodUntil: new DateOnly(2026, 4, 20),
+            AgentIds: new[] { lowHoursFirst, highHoursSecond },
+            ShiftIds: null,
+            AnalyseToken: null,
+            AgentOrderIsUserDefined: true);
+
+        var result = await _sut.BuildContextAsync(request, CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(
+            new[] { lowHoursFirst.ToString(), highHoursSecond.ToString() });
+    }
+
+    [Test]
+    public async Task BuildContextAsync_EqualGuaranteedHours_ReshapeIsStable()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var thirdId = Guid.NewGuid();
+
+        SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal>
+        {
+            [firstId] = 20,
+            [secondId] = 20,
+            [thirdId] = 20,
+        });
+
+        var request = new WizardContextRequest(
+            PeriodFrom: new DateOnly(2026, 4, 20),
+            PeriodUntil: new DateOnly(2026, 4, 20),
+            AgentIds: new[] { firstId, secondId, thirdId },
+            ShiftIds: null,
+            AnalyseToken: null,
+            AgentOrderIsUserDefined: false);
+
+        var result = await _sut.BuildContextAsync(request, CancellationToken.None);
+
+        result.Agents.Select(a => a.Id).ShouldBe(
+            new[] { firstId.ToString(), secondId.ToString(), thirdId.ToString() });
+    }
+
+    private void SetupContractsWithGuaranteedHours(IReadOnlyDictionary<Guid, decimal> guaranteedHoursPerAgent)
+    {
+        var contracts = guaranteedHoursPerAgent.ToDictionary(
+            kv => kv.Key,
+            kv => new EffectiveContractData
+            {
+                HasActiveContract = true,
+                ContractId = Guid.NewGuid(),
+                FullTime = 40,
+                GuaranteedHours = kv.Value,
+                MaxDailyHours = 10,
+                MaxWeeklyHours = 50,
+                MinPauseHours = 11,
+                MaxConsecutiveDays = 6,
+            });
+
+        _contractProvider
+            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(contracts);
+
+        _shiftBuilder
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<CoreShift>());
+
+        _hardBuilder
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new HardConstraintResult([], [], [], [], []));
+    }
+
+    [Test]
     public void BuildContextAsync_PropagatesCancellation()
     {
         var cts = new CancellationTokenSource();

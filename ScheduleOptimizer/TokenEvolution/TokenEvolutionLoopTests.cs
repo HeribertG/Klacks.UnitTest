@@ -91,6 +91,25 @@ public class TokenEvolutionLoopTests
     }
 
     [Test]
+    public void Run_MaxRuntimeExpired_ReturnsBestSoFarInsteadOfThrowing()
+    {
+        var context = BuildContext(agentCount: 3, dayCount: 14);
+        var config = new TokenEvolutionConfig
+        {
+            PopulationSize = 8,
+            MaxGenerations = 200,
+            EarlyStopNoImprovementGenerations = 200,
+            RandomSeed = 42,
+            MaxRuntime = TimeSpan.Zero,
+        };
+
+        var best = TokenEvolutionLoop.Create().Run(context, config);
+
+        best.ShouldNotBeNull();
+        best.Tokens.ShouldNotBeEmpty();
+    }
+
+    [Test]
     public void Run_ReportsProgressPerGeneration()
     {
         var context = BuildContext(agentCount: 2, dayCount: 3);

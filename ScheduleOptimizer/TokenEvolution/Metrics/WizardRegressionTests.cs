@@ -32,6 +32,7 @@ public sealed class WizardRegressionTests
     private const double EntropyMinDelta = -0.10;
     private const int EscalationMaxDelta = 2;
     private const int MaxBlockMaxDelta = 1;
+    private const double RosterFidelityMaxDelta = 0.05;
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
@@ -104,6 +105,8 @@ public sealed class WizardRegressionTests
             $"{scenario}: Escalations grew from {baseline.Stage1EscalationCount} to {actual.Stage1EscalationCount}");
         (actual.MaxConsecutiveBlockLen - baseline.MaxConsecutiveBlockLen).ShouldBeLessThanOrEqualTo(MaxBlockMaxDelta,
             $"{scenario}: MaxConsecutiveBlockLen grew from {baseline.MaxConsecutiveBlockLen} to {actual.MaxConsecutiveBlockLen}");
+        (actual.RosterFidelityInversionRate - baseline.RosterFidelityInversionRate).ShouldBeLessThanOrEqualTo(RosterFidelityMaxDelta,
+            $"{scenario}: RosterFidelityInversionRate grew from {baseline.RosterFidelityInversionRate:F3} to {actual.RosterFidelityInversionRate:F3} (top-down rule degraded)");
     }
 
     private static string BaselinePath([CallerFilePath] string thisFile = "")
