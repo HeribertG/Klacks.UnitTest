@@ -36,7 +36,7 @@ public class SkillUsageTrackerServiceTests
         SkillUsageRecord? saved = null;
         repo.When(r => r.AddAsync(Arg.Any<SkillUsageRecord>(), Arg.Any<CancellationToken>()))
             .Do(ci => saved = ci.Arg<SkillUsageRecord>());
-        var sut = new SkillUsageTrackerService(repo, NullLogger<SkillUsageTrackerService>.Instance);
+        var sut = new SkillUsageTrackerService(repo, Substitute.For<ISkillSequenceProactiveNotifier>(), NullLogger<SkillUsageTrackerService>.Instance);
         return (sut, () => saved);
     }
 
