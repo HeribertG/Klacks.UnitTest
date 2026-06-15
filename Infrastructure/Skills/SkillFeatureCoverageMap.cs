@@ -37,6 +37,7 @@ public static class SkillFeatureCoverageMap
         ["ProvidersController"] = Covered("list_llm_providers", "create_llm_provider", "update_llm_provider", "delete_llm_provider"),
         ["SkillCoverageController"] = Excluded("Klacksy skill introspection endpoint, assistant infrastructure"),
         ["SkillProposalsController"] = Covered("review_skill_suggestions"),
+        ["SkillRelationsController"] = Excluded("admin-only insight view of the emergent skill-relationship graph (accept/dismiss learned edges); assistant meta-infrastructure, not chat-addressable"),
         ["SkillsController"] = Covered("list_agent_skills", "create_agent_skill", "update_agent_skill", "delete_agent_skill"),
         ["SttController"] = Excluded("voice audio streaming pipeline, not chat-addressable; settings covered by get_speech_settings"),
         ["TranscriptionController"] = Excluded("voice audio streaming pipeline, not chat-addressable; settings covered by get_speech_settings"),
