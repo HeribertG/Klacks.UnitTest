@@ -151,8 +151,9 @@ public sealed class WizardLiveRunReproductionTests
 
             foreach (var agent in ctx.Agents)
             {
+                var slotRef = Guid.TryParse(slot.Id, out var parsedRef) ? parsedRef : Guid.Empty;
                 var valid = SlotConstraintFilter.IsValidAssignment(
-                    agent, date, typeIndex, (decimal)slot.Hours, ctx, emptyTokens, startUtc, endUtc);
+                    agent, date, typeIndex, slotRef, (decimal)slot.Hours, ctx, emptyTokens, startUtc, endUtc);
                 TestContext.Out.WriteLine(
                     $"slot={slot.Id[..8]} {slot.Date} {slot.StartTime}-{slot.EndTime} type={typeIndex} agent={agent.Id,-9} validOnEmptyPlan={valid}");
             }

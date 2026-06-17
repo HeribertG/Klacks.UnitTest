@@ -48,7 +48,11 @@ public class WizardContextBuilderTests
             });
 
         var agentBuilder = new WizardAgentSnapshotBuilder(_contractProvider);
-        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider);
+        var eligibilityBuilder = Substitute.For<IEligibilityMatrixBuilder>();
+        eligibilityBuilder
+            .BuildAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<EligibilitySlot>>(), Arg.Any<CancellationToken>())
+            .Returns(EligibilityMatrix.Empty);
+        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder);
     }
 
     [Test]

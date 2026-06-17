@@ -50,7 +50,7 @@ public sealed class SlotConstraintFilterContractDayTests
         var ctx = MakeContext(
             new CoreContractDay(agent.Id, monday, WorksOnDay: false, PerformsShiftWork: true, FullTimeShare: 1, MaximumHoursPerDay: 10, ContractId: Guid.Empty));
 
-        var valid = SlotConstraintFilter.IsValidAssignment(agent, monday, 0, 8, ctx, []);
+        var valid = SlotConstraintFilter.IsValidAssignment(agent, monday, 0, Guid.Empty, 8, ctx, []);
 
         valid.ShouldBeFalse();
     }
@@ -63,7 +63,7 @@ public sealed class SlotConstraintFilterContractDayTests
         var ctx = MakeContext(
             new CoreContractDay(agent.Id, saturday, WorksOnDay: true, PerformsShiftWork: true, FullTimeShare: 1, MaximumHoursPerDay: 10, ContractId: Guid.Empty));
 
-        var valid = SlotConstraintFilter.IsValidAssignment(agent, saturday, 0, 8, ctx, []);
+        var valid = SlotConstraintFilter.IsValidAssignment(agent, saturday, 0, Guid.Empty, 8, ctx, []);
 
         valid.ShouldBeTrue();
     }
@@ -76,7 +76,7 @@ public sealed class SlotConstraintFilterContractDayTests
         var monday = new DateOnly(2026, 6, 1);
         var ctx = MakeContext();
 
-        SlotConstraintFilter.IsValidAssignment(agent, saturday, 0, 8, ctx, []).ShouldBeFalse();
-        SlotConstraintFilter.IsValidAssignment(agent, monday, 0, 8, ctx, []).ShouldBeTrue();
+        SlotConstraintFilter.IsValidAssignment(agent, saturday, 0, Guid.Empty, 8, ctx, []).ShouldBeFalse();
+        SlotConstraintFilter.IsValidAssignment(agent, monday, 0, Guid.Empty, 8, ctx, []).ShouldBeTrue();
     }
 }
