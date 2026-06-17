@@ -56,6 +56,26 @@ public class OnnxEmbeddingProviderTests
     }
 
     [Test]
+    public async Task EmbedBatchAsync_BatchSpanningMultipleChunks_ReturnsAllVectorsNormalized()
+    {
+        var loader = new ModelLoader(new HttpClient());
+        await using var provider = new OnnxEmbeddingProvider(loader, CacheDir);
+
+        var count = KnowledgeIndexConstants.EmbeddingBatchSize + 5;
+        var texts = Enumerable.Range(0, count).Select(i => $"open shift number {i}").ToArray();
+
+        var embeddings = await provider.EmbedBatchAsync(texts, CancellationToken.None);
+
+        embeddings.Length.ShouldBe(count);
+        foreach (var emb in embeddings)
+        {
+            emb.Length.ShouldBe(KnowledgeIndexConstants.EmbeddingDimension);
+            var norm = Math.Sqrt(emb.Sum(x => (double)x * x));
+            norm.ShouldBe(1.0, 0.01);
+        }
+    }
+
+    [Test]
     public async Task EmbedAsync_DifferentTexts_ProduceDifferentVectors()
     {
         var loader = new ModelLoader(new HttpClient());
