@@ -96,6 +96,7 @@ public class SkillRelationLearnerTests
         reinforced.ShouldNotBeNull();
         reinforced!.Confidence.ShouldBe(0.45, 0.0001);
         reinforced.SupportCount.ShouldBe(1);
+        reinforced.Source.ShouldBe(SkillRelationSource.Learned);
         added.ShouldContain(e => e.Type == SkillRelationType.CoRequired && e.SkillAName == "ee" && e.SkillBName == "ff"
             && e.Source == SkillRelationSource.Learned);
     }
