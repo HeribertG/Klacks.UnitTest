@@ -310,6 +310,63 @@ public class RejectAnalyseScenarioCommandHandlerTests
         // Assert
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
+
+    [Test]
+    public async Task Should_Persist_Reject_Reason_When_Provided()
+    {
+        // Arrange
+        var scenarioId = Guid.NewGuid();
+        var scenario = new AnalyseScenario
+        {
+            Id = scenarioId,
+            Name = "To Reject",
+            Token = Guid.NewGuid(),
+            GroupId = Guid.NewGuid(),
+            FromDate = new DateOnly(2026, 6, 1),
+            UntilDate = new DateOnly(2026, 6, 30),
+            Status = AnalyseScenarioStatus.Active
+        };
+        _repository.Get(scenarioId).Returns(scenario);
+        var command = new RejectAnalyseScenarioCommand(scenarioId, RejectReason.HoursImbalance, "too uneven");
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.ShouldBeTrue();
+        scenario.Status.ShouldBe(AnalyseScenarioStatus.Rejected);
+        scenario.RejectReason.ShouldBe(RejectReason.HoursImbalance);
+        scenario.RejectReasonText.ShouldBe("too uneven");
+        await _scenarioService.Received(1).SoftDeleteScenarioDataAsync(scenario.Token, Arg.Any<CancellationToken>());
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Should_Leave_Reject_Reason_Null_For_OneClick_Reject()
+    {
+        // Arrange
+        var scenarioId = Guid.NewGuid();
+        var scenario = new AnalyseScenario
+        {
+            Id = scenarioId,
+            Name = "Quick Reject",
+            Token = Guid.NewGuid(),
+            GroupId = Guid.NewGuid(),
+            FromDate = new DateOnly(2026, 7, 1),
+            UntilDate = new DateOnly(2026, 7, 31),
+            Status = AnalyseScenarioStatus.Active
+        };
+        _repository.Get(scenarioId).Returns(scenario);
+        var command = new RejectAnalyseScenarioCommand(scenarioId);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        scenario.Status.ShouldBe(AnalyseScenarioStatus.Rejected);
+        scenario.RejectReason.ShouldBeNull();
+        scenario.RejectReasonText.ShouldBeNull();
+    }
 }
 
 [TestFixture]
