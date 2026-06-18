@@ -52,7 +52,11 @@ public class WizardContextBuilderTests
         eligibilityBuilder
             .BuildAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<EligibilitySlot>>(), Arg.Any<CancellationToken>())
             .Returns(EligibilityMatrix.Empty);
-        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder);
+        var availabilityService = Substitute.For<IAvailabilityIneligibilityService>();
+        availabilityService
+            .GetAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<IReadOnlyList<AvailabilityShiftSlot>>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlySet<(string, Guid, DateOnly)>)new HashSet<(string, Guid, DateOnly)>());
+        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder, availabilityService);
     }
 
     [Test]
