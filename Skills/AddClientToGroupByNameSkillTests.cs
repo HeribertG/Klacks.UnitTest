@@ -37,7 +37,7 @@ public class AddClientToGroupByNameSkillTests
         _skill = new AddClientToGroupByNameSkill(
             _clientRepository, _searchRepository, _groupRepository, _unitOfWork);
 
-        _searchRepository.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _searchRepository.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult
             {
                 Items = new List<ClientSearchItem> { new() { Id = ClientId, FirstName = "Max", LastName = "Müller" } },
