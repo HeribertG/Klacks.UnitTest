@@ -293,6 +293,67 @@ public class DomainAwareReplaceValidatorTests
         validator.IsValid(bitmap, new ReplaceMove(0, 1, 0)).ShouldBeFalse();
     }
 
+    [Test]
+    public void IsValid_BoundaryHoursSameWeekExceedMaxWeekly_Rejected()
+    {
+        // agent-1 has MaxWeeklyHours = 40 and works Mon+Tue inside the 3-day bitmap (16h). Three boundary
+        // works on Thu/Fri/Sat of the SAME ISO week (24h) lie outside the bitmap. Swapping agent-0's Wed
+        // work (8h) onto agent-1 makes the real calendar week 16 + 8 + 24 = 48h > 40 → reject.
+        // Without boundary awareness the check only saw 24h and wrongly accepted (the closed leak).
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: (id, idx) => new BitmapAgent(
+            id, id, 100m, new HashSet<CellSymbol>(), MaxWeeklyHours: idx == 1 ? 40m : 0m));
+        var workCell = (DateOnly d) => new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            d.ToDateTime(new TimeOnly(7, 0)), d.ToDateTime(new TimeOnly(15, 0)), 8m);
+
+        bitmap.SetCell(1, 0, workCell(Day0));
+        bitmap.SetCell(1, 1, workCell(Day0.AddDays(1)));
+        bitmap.SetCell(0, 2, workCell(Day0.AddDays(2)));
+
+        var boundaryWork = (DateOnly d) => new BitmapAssignment("agent-1", d, CellSymbol.Early, Guid.NewGuid(),
+            [Guid.NewGuid()], IsLocked: true,
+            StartAt: d.ToDateTime(new TimeOnly(7, 0)), EndAt: d.ToDateTime(new TimeOnly(15, 0)), Hours: 8m);
+        var boundary = new List<BitmapAssignment>
+        {
+            boundaryWork(Day0.AddDays(3)),
+            boundaryWork(Day0.AddDays(4)),
+            boundaryWork(Day0.AddDays(5)),
+        };
+
+        var validator = new DomainAwareReplaceValidator(null, boundary);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 2)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsValid_BoundaryHoursDifferentWeek_NotCounted_Accepted()
+    {
+        // Same in-bitmap setup, but the boundary works fall in the NEXT ISO week (Mon/Tue after this
+        // week). They must NOT count toward this week's cap: 16h in-bitmap + 8h incoming = 24h <= 40 →
+        // accept. Guards the WeekOf filter (the next-week days are scanned but excluded; if wrongly
+        // counted the 24h would push the total to 48h and reject).
+        var bitmap = BuildBitmap(rows: 2, days: 3, agentBuilder: (id, idx) => new BitmapAgent(
+            id, id, 100m, new HashSet<CellSymbol>(), MaxWeeklyHours: idx == 1 ? 40m : 0m));
+        var workCell = (DateOnly d) => new Cell(CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+            d.ToDateTime(new TimeOnly(7, 0)), d.ToDateTime(new TimeOnly(15, 0)), 8m);
+
+        bitmap.SetCell(1, 0, workCell(Day0));
+        bitmap.SetCell(1, 1, workCell(Day0.AddDays(1)));
+        bitmap.SetCell(0, 2, workCell(Day0.AddDays(2)));
+
+        var nextWeekWork = (DateOnly d) => new BitmapAssignment("agent-1", d, CellSymbol.Early, Guid.NewGuid(),
+            [Guid.NewGuid()], IsLocked: true,
+            StartAt: d.ToDateTime(new TimeOnly(7, 0)), EndAt: d.ToDateTime(new TimeOnly(19, 0)), Hours: 12m);
+        var boundary = new List<BitmapAssignment>
+        {
+            nextWeekWork(Day0.AddDays(7)),
+            nextWeekWork(Day0.AddDays(8)),
+        };
+
+        var validator = new DomainAwareReplaceValidator(null, boundary);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 2)).ShouldBeTrue();
+    }
+
     private static HarmonyBitmap BuildBitmap(int rows, int days, Func<string, int, BitmapAgent>? agentBuilder = null)
     {
         agentBuilder ??= (id, _) => new BitmapAgent(id, id, 100m, new HashSet<CellSymbol>());

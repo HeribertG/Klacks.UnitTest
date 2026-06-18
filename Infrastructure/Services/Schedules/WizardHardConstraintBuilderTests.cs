@@ -65,12 +65,15 @@ public class WizardHardConstraintBuilderTests
             AnalyseToken = null,
         });
 
+        // Preferences are now token-filtered like the other four sections (M1 fix): in scenario mode
+        // only the cloned (scenario-token) preferences load, not the real (token=null) ones.
         _context.ClientShiftPreference.Add(new ClientShiftPreference
         {
             Id = Guid.NewGuid(),
             ClientId = agentA,
             ShiftId = shift,
             PreferenceType = ShiftPreferenceType.Preferred,
+            AnalyseToken = scenarioToken,
         });
         _context.ClientShiftPreference.Add(new ClientShiftPreference
         {
@@ -78,6 +81,7 @@ public class WizardHardConstraintBuilderTests
             ClientId = agentB,
             ShiftId = shift,
             PreferenceType = ShiftPreferenceType.Blacklist,
+            AnalyseToken = scenarioToken,
         });
 
         var absenceId = Guid.NewGuid();
