@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.ScheduleOptimizer.Constraints;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Controller;
 using Klacks.ScheduleOptimizer.TokenEvolution.Constraints;
