@@ -15,7 +15,6 @@ namespace Klacks.UnitTest.Services.Shifts;
 public class ShiftResetServiceTests
 {
     private IShiftRepository _shiftRepository = null!;
-    private ScheduleMapper _scheduleMapper = null!;
     private ILogger<ShiftResetService> _logger = null!;
     private ShiftResetService _service = null!;
 
@@ -23,12 +22,10 @@ public class ShiftResetServiceTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
-        _scheduleMapper = new ScheduleMapper();
         _logger = Substitute.For<ILogger<ShiftResetService>>();
 
         _service = new ShiftResetService(
             _shiftRepository,
-            _scheduleMapper,
             _logger
         );
     }
