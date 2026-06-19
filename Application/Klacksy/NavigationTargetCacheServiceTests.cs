@@ -4,6 +4,7 @@ namespace Klacks.UnitTest.Application.Klacksy;
 
 using Shouldly;
 using Klacks.Api.Application.Klacksy;
+using Klacks.Api.Application.Interfaces.Klacksy;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.DependencyInjection;

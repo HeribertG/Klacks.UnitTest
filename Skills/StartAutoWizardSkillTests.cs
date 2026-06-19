@@ -8,6 +8,7 @@
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules.AutoWizard;
+using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Domain.Models.Assistant;

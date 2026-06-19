@@ -10,6 +10,7 @@
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.DTOs.Assistant;
 using Klacks.Api.Application.Klacksy;
+using Klacks.Api.Application.Interfaces.Klacksy;
 using Klacks.Api.Application.Klacksy.Models;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;

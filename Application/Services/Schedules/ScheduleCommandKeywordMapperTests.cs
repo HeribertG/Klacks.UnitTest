@@ -2,6 +2,7 @@
 
 using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.ScheduleOptimizer.Models;
 using NUnit.Framework;
 

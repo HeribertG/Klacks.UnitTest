@@ -8,6 +8,7 @@ namespace Klacks.UnitTest.Application.Handlers.Klacksy;
 
 using Klacks.Api.Application.Handlers.Klacksy;
 using Klacks.Api.Application.Klacksy;
+using Klacks.Api.Application.Interfaces.Klacksy;
 using Klacks.Api.Application.Klacksy.Models;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;

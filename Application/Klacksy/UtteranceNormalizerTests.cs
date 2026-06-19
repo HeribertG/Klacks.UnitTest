@@ -4,6 +4,7 @@ namespace Klacks.UnitTest.Application.Klacksy;
 
 using Shouldly;
 using Klacks.Api.Application.Klacksy;
+using Klacks.Api.Application.Interfaces.Klacksy;
 using NUnit.Framework;
 
 [TestFixture]

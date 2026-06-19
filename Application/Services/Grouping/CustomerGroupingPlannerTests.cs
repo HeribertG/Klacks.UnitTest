@@ -8,6 +8,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.Grouping;
+using Klacks.Api.Application.Interfaces.Grouping;
 
 namespace Klacks.UnitTest.Application.Services.Grouping;
 

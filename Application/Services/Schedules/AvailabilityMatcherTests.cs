@@ -8,6 +8,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 
 namespace Klacks.UnitTest.Application.Services.Schedules;

@@ -2,6 +2,7 @@
 
 using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Application.Interfaces.Schedules;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Schedules;

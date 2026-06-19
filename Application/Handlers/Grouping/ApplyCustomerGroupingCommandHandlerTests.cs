@@ -11,6 +11,7 @@ using Klacks.Api.Application.Commands.Grouping;
 using Klacks.Api.Application.DTOs.Grouping;
 using Klacks.Api.Application.Handlers.Grouping;
 using Klacks.Api.Application.Services.Grouping;
+using Klacks.Api.Application.Interfaces.Grouping;
 
 namespace Klacks.UnitTest.Application.Handlers.Grouping;
 
