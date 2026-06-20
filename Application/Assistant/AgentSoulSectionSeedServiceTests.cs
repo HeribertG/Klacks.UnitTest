@@ -65,6 +65,20 @@ public class AgentSoulSectionSeedServiceTests
     }
 
     [Test]
+    public async Task Seeds_Humor_WithGlobalConservativeGuardrails()
+    {
+        await Service().SeedAsync();
+
+        _captured.ShouldContain(c =>
+            c.Type == SoulSectionTypes.Humor
+            && c.Content.Contains("self-deprecating")
+            && c.Content.Contains("No sarcasm")
+            && c.Content.Contains("religion, politics")
+            && c.Content.Contains("EVERY language and culture")
+            && c.Content.Contains("[USER_MOOD: FRUSTRATED]"));
+    }
+
+    [Test]
     public async Task SecondRun_IsIdempotent_NoReUpsert()
     {
         await Service().SeedAsync();
