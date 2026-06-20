@@ -127,6 +127,30 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     }
 
     [Test]
+    public async Task Handle_NoHolidayButPoorAir_SetsAirAmbientKey()
+    {
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+        _weatherClient.GetAirQualityAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns((int?)130);
+
+        var result = await _handler.Handle(request, CancellationToken.None);
+
+        result.AmbientKey.ShouldBe("klacksy.welcome.ambient.air_poor");
+    }
+
+    [Test]
+    public async Task Handle_NoHolidayAndGoodAir_LeavesAmbientEmpty()
+    {
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+        _weatherClient.GetAirQualityAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns((int?)15);
+
+        var result = await _handler.Handle(request, CancellationToken.None);
+
+        result.AmbientKey.ShouldBe(string.Empty);
+    }
+
+    [Test]
     public async Task Handle_GreetingLlmEnabled_SetsGreetingTextFromComposer()
     {
         var config = new ConfigurationBuilder()
