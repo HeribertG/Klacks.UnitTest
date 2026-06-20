@@ -8,6 +8,8 @@ using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Queries.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Assistant;
+using Microsoft.Extensions.Configuration;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -19,6 +21,8 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     private IOpenMeteoClient _weatherClient = null!;
     private ICompanyLocationProvider _companyLocationProvider = null!;
     private IOnboardingService _onboardingService = null!;
+    private IPublicHolidayProvider _holidayProvider = null!;
+    private IConfiguration _configuration = null!;
     private GetWelcomeQueryHandler _handler = null!;
 
     [SetUp]
@@ -31,7 +35,11 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _weatherClient = Substitute.For<IOpenMeteoClient>();
         _companyLocationProvider = Substitute.For<ICompanyLocationProvider>();
         _onboardingService = Substitute.For<IOnboardingService>();
-        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService);
+        _holidayProvider = Substitute.For<IPublicHolidayProvider>();
+        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((UpcomingHoliday?)null);
+        _configuration = new ConfigurationBuilder().Build();
+        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _configuration);
     }
 
     [Test]
@@ -83,6 +91,32 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         result.Onboarding.ShouldNotBeNull();
         result.Onboarding!.ShouldOffer.ShouldBeTrue();
         result.Onboarding.Status.ShouldBe("pending");
+    }
+
+    [Test]
+    public async Task Handle_HolidayTomorrow_SetsAmbientKeyAndName()
+    {
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+        _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new UpcomingHoliday("Auffahrt", IsToday: false));
+
+        var result = await _handler.Handle(request, CancellationToken.None);
+
+        result.AmbientKey.ShouldBe("klacksy.welcome.ambient.holiday_tomorrow");
+        result.AmbientHolidayName.ShouldBe("Auffahrt");
+    }
+
+    [Test]
+    public async Task Handle_NoHoliday_LeavesAmbientEmpty()
+    {
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+
+        var result = await _handler.Handle(request, CancellationToken.None);
+
+        result.AmbientKey.ShouldBe(string.Empty);
+        result.AmbientHolidayName.ShouldBe(string.Empty);
     }
 
     private static GetWelcomeQuery BuildRequest(double? latitude, double? longitude)
