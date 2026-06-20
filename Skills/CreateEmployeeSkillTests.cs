@@ -119,6 +119,56 @@ public class CreateEmployeeSkillTests
     }
 
     [Test]
+    public async Task ReturnsError_WhenAddressGivenWithoutZip_EvenIfContactSkipped()
+    {
+        // Regression: "ohne Kontaktdaten" set proceedWithoutContact=true, which used to skip the WHOLE
+        // address check and create an address with an empty zip. An address must always be complete.
+        var parameters = new Dictionary<string, object>
+        {
+            ["firstName"] = "Biel",
+            ["lastName"] = "GmbH",
+            ["gender"] = "LegalEntity",
+            ["company"] = "Biel GmbH",
+            ["entityType"] = "Customer",
+            ["memberSince"] = "2026-06-01",
+            ["street"] = "Bahnhofstr 100",
+            ["city"] = "Biel",
+            ["proceedWithoutContact"] = true
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("zip"));
+        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task CreatesCustomer_WithCompleteAddress_AndNoContact()
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["firstName"] = "Biel",
+            ["lastName"] = "GmbH",
+            ["gender"] = "LegalEntity",
+            ["company"] = "Biel GmbH",
+            ["entityType"] = "Customer",
+            ["memberSince"] = "2026-06-01",
+            ["street"] = "Bahnhofstr 100",
+            ["zip"] = "2500",
+            ["city"] = "Biel",
+            ["proceedWithoutContact"] = true
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True, result.Message);
+        await _clientRepository.Received(1).Add(Arg.Is<Client>(c => c.Type == EntityTypeEnum.Customer));
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
     public async Task ReturnsError_WhenAddressIncomplete()
     {
         var parameters = CompleteParameters();

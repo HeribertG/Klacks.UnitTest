@@ -18,6 +18,8 @@ public class AgentTriggerServiceTests
     private IAgentTriggerRateLimiter _rateLimiter = null!;
     private IAgentTriggerPreferenceService _preferenceService = null!;
     private IAssistantNotificationService _notificationService = null!;
+    private IProactiveTriggerDispatchRepository _dispatchRepository = null!;
+    private IUserActivityTracker _activityTracker = null!;
     private AgentTriggerService _sut = null!;
 
     [SetUp]
@@ -26,9 +28,11 @@ public class AgentTriggerServiceTests
         _rateLimiter = Substitute.For<IAgentTriggerRateLimiter>();
         _preferenceService = Substitute.For<IAgentTriggerPreferenceService>();
         _notificationService = Substitute.For<IAssistantNotificationService>();
+        _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
+        _activityTracker = Substitute.For<IUserActivityTracker>();
         _preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _sut = new AgentTriggerService(_rateLimiter, _preferenceService, _notificationService,
-            NullLogger<AgentTriggerService>.Instance);
+            _dispatchRepository, _activityTracker, NullLogger<AgentTriggerService>.Instance);
     }
 
     private static UnstaffedShiftTriggerEvent MakeEvent(int daysUntil = 2) =>
@@ -84,6 +88,32 @@ public class AgentTriggerServiceTests
 
         await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_AlreadyDispatched_SkipsDedup()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _dispatchRepository
+            .WasDispatchedAsync("user-a", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        await _sut.OnEventAsync(MakeEvent());
+
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+    }
+
+    [Test]
+    public async Task OnEventAsync_UserActiveInConversation_SkipsThatUser()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _activityTracker.IsRecentlyActive("user-a", Arg.Any<TimeSpan>()).Returns(true);
+
+        await _sut.OnEventAsync(MakeEvent());
+
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
     }
 
     [Test]

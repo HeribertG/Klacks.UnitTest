@@ -55,7 +55,8 @@ public class ChatControllerFastPathTests
             _navMatcher,
             Substitute.For<INavigationTargetCacheService>(),
             _navLogger,
-            _llmRepository)
+            _llmRepository,
+            Substitute.For<IUserActivityTracker>())
         {
             ControllerContext = new ControllerContext
             {
