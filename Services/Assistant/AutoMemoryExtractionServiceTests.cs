@@ -90,4 +90,32 @@ public class AutoMemoryExtractionServiceTests
             Arg.Is<AgentMemory>(m => m.Key == "Firmen_Standort"),
             Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task PersonalFact_IsScopedToCurrentUser()
+    {
+        var userId = Guid.NewGuid();
+        SetupExtractionResponse(
+            "[{\"key\":\"Lieblingssport\",\"content\":\"Der Benutzer mag Fussball.\",\"category\":\"preference\",\"importance\":6}]");
+
+        await _service.ExtractAndStoreMemoriesAsync(Guid.NewGuid(), "frage", "antwort", userId.ToString());
+
+        await _memoryRepository.Received(1).AddAsync(
+            Arg.Is<AgentMemory>(m => m.Key == "Lieblingssport" && m.UserId == userId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CompanyFact_StaysGlobal_NotScopedToUser()
+    {
+        var userId = Guid.NewGuid();
+        SetupExtractionResponse(
+            "[{\"key\":\"Firmen_Standort\",\"content\":\"Die Firma hat ihren Hauptsitz in Bern.\",\"category\":\"fact\",\"importance\":8}]");
+
+        await _service.ExtractAndStoreMemoriesAsync(Guid.NewGuid(), "frage", "antwort", userId.ToString());
+
+        await _memoryRepository.Received(1).AddAsync(
+            Arg.Is<AgentMemory>(m => m.Key == "Firmen_Standort" && m.UserId == null),
+            Arg.Any<CancellationToken>());
+    }
 }
