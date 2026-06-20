@@ -99,6 +99,20 @@ public class AgentTriggerServiceTests
             Arg.Is<string>(s => s.StartsWith("[HIGH]")),
             Arg.Any<string?>());
     }
+
+    [Test]
+    public async Task OnEventAsync_TargetedEvent_DispatchesOnlyToTargetUser()
+    {
+        var target = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        _notificationService.GetConnectedUserIds().Returns(new[] { target.ToString(), other.ToString() });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("By the way — are you into any sport?", target));
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>());
+    }
 }
 
 [TestFixture]
@@ -149,5 +163,16 @@ public class AgentTriggerRateLimiterTests
 
         Assert.That(_sut.ShouldFire("user-a", "kind-1"), Is.False);
         Assert.That(_sut.ShouldFire("user-a", "kind-2"), Is.True);
+    }
+
+    [Test]
+    public void CuriosityKind_IsCappedAtOnePerDay()
+    {
+        Assert.That(_sut.GetRemainingBudget("user-a", AgentTriggerKinds.CuriosityQuestion), Is.EqualTo(1));
+
+        _sut.RecordFire("user-a", AgentTriggerKinds.CuriosityQuestion);
+
+        Assert.That(_sut.ShouldFire("user-a", AgentTriggerKinds.CuriosityQuestion), Is.False);
+        Assert.That(_sut.GetRemainingBudget("user-a", AgentTriggerKinds.CuriosityQuestion), Is.EqualTo(0));
     }
 }
