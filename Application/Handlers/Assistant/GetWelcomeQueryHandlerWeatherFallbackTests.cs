@@ -22,6 +22,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     private ICompanyLocationProvider _companyLocationProvider = null!;
     private IOnboardingService _onboardingService = null!;
     private IPublicHolidayProvider _holidayProvider = null!;
+    private IGreetingComposer _greetingComposer = null!;
     private IConfiguration _configuration = null!;
     private GetWelcomeQueryHandler _handler = null!;
 
@@ -38,9 +39,15 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _holidayProvider = Substitute.For<IPublicHolidayProvider>();
         _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((UpcomingHoliday?)null);
+        _greetingComposer = Substitute.For<IGreetingComposer>();
+        _greetingComposer.ComposeAsync(Arg.Any<GreetingContext>(), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
         _configuration = new ConfigurationBuilder().Build();
-        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _configuration);
+        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration);
     }
+
+    private GetWelcomeQueryHandler HandlerWith(IConfiguration configuration)
+        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration);
 
     [Test]
     public async Task Handle_RequestHasBrowserCoordinates_UsesThemAndSkipsCompanyFallback()
@@ -117,6 +124,34 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
 
         result.AmbientKey.ShouldBe(string.Empty);
         result.AmbientHolidayName.ShouldBe(string.Empty);
+    }
+
+    [Test]
+    public async Task Handle_GreetingLlmEnabled_SetsGreetingTextFromComposer()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Assistant:Greeting:LlmEnabled"] = "true" })
+            .Build();
+        _greetingComposer.ComposeAsync(Arg.Any<GreetingContext>(), Arg.Any<CancellationToken>())
+            .Returns("Guten Morgen, Max! Grauer Montag, aber die Luft ist frisch.");
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+
+        var result = await HandlerWith(config).Handle(request, CancellationToken.None);
+
+        result.GreetingText.ShouldBe("Guten Morgen, Max! Grauer Montag, aber die Luft ist frisch.");
+    }
+
+    [Test]
+    public async Task Handle_GreetingLlmDisabledByDefault_LeavesGreetingTextNull()
+    {
+        var request = BuildRequest(latitude: 10.0, longitude: 20.0);
+        _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
+
+        var result = await _handler.Handle(request, CancellationToken.None);
+
+        result.GreetingText.ShouldBeNull();
+        await _greetingComposer.DidNotReceive().ComposeAsync(Arg.Any<GreetingContext>(), Arg.Any<CancellationToken>());
     }
 
     private static GetWelcomeQuery BuildRequest(double? latitude, double? longitude)
