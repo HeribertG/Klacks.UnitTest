@@ -108,7 +108,7 @@ public class AgentTriggerServiceTests
         _notificationService.GetConnectedUserIds().Returns(new[] { target.ToString(), other.ToString() });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
-        await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("By the way — are you into any sport?", target));
+        await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("sport", target));
 
         await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>());

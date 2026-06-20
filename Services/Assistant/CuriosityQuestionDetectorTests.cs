@@ -91,9 +91,8 @@ public class CuriosityQuestionDetectorTests
         var events = await Detector(enabled: true).DetectAsync();
 
         Assert.That(events, Has.Count.EqualTo(1));
-        var question = ((CuriosityQuestionTriggerEvent)events[0]).Question;
-        var sportText = CuriosityQuestions.Pool.First(q => q.Topic == "sport").Text;
-        Assert.That(question, Is.Not.EqualTo(sportText));
+        var topic = ((CuriosityQuestionTriggerEvent)events[0]).Topic;
+        Assert.That(topic, Is.Not.EqualTo("sport"));
     }
 
     [Test]
