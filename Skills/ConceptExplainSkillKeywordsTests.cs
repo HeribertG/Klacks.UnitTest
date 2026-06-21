@@ -58,6 +58,18 @@ public class ConceptExplainSkillKeywordsTests
         Assert.That(result, Does.Contain(expectedSkill));
     }
 
+    [TestCase("Teile den 24h-Dienst in Früh, Spät und Nacht auf")]
+    [TestCase("Kannst du den Dienst nach Zeit trennen?")]
+    [TestCase("schneide die Bestellung in 3 Teile")]
+    [TestCase("Ich brauche eine 24/7 Rotation aufgeteilt")]
+    [TestCase("split this shift into parts")]
+    public void CutIntentPhrases_ResolveCutShiftSkill(string message)
+    {
+        var result = ConceptExplainSkillKeywords.ResolveSkillNames(message);
+
+        Assert.That(result, Does.Contain("cut_shift"));
+    }
+
     [Test]
     public void MultipleKeywordsForSameSkill_ResolveDistinct()
     {
