@@ -27,6 +27,10 @@ public class SkillRiskClassifierTests
     [TestCase("create_identity_provider")]
     [TestCase("update_identity_provider")]
     [TestCase("delete_identity_provider")]
+    [TestCase("delete_group")]
+    [TestCase("delete_branch")]
+    [TestCase("delete_client")]
+    [TestCase("delete_membership")]
     public void Classify_SensitiveSkills_ReturnsSensitive(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
@@ -57,7 +61,6 @@ public class SkillRiskClassifierTests
 
     [TestCase("accept_scenario")]
     [TestCase("update_client")]
-    [TestCase("delete_client")]
     [TestCase("delete_shift")]
     [TestCase("update_general_settings")]
     [TestCase("email_schedule_to_client")]
@@ -66,6 +69,8 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Irreversible));
     }
 
+    // Real read skills carry a read-only category (Query/Read), so they classify as ReadOnly via
+    // category — not via their name prefix.
     [TestCase("get_client_details")]
     [TestCase("list_groups")]
     [TestCase("search_employees")]
@@ -74,17 +79,45 @@ public class SkillRiskClassifierTests
     [TestCase("interpret_resource_monitor")]
     [TestCase("evaluate_scenario")]
     [TestCase("generate_period_summary")]
-    public void Classify_ReadPrefixedSkills_ReturnsReadOnly(string name)
+    public void Classify_QueryCategoryReadSkills_ReturnsReadOnly(string name)
     {
-        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.ReadOnly));
+        Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Query)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
+    // Read-only skills that happen to carry a write (Crud) category are allow-listed explicitly.
+    [TestCase("find_customer_candidates")]
+    [TestCase("find_split_shift_candidates")]
+    public void Classify_ReadOnlyExtras_WithCrudCategory_ReturnsReadOnly(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Crud)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
     [TestCase(SkillCategory.Query)]
+    [TestCase(SkillCategory.Read)]
     [TestCase(SkillCategory.Validation)]
     [TestCase(SkillCategory.UI)]
     public void Classify_ReadOnlyCategories_ReturnsReadOnly(SkillCategory category)
     {
         Assert.That(_sut.Classify(Descriptor("some_unknown_skill", category)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
+    // The trap: a write-category skill whose name carries a read-only prefix must NOT be read-only.
+    [TestCase("evaluate_revenue")]
+    [TestCase("generate_invoice")]
+    [TestCase("check_balance")]
+    [TestCase("detect_fraud")]
+    public void Classify_WriteCategoryWithReadPrefix_ReturnsIrreversible(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Crud)), Is.EqualTo(SkillRiskClass.Irreversible));
+    }
+
+    // A read-only name prefix still classifies non-write categories (e.g. System) as read-only.
+    [Test]
+    public void Classify_ReadPrefixOnNonWriteCategory_ReturnsReadOnly()
+    {
+        Assert.That(
+            _sut.Classify(Descriptor("get_system_status", SkillCategory.System)),
+            Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
     [Test]
