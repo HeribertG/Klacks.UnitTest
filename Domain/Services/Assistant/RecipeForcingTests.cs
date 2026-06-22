@@ -116,6 +116,31 @@ public class RecipeForcingTests
         Assert.That(plan.CurrentStepNote, Is.Null);
     }
 
+    [TestCase("Mach mir einen geteilten 24-Stunden-Dienst fuer Spitex Bern")]
+    [TestCase("Leg einen 24h-Dienst an und teile ihn in drei Schichten")]
+    [TestCase("Richte einen Rund-um-die-Uhr-Dienst ein und schneide ihn in drei Teile")]
+    [TestCase("Trag einen geteilten Nachtdienst fuer Spitex ein")]
+    [TestCase("Plane einen 24-Stunden-Einsatz und schneide ihn")]
+    [TestCase("Bestellung anlegen und in Tag- und Nachtschicht aufteilen")]
+    [TestCase("Erstell mir bitte einen aufgeteilten Wochenenddienst")]
+    public void Resolve_Engages_On_Natural_Create_And_Split_Requests(string message)
+    {
+        Assert.That(RecipeForcingResolver.Resolve(message), Is.Not.Null);
+    }
+
+    [TestCase("Kannst du mir mitteilen, wie ich eine neue Schicht erstelle?")] // how-to; "mitteilen" is not a split
+    [TestCase("Wie erstelle ich einen geteilten 24h-Dienst?")] // how-to question
+    [TestCase("Kannst du die Pflege-Dienste aufteilen?")] // "Pflege" must not match the create stem "leg"
+    [TestCase("Ich will die neue Pflegekraft einteilen")] // "einteilen" is not a split
+    [TestCase("Gibt es Vorteile, wenn ich neue Dienste erstelle?")] // info question; "Vorteile" is not a split
+    [TestCase("Aktualisiere den Drehplan und erstelle die neue Woche")] // edit of an existing thing
+    [TestCase("Wie lege ich einen geteilten Dienst an?")] // how-to question
+    [TestCase("Zeig mir die Pflegeliste und teile sie mit dem Team")] // display request, not create-and-cut
+    public void Resolve_Stays_Silent_On_NonRequests(string message)
+    {
+        Assert.That(RecipeForcingResolver.Resolve(message), Is.Null);
+    }
+
     private static RecipeForcingPlan NewFullPlan() => new(RecipeConstants.CutFromOrderRecipeName, Steps());
 
     private static RecipeForcingPlan NewKnownCustomerPlan() =>
