@@ -26,6 +26,7 @@ public class ContextAssemblyPipelineTests
     private IKlacksOntologyService _ontology = null!;
     private IMemoryRetrievalService _memory = null!;
     private ISentimentAnalyzer _sentiment = null!;
+    private IPendingUserNoteRepository _pendingNotes = null!;
     private ContextAssemblyPipeline _sut = null!;
 
     [SetUp]
@@ -35,6 +36,7 @@ public class ContextAssemblyPipelineTests
         _ontology = Substitute.For<IKlacksOntologyService>();
         _memory = Substitute.For<IMemoryRetrievalService>();
         _sentiment = Substitute.For<ISentimentAnalyzer>();
+        _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
 
         _identity.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(IdentityText);
@@ -43,9 +45,12 @@ public class ContextAssemblyPipelineTests
             .Returns(MemoryText);
         _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
             .Returns(new SentimentResult(SentimentMood.Neutral, 0f));
+        _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(0);
 
         _sut = new ContextAssemblyPipeline(
             _identity, _ontology, _memory, _sentiment, new RuleContextProvider(),
+            _pendingNotes,
             NullLogger<ContextAssemblyPipeline>.Instance);
     }
 
@@ -170,5 +175,41 @@ public class ContextAssemblyPipelineTests
             Guid.NewGuid(), "ok do it now please", null, new[] { "place_work" }, hasDomainSkillContext: false);
 
         Assert.That(result, Does.Contain(OntologyText));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_InjectsPendingNotesHint_WhenUndeliveredNotesExist()
+    {
+        var userId = Guid.NewGuid();
+        _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), userId, Arg.Any<CancellationToken>()).Returns(2);
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "hello there", userId: userId);
+
+        Assert.That(result, Does.Contain("[PENDING_NOTES: 2]"));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoPendingNotesHint_WhenNoneExist()
+    {
+        var userId = Guid.NewGuid();
+        _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(0);
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "hello there", userId: userId);
+
+        Assert.That(result, Does.Not.Contain("PENDING_NOTES"));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoPendingNotesHint_WhenUserIdMissing()
+    {
+        _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(5);
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
+
+        Assert.That(result, Does.Not.Contain("PENDING_NOTES"));
+        await _pendingNotes.DidNotReceive().CountPendingAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 }
