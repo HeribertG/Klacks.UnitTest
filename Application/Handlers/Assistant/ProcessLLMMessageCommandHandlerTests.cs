@@ -11,8 +11,11 @@ using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.Infrastructure.KnowledgeIndex.Domain;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -30,6 +33,7 @@ public class ProcessLLMMessageCommandHandlerTests
     private ISkillCacheService _skillCache = null!;
     private IKnowledgeRetrievalService _retrieval = null!;
     private IPlanningScopeEnricher _enricher = null!;
+    private RecipeEngineService _recipeEngine = null!;
     private Agent _agent = null!;
     private LLMContext? _capturedContext;
 
@@ -41,6 +45,18 @@ public class ProcessLLMMessageCommandHandlerTests
         _skillCache = Substitute.For<ISkillCacheService>();
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _enricher = Substitute.For<IPlanningScopeEnricher>();
+
+        var recipeRepository = Substitute.For<IAgentRecipeRepository>();
+        recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
+        var scopedProvider = Substitute.For<IServiceProvider>();
+        scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
+        var serviceScope = Substitute.For<IServiceScope>();
+        serviceScope.ServiceProvider.Returns(scopedProvider);
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(serviceScope);
+        var pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
+        _recipeEngine = new RecipeEngineService(
+            scopeFactory, pendingRecipeStore, Substitute.For<ILogger<RecipeEngineService>>());
 
         _agent = new Agent { Id = Guid.NewGuid() };
         _skillCache.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(_agent);
@@ -64,7 +80,7 @@ public class ProcessLLMMessageCommandHandlerTests
     private ProcessLLMMessageCommandHandler CreateHandler()
     {
         return new ProcessLLMMessageCommandHandler(
-            _llmService, _agentRepository, _skillCache, _retrieval, _enricher);
+            _llmService, _agentRepository, _skillCache, _retrieval, _enricher, _recipeEngine);
     }
 
     private static AgentSkill CreateSkill(string name)
