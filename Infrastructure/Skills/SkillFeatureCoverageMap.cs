@@ -16,8 +16,6 @@ public static class SkillFeatureCoverageMap
     public const string ExcludedPrefix = "excluded: ";
 
     private const string GapRoadmapSuffix = "), planned phase A3 (roadmap 2026-06-10)";
-    private const string FloorPlanDeferred = "FloorPlan: feature unfinished, skills deferred (2026-06-10)";
-
     public static readonly IReadOnlyDictionary<string, string> Decisions = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["AgentAutonomyController"] = Covered("get_autonomy_level", "set_autonomy_level"),
@@ -81,9 +79,6 @@ public static class SkillFeatureCoverageMap
         ["SpamRulesController"] = Covered("get_spam_filter_settings", "update_spam_filter_settings"),
 
         ["OrderExportController"] = Covered("list_sealed_orders", "list_recent_exports", "open_order_export"),
-
-        ["FloorPlanWorkMarkersController"] = Excluded(FloorPlanDeferred),
-        ["FloorPlansController"] = Excluded(FloorPlanDeferred),
 
         ["PeriodClosingController"] = Covered("close_period", "reopen_period", "approve_day", "revoke_day_approval", "generate_period_summary"),
 
