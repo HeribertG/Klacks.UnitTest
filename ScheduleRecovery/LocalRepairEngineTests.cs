@@ -376,8 +376,10 @@ public sealed class LocalRepairEngineTests
     }
 
     [Test]
-    public void Covering_with_a_violation_beats_leaving_a_critical_slot_uncovered()
+    public void Weekly_cap_excludes_the_only_candidate_so_the_slot_stays_uncovered()
     {
+        // All-hard policy: the only candidate (B) would breach the weekly cap, so it is excluded rather
+        // than covered-with-a-violation. With no legal candidate the critical slot is left uncovered.
         var monday = MondayOf(Day(6, 3));
         var tuesday = monday.AddDays(1);
         var s = Shift(1);
@@ -392,16 +394,19 @@ public sealed class LocalRepairEngineTests
 
         var proposal = _engine.Repair(snapshot, new AbsenceEvent(Agent(1), [tuesday]), Ruleset.Default);
 
-        proposal.Uncovered.ShouldBeEmpty();
-        var delta = proposal.Deltas.Single();
-        delta.ToAgentId.ShouldBe(Agent(2));
-        proposal.Objective.UncoveredCritical.ShouldBe(0);
-        proposal.Objective.NewHardViolations.ShouldBe(1);
+        proposal.Deltas.ShouldBeEmpty();
+        proposal.Uncovered.Count.ShouldBe(1);
+        proposal.Uncovered[0].Date.ShouldBe(tuesday);
+        proposal.Uncovered[0].IsCritical.ShouldBeTrue();
+        proposal.Objective.UncoveredCritical.ShouldBe(1);
+        proposal.Objective.NewHardViolations.ShouldBe(0);
     }
 
     [Test]
-    public void Weekly_cap_is_detected_across_the_iso_year_boundary()
+    public void Weekly_cap_across_the_iso_year_boundary_excludes_the_candidate()
     {
+        // The weekly cap is correctly detected across the ISO year boundary, so the candidate is excluded
+        // (all-hard) and the slot stays uncovered — the boundary week is counted as one bucket.
         var lastYear = new DateOnly(2025, 12, 30);
         var thisYear = new DateOnly(2026, 1, 2);
         var s = Shift(1);
@@ -416,8 +421,10 @@ public sealed class LocalRepairEngineTests
 
         var proposal = _engine.Repair(snapshot, new AbsenceEvent(Agent(1), [thisYear]), Ruleset.Default);
 
-        proposal.Deltas.Single().ToAgentId.ShouldBe(Agent(2));
-        proposal.Objective.NewHardViolations.ShouldBe(1);
+        proposal.Deltas.ShouldBeEmpty();
+        proposal.Uncovered.Count.ShouldBe(1);
+        proposal.Uncovered[0].Date.ShouldBe(thisYear);
+        proposal.Objective.NewHardViolations.ShouldBe(0);
     }
 
     [Test]

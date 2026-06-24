@@ -81,7 +81,9 @@ internal sealed class SnapshotBuilder
         decimal targetHoursDeficit = 0m,
         IEnumerable<Guid>? preferredShiftIds = null,
         IEnumerable<Guid>? blacklistedShiftIds = null,
-        bool isInGroup = true)
+        bool isInGroup = true,
+        decimal maxDailyHours = 0m,
+        bool performsShiftWork = true)
     {
         _agents.Add(new RecoveryAgent(
             id,
@@ -92,7 +94,9 @@ internal sealed class SnapshotBuilder
             targetHoursDeficit,
             preferredShiftIds?.ToHashSet() ?? [],
             blacklistedShiftIds?.ToHashSet() ?? [],
-            isInGroup));
+            isInGroup,
+            maxDailyHours,
+            performsShiftWork));
         return this;
     }
 
