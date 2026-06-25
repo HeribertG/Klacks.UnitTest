@@ -98,6 +98,7 @@ public static class SkillFeatureCoverageMap
         ["ExpensesController"] = Covered("list_expenses", "add_expense", "update_expense", "delete_expense"),
         ["HarmonizerController"] = Covered("start_wizard2"),
         ["HolisticHarmonizerController"] = Covered("start_wizard3"),
+        ["RecoveryController"] = Covered("cover_absence"),
         ["ScheduleCommandsController"] = Covered("add_schedule_command"),
         ["ScheduleNotesController"] = Covered("list_schedule_notes", "add_schedule_note", "delete_schedule_note"),
         ["ShiftsController"] = Covered("create_shift", "update_shift", "delete_shift", "set_shift_required_qualification", "search_shifts", "get_shift_details"),
