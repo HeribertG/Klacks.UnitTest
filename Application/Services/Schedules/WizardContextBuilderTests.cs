@@ -20,6 +20,7 @@ public class WizardContextBuilderTests
     private IWizardShiftBuilder _shiftBuilder = null!;
     private IWizardHardConstraintBuilder _hardBuilder = null!;
     private IPeriodHoursService _periodHours = null!;
+    private IAvailabilityIneligibilityService _availabilityService = null!;
     private WizardContextBuilder _sut = null!;
 
     [SetUp]
@@ -53,12 +54,78 @@ public class WizardContextBuilderTests
         eligibilityBuilder
             .BuildAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<EligibilitySlot>>(), Arg.Any<CancellationToken>())
             .Returns(EligibilityMatrix.Empty);
-        var availabilityService = Substitute.For<IAvailabilityIneligibilityService>();
-        availabilityService
+        _availabilityService = Substitute.For<IAvailabilityIneligibilityService>();
+        _availabilityService
             .GetAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<IReadOnlyList<AvailabilityShiftSlot>>(), Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<(string, Guid, DateOnly)>)new HashSet<(string, Guid, DateOnly)>());
-        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder, availabilityService);
+        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder, _availabilityService);
     }
+
+    [Test]
+    public async Task BuildContextAsync_AvailabilityBlock_WithoutHigherLayer_IsKept()
+    {
+        var agentId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 20);
+        ArrangeAvailabilityHierarchyCase(agentId, shiftId, date, new HardConstraintResult([], [], [], [], []));
+
+        var result = await _sut.BuildContextAsync(HierarchyRequest(agentId, date), CancellationToken.None);
+
+        result.IneligibleAssignments.ShouldContain((agentId.ToString(), shiftId, date));
+    }
+
+    [Test]
+    public async Task BuildContextAsync_AvailabilityBlock_OnKeywordDay_IsSuppressed()
+    {
+        var agentId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 20);
+        var keyword = new CoreScheduleCommand(agentId.ToString(), date, ScheduleCommandKeyword.OnlyLate);
+        ArrangeAvailabilityHierarchyCase(agentId, shiftId, date, new HardConstraintResult([keyword], [], [], [], []));
+
+        var result = await _sut.BuildContextAsync(HierarchyRequest(agentId, date), CancellationToken.None);
+
+        result.IneligibleAssignments.ShouldNotContain((agentId.ToString(), shiftId, date));
+    }
+
+    [Test]
+    public async Task BuildContextAsync_AvailabilityBlock_OnBreakDay_IsSuppressed()
+    {
+        var agentId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 20);
+        var breakBlocker = new CoreBreakBlocker(agentId.ToString(), date, date, "Vacation");
+        ArrangeAvailabilityHierarchyCase(agentId, shiftId, date, new HardConstraintResult([], [], [breakBlocker], [], []));
+
+        var result = await _sut.BuildContextAsync(HierarchyRequest(agentId, date), CancellationToken.None);
+
+        result.IneligibleAssignments.ShouldNotContain((agentId.ToString(), shiftId, date));
+    }
+
+    private void ArrangeAvailabilityHierarchyCase(
+        Guid agentId, Guid shiftId, DateOnly date, HardConstraintResult hardConstraints)
+    {
+        SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal> { [agentId] = 30 });
+
+        _hardBuilder
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(hardConstraints);
+
+        _availabilityService
+            .GetAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<IReadOnlyList<AvailabilityShiftSlot>>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlySet<(string, Guid, DateOnly)>)new HashSet<(string, Guid, DateOnly)>
+            {
+                (agentId.ToString(), shiftId, date),
+            });
+    }
+
+    private static WizardContextRequest HierarchyRequest(Guid agentId, DateOnly date)
+        => new(
+            PeriodFrom: date,
+            PeriodUntil: date,
+            AgentIds: new[] { agentId },
+            ShiftIds: null,
+            AnalyseToken: null);
 
     [Test]
     public async Task BuildContextAsync_ComposesAllSubBuildersAndPropagatesAnalyseToken()

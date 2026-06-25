@@ -83,6 +83,14 @@ public class FindReplacementQueryHandlerTests
         IsAvailable = false
     };
 
+    private static ClientAvailability Available(Guid clientId, int hour) => new()
+    {
+        ClientId = clientId,
+        Date = Date,
+        Hour = hour,
+        IsAvailable = true
+    };
+
     private void SetMembers(params Client[] members)
         => _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(members.ToList());
@@ -230,16 +238,32 @@ public class FindReplacementQueryHandlerTests
     }
 
     [Test]
-    public async Task AvailableRecordOnly_IsNotExcluded()
+    public async Task AvailableRecordsCoveringTheShift_IsNotExcluded()
     {
+        // Shift 22:00-06:00 occupies same-day hours 22 and 23; both marked available -> eligible.
         var a = Guid.NewGuid();
         SetMembers(Member(a, "Anna"));
-        SetAvailability(new ClientAvailability { ClientId = a, Date = Date, Hour = 22, IsAvailable = true });
+        SetAvailability(Available(a, 22), Available(a, 23));
 
         var result = await Find();
 
         result.Eligible.Single().ClientId.ShouldBe(a);
         result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task AvailableRecordsCoveringOnlyPartOfTheShift_IsExcluded()
+    {
+        // Marked available at 22 only; the 22:00-06:00 shift also needs hour 23 -> positively unavailable.
+        var blocked = Guid.NewGuid();
+        SetMembers(Member(blocked, "Bea"));
+        SetAvailability(Available(blocked, 22));
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.Single().ClientId.ShouldBe(blocked);
+        result.Excluded.Single().Reason.ShouldBe("unavailable");
     }
 
     [Test]
