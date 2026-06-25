@@ -17,12 +17,14 @@ namespace Klacks.UnitTest.Skills;
 public class GroupCrudSkillTests
 {
     private IGroupRepository _groupRepository = null!;
+    private ICalendarSelectionRepository _calendarSelectionRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
 
     [SetUp]
     public void Setup()
     {
         _groupRepository = Substitute.For<IGroupRepository>();
+        _calendarSelectionRepository = Substitute.For<ICalendarSelectionRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
     }
 
@@ -37,7 +39,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_ReturnsError_WhenParentNotFound()
     {
-        var skill = new CreateGroupSkill(_groupRepository, _unitOfWork);
+        var skill = new CreateGroupSkill(_groupRepository, _calendarSelectionRepository, _unitOfWork);
         var parentId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns((Group?)null);
         var parameters = new Dictionary<string, object>
@@ -55,7 +57,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_AtRoot_AddsGroupAndCompletes()
     {
-        var skill = new CreateGroupSkill(_groupRepository, _unitOfWork);
+        var skill = new CreateGroupSkill(_groupRepository, _calendarSelectionRepository, _unitOfWork);
         var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
