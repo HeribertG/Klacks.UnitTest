@@ -121,4 +121,68 @@ public class RecipeTriggerMatcherTests
         // Assert
         Assert.That(result, Is.False);
     }
+
+    [Test]
+    public void Synonym_Fires_When_AllOf_Does_Not_Match()
+    {
+        // Arrange — a Spanish message that does not satisfy the German allOf, but a plugin-language synonym
+        var trigger = AddClientToGroupTrigger();
+        var message = "incorporar un empleado al grupo";
+        string[] synonyms = ["incorporar un empleado al grupo"];
+
+        // Act
+        var withoutSynonyms = RecipeTriggerMatcher.Matches(trigger, message);
+        var withSynonyms = RecipeTriggerMatcher.Matches(trigger, synonyms, message);
+
+        // Assert
+        Assert.That(withoutSynonyms, Is.False, "no German allOf hit, so the core path stays silent");
+        Assert.That(withSynonyms, Is.True, "the plugin-language synonym fires the recipe");
+    }
+
+    [Test]
+    public void Synonym_Is_Still_Blocked_By_NoneOf()
+    {
+        // Arrange — a question opener must keep the recipe silent even when a synonym is present
+        var trigger = AddClientToGroupTrigger();
+        string[] synonyms = ["incorporar un empleado al grupo"];
+
+        // Act
+        var result = RecipeTriggerMatcher.Matches(trigger, synonyms, "wie incorporar un empleado al grupo?");
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void Synonym_Overload_With_No_Synonyms_Equals_Core_Path()
+    {
+        // Arrange — the language-scoped overload must be a pure no-op for core languages (null/empty synonyms)
+        var trigger = AddClientToGroupTrigger();
+        var match = "Füge Hans zur Gruppe Bern hinzu";
+        var noMatch = "incorporar un empleado al grupo";
+
+        // Act & Assert — identical verdict to the 2-arg path in both directions
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, match),
+            Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, match)));
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, [], match),
+            Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, match)));
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, noMatch),
+            Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, noMatch)));
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, [], noMatch),
+            Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, noMatch)));
+    }
+
+    [Test]
+    public void Synonym_Does_Not_Override_AllOf_For_Core_Language_Message()
+    {
+        // Arrange — a German message still matches via allOf regardless of (irrelevant) synonyms
+        var trigger = AddClientToGroupTrigger();
+        string[] synonyms = ["incorporar un empleado al grupo"];
+
+        // Act
+        var result = RecipeTriggerMatcher.Matches(trigger, synonyms, "Füge Hans zur Gruppe Bern hinzu");
+
+        // Assert
+        Assert.That(result, Is.True);
+    }
 }

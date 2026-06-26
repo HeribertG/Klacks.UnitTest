@@ -10,6 +10,7 @@ using Klacks.Api.Application.Commands.Groups;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
@@ -53,6 +54,11 @@ public class FillGroupByCriteriaCommandHandlerTests
         _groupItemRepository.GetByClientAndGroup(NewClientId, GroupId).Returns((GroupItem?)null);
         _groupItemRepository.GetByClientAndGroup(MemberClientId, GroupId)
             .Returns(new GroupItem { Id = Guid.NewGuid(), ClientId = MemberClientId, GroupId = GroupId });
+
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
+            .Returns(ci => ci.Arg<Func<Task<int>>>()());
+        _groupItemRepository.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(1);
     }
 
     private static FillGroupByCriteriaCommand Command(bool apply, Guid? contractId = null) =>
@@ -77,11 +83,22 @@ public class FillGroupByCriteriaCommandHandlerTests
 
         Assert.That(result.Applied, Is.True);
         Assert.That(result.AddedCount, Is.EqualTo(1));
+        Assert.That(result.VerifiedCount, Is.EqualTo(1));
         Assert.That(result.AlreadyMemberCount, Is.EqualTo(1));
         await _groupItemRepository.Received(1).Add(
             Arg.Is<GroupItem>(gi => gi.ClientId == NewClientId && gi.GroupId == GroupId && gi.CurrentUserCreated == "tester"));
         await _groupItemRepository.DidNotReceive().Add(Arg.Is<GroupItem>(gi => gi.ClientId == MemberClientId));
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public void Apply_RollsBackByThrowing_WhenVerificationCountDoesNotMatch()
+    {
+        _groupItemRepository.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(0);
+
+        Assert.ThrowsAsync<SkillVerificationException>(
+            () => _handler.Handle(Command(apply: true), CancellationToken.None));
     }
 
     [Test]

@@ -61,7 +61,7 @@ public class FillGroupByCriteriaSkillTests
             {
                 var cmd = ci.Arg<FillGroupByCriteriaCommand>();
                 return Task.FromResult(new FillGroupByCriteriaResult(
-                    cmd.Apply, cmd.GroupName, 1, cmd.Apply ? 1 : 0, 0,
+                    cmd.Apply, cmd.GroupName, 1, cmd.Apply ? 1 : 0, cmd.Apply ? 1 : 0, 0,
                     new List<ClientSearchItem> { new() { Id = Guid.NewGuid(), FirstName = "Max", LastName = "Müller" } }));
             });
     }
