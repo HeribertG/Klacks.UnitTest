@@ -140,6 +140,37 @@ public class CustomerGroupingPlannerTests
         assignment.RetireGroupIds.ShouldContain(cantonWithoutCity);
     }
 
+    [Test]
+    public async Task BuildProposal_ForEmployees_QueriesEmployeeType_AndAssignsToNearestCity()
+    {
+        var employee = ClientOfType(EntityTypeEnum.Employee, "Gina", "Vogel", 47.38, 8.54, new[] { CantonZh });
+        _clientRepository
+            .GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { employee });
+
+        var proposal = await _planner.BuildProposalAsync(EntityTypeEnum.Employee);
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(CityZurich);
+        assignment.RetireGroupIds.ShouldContain(CantonZh);
+    }
+
+    [Test]
+    public async Task BuildProposal_ForEmployees_DoesNotQueryCustomers()
+    {
+        var employee = ClientOfType(EntityTypeEnum.Employee, "Hans", "Berg", 47.38, 8.54, new[] { CantonZh });
+        _clientRepository
+            .GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { employee });
+
+        await _planner.BuildProposalAsync(EntityTypeEnum.Employee);
+
+        await _clientRepository.DidNotReceive()
+            .GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Customer, Arg.Any<CancellationToken>());
+        await _clientRepository.Received(1)
+            .GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>());
+    }
+
     private void SetCustomers(params Client[] customers)
     {
         _clientRepository
@@ -148,6 +179,10 @@ public class CustomerGroupingPlannerTests
     }
 
     private static Client Customer(string firstName, string lastName, double? lat, double? lon, IEnumerable<Guid> groupIds)
+        => ClientOfType(EntityTypeEnum.Customer, firstName, lastName, lat, lon, groupIds);
+
+    private static Client ClientOfType(
+        EntityTypeEnum type, string firstName, string lastName, double? lat, double? lon, IEnumerable<Guid> groupIds)
     {
         var clientId = Guid.NewGuid();
         var addresses = new List<Address>();
@@ -161,7 +196,7 @@ public class CustomerGroupingPlannerTests
             Id = clientId,
             FirstName = firstName,
             Name = lastName,
-            Type = EntityTypeEnum.Customer,
+            Type = type,
             Addresses = addresses,
             GroupItems = groupIds.Select(g => new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = g }).ToList()
         };

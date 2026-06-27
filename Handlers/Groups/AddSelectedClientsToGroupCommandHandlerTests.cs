@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for FillGroupByCriteriaCommandHandler: a preview (Apply=false) never persists, an apply
-/// adds only clients that are not already members and commits once, and the contract filter is passed
-/// through to the search.
+/// Unit tests for AddSelectedClientsToGroupCommandHandler: a preview (Apply=false) never persists and
+/// reports eligible vs already-member counts, an apply adds only the non-members and commits once, a
+/// verification mismatch rolls back by throwing, and stale selection ids (not resolving to a client)
+/// are counted as not-found.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Groups;
@@ -14,16 +15,17 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Staffs;
 
 namespace Klacks.UnitTest.Handlers.Groups;
 
 [TestFixture]
-public class FillGroupByCriteriaCommandHandlerTests
+public class AddSelectedClientsToGroupCommandHandlerTests
 {
-    private IClientSearchRepository _searchRepository = null!;
+    private IClientRepository _clientRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
-    private FillGroupByCriteriaCommandHandler _handler = null!;
+    private AddSelectedClientsToGroupCommandHandler _handler = null!;
 
     private static readonly Guid GroupId = Guid.NewGuid();
     private static readonly Guid NewClientId = Guid.NewGuid();
@@ -32,23 +34,17 @@ public class FillGroupByCriteriaCommandHandlerTests
     [SetUp]
     public void Setup()
     {
-        _searchRepository = Substitute.For<IClientSearchRepository>();
+        _clientRepository = Substitute.For<IClientRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _handler = new FillGroupByCriteriaCommandHandler(
-            _searchRepository, _groupItemRepository, _unitOfWork);
+        _handler = new AddSelectedClientsToGroupCommandHandler(
+            _clientRepository, _groupItemRepository, _unitOfWork);
 
-        _searchRepository.SearchAsync(
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
-            Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new ClientSearchResult
+        _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client>
             {
-                Items = new List<ClientSearchItem>
-                {
-                    new() { Id = NewClientId, FirstName = "Max", LastName = "Müller" },
-                    new() { Id = MemberClientId, FirstName = "Eva", LastName = "Meier" }
-                },
-                TotalCount = 2
+                new() { Id = NewClientId, FirstName = "Max", Name = "Müller", Type = EntityTypeEnum.Employee },
+                new() { Id = MemberClientId, FirstName = "Eva", Name = "Meier", Type = EntityTypeEnum.Employee }
             });
 
         _groupItemRepository.GetByClientAndGroup(NewClientId, GroupId).Returns((GroupItem?)null);
@@ -61,17 +57,20 @@ public class FillGroupByCriteriaCommandHandlerTests
             .Returns(1);
     }
 
-    private static FillGroupByCriteriaCommand Command(bool apply, Guid? contractId = null, DateTime? validFrom = null) =>
-        new(GroupId, "Bern", "BE", contractId, EntityTypeEnum.Employee, null, validFrom, apply, "tester");
+    private static AddSelectedClientsToGroupCommand Command(bool apply, DateTime? validFrom = null) =>
+        new(GroupId, "Bern", new[] { NewClientId, MemberClientId }, validFrom, apply, "tester");
 
     [Test]
-    public async Task Preview_DoesNotPersist_AndReturnsAllMatches()
+    public async Task Preview_DoesNotPersist_AndReportsEligibleAndAlreadyMember()
     {
         var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
 
         Assert.That(result.Applied, Is.False);
-        Assert.That(result.TotalMatchCount, Is.EqualTo(2));
-        Assert.That(result.Clients, Has.Count.EqualTo(2));
+        Assert.That(result.RequestedCount, Is.EqualTo(2));
+        Assert.That(result.FoundCount, Is.EqualTo(2));
+        Assert.That(result.EligibleCount, Is.EqualTo(1));
+        Assert.That(result.AlreadyMemberCount, Is.EqualTo(1));
+        Assert.That(result.Clients, Has.Count.EqualTo(1));
         await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
@@ -113,13 +112,19 @@ public class FillGroupByCriteriaCommandHandlerTests
     }
 
     [Test]
-    public async Task Apply_PassesContractFilter_ToSearch()
+    public async Task CountsStaleSelectionIds_AsNotFound()
     {
-        var contractId = Guid.NewGuid();
+        _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client>
+            {
+                new() { Id = NewClientId, FirstName = "Max", Name = "Müller", Type = EntityTypeEnum.Employee }
+            });
 
-        await _handler.Handle(Command(apply: true, contractId: contractId), CancellationToken.None);
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
 
-        await _searchRepository.Received(1).SearchAsync(
-            Arg.Any<string?>(), "BE", EntityTypeEnum.Employee, contractId, Arg.Any<int>(), Arg.Any<CancellationToken>());
+        Assert.That(result.RequestedCount, Is.EqualTo(2));
+        Assert.That(result.FoundCount, Is.EqualTo(1));
+        Assert.That(result.NotFoundCount, Is.EqualTo(1));
+        Assert.That(result.EligibleCount, Is.EqualTo(1));
     }
 }

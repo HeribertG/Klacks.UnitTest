@@ -102,7 +102,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
     [Test]
     public async Task Handle_NoAssignments_DoesNotCommit()
     {
-        _planner.BuildProposalAsync(Arg.Any<CancellationToken>())
+        _planner.BuildProposalAsync(Arg.Any<EntityTypeEnum>(), Arg.Any<CancellationToken>())
             .Returns(new CustomerGroupingProposal(
                 2,
                 Array.Empty<CustomerGroupingAssignment>(),
@@ -118,7 +118,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
 
     private void SetProposal(CustomerGroupingAssignment assignment)
     {
-        _planner.BuildProposalAsync(Arg.Any<CancellationToken>())
+        _planner.BuildProposalAsync(Arg.Any<EntityTypeEnum>(), Arg.Any<CancellationToken>())
             .Returns(new CustomerGroupingProposal(
                 2,
                 new[] { assignment },

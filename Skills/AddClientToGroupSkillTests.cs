@@ -55,7 +55,8 @@ public class AddClientToGroupSkillTests
     private Dictionary<string, object> Params() => new()
     {
         ["clientId"] = ClientId.ToString(),
-        ["groupId"] = GroupId.ToString()
+        ["groupId"] = GroupId.ToString(),
+        ["validFrom"] = "2026-05-01"
     };
 
     [Test]
@@ -96,5 +97,22 @@ public class AddClientToGroupSkillTests
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("already a member"));
         await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
+    }
+
+    [Test]
+    public async Task AsksForStartDate_AndDoesNotPersist_WhenValidFromIsMissing()
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["clientId"] = ClientId.ToString(),
+            ["groupId"] = GroupId.ToString()
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("date"));
+        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

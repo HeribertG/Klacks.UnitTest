@@ -52,12 +52,13 @@ public class AddClientToGroupByNameSkillTests
         });
     }
 
-    private static SkillExecutionContext Ctx() => new()
+    private static SkillExecutionContext Ctx(IReadOnlyList<Guid>? selection = null) => new()
     {
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditClients" }
+        UserPermissions = new List<string> { "CanEditClients" },
+        SelectedEntityIds = selection
     };
 
     [Test]
@@ -86,7 +87,8 @@ public class AddClientToGroupByNameSkillTests
         {
             ["firstName"] = "Max",
             ["lastName"] = "Müller",
-            ["groupName"] = "Verkauf"
+            ["groupName"] = "Verkauf",
+            ["validFrom"] = "2026-05-01"
         };
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
@@ -94,5 +96,73 @@ public class AddClientToGroupByNameSkillTests
         Assert.That(result.Success, Is.True);
         await _clientRepository.Received(1).Put(Arg.Is<Client>(c => c.GroupItems.Any(gi => !gi.IsDeleted)));
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task AsksForStartDate_AndDoesNotPersist_WhenValidFromIsMissing()
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["firstName"] = "Max",
+            ["lastName"] = "Müller",
+            ["groupName"] = "Verkauf"
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("date"));
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task OnAmbiguousName_TellsModelToFinishItself_NotOpenTheEditPage()
+    {
+        _searchRepository.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult
+            {
+                Items = new List<ClientSearchItem>
+                {
+                    new() { Id = Guid.NewGuid(), FirstName = "Lya", LastName = "Ackermann", IdNumber = 1450 },
+                    new() { Id = Guid.NewGuid(), FirstName = "Lya", LastName = "Ackermann", IdNumber = 1622 }
+                },
+                TotalCount = 2
+            });
+
+        var parameters = new Dictionary<string, object>
+        {
+            ["firstName"] = "Lya",
+            ["lastName"] = "Ackermann",
+            ["groupName"] = "Verkauf",
+            ["validFrom"] = "2026-06-01"
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("1450"));
+        Assert.That(result.Message, Does.Contain("edit page"));
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+    }
+
+    [Test]
+    public async Task RedirectsToBulkSkill_WhenNamedClientIsPartOfAnActiveSelection()
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["firstName"] = "Max",
+            ["lastName"] = "Müller",
+            ["groupName"] = "Verkauf",
+            ["validFrom"] = "2026-06-01"
+        };
+
+        var selection = new List<Guid> { ClientId, Guid.NewGuid(), Guid.NewGuid() };
+        var result = await _skill.ExecuteAsync(Ctx(selection), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("add_selected_clients_to_group"));
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

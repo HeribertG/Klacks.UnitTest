@@ -152,7 +152,8 @@ public class FillGroupByCriteriaSkillTests
         var parameters = new Dictionary<string, object>
         {
             ["groupName"] = "Bern",
-            ["apply"] = JsonSerializer.SerializeToElement(true)
+            ["apply"] = JsonSerializer.SerializeToElement(true),
+            ["validFrom"] = "2026-05-01"
         };
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
@@ -161,6 +162,37 @@ public class FillGroupByCriteriaSkillTests
         Assert.That(result.Message, Does.Contain("Added"));
         await _mediator.Received(1).Send(
             Arg.Is<FillGroupByCriteriaCommand>(c => c.Apply),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_WithoutValidFrom_AsksForStartDate_AndDoesNotPersist()
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["groupName"] = "Bern",
+            ["apply"] = JsonSerializer.SerializeToElement(true)
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("date"));
+        await _mediator.DidNotReceive().Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Preview_WithoutValidFrom_AsksForStartDate_InTheSameTurn()
+    {
+        var parameters = new Dictionary<string, object> { ["groupName"] = "Bern" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Does.Contain("Preview"));
+        Assert.That(result.Message, Does.Contain("validFrom"));
+        await _mediator.Received(1).Send(
+            Arg.Is<FillGroupByCriteriaCommand>(c => !c.Apply),
             Arg.Any<CancellationToken>());
     }
 }
