@@ -29,6 +29,7 @@ public class FillGroupByCriteriaCommandHandlerTests
     private static readonly Guid GroupId = Guid.NewGuid();
     private static readonly Guid NewClientId = Guid.NewGuid();
     private static readonly Guid MemberClientId = Guid.NewGuid();
+    private static readonly DateTime CompanyToday = new(2099, 1, 15, 0, 0, 0, DateTimeKind.Utc);
 
     [SetUp]
     public void Setup()
@@ -37,8 +38,7 @@ public class FillGroupByCriteriaCommandHandlerTests
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _companyClock = Substitute.For<ICompanyClock>();
-        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
-            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
         _handler = new FillGroupByCriteriaCommandHandler(
             _searchRepository, _groupItemRepository, _unitOfWork, _companyClock);
 
@@ -104,6 +104,16 @@ public class FillGroupByCriteriaCommandHandlerTests
 
         await _groupItemRepository.Received(1).Add(
             Arg.Is<GroupItem>(gi => gi.ClientId == NewClientId && gi.ValidFrom == validFrom));
+    }
+
+    [Test]
+    public async Task Apply_StampsTheCompanyToday_WhenNoValidFromGiven()
+    {
+        await _handler.Handle(Command(apply: true), CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi =>
+            gi.ClientId == NewClientId
+            && gi.ValidFrom == CompanyToday && gi.ValidFrom.Kind == DateTimeKind.Utc));
     }
 
     [Test]

@@ -24,6 +24,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid Canton = Guid.NewGuid();
     private static readonly Guid City = Guid.NewGuid();
+    private static readonly DateTime CompanyToday = new(2099, 1, 15, 0, 0, 0, DateTimeKind.Utc);
 
     private ICustomerGroupingPlanner _planner = null!;
     private IGroupItemRepository _groupItemRepository = null!;
@@ -38,8 +39,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _companyClock = Substitute.For<ICompanyClock>();
-        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
-            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
         _handler = new ApplyCustomerGroupingCommandHandler(_planner, _groupItemRepository, _unitOfWork, _companyClock);
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
@@ -60,7 +60,9 @@ public class ApplyCustomerGroupingCommandHandlerTests
         var result = await _handler.Handle(new ApplyCustomerGroupingCommand(), CancellationToken.None);
 
         _groupItemRepository.Received(1).Remove(cantonMembership);
-        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(g => g.GroupId == City && g.ClientId == ClientId));
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(g =>
+            g.GroupId == City && g.ClientId == ClientId
+            && g.ValidFrom == CompanyToday && g.ValidFrom.Kind == DateTimeKind.Utc));
         await _unitOfWork.Received(1).CompleteAsync();
         await _groupItemRepository.Received(1).CountExistingByIds(
             Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1), Arg.Any<CancellationToken>());
