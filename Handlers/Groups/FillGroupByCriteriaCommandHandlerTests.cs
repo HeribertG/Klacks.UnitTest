@@ -113,7 +113,7 @@ public class FillGroupByCriteriaCommandHandlerTests
 
         await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi =>
             gi.ClientId == NewClientId
-            && gi.ValidFrom == CompanyToday && gi.ValidFrom.Kind == DateTimeKind.Utc));
+            && gi.ValidFrom == CompanyToday && gi.ValidFrom!.Value.Kind == DateTimeKind.Utc));
     }
 
     [Test]

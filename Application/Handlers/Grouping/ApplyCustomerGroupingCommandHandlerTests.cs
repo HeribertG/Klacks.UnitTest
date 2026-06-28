@@ -62,7 +62,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
         _groupItemRepository.Received(1).Remove(cantonMembership);
         await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(g =>
             g.GroupId == City && g.ClientId == ClientId
-            && g.ValidFrom == CompanyToday && g.ValidFrom.Kind == DateTimeKind.Utc));
+            && g.ValidFrom == CompanyToday && g.ValidFrom!.Value.Kind == DateTimeKind.Utc));
         await _unitOfWork.Received(1).CompleteAsync();
         await _groupItemRepository.Received(1).CountExistingByIds(
             Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1), Arg.Any<CancellationToken>());
