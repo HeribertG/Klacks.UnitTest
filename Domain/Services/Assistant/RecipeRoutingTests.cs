@@ -74,6 +74,9 @@ public class RecipeRoutingTests
     [TestCase("Ordne die selektierten Mitarbeiter der Gruppe Zürich zu")]
     [TestCase("Füge die ausgewählten Mitarbeiter zur Gruppe Bern hinzu")]
     [TestCase("Füge alle markierten Kunden zur Gruppe Basel hinzu")]
+    [TestCase("Füge diese Mitarbeiter zur Gruppe Bern hinzu")]
+    [TestCase("Füge diese Mitarbeitenden zur Gruppe Bern hinzu")]
+    [TestCase("Füge diese Kunden zur Gruppe Zürich hinzu")]
     public void SelectionUtterances_RouteToSelectedClientsRecipe(string utterance)
     {
         Assert.That(Resolve(utterance), Is.EqualTo("add-selected-clients-to-group"));
