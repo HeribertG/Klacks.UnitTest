@@ -28,6 +28,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
     private ICustomerGroupingPlanner _planner = null!;
     private IGroupItemRepository _groupItemRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
     private ApplyCustomerGroupingCommandHandler _handler = null!;
 
     [SetUp]
@@ -36,7 +37,10 @@ public class ApplyCustomerGroupingCommandHandlerTests
         _planner = Substitute.For<ICustomerGroupingPlanner>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _handler = new ApplyCustomerGroupingCommandHandler(_planner, _groupItemRepository, _unitOfWork);
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
+        _handler = new ApplyCustomerGroupingCommandHandler(_planner, _groupItemRepository, _unitOfWork, _companyClock);
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
             .Returns(ci => ci.Arg<Func<Task<int>>>()());

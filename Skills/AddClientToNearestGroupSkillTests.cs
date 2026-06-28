@@ -23,6 +23,7 @@ public class AddClientToNearestGroupSkillTests
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
     private AddClientToNearestGroupSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -35,8 +36,11 @@ public class AddClientToNearestGroupSkillTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToNearestGroupSkill(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork);
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
 
         _clientRepository.Get(ClientId).Returns(new Client
         {

@@ -23,6 +23,7 @@ public class AddSelectedClientsToGroupSkillTests
 {
     private IGroupRepository _groupRepository = null!;
     private IMediator _mediator = null!;
+    private ICompanyClock _companyClock = null!;
     private AddSelectedClientsToGroupSkill _skill = null!;
 
     private static readonly Guid BernGroupId = Guid.NewGuid();
@@ -33,7 +34,10 @@ public class AddSelectedClientsToGroupSkillTests
     {
         _groupRepository = Substitute.For<IGroupRepository>();
         _mediator = Substitute.For<IMediator>();
-        _skill = new AddSelectedClientsToGroupSkill(_groupRepository, _mediator);
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
+        _skill = new AddSelectedClientsToGroupSkill(_groupRepository, _mediator, _companyClock);
 
         _groupRepository.List().Returns(new List<Group>
         {

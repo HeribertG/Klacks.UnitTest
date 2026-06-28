@@ -21,6 +21,7 @@ public class AddClientToGroupSkillTests
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
     private AddClientToGroupSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -33,8 +34,11 @@ public class AddClientToGroupSkillTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupSkill(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork);
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
 
         _clientRepository.Exists(ClientId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });

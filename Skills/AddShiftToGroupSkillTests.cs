@@ -22,6 +22,7 @@ public class AddShiftToGroupSkillTests
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
     private AddShiftToGroupSkill _skill = null!;
 
     private static readonly Guid ShiftId = Guid.NewGuid();
@@ -34,7 +35,10 @@ public class AddShiftToGroupSkillTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _skill = new AddShiftToGroupSkill(_shiftRepository, _groupRepository, _groupItemRepository, _unitOfWork);
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
+        _skill = new AddShiftToGroupSkill(_shiftRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
 
         _shiftRepository.Exists(ShiftId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });

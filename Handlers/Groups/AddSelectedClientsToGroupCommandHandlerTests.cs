@@ -25,6 +25,7 @@ public class AddSelectedClientsToGroupCommandHandlerTests
     private IClientRepository _clientRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
     private AddSelectedClientsToGroupCommandHandler _handler = null!;
 
     private static readonly Guid GroupId = Guid.NewGuid();
@@ -37,8 +38,11 @@ public class AddSelectedClientsToGroupCommandHandlerTests
         _clientRepository = Substitute.For<IClientRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _handler = new AddSelectedClientsToGroupCommandHandler(
-            _clientRepository, _groupItemRepository, _unitOfWork);
+            _clientRepository, _groupItemRepository, _unitOfWork, _companyClock);
 
         _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client>

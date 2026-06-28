@@ -26,6 +26,7 @@ public class FillGroupByCriteriaSkillTests
     private IGroupRepository _groupRepository = null!;
     private IContractRepository _contractRepository = null!;
     private IMediator _mediator = null!;
+    private ICompanyClock _companyClock = null!;
     private FillGroupByCriteriaSkill _skill = null!;
 
     private static readonly Guid BernGroupId = Guid.NewGuid();
@@ -36,7 +37,10 @@ public class FillGroupByCriteriaSkillTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _contractRepository = Substitute.For<IContractRepository>();
         _mediator = Substitute.For<IMediator>();
-        _skill = new FillGroupByCriteriaSkill(_groupRepository, _contractRepository, _mediator);
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
+        _skill = new FillGroupByCriteriaSkill(_groupRepository, _contractRepository, _mediator, _companyClock);
 
         _groupRepository.List().Returns(new List<Group>
         {

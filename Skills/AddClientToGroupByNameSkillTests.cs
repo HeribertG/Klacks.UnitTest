@@ -23,6 +23,7 @@ public class AddClientToGroupByNameSkillTests
     private IClientSearchRepository _searchRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
     private AddClientToGroupByNameSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -34,8 +35,11 @@ public class AddClientToGroupByNameSkillTests
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupByNameSkill(
-            _clientRepository, _searchRepository, _groupRepository, _unitOfWork);
+            _clientRepository, _searchRepository, _groupRepository, _unitOfWork, _companyClock);
 
         _searchRepository.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult

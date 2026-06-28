@@ -23,6 +23,7 @@ public class FillGroupByCriteriaCommandHandlerTests
     private IClientSearchRepository _searchRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ICompanyClock _companyClock = null!;
     private FillGroupByCriteriaCommandHandler _handler = null!;
 
     private static readonly Guid GroupId = Guid.NewGuid();
@@ -35,8 +36,11 @@ public class FillGroupByCriteriaCommandHandlerTests
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
+            .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _handler = new FillGroupByCriteriaCommandHandler(
-            _searchRepository, _groupItemRepository, _unitOfWork);
+            _searchRepository, _groupItemRepository, _unitOfWork, _companyClock);
 
         _searchRepository.SearchAsync(
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
