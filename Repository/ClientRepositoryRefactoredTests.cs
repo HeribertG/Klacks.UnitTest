@@ -84,7 +84,7 @@ public class ClientRepositoryRefactoredTests
             _mockSearchService,
             _mockSortingService);
 
-        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(
+        var baseQueryService = new Klacks.Api.Infrastructure.Services.Clients.ClientBaseQueryService(
             _context, mockGroupFilterService, _mockSearchFilterService);
         _clientBreakPlaceholderRepository = new ClientBreakPlaceholderRepository(
             _context,

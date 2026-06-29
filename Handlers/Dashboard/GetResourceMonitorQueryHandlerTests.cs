@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
+using Klacks.Api.Infrastructure.Repositories.Dashboard;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -34,7 +35,7 @@ public class GetResourceMonitorQueryHandlerTests
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
         var logger = Substitute.For<ILogger<GetResourceMonitorQueryHandler>>();
-        _handler = new GetResourceMonitorQueryHandler(_context, logger);
+        _handler = new GetResourceMonitorQueryHandler(new ResourceMonitorReadRepository(_context), logger);
     }
 
     [TearDown]

@@ -58,7 +58,7 @@ internal class BreakPlaceholderTests
         var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
         mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
-        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
+        var baseQueryService = new Klacks.Api.Infrastructure.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
         var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
@@ -110,7 +110,7 @@ internal class BreakPlaceholderTests
         var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
         mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
-        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
+        var baseQueryService = new Klacks.Api.Infrastructure.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
         var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
@@ -149,7 +149,7 @@ internal class BreakPlaceholderTests
         var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
         mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
-        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
+        var baseQueryService = new Klacks.Api.Infrastructure.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
         var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
@@ -188,7 +188,7 @@ internal class BreakPlaceholderTests
         var mockSearchFilter = Substitute.For<IClientSearchFilterService>();
         mockSearchFilter.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
-        var baseQueryService = new Klacks.Api.Application.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
+        var baseQueryService = new Klacks.Api.Infrastructure.Services.Clients.ClientBaseQueryService(dbContext, mockGroupFilter, mockSearchFilter);
 
         var breakPlaceholderRepository = new ClientBreakPlaceholderRepository(dbContext, baseQueryService);
         var query = new Klacks.Api.Application.Queries.BreakPlaceholders.ListQuery(filter);
