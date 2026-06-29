@@ -126,6 +126,94 @@ public class HarmonizerBenchmarkTests
         Assert.That(scenarios, Is.Not.Empty);
     }
 
+    // Ground anchor (no optimisation against the test metric): the conductor already produces the
+    // best-known plans using the "lying" scorer. If the aligned fitness ranks those plans >= the
+    // fragmenting standard-GA output, it is validated as "consistent with good" optimiser-independently.
+    [Test]
+    public void Alignment_GroundAnchor_AlignedFitnessRanksConductorAboveGreedyGA()
+    {
+        var scorer = new HarmonyScorer();
+        var aligned = new AlignedHarmonyFitnessEvaluator(scorer);
+        var baseline = new HarmonyFitnessEvaluator(scorer);
+
+        var conductorWins = 0;
+        var total = 0;
+        foreach (var (snapshot, input) in LoadAllScenarios())
+        {
+            var seedBitmap = BitmapBuilder.Build(input);
+            var conductorBitmap = RunConductorOnly(input).ResultBitmap;
+            var gaBitmap = RunEvolution(input, Seed).ResultBitmap;
+
+            var aSeed = aligned.Evaluate(seedBitmap).Fitness;
+            var aConductor = aligned.Evaluate(conductorBitmap).Fitness;
+            var aGa = aligned.Evaluate(gaBitmap).Fitness;
+            var hConductor = baseline.Evaluate(conductorBitmap).Fitness;
+            var hGa = baseline.Evaluate(gaBitmap).Fitness;
+
+            TestContext.Progress.WriteLine($"=== {snapshot.Name} ===");
+            TestContext.Progress.WriteLine($"ALIGN_ANCHOR aligned-fitness: seed={aSeed:F4} conductor={aConductor:F4} ga={aGa:F4}  (higher=better)");
+            TestContext.Progress.WriteLine($"ALIGN_BASELINE harmony-fitness: conductor={hConductor:F4} ga={hGa:F4}  (the GA maximises THIS one)");
+
+            if (aConductor >= aGa) { conductorWins++; }
+            total++;
+        }
+
+        TestContext.Progress.WriteLine(
+            $"ALIGN_ANCHOR_CONDUCTOR_WINS: {conductorWins}/{total}  (criterion: aligned fitness ranks the known-better conductor plans >= the fragmenting GA output)");
+        Assert.That(total, Is.GreaterThan(0));
+    }
+
+    // Holdout experiment: the aligned GA optimises block consolidation + legality but NOT fairness.
+    // Non-circular signal: when the in-fitness terms improve, what happens to the HELD-OUT fairness?
+    // improves/neutral => fitness captures generalising structure; degrades => a real consolidation
+    // vs. per-agent-load tradeoff. Criterion fixed before the run (see fitness-alignment-plan.md).
+    [Test]
+    public void Alignment_Holdout_OptimisingNonFairnessTerms_TracksFairness()
+    {
+        var infitNoWorse = 0;
+        var lieClearedByAlignment = 0;
+        var fairImprovedVsStd = 0;
+        var fairDegradedVsStd = 0;
+        var fairWreckedVsBeforeByBoth = 0;
+        var total = 0;
+
+        foreach (var (snapshot, input) in LoadAllScenarios())
+        {
+            var std = RunEvolution(input, Seed);
+            var aln = RunEvolutionAligned(input, Seed);
+
+            TestContext.Progress.WriteLine($"=== {snapshot.Name} ===");
+            ReportRun("EVOLUTION_STD", std);
+            ReportRun("EVOLUTION_ALIGNED", aln);
+
+            var stdInfit = std.Score.FragmentationPenalty + std.Score.BlockShorteningPenalty + std.Score.ViolationPenalty;
+            var alnInfit = aln.Score.FragmentationPenalty + aln.Score.BlockShorteningPenalty + aln.Score.ViolationPenalty;
+            TestContext.Progress.WriteLine($"ALIGN_INFIT std={stdInfit:F3} aligned={alnInfit:F3}  (frag+blockLen+vio penalties, lower=better)");
+
+            // Headline: does aligned SELECTION clear the (original-scorer) lie while keeping the harmony gain?
+            TestContext.Progress.WriteLine(
+                $"ALIGN_LIE std={(std.Score.ScorerLies ? "YES" : "no")} aligned={(aln.Score.ScorerLies ? "YES" : "no")}  origHarmony std={std.HarmonyBefore:F3}->{std.HarmonyAfter:F3} aligned={aln.HarmonyBefore:F3}->{aln.HarmonyAfter:F3}");
+
+            var beforeFair = (double)std.Before.TargetHoursAbsoluteDeviation;
+            var stdFair = (double)std.After.TargetHoursAbsoluteDeviation;
+            var alnFair = (double)aln.After.TargetHoursAbsoluteDeviation;
+            TestContext.Progress.WriteLine($"ALIGN_HOLDOUT_FAIR before={beforeFair:F2} std={stdFair:F2} aligned={alnFair:F2}  (fairness HELD OUT of aligned fitness)");
+
+            if (alnInfit <= stdInfit + 1e-9) { infitNoWorse++; }
+            if (std.Score.ScorerLies && !aln.Score.ScorerLies) { lieClearedByAlignment++; }
+            if (alnFair < stdFair - 1e-9) { fairImprovedVsStd++; }
+            else if (alnFair > stdFair + 1e-9) { fairDegradedVsStd++; }
+            if (stdFair > beforeFair + 1e-9 && alnFair > beforeFair + 1e-9) { fairWreckedVsBeforeByBoth++; }
+            total++;
+        }
+
+        TestContext.Progress.WriteLine(
+            $"ALIGN_HOLDOUT_SUMMARY scenarios={total} infit-aligned<=std={infitNoWorse} lie-cleared-by-alignment={lieClearedByAlignment} heldout-fair-improved-vs-std={fairImprovedVsStd} heldout-fair-degraded-vs-std={fairDegradedVsStd} fair-wrecked-vs-before-by-BOTH={fairWreckedVsBeforeByBoth}");
+        TestContext.Progress.WriteLine(
+            "ALIGN_HOLDOUT_VERDICT: lie cleared with the harmony gain kept => non-fragmented high-harmony plans exist (consolidation is free); fair-wrecked-vs-before-by-both => gap-2 fairness blind spot persists in BOTH (held out by design).");
+        Assert.That(total, Is.GreaterThan(0));
+    }
+
     private static void ReportSeedStats(string label, IReadOnlyList<double> totals)
     {
         var mean = totals.Average();
@@ -178,7 +266,8 @@ public class HarmonizerBenchmarkTests
         double HarmonyBefore,
         double HarmonyAfter,
         ResearchScoreBreakdown Score,
-        long DurationMs);
+        long DurationMs,
+        HarmonyBitmap ResultBitmap);
 
     private static RunResult RunConductorOnly(BitmapInput input)
     {
@@ -202,7 +291,7 @@ public class HarmonizerBenchmarkTests
         var harmonyAfter = fitness.Evaluate(bitmap).Fitness;
         var qualityAfter = ScheduleQualityMetrics.Compute(bitmap);
         var score = ResearchScore.Compute(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter);
-        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds);
+        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds, bitmap);
     }
 
     private static RunResult RunEvolution(BitmapInput input, int seed = Seed)
@@ -223,7 +312,33 @@ public class HarmonizerBenchmarkTests
         var harmonyAfter = result.Best.Fitness;
         var qualityAfter = ScheduleQualityMetrics.Compute(result.Best.Bitmap);
         var score = ResearchScore.Compute(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter);
-        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds);
+        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds, result.Best.Bitmap);
+    }
+
+    // GA driven by the aligned research fitness (block consolidation + legality; fairness HELD OUT).
+    // The local conductor moves still use the production HarmonyScorer — only the population-level
+    // selection objective changes, so this measures whether aligned SELECTION alone shifts quality.
+    // Crucially, the ScorerLie is computed from the ORIGINAL harmony of the optimised plan, not from
+    // result.Best.Fitness (the aligned value) — otherwise the lie detector would agree with itself.
+    private static RunResult RunEvolutionAligned(BitmapInput input, int seed = Seed)
+    {
+        var bitmap = BitmapBuilder.Build(input);
+        var bitmapBefore = CloneBitmap(bitmap);
+
+        var scorer = new HarmonyScorer();
+        var baselineFitness = new HarmonyFitnessEvaluator(scorer);
+        var harmonyBefore = baselineFitness.Evaluate(bitmapBefore).Fitness;
+        var qualityBefore = ScheduleQualityMetrics.Compute(bitmapBefore);
+
+        var loop = BuildAlignedLoop(seed);
+        var stopwatch = Stopwatch.StartNew();
+        var result = loop.Run(bitmap);
+        stopwatch.Stop();
+
+        var harmonyAfter = baselineFitness.Evaluate(result.Best.Bitmap).Fitness;
+        var qualityAfter = ScheduleQualityMetrics.Compute(result.Best.Bitmap);
+        var score = ResearchScore.Compute(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter);
+        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds, result.Best.Bitmap);
     }
 
     private static RunResult RunAnnealing(BitmapInput input, bool withConductor, int maxIterations, int seed = Seed)
@@ -244,7 +359,7 @@ public class HarmonizerBenchmarkTests
         var harmonyAfter = result.Best.Fitness;
         var qualityAfter = ScheduleQualityMetrics.Compute(result.Best.Bitmap);
         var score = ResearchScore.Compute(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter);
-        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds);
+        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds, result.Best.Bitmap);
     }
 
     private static HarmonizerEvolutionLoop BuildLoop(int seed)
@@ -252,6 +367,33 @@ public class HarmonizerBenchmarkTests
         var scorer = new HarmonyScorer();
         var domainValidator = new DomainAwareReplaceValidator(availability: null);
         var fitness = new HarmonyFitnessEvaluator(scorer);
+        var stochasticMutation = new StochasticBitmapMutation(domainValidator);
+        var config = new HarmonizerEvolutionConfig(
+            PopulationSize: 6,
+            MaxGenerations: 6,
+            EliteCount: 2,
+            TournamentSize: 3,
+            StochasticMutationsPerOffspring: 2,
+            StagnationGenerations: 4,
+            Seed: seed);
+
+        Func<int, HarmonizerConductor> conductorFactory = rowCount =>
+        {
+            var mutation = new ReplaceMutation(scorer, domainValidator);
+            var blockSwap = new BlockSwapMutation(scorer, domainValidator);
+            var emergency = new EmergencyUnlockManager(new EmergencyUnlockState(rowCount));
+            return new HarmonizerConductor(scorer, mutation, emergency, blockSwapMutation: blockSwap);
+        };
+
+        return new HarmonizerEvolutionLoop(fitness, stochasticMutation, conductorFactory, config);
+    }
+
+    // Identical to BuildLoop except the population-ranking fitness is the aligned research objective.
+    private static HarmonizerEvolutionLoop BuildAlignedLoop(int seed)
+    {
+        var scorer = new HarmonyScorer();
+        var domainValidator = new DomainAwareReplaceValidator(availability: null);
+        var fitness = new AlignedHarmonyFitnessEvaluator(scorer);
         var stochasticMutation = new StochasticBitmapMutation(domainValidator);
         var config = new HarmonizerEvolutionConfig(
             PopulationSize: 6,
