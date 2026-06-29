@@ -11,6 +11,7 @@
  *   - Full evolution loop (population + mutations) to measure the actual production path
  */
 
+using System.Diagnostics;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
 using Klacks.ScheduleOptimizer.Harmonizer.Evolution;
@@ -25,6 +26,19 @@ public class HarmonizerBenchmarkTests
 {
     private const int Seed = 42;
 
+    // GA budget in conductor passes = PopulationSize + (PopulationSize - EliteCount) * MaxGenerations
+    //                               = 6 + (6 - 2) * 6 = 30. Annealing+conductor matches that axis.
+    private const int AnnealingIterationsWithConductor = 30;
+
+    // Conductor-less annealing steps are far cheaper, so the chain gets a larger step budget;
+    // wall-clock is reported per arm so the budget basis stays transparent.
+    private const int AnnealingIterationsWithoutConductor = 2000;
+
+    private const int AnnealingMovesPerStep = 2;
+
+    // Multiple seeds so an engine comparison reflects the average, not a lucky draw.
+    private static readonly int[] BenchmarkSeeds = { 42, 7, 123, 999, 2024 };
+
     [Test]
     public void Aggregate_AllScenarios_ReportTotalScore()
     {
@@ -32,28 +46,41 @@ public class HarmonizerBenchmarkTests
         var perScenario = new List<(string Name, ResearchScoreBreakdown Score, RunResult Run)>();
         double aggregate = 0;
         double planOnlyAggregate = 0;
+        double conductorAggregate = 0;
+        double annealingAggregate = 0;
+        double annealingOnlyAggregate = 0;
 
         foreach (var (snapshot, input) in scenarios)
         {
             var conductorOnly = RunConductorOnly(input);
             var evolution = RunEvolution(input);
+            var annealing = RunAnnealing(input, withConductor: true, AnnealingIterationsWithConductor);
+            var annealingOnly = RunAnnealing(input, withConductor: false, AnnealingIterationsWithoutConductor);
 
             TestContext.Progress.WriteLine($"=== Scenario: {snapshot.Name} ===");
             ReportRun("CONDUCTOR_ONLY", conductorOnly);
             ReportRun("EVOLUTION", evolution);
+            ReportRun("ANNEALING", annealing);
+            ReportRun("ANNEALING_ONLY", annealingOnly);
             PrintPerAgentDelta(evolution);
             PrintPerRowLies(snapshot.Name, evolution);
 
             perScenario.Add((snapshot.Name, evolution.Score, evolution));
             aggregate += evolution.Score.Total;
+            conductorAggregate += conductorOnly.Score.Total;
+            annealingAggregate += annealing.Score.Total;
+            annealingOnlyAggregate += annealingOnly.Score.Total;
             if (snapshot.Name.StartsWith("plan-real", StringComparison.Ordinal))
             {
                 planOnlyAggregate += evolution.Score.Total;
             }
         }
 
-        TestContext.Progress.WriteLine("=== AGGREGATE ===");
+        TestContext.Progress.WriteLine("=== AGGREGATE (lower = better) ===");
+        TestContext.Progress.WriteLine($"AUTORESEARCH_SCORE_CONDUCTOR_ONLY: {conductorAggregate:F4}");
         TestContext.Progress.WriteLine($"AUTORESEARCH_SCORE: {aggregate:F4}");
+        TestContext.Progress.WriteLine($"AUTORESEARCH_SCORE_ANNEALING: {annealingAggregate:F4}");
+        TestContext.Progress.WriteLine($"AUTORESEARCH_SCORE_ANNEALING_ONLY: {annealingOnlyAggregate:F4}");
         TestContext.Progress.WriteLine($"AUTORESEARCH_SCORE_PLAN_ONLY: {planOnlyAggregate:F4}");
         TestContext.Progress.WriteLine($"AUTORESEARCH_SCENARIO_COUNT: {scenarios.Count}");
         TestContext.Progress.WriteLine(
@@ -62,6 +89,50 @@ public class HarmonizerBenchmarkTests
             $"AUTORESEARCH_TOTAL_VIOLATIONS: {perScenario.Sum(s => s.Score.ViolationsAfter)}");
 
         Assert.That(scenarios, Is.Not.Empty);
+    }
+
+    [Test]
+    public void MultiSeed_CompareEngines_ReportMeanAndSpread()
+    {
+        var scenarios = LoadAllScenarios();
+
+        // The conductor is deterministic (no random source), so a single run per scenario suffices.
+        var conductorTotal = scenarios.Sum(s => RunConductorOnly(s.Input).Score.Total);
+
+        var evolutionTotals = new List<double>();
+        var annealingTotals = new List<double>();
+        var annealingOnlyTotals = new List<double>();
+
+        foreach (var seed in BenchmarkSeeds)
+        {
+            double evo = 0, ann = 0, annOnly = 0;
+            foreach (var (_, input) in scenarios)
+            {
+                evo += RunEvolution(input, seed).Score.Total;
+                ann += RunAnnealing(input, withConductor: true, AnnealingIterationsWithConductor, seed).Score.Total;
+                annOnly += RunAnnealing(input, withConductor: false, AnnealingIterationsWithoutConductor, seed).Score.Total;
+            }
+            evolutionTotals.Add(evo);
+            annealingTotals.Add(ann);
+            annealingOnlyTotals.Add(annOnly);
+        }
+
+        TestContext.Progress.WriteLine($"=== MULTI-SEED AGGREGATE over {BenchmarkSeeds.Length} seeds (lower = better) ===");
+        TestContext.Progress.WriteLine($"AUTORESEARCH_SEED_CONDUCTOR_ONLY: {conductorTotal:F4}");
+        ReportSeedStats("EVOLUTION", evolutionTotals);
+        ReportSeedStats("ANNEALING", annealingTotals);
+        ReportSeedStats("ANNEALING_ONLY", annealingOnlyTotals);
+
+        Assert.That(scenarios, Is.Not.Empty);
+    }
+
+    private static void ReportSeedStats(string label, IReadOnlyList<double> totals)
+    {
+        var mean = totals.Average();
+        var variance = totals.Sum(t => (t - mean) * (t - mean)) / totals.Count;
+        var stdDev = Math.Sqrt(variance);
+        TestContext.Progress.WriteLine(
+            $"AUTORESEARCH_SEED_{label}: mean={mean:F4} std={stdDev:F4} min={totals.Min():F4} max={totals.Max():F4}");
     }
 
     private static void PrintPerRowLies(string scenarioName, RunResult run)
@@ -106,7 +177,8 @@ public class HarmonizerBenchmarkTests
         ScheduleQualityReport After,
         double HarmonyBefore,
         double HarmonyAfter,
-        ResearchScoreBreakdown Score);
+        ResearchScoreBreakdown Score,
+        long DurationMs);
 
     private static RunResult RunConductorOnly(BitmapInput input)
     {
@@ -123,15 +195,17 @@ public class HarmonizerBenchmarkTests
         var blockSwap = new BlockSwapMutation(scorer, validator);
         var emergency = new EmergencyUnlockManager(new EmergencyUnlockState(bitmap.RowCount));
         var conductor = new HarmonizerConductor(scorer, mutation, emergency, blockSwapMutation: blockSwap);
+        var stopwatch = Stopwatch.StartNew();
         conductor.Run(bitmap);
+        stopwatch.Stop();
 
         var harmonyAfter = fitness.Evaluate(bitmap).Fitness;
         var qualityAfter = ScheduleQualityMetrics.Compute(bitmap);
         var score = ResearchScore.Compute(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter);
-        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score);
+        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds);
     }
 
-    private static RunResult RunEvolution(BitmapInput input)
+    private static RunResult RunEvolution(BitmapInput input, int seed = Seed)
     {
         var bitmap = BitmapBuilder.Build(input);
         var bitmapBefore = CloneBitmap(bitmap);
@@ -141,13 +215,36 @@ public class HarmonizerBenchmarkTests
         var harmonyBefore = fitness.Evaluate(bitmapBefore).Fitness;
         var qualityBefore = ScheduleQualityMetrics.Compute(bitmapBefore);
 
-        var loop = BuildLoop(Seed);
+        var loop = BuildLoop(seed);
+        var stopwatch = Stopwatch.StartNew();
         var result = loop.Run(bitmap);
+        stopwatch.Stop();
 
         var harmonyAfter = result.Best.Fitness;
         var qualityAfter = ScheduleQualityMetrics.Compute(result.Best.Bitmap);
         var score = ResearchScore.Compute(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter);
-        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score);
+        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds);
+    }
+
+    private static RunResult RunAnnealing(BitmapInput input, bool withConductor, int maxIterations, int seed = Seed)
+    {
+        var bitmap = BitmapBuilder.Build(input);
+        var bitmapBefore = CloneBitmap(bitmap);
+
+        var scorer = new HarmonyScorer();
+        var fitness = new HarmonyFitnessEvaluator(scorer);
+        var harmonyBefore = fitness.Evaluate(bitmapBefore).Fitness;
+        var qualityBefore = ScheduleQualityMetrics.Compute(bitmapBefore);
+
+        var loop = BuildAnnealingLoop(seed, withConductor, maxIterations);
+        var stopwatch = Stopwatch.StartNew();
+        var result = loop.Run(bitmap);
+        stopwatch.Stop();
+
+        var harmonyAfter = result.Best.Fitness;
+        var qualityAfter = ScheduleQualityMetrics.Compute(result.Best.Bitmap);
+        var score = ResearchScore.Compute(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter);
+        return new RunResult(qualityBefore, qualityAfter, harmonyBefore, harmonyAfter, score, stopwatch.ElapsedMilliseconds);
     }
 
     private static HarmonizerEvolutionLoop BuildLoop(int seed)
@@ -176,6 +273,29 @@ public class HarmonizerBenchmarkTests
         return new HarmonizerEvolutionLoop(fitness, stochasticMutation, conductorFactory, config);
     }
 
+    private static HarmonizerAnnealingLoop BuildAnnealingLoop(int seed, bool withConductor, int maxIterations)
+    {
+        var scorer = new HarmonyScorer();
+        var domainValidator = new DomainAwareReplaceValidator(availability: null);
+        var fitness = new HarmonyFitnessEvaluator(scorer);
+        var stochasticMutation = new StochasticBitmapMutation(domainValidator);
+        var config = new HarmonizerAnnealingConfig(
+            MaxIterations: maxIterations,
+            MovesPerStep: AnnealingMovesPerStep,
+            RunConductorPerStep: withConductor,
+            Seed: seed);
+
+        Func<int, HarmonizerConductor> conductorFactory = rowCount =>
+        {
+            var mutation = new ReplaceMutation(scorer, domainValidator);
+            var blockSwap = new BlockSwapMutation(scorer, domainValidator);
+            var emergency = new EmergencyUnlockManager(new EmergencyUnlockState(rowCount));
+            return new HarmonizerConductor(scorer, mutation, emergency, blockSwapMutation: blockSwap);
+        };
+
+        return new HarmonizerAnnealingLoop(fitness, stochasticMutation, conductorFactory, config);
+    }
+
     private static HarmonyBitmap CloneBitmap(HarmonyBitmap source)
     {
         var cells = new Cell[source.RowCount, source.DayCount];
@@ -193,6 +313,8 @@ public class HarmonizerBenchmarkTests
     {
         var s = run.Score;
         TestContext.Progress.WriteLine($"-- {label} --");
+        TestContext.Progress.WriteLine($"AUTORESEARCH_MS      {label}: {run.DurationMs}");
+        TestContext.Progress.WriteLine($"AUTORESEARCH_SCORE   {label}: {s.Total:F4}");
         TestContext.Progress.WriteLine($"AUTORESEARCH_HARMONY {label}: {run.HarmonyBefore:F4} -> {run.HarmonyAfter:F4}");
         TestContext.Progress.WriteLine($"AUTORESEARCH_BLOCKS  {label}: {run.Before.TotalBlocks} -> {run.After.TotalBlocks}  (delta={s.FragmentationDelta:+0.00;-0.00;0.00})");
         TestContext.Progress.WriteLine($"AUTORESEARCH_AVGLEN  {label}: {run.Before.AvgBlockLength:F2} -> {run.After.AvgBlockLength:F2}  (delta={-s.BlockLengthDelta:+0.00;-0.00;0.00})");
