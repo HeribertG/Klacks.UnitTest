@@ -6,9 +6,9 @@ using Shouldly;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Interfaces;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Services;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Domain;
+using Klacks.Api.KnowledgeIndex.Application.Interfaces;
+using Klacks.Api.KnowledgeIndex.Application.Services;
+using Klacks.Api.KnowledgeIndex.Domain;
 using NSubstitute;
 using NUnit.Framework;
 

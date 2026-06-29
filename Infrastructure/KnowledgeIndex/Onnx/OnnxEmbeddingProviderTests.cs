@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Shouldly;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Constants;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Infrastructure.Onnx;
+using Klacks.Api.KnowledgeIndex.Application.Constants;
+using Klacks.Api.KnowledgeIndex.Infrastructure.Onnx;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Infrastructure.KnowledgeIndex.Onnx;

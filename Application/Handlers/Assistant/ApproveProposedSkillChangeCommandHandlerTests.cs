@@ -11,7 +11,7 @@ using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Interfaces;
+using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;

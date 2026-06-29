@@ -2,7 +2,7 @@
 
 using System.Security.Cryptography;
 using Shouldly;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Infrastructure.Onnx;
+using Klacks.Api.KnowledgeIndex.Infrastructure.Onnx;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Infrastructure.KnowledgeIndex.Onnx;

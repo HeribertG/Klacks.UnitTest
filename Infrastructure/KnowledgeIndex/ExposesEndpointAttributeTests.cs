@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Shouldly;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Presentation.Attributes;
+using Klacks.Api.KnowledgeIndex.Presentation.Attributes;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Infrastructure.KnowledgeIndex;

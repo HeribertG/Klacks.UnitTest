@@ -9,7 +9,7 @@
 /// </summary>
 
 using System.Text.Json;
-using Klacks.Api.Infrastructure.KnowledgeIndex.Application.Constants;
+using Klacks.Api.KnowledgeIndex.Application.Constants;
 
 namespace Klacks.UnitTest.Application.Assistant;
 
