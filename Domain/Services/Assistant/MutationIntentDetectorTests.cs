@@ -66,4 +66,25 @@ public class MutationIntentDetectorTests
         MutationIntentDetector.IsMutationIntent("Bitte die Adresse aktualisieren").ShouldBeTrue();
         MutationIntentDetector.IsMutationIntent("Zeig mir die address liste").ShouldBeFalse();
     }
+
+    [Test]
+    public void Configure_AddsPluginMutationPhrases_DetectedAsMutation()
+    {
+        MutationIntentDetector.Configure(
+            questionLeads: [],
+            mutationPhrases: ["usuń klienta", "utwórz pracownika"]);
+
+        MutationIntentDetector.IsMutationIntent("usuń klienta Müller AG").ShouldBeTrue();
+        MutationIntentDetector.IsMutationIntent("proszę utwórz pracownika Jan Kowalski").ShouldBeTrue();
+    }
+
+    [Test]
+    public void Configure_AddsPluginQuestionLeads_SuppressesDetection()
+    {
+        MutationIntentDetector.Configure(
+            questionLeads: ["jak", "dlaczego"],
+            mutationPhrases: []);
+
+        MutationIntentDetector.IsMutationIntent("jak usunąć klienta?").ShouldBeFalse();
+    }
 }
