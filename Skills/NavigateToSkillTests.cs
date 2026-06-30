@@ -128,4 +128,57 @@ public class NavigateToSkillTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Not.Contain("explain_page"));
     }
+
+    [Test]
+    public async Task WithTargetParam_IncludesTargetInNavigationData()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        var parameters = new Dictionary<string, object>
+        {
+            ["page"] = "settings",
+            ["target"] = "macros"
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        var data = result.Data as dynamic;
+        Assert.That(data, Is.Not.Null);
+        var dataJson = System.Text.Json.JsonSerializer.Serialize(data);
+        Assert.That(dataJson, Does.Contain("\"Target\":\"macros\""));
+    }
+
+    [Test]
+    public async Task WithoutTargetParam_DataHasNullTarget()
+    {
+        _catalog.GetByPageKey("settings").Returns(MakeEntry("settings", "/workplace/settings", hasEntityParam: false));
+        var parameters = new Dictionary<string, object> { ["page"] = "settings" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        var dataJson = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        Assert.That(dataJson, Does.Contain("\"Target\":null"));
+    }
+
+    [Test]
+    public async Task WithTargetAndEntityId_BothIncludedInNavigationData()
+    {
+        var entityId = Guid.NewGuid().ToString();
+        _catalog.GetByPageKey(UiPageKeys.EditEmployee)
+            .Returns(MakeEntry(UiPageKeys.EditEmployee, "/workplace/edit-address"));
+        var parameters = new Dictionary<string, object>
+        {
+            ["page"] = UiPageKeys.EditEmployee,
+            ["entityId"] = entityId,
+            ["target"] = "address-contracts"
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        var dataJson = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        Assert.That(dataJson, Does.Contain("\"Target\":\"address-contracts\""));
+        Assert.That(dataJson, Does.Contain(entityId));
+    }
 }

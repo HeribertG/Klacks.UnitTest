@@ -176,4 +176,37 @@ public class LLMResponseBuilderTests
         response.SuggestedReplies.Options[0].Label.ShouldBe("Alpha");
         response.SuggestedReplies.Options[0].Value.ShouldBe("a");
     }
+
+    [Test]
+    public void BuildSuccessResponse_WithNavigationTarget_SetsNavigateToTarget()
+    {
+        var response = _builder.BuildSuccessResponse(
+            CreateProviderResponse(), "conv-1", "Navigating...",
+            navigationRoute: "/workplace/settings",
+            navigationTarget: "macros");
+
+        response.NavigateTo.ShouldBe("/workplace/settings");
+        response.NavigateToTarget.ShouldBe("macros");
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithNullNavigationTarget_NavigateToTargetIsNull()
+    {
+        var response = _builder.BuildSuccessResponse(
+            CreateProviderResponse(), "conv-1", "Navigating...",
+            navigationRoute: "/workplace/settings",
+            navigationTarget: null);
+
+        response.NavigateTo.ShouldBe("/workplace/settings");
+        response.NavigateToTarget.ShouldBeNull();
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithNoNavigation_BothNavigateFieldsAreNull()
+    {
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", "Hello");
+
+        response.NavigateTo.ShouldBeNull();
+        response.NavigateToTarget.ShouldBeNull();
+    }
 }

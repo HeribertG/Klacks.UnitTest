@@ -48,11 +48,11 @@ public class LLMFunctionExecutorTests
         UserRights = new List<string>()
     };
 
-    private static SkillBridgeResult NavigationResult(string route) => new()
+    private static SkillBridgeResult NavigationResult(string route, string? target = null) => new()
     {
         Success = true,
         Message = "Navigate to shift",
-        Data = new { Page = "shift", Route = route },
+        Data = new { Page = "shift", Route = route, Target = target },
         ResultType = nameof(Klacks.Api.Domain.Enums.SkillResultType.Navigation)
     };
 
@@ -188,5 +188,50 @@ public class LLMFunctionExecutorTests
 
         Assert.That(result, Does.Contain("Navigate to shift"));
         Assert.That(result, Does.Not.Contain("Server-included page knowledge"));
+    }
+
+    [Test]
+    public async Task NavigateTo_WithTargetInResult_SetsNavigationTarget()
+    {
+        SetupBridgeFor(SkillNames.NavigateTo, NavigationResult("/workplace/settings", "macros"));
+        var calls = new List<LLMFunctionCall>
+        {
+            new() { FunctionName = SkillNames.NavigateTo, Parameters = new() { ["page"] = "settings", ["target"] = "macros" } }
+        };
+
+        await _executor.ProcessFunctionCallsAsync(Ctx(), calls);
+
+        Assert.That(_executor.NavigationRoute, Is.EqualTo("/workplace/settings"));
+        Assert.That(_executor.NavigationTarget, Is.EqualTo("macros"));
+    }
+
+    [Test]
+    public async Task NavigateTo_WithoutTargetInResult_NavigationTargetIsNull()
+    {
+        SetupBridgeFor(SkillNames.NavigateTo, NavigationResult("/workplace/shift"));
+        var calls = new List<LLMFunctionCall>
+        {
+            new() { FunctionName = SkillNames.NavigateTo, Parameters = new() { ["page"] = "shift" } }
+        };
+
+        await _executor.ProcessFunctionCallsAsync(Ctx(), calls);
+
+        Assert.That(_executor.NavigationRoute, Is.EqualTo("/workplace/shift"));
+        Assert.That(_executor.NavigationTarget, Is.Null);
+    }
+
+    [Test]
+    public async Task OtherSkill_WithTargetInNavigationResult_SetsNavigationTarget()
+    {
+        SetupBridgeFor("search_and_navigate", NavigationResult("/workplace/edit-address/123", "address-contracts"));
+        var calls = new List<LLMFunctionCall>
+        {
+            new() { FunctionName = "search_and_navigate", Parameters = new() { ["query"] = "Müller" } }
+        };
+
+        await _executor.ProcessFunctionCallsAsync(Ctx(), calls);
+
+        Assert.That(_executor.NavigationRoute, Is.EqualTo("/workplace/edit-address/123"));
+        Assert.That(_executor.NavigationTarget, Is.EqualTo("address-contracts"));
     }
 }
