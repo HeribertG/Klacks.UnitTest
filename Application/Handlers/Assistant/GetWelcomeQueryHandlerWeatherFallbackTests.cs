@@ -191,4 +191,52 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
             UserId = Guid.NewGuid().ToString(),
         };
     }
+
+    [Test]
+    public async Task SuggestionRoutes_ContainsRouteForEachKnownNavigationKey()
+    {
+        var knownKeys = new Dictionary<string, string>
+        {
+            ["klacksy.welcome.suggestion.edit_settings"] = "/workplace/settings",
+            ["klacksy.welcome.suggestion.manage_providers"] = "/workplace/settings/llm",
+            ["klacksy.welcome.suggestion.view_schedule"] = "/workplace/schedule",
+            ["klacksy.welcome.suggestion.review_absences"] = "/workplace/absence",
+            ["klacksy.welcome.suggestion.create_employee"] = "/workplace/new-employee",
+            ["klacksy.welcome.suggestion.find_person"] = "/workplace/clients",
+        };
+
+        _suggestionsRanker
+            .RankAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<string>)knownKeys.Keys.ToList());
+
+        var result = await _handler.Handle(BuildQuery(), CancellationToken.None);
+
+        result.SuggestionRoutes.ShouldNotBeNull();
+        foreach (var (key, expectedRoute) in knownKeys)
+        {
+            result.SuggestionRoutes.ShouldContainKey(key);
+            result.SuggestionRoutes[key].ShouldBe(expectedRoute);
+        }
+    }
+
+    [Test]
+    public async Task SuggestionRoutes_DoesNotContainRouteForNonNavigationKey()
+    {
+        _suggestionsRanker
+            .RankAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<string>)new List<string> { "klacksy.welcome.suggestion.show_help" });
+
+        var result = await _handler.Handle(BuildQuery(), CancellationToken.None);
+
+        result.SuggestionRoutes.ShouldNotContainKey("klacksy.welcome.suggestion.show_help");
+    }
+
+    private GetWelcomeQuery BuildQuery() => new()
+    {
+        Lang = "de",
+        LocalHour = 15,
+        Weekday = 2,
+        IsReopen = false,
+        UserId = Guid.NewGuid().ToString(),
+    };
 }
