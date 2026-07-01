@@ -103,7 +103,7 @@ public class McpSkillCallHandlerTests
 
         var result = await _sut.HandleAsync(
             new CallToolRequestParams { Name = "search_employees", Arguments = arguments },
-            McpTestData.Principal(userId, tenantId, "alice", "Admin"),
+            McpTestData.Principal(userId, tenantId, "alice", Roles.Admin),
             CancellationToken.None);
 
         Assert.That(result.IsError, Is.False);
@@ -114,7 +114,8 @@ public class McpSkillCallHandlerTests
                 command.UserId == userId
                 && command.TenantId == tenantId
                 && command.UserName == "alice"
-                && command.UserPermissions.Contains("Admin")
+                && !command.UserPermissions.Contains(Roles.Admin)
+                && command.UserPermissions.Contains(Permissions.CanUseAssistant)
                 && command.Request.SkillName == "search_employees"
                 && command.Request.Parameters.ContainsKey("searchTerm")),
             Arg.Any<CancellationToken>());

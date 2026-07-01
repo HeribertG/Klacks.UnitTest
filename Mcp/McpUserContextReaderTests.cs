@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using System.Security.Claims;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Presentation.Mcp;
 
 namespace Klacks.UnitTest.Mcp;
@@ -19,18 +20,51 @@ public class McpUserContextReaderTests
     }
 
     [Test]
-    public void PrincipalWithClaims_ReturnsParsedContext()
+    public void PrincipalWithClaims_ReturnsParsedIdentity()
     {
         var userId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
-        var principal = McpTestData.Principal(userId, tenantId, "alice", "Admin", "CanViewClients");
+        var principal = McpTestData.Principal(userId, tenantId, "alice", Roles.Authorised);
 
         var context = McpUserContextReader.Read(principal);
 
         Assert.That(context.UserId, Is.EqualTo(userId));
         Assert.That(context.TenantId, Is.EqualTo(tenantId));
         Assert.That(context.UserName, Is.EqualTo("alice"));
-        Assert.That(context.Permissions, Is.EquivalentTo(new[] { "Admin", "CanViewClients" }));
+    }
+
+    [Test]
+    public void AdminPrincipal_PermissionsCappedAtAuthorisedLevel()
+    {
+        var principal = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "alice", Roles.Admin);
+
+        var context = McpUserContextReader.Read(principal);
+
+        Assert.That(context.Permissions, Is.EquivalentTo(Permissions.GetPermissionsForRole(Roles.Authorised)));
+        Assert.That(context.Permissions, Does.Not.Contain(Roles.Admin));
+        Assert.That(context.Permissions, Does.Not.Contain(Permissions.CanEditSettings));
+        Assert.That(context.Permissions, Does.Not.Contain(Permissions.CanDeleteClients));
+    }
+
+    [Test]
+    public void AuthorisedPrincipal_KeepsItsOwnPermissionSet()
+    {
+        var principal = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "bob", Roles.Authorised);
+
+        var context = McpUserContextReader.Read(principal);
+
+        var expected = Permissions.GetPermissionsForRole(Roles.Authorised).Append(Roles.Authorised);
+        Assert.That(context.Permissions, Is.EquivalentTo(expected));
+    }
+
+    [Test]
+    public void PrincipalWithoutRoles_ReturnsNoPermissions()
+    {
+        var principal = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "carol");
+
+        var context = McpUserContextReader.Read(principal);
+
+        Assert.That(context.Permissions, Is.Empty);
     }
 
     [Test]
