@@ -578,6 +578,86 @@ public class ShiftRepositoryTests
         result.ShouldNotContain(s => s.Id == shiftWithDifferentGroup.Id);
     }
 
+    [Test]
+    public void FilterShifts_UnsealedDraftView_BypassesDateRangeFilter()
+    {
+        // A far-future FromDate (typical for ERP-imported drafts booked well in advance) must not
+        // be hidden by the default "active date range only" filter in the draft review queue.
+        var draftFarInFuture = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "ERP draft",
+            Status = ShiftStatus.OriginalOrder,
+            FromDate = DateOnly.FromDateTime(DateTime.Now).AddYears(1),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(7)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(15))
+        };
+        _context.Shift.Add(draftFarInFuture);
+        _context.SaveChanges();
+
+        var filter = new ShiftFilter
+        {
+            FilterType = ShiftFilterType.Original,
+            IsSealedOrder = false,
+            ActiveDateRange = true,
+            FormerDateRange = false,
+            FutureDateRange = false
+        };
+
+        _mockQueryPipeline
+            .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+
+        var result = _repository.FilterShifts(filter).ToList();
+
+        _mockQueryPipeline.DidNotReceiveWithAnyArgs().ApplyDateRangeFilter(default!, default, default, default);
+        result.ShouldContain(s => s.Id == draftFarInFuture.Id);
+    }
+
+    [Test]
+    public void FilterShifts_SealedOrderView_StillAppliesDateRangeFilter()
+    {
+        var shift = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Sealed order",
+            Status = ShiftStatus.SealedOrder,
+            FromDate = DateOnly.FromDateTime(DateTime.Now)
+        };
+        _context.Shift.Add(shift);
+        _context.SaveChanges();
+
+        var filter = new ShiftFilter
+        {
+            FilterType = ShiftFilterType.Original,
+            IsSealedOrder = true,
+            ActiveDateRange = true
+        };
+
+        _mockQueryPipeline
+            .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+
+        _repository.FilterShifts(filter).ToList();
+
+        _mockQueryPipeline.Received(1).ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), true, false, false);
+    }
+
     [TearDown]
     public void TearDown()
     {

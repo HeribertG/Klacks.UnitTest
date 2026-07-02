@@ -172,6 +172,7 @@ public class ShiftPerformanceIntegrationTests
         // Arrange
         var filter = new ShiftFilter
         {
+            FilterType = ShiftFilterType.Shift, // generic schedule view, not the Original/unsealed-drafts queue (which bypasses date-range filtering)
             ActiveDateRange = true,
             FormerDateRange = false,
             FutureDateRange = false,
@@ -208,6 +209,7 @@ public class ShiftPerformanceIntegrationTests
         // Arrange - Use date range filter instead of search filter to avoid EF.Functions.Like issues
         var filter = new ShiftFilter
         {
+            FilterType = ShiftFilterType.Shift, // generic schedule view, not the Original/unsealed-drafts queue (which bypasses date-range filtering)
             ActiveDateRange = true,
             FormerDateRange = false,
             FutureDateRange = false,
