@@ -5,6 +5,7 @@ using Klacks.Api.Application.Services.Imports;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Imports;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Interfaces.Settings;
@@ -24,6 +25,8 @@ public class ErpOrderImportRunnerTests
     private IOrderImportParser _parser = null!;
     private IClientRepository _clientRepository = null!;
     private IShiftRepository _shiftRepository = null!;
+    private IWorkRepository _workRepository = null!;
+    private IAgentTriggerService _triggerService = null!;
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ErpOrderImportRunner _runner = null!;
@@ -45,11 +48,15 @@ public class ErpOrderImportRunnerTests
         _parser = Substitute.For<IOrderImportParser>();
         _clientRepository = Substitute.For<IClientRepository>();
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _workRepository = Substitute.For<IWorkRepository>();
+        _triggerService = Substitute.For<IAgentTriggerService>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Client>>>())
+            .Returns(ci => ci.Arg<Func<Task<Client>>>()());
 
         _dropPointRepository.List().Returns([DropPoint]);
 
@@ -58,7 +65,8 @@ public class ErpOrderImportRunnerTests
             .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddMinutes(-5).ToString("O") });
 
         var resolver = new ErpCustomerResolver(_clientRepository);
-        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, _settingsRepository, _unitOfWork, NullLogger<ErpOrderImportRunner>.Instance);
+        var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
+        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _settingsRepository, _unitOfWork, NullLogger<ErpOrderImportRunner>.Instance);
     }
 
     private static ImportedOrderPayload Order(string reference = "ORD-1") => new()
@@ -121,16 +129,42 @@ public class ErpOrderImportRunnerTests
     }
 
     [Test]
-    public async Task RunAsync_ExistingSealedOrder_IsLeftUntouched()
+    public async Task RunAsync_ExistingSealedOrder_UnchangedPayload_IsNoOp()
     {
-        SetupFile("customer-1/order-1.xml", Order());
-        var sealedOrder = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.SealedOrder, SourceSystemId = "erp-1", ExternalOrderReference = "ORD-1" };
+        var order = Order();
+        SetupFile("customer-1/order-1.xml", order);
+        var existingClient = new Client { Id = Guid.NewGuid(), Type = EntityTypeEnum.Customer, Company = "Spitex Musterhausen" };
+        _clientRepository.FindReusableCustomerAsync(Arg.Any<Client>(), Arg.Any<CancellationToken>()).Returns(existingClient);
+
+        var sealedOrder = new Shift
+        {
+            Id = Guid.NewGuid(),
+            Status = ShiftStatus.SealedOrder,
+            SourceSystemId = "erp-1",
+            ExternalOrderReference = "ORD-1",
+            ClientId = existingClient.Id,
+            FromDate = order.FromDate,
+            UntilDate = order.UntilDate,
+            StartShift = order.StartTime,
+            EndShift = order.EndTime,
+            IsTimeRange = order.IsTimeRange,
+            IsMonday = order.IsMonday,
+            IsTuesday = order.IsTuesday,
+            IsWednesday = order.IsWednesday,
+            IsThursday = order.IsThursday,
+            IsFriday = order.IsFriday,
+            IsSaturday = order.IsSaturday,
+            IsSunday = order.IsSunday,
+            Quantity = order.Quantity,
+            SumEmployees = order.SumEmployees
+        };
         _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns(sealedOrder);
 
         await _runner.RunAsync();
 
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
         await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+        await _triggerService.DidNotReceive().OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
