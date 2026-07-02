@@ -27,6 +27,7 @@ public class ErpOrderImportRunnerTests
     private IShiftRepository _shiftRepository = null!;
     private IWorkRepository _workRepository = null!;
     private IAgentTriggerService _triggerService = null!;
+    private IErpImportExceptionRepository _exceptionRepository = null!;
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ErpOrderImportRunner _runner = null!;
@@ -50,6 +51,7 @@ public class ErpOrderImportRunnerTests
         _shiftRepository = Substitute.For<IShiftRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
         _triggerService = Substitute.For<IAgentTriggerService>();
+        _exceptionRepository = Substitute.For<IErpImportExceptionRepository>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
@@ -66,7 +68,7 @@ public class ErpOrderImportRunnerTests
 
         var resolver = new ErpCustomerResolver(_clientRepository);
         var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
-        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _settingsRepository, _unitOfWork, NullLogger<ErpOrderImportRunner>.Instance);
+        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _unitOfWork, NullLogger<ErpOrderImportRunner>.Instance);
     }
 
     private static ImportedOrderPayload Order(string reference = "ORD-1") => new()
@@ -192,6 +194,8 @@ public class ErpOrderImportRunnerTests
 
         await _objectStorageService.Received(1).MoveAsync("customer-1/broken.xml", "customer-1/error/broken.xml", Arg.Any<CancellationToken>());
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+        await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e => e.SourceSystemId == "erp-1" && e.FileKey == "customer-1/broken.xml"));
+        await _triggerService.Received(1).OnEventAsync(Arg.Is<IAgentTriggerEvent>(e => e.Kind == AgentTriggerKinds.OrderImportFailed && e.AdminOnly), Arg.Any<CancellationToken>());
     }
 
     [Test]
