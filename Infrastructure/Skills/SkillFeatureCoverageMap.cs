@@ -62,6 +62,7 @@ public static class SkillFeatureCoverageMap
         ["PersonalAccessTokensController"] = Excluded("auth infrastructure: self-service credential management for MCP access; exposing token minting/revocation as chat skills would be a security risk"),
         ["ErpDropPointsController"] = Excluded("admin-only ERP integration configuration (object storage drop points, import token issuance); security-sensitive credential minting, not chat-addressable, no skills built for this feature yet"),
         ["ErpOrderUploadController"] = Excluded("machine-to-machine ERP upload endpoint authenticated by a drop-point-scoped import token, not a logged-in Klacks user; not chat-addressable"),
+        ["ErpImportTokensController"] = Excluded("security-sensitive credential minting/revocation for ERP drop points, same rationale as PersonalAccessTokensController; not chat-addressable"),
 
         ["BaseController"] = Excluded("base class for API controllers, no own endpoints"),
         ["DashboardController"] = Covered("get_dashboard_summary", "get_client_locations_overview", "interpret_resource_monitor"),
