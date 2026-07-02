@@ -209,4 +209,21 @@ public class LLMResponseBuilderTests
         response.NavigateTo.ShouldBeNull();
         response.NavigateToTarget.ShouldBeNull();
     }
+
+    [Test]
+    public void BuildSuccessResponse_FunctionCallsIncludeSuccessFlag_SoFrontendCanSkipRejectedCalls()
+    {
+        var allFunctionCalls = new List<LLMFunctionCall>
+        {
+            new() { FunctionName = "navigate_to", Success = false, Result = "Error: not a valid entity id" },
+            new() { FunctionName = "navigate_to", Success = true, Result = "Navigate to edit-employee" }
+        };
+
+        var response = _builder.BuildSuccessResponse(
+            CreateProviderResponse(), "conv-1", "Navigating...", allFunctionCalls);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(response.FunctionCalls);
+        json.ShouldContain("\"Success\":false");
+        json.ShouldContain("\"Success\":true");
+    }
 }

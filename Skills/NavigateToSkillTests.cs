@@ -9,6 +9,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Skills.Implementations;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -16,13 +17,18 @@ namespace Klacks.UnitTest.Skills;
 public class NavigateToSkillTests
 {
     private IKlacksyPageKeyCatalog _catalog = null!;
+    private INavigationGuidanceProvider _guidanceProvider = null!;
     private NavigateToSkill _skill = null!;
 
     [SetUp]
     public void SetUp()
     {
         _catalog = Substitute.For<IKlacksyPageKeyCatalog>();
-        _skill = new NavigateToSkill(_catalog);
+        _guidanceProvider = Substitute.For<INavigationGuidanceProvider>();
+        _skill = new NavigateToSkill(
+            _catalog,
+            new[] { _guidanceProvider },
+            NullLogger<NavigateToSkill>.Instance);
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -92,6 +98,24 @@ public class NavigateToSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenEditAddress_WithNonGuidEntityId()
+    {
+        _catalog.GetByPageKey(UiPageKeys.EditAddress)
+            .Returns(MakeEntry(UiPageKeys.EditAddress, "/workplace/edit-address"));
+        var parameters = new Dictionary<string, object>
+        {
+            ["page"] = UiPageKeys.EditAddress,
+            ["entityId"] = "6556"
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("6556"));
+        Assert.That(result.Message, Does.Contain("search_and_navigate"));
     }
 
     [Test]
@@ -180,5 +204,83 @@ public class NavigateToSkillTests
         var dataJson = System.Text.Json.JsonSerializer.Serialize(result.Data);
         Assert.That(dataJson, Does.Contain("\"Target\":\"address-contracts\""));
         Assert.That(dataJson, Does.Contain(entityId));
+    }
+
+    [Test]
+    public async Task EditShiftNavigation_AppendsGuidanceFromMatchingProvider()
+    {
+        var entityId = Guid.NewGuid();
+        _catalog.GetByPageKey(UiPageKeys.EditShift)
+            .Returns(MakeEntry(UiPageKeys.EditShift, "/workplace/edit-shift"));
+        _guidanceProvider.CanHandle(UiPageKeys.EditShift).Returns(true);
+        _guidanceProvider.GetGuidanceAsync(UiPageKeys.EditShift, entityId, Arg.Any<CancellationToken>())
+            .Returns("This shift is locked.");
+        var parameters = new Dictionary<string, object>
+        {
+            ["page"] = UiPageKeys.EditShift,
+            ["entityId"] = entityId.ToString()
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Is.EqualTo($"Navigate to {UiPageKeys.EditShift} This shift is locked."));
+    }
+
+    [Test]
+    public async Task EditShiftNavigation_GuidanceFailure_DoesNotBreakNavigation()
+    {
+        var entityId = Guid.NewGuid();
+        _catalog.GetByPageKey(UiPageKeys.EditShift)
+            .Returns(MakeEntry(UiPageKeys.EditShift, "/workplace/edit-shift"));
+        _guidanceProvider.CanHandle(UiPageKeys.EditShift).Returns(true);
+        _guidanceProvider.GetGuidanceAsync(UiPageKeys.EditShift, entityId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string?>(new InvalidOperationException("lookup failed")));
+        var parameters = new Dictionary<string, object>
+        {
+            ["page"] = UiPageKeys.EditShift,
+            ["entityId"] = entityId.ToString()
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Type, Is.EqualTo(SkillResultType.Navigation));
+        Assert.That(result.Message, Is.EqualTo($"Navigate to {UiPageKeys.EditShift}"));
+    }
+
+    [Test]
+    public async Task EditShiftNavigation_ProviderNotResponsible_GuidanceNeverQueried()
+    {
+        var entityId = Guid.NewGuid();
+        _catalog.GetByPageKey(UiPageKeys.EditShift)
+            .Returns(MakeEntry(UiPageKeys.EditShift, "/workplace/edit-shift"));
+        var parameters = new Dictionary<string, object>
+        {
+            ["page"] = UiPageKeys.EditShift,
+            ["entityId"] = entityId.ToString()
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Is.EqualTo($"Navigate to {UiPageKeys.EditShift}"));
+        await _guidanceProvider.DidNotReceive()
+            .GetGuidanceAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PageWithoutEntityParam_ProviderNeverConsulted()
+    {
+        _catalog.GetByPageKey("dashboard")
+            .Returns(MakeEntry("dashboard", "/workplace/dashboard", hasEntityParam: false));
+        var parameters = new Dictionary<string, object> { ["page"] = "dashboard" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        _guidanceProvider.DidNotReceive().CanHandle(Arg.Any<string>());
+        await _guidanceProvider.DidNotReceive()
+            .GetGuidanceAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 }

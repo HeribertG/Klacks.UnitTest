@@ -64,6 +64,28 @@ public class LLMSystemPromptBuilderGuidelinesTests
     }
 
     [Test]
+    public async Task BuildSystemPromptAsync_WithNavigateToSkill_ForbidsNarratingInternalRetries()
+    {
+        var context = new LLMContext
+        {
+            UserId = "user-123",
+            UserRights = new List<string> { "CanViewSettings", "CanEditSettings" },
+            AvailableFunctions = new List<LLMFunction>
+            {
+                new() { Name = "navigate_to", Description = "Navigate to a page" }
+            },
+            Language = "en"
+        };
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        var result = await _builder.BuildSystemPromptAsync(context);
+
+        result.ShouldContain("Never narrate internal steps, retries, or corrections");
+        result.ShouldContain("Never mention or compare fields you only saw in a tool result");
+        result.ShouldContain("Never expose internal identifiers to the user");
+    }
+
+    [Test]
     public async Task BuildSystemPromptAsync_WithContext_ContainsPermissions()
     {
         // Arrange
