@@ -1,9 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Phase 3 (visibility) tests for the skill-relation handlers: the list query drops retired edges
-/// and orders by confidence; accept boosts confidence and promotes to active; dismiss drops
-/// confidence and counts a contradiction; both commands return null for an unknown edge.
+/// Phase 3 (visibility) tests for the skill-relation handlers: the list query shows only Learned,
+/// Candidate-status edges (the still-undecided review queue) and orders by confidence — Derived
+/// seeds, already-Active edges and Retired edges are all excluded; accept boosts confidence and
+/// promotes to active; dismiss drops confidence and counts a contradiction; both commands return
+/// null for an unknown edge.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
@@ -50,12 +52,13 @@ public class SkillRelationHandlersTests
         };
 
     [Test]
-    public async Task GetSkillRelations_DropsRetired_AndOrdersByConfidenceDescending()
+    public async Task GetSkillRelations_KeepsOnlyCandidates_AndOrdersByConfidenceDescending()
     {
         var repo = Substitute.For<ISkillRelationRepository>();
         repo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<SkillRelation>
         {
             Edge(0.3, SkillRelationStatus.Candidate),
+            Edge(0.6, SkillRelationStatus.Candidate),
             Edge(0.0, SkillRelationStatus.Retired),
             Edge(0.9, SkillRelationStatus.Active),
         });
@@ -63,14 +66,28 @@ public class SkillRelationHandlersTests
         var result = await new GetSkillRelationsQueryHandler(repo).Handle(new GetSkillRelationsQuery(), default);
 
         result.Count.ShouldBe(2);
-        result[0].Confidence.ShouldBe(0.9);
+        result[0].Confidence.ShouldBe(0.6);
         result[1].Confidence.ShouldBe(0.3);
+    }
+
+    [Test]
+    public async Task GetSkillRelations_HidesActiveEdges_TheyAreAlreadyDecidedAndAcceptWouldBeDisabled()
+    {
+        var repo = Substitute.For<ISkillRelationRepository>();
+        repo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<SkillRelation>
+        {
+            Edge(0.95, SkillRelationStatus.Active),
+        });
+
+        var result = await new GetSkillRelationsQueryHandler(repo).Handle(new GetSkillRelationsQuery(), default);
+
+        result.ShouldBeEmpty();
     }
 
     [Test]
     public async Task GetSkillRelations_ShowsOnlyLearnedEdges_HidesAllDerivedSeeds()
     {
-        var learned = Edge(0.9, SkillRelationStatus.Active);
+        var learned = Edge(0.9, SkillRelationStatus.Candidate);
         var repo = Substitute.For<ISkillRelationRepository>();
         repo.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<SkillRelation>
         {
