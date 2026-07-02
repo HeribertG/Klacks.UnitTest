@@ -1,0 +1,194 @@
+using System.Text;
+using Klacks.Api.Application.DTOs.Imports;
+using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Services.Imports;
+using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Imports;
+using Klacks.Api.Domain.Interfaces.Schedules;
+using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Imports;
+using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Models.Settings;
+using Klacks.Api.Domain.Models.Staffs;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Klacks.UnitTest.Application.Services.Imports;
+
+[TestFixture]
+public class ErpOrderImportRunnerTests
+{
+    private IErpDropPointRepository _dropPointRepository = null!;
+    private IObjectStorageService _objectStorageService = null!;
+    private IOrderImportParser _parser = null!;
+    private IClientRepository _clientRepository = null!;
+    private IShiftRepository _shiftRepository = null!;
+    private ISettingsRepository _settingsRepository = null!;
+    private IUnitOfWork _unitOfWork = null!;
+    private ErpOrderImportRunner _runner = null!;
+
+    private static readonly ErpDropPoint DropPoint = new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "Test ERP",
+        SourceSystemId = "erp-1",
+        BucketPrefix = "customer-1",
+        IsEnabled = true
+    };
+
+    [SetUp]
+    public void SetUp()
+    {
+        _dropPointRepository = Substitute.For<IErpDropPointRepository>();
+        _objectStorageService = Substitute.For<IObjectStorageService>();
+        _parser = Substitute.For<IOrderImportParser>();
+        _clientRepository = Substitute.For<IClientRepository>();
+        _shiftRepository = Substitute.For<IShiftRepository>();
+        _settingsRepository = Substitute.For<ISettingsRepository>();
+        _unitOfWork = Substitute.For<IUnitOfWork>();
+
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
+            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
+
+        _dropPointRepository.List().Returns([DropPoint]);
+
+        // Due immediately: NextRunUtc already in the past.
+        _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc)
+            .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddMinutes(-5).ToString("O") });
+
+        var resolver = new ErpCustomerResolver(_clientRepository);
+        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, _settingsRepository, _unitOfWork, NullLogger<ErpOrderImportRunner>.Instance);
+    }
+
+    private static ImportedOrderPayload Order(string reference = "ORD-1") => new()
+    {
+        SourceSystemId = "erp-1",
+        ExternalOrderReference = reference,
+        Customer = new ImportedCustomerPayload { Company = "Spitex Musterhausen", Street = "Hauptstrasse 5", Zip = "4000" },
+        FromDate = new DateOnly(2026, 8, 1),
+        StartTime = new TimeOnly(7, 0),
+        EndTime = new TimeOnly(15, 0)
+    };
+
+    [Test]
+    public async Task RunAsync_NotYetDue_SkipsEntirely()
+    {
+        _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc)
+            .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddHours(1).ToString("O") });
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.DidNotReceive().ListAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_FirstEverRun_ComputesScheduleWithoutFiring()
+    {
+        _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc).Returns((Settings?)null);
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.DidNotReceive().ListAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _settingsRepository.Received(1).AddSetting(Arg.Is<Settings>(s => s.Type == ErpImportSettingsTypes.NextRunUtc));
+    }
+
+    [Test]
+    public async Task RunAsync_NewOrder_CreatesDraftShift()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns((Shift?)null);
+
+        await _runner.RunAsync();
+
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Is<Shift>(s =>
+            s.Status == ShiftStatus.OriginalOrder &&
+            s.SourceSystemId == "erp-1" &&
+            s.ExternalOrderReference == "ORD-1"));
+    }
+
+    [Test]
+    public async Task RunAsync_ExistingDraftOrder_IsOverwritten()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        var existingDraft = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.OriginalOrder, SourceSystemId = "erp-1", ExternalOrderReference = "ORD-1" };
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns(existingDraft);
+
+        await _runner.RunAsync();
+
+        await _shiftRepository.Received(1).PutWithSealedOrderHandling(Arg.Is<Shift>(s => s.Id == existingDraft.Id));
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task RunAsync_ExistingSealedOrder_IsLeftUntouched()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        var sealedOrder = new Shift { Id = Guid.NewGuid(), Status = ShiftStatus.SealedOrder, SourceSystemId = "erp-1", ExternalOrderReference = "ORD-1" };
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns(sealedOrder);
+
+        await _runner.RunAsync();
+
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task RunAsync_ProcessedFile_IsMovedToProcessedSegment()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns((Shift?)null);
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.Received(1).MoveAsync("customer-1/order-1.xml", "customer-1/processed/order-1.xml", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_RootValidationFailure_MovesFileToErrorSegmentWithoutProcessingOrders()
+    {
+        _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns(["customer-1/broken.xml"]);
+        _objectStorageService.DownloadAsync("customer-1/broken.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("not xml")));
+        _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult
+        {
+            Errors = [new OrderImportValidationError { Field = "root", Message = "malformed" }]
+        });
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.Received(1).MoveAsync("customer-1/broken.xml", "customer-1/error/broken.xml", Arg.Any<CancellationToken>());
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task RunAsync_AlreadyProcessedFiles_AreSkipped()
+    {
+        _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns([
+            "customer-1/processed/order-old.xml",
+            "customer-1/error/order-bad.xml"
+        ]);
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.DidNotReceive().DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_DisabledDropPoint_IsSkipped()
+    {
+        var disabled = new ErpDropPoint { Id = Guid.NewGuid(), Name = "Disabled", SourceSystemId = "erp-2", BucketPrefix = "customer-2", IsEnabled = false };
+        _dropPointRepository.List().Returns([disabled]);
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.DidNotReceive().ListAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    private void SetupFile(string key, ImportedOrderPayload order)
+    {
+        _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns([key]);
+        _objectStorageService.DownloadAsync(key, Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
+        _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult { Orders = [order] });
+        _clientRepository.FindReusableCustomerAsync(Arg.Any<Client>(), Arg.Any<CancellationToken>()).Returns((Client?)null);
+    }
+}
