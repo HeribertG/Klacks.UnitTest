@@ -49,6 +49,7 @@ public class OrderSupersessionServiceTests
         FromDate = new DateOnly(2026, 8, 1),
         StartShift = new TimeOnly(7, 0),
         EndShift = new TimeOnly(15, 0),
+        WorkTime = 8,
         Quantity = 1,
         SumEmployees = 1
     };

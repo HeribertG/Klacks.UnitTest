@@ -14,6 +14,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.Application.Services.Imports;
 
@@ -145,6 +146,8 @@ public class ErpOrderImportRunnerTests
             SourceSystemId = "erp-1",
             ExternalOrderReference = "ORD-1",
             ClientId = existingClient.Id,
+            Description = order.Description,
+            WorkTime = ImportedOrderShiftMapper.ResolveWorkTimeHours(order),
             FromDate = order.FromDate,
             UntilDate = order.UntilDate,
             StartShift = order.StartTime,
@@ -196,6 +199,66 @@ public class ErpOrderImportRunnerTests
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
         await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e => e.SourceSystemId == "erp-1" && e.FileKey == "customer-1/broken.xml"));
         await _triggerService.Received(1).OnEventAsync(Arg.Is<IAgentTriggerEvent>(e => e.Kind == AgentTriggerKinds.OrderImportFailed && e.AdminOnly), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_OrderLevelRejection_RecordsExceptionAndQuarantinesFileWhileValidOrdersImport()
+    {
+        _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns(["customer-1/mixed.xml"]);
+        _objectStorageService.DownloadAsync("customer-1/mixed.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
+        _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult
+        {
+            Orders = [Order()],
+            Errors = [new OrderImportValidationError { Field = "Weekdays", Message = "no weekday", ExternalOrderReference = "ORD-2" }]
+        });
+        _clientRepository.FindReusableCustomerAsync(Arg.Any<Client>(), Arg.Any<CancellationToken>()).Returns((Client?)null);
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns((Shift?)null);
+
+        await _runner.RunAsync();
+
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Is<Shift>(s => s.ExternalOrderReference == "ORD-1"));
+        await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e =>
+            e.ExternalOrderReference == "ORD-2" &&
+            e.FileKey == "customer-1/mixed.xml" &&
+            e.Reason.Contains("no weekday")));
+        await _objectStorageService.Received(1).MoveAsync("customer-1/mixed.xml", "customer-1/error/mixed.xml", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_AllOrdersRejected_RecordsOneExceptionPerOrder()
+    {
+        _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns(["customer-1/all-bad.xml"]);
+        _objectStorageService.DownloadAsync("customer-1/all-bad.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
+        _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult
+        {
+            Errors =
+            [
+                new OrderImportValidationError { Field = "Weekdays", Message = "no weekday", ExternalOrderReference = "ORD-1" },
+                new OrderImportValidationError { Field = "Weekdays", Message = "no weekday", ExternalOrderReference = "ORD-2" }
+            ]
+        });
+
+        await _runner.RunAsync();
+
+        await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e => e.ExternalOrderReference == "ORD-1"));
+        await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e => e.ExternalOrderReference == "ORD-2"));
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+        await _objectStorageService.Received(1).MoveAsync("customer-1/all-bad.xml", "customer-1/error/all-bad.xml", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_OrderProcessingFailure_RecordsExceptionAndQuarantinesFile()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns((Shift?)null);
+        _shiftRepository.AddWithSealedOrderHandling(Arg.Any<Shift>()).ThrowsAsync(new InvalidOperationException("db down"));
+
+        await _runner.RunAsync();
+
+        await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e =>
+            e.ExternalOrderReference == "ORD-1" &&
+            e.Reason.Contains("db down")));
+        await _objectStorageService.Received(1).MoveAsync("customer-1/order-1.xml", "customer-1/error/order-1.xml", Arg.Any<CancellationToken>());
     }
 
     [Test]
