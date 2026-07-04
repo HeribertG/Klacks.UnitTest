@@ -50,7 +50,7 @@ public static class SkillFeatureCoverageMap
         ["ClientShiftPreferencesController"] = Covered("set_shift_preferences"),
         ["ContractsController"] = Covered("list_contracts", "get_contract_details", "create_contract", "update_contract", "delete_contract", "assign_contract_to_client", "assign_contract_by_name"),
         ["GroupItemsController"] = Covered("add_client_to_group", "add_client_to_group_by_name", "remove_client_from_group"),
-        ["GroupVisibilitiesController"] = Covered("set_user_group_scope"),
+        ["GroupVisibilitiesController"] = Covered("set_user_group_scope", "get_user_group_scope"),
         ["GroupsController"] = Covered("list_groups", "list_groups_hierarchical", "create_group", "update_group", "delete_group", "set_group_location"),
         ["MembershipsController"] = Covered("list_client_memberships", "update_membership"),
 
