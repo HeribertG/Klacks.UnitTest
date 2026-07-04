@@ -82,6 +82,7 @@ public static class SkillFeatureCoverageMap
         ["SpamRulesController"] = Covered("get_spam_filter_settings", "update_spam_filter_settings"),
 
         ["OrderExportController"] = Covered("list_sealed_orders", "list_recent_exports", "open_order_export"),
+        ["ClientPeriodExportController"] = Excluded("new date-range client-period export (hours/expenses/breaks per employee/external employee) for period-closing; no chat skill yet, backend-only for this iteration"),
 
         ["PeriodClosingController"] = Covered("close_period", "reopen_period", "approve_day", "revoke_day_approval", "generate_period_summary"),
 
