@@ -6,12 +6,15 @@
 /// build red instead of being discovered (and reworked) live. Checks naming (english kebab-case,
 /// unique), unique sort order, that only the executed step kinds ask/search/mutate are used (guard and
 /// verify are dead and must never appear), that every referenced skill exists in the skill seeds, that
-/// every inject value is a $slot reference resolving to an ask slot or a capture alias, and that ask and
-/// search/mutate steps are structurally complete.
+/// every inject value is a $slot reference resolving to an ask slot or a capture alias, that ask and
+/// search/mutate steps are structurally complete, and that no two recipes' triggers can both match the
+/// same realistic sentence (using the production RecipeTriggerMatcher itself, not a reimplementation).
 /// </summary>
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Klacks.Api.Domain.Models.Assistant.Recipes;
+using Klacks.Api.Domain.Services.Assistant;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -246,6 +249,99 @@ public class RecipeSeedQualityTests
         }
 
         violations.ShouldBeEmpty(string.Join("; ", violations));
+    }
+
+    [Test]
+    public void RecipeTriggers_MustBeDisjoint_NoRealisticSentenceMatchesTwoRecipes()
+    {
+        var triggers = LoadRecipeTriggers();
+        var violations = new List<string>();
+        var reportedPairs = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (name, trigger) in triggers)
+        {
+            var selfSatisfyingPhrases = GenerateCanonicalPhrases(trigger)
+                .Where(phrase => RecipeTriggerMatcher.Matches(trigger, null, phrase))
+                .ToList();
+
+            foreach (var (otherName, otherTrigger) in triggers)
+            {
+                if (otherName == name)
+                {
+                    continue;
+                }
+
+                var pairKey = string.CompareOrdinal(name, otherName) < 0
+                    ? $"{name}|{otherName}"
+                    : $"{otherName}|{name}";
+                if (reportedPairs.Contains(pairKey))
+                {
+                    continue;
+                }
+
+                var collidingPhrase = selfSatisfyingPhrases
+                    .FirstOrDefault(phrase => RecipeTriggerMatcher.Matches(otherTrigger, null, phrase));
+                if (collidingPhrase != null)
+                {
+                    reportedPairs.Add(pairKey);
+                    violations.Add($"'{collidingPhrase}' matches both '{name}' and '{otherName}'");
+                }
+            }
+        }
+
+        violations.ShouldBeEmpty(
+            "No realistic sentence built from a recipe's own trigger vocabulary (anyWordStart x anySubstring) " +
+            "may also match another recipe's trigger — the engine returns the FIRST matching recipe by sort " +
+            "order and silently ignores the rest, so an overlap means one recipe silently steals the other's " +
+            "requests. Add a distinguishing noneOf guard on one side (see recipe-authoring.md §2). Violations: " +
+            string.Join("; ", violations));
+    }
+
+    private static List<string> GenerateCanonicalPhrases(RecipeTrigger trigger)
+    {
+        IEnumerable<string> ConditionTerms(RecipeCondition condition) =>
+            (condition.AnyWordStart ?? new List<string>())
+                .Concat(condition.AnySubstring ?? new List<string>())
+                .Concat(condition.StartsWith ?? new List<string>());
+
+        IEnumerable<string> phrases = new[] { string.Empty };
+        foreach (var condition in trigger.AllOf)
+        {
+            var terms = ConditionTerms(condition).ToList();
+            if (terms.Count == 0)
+            {
+                continue;
+            }
+
+            phrases = phrases.SelectMany(prefix => terms.Select(term =>
+                string.IsNullOrEmpty(prefix) ? term : $"{prefix} {term}"));
+        }
+
+        return phrases.Where(p => !string.IsNullOrEmpty(p)).ToList();
+    }
+
+    private static List<(string Name, RecipeTrigger Trigger)> LoadRecipeTriggers()
+    {
+        var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(RecipeSeedsFileName)));
+        var result = new List<(string, RecipeTrigger)>();
+
+        foreach (var element in document.RootElement.GetProperty("recipes").EnumerateArray())
+        {
+            var name = element.GetProperty("name").GetString() ?? string.Empty;
+            if (!element.TryGetProperty("trigger", out var triggerElement))
+            {
+                continue;
+            }
+
+            var trigger = JsonSerializer.Deserialize<RecipeTrigger>(triggerElement.GetRawText(), jsonOptions);
+            if (trigger != null)
+            {
+                result.Add((name, trigger));
+            }
+        }
+
+        return result;
     }
 
     [Test]
