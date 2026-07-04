@@ -60,7 +60,7 @@ public static class SkillFeatureCoverageMap
         ["OAuthAuthorizationServerController"] = Excluded("OAuth authorization server endpoints; not chat-skill material"),
         ["OAuthAuthorizationServerMetadataController"] = Excluded("OAuth authorization server endpoints; not chat-skill material"),
         ["PersonalAccessTokensController"] = Excluded("auth infrastructure: self-service credential management for MCP access; exposing token minting/revocation as chat skills would be a security risk"),
-        ["ErpDropPointsController"] = Excluded("admin-only ERP integration configuration (object storage drop points, import token issuance); security-sensitive credential minting, not chat-addressable, no skills built for this feature yet"),
+        ["ErpDropPointsController"] = Covered("get_erp_import_status", "trigger_erp_import_run"),
         ["ErpOrderUploadController"] = Excluded("machine-to-machine ERP upload endpoint authenticated by a drop-point-scoped import token, not a logged-in Klacks user; not chat-addressable"),
         ["ErpImportTokensController"] = Excluded("security-sensitive credential minting/revocation for ERP drop points, same rationale as PersonalAccessTokensController; not chat-addressable"),
 
@@ -115,7 +115,7 @@ public static class SkillFeatureCoverageMap
         ["BranchController"] = Covered("list_branches", "create_branch", "update_branch", "delete_branch"),
         ["CalendarRulesController"] = Covered("import_calendar_rules", "validate_calendar_rule", "list_holidays_for_period", "validate_holiday_overlap"),
         ["CountriesController"] = Covered("list_countries"),
-        ["GeneralSettingsController"] = Covered("get_general_settings", "update_general_settings", "get_email_settings", "update_email_settings", "get_imap_settings", "update_imap_settings", "get_owner_address", "update_owner_address", "get_work_settings", "update_work_settings", "get_deepl_settings", "update_deepl_settings", "get_web_search_settings", "update_web_search_settings", "test_smtp_connection", "test_imap_connection"),
+        ["GeneralSettingsController"] = Covered("get_general_settings", "update_general_settings", "get_email_settings", "update_email_settings", "get_imap_settings", "update_imap_settings", "get_owner_address", "update_owner_address", "get_work_settings", "update_work_settings", "get_deepl_settings", "update_deepl_settings", "get_web_search_settings", "update_web_search_settings", "test_smtp_connection", "test_imap_connection", "set_erp_import_schedule"),
         ["MacrosController"] = Covered("list_macros", "create_macro", "update_macro", "delete_macro"),
         ["PostcodeChController"] = Covered("lookup_location"),
         ["QualificationController"] = Covered("create_qualification", "update_qualification", "delete_qualification", "list_qualifications", "set_client_qualification"),
