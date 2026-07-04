@@ -3,7 +3,9 @@
 /// <summary>
 /// Unit tests for assign_user_permissions: the skill resolves the target user (by id or name),
 /// applies the requested role level exclusively via ChangeRoleCommand (grant target, revoke the
-/// other elevated role; User removes both), and reports the derived permission set.
+/// other elevated role; User removes both), re-reads the resulting role set fresh via
+/// GetUserRolesAsync and reports the derived permission set, or an error when the re-read does not
+/// confirm the requested role.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Accounts;
@@ -41,6 +43,7 @@ public class AssignUserPermissionsSkillTests
         var mediator = Substitute.For<IMediator>();
         var users = Substitute.For<IUserManagementService>();
         users.FindUserByIdAsync("u1").Returns(User("u1"));
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string> { Roles.Admin });
         var skill = new AssignUserPermissionsSkill(mediator, users);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
@@ -50,6 +53,7 @@ public class AssignUserPermissionsSkillTests
         });
 
         result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("confirmed in the database (verified)");
         await mediator.Received(1).Send(
             Arg.Is<ChangeRoleCommand>(c =>
                 c.ChangeRole.UserId == "u1" && c.ChangeRole.RoleName == Roles.Admin && c.ChangeRole.IsSelected),
@@ -66,6 +70,7 @@ public class AssignUserPermissionsSkillTests
         var mediator = Substitute.For<IMediator>();
         var users = Substitute.For<IUserManagementService>();
         users.FindUserByIdAsync("u1").Returns(User("u1"));
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string>());
         var skill = new AssignUserPermissionsSkill(mediator, users);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
@@ -95,6 +100,7 @@ public class AssignUserPermissionsSkillTests
             new() { Id = "u9", FirstName = "Anna", LastName = "Muster", Email = "anna@x.io", UserName = "amuster" }
         });
         users.FindUserByIdAsync("u9").Returns(User("u9"));
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string> { Roles.Authorised });
         var skill = new AssignUserPermissionsSkill(mediator, users);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
@@ -170,5 +176,24 @@ public class AssignUserPermissionsSkillTests
 
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<ChangeRoleCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task VerificationMismatch_ReturnsError_WhenReReadRoleSetDoesNotConfirmTheGrant()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var users = Substitute.For<IUserManagementService>();
+        users.FindUserByIdAsync("u1").Returns(User("u1"));
+        users.GetUserRolesAsync(Arg.Any<AppUser>()).Returns(new List<string>());
+        var skill = new AssignUserPermissionsSkill(mediator, users);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["userId"] = "u1",
+            ["role"] = Roles.Admin
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("could not be confirmed in the database");
     }
 }
