@@ -8,7 +8,10 @@
 using System.Text.Json;
 using Klacks.Api.Application.Commands.IdentityProviders;
 using Klacks.Api.Application.DTOs.IdentityProviders;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -26,24 +29,47 @@ public class CreateIdentityProviderSkillTests
         UserPermissions = new List<string> { "Admin" }
     };
 
-    private static IMediator MediatorReturningCreated()
+    private static IUnitOfWork UnitOfWorkThatExecutes()
     {
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
+            .Returns(call => call.Arg<Func<Task<Guid>>>()());
+        return unitOfWork;
+    }
+
+    private static (IMediator mediator, IIdentityProviderRepository repository) MediatorAndRepositoryReturningCreated()
+    {
+        IdentityProviderResource? createdModel = null;
+
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 var model = call.Arg<PostCommand>().Model;
                 model.Id = Guid.NewGuid();
+                createdModel = model;
                 return model;
             });
-        return mediator;
+
+        var repository = Substitute.For<IIdentityProviderRepository>();
+        repository.GetNoTracking(Arg.Any<Guid>()).Returns(_ => new IdentityProvider
+        {
+            Id = createdModel!.Id,
+            Name = createdModel.Name,
+            Type = createdModel.Type,
+            IsEnabled = createdModel.IsEnabled,
+            BindPassword = createdModel.BindPassword,
+            ClientSecret = createdModel.ClientSecret
+        });
+
+        return (mediator, repository);
     }
 
     [Test]
     public async Task ExplicitValues_CreatesProvider_AndMasksSecrets()
     {
-        var mediator = MediatorReturningCreated();
-        var skill = new CreateIdentityProviderSkill(mediator);
+        var (mediator, repository) = MediatorAndRepositoryReturningCreated();
+        var skill = new CreateIdentityProviderSkill(mediator, repository, UnitOfWorkThatExecutes());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -78,7 +104,7 @@ public class CreateIdentityProviderSkillTests
     public async Task MissingName_ReturnsErrorWithoutMutation()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateIdentityProviderSkill(mediator);
+        var skill = new CreateIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), Substitute.For<IUnitOfWork>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -94,7 +120,7 @@ public class CreateIdentityProviderSkillTests
     public async Task InvalidType_ReturnsErrorWithValidValues()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateIdentityProviderSkill(mediator);
+        var skill = new CreateIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), Substitute.For<IUnitOfWork>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -111,7 +137,7 @@ public class CreateIdentityProviderSkillTests
     public async Task InvalidPort_ReturnsError()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateIdentityProviderSkill(mediator);
+        var skill = new CreateIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), Substitute.For<IUnitOfWork>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

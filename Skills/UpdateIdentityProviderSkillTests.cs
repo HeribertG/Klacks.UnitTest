@@ -9,8 +9,11 @@
 using System.Text.Json;
 using Klacks.Api.Application.Commands.IdentityProviders;
 using Klacks.Api.Application.DTOs.IdentityProviders;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.IdentityProviders;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -43,16 +46,68 @@ public class UpdateIdentityProviderSkillTests
         BindPassword = StoredBindPassword
     };
 
+    private static IUnitOfWork UnitOfWorkThatExecutes()
+    {
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
+            .Returns(call => call.Arg<Func<Task<Guid>>>()());
+        return unitOfWork;
+    }
+
+    private static IIdentityProviderRepository RepositoryReflecting(Func<IdentityProviderResource?> latest)
+    {
+        var repository = Substitute.For<IIdentityProviderRepository>();
+        repository.GetNoTracking(Arg.Any<Guid>()).Returns(_ =>
+        {
+            var model = latest();
+            if (model == null)
+            {
+                return null;
+            }
+
+            return new IdentityProvider
+            {
+                Id = model.Id,
+                Name = model.Name,
+                Type = model.Type,
+                IsEnabled = model.IsEnabled,
+                SortOrder = model.SortOrder,
+                UseForAuthentication = model.UseForAuthentication,
+                UseForClientImport = model.UseForClientImport,
+                Host = model.Host,
+                Port = model.Port,
+                UseSsl = model.UseSsl,
+                BaseDn = model.BaseDn,
+                BindDn = model.BindDn,
+                BindPassword = model.BindPassword,
+                UserFilter = model.UserFilter,
+                ClientId = model.ClientId,
+                ClientSecret = model.ClientSecret,
+                AuthorizationUrl = model.AuthorizationUrl,
+                TokenUrl = model.TokenUrl,
+                UserInfoUrl = model.UserInfoUrl,
+                Scopes = model.Scopes,
+                TenantId = model.TenantId
+            };
+        });
+        return repository;
+    }
+
     [Test]
     public async Task PartialUpdate_KeepsStoredSecret_AndMasksResponse()
     {
         var id = Guid.NewGuid();
+        IdentityProviderResource? putModel = null;
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery>(), Arg.Any<CancellationToken>())
             .Returns(Existing(id));
         mediator.Send(Arg.Any<PutCommand>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<PutCommand>().Model);
-        var skill = new UpdateIdentityProviderSkill(mediator);
+            .Returns(call =>
+            {
+                putModel = call.Arg<PutCommand>().Model;
+                return putModel;
+            });
+        var skill = new UpdateIdentityProviderSkill(mediator, RepositoryReflecting(() => putModel), UnitOfWorkThatExecutes());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -82,12 +137,17 @@ public class UpdateIdentityProviderSkillTests
     public async Task NewSecret_ReplacesStoredSecret()
     {
         var id = Guid.NewGuid();
+        IdentityProviderResource? putModel = null;
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery>(), Arg.Any<CancellationToken>())
             .Returns(Existing(id));
         mediator.Send(Arg.Any<PutCommand>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<PutCommand>().Model);
-        var skill = new UpdateIdentityProviderSkill(mediator);
+            .Returns(call =>
+            {
+                putModel = call.Arg<PutCommand>().Model;
+                return putModel;
+            });
+        var skill = new UpdateIdentityProviderSkill(mediator, RepositoryReflecting(() => putModel), UnitOfWorkThatExecutes());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -108,7 +168,7 @@ public class UpdateIdentityProviderSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery>(), Arg.Any<CancellationToken>())
             .Returns((IdentityProviderResource?)null);
-        var skill = new UpdateIdentityProviderSkill(mediator);
+        var skill = new UpdateIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), Substitute.For<IUnitOfWork>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -125,7 +185,7 @@ public class UpdateIdentityProviderSkillTests
     public async Task NoFields_ReturnsNothingToUpdate()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new UpdateIdentityProviderSkill(mediator);
+        var skill = new UpdateIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), Substitute.For<IUnitOfWork>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

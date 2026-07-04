@@ -8,7 +8,9 @@
 using System.Text.Json;
 using Klacks.Api.Application.Commands.IdentityProviders;
 using Klacks.Api.Application.DTOs.IdentityProviders;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -26,6 +28,14 @@ public class DeleteIdentityProviderSkillTests
         UserPermissions = new List<string> { "Admin" }
     };
 
+    private static IUnitOfWork UnitOfWorkThatExecutes()
+    {
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
+            .Returns(call => call.Arg<Func<Task<Guid>>>()());
+        return unitOfWork;
+    }
+
     [Test]
     public async Task Delete_AuthProvider_SucceedsWithLockoutWarning()
     {
@@ -42,7 +52,8 @@ public class DeleteIdentityProviderSkillTests
                 ClientId = "klacks",
                 ClientSecret = StoredClientSecret
             });
-        var skill = new DeleteIdentityProviderSkill(mediator);
+        // Repository default (unconfigured GetNoTracking) returns null, confirming the soft-delete.
+        var skill = new DeleteIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), UnitOfWorkThatExecutes());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -63,7 +74,7 @@ public class DeleteIdentityProviderSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<DeleteCommand>(), Arg.Any<CancellationToken>())
             .Returns((IdentityProviderResource?)null);
-        var skill = new DeleteIdentityProviderSkill(mediator);
+        var skill = new DeleteIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), UnitOfWorkThatExecutes());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -78,7 +89,7 @@ public class DeleteIdentityProviderSkillTests
     public async Task InvalidId_ReturnsErrorWithoutMutation()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new DeleteIdentityProviderSkill(mediator);
+        var skill = new DeleteIdentityProviderSkill(mediator, Substitute.For<IIdentityProviderRepository>(), Substitute.For<IUnitOfWork>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
