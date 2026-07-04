@@ -179,6 +179,23 @@ public class FileSystemObjectStorageServiceTests
     }
 
     [Test]
+    public async Task DeleteAsync_RemovesFile()
+    {
+        var key = DropPointPrefix + "order-1.xml";
+        await _service.UploadAsync(key, ToStream("content"));
+
+        await _service.DeleteAsync(key);
+
+        File.Exists(Path.Combine(_rootPath, "erp", "exports", "order-1.xml")).ShouldBeFalse();
+    }
+
+    [Test]
+    public void DeleteAsync_KeyEscapingRoot_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _service.DeleteAsync("../outside.xml"));
+    }
+
+    [Test]
     public void ToSafePath_KeyEscapingRoot_Throws()
     {
         Should.Throw<ArgumentException>(() => _service.DownloadAsync("../outside.xml"));

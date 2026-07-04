@@ -80,4 +80,12 @@ public class S3ObjectStorageServiceTests
 
         await _client.Received(1).DeleteObjectAsync("klacks-erp-import", "customer-1/order-1.xml", Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task DeleteAsync_DeletesObjectUnderConfiguredBucket()
+    {
+        await _service.DeleteAsync("customer-1/error/order-1.xml");
+
+        await _client.Received(1).DeleteObjectAsync("klacks-erp-import", "customer-1/error/order-1.xml", Arg.Any<CancellationToken>());
+    }
 }
