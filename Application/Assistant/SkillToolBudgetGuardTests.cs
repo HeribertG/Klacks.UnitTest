@@ -33,6 +33,23 @@ public class SkillToolBudgetGuardTests
                 "truncated away and become unreachable via chat. Raise the cap or reduce alwaysOn skills.");
     }
 
+    private const int MaxAlwaysOnSkills = 10;
+
+    [Test]
+    public void AlwaysOnSkillCount_DoesNotRegrowUnchecked()
+    {
+        var seedPath = LocateSkillSeeds();
+        using var doc = JsonDocument.Parse(File.ReadAllText(seedPath));
+
+        var alwaysOn = doc.RootElement.GetProperty("skills").EnumerateArray()
+            .Count(s => s.TryGetProperty("alwaysOn", out var v) && v.ValueKind == JsonValueKind.True);
+
+        alwaysOn.ShouldBeLessThanOrEqualTo(
+            MaxAlwaysOnSkills,
+            $"alwaysOn skill count ({alwaysOn}) exceeds {MaxAlwaysOnSkills}; new skills should default to " +
+            "retrieval-only unless there is a specific reason every chat turn must see them.");
+    }
+
     private static string LocateSkillSeeds()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
