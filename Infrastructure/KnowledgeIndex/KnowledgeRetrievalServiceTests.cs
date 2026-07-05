@@ -54,7 +54,7 @@ public class KnowledgeRetrievalServiceTests
         _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new double[] { 0.9 });
 
-        var result = await _service.RetrieveAsync("open shifts", [], false, 5, CancellationToken.None);
+        var result = await _service.RetrieveAsync("open shifts", [], false, 5, currentRoute: null, CancellationToken.None);
 
         result.Candidates.ShouldHaveSingleItem();
         result.Candidates[0].Entry.SourceId.ShouldBe("ListOpenShifts");
@@ -76,7 +76,7 @@ public class KnowledgeRetrievalServiceTests
         _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new double[] { KnowledgeIndexConstants.DefaultScoreCutoff - 0.01 });
 
-        var result = await _service.RetrieveAsync("query", [], false, 5, CancellationToken.None);
+        var result = await _service.RetrieveAsync("query", [], false, 5, currentRoute: null, CancellationToken.None);
 
         result.IsEmpty.ShouldBeTrue();
     }
@@ -87,7 +87,7 @@ public class KnowledgeRetrievalServiceTests
         _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<KnowledgeEntry>());
 
-        await _service.RetrieveAsync("query", [], isAdmin: true, 5, CancellationToken.None);
+        await _service.RetrieveAsync("query", [], isAdmin: true, 5, currentRoute: null, CancellationToken.None);
 
         await _repo.Received(1).FindNearestAsync(
             Arg.Any<float[]>(),
@@ -100,7 +100,7 @@ public class KnowledgeRetrievalServiceTests
     [Test]
     public async Task RetrieveAsync_WhitespaceQuery_ReturnsEmpty()
     {
-        var result = await _service.RetrieveAsync("   ", [], false, 5, CancellationToken.None);
+        var result = await _service.RetrieveAsync("   ", [], false, 5, currentRoute: null, CancellationToken.None);
 
         result.IsEmpty.ShouldBeTrue();
         await _repo.DidNotReceive().FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
@@ -118,10 +118,81 @@ public class KnowledgeRetrievalServiceTests
         _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new double[] { 0.5, 0.9 });
 
-        var result = await _service.RetrieveAsync("query", [], false, 5, CancellationToken.None);
+        var result = await _service.RetrieveAsync("query", [], false, 5, currentRoute: null, CancellationToken.None);
 
         result.Candidates.Count().ShouldBe(2);
         result.Candidates[0].Entry.SourceId.ShouldBe("LowScore");
         result.Candidates[1].Entry.SourceId.ShouldBe("HighScore");
+    }
+
+    [Test]
+    public async Task RetrieveAsync_CurrentRouteMatchesBoostTable_LiftsMatchingSkillAboveHigherRawScore()
+    {
+        var pageSkill = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "create_shift", Text = "Creates a shift." };
+        var unrelated = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "unrelated_skill", Text = "Something else." };
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([pageSkill, unrelated]);
+
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.5, 0.53 });
+
+        var result = await _service.RetrieveAsync(
+            "query", [], false, 5, "/workplace/schedule/week", CancellationToken.None);
+
+        result.Candidates[0].Entry.SourceId.ShouldBe("create_shift");
+    }
+
+    [Test]
+    public async Task RetrieveAsync_CurrentRouteNotInBoostTable_NoBoostApplied()
+    {
+        var pageSkill = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "create_shift", Text = "Creates a shift." };
+        var unrelated = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "unrelated_skill", Text = "Something else." };
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([pageSkill, unrelated]);
+
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.5, 0.53 });
+
+        var result = await _service.RetrieveAsync(
+            "query", [], false, 5, "/workplace/unmapped-page", CancellationToken.None);
+
+        result.Candidates[0].Entry.SourceId.ShouldBe("unrelated_skill");
+    }
+
+    [Test]
+    public async Task RetrieveAsync_RouteBoost_NeverFiltersOutNonMatchingSkills()
+    {
+        var pageSkill = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "create_shift", Text = "Creates a shift." };
+        var unrelated = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "unrelated_skill", Text = "Something else." };
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([pageSkill, unrelated]);
+
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.5, 0.53 });
+
+        var result = await _service.RetrieveAsync(
+            "query", [], false, 5, "/workplace/schedule/week", CancellationToken.None);
+
+        result.Candidates.Count().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task RetrieveAsync_RouteBoost_NeverLiftsSubCutoffSkillIntoTheResult()
+    {
+        var pageSkill = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "create_shift", Text = "Creates a shift." };
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([pageSkill]);
+
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { KnowledgeIndexConstants.DefaultScoreCutoff - 0.01 });
+
+        var result = await _service.RetrieveAsync(
+            "query", [], false, 5, "/workplace/schedule/week", CancellationToken.None);
+
+        result.IsEmpty.ShouldBeTrue();
     }
 }

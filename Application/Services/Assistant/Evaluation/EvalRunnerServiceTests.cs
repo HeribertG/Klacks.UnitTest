@@ -44,9 +44,9 @@ public class EvalRunnerServiceTests
             new("show branches", "list_branches")
         };
         _goldsetLoader.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(items);
-        _retrieval.RetrieveAsync("create employee", Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync("create employee", Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(MakeResult("create_employee", "search_employees"));
-        _retrieval.RetrieveAsync("show branches", Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync("show branches", Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(MakeResult("list_branches", "create_branch"));
 
         var run = await _service.RunAsync("test-goldset");
@@ -69,7 +69,7 @@ public class EvalRunnerServiceTests
             new("create employee", "create_employee")
         };
         _goldsetLoader.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(items);
-        _retrieval.RetrieveAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(MakeResult("search_employees", "list_branches", "create_employee"));
 
         var run = await _service.RunAsync("test-goldset");
@@ -85,7 +85,7 @@ public class EvalRunnerServiceTests
     {
         var items = new List<GoldsetItem> { new("foo", "bar") };
         _goldsetLoader.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(items);
-        _retrieval.RetrieveAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(MakeResult("bar"));
         _evalRunRepository.GetLatestAsync("test-goldset", Arg.Any<CancellationToken>())
             .Returns(new EvalRun { CompositeScore = 0.5m });
@@ -102,7 +102,7 @@ public class EvalRunnerServiceTests
     {
         var items = new List<GoldsetItem> { new("unknown", "missing_skill") };
         _goldsetLoader.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(items);
-        _retrieval.RetrieveAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new RetrievalResult([]));
 
         var run = await _service.RunAsync("test-goldset");

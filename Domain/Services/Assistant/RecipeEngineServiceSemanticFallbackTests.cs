@@ -66,7 +66,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task MessageWithoutTriggerKeyword_ButStrongSemanticHit_ResolvesTheRecipe()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -79,7 +79,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task MessageWithoutTriggerKeyword_WeakSemanticHit_DoesNotResolve()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(RecipeResult("onboard-employee", 0.2));
 
         var plan = await _service.ResolveAsync(message);
@@ -91,7 +91,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task MessageWithoutTriggerKeyword_NoRetrievalHits_DoesNotResolve()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new RetrievalResult([]));
 
         var plan = await _service.ResolveAsync(message);
@@ -109,18 +109,100 @@ public class RecipeEngineServiceSemanticFallbackTests
         plan.ShouldNotBeNull();
         plan!.Name.ShouldBe("onboard-employee");
         await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
-            default!, default!, default, default, default);
+            default!, default!, default, default, default, default);
     }
 
     [Test]
     public async Task SemanticFallback_RetrievalThrows_IsSwallowedAndReturnsNull()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter anlegen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns<RetrievalResult>(_ => throw new InvalidOperationException("boom"));
 
         var plan = await _service.ResolveAsync(message);
 
         plan.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GuaranteedSkillNamesAsync_MessageWithoutTriggerKeyword_ButStrongSemanticHit_GuaranteesStepSkills()
+    {
+        var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
+
+        skills.ShouldBe(["create_employee"]);
+    }
+
+    [Test]
+    public async Task GuaranteedSkillNamesAsync_MessageWithoutTriggerKeyword_WeakSemanticHit_ReturnsEmpty()
+    {
+        var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.2));
+
+        var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
+
+        skills.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GuaranteedSkillNamesAsync_MessageMatchingKeywordTrigger_NeverConsultsSemanticFallback()
+    {
+        var message = "Bitte onboard einen neuen Mitarbeiter";
+
+        var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
+
+        skills.ShouldBe(["create_employee"]);
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task GuaranteedSkillNamesThenResolve_SameMessage_RunsSemanticFallbackOnlyOnce()
+    {
+        var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
+        var plan = await _service.ResolveAsync(message);
+
+        skills.ShouldBe(["create_employee"]);
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        await _retrieval.ReceivedWithAnyArgs(1).RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task GuaranteedSkillNamesThenResolve_SameMessageWithoutAnyMatch_RunsSemanticFallbackOnlyOnce()
+    {
+        var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new RetrievalResult([]));
+
+        var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
+        var plan = await _service.ResolveAsync(message);
+
+        skills.ShouldBeEmpty();
+        plan.ShouldBeNull();
+        await _retrieval.ReceivedWithAnyArgs(1).RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task NoEnabledRecipes_NeverConsultsSemanticFallback()
+    {
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
+        var message = "Irgendeine Nachricht ohne jeden Rezept-Bezug.";
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default);
     }
 }

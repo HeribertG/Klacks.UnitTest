@@ -69,7 +69,7 @@ public class ProcessLLMMessageCommandHandlerTests
 
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new RetrievalResult([]));
 
         _capturedContext = null;
@@ -148,7 +148,7 @@ public class ProcessLLMMessageCommandHandlerTests
         };
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<CancellationToken>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new RetrievalResult([new RetrievalCandidate(entry, 0.9)]));
 
         await CreateHandler().Handle(CreateCommand("/workplace/dashboard"), CancellationToken.None);
