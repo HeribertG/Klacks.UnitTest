@@ -1,0 +1,126 @@
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+/// <summary>
+/// Unit tests for RecipeEngineService's semantic fallback — verifies that a message which does
+/// not match any recipe's keyword trigger can still resolve the recipe via a strong-confidence
+/// KnowledgeIndex hit (Kind=Recipe), while a weak or missing hit correctly falls through to no
+/// match.
+/// </summary>
+
+using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant;
+using Klacks.Api.KnowledgeIndex.Application.Interfaces;
+using Klacks.Api.KnowledgeIndex.Domain;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace Klacks.UnitTest.Domain.Services.Assistant;
+
+[TestFixture]
+public class RecipeEngineServiceSemanticFallbackTests
+{
+    private IAgentRecipeRepository _recipeRepository = null!;
+    private IKnowledgeRetrievalService _retrieval = null!;
+    private IPendingRecipeStore _pendingRecipeStore = null!;
+    private RecipeEngineService _service = null!;
+
+    private static readonly AgentRecipe OnboardRecipe = new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "onboard-employee",
+        Goal = "Onboard a new employee end to end.",
+        TriggerJson = """{"allOf":[{"anyWordStart":["onboard","einstell"]}],"noneOf":[]}""",
+        StepsJson = """[{"kind":"mutate","skill":"create_employee"}]""",
+        IsEnabled = true,
+    };
+
+    [SetUp]
+    public void SetUp()
+    {
+        _recipeRepository = Substitute.For<IAgentRecipeRepository>();
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRecipe> { OnboardRecipe });
+
+        _retrieval = Substitute.For<IKnowledgeRetrievalService>();
+        _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
+
+        var scope = Substitute.For<IServiceScope>();
+        var provider = Substitute.For<IServiceProvider>();
+        provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
+        provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
+        scope.ServiceProvider.Returns(provider);
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(scope);
+
+        _service = new RecipeEngineService(
+            scopeFactory, _pendingRecipeStore, Substitute.For<ILogger<RecipeEngineService>>());
+    }
+
+    private static RetrievalResult RecipeResult(string sourceId, double score) =>
+        new([new RetrievalCandidate(
+            new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = sourceId, Text = "irrelevant" },
+            score)]);
+
+    [Test]
+    public async Task MessageWithoutTriggerKeyword_ButStrongSemanticHit_ResolvesTheRecipe()
+    {
+        var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+    }
+
+    [Test]
+    public async Task MessageWithoutTriggerKeyword_WeakSemanticHit_DoesNotResolve()
+    {
+        var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.2));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task MessageWithoutTriggerKeyword_NoRetrievalHits_DoesNotResolve()
+    {
+        var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new RetrievalResult([]));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task MessageMatchingKeywordTrigger_NeverConsultsSemanticFallback()
+    {
+        var message = "Bitte onboard einen neuen Mitarbeiter";
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default);
+    }
+
+    [Test]
+    public async Task SemanticFallback_RetrievalThrows_IsSwallowedAndReturnsNull()
+    {
+        var message = "Kannst du bitte einen komplett neuen Mitarbeiter anlegen?";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<RetrievalResult>(_ => throw new InvalidOperationException("boom"));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+    }
+}

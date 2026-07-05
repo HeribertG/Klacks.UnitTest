@@ -18,6 +18,7 @@ namespace Klacks.UnitTest.Infrastructure.KnowledgeIndex;
 public class KnowledgeIndexSynchronizerTests
 {
     private ISkillRegistry _skillRegistry = null!;
+    private IAgentRecipeRepository _recipeRepository = null!;
     private IEmbeddingProvider _embeddings = null!;
     private IKnowledgeIndexRepository _repo = null!;
 
@@ -25,6 +26,8 @@ public class KnowledgeIndexSynchronizerTests
     public void Setup()
     {
         _skillRegistry = Substitute.For<ISkillRegistry>();
+        _recipeRepository = Substitute.For<IAgentRecipeRepository>();
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
         _embeddings = Substitute.For<IEmbeddingProvider>();
         _repo = Substitute.For<IKnowledgeIndexRepository>();
     }
@@ -46,7 +49,7 @@ public class KnowledgeIndexSynchronizerTests
                 { (KnowledgeEntryKind.Skill, "X"), existingHash }
             });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
@@ -64,7 +67,7 @@ public class KnowledgeIndexSynchronizerTests
                 { (KnowledgeEntryKind.Skill, "OrphanSkill"), new byte[] { 1, 2, 3 } }
             });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).DeleteAsync(
@@ -88,7 +91,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.Received(1).EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
@@ -119,7 +122,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -144,12 +147,84 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
             Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
                 list.Count == 1 && list[0].RequiredPermission == "shifts.read"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SyncAsync_EnabledRecipe_IndexedAsRecipeKindWithGoalKeywordsSynonymsAndSteps()
+    {
+        _skillRegistry.GetAllSkills().Returns([]);
+
+        var recipe = new AgentRecipe
+        {
+            Id = Guid.NewGuid(),
+            Name = "onboard-employee",
+            Goal = "Onboard a new employee end to end.",
+            TriggerJson = """
+                {
+                  "allOf": [ { "anyWordStart": ["onboard", "einstell"], "anySubstring": ["neuer mitarbeiter"] } ],
+                  "noneOf": []
+                }
+                """,
+            StepsJson = """[{"kind":"mutate","skill":"create_employee"},{"kind":"mutate","skill":"add_client_to_group"}]""",
+            IsEnabled = true,
+            Synonyms = new Dictionary<string, List<string>> { ["fr"] = ["intégrer un employé"] }
+        };
+
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe> { recipe });
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new float[][] { new float[384] });
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _repo.Received(1).UpsertAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                list.Count == 1 &&
+                list[0].Kind == KnowledgeEntryKind.Recipe &&
+                list[0].SourceId == "onboard-employee" &&
+                list[0].RequiredPermission == null &&
+                list[0].Text.Contains("Onboard a new employee end to end.") &&
+                list[0].Text.Contains("onboard") &&
+                list[0].Text.Contains("einstell") &&
+                list[0].Text.Contains("neuer mitarbeiter") &&
+                list[0].Text.Contains("intégrer un employé") &&
+                list[0].Text.Contains("create_employee") &&
+                list[0].Text.Contains("add_client_to_group")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SyncAsync_SkillsAndRecipes_AreBothIndexedTogether()
+    {
+        var descriptor = new SkillDescriptor("X", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        var recipe = new AgentRecipe { Id = Guid.NewGuid(), Name = "some-recipe", Goal = "Do something.", IsEnabled = true };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe> { recipe });
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<IReadOnlyList<string>>().Select(_ => new float[384]).ToArray());
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _repo.Received(1).UpsertAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                list.Count == 2 &&
+                list.Any(e => e.Kind == KnowledgeEntryKind.Skill && e.SourceId == "X") &&
+                list.Any(e => e.Kind == KnowledgeEntryKind.Recipe && e.SourceId == "some-recipe")),
             Arg.Any<CancellationToken>());
     }
 }
