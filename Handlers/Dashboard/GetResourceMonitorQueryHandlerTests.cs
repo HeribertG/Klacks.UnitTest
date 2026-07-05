@@ -8,6 +8,7 @@ using Shouldly;
 using Klacks.Api.Application.Handlers.Dashboard;
 using Klacks.Api.Application.Queries.Dashboard;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -35,7 +36,9 @@ public class GetResourceMonitorQueryHandlerTests
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
         var logger = Substitute.For<ILogger<GetResourceMonitorQueryHandler>>();
-        _handler = new GetResourceMonitorQueryHandler(new ResourceMonitorReadRepository(_context), logger);
+        var groupVisibilityService = Substitute.For<IGroupVisibilityService>();
+        groupVisibilityService.GetVisibilityScopeAsync().Returns(GroupVisibilityScope.Unrestricted());
+        _handler = new GetResourceMonitorQueryHandler(new ResourceMonitorReadRepository(_context), groupVisibilityService, logger);
     }
 
     [TearDown]
