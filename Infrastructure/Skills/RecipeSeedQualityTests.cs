@@ -148,6 +148,38 @@ public class RecipeSeedQualityTests
     }
 
     [Test]
+    public void ContractAndGroupAssignmentSteps_MustAskTheSlotNameSuggestionGroundingKnows()
+    {
+        // SuggestionEntityNameReader (Infrastructure/Repositories/Assistant) hardcodes "contractName"
+        // and "groupName" as the only two slots it grounds LLM suggestion chips against. If a recipe
+        // ever asks for a contract/group name under a different slot, the grounding filter silently
+        // no-ops for that recipe (fail-open) instead of failing loud — this gate catches that drift
+        // at the JSON level before it ships.
+        const string ContractSkill = "assign_contract_by_name";
+        const string GroupSkill = "add_client_to_group_by_name";
+        const string ContractSlot = "contractName";
+        const string GroupSlot = "groupName";
+
+        var violations = new List<string>();
+        foreach (var recipe in LoadRecipes())
+        {
+            var askSlots = recipe.Steps.Where(s => s.Kind == "ask").Select(s => s.Slot).ToHashSet(StringComparer.Ordinal);
+
+            if (recipe.Steps.Any(s => s.Skill == ContractSkill) && !askSlots.Contains(ContractSlot))
+            {
+                violations.Add($"{recipe.Name}: calls '{ContractSkill}' but has no ask step with slot '{ContractSlot}'");
+            }
+
+            if (recipe.Steps.Any(s => s.Skill == GroupSkill) && !askSlots.Contains(GroupSlot))
+            {
+                violations.Add($"{recipe.Name}: calls '{GroupSkill}' but has no ask step with slot '{GroupSlot}'");
+            }
+        }
+
+        violations.ShouldBeEmpty(string.Join("; ", violations));
+    }
+
+    [Test]
     public void Steps_MustUseOnlyExecutedKinds_NoDeadGuardOrVerify()
     {
         var violations = new List<string>();

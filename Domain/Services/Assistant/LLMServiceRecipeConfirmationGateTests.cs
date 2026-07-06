@@ -88,7 +88,8 @@ public class LLMServiceRecipeConfirmationGateTests
             backgroundTaskService: null!,
             pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
-            slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()));
+            slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
+            suggestionEntityNameReader: null!);
     }
 
     private static LLMContext Context(string message) => new()
@@ -251,7 +252,7 @@ public class LLMServiceRecipeConfirmationGateTests
             AvailableFunctions = new List<LLMFunction> { new() { Name = "create_employee" } }
         };
 
-        var (responseContent, _, iterationsUsed, allFunctionCalls) =
+        var (responseContent, _, iterationsUsed, allFunctionCalls, _) =
             await _service.ExecuteMultiTurnLoopAsync(BuildContext(context, provider));
 
         responseContent.ShouldBe("Soll ich den Mitarbeiter anlegen?");
@@ -262,5 +263,47 @@ public class LLMServiceRecipeConfirmationGateTests
             && p.UserId == UserId && p.ConversationId == ConversationId));
         await provider.Received(1).ProcessAsync(
             Arg.Is<LLMProviderRequest>(r => r.AvailableFunctions.Count == 0), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecuteMultiTurnLoopAsync_KeywordMatch_PausesOnAskStep_ReturnsAskedSlot()
+    {
+        // Regression guard for the suggestion-grounding fix: LLMService.ApplySuggestionGroundingAsync
+        // relies on this exact return value to know which entity (contract/group) the just-asked
+        // question refers to, so a real assign-contract-shaped recipe pausing on its first ask step
+        // must surface that step's slot name, not just an ask having happened.
+        var assignContractRecipe = new AgentRecipe
+        {
+            Id = Guid.NewGuid(),
+            Name = "assign-contract",
+            Goal = "Assign a contract to an employee.",
+            TriggerJson = """{"allOf":[{"anyWordStart":["vertrag zuweisen"]}],"noneOf":[]}""",
+            StepsJson = """[{"kind":"ask","slot":"contractName","prompt":"Welchen Vertrag?"}]""",
+            IsEnabled = true,
+        };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRecipe> { OnboardRecipe, assignContractRecipe });
+        _recipeRepository.GetByNameAsync("assign-contract", Arg.Any<CancellationToken>())
+            .Returns(assignContractRecipe);
+        _pendingRecipeStore.Peek(UserId, ConversationId).Returns((PendingRecipe?)null);
+
+        var message = "Bitte Vertrag zuweisen";
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMProviderResponse { Success = true, Content = "Welchen Vertrag möchtest du zuweisen?" });
+
+        var context = new LLMContext
+        {
+            Message = message,
+            UserId = UserId.ToString(),
+            AvailableFunctions = new List<LLMFunction>()
+        };
+
+        var (responseContent, _, _, allFunctionCalls, askedSlot) =
+            await _service.ExecuteMultiTurnLoopAsync(BuildContext(context, provider));
+
+        responseContent.ShouldBe("Welchen Vertrag möchtest du zuweisen?");
+        allFunctionCalls.ShouldBeEmpty();
+        askedSlot.ShouldBe("contractName");
     }
 }
