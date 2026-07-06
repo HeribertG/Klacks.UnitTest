@@ -80,7 +80,8 @@ public class ProcessLLMMessageCommandHandlerTests
     private ProcessLLMMessageCommandHandler CreateHandler()
     {
         return new ProcessLLMMessageCommandHandler(
-            _llmService, _agentRepository, _skillCache, _retrieval, _enricher, _recipeEngine);
+            _llmService, _agentRepository, _skillCache, _retrieval, _enricher, _recipeEngine,
+            Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
     private static AgentSkill CreateSkill(string name)
@@ -155,5 +156,25 @@ public class ProcessLLMMessageCommandHandlerTests
 
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.AvailableFunctions.Count(f => f.Name == DashboardSkillName).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Handle_RetrievalThrows_FallsBackToAlwaysOnSkills_DoesNotCrash()
+    {
+        // Regression guard: this handler is the one caller of IKnowledgeRetrievalService.RetrieveAsync
+        // (ChatController's non-streaming path) that used to have no try/catch around the call, unlike
+        // RecipeEngineService/LLMStreamingOrchestrator. That gap was inert while NullEmbeddingProvider
+        // (dead-ONNX platforms) only ever returned zero vectors and never threw. It becomes reachable
+        // now that a GeminiEmbeddingProvider fallback exists that fails loud (e.g. missing/invalid key).
+        _retrieval.RetrieveAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns<RetrievalResult>(_ => throw new InvalidOperationException("embedding API key missing"));
+
+        await CreateHandler().Handle(CreateCommand("/workplace/dashboard"), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.AvailableFunctions.ShouldContain(f => f.Name == DashboardSkillName);
+        _capturedContext.AvailableFunctions.ShouldNotContain(f => f.Name == EmployeesSkillName);
     }
 }
