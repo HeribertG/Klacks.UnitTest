@@ -7,8 +7,10 @@
 /// match.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
@@ -76,6 +78,22 @@ public class RecipeEngineServiceSemanticFallbackTests
     }
 
     [Test]
+    public async Task MessageWithoutTriggerKeyword_ButStrongSemanticHit_PlanNeedsConfirmation()
+    {
+        // A recipe matched purely by meaning (no explicit trigger keyword) must not start its flow
+        // directly — the chat loop gates it behind a confirmation question (expensive false positives).
+        var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.NeedsConfirmation.ShouldBeTrue();
+        plan.Goal.ShouldBe(OnboardRecipe.Goal);
+    }
+
+    [Test]
     public async Task MessageWithoutTriggerKeyword_WeakSemanticHit_DoesNotResolve()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
@@ -110,6 +128,19 @@ public class RecipeEngineServiceSemanticFallbackTests
         plan!.Name.ShouldBe("onboard-employee");
         await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
             default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task MessageMatchingKeywordTrigger_PlanDoesNotNeedConfirmation()
+    {
+        // The deterministic fast path is precise by construction — it must keep starting the flow
+        // directly, exactly as before the confirmation gate was introduced.
+        var message = "Bitte onboard einen neuen Mitarbeiter";
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.NeedsConfirmation.ShouldBeFalse();
     }
 
     [Test]
@@ -204,5 +235,52 @@ public class RecipeEngineServiceSemanticFallbackTests
         plan.ShouldBeNull();
         await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
             default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task ResumeAsync_PendingAwaitingConfirmation_RebuildsPlanStillNeedingConfirmation()
+    {
+        // A pause persisted while the confirmation gate is open must resume in the same state — the
+        // gate is not implicitly cleared by a mere resume (only an affirmation in LLMService clears it).
+        var userId = Guid.NewGuid();
+        const string conversationId = "conv-1";
+        _recipeRepository.GetByNameAsync("onboard-employee", Arg.Any<CancellationToken>())
+            .Returns(OnboardRecipe);
+        _pendingRecipeStore.Peek(userId, conversationId).Returns(new PendingRecipe
+        {
+            UserId = userId,
+            ConversationId = conversationId,
+            RecipeName = "onboard-employee",
+            AwaitingConfirmation = true,
+            StepIndex = 0,
+            Slots = new Dictionary<string, string>()
+        });
+
+        var resumed = await _service.ResumeAsync(userId, conversationId);
+
+        resumed.ShouldNotBeNull();
+        resumed!.NeedsConfirmation.ShouldBeTrue();
+        resumed.Goal.ShouldBe(OnboardRecipe.Goal);
+    }
+
+    [Test]
+    public async Task Persist_AfterConfirmAndProceed_SavesAwaitingConfirmationAsFalse()
+    {
+        // Persist must reflect the plan's current NeedsConfirmation, not just always carry the flag
+        // from before the gate was cleared — otherwise a confirmed recipe would re-ask forever.
+        var userId = Guid.NewGuid();
+        const string conversationId = "conv-1";
+        var plan = new RecipeExecutionPlan(
+            "onboard-employee",
+            new List<RecipeStep>
+            {
+                new() { Kind = RecipeStepKinds.Mutate, Skill = "create_employee" }
+            },
+            needsConfirmation: true);
+        plan.ConfirmAndProceed();
+
+        _service.Persist(userId, conversationId, plan);
+
+        _pendingRecipeStore.Received(1).Save(Arg.Is<PendingRecipe>(p => p.AwaitingConfirmation == false));
     }
 }

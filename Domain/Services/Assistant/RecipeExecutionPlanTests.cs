@@ -198,4 +198,47 @@ public class RecipeExecutionPlanTests
         Assert.That(plan.CurrentSkill, Is.EqualTo("search_employees"));
         Assert.That(plan.GetParameterInjections("search_employees")["searchTerm"], Is.EqualTo("Hans"));
     }
+
+    [Test]
+    public void Default_Plan_Does_Not_Need_Confirmation()
+    {
+        // Arrange / Act
+        var plan = new RecipeExecutionPlan("r", AddClientToGroupSteps());
+
+        // Assert
+        Assert.That(plan.NeedsConfirmation, Is.False);
+    }
+
+    [Test]
+    public void Plan_Built_With_NeedsConfirmation_Requires_ConfirmAndProceed_To_Clear_The_Flag()
+    {
+        // Arrange — mirrors a semantic-fallback match, which must be confirmed before it can be forced
+        var plan = new RecipeExecutionPlan("r", AddClientToGroupSteps(), needsConfirmation: true);
+
+        // Act / Assert
+        Assert.That(plan.NeedsConfirmation, Is.True);
+        plan.ConfirmAndProceed();
+        Assert.That(plan.NeedsConfirmation, Is.False);
+    }
+
+    [Test]
+    public void Goal_Defaults_To_Name_When_Not_Provided()
+    {
+        // Arrange / Act
+        var plan = new RecipeExecutionPlan("r", AddClientToGroupSteps());
+
+        // Assert — the confirmation instruction always has something to format, even for old callers
+        Assert.That(plan.Goal, Is.EqualTo("r"));
+    }
+
+    [Test]
+    public void Goal_Is_Carried_Separately_From_Name_When_Provided()
+    {
+        // Arrange / Act
+        var plan = new RecipeExecutionPlan("r", AddClientToGroupSteps(), goal: "Onboard a new employee end to end.");
+
+        // Assert
+        Assert.That(plan.Goal, Is.EqualTo("Onboard a new employee end to end."));
+        Assert.That(plan.Name, Is.EqualTo("r"));
+    }
 }
