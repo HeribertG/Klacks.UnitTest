@@ -63,6 +63,8 @@ public static class SkillFeatureCoverageMap
         ["ErpDropPointsController"] = Covered("get_erp_import_status", "trigger_erp_import_run"),
         ["ErpOrderUploadController"] = Excluded("machine-to-machine ERP upload endpoint authenticated by a drop-point-scoped import token, not a logged-in Klacks user; not chat-addressable"),
         ["ErpImportTokensController"] = Excluded("security-sensitive credential minting/revocation for ERP drop points, same rationale as PersonalAccessTokensController; not chat-addressable"),
+        ["KlacksBotTokensController"] = Excluded("security-sensitive credential minting/revocation for the external Otto marketing bot, same rationale as PersonalAccessTokensController/ErpImportTokensController; not chat-addressable"),
+        ["BotQueryController"] = Excluded("machine-to-machine read-only endpoint for the external Otto marketing bot, authenticated by a bot-scoped token with no user role, not a logged-in Klacks user; not chat-addressable, same rationale as ErpOrderUploadController"),
 
         ["BaseController"] = Excluded("base class for API controllers, no own endpoints"),
         ["DashboardController"] = Covered("get_dashboard_summary", "get_client_locations_overview", "interpret_resource_monitor"),
