@@ -19,7 +19,7 @@ public static class SkillFeatureCoverageMap
     public static readonly IReadOnlyDictionary<string, string> Decisions = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["AgentAutonomyController"] = Covered("get_autonomy_level", "set_autonomy_level"),
-        ["AgentMemoriesController"] = Covered("get_ai_memories", "add_ai_memory", "update_ai_memory", "delete_ai_memory"),
+        ["AgentMemoriesController"] = Covered("get_ai_memories", "add_ai_memory", "add_personal_memory", "update_ai_memory", "delete_ai_memory"),
         ["AgentPlansController"] = Excluded("Klacksy assistant infrastructure: persisted planner runs; plans are initiated via the propose_plan skill"),
         ["AgentSoulController"] = Covered("get_ai_soul", "update_ai_soul"),
         ["AgentTriggerPreferencesController"] = Excluded("Klacksy assistant self-configuration: per-user trigger mute/snooze managed in the assistant settings UI; heartbeat tuning is exposed via configure_heartbeat"),

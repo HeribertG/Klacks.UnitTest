@@ -23,6 +23,9 @@ public class MutationIntentDetectorTests
     [TestCase("Schneide den Dienst in drei Teile")]
     [TestCase("Weise den Vertrag dem Kunden zu")]
     [TestCase("Plane den Frühdienst für Montag ein")]
+    [TestCase("Ordne die Mitarbeiter den Gruppen zu")]
+    [TestCase("Ordne die Mitarbeiter nach ihrer Adresse den passenden Gruppen zu")]
+    [TestCase("Gruppiere die Mitarbeiter nach Adresse")]
     [TestCase("create a customer named Acme Ltd")]
     [TestCase("delete client 5")]
     [TestCase("add the employee to the Bern group")]
@@ -46,6 +49,8 @@ public class MutationIntentDetectorTests
     [TestCase("what does cut_shift do?")]
     [TestCase("Hallo, wie geht es dir?")]
     [TestCase("Welche Kunden sind in Bern?")]
+    [TestCase("Zeig mir die Gruppen")]
+    [TestCase("Welche Gruppen gibt es?")]
     [TestCase("")]
     [TestCase("   ")]
     public void IsMutationIntent_False_For_Questions_And_Reads(string message)
