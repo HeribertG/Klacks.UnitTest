@@ -18,6 +18,7 @@ public class GroupingIntentResolverTests
     [TestCase("Kunden nach Region gruppieren")]
     [TestCase("assign the employees to the nearest group")]
     [TestCase("group the customers by location")]
+    [TestCase("Kannst du Mitarbeiter die noch zu keiner Gruppe gehören, gemäss ihrer Adresse zu Gruppen zuordnen")]
     public void GuaranteedSkillNames_Returns_GroupingSkills_For_GroupingIntent(string message)
     {
         var result = GroupingIntentResolver.GuaranteedSkillNames(message);
@@ -25,6 +26,7 @@ public class GroupingIntentResolverTests
         result.ShouldContain("propose_employee_grouping");
         result.ShouldContain("apply_employee_grouping");
         result.ShouldContain("add_client_to_nearest_group");
+        result.ShouldContain("group_ungrouped_by_city_name");
     }
 
     [TestCase("Welche Gruppen gibt es?")]
