@@ -64,6 +64,40 @@ public class LLMSystemPromptBuilderGuidelinesTests
     }
 
     [Test]
+    public async Task BuildSystemPromptAsync_WithTools_ContainsToolCallBatchingGuide()
+    {
+        // Arrange
+        var context = CreateContext();
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
+
+        // Assert
+        result.ShouldContain("TOOL CALL BATCHING");
+    }
+
+    [Test]
+    public async Task BuildSystemPromptAsync_WithoutTools_OmitsToolCallBatchingGuide()
+    {
+        // Arrange
+        var context = new LLMContext
+        {
+            UserId = "user-123",
+            UserRights = new List<string> { "CanViewSettings", "CanEditSettings" },
+            AvailableFunctions = new List<LLMFunction>(),
+            Language = "en"
+        };
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        // Act
+        var result = await _builder.BuildSystemPromptAsync(context);
+
+        // Assert
+        result.ShouldNotContain("TOOL CALL BATCHING");
+    }
+
+    [Test]
     public async Task BuildSystemPromptAsync_WithNavigateToSkill_ForbidsNarratingInternalRetries()
     {
         var context = new LLMContext

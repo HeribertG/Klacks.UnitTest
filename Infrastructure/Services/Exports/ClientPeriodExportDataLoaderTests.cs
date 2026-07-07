@@ -167,6 +167,38 @@ public class ClientPeriodExportDataLoaderTests
             ToInvoice = false,
         });
 
+        _context.ClientPeriodHours.Add(new ClientPeriodHours
+        {
+            Id = Guid.NewGuid(),
+            ClientId = _employeeClientId,
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 1, 31),
+            Hours = 160.25m,
+            Surcharges = 12.5m,
+            PaymentInterval = PaymentInterval.Monthly,
+        });
+        _context.ClientPeriodHours.Add(new ClientPeriodHours
+        {
+            Id = Guid.NewGuid(),
+            ClientId = _employeeClientId,
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 1, 31),
+            Hours = 99m,
+            Surcharges = 0m,
+            PaymentInterval = PaymentInterval.Monthly,
+            AnalyseToken = Guid.NewGuid(),
+        });
+        _context.ClientPeriodHours.Add(new ClientPeriodHours
+        {
+            Id = Guid.NewGuid(),
+            ClientId = _employeeClientId,
+            StartDate = new DateOnly(2025, 11, 1),
+            EndDate = new DateOnly(2025, 11, 30),
+            Hours = 150m,
+            Surcharges = 0m,
+            PaymentInterval = PaymentInterval.Monthly,
+        });
+
         _context.SaveChanges();
     }
 
@@ -216,6 +248,30 @@ public class ClientPeriodExportDataLoaderTests
     }
 
     [Test]
+    public async Task LoadAsync_ExcludesScenarioWork_WithAnalyseToken()
+    {
+        _context.Work.Add(new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = _employeeClientId,
+            ShiftId = Guid.NewGuid(),
+            CurrentDate = new DateOnly(2026, 1, 11),
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            WorkTime = 8,
+            LockLevel = WorkLockLevel.Closed,
+            AnalyseToken = Guid.NewGuid(),
+        });
+        _context.SaveChanges();
+
+        var result = await _loader.LoadAsync(FromDate, UntilDate);
+
+        var employeeGroup = result.Clients.Single(c => c.ClientId == _employeeClientId);
+        employeeGroup.WorkEntries.Count.ShouldBe(1);
+        employeeGroup.WorkEntries.Single().WorkId.ShouldBe(_employeeWorkId);
+    }
+
+    [Test]
     public async Task LoadAsync_LinksBreakByClientAndDate()
     {
         var result = await _loader.LoadAsync(FromDate, UntilDate);
@@ -252,6 +308,21 @@ public class ClientPeriodExportDataLoaderTests
 
         result.StartDate.ShouldBe(FromDate);
         result.EndDate.ShouldBe(UntilDate);
+    }
+
+    [Test]
+    public async Task LoadAsync_LoadsOverlappingProductionPeriodHours_ExcludingScenarioAndOutOfRangeRows()
+    {
+        var result = await _loader.LoadAsync(FromDate, UntilDate);
+
+        var employeeGroup = result.Clients.Single(c => c.ClientId == _employeeClientId);
+        employeeGroup.PeriodHours.Count.ShouldBe(1);
+        employeeGroup.PeriodHours[0].Hours.ShouldBe(160.25m);
+        employeeGroup.PeriodHours[0].Surcharges.ShouldBe(12.5m);
+        employeeGroup.PeriodHours[0].PaymentInterval.ShouldBe(nameof(PaymentInterval.Monthly));
+
+        var externGroup = result.Clients.Single(c => c.ClientId == _externClientId);
+        externGroup.PeriodHours.ShouldBeEmpty();
     }
 
     [Test]

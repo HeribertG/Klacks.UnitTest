@@ -13,7 +13,6 @@ using Klacks.Api.Application.Interfaces.Exports;
 using Klacks.Api.Application.Queries.Exports;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Exports;
-using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Exports;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -27,7 +26,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
 {
     private IOrderExportDataLoader _dataLoader = null!;
     private IExportFormatter _formatter = null!;
-    private ISettingsReader _settingsReader = null!;
+    private ICompanyInfoLoader _companyInfoLoader = null!;
     private IExportLogRepository _exportLogRepository = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -39,7 +38,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
     {
         _dataLoader = Substitute.For<IOrderExportDataLoader>();
         _formatter = Substitute.For<IExportFormatter>();
-        _settingsReader = Substitute.For<ISettingsReader>();
+        _companyInfoLoader = Substitute.For<ICompanyInfoLoader>();
         _exportLogRepository = Substitute.For<IExportLogRepository>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
@@ -58,7 +57,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
                 EndDate = new DateOnly(2026, 1, 31)
             });
 
-        _settingsReader.GetSetting(Arg.Any<string>()).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
+        _companyInfoLoader.LoadAsync(Arg.Any<CancellationToken>()).Returns(new CompanyInfo());
 
         var httpContext = new DefaultHttpContext();
         httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
@@ -71,7 +70,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
         _handler = new CreateOrderExportQueryHandler(
             _dataLoader,
             [_formatter],
-            _settingsReader,
+            _companyInfoLoader,
             _exportLogRepository,
             _httpContextAccessor,
             _unitOfWork,

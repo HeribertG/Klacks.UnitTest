@@ -32,7 +32,9 @@ public class ProcessLLMMessageCommandHandlerTests
     private IAgentRepository _agentRepository = null!;
     private ISkillCacheService _skillCache = null!;
     private IKnowledgeRetrievalService _retrieval = null!;
+    private IRetrievalQueryBuilder _retrievalQueryBuilder = null!;
     private IPlanningScopeEnricher _enricher = null!;
+    private IPendingUserNoteRepository _pendingUserNoteRepository = null!;
     private RecipeEngineService _recipeEngine = null!;
     private Agent _agent = null!;
     private LLMContext? _capturedContext;
@@ -44,7 +46,13 @@ public class ProcessLLMMessageCommandHandlerTests
         _agentRepository = Substitute.For<IAgentRepository>();
         _skillCache = Substitute.For<ISkillCacheService>();
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
+        _retrievalQueryBuilder = Substitute.For<IRetrievalQueryBuilder>();
+        _retrievalQueryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.ArgAt<string>(0));
         _enricher = Substitute.For<IPlanningScopeEnricher>();
+        _pendingUserNoteRepository = Substitute.For<IPendingUserNoteRepository>();
+        _pendingUserNoteRepository.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(0);
 
         var recipeRepository = Substitute.For<IAgentRecipeRepository>();
         recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
@@ -80,7 +88,8 @@ public class ProcessLLMMessageCommandHandlerTests
     private ProcessLLMMessageCommandHandler CreateHandler()
     {
         return new ProcessLLMMessageCommandHandler(
-            _llmService, _agentRepository, _skillCache, _retrieval, _enricher, _recipeEngine,
+            _llmService, _agentRepository, _skillCache, _retrieval, _retrievalQueryBuilder,
+            _enricher, _pendingUserNoteRepository, _recipeEngine,
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 

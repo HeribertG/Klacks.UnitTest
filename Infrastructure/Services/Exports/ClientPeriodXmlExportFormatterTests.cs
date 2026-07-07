@@ -113,6 +113,58 @@ public class ClientPeriodXmlExportFormatterTests
         externWork.Element("Information").ShouldBeNull();
     }
 
+    [Test]
+    public void Format_WritesPeriodHoursBlock_WithAttributesAndInvariantDecimals()
+    {
+        var data = BuildData();
+        data.Clients[0].PeriodHours =
+        [
+            new ClientPeriodHoursExportEntry
+            {
+                StartDate = new DateOnly(2026, 1, 1),
+                EndDate = new DateOnly(2026, 1, 31),
+                Hours = 160.25m,
+                Surcharges = 12.5m,
+                PaymentInterval = "Monthly",
+            },
+            new ClientPeriodHoursExportEntry
+            {
+                StartDate = new DateOnly(2026, 2, 1),
+                EndDate = new DateOnly(2026, 2, 28),
+                Hours = 152m,
+                Surcharges = 0m,
+                PaymentInterval = "Weekly",
+            },
+        ];
+        var options = new ExportOptions { CurrencyCode = "EUR" };
+
+        var bytes = _formatter.Format(data, options);
+        var xml = XDocument.Parse(Encoding.UTF8.GetString(bytes));
+
+        var periods = xml.Root!.Elements("Client").First()
+            .Element("PeriodHours")!.Elements("Period").ToList();
+
+        periods.Count.ShouldBe(2);
+        periods[0].Attribute("startDate")!.Value.ShouldBe("2026-01-01");
+        periods[0].Attribute("endDate")!.Value.ShouldBe("2026-01-31");
+        periods[0].Element("Hours")!.Value.ShouldBe("160.25");
+        periods[0].Element("Surcharges")!.Value.ShouldBe("12.50");
+        periods[0].Element("PaymentInterval")!.Value.ShouldBe("Monthly");
+        periods[1].Element("PaymentInterval")!.Value.ShouldBe("Weekly");
+    }
+
+    [Test]
+    public void Format_OmitsPeriodHoursBlock_WhenEmpty()
+    {
+        var data = BuildData();
+        var options = new ExportOptions { CurrencyCode = "EUR" };
+
+        var bytes = _formatter.Format(data, options);
+        var xml = XDocument.Parse(Encoding.UTF8.GetString(bytes));
+
+        xml.Root!.Elements("Client").First().Element("PeriodHours").ShouldBeNull();
+    }
+
     private static ClientPeriodExportData BuildData()
     {
         var employeeWorkId = Guid.NewGuid();

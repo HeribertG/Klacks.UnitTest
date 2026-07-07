@@ -2,9 +2,9 @@
 
 /// <summary>
 /// Unit tests for the conversation-aware navigation fast-path in ChatController:
-/// the deterministic fast-path may short-circuit the LLM only for the FIRST message of a
-/// conversation. Once a conversation has history it must route through the LLM so guided
-/// flows (e.g. create_employee) are not hijacked by bare answers like "Mitarbeiter".
+/// the deterministic fast-path short-circuits the LLM for the FIRST message of a conversation,
+/// and mid-conversation only for explicit navigation commands ("öffne …"). Bare answers like
+/// "Mitarbeiter" inside a guided flow (e.g. create_employee) must route through the LLM.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
@@ -111,6 +111,41 @@ public class ChatControllerFastPathTests
         Assert.That(ok, Is.Not.Null);
         var response = ok!.Value as LLMResponse;
         Assert.That(response!.NavigateTo, Is.Null);
+    }
+
+    [Test]
+    public async Task FastPath_Routes_MidConversation_WhenMessageIsExplicitNavigationCommand()
+    {
+        const string conversationId = "conv-1";
+        _llmRepository.GetConversationByConversationIdAsync(conversationId)
+            .Returns(new LLMConversation { MessageCount = 2 });
+
+        var request = new LLMRequest { Message = "Öffne Mitarbeiter", ConversationId = conversationId };
+
+        var result = await _controller.ProcessMessage(request);
+
+        var ok = result.Result as OkObjectResult;
+        Assert.That(ok, Is.Not.Null);
+        var response = ok!.Value as LLMResponse;
+        Assert.That(response!.NavigateTo, Is.EqualTo(FastPathRoute));
+        Assert.That(response.ActionPerformed, Is.True);
+        await _mediator.DidNotReceive().Send(Arg.Any<ProcessLLMMessageCommand>());
+    }
+
+    [Test]
+    public async Task FastPath_Suppressed_MidConversation_WhenBareAnswerMatchesTargetExactly()
+    {
+        const string conversationId = "conv-1";
+        _llmRepository.GetConversationByConversationIdAsync(conversationId)
+            .Returns(new LLMConversation { MessageCount = 2 });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>())
+            .Returns(new LLMResponse { Message = "Wie lautet die Adresse?" });
+
+        var request = new LLMRequest { Message = "Mitarbeiter", ConversationId = conversationId };
+
+        await _controller.ProcessMessage(request);
+
+        await _mediator.Received(1).Send(Arg.Any<ProcessLLMMessageCommand>());
     }
 
     [Test]

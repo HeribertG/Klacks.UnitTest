@@ -38,7 +38,7 @@ public class ContextAssemblyPipelineTests
         _sentiment = Substitute.For<ISentimentAnalyzer>();
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
 
-        _identity.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _identity.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(IdentityText);
         _ontology.RenderWorldModelBlock(Arg.Any<int>()).Returns(OntologyText);
         _memory.RetrieveRelevantMemoriesAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
@@ -60,6 +60,28 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
         Assert.That(result, Does.Contain(OntologyText));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_VoiceMode_SuppressesTextOnlyAffordancesInIdentityPrompt()
+    {
+        var agentId = Guid.NewGuid();
+
+        await _sut.AssembleSoulAndMemoryPromptAsync(agentId, "hello there", isVoiceMode: true);
+
+        await _identity.Received(1).GetIdentityPromptAsync(
+            agentId, Arg.Any<string?>(), true, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_TextMode_KeepsTextOnlyAffordancesInIdentityPrompt()
+    {
+        var agentId = Guid.NewGuid();
+
+        await _sut.AssembleSoulAndMemoryPromptAsync(agentId, "hello there", isVoiceMode: false);
+
+        await _identity.Received(1).GetIdentityPromptAsync(
+            agentId, Arg.Any<string?>(), false, Arg.Any<CancellationToken>());
     }
 
     [Test]

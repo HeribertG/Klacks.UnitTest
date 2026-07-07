@@ -47,7 +47,7 @@ public class GreetingComposerTests
         _settingsReader = Substitute.For<ISettingsReader>();
 
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(new Agent { Id = Guid.NewGuid() });
-        _identityProvider.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _identityProvider.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns("You are Klacksy.");
         _searchFactory.CreateAsync(Arg.Any<CancellationToken>()).Returns((IWebSearchProvider?)null);
         _settingsReader.GetSetting(Arg.Any<string>()).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);

@@ -106,6 +106,101 @@ public class RecipeEngineServiceSemanticFallbackTests
     }
 
     [Test]
+    public async Task MessageWithoutTriggerKeyword_GreyZoneHit_ResolvesButNeedsConfirmation()
+    {
+        // A cross-lingual query can land in the grey zone (0.4..0.7) against the de/en embedding text.
+        // It must still surface the recipe, but only behind the confirmation gate — never start directly.
+        var message = "Neuen Mitarbeiter, bitte.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.55));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        plan.NeedsConfirmation.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task MessageWithoutTriggerKeyword_BelowGreyZone_DoesNotResolve()
+    {
+        var message = "Nachricht knapp unter der Grauzone.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.39));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task MessageWithoutTriggerKeyword_TwoCloseCandidates_SurfacesAlternativeInConfirmation()
+    {
+        // Two recipes match almost equally: the confirmation question must offer both interpretations
+        // instead of the engine silently railroading the user into the top pick.
+        var groupRecipe = new AgentRecipe
+        {
+            Id = Guid.NewGuid(),
+            Name = "create-group",
+            Goal = "Create a new group.",
+            TriggerJson = """{"allOf":[{"anyWordStart":["gruppe"]}],"noneOf":[]}""",
+            StepsJson = """[{"kind":"mutate","skill":"create_group"}]""",
+            IsEnabled = true,
+        };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRecipe> { OnboardRecipe, groupRecipe });
+
+        var message = "Etwas Neues anlegen.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new RetrievalResult(
+            [
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "x" }, 0.72),
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "create-group", Text = "x" }, 0.70),
+            ]));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        plan.NeedsConfirmation.ShouldBeTrue();
+        plan.AlternativeGoal.ShouldBe("Create a new group.");
+        plan.ConfirmationInstruction.ShouldContain("Create a new group.");
+        plan.ConfirmationInstruction.ShouldContain(OnboardRecipe.Goal);
+        plan.ConfirmationInstruction.ShouldNotContain("yes/no");
+    }
+
+    [Test]
+    public async Task MessageWithoutTriggerKeyword_SecondCandidateOutsideMargin_NoAlternative()
+    {
+        var groupRecipe = new AgentRecipe
+        {
+            Id = Guid.NewGuid(),
+            Name = "create-group",
+            Goal = "Create a new group.",
+            TriggerJson = """{"allOf":[{"anyWordStart":["gruppe"]}],"noneOf":[]}""",
+            StepsJson = """[{"kind":"mutate","skill":"create_group"}]""",
+            IsEnabled = true,
+        };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRecipe> { OnboardRecipe, groupRecipe });
+
+        var message = "Etwas Neues anlegen.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new RetrievalResult(
+            [
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "x" }, 0.82),
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "create-group", Text = "x" }, 0.55),
+            ]));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.AlternativeGoal.ShouldBeNull();
+        plan.ConfirmationInstruction.ShouldContain(OnboardRecipe.Goal);
+        plan.ConfirmationInstruction.ShouldContain("yes/no");
+    }
+
+    [Test]
     public async Task MessageWithoutTriggerKeyword_NoRetrievalHits_DoesNotResolve()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";

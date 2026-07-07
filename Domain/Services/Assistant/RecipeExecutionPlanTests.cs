@@ -113,16 +113,39 @@ public class RecipeExecutionPlanTests
     }
 
     [Test]
-    public void Ambiguous_Result_Deactivates_The_Plan()
+    public void Ambiguous_Result_Rewinds_To_Ask_For_Disambiguation()
     {
         // Arrange
         var plan = new RecipeExecutionPlan("r", AddClientToGroupSteps());
         plan.PrefillSlots(new Dictionary<string, string> { ["groupName"] = "Be" });
         plan.AdvanceOverSatisfied();
 
-        // Act — two groups match, so capture is impossible
+        // Act — two groups match, so capture is impossible; instead of deactivating, the plan clears the
+        // input slot and rewinds to the ask so the user can disambiguate.
         plan.Observe([SuccessCall("list_groups",
             $"{{\"Groups\":[{{\"Id\":\"{GroupGuid}\"}},{{\"Id\":\"{ClientGuid}\"}}],\"TotalCount\":2}}")]);
+
+        // Assert — still active, back on the groupName ask, slot cleared
+        Assert.That(plan.IsActive, Is.True);
+        Assert.That(plan.CurrentIsAsk, Is.True);
+        Assert.That(plan.CurrentAskPrompt, Is.EqualTo("Which group?"));
+        Assert.That(plan.Slots.ContainsKey("groupName"), Is.False);
+    }
+
+    [Test]
+    public void Second_Ambiguous_Result_After_Rewind_Deactivates_The_Plan()
+    {
+        // Arrange — the rewind is a one-shot recovery; a second ambiguous capture must not loop forever.
+        var plan = new RecipeExecutionPlan("r", AddClientToGroupSteps());
+        plan.PrefillSlots(new Dictionary<string, string> { ["groupName"] = "Be" });
+        plan.AdvanceOverSatisfied();
+        var ambiguous = $"{{\"Groups\":[{{\"Id\":\"{GroupGuid}\"}},{{\"Id\":\"{ClientGuid}\"}}],\"TotalCount\":2}}";
+
+        // Act — first ambiguous capture rewinds, user re-answers, still ambiguous
+        plan.Observe([SuccessCall("list_groups", ambiguous)]);
+        plan.FillSlot("groupName", "Be");
+        plan.AdvanceOverSatisfied();
+        plan.Observe([SuccessCall("list_groups", ambiguous)]);
 
         // Assert
         Assert.That(plan.IsActive, Is.False);
