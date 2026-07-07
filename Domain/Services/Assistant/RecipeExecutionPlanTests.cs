@@ -152,6 +152,43 @@ public class RecipeExecutionPlanTests
     }
 
     [Test]
+    public void Rewind_Sets_CaptureRewindUsed_So_It_Can_Be_Persisted()
+    {
+        // Arrange
+        var plan = new RecipeExecutionPlan("r", AddClientToGroupSteps());
+        plan.PrefillSlots(new Dictionary<string, string> { ["groupName"] = "Be" });
+        plan.AdvanceOverSatisfied();
+
+        // Act — first ambiguous capture rewinds and marks the one-shot guard spent
+        plan.Observe([SuccessCall("list_groups",
+            $"{{\"Groups\":[{{\"Id\":\"{GroupGuid}\"}},{{\"Id\":\"{ClientGuid}\"}}],\"TotalCount\":2}}")]);
+
+        // Assert — the flag is exposed so Persist carries it into the pending recipe
+        Assert.That(plan.CaptureRewindUsed, Is.True);
+    }
+
+    [Test]
+    public void Resumed_Plan_With_Spent_Rewind_Deactivates_On_Next_Ambiguity()
+    {
+        // Arrange — mirrors the real flow: a prior turn spent the rewind, this turn is a FRESH plan
+        // rebuilt from the pending store with captureRewindUsed restored. Without persisting the flag the
+        // guard would re-arm here and the recipe would re-ask forever.
+        var plan = new RecipeExecutionPlan(
+            "r", AddClientToGroupSteps(),
+            new Dictionary<string, string> { ["groupName"] = "Be" },
+            stepIndex: 0,
+            captureRewindUsed: true);
+        plan.AdvanceOverSatisfied();
+
+        // Act — the search is still ambiguous
+        plan.Observe([SuccessCall("list_groups",
+            $"{{\"Groups\":[{{\"Id\":\"{GroupGuid}\"}},{{\"Id\":\"{ClientGuid}\"}}],\"TotalCount\":2}}")]);
+
+        // Assert — no second rewind; the plan deactivates
+        Assert.That(plan.IsActive, Is.False);
+    }
+
+    [Test]
     public void Failed_Call_Does_Not_Advance()
     {
         // Arrange
