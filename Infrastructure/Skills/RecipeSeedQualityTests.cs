@@ -6,9 +6,12 @@
 /// build red instead of being discovered (and reworked) live. Checks naming (english kebab-case,
 /// unique), unique sort order, that only the executed step kinds ask/search/mutate are used (guard and
 /// verify are dead and must never appear), that every referenced skill exists in the skill seeds, that
-/// every inject value is a $slot reference resolving to an ask slot or a capture alias, that ask and
-/// search/mutate steps are structurally complete, and that no two recipes' triggers can both match the
-/// same realistic sentence (using the production RecipeTriggerMatcher itself, not a reimplementation).
+/// every inject value is either a $slot reference resolving to an ask slot or a capture alias or a
+/// non-blank literal string constant, that ask and search/mutate steps are structurally complete, that
+/// every recipe carries goalTranslations and every ask step carries promptTranslations for the core
+/// languages (de/en/fr/it) so deterministic fallbacks never leak English meta-prompts, and that no two
+/// recipes' triggers can both match the same realistic sentence (using the production
+/// RecipeTriggerMatcher itself, not a reimplementation).
 /// </summary>
 
 using System.Text.Json;
@@ -40,14 +43,20 @@ public class RecipeSeedQualityTests
     private static readonly HashSet<string> ExecutedStepKinds =
         new(StringComparer.Ordinal) { "ask", "search", "mutate" };
 
+    private static readonly string[] CoreLanguages = ["de", "en", "fr", "it"];
+
     private static readonly Regex KebabCase = new("^[a-z][a-z0-9]*(-[a-z0-9]+)*$", RegexOptions.Compiled);
+
+    private sealed record InjectValue(string Reference, bool IsString);
 
     private sealed record RecipeStep(
         string Kind, string? Slot, string? Prompt, string? Skill,
-        IReadOnlyList<string> InjectRefs, string? CaptureAlias);
+        IReadOnlyList<InjectValue> InjectValues, string? CaptureAlias,
+        IReadOnlyDictionary<string, string>? PromptTranslations);
 
     private sealed record Recipe(
-        string Name, int SortOrder, bool HasTriggerAllOf, IReadOnlyList<RecipeStep> Steps);
+        string Name, int SortOrder, bool HasTriggerAllOf, IReadOnlyList<RecipeStep> Steps,
+        IReadOnlyDictionary<string, string>? GoalTranslations);
 
     private static List<Recipe> LoadRecipes()
     {
@@ -73,14 +82,14 @@ public class RecipeSeedQualityTests
                     var prompt = step.TryGetProperty("prompt", out var p) ? p.GetString() : null;
                     var skill = step.TryGetProperty("skill", out var sk) ? sk.GetString() : null;
 
-                    var injectRefs = new List<string>();
+                    var injectValues = new List<InjectValue>();
                     if (step.TryGetProperty("inject", out var inject) && inject.ValueKind == JsonValueKind.Object)
                     {
                         foreach (var prop in inject.EnumerateObject())
                         {
-                            injectRefs.Add(prop.Value.ValueKind == JsonValueKind.String
-                                ? prop.Value.GetString() ?? string.Empty
-                                : prop.Value.GetRawText());
+                            injectValues.Add(prop.Value.ValueKind == JsonValueKind.String
+                                ? new InjectValue(prop.Value.GetString() ?? string.Empty, true)
+                                : new InjectValue(prop.Value.GetRawText(), false));
                         }
                     }
 
@@ -92,14 +101,35 @@ public class RecipeSeedQualityTests
                         captureAlias = idx >= 0 ? text[(idx + 4)..].Trim() : null;
                     }
 
-                    steps.Add(new RecipeStep(kind, slot, prompt, skill, injectRefs, captureAlias));
+                    steps.Add(new RecipeStep(
+                        kind, slot, prompt, skill, injectValues, captureAlias,
+                        ReadTranslations(step, "promptTranslations")));
                 }
             }
 
-            recipes.Add(new Recipe(name, sortOrder, hasAllOf, steps));
+            recipes.Add(new Recipe(name, sortOrder, hasAllOf, steps, ReadTranslations(element, "goalTranslations")));
         }
 
         return recipes;
+    }
+
+    private static IReadOnlyDictionary<string, string>? ReadTranslations(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var translations)
+            || translations.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in translations.EnumerateObject())
+        {
+            map[prop.Name] = prop.Value.ValueKind == JsonValueKind.String
+                ? prop.Value.GetString() ?? string.Empty
+                : string.Empty;
+        }
+
+        return map;
     }
 
     [Test]
@@ -221,8 +251,11 @@ public class RecipeSeedQualityTests
     }
 
     [Test]
-    public void InjectValues_MustBeSlotReferences_ResolvingToAskSlotOrCaptureAlias()
+    public void InjectValues_MustBeResolvableSlotReferences_OrNonBlankStringLiterals()
     {
+        // The engine resolves a $-prefixed inject value from the slot bag and passes any other string
+        // through verbatim as a literal constant (RecipeExecutionPlan.ResolveReference). A literal must
+        // be a non-blank JSON string; a $-reference must resolve to an ask slot or a capture alias.
         var violations = new List<string>();
 
         foreach (var recipe in LoadRecipes())
@@ -243,16 +276,26 @@ public class RecipeSeedQualityTests
 
             foreach (var step in recipe.Steps)
             {
-                foreach (var reference in step.InjectRefs)
+                foreach (var value in step.InjectValues)
                 {
-                    if (!reference.StartsWith('$'))
+                    if (!value.IsString)
                     {
-                        violations.Add($"{recipe.Name}: inject value '{reference}' is not a $slot reference " +
-                            "(constants must be passed to the model via the step note, not via inject)");
+                        violations.Add($"{recipe.Name}: inject value '{value.Reference}' is not a JSON string " +
+                            "(the engine's inject bag is string-typed; literals must be strings)");
                         continue;
                     }
 
-                    var slot = reference[1..];
+                    if (!value.Reference.StartsWith('$'))
+                    {
+                        if (string.IsNullOrWhiteSpace(value.Reference))
+                        {
+                            violations.Add($"{recipe.Name}: inject contains a blank literal value");
+                        }
+
+                        continue;
+                    }
+
+                    var slot = value.Reference[1..];
                     if (!definedSlots.Contains(slot))
                     {
                         violations.Add($"{recipe.Name}: inject references '${slot}' which is not defined by any " +
@@ -264,6 +307,58 @@ public class RecipeSeedQualityTests
 
         violations.ShouldBeEmpty(string.Join("; ", violations));
     }
+
+    [Test]
+    public void EveryRecipe_MustHaveGoalTranslations_ForAllCoreLanguages()
+    {
+        var violations = new List<string>();
+
+        foreach (var recipe in LoadRecipes())
+        {
+            var missing = MissingCoreLanguages(recipe.GoalTranslations);
+            if (missing.Count > 0)
+            {
+                violations.Add($"{recipe.Name}: goalTranslations missing or blank for {string.Join(", ", missing)}");
+            }
+        }
+
+        violations.ShouldBeEmpty(
+            "Every recipe must carry non-blank goalTranslations for the core languages (de/en/fr/it): the " +
+            "deterministic confirmation fallback embeds the localized goal instead of the raw English goal " +
+            "text. Violations: " + string.Join("; ", violations));
+    }
+
+    [Test]
+    public void EveryAskStep_MustHavePromptTranslations_ForAllCoreLanguages()
+    {
+        var violations = new List<string>();
+
+        foreach (var recipe in LoadRecipes())
+        {
+            foreach (var step in recipe.Steps.Where(s => s.Kind == "ask"))
+            {
+                var missing = MissingCoreLanguages(step.PromptTranslations);
+                if (missing.Count > 0)
+                {
+                    violations.Add($"{recipe.Name}/{step.Slot}: promptTranslations missing or blank for " +
+                        string.Join(", ", missing));
+                }
+            }
+        }
+
+        violations.ShouldBeEmpty(
+            "Every ask step must carry non-blank promptTranslations for the core languages (de/en/fr/it): " +
+            "when the model fails to produce a question-shaped reply, the deterministic fallback shows the " +
+            "localized question instead of the raw English ask meta-prompt. Violations: " +
+            string.Join("; ", violations));
+    }
+
+    private static List<string> MissingCoreLanguages(IReadOnlyDictionary<string, string>? translations) =>
+        CoreLanguages
+            .Where(lang => translations == null
+                           || !translations.TryGetValue(lang, out var text)
+                           || string.IsNullOrWhiteSpace(text))
+            .ToList();
 
     [Test]
     public void AskSteps_MustHaveSlotAndPrompt()

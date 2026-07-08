@@ -3,8 +3,9 @@
 /// <summary>
 /// Unit tests for the data-driven recipe execution plan: ask steps whose slot is filled are skipped
 /// (don't re-ask what was said / GUID fast-path), search steps capture the lone matching id into a slot
-/// and deactivate on an ambiguous result, slot values are injected into the forced skill's parameters,
-/// non-injected slots surface as known values, and resume restores the slot bag and step index.
+/// and deactivate on an ambiguous result, slot values ($-references) and literal constants are injected
+/// into the forced skill's parameters, non-injected slots surface as known values, goal/prompt
+/// translations are exposed for the localized fallbacks, and resume restores the slot bag and step index.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -300,5 +301,118 @@ public class RecipeExecutionPlanTests
         // Assert
         Assert.That(plan.Goal, Is.EqualTo("Onboard a new employee end to end."));
         Assert.That(plan.Name, Is.EqualTo("r"));
+    }
+
+    private static List<RecipeStep> SearchWithLiteralInjectSteps() =>
+    [
+        new RecipeStep { Kind = RecipeStepKinds.Ask, Slot = "clientName", Prompt = "Which customer?" },
+        new RecipeStep
+        {
+            Kind = RecipeStepKinds.Search, Skill = "search_employees",
+            Inject = new Dictionary<string, string> { ["searchTerm"] = "$clientName", ["entityType"] = "Customer" },
+            Capture = "Results[].Id as clientId"
+        }
+    ];
+
+    [Test]
+    public void Literal_Inject_Value_Is_Passed_Through_As_Constant()
+    {
+        // Arrange — the recipe pins entityType='Customer' deterministically instead of via a note
+        var plan = new RecipeExecutionPlan("r", SearchWithLiteralInjectSteps());
+        plan.PrefillSlots(new Dictionary<string, string> { ["clientName"] = "Müller" });
+        plan.AdvanceOverSatisfied();
+
+        // Act
+        var injections = plan.GetParameterInjections("search_employees");
+
+        // Assert — the $slot resolves from the bag, the literal is passed through verbatim
+        Assert.That(injections["searchTerm"], Is.EqualTo("Müller"));
+        Assert.That(injections["entityType"], Is.EqualTo("Customer"));
+    }
+
+    [Test]
+    public void Literal_Inject_Is_Not_Treated_As_A_Slot_In_Known_Values()
+    {
+        // Arrange — a slot whose NAME equals a literal inject value must still surface as a known value
+        var plan = new RecipeExecutionPlan("r", SearchWithLiteralInjectSteps());
+        plan.PrefillSlots(new Dictionary<string, string> { ["clientName"] = "Müller", ["Customer"] = "irrelevant" });
+        plan.AdvanceOverSatisfied();
+
+        // Act
+        var knownValues = plan.GetKnownValuesNote();
+
+        // Assert — 'Customer' is a literal, not an injected slot reference, so the slot is not excluded
+        Assert.That(knownValues, Does.Contain("Customer = irrelevant"));
+    }
+
+    [Test]
+    public void Ambiguous_Result_With_Literal_Inject_Still_Rewinds_On_The_Slot_Reference()
+    {
+        // Arrange — the rewind must skip the literal and clear the $clientName ask slot
+        var plan = new RecipeExecutionPlan("r", SearchWithLiteralInjectSteps());
+        plan.PrefillSlots(new Dictionary<string, string> { ["clientName"] = "M" });
+        plan.AdvanceOverSatisfied();
+
+        // Act — two customers match, capture is ambiguous
+        plan.Observe([SuccessCall("search_employees",
+            $"{{\"Results\":[{{\"Id\":\"{GroupGuid}\"}},{{\"Id\":\"{ClientGuid}\"}}],\"TotalCount\":2}}")]);
+
+        // Assert — back on the clientName ask, slot cleared, plan still active
+        Assert.That(plan.IsActive, Is.True);
+        Assert.That(plan.CurrentIsAsk, Is.True);
+        Assert.That(plan.Slots.ContainsKey("clientName"), Is.False);
+    }
+
+    [Test]
+    public void CurrentAskPromptTranslations_Are_Exposed_On_An_Ask_Step()
+    {
+        // Arrange
+        var translations = new Dictionary<string, string> { ["de"] = "Welche Gruppe?", ["en"] = "Which group?" };
+        var steps = new List<RecipeStep>
+        {
+            new() { Kind = RecipeStepKinds.Ask, Slot = "groupName", Prompt = "Which group?", PromptTranslations = translations }
+        };
+        var plan = new RecipeExecutionPlan("r", steps);
+
+        // Act
+        plan.AdvanceOverSatisfied();
+
+        // Assert
+        Assert.That(plan.CurrentAskPromptTranslations, Is.SameAs(translations));
+    }
+
+    [Test]
+    public void CurrentAskPromptTranslations_Are_Null_On_A_Push_Step()
+    {
+        // Arrange — plan positioned on the search step
+        var plan = new RecipeExecutionPlan("r", SearchWithLiteralInjectSteps());
+        plan.PrefillSlots(new Dictionary<string, string> { ["clientName"] = "Müller" });
+
+        // Act
+        plan.AdvanceOverSatisfied();
+
+        // Assert
+        Assert.That(plan.CurrentIsAsk, Is.False);
+        Assert.That(plan.CurrentAskPromptTranslations, Is.Null);
+    }
+
+    [Test]
+    public void Goal_And_AlternativeGoal_Translations_Are_Carried()
+    {
+        // Arrange
+        var goalTranslations = new Dictionary<string, string> { ["de"] = "Eine neue Gruppe erstellen." };
+        var alternativeTranslations = new Dictionary<string, string> { ["de"] = "Einen Dienst hinzufügen." };
+
+        // Act
+        var plan = new RecipeExecutionPlan(
+            "r", AddClientToGroupSteps(),
+            goal: "Create a new group.",
+            alternativeGoal: "Add a shift.",
+            goalTranslations: goalTranslations,
+            alternativeGoalTranslations: alternativeTranslations);
+
+        // Assert
+        Assert.That(plan.GoalTranslations, Is.SameAs(goalTranslations));
+        Assert.That(plan.AlternativeGoalTranslations, Is.SameAs(alternativeTranslations));
     }
 }

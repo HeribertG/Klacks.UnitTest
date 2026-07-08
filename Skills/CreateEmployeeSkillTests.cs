@@ -24,6 +24,7 @@ public class CreateEmployeeSkillTests
     private IUnitOfWork _unitOfWork = null!;
     private ICountryResolver _countryResolver = null!;
     private CreateEmployeeSkill _skill = null!;
+    private Client? _persistedClient;
 
     private static Countries MakeCountry(string abbr, string prefix, string nameDe, string nameEn) => new()
     {
@@ -48,6 +49,12 @@ public class CreateEmployeeSkillTests
         _countryResolver.ResolveAsync(Arg.Is<string?>(s => string.IsNullOrWhiteSpace(s)), Arg.Any<CancellationToken>())
             .Returns((Countries?)null);
         _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns(ch);
+
+        _persistedClient = null;
+        _clientRepository.Add(Arg.Do<Client>(c => _persistedClient = c)).Returns(Task.CompletedTask);
+        _clientRepository.GetNoTracking(Arg.Any<Guid>()).Returns(_ => _persistedClient);
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
+            .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
 
         _skill = new CreateEmployeeSkill(_clientRepository, _searchRepository, _unitOfWork, _countryResolver);
     }
@@ -300,6 +307,26 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(captured!.Addresses.Single().State, Is.EqualTo("BE"));
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenDatabaseVerificationFails()
+    {
+        _clientRepository.GetNoTracking(Arg.Any<Guid>()).Returns((Client?)null);
+
+        var result = await _skill.ExecuteAsync(Ctx(), CompleteParameters());
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("verification failed"));
+    }
+
+    [Test]
+    public async Task SuccessMessage_CarriesVerifiedMarker()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), CompleteParameters());
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Does.Contain("verified"));
     }
 
     [TestCase("0791021402", "CH", "+41", "791021402")]

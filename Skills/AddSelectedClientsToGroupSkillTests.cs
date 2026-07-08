@@ -37,7 +37,8 @@ public class AddSelectedClientsToGroupSkillTests
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
-        _skill = new AddSelectedClientsToGroupSkill(_groupRepository, _mediator, _companyClock);
+        _skill = new AddSelectedClientsToGroupSkill(
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), _mediator, _companyClock);
 
         _groupRepository.List().Returns(new List<Group>
         {

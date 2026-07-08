@@ -40,7 +40,7 @@ public class AddClientToNearestGroupSkillTests
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToNearestGroupSkill(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
+            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _companyClock);
 
         _clientRepository.Get(ClientId).Returns(new Client
         {

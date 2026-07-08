@@ -38,7 +38,8 @@ public class AddShiftToGroupSkillTests
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
-        _skill = new AddShiftToGroupSkill(_shiftRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
+        _skill = new AddShiftToGroupSkill(
+            _shiftRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _companyClock);
 
         _shiftRepository.Exists(ShiftId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });

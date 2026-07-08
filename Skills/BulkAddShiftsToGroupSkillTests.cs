@@ -38,7 +38,8 @@ public class BulkAddShiftsToGroupSkillTests
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _mediator = Substitute.For<IMediator>();
-        _skill = new BulkAddShiftsToGroupSkill(_groupRepository, _groupItemRepository, _unitOfWork, _mediator);
+        _skill = new BulkAddShiftsToGroupSkill(
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _mediator);
 
         _groupRepository.List().Returns(new List<Group> { new() { Id = BernGroupId, Name = "Bern" } });
 

@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for SkillMatchingEngine.TopKeywordMatchedSkillNames — the deterministic keyword
 /// guarantee feeding both skill-selection pipelines. Verifies keyword and synonym matching across
-/// languages, the minimum-length noise guard, longest-match-first ranking and the guarantee cap.
+/// languages, the minimum-length noise guard, the ranking (distinct matched terms, then longest
+/// match, then read-only before mutating, then name) and the guarantee cap.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant;
@@ -14,11 +15,19 @@ namespace Klacks.UnitTest.Application.Services.Assistant;
 [TestFixture]
 public class SkillMatchingEngineTests
 {
-    private static AgentSkill Skill(string name, string[]? keywords = null, Dictionary<string, List<string>>? synonyms = null)
+    private const string QueryCategory = "query";
+    private const string CrudCategory = "crud";
+
+    private static AgentSkill Skill(
+        string name,
+        string[]? keywords = null,
+        Dictionary<string, List<string>>? synonyms = null,
+        string category = CrudCategory)
     {
         return new AgentSkill
         {
             Name = name,
+            Category = category,
             TriggerKeywords = keywords == null ? "[]" : System.Text.Json.JsonSerializer.Serialize(keywords),
             Synonyms = synonyms
         };
@@ -97,5 +106,70 @@ public class SkillMatchingEngineTests
         var skills = new[] { Skill("create_employee", ["mitarbeiter erstellen"]) };
 
         SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "wie ist das Wetter heute?").ShouldBeEmpty();
+    }
+
+    [Test]
+    public void TopKeywordMatchedSkillNames_EntitySignalTie_ReadOnlySkillsAreNotDisplacedByMutatingOnes()
+    {
+        string[] sharedKeyword = ["mitarbeiter"];
+        var skills = new[]
+        {
+            Skill("add_client_to_group", sharedKeyword, category: CrudCategory),
+            Skill("assign_contract_to_client", sharedKeyword, category: CrudCategory),
+            Skill("create_employee", sharedKeyword, category: CrudCategory),
+            Skill("delete_client", sharedKeyword, category: CrudCategory),
+            Skill("email_schedule_to_client", sharedKeyword, category: CrudCategory),
+            Skill("get_client_details", sharedKeyword, category: QueryCategory),
+            Skill("search_employees", sharedKeyword, category: QueryCategory),
+            Skill("update_client", sharedKeyword, category: CrudCategory)
+        };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "zeige mir die mitarbeiter im team ost");
+
+        result.Count.ShouldBe(SkillMatchingEngine.GuaranteedMatchCap);
+        result[0].ShouldBe("get_client_details");
+        result[1].ShouldBe("search_employees");
+    }
+
+    [Test]
+    public void TopKeywordMatchedSkillNames_MoreDistinctMatchedKeywords_BeatSingleLongerMatch()
+    {
+        var skills = new[]
+        {
+            Skill("skill_one_long_hit", ["mitarbeiterverzeichnis"]),
+            Skill("skill_two_hits", ["suche", "mitarbeiter"])
+        };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "suche im mitarbeiterverzeichnis");
+
+        result.ShouldBe(["skill_two_hits", "skill_one_long_hit"]);
+    }
+
+    [Test]
+    public void TopKeywordMatchedSkillNames_EqualMatches_PrefersReadOnlyOverMutating()
+    {
+        var skills = new[]
+        {
+            Skill("aaa_mutating_skill", ["dienstplan"], category: CrudCategory),
+            Skill("zzz_readonly_skill", ["dienstplan"], category: QueryCategory)
+        };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "zeig mir den dienstplan");
+
+        result.ShouldBe(["zzz_readonly_skill", "aaa_mutating_skill"]);
+    }
+
+    [Test]
+    public void TopKeywordMatchedSkillNames_EqualMatchesAndRisk_FallsBackToNameOrder()
+    {
+        var skills = new[]
+        {
+            Skill("skill_beta", ["dienstplan"], category: QueryCategory),
+            Skill("skill_alpha", ["dienstplan"], category: QueryCategory)
+        };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "zeig mir den dienstplan");
+
+        result.ShouldBe(["skill_alpha", "skill_beta"]);
     }
 }

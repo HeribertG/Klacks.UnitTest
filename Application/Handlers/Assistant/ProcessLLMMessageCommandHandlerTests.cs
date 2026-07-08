@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Verifies the page-explain route guarantee in the chat skill selection: the explain_page_*
-/// skill matching PageContext.CurrentRoute is always offered to the LLM, independent of
-/// retrieval quality, and never duplicated when retrieval already surfaced it.
+/// Verifies the non-streaming chat path (ChatController → ProcessLLMMessageCommandHandler) against
+/// the shared SkillToolsetAssembler: the page-explain route guarantee, the retrieval failure fallback,
+/// the co-required expansion and the domain-skill ontology gate all apply on this path exactly as on
+/// the streaming path.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
@@ -27,12 +28,14 @@ public class ProcessLLMMessageCommandHandlerTests
 {
     private const string DashboardSkillName = "explain_page_dashboard";
     private const string EmployeesSkillName = "explain_page_employees";
+    private const string NeighbourSkillName = "list_contracts";
 
     private ILLMService _llmService = null!;
     private IAgentRepository _agentRepository = null!;
     private ISkillCacheService _skillCache = null!;
     private IKnowledgeRetrievalService _retrieval = null!;
     private IRetrievalQueryBuilder _retrievalQueryBuilder = null!;
+    private ISkillRetrievalExpander _expander = null!;
     private IPlanningScopeEnricher _enricher = null!;
     private IPendingUserNoteRepository _pendingUserNoteRepository = null!;
     private RecipeEngineService _recipeEngine = null!;
@@ -49,6 +52,11 @@ public class ProcessLLMMessageCommandHandlerTests
         _retrievalQueryBuilder = Substitute.For<IRetrievalQueryBuilder>();
         _retrievalQueryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.ArgAt<string>(0));
+        _expander = Substitute.For<ISkillRetrievalExpander>();
+        _expander.ExpandAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>());
         _enricher = Substitute.For<IPlanningScopeEnricher>();
         _pendingUserNoteRepository = Substitute.For<IPendingUserNoteRepository>();
         _pendingUserNoteRepository.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -85,12 +93,18 @@ public class ProcessLLMMessageCommandHandlerTests
             .Returns(new LLMResponse());
     }
 
+    private ISkillToolsetAssembler CreateAssembler()
+    {
+        return new SkillToolsetAssembler(
+            _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
+            _pendingUserNoteRepository, _recipeEngine,
+            Substitute.For<ILogger<SkillToolsetAssembler>>());
+    }
+
     private ProcessLLMMessageCommandHandler CreateHandler()
     {
         return new ProcessLLMMessageCommandHandler(
-            _llmService, _agentRepository, _skillCache, _retrieval, _retrievalQueryBuilder,
-            _enricher, _pendingUserNoteRepository, _recipeEngine,
-            Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
+            _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher);
     }
 
     private static AgentSkill CreateSkill(string name)
@@ -114,6 +128,18 @@ public class ProcessLLMMessageCommandHandlerTests
                 ? null
                 : new AssistantPageContext { CurrentRoute = currentRoute }
         };
+    }
+
+    private RetrievalResult RetrievalHit(string skillName)
+    {
+        var entry = new KnowledgeEntry
+        {
+            Id = Guid.NewGuid(),
+            Kind = KnowledgeEntryKind.Skill,
+            SourceId = skillName,
+            Text = $"{skillName}. Explains a page."
+        };
+        return new RetrievalResult([new RetrievalCandidate(entry, 0.9)]);
     }
 
     [Test]
@@ -149,17 +175,10 @@ public class ProcessLLMMessageCommandHandlerTests
     [Test]
     public async Task Handle_SkillAlreadyRetrieved_IsNotDuplicated()
     {
-        var entry = new KnowledgeEntry
-        {
-            Id = Guid.NewGuid(),
-            Kind = KnowledgeEntryKind.Skill,
-            SourceId = DashboardSkillName,
-            Text = "explain_page_dashboard. Explains a page."
-        };
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
                 Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new RetrievalResult([new RetrievalCandidate(entry, 0.9)]));
+            .Returns(RetrievalHit(DashboardSkillName));
 
         await CreateHandler().Handle(CreateCommand("/workplace/dashboard"), CancellationToken.None);
 
@@ -185,5 +204,60 @@ public class ProcessLLMMessageCommandHandlerTests
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.AvailableFunctions.ShouldContain(f => f.Name == DashboardSkillName);
         _capturedContext.AvailableFunctions.ShouldNotContain(f => f.Name == EmployeesSkillName);
+        _capturedContext.HasDomainSkillContext.ShouldBe(true);
+    }
+
+    [Test]
+    public async Task Handle_ConversationalTurn_SetsHasDomainSkillContextFalse()
+    {
+        // Ontology gate on the non-streaming path: empty retrieval and no guarantee firing means a
+        // purely conversational turn, so the world-model ontology block may be omitted.
+        await CreateHandler().Handle(CreateCommand(null), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.HasDomainSkillContext.ShouldBe(false);
+    }
+
+    [Test]
+    public async Task Handle_RetrievalHit_SetsHasDomainSkillContextTrue()
+    {
+        _retrieval.RetrieveAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RetrievalHit(DashboardSkillName));
+
+        await CreateHandler().Handle(CreateCommand(null), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.HasDomainSkillContext.ShouldBe(true);
+    }
+
+    [Test]
+    public async Task Handle_ExpanderNeighbour_IsIncludedInToolset()
+    {
+        // Co-required expansion on the non-streaming path: a high-confidence neighbour returned by
+        // ISkillRetrievalExpander must reach the LLM toolset exactly as on the streaming path.
+        var neighbour = CreateSkill(NeighbourSkillName);
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                CreateSkill(DashboardSkillName),
+                CreateSkill(EmployeesSkillName),
+                neighbour
+            });
+        _retrieval.RetrieveAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RetrievalHit(DashboardSkillName));
+        _expander.ExpandAsync(
+                _agent.Id, Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill> { neighbour });
+
+        await CreateHandler().Handle(CreateCommand(null), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.AvailableFunctions.ShouldContain(f => f.Name == DashboardSkillName);
+        _capturedContext.AvailableFunctions.ShouldContain(f => f.Name == NeighbourSkillName);
     }
 }

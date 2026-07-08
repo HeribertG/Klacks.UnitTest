@@ -32,6 +32,8 @@ public class SkillRiskClassifierTests
     [TestCase("delete_client")]
     [TestCase("delete_membership")]
     [TestCase("create_personal_access_token")]
+    [TestCase("close_period")]
+    [TestCase("create_user")]
     public void Classify_SensitiveSkills_ReturnsSensitive(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
@@ -50,7 +52,7 @@ public class SkillRiskClassifierTests
     [TestCase("add_break")]
     [TestCase("confirm_work")]
     [TestCase("approve_day")]
-    [TestCase("close_period")]
+    [TestCase("reopen_period")]
     [TestCase("create_branch")]
     [TestCase("create_contract")]
     [TestCase("delete_work")]

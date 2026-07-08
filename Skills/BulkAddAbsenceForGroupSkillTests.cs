@@ -44,7 +44,7 @@ public class BulkAddAbsenceForGroupSkillTests
         _breakRepository = Substitute.For<IBreakRepository>();
         _mediator = Substitute.For<IMediator>();
         _skill = new BulkAddAbsenceForGroupSkill(
-            _groupRepository, _absenceRepository, _memberService, _breakRepository, _mediator);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), _absenceRepository, _memberService, _breakRepository, _mediator);
 
         _groupRepository.List().Returns(new List<Group> { new() { Id = BernGroupId, Name = "Bern" } });
         _absenceRepository.List().Returns(new List<Absence>
@@ -129,6 +129,40 @@ public class BulkAddAbsenceForGroupSkillTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Contain("WARNING"));
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenMoreThanMaxMembersWouldBeChanged()
+    {
+        var manyMembers = Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToList();
+        _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId).Returns(manyMembers);
+        _breakRepository.GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("101").And.Contain("100"));
+        Assert.That(result.Message, Does.Contain("smaller"));
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AllowsApply_WhenExcessMembersAlreadyHaveTheAbsence()
+    {
+        var manyMembers = Enumerable.Range(0, 150).Select(_ => Guid.NewGuid()).ToList();
+        _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId).Returns(manyMembers);
+        var alreadyHave = manyMembers.Take(60).ToList();
+        _breakRepository.GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(alreadyHave, manyMembers);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
+
+        Assert.That(result.Success, Is.True);
+        await _mediator.Received(1).Send(
+            Arg.Is<BulkAddBreaksCommand>(c => c.Request.Breaks.Count == 90), Arg.Any<CancellationToken>());
     }
 
     [Test]

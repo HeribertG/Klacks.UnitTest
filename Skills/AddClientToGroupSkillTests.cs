@@ -38,7 +38,7 @@ public class AddClientToGroupSkillTests
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupSkill(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
+            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _companyClock);
 
         _clientRepository.Exists(ClientId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });

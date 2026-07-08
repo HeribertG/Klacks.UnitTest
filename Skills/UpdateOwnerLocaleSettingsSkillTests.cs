@@ -22,12 +22,24 @@ public class UpdateOwnerLocaleSettingsSkillTests
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private UpdateOwnerLocaleSettingsSkill _skill = null!;
+    private Dictionary<string, SettingsModel> _persistedSettings = null!;
 
     [SetUp]
     public void SetUp()
     {
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+
+        _persistedSettings = new Dictionary<string, SettingsModel>();
+        _settingsRepository.AddSetting(Arg.Do<SettingsModel>(s => _persistedSettings[s.Type] = s))
+            .Returns(ci => ci.Arg<SettingsModel>());
+        _settingsRepository.PutSetting(Arg.Do<SettingsModel>(s => _persistedSettings[s.Type] = s))
+            .Returns(ci => ci.Arg<SettingsModel>());
+        _settingsRepository.GetSettingNoTracking(Arg.Any<string>())
+            .Returns(ci => _persistedSettings.TryGetValue(ci.Arg<string>(), out var s) ? s : null);
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
+            .Returns(ci => ci.Arg<Func<Task<int>>>()());
+
         _skill = new UpdateOwnerLocaleSettingsSkill(_settingsRepository, _unitOfWork);
     }
 
@@ -150,5 +162,52 @@ public class UpdateOwnerLocaleSettingsSkillTests
         result.Message.ShouldContain("timeZone");
         result.Message.ShouldContain("calendarId");
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenDatabaseVerificationFails()
+    {
+        _settingsRepository.GetSettingNoTracking(Arg.Any<string>())
+            .Returns((SettingsModel?)null);
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["timeZone"] = "Europe/Zurich"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("verification failed");
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenPersistedValueDiffers()
+    {
+        _settingsRepository.GetSettingNoTracking(SettingsConstants.APP_ADDRESS_TIMEZONE)
+            .Returns(new SettingsModel
+            {
+                Id = Guid.NewGuid(),
+                Type = SettingsConstants.APP_ADDRESS_TIMEZONE,
+                Value = "Europe/Vienna"
+            });
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["timeZone"] = "Europe/Zurich"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("verification failed");
+    }
+
+    [Test]
+    public async Task SuccessMessage_CarriesVerifiedMarker()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["country"] = "CH"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("verified");
     }
 }

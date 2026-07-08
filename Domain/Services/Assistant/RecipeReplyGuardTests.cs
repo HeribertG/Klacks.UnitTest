@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for RecipeReplyGuard — verifies that a well-formed native confirmation question passes
 /// through untouched, while tool-call markup leaks and completion claims ("I updated the address.")
-/// are replaced by the deterministic localized confirmation (or the recipe's own ask prompt).
+/// are replaced by the deterministic localized confirmation (using the recipe's goal translations when
+/// available) or the localized ask question (falling back to the raw ask prompt without translations).
 /// </summary>
 
 using Klacks.Api.Domain.Services.Assistant;
@@ -15,6 +16,30 @@ public class RecipeReplyGuardTests
 {
     private const string Goal = "Create a new group.";
     private const string AlternativeGoal = "Add an existing shift/order to a named group.";
+
+    private static readonly Dictionary<string, string> GoalTranslations = new()
+    {
+        ["de"] = "Eine neue Gruppe erstellen.",
+        ["en"] = "Create a new group.",
+        ["fr"] = "Créer un nouveau groupe.",
+        ["it"] = "Creare un nuovo gruppo.",
+    };
+
+    private static readonly Dictionary<string, string> AlternativeGoalTranslations = new()
+    {
+        ["de"] = "Einen bestehenden Dienst einer Gruppe hinzufügen.",
+        ["en"] = "Add an existing shift/order to a named group.",
+        ["fr"] = "Ajouter un service existant à un groupe.",
+        ["it"] = "Aggiungere un servizio esistente a un gruppo.",
+    };
+
+    private static readonly Dictionary<string, string> AskTranslations = new()
+    {
+        ["de"] = "Ab welchem Datum soll die Gruppe gültig sein?",
+        ["en"] = "From which date should the group be valid?",
+        ["fr"] = "À partir de quelle date le groupe doit-il être valable ?",
+        ["it"] = "Da quale data deve essere valido il gruppo?",
+    };
 
     [TestCase("Möchtest du eine neue Gruppe erstellen? Ja oder Nein?")]
     [TestCase("Do you want me to start onboarding a new employee?")]
@@ -152,5 +177,105 @@ public class RecipeReplyGuardTests
         const string askPrompt = "From which date should the group be valid?";
 
         RecipeReplyGuard.SafeAsk(reply, askPrompt).ShouldBe(askPrompt);
+    }
+
+    [TestCase("de")]
+    [TestCase("en")]
+    [TestCase("fr")]
+    [TestCase("it")]
+    public void SafeAsk_CompletionClaim_FallsBackToLocalizedQuestion(string language)
+    {
+        const string askPrompt = "Ask the user from which date the group should be valid.";
+
+        var result = RecipeReplyGuard.SafeAsk("Die Gruppe wurde erstellt.", askPrompt, AskTranslations, language);
+
+        result.ShouldBe(AskTranslations[language]);
+    }
+
+    [TestCase("es")]
+    [TestCase("zh-CN")]
+    [TestCase(null)]
+    [TestCase("")]
+    public void SafeAsk_NonCoreLanguage_FallsBackToEnglishTranslation(string? language)
+    {
+        const string askPrompt = "Ask the user from which date the group should be valid.";
+
+        var result = RecipeReplyGuard.SafeAsk("Erledigt.", askPrompt, AskTranslations, language);
+
+        result.ShouldBe(AskTranslations["en"]);
+    }
+
+    [Test]
+    public void SafeAsk_TranslationsWithoutRequestedLanguage_FallsBackToEnglishEntry()
+    {
+        var partial = new Dictionary<string, string> { ["en"] = "From when?" };
+
+        var result = RecipeReplyGuard.SafeAsk("Erledigt.", "Ask for the date.", partial, "de");
+
+        result.ShouldBe("From when?");
+    }
+
+    [Test]
+    public void SafeAsk_NoTranslations_FallsBackToAskPrompt()
+    {
+        const string askPrompt = "From which date should the group be valid?";
+
+        var result = RecipeReplyGuard.SafeAsk("Erledigt.", askPrompt, null, "de");
+
+        result.ShouldBe(askPrompt);
+    }
+
+    [Test]
+    public void SafeAsk_WellFormedQuestion_WinsOverLocalizedFallback()
+    {
+        var reply = "Ab welchem Datum soll die Gruppe gültig sein?";
+
+        RecipeReplyGuard.SafeAsk(reply, "Ask for the date.", AskTranslations, "fr").ShouldBe(reply);
+    }
+
+    [TestCase("de")]
+    [TestCase("fr")]
+    [TestCase("it")]
+    public void SafeConfirmation_DeterministicFallback_UsesLocalizedGoal(string language)
+    {
+        var result = RecipeReplyGuard.SafeConfirmation(
+            "Erledigt.", Goal, null, language, GoalTranslations);
+
+        result.ShouldContain(GoalTranslations[language]);
+        result.ShouldNotContain(Goal);
+    }
+
+    [Test]
+    public void SafeConfirmation_WithAlternative_UsesLocalizedGoalsForBoth()
+    {
+        var result = RecipeReplyGuard.SafeConfirmation(
+            "Erledigt.", Goal, AlternativeGoal, "de", GoalTranslations, AlternativeGoalTranslations);
+
+        result.ShouldContain(GoalTranslations["de"]);
+        result.ShouldContain(AlternativeGoalTranslations["de"]);
+        result.ShouldContain("?");
+    }
+
+    [Test]
+    public void SafeConfirmation_NonCoreLanguage_UsesEnglishGoalTranslation()
+    {
+        var translations = new Dictionary<string, string>
+        {
+            ["de"] = "Eine neue Gruppe erstellen.",
+            ["en"] = "Create a brand-new group.",
+        };
+
+        var result = RecipeReplyGuard.SafeConfirmation("Erledigt.", Goal, null, "es", translations);
+
+        result.ShouldStartWith("Do you want");
+        result.ShouldContain("Create a brand-new group.");
+    }
+
+    [Test]
+    public void SafeConfirmation_NoTranslations_FallsBackToRawGoal()
+    {
+        var result = RecipeReplyGuard.SafeConfirmation("Erledigt.", Goal, null, "de", null);
+
+        result.ShouldContain(Goal);
     }
 }
