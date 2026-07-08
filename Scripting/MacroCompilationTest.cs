@@ -19,8 +19,8 @@ import holiday
 import holidaynextday
 import nightrate
 import holidayrate
-import sarate
-import sorate
+import we1rate
+import we2rate
 import guaranteedhours
 import fulltime
 
@@ -41,13 +41,13 @@ FUNCTION CalcSegment(StartTime, EndTime, HolidayFlag, WeekdayNum)
       NRate = 0
       IF NightHours > 0 THEN NRate = NightRate ENDIF
       IF HasHoliday AndAlso HolidayRate > NRate THEN NRate = HolidayRate ENDIF
-      IF IsSaturday AndAlso SaRate > NRate THEN NRate = SaRate ENDIF
-      IF IsSunday AndAlso SoRate > NRate THEN NRate = SoRate ENDIF
+      IF IsSaturday AndAlso WE1Rate > NRate THEN NRate = WE1Rate ENDIF
+      IF IsSunday AndAlso WE2Rate > NRate THEN NRate = WE2Rate ENDIF
 
       DRate = 0
       IF HasHoliday AndAlso HolidayRate > DRate THEN DRate = HolidayRate ENDIF
-      IF IsSaturday AndAlso SaRate > DRate THEN DRate = SaRate ENDIF
-      IF IsSunday AndAlso SoRate > DRate THEN DRate = SoRate ENDIF
+      IF IsSaturday AndAlso WE1Rate > DRate THEN DRate = WE1Rate ENDIF
+      IF IsSunday AndAlso WE2Rate > DRate THEN DRate = WE2Rate ENDIF
 
       CalcSegment = NightHours * NRate + NonNightHours * DRate
   ENDFUNCTION
@@ -93,8 +93,8 @@ FUNCTION CalcSegment(StartTime, EndTime, HolidayFlag, WeekdayNum)
         compiled.SetExternalValue("holidaynextday", false);
         compiled.SetExternalValue("nightrate", 0.1m);
         compiled.SetExternalValue("holidayrate", 0.15m);
-        compiled.SetExternalValue("sarate", 0.1m);
-        compiled.SetExternalValue("sorate", 0.1m);
+        compiled.SetExternalValue("we1rate", 0.1m);
+        compiled.SetExternalValue("we2rate", 0.1m);
         compiled.SetExternalValue("guaranteedhours", 160m);
         compiled.SetExternalValue("fulltime", 180m);
 

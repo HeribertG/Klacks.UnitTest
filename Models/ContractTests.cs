@@ -24,8 +24,8 @@ public class ContractTests
         contract.FullTime.ShouldBeNull();
         contract.NightRate.ShouldBeNull();
         contract.HolidayRate.ShouldBeNull();
-        contract.SaRate.ShouldBeNull();
-        contract.SoRate.ShouldBeNull();
+        contract.WE1Rate.ShouldBeNull();
+        contract.WE2Rate.ShouldBeNull();
         contract.ValidFrom.ShouldBe(default(DateTime));
         contract.ValidUntil.ShouldBeNull();
         contract.CalendarSelectionId.ShouldBeNull();

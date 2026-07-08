@@ -94,8 +94,8 @@ internal static class WizardScenarioFixtures
         WorkOnSaturday = true,
         WorkOnSunday = true,
         NightRate = 0.10m,
-        SaRate = 0.25m,
-        SoRate = 0.50m,
+        WE1Rate = 0.25m,
+        WE2Rate = 0.50m,
     };
 
     private static CoreAgent PartTimeAgent(string id, double guaranteed) => FullTimeAgent(id) with
