@@ -320,6 +320,40 @@ public class RecipeEngineServiceSemanticFallbackTests
     }
 
     [Test]
+    public async Task ReadQuestion_TopicallyNearMutationRecipe_DoesNotConsultSemanticFallback()
+    {
+        // "Which groups exist?" scores 0.6+ against create-group by topic, but it is a READ, not an
+        // action. The mutation-intent gate must keep the semantic fallback from hijacking the turn into
+        // a recipe confirmation. The stubbed strong hit proves the gate — not a weak score — blocks it.
+        var message = "Welche Gruppen gibt es bei uns?";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task VerblessActionRequest_NotAQuestion_StillConsultsSemanticFallback()
+    {
+        // "New employee, please" carries no mutation verb but is a genuine action request — the negative
+        // question-gate must let it reach the guided flow (positive mutation-signal gating would starve
+        // exactly these terse phrasings). Counterpart to the read-question suppression above.
+        var message = "Neuen Mitarbeiter, bitte.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.64));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        plan.NeedsConfirmation.ShouldBeTrue();
+    }
+
+    [Test]
     public async Task NoEnabledRecipes_NeverConsultsSemanticFallback()
     {
         _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());

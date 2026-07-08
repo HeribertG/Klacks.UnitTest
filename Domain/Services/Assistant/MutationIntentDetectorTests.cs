@@ -64,6 +64,39 @@ public class MutationIntentDetectorTests
         MutationIntentDetector.IsMutationIntent(null).ShouldBeFalse();
     }
 
+    [TestCase("Welche Gruppen gibt es?")]
+    [TestCase("Wie erstelle ich einen Kunden?")]
+    [TestCase("Was ist eine Bestellung?")]
+    [TestCase("Wie viele Kunden gibt es?")]
+    [TestCase("which groups exist?")]
+    [TestCase("how do I create a customer?")]
+    [TestCase("quelle est l'adresse?")]
+    [TestCase("quali gruppi ci sono?")]
+    public void IsInformationQuestion_True_For_Questions(string message)
+    {
+        MutationIntentDetector.IsInformationQuestion(message).ShouldBeTrue(message);
+    }
+
+    [TestCase("Zeig mir die Adressen")]
+    [TestCase("Erstelle einen neuen Kunden Müller AG")]
+    [TestCase("Neuen Mitarbeiter, bitte.")]
+    [TestCase("Füge den Mitarbeiter zur Gruppe hinzu")]
+    [TestCase("")]
+    [TestCase("   ")]
+    public void IsInformationQuestion_False_For_NonQuestions(string message)
+    {
+        // Crucial boundary: a display imperative ("Zeig mir …") and a verbless action request
+        // ("Neuen Mitarbeiter, bitte") are NOT information questions — the recipe gate must let them
+        // through so genuine (terse) actions still reach the guided flow.
+        MutationIntentDetector.IsInformationQuestion(message).ShouldBeFalse(message);
+    }
+
+    [Test]
+    public void IsInformationQuestion_False_For_Null()
+    {
+        MutationIntentDetector.IsInformationQuestion(null).ShouldBeFalse();
+    }
+
     [Test]
     public void IsMutationIntent_Does_Not_Misfire_On_Word_Address()
     {
