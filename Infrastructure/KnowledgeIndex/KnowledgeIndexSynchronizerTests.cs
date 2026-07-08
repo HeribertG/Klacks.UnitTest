@@ -29,8 +29,12 @@ public class KnowledgeIndexSynchronizerTests
         _recipeRepository = Substitute.For<IAgentRecipeRepository>();
         _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
         _embeddings = Substitute.For<IEmbeddingProvider>();
+        _embeddings.EmbeddingSpaceId.Returns("test-space");
         _repo = Substitute.For<IKnowledgeIndexRepository>();
     }
+
+    private static byte[] HashFor(string spaceId, string embeddingText) =>
+        SHA256.HashData(Encoding.UTF8.GetBytes(spaceId + "\n" + embeddingText));
 
     [Test]
     public async Task SyncAsync_SkipsEntriesWithUnchangedHash()
@@ -41,7 +45,7 @@ public class KnowledgeIndexSynchronizerTests
         _skillRegistry.GetAllSkills().Returns([descriptor]);
 
         var embeddingText = "X. Desc\nParameters: ";
-        var existingHash = SHA256.HashData(Encoding.UTF8.GetBytes(embeddingText));
+        var existingHash = HashFor("test-space", embeddingText);
 
         _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
             .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>
@@ -54,6 +58,37 @@ public class KnowledgeIndexSynchronizerTests
 
         await _embeddings.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
         await _repo.DidNotReceive().UpsertAsync(Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SyncAsync_EmbeddingSpaceChanged_ReembedsEntryWithUnchangedText()
+    {
+        var descriptor = new SkillDescriptor(
+            "X", "Desc", SkillCategory.System, [], [], [], null);
+
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        var embeddingText = "X. Desc\nParameters: ";
+        var hashFromOtherProvider = HashFor("onnx:multilingual-e5-small@384", embeddingText);
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>
+            {
+                { (KnowledgeEntryKind.Skill, "X"), hashFromOtherProvider }
+            });
+
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new float[][] { new float[384] });
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _embeddings.Received(1).EmbedBatchAsync(
+            Arg.Is<IReadOnlyList<string>>(texts => texts.Count == 1 && texts[0] == embeddingText),
+            Arg.Any<CancellationToken>());
+        await _repo.Received(1).UpsertAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list => list.Count == 1 && list[0].SourceId == "X"),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
