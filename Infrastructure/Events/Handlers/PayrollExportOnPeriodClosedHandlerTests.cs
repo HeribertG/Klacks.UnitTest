@@ -71,7 +71,7 @@ public class PayrollExportOnPeriodClosedHandlerTests
         _formatter.FormatKey.Returns(PayrollExportConstants.FormatKeyDatevLug);
         _formatter.FileExtension.Returns(PayrollExportConstants.FileExtensionCsv);
         _configRepository.GetByGroupAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(new PayrollExportGroupConfig { GroupId = GroupId });
+            .Returns(new PayrollExportGroupConfig { GroupId = GroupId, TargetSystem = PayrollExportConstants.FormatKeyDatevLug });
         _exportLogRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<ExportLog>());
 
@@ -135,11 +135,24 @@ public class PayrollExportOnPeriodClosedHandlerTests
                 new()
                 {
                     GroupId = GroupId,
-                    Format = PayrollExportConstants.TargetSystemDatevLug,
+                    Format = PayrollExportConstants.FormatKeyDatevLug,
                     StartDate = new DateOnly(2026, 1, 1),
                     EndDate = new DateOnly(2026, 1, 31),
                 },
             });
+
+        await _handler.HandleAsync(GroupEvent(), CancellationToken.None);
+
+        await _mediator.DidNotReceive().Send(Arg.Any<GetPayrollPeriodDataQuery>(), Arg.Any<CancellationToken>());
+        await _objectStorage.DidNotReceive().UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HandleAsync_Skips_WhenNoFormatterMatchesGroupTargetSystem()
+    {
+        EnableFeature();
+        _configRepository.GetByGroupAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new PayrollExportGroupConfig { GroupId = GroupId, TargetSystem = "unregistered-target-system" });
 
         await _handler.HandleAsync(GroupEvent(), CancellationToken.None);
 
@@ -173,7 +186,7 @@ public class PayrollExportOnPeriodClosedHandlerTests
         await _objectStorage.Received(1).UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
         await _exportLogRepository.Received(1).AddAsync(
             Arg.Is<ExportLog>(l => l.GroupId == GroupId
-                && l.Format == PayrollExportConstants.TargetSystemDatevLug
+                && l.Format == PayrollExportConstants.FormatKeyDatevLug
                 && l.RecordCount == 1
                 && l.FileSize == 3),
             Arg.Any<CancellationToken>());
