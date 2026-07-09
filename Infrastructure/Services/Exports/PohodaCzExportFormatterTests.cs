@@ -198,6 +198,25 @@ public class PohodaCzExportFormatterTests
     }
 
     [Test]
+    public void Format_Surcharge_IsEmittedAsPriplatekWhenSurchargeWageTypeConfigured()
+    {
+        var data = DataWith("Muster, Max", new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 15),
+            Kind = PayrollEntryKind.Surcharge,
+            Quantity = 2.25m,
+        });
+
+        var result = _formatter.Format(data, Config(surchargeWageType: "P07"));
+        var document = Parse(result.Content);
+
+        var priplatek = document.Root!.Element("mzdy")!.Element("priplatek")!;
+        priplatek.Element(Kod)!.Value.ShouldBe("P07");
+        priplatek.Element(Hodiny)!.Value.ShouldBe("2:15");
+        result.RecordCount.ShouldBe(1);
+    }
+
+    [Test]
     public void Format_MultipleEmployees_ThrowsNotSupported()
     {
         var data = new PayrollExportData
