@@ -1,10 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for the Stormware PAMICA/POHODA dochazka_zamestnance formatter: root element and version
-/// attribute, cislo_pracovniho_pomeru matching key, presence-vs-absence section assignment, unmapped-
-/// absence skipping, single-employee guard and Windows-1250 encoding round-trip.
+/// Unit tests for the Stormware PAMICA/POHODA dochazka_zamestnance formatter: ZIP-of-one-document-
+/// per-employee packaging, root element and version attribute, cislo_pracovniho_pomeru matching key,
+/// presence-vs-absence section assignment, unmapped-absence skipping and Windows-1250 encoding.
 /// </summary>
+using System.IO.Compression;
 using System.Text;
 using System.Xml.Linq;
 using Klacks.Api.Application.Constants;
@@ -29,8 +30,6 @@ public class PohodaCzExportFormatterTests
     private const string Kod = "kod";
     private const string Od = "od";
     private const string Do = "do";
-    private const string Jmeno = "jmeno";
-    private const string Prijmeni = "prijmeni";
     private const string Version = "version";
 
     private PohodaCzExportFormatter _formatter = null!;
@@ -62,27 +61,48 @@ public class PohodaCzExportFormatterTests
 
     private static PayrollExportData DataWith(string fullName, params PayrollDayEntry[] entries)
     {
+        return DataWithEmployees(new PayrollEmployee
+        {
+            ClientId = Guid.NewGuid(),
+            IdNumber = 42,
+            FullName = fullName,
+            Entries = entries.ToList(),
+        });
+    }
+
+    private static PayrollExportData DataWithEmployees(params PayrollEmployee[] employees)
+    {
         return new PayrollExportData
         {
             GroupId = Guid.NewGuid(),
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 1, 31),
-            Employees =
-            [
-                new PayrollEmployee
-                {
-                    ClientId = Guid.NewGuid(),
-                    IdNumber = 42,
-                    FullName = fullName,
-                    Entries = entries.ToList(),
-                },
-            ],
+            Employees = employees.ToList(),
         };
     }
 
-    private static XDocument Parse(byte[] content)
+    private static List<(string EntryName, byte[] Content)> ExtractZipEntries(byte[] zipBytes)
     {
-        var text = Encoding.GetEncoding(PayrollExportConstants.Windows1250CodePage).GetString(content);
+        using var stream = new MemoryStream(zipBytes);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+
+        var entries = new List<(string, byte[])>();
+        foreach (var entry in archive.Entries)
+        {
+            using var entryStream = entry.Open();
+            using var buffer = new MemoryStream();
+            entryStream.CopyTo(buffer);
+            entries.Add((entry.Name, buffer.ToArray()));
+        }
+
+        return entries;
+    }
+
+    private static XDocument ParseSingleEntry(byte[] zipBytes)
+    {
+        var entries = ExtractZipEntries(zipBytes);
+        entries.Count.ShouldBe(1);
+        var text = Encoding.GetEncoding(PayrollExportConstants.Windows1250CodePage).GetString(entries[0].Content);
         return XDocument.Parse(text);
     }
 
@@ -97,7 +117,7 @@ public class PohodaCzExportFormatterTests
         });
 
         var result = _formatter.Format(data, Config());
-        var document = Parse(result.Content);
+        var document = ParseSingleEntry(result.Content);
 
         document.Root.ShouldNotBeNull();
         document.Root!.Name.LocalName.ShouldBe(DochazkaZamestnance);
@@ -115,7 +135,7 @@ public class PohodaCzExportFormatterTests
         });
 
         var result = _formatter.Format(data, Config());
-        var document = Parse(result.Content);
+        var document = ParseSingleEntry(result.Content);
 
         document.Root!.Element(Hlavicka)!.Element(CisloPracovnihoPomeru)!.Value.ShouldBe("42");
     }
@@ -129,7 +149,7 @@ public class PohodaCzExportFormatterTests
             new PayrollDayEntry { Date = new DateOnly(2026, 1, 16), Kind = PayrollEntryKind.WorkHours, Quantity = 4m });
 
         var result = _formatter.Format(data, Config());
-        var document = Parse(result.Content);
+        var document = ParseSingleEntry(result.Content);
 
         var pritomnost = document.Root!.Element(Pritomnost)!;
         pritomnost.Element(PrescasPracovniDen)!.Element(Hodiny)!.Value.ShouldBe("12:30");
@@ -152,7 +172,7 @@ public class PohodaCzExportFormatterTests
         });
 
         var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
-        var document = Parse(result.Content);
+        var document = ParseSingleEntry(result.Content);
 
         var nepritomnost = document.Root!.Element(Nepritomnosti)!.Element(Nepritomnost)!;
         nepritomnost.Element(Kod)!.Value.ShouldBe("N01");
@@ -175,7 +195,7 @@ public class PohodaCzExportFormatterTests
         });
 
         var result = _formatter.Format(data, Config(absenceMappingJson: "{}"));
-        var document = Parse(result.Content);
+        var document = ParseSingleEntry(result.Content);
 
         document.Root!.Element(Nepritomnosti)!.Elements(Nepritomnost).ShouldBeEmpty();
         result.RecordCount.ShouldBe(0);
@@ -208,7 +228,7 @@ public class PohodaCzExportFormatterTests
         });
 
         var result = _formatter.Format(data, Config(surchargeWageType: "P07"));
-        var document = Parse(result.Content);
+        var document = ParseSingleEntry(result.Content);
 
         var priplatek = document.Root!.Element("mzdy")!.Element("priplatek")!;
         priplatek.Element(Kod)!.Value.ShouldBe("P07");
@@ -217,21 +237,36 @@ public class PohodaCzExportFormatterTests
     }
 
     [Test]
-    public void Format_MultipleEmployees_ThrowsNotSupported()
+    public void Format_MultipleEmployees_ProducesOneZipEntryPerEmployeeWithSummedCounts()
     {
-        var data = new PayrollExportData
-        {
-            GroupId = Guid.NewGuid(),
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 1, 31),
-            Employees =
-            [
-                new PayrollEmployee { ClientId = Guid.NewGuid(), IdNumber = 1, FullName = "A, A" },
-                new PayrollEmployee { ClientId = Guid.NewGuid(), IdNumber = 2, FullName = "B, B" },
-            ],
-        };
+        var data = DataWithEmployees(
+            new PayrollEmployee
+            {
+                ClientId = Guid.NewGuid(),
+                IdNumber = 1,
+                FullName = "A, A",
+                Entries = [new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.WorkHours, Quantity = 8m }],
+            },
+            new PayrollEmployee
+            {
+                ClientId = Guid.NewGuid(),
+                IdNumber = 2,
+                FullName = "B, B",
+                Entries = [new PayrollDayEntry { Date = new DateOnly(2026, 1, 15), Kind = PayrollEntryKind.WorkHours, Quantity = 6m }],
+            });
 
-        Should.Throw<NotSupportedException>(() => _formatter.Format(data, Config()));
+        var result = _formatter.Format(data, Config());
+        var entries = ExtractZipEntries(result.Content);
+
+        entries.Count.ShouldBe(2);
+        entries.Select(e => e.EntryName).ShouldBe(["dochazka_1.xml", "dochazka_2.xml"], ignoreOrder: true);
+
+        var windows1250 = Encoding.GetEncoding(PayrollExportConstants.Windows1250CodePage);
+        var employeeOne = XDocument.Parse(windows1250.GetString(entries.Single(e => e.EntryName == "dochazka_1.xml").Content));
+        employeeOne.Root!.Element(Hlavicka)!.Element(CisloPracovnihoPomeru)!.Value.ShouldBe("1");
+
+        result.RecordCount.ShouldBe(2);
+        result.SkippedAbsenceCount.ShouldBe(0);
     }
 
     [Test]
@@ -240,9 +275,10 @@ public class PohodaCzExportFormatterTests
         var data = DataWith("Nováková, Jiří");
 
         var result = _formatter.Format(data, Config());
+        var entries = ExtractZipEntries(result.Content);
         var windows1250 = Encoding.GetEncoding(PayrollExportConstants.Windows1250CodePage);
-        var utf8Text = Encoding.UTF8.GetString(result.Content);
-        var windows1250Text = windows1250.GetString(result.Content);
+        var windows1250Text = windows1250.GetString(entries[0].Content);
+        var utf8Text = Encoding.UTF8.GetString(entries[0].Content);
 
         windows1250Text.ShouldContain("Nováková");
         windows1250Text.ShouldContain("Jiří");
@@ -253,7 +289,7 @@ public class PohodaCzExportFormatterTests
     public void Format_ExposesFormatKeyContentTypeAndExtension()
     {
         _formatter.FormatKey.ShouldBe(PayrollExportConstants.FormatKeyPohodaCz);
-        _formatter.ContentType.ShouldBe(PayrollExportConstants.ContentTypeXml);
-        _formatter.FileExtension.ShouldBe(PayrollExportConstants.FileExtensionXml);
+        _formatter.ContentType.ShouldBe(PayrollExportConstants.ContentTypeZip);
+        _formatter.FileExtension.ShouldBe(PayrollExportConstants.FileExtensionZip);
     }
 }
