@@ -242,6 +242,7 @@ public class SkillToolsetAssemblerTests
         var orchestrator = new LLMStreamingOrchestrator(
             streamingLLMService, _skillCache, assembler,
             Substitute.For<IPlanningScopeEnricher>(),
+            Substitute.For<IEntityCandidateGrounder>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
 
         LLMContext? nonStreamingContext = null;
@@ -250,7 +251,8 @@ public class SkillToolsetAssemblerTests
             .Returns(new LLMResponse());
         var handler = new ProcessLLMMessageCommandHandler(
             nonStreamingLLMService, Substitute.For<IAgentRepository>(), _skillCache, assembler,
-            Substitute.For<IPlanningScopeEnricher>());
+            Substitute.For<IPlanningScopeEnricher>(),
+            Substitute.For<IEntityCandidateGrounder>());
 
         await foreach (var _ in orchestrator.ProcessStreamAsync(
             new LLMStreamRequest { Message = UserMessage, UserId = UserId }, CancellationToken.None))

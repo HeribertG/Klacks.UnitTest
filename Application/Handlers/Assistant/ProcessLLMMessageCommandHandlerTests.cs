@@ -104,7 +104,8 @@ public class ProcessLLMMessageCommandHandlerTests
     private ProcessLLMMessageCommandHandler CreateHandler()
     {
         return new ProcessLLMMessageCommandHandler(
-            _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher);
+            _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher,
+            Substitute.For<IEntityCandidateGrounder>());
     }
 
     private static AgentSkill CreateSkill(string name)
