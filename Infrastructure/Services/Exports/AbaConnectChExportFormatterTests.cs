@@ -118,6 +118,7 @@ public class AbaConnectChExportFormatterTests
         preEntry!.Attribute("mode")!.Value.ShouldBe("SAVE");
         preEntry.Element("EmployeeNumber")!.Value.ShouldBe("42");
         preEntry.Element("PeriodDate")!.Value.ShouldBe("2026-01-15");
+        preEntry.Element("PeriodNumber")!.Value.ShouldBe("01");
         preEntry.Element("PayrollType")!.Value.ShouldBe("1000");
         preEntry.Element("Amount")!.Value.ShouldBe("8.500000");
         preEntry.Element("Factor")!.Value.ShouldBe("1.000000");
@@ -203,6 +204,23 @@ public class AbaConnectChExportFormatterTests
         result.RecordCount.ShouldBe(0);
         result.SkippedAbsenceCount.ShouldBe(1);
         xml.Root!.XPathSelectElements(PreEntryXPath).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Format_WorkHours_DerivesPeriodNumberFromEntryMonth()
+    {
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 11, 3),
+            Kind = PayrollEntryKind.WorkHours,
+            Quantity = 8m,
+        });
+
+        var result = _formatter.Format(data, Config());
+        var xml = Parse(result.Content);
+        var preEntry = xml.Root!.XPathSelectElement(PreEntryXPath);
+
+        preEntry!.Element("PeriodNumber")!.Value.ShouldBe("11");
     }
 
     [Test]
