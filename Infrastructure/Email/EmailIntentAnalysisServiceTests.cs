@@ -198,4 +198,86 @@ public class EmailIntentAnalysisServiceTests
         result!.Intent.ShouldBe(EmailIntent.Other);
         result.FailureReason.ShouldBeNull();
     }
+
+    [Test]
+    public async Task AvailabilityAnnouncement_MapsIntentHourWindowAndWeekdays()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar im August.","fromDate":"2026-08-03","untilDate":"2026-08-28","startHour":8,"endHour":16,"weekdays":"2,1"}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Intent.ShouldBe(EmailIntent.AvailabilityAnnouncement);
+        result.FromDate.ShouldBe(new DateOnly(2026, 8, 3));
+        result.UntilDate.ShouldBe(new DateOnly(2026, 8, 28));
+        result.StartHour.ShouldBe(8);
+        result.EndHour.ShouldBe(16);
+        result.Weekdays.ShouldBe("1,2");
+    }
+
+    [TestCase(25, 10)]
+    [TestCase(16, 8)]
+    public async Task InvalidHourWindow_MapsBothHoursToNull(int startHour, int endHour)
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies($$"""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":{{startHour}},"endHour":{{endHour}},"weekdays":null}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.StartHour.ShouldBeNull();
+        result.EndHour.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Weekdays_AreDeduplicatedSortedAndInvalidTokensDropped()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-28","startHour":null,"endHour":null,"weekdays":" 5, 1, 1, 9, x "}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Weekdays.ShouldBe("1,5");
+    }
+
+    [Test]
+    public async Task HoursAsJsonStrings_AreParsed()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":"8","endHour":"16","weekdays":null}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.StartHour.ShouldBe(8);
+        result.EndHour.ShouldBe(16);
+    }
+
+    [Test]
+    public async Task ShiftPreference_MapsIntentAndNormalizesScheduleCommands()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"ShiftPreference","summary":"Kann nur früh arbeiten.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":null,"endHour":null,"weekdays":null,"scheduleCommands":" early, -night, early, FOO "}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Intent.ShouldBe(EmailIntent.ShiftPreference);
+        result.ScheduleCommands.ShouldBe("EARLY,-NIGHT");
+    }
+
+    [Test]
+    public async Task ScheduleCommandsWithoutValidKeywords_MapToNull()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"ShiftPreference","summary":"Unklare Präferenz.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":null,"endHour":null,"weekdays":null,"scheduleCommands":"MORNING, FOO, "}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Intent.ShouldBe(EmailIntent.ShiftPreference);
+        result.ScheduleCommands.ShouldBeNull();
+    }
 }

@@ -144,4 +144,62 @@ public class EmailAnalysisNotifierTests
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("2026-07-09") && m.Contains("2026-07-12")), null, null);
     }
+
+    [Test]
+    public async Task AvailabilityAnnouncement_LabelAppearsInMessage()
+    {
+        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        var analysis = Analysis();
+        analysis.Intent = EmailIntent.AvailabilityAnnouncement;
+
+        await _notifier.NotifyAsync(Email(), analysis);
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.Contains("Availability announcement")), null, null);
+    }
+
+    [Test]
+    public async Task HourWindowAndWeekdays_AppearInMessage()
+    {
+        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        var analysis = Analysis();
+        analysis.Intent = EmailIntent.AvailabilityAnnouncement;
+        analysis.StartHour = 8;
+        analysis.EndHour = 16;
+        analysis.Weekdays = "1,2";
+
+        await _notifier.NotifyAsync(Email(), analysis);
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner,
+            Arg.Is<string>(m => m.Contains("Hours: 8-16") && m.Contains("Weekdays: Mon, Tue")),
+            null, null);
+    }
+
+    [Test]
+    public async Task ShiftPreference_LabelAppearsInMessage()
+    {
+        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        var analysis = Analysis();
+        analysis.Intent = EmailIntent.ShiftPreference;
+
+        await _notifier.NotifyAsync(Email(), analysis);
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.Contains("Shift preference")), null, null);
+    }
+
+    [Test]
+    public async Task ScheduleCommands_AppearInMessage()
+    {
+        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        var analysis = Analysis();
+        analysis.Intent = EmailIntent.ShiftPreference;
+        analysis.ScheduleCommands = "EARLY,-NIGHT";
+
+        await _notifier.NotifyAsync(Email(), analysis);
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.Contains("Planning commands: EARLY, -NIGHT")), null, null);
+    }
 }

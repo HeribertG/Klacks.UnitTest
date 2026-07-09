@@ -28,6 +28,7 @@ public class EmailActionOrchestratorTests
     private ISkillExecutor _skillExecutor = null!;
     private IGroupMembershipService _groupMembershipService = null!;
     private Klacks.Api.Application.Interfaces.IAbsenceRepository _absenceRepository = null!;
+    private IClientContractDataProvider _contractDataProvider = null!;
     private EmailActionOrchestrator _orchestrator = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -42,7 +43,9 @@ public class EmailActionOrchestratorTests
         _skillExecutor = Substitute.For<ISkillExecutor>();
         _groupMembershipService = Substitute.For<IGroupMembershipService>();
         _absenceRepository = Substitute.For<Klacks.Api.Application.Interfaces.IAbsenceRepository>();
+        _contractDataProvider = Substitute.For<IClientContractDataProvider>();
 
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0 });
         _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new HashSet<string> { AdminGuid.ToString() });
         _groupMembershipService.GetClientGroupsAsync(ClientId)
@@ -57,7 +60,7 @@ public class EmailActionOrchestratorTests
 
         _orchestrator = new EmailActionOrchestrator(
             _autonomyPreferences, _audienceResolver, _skillExecutor,
-            _groupMembershipService, _absenceRepository,
+            _groupMembershipService, _absenceRepository, _contractDataProvider,
             Substitute.For<ILogger<EmailActionOrchestrator>>());
     }
 
@@ -65,6 +68,12 @@ public class EmailActionOrchestratorTests
     {
         _autonomyPreferences.GetAsync(AdminGuid.ToString(), Arg.Any<CancellationToken>())
             .Returns(new AgentAutonomyPreferenceRow { UserId = AdminGuid.ToString(), Level = level });
+    }
+
+    private void SetContract(EffectiveContractData contract)
+    {
+        _contractDataProvider.GetEffectiveContractDataAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(contract);
     }
 
     private static Absence AbsenceType(string de, string en) => new()
@@ -83,6 +92,42 @@ public class EmailActionOrchestratorTests
         FromDate = new DateOnly(2026, 7, 10),
         UntilDate = new DateOnly(2026, 7, 12)
     };
+
+    private static EmailAnalysis AvailabilityAnalysis(
+        DateOnly fromDate, DateOnly untilDate, int? startHour = null, int? endHour = null, string? weekdays = null) => new()
+    {
+        ClientId = ClientId,
+        ClientType = EntityTypeEnum.Employee,
+        Intent = EmailIntent.AvailabilityAnnouncement,
+        FromDate = fromDate,
+        UntilDate = untilDate,
+        StartHour = startHour,
+        EndHour = endHour,
+        Weekdays = weekdays
+    };
+
+    private static EmailAnalysis ShiftPreferenceAnalysis(
+        DateOnly fromDate, DateOnly untilDate, string? scheduleCommands, string? weekdays = null) => new()
+    {
+        ClientId = ClientId,
+        ClientType = EntityTypeEnum.Employee,
+        Intent = EmailIntent.ShiftPreference,
+        FromDate = fromDate,
+        UntilDate = untilDate,
+        ScheduleCommands = scheduleCommands,
+        Weekdays = weekdays
+    };
+
+    private List<SkillInvocation> CaptureSkillInvocations()
+    {
+        var captured = new List<SkillInvocation>();
+        _skillExecutor.ExecuteAsync(
+                Arg.Do<SkillInvocation>(captured.Add),
+                Arg.Any<SkillExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null, "done"));
+        return captured;
+    }
 
     private Task<int> ExecutedSkillCallsAsync() =>
         Task.FromResult(_skillExecutor.ReceivedCalls().Count());
@@ -254,5 +299,248 @@ public class EmailActionOrchestratorTests
         captured!.UserId.ShouldBe(AdminGuid);
         captured.UserName.ShouldBe("Klacksy email-analysis");
         captured.BypassAutonomyGate.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task Availability_FullyAutonomous_ExecutesSkillWithDateRangeAndHours()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 12), startHour: 8, endHour: 16));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        var invocation = invocations[0];
+        invocation.SkillName.ShouldBe("set_client_availability");
+        invocation.Parameters["clientId"].ShouldBe(ClientId);
+        invocation.Parameters["startDate"].ShouldBe(new DateOnly(2026, 7, 10));
+        invocation.Parameters["endDate"].ShouldBe(new DateOnly(2026, 7, 12));
+        invocation.Parameters["isAvailable"].ShouldBe(true);
+        invocation.Parameters["startHour"].ShouldBe(8);
+        invocation.Parameters["endHour"].ShouldBe(16);
+        invocation.Parameters.ContainsKey("dates").ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task Availability_WithWeekdays_PassesOnlyMatchingDatesInsteadOfRange()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 19), weekdays: "1,2,3,4,5"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        var invocation = invocations[0];
+        invocation.SkillName.ShouldBe("set_client_availability");
+        invocation.Parameters["dates"].ShouldBe("2026-07-13,2026-07-14,2026-07-15,2026-07-16,2026-07-17");
+        invocation.Parameters["isAvailable"].ShouldBe(true);
+        invocation.Parameters.ContainsKey("startDate").ShouldBeFalse();
+        invocation.Parameters.ContainsKey("endDate").ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task Availability_BelowFullyAutonomous_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.Autonomous);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), startHour: 8, endHour: 16));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("set_client_availability");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Availability_RangeOverNinetyTwoDays_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 10), new DateOnly(2026, 10, 10)));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("set_client_availability");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Availability_WeekdaysOutsidePeriod_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 13), weekdays: "7"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("set_client_availability");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_ZeroHourContract_ExecutesOneCallPerKeyword()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "-NIGHT"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        var invocation = invocations[0];
+        invocation.SkillName.ShouldBe("add_schedule_commands_range");
+        invocation.Parameters["clientId"].ShouldBe(ClientId);
+        invocation.Parameters["fromDate"].ShouldBe(new DateOnly(2026, 7, 13));
+        invocation.Parameters["untilDate"].ShouldBe(new DateOnly(2026, 7, 17));
+        invocation.Parameters["commandKeyword"].ShouldBe("-NIGHT");
+    }
+
+    [Test]
+    public async Task ShiftPreference_TwoKeywords_ExecutesTwoCalls()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-NIGHT"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(2);
+        invocations.Select(i => i.SkillName).ShouldAllBe(name => name == "add_schedule_commands_range");
+        invocations.Select(i => (string)i.Parameters["commandKeyword"]).ShouldBe(new[] { "EARLY", "-NIGHT" });
+    }
+
+    [Test]
+    public async Task ShiftPreference_WithWeekdays_MergesConsecutiveDaysIntoSubRanges()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 19), "EARLY", weekdays: "1,2,3"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        var invocation = invocations[0];
+        invocation.Parameters["fromDate"].ShouldBe(new DateOnly(2026, 7, 13));
+        invocation.Parameters["untilDate"].ShouldBe(new DateOnly(2026, 7, 15));
+        invocation.Parameters["commandKeyword"].ShouldBe("EARLY");
+    }
+
+    [Test]
+    public async Task ShiftPreference_GuaranteedHoursContract_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20 });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("guaranteed");
+        outcome.Description.ShouldContain("add_schedule_commands_range");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_NoActiveContract_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = false });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("no active contract");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task DayOffWish_GuaranteedHoursContract_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20 });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("guaranteed");
+        outcome.Description.ShouldContain("add_schedule_commands_range");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Availability_GuaranteedHoursContract_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20 });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17)));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("guaranteed");
+        outcome.Description.ShouldContain("set_client_availability");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_ContradictingKeywords_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("contradict");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_BelowFullyAutonomous_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.Autonomous);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("add_schedule_commands_range");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_NoUsableKeywords_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), null));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("no unambiguous planning command");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
     }
 }
