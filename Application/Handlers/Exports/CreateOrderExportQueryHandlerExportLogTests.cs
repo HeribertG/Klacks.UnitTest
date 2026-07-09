@@ -11,6 +11,7 @@ using Klacks.Api.Application.Handlers.Exports;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Exports;
 using Klacks.Api.Application.Queries.Exports;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Exports;
 using Klacks.Api.Domain.Models.Exports;
@@ -26,6 +27,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
 {
     private IOrderExportDataLoader _dataLoader = null!;
     private IExportFormatter _formatter = null!;
+    private IExportFormatPolicy _exportFormatPolicy = null!;
     private ICompanyInfoLoader _companyInfoLoader = null!;
     private IExportLogRepository _exportLogRepository = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
@@ -38,6 +40,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
     {
         _dataLoader = Substitute.For<IOrderExportDataLoader>();
         _formatter = Substitute.For<IExportFormatter>();
+        _exportFormatPolicy = Substitute.For<IExportFormatPolicy>();
         _companyInfoLoader = Substitute.For<ICompanyInfoLoader>();
         _exportLogRepository = Substitute.For<IExportLogRepository>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
@@ -48,6 +51,8 @@ public class CreateOrderExportQueryHandlerExportLogTests
         _formatter.ContentType.Returns("text/csv");
         _formatter.FileExtension.Returns(".csv");
         _formatter.Format(Arg.Any<OrderExportData>(), Arg.Any<ExportOptions>()).Returns(new byte[] { 1, 2, 3 });
+
+        _exportFormatPolicy.IsEnabledAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         _dataLoader.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
             .Returns(new OrderExportData
@@ -70,11 +75,29 @@ public class CreateOrderExportQueryHandlerExportLogTests
         _handler = new CreateOrderExportQueryHandler(
             _dataLoader,
             [_formatter],
+            _exportFormatPolicy,
             _companyInfoLoader,
             _exportLogRepository,
             _httpContextAccessor,
             _unitOfWork,
             _logger);
+    }
+
+    [Test]
+    public async Task Handle_ThrowsInvalidRequestException_WhenFormatDisabled()
+    {
+        _exportFormatPolicy.IsEnabledAsync("csv", Arg.Any<CancellationToken>()).Returns(false);
+
+        var filter = new OrderExportFilter
+        {
+            OrderIds = [Guid.NewGuid()],
+            Format = "csv",
+            Language = "de",
+            CurrencyCode = "EUR"
+        };
+
+        await Should.ThrowAsync<InvalidRequestException>(async () =>
+            await _handler.Handle(new CreateOrderExportQuery(filter), CancellationToken.None));
     }
 
     [Test]

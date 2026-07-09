@@ -31,6 +31,7 @@ public class CreateOrderRangeExportQueryHandlerTests
     private IOrderExportDataLoader _orderDataLoader = null!;
     private IClientPeriodExportDataLoader _clientPeriodDataLoader = null!;
     private IExportFormatter _formatter = null!;
+    private IExportFormatPolicy _exportFormatPolicy = null!;
     private IClientPeriodExportFormatter _clientPeriodFormatter = null!;
     private IPeriodClosedEntryFilter _periodClosedEntryFilter = null!;
     private IPeriodClosedLookup _lookup = null!;
@@ -58,6 +59,7 @@ public class CreateOrderRangeExportQueryHandlerTests
         _orderDataLoader = Substitute.For<IOrderExportDataLoader>();
         _clientPeriodDataLoader = Substitute.For<IClientPeriodExportDataLoader>();
         _formatter = Substitute.For<IExportFormatter>();
+        _exportFormatPolicy = Substitute.For<IExportFormatPolicy>();
         _clientPeriodFormatter = Substitute.For<IClientPeriodExportFormatter>();
         _periodClosedEntryFilter = Substitute.For<IPeriodClosedEntryFilter>();
         _lookup = Substitute.For<IPeriodClosedLookup>();
@@ -73,6 +75,8 @@ public class CreateOrderRangeExportQueryHandlerTests
         _formatter.ContentType.Returns(ExportConstants.ContentTypeXml);
         _formatter.FileExtension.Returns(".xml");
         _formatter.Format(Arg.Any<OrderExportData>(), Arg.Any<ExportOptions>()).Returns([1, 2, 3]);
+
+        _exportFormatPolicy.IsEnabledAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         _clientPeriodFormatter.ContentType.Returns(ExportConstants.ContentTypeXml);
         _clientPeriodFormatter.FileExtension.Returns(".xml");
@@ -107,6 +111,7 @@ public class CreateOrderRangeExportQueryHandlerTests
             _orderDataLoader,
             _clientPeriodDataLoader,
             [_formatter],
+            _exportFormatPolicy,
             _clientPeriodFormatter,
             _periodClosedEntryFilter,
             _companyInfoLoader,
@@ -121,6 +126,17 @@ public class CreateOrderRangeExportQueryHandlerTests
     {
         var filter = BuildFilter();
         filter.Format = "unknown";
+
+        await Should.ThrowAsync<InvalidRequestException>(async () =>
+            await _handler.Handle(new CreateOrderRangeExportQuery(filter), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task Handle_ThrowsInvalidRequestException_WhenFormatDisabled()
+    {
+        _exportFormatPolicy.IsEnabledAsync(ExportConstants.FormatXml, Arg.Any<CancellationToken>()).Returns(false);
+
+        var filter = BuildFilter();
 
         await Should.ThrowAsync<InvalidRequestException>(async () =>
             await _handler.Handle(new CreateOrderRangeExportQuery(filter), CancellationToken.None));
