@@ -20,6 +20,7 @@ using Klacks.Api.Infrastructure.Events.Handlers;
 using Klacks.Api.Infrastructure.Mediator;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Shouldly;
 
 namespace Klacks.UnitTest.Infrastructure.Events.Handlers;
 
@@ -170,6 +171,20 @@ public class PayrollExportOnPeriodClosedHandlerTests
 
         _formatter.DidNotReceive().Format(Arg.Any<PayrollExportData>(), Arg.Any<PayrollExportGroupConfig>());
         await _objectStorage.DidNotReceive().UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HandleAsync_LogsAndDoesNotThrow_WhenFormatterThrows()
+    {
+        EnableFeature();
+        ReturnData(SampleData());
+        _formatter.Format(Arg.Any<PayrollExportData>(), Arg.Any<PayrollExportGroupConfig>())
+            .Returns(_ => throw new NotSupportedException("formatter cannot handle this data shape"));
+
+        await Should.NotThrowAsync(() => _handler.HandleAsync(GroupEvent(), CancellationToken.None));
+
+        await _objectStorage.DidNotReceive().UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await _exportLogRepository.DidNotReceive().AddAsync(Arg.Any<ExportLog>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
