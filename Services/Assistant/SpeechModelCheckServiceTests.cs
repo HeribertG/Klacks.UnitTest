@@ -105,6 +105,76 @@ public class SpeechModelCheckServiceTests
         result[0].Error!.ShouldContain("unexpected");
     }
 
+    [Test]
+    public async Task CheckAllAsync_TransientFailureThenSuccess_RetriesAndReturnsHealthy()
+    {
+        var model = BuildModel("flaky-model", "Flaky Model", "test", 32000, 0m, 0m);
+        _repo.GetModelsAsync(true).Returns(new List<LLMModel> { model });
+        _repo.GetModelByIdAsync(model.ModelId).Returns(model);
+
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+                .Returns(
+                    Task.FromResult(new LLMProviderResponse { Success = false, Error = "Rate limited" }),
+                    Task.FromResult(new LLMProviderResponse { Success = true, Content = "ok" }));
+        _factory.GetProviderForModelAsync(model.ModelId).Returns(provider);
+
+        var result = await _sut.CheckAllAsync(CancellationToken.None);
+
+        result.Count.ShouldBe(1);
+        result[0].IsHealthy.ShouldBeTrue();
+        result[0].Error.ShouldBeNull();
+        await provider.Received(2).ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CheckAllAsync_UnexpectedContent_DoesNotRetry()
+    {
+        var model = BuildModel("noisy-model", "Noisy Model", "test", 32000, 0m, 0m);
+        _repo.GetModelsAsync(true).Returns(new List<LLMModel> { model });
+        _repo.GetModelByIdAsync(model.ModelId).Returns(model);
+
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(new LLMProviderResponse
+                {
+                    Success = true,
+                    Content = "This is definitely not the expected single word.",
+                }));
+        _factory.GetProviderForModelAsync(model.ModelId).Returns(provider);
+
+        var result = await _sut.CheckAllAsync(CancellationToken.None);
+
+        result.Count.ShouldBe(1);
+        result[0].IsHealthy.ShouldBeFalse();
+        await provider.Received(1).ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CheckAllAsync_MultipleModels_PreservesInputOrder()
+    {
+        var modelA = BuildModel("model-a", "Model A", "p1", 32000, 0m, 0m);
+        var modelB = BuildModel("model-b", "Model B", "p2", 64000, 0m, 0m);
+        var modelC = BuildModel("model-c", "Model C", "p3", 128000, 0m, 0m);
+        _repo.GetModelsAsync(true).Returns(new List<LLMModel> { modelA, modelB, modelC });
+        _repo.GetModelByIdAsync(modelA.ModelId).Returns(modelA);
+        _repo.GetModelByIdAsync(modelB.ModelId).Returns(modelB);
+        _repo.GetModelByIdAsync(modelC.ModelId).Returns(modelC);
+
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult(new LLMProviderResponse { Success = true, Content = "ok" }));
+        _factory.GetProviderForModelAsync(Arg.Any<string>()).Returns(provider);
+
+        var result = await _sut.CheckAllAsync(CancellationToken.None);
+
+        result.Count.ShouldBe(3);
+        result[0].ModelId.ShouldBe("model-a");
+        result[1].ModelId.ShouldBe("model-b");
+        result[2].ModelId.ShouldBe("model-c");
+        result.All(r => r.IsHealthy).ShouldBeTrue();
+    }
+
     private static LLMModel BuildModel(
         string modelId,
         string modelName,
