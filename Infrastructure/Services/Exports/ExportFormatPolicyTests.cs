@@ -54,6 +54,43 @@ public class ExportFormatPolicyTests
     }
 
     [Test]
+    public async Task GetCatalogAsync_TagsEachResourceWithItsFamily()
+    {
+        ReturnSetting(null);
+
+        var catalog = await _policy.GetCatalogAsync(CancellationToken.None);
+
+        catalog.Single(r => r.Key == ExportConstants.FormatBmd).Family.ShouldBe(ExportConstants.FormatFamilyOrder);
+        catalog.Single(r => r.Key == PayrollExportConstants.FormatKeyPaxmlSe).Family.ShouldBe(ExportConstants.FormatFamilyPayroll);
+    }
+
+    [Test]
+    public async Task GetCatalogAsync_GroupsDatevOrderAndPayrollUnderTheSameBrand()
+    {
+        var datevOrder = Substitute.For<IExportFormatter>();
+        datevOrder.FormatKey.Returns(ExportConstants.FormatDatev);
+        var datevPayroll = Substitute.For<IPayrollExportFormatter>();
+        datevPayroll.FormatKey.Returns(PayrollExportConstants.FormatKeyDatevLug);
+        var policy = new ExportFormatPolicy([datevOrder], [datevPayroll], _settingsReader);
+        ReturnSetting(null);
+
+        var catalog = await policy.GetCatalogAsync(CancellationToken.None);
+
+        catalog.Single(r => r.Key == ExportConstants.FormatDatev).Brand.ShouldBe(ExportConstants.BrandDatev);
+        catalog.Single(r => r.Key == PayrollExportConstants.FormatKeyDatevLug).Brand.ShouldBe(ExportConstants.BrandDatev);
+    }
+
+    [Test]
+    public async Task GetCatalogAsync_UsesFormatKeyAsBrand_ForSingleVariantFormats()
+    {
+        ReturnSetting(null);
+
+        var catalog = await _policy.GetCatalogAsync(CancellationToken.None);
+
+        catalog.Single(r => r.Key == ExportConstants.FormatBmd).Brand.ShouldBe(ExportConstants.FormatBmd);
+    }
+
+    [Test]
     public async Task GetCatalogAsync_MarksCsvJsonXmlAsFixedAndEnabled()
     {
         var csvFormatter = Substitute.For<IExportFormatter>();

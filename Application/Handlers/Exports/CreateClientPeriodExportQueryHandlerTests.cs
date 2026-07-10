@@ -44,6 +44,7 @@ public class CreateClientPeriodExportQueryHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<CreateClientPeriodExportQueryHandler>>();
 
+        _formatter.FormatKey.Returns(ExportConstants.FormatXml);
         _formatter.ContentType.Returns("application/xml");
         _formatter.FileExtension.Returns(".xml");
         _formatter.Format(Arg.Any<ClientPeriodExportData>(), Arg.Any<ExportOptions>()).Returns(new byte[] { 1, 2, 3 });
@@ -66,7 +67,7 @@ public class CreateClientPeriodExportQueryHandlerTests
 
         _handler = new CreateClientPeriodExportQueryHandler(
             _dataLoader,
-            _formatter,
+            [_formatter],
             _exportLogRepository,
             _httpContextAccessor,
             _unitOfWork,
@@ -90,7 +91,7 @@ public class CreateClientPeriodExportQueryHandlerTests
 
         await _exportLogRepository.Received(1).AddAsync(
             Arg.Is<ExportLog>(e =>
-                e.Format == ExportConstants.FormatClientPeriodXml &&
+                e.Format == $"clientperiod-{ExportConstants.FormatXml}" &&
                 e.FileSize == 3 &&
                 e.ExportedBy == "tester"),
             Arg.Any<CancellationToken>());
@@ -107,5 +108,49 @@ public class CreateClientPeriodExportQueryHandlerTests
 
         await Should.ThrowAsync<InvalidRequestException>(async () =>
             await _handler.Handle(new CreateClientPeriodExportQuery(filter), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task Handle_ThrowsInvalidRequestException_WhenFormatUnknown()
+    {
+        var filter = new ClientPeriodExportFilter
+        {
+            FromDate = new DateOnly(2026, 1, 1),
+            UntilDate = new DateOnly(2026, 1, 31),
+            Format = "does-not-exist"
+        };
+
+        await Should.ThrowAsync<InvalidRequestException>(async () =>
+            await _handler.Handle(new CreateClientPeriodExportQuery(filter), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task Handle_SelectsFormatterMatchingTheRequestedFormat()
+    {
+        var csvFormatter = Substitute.For<IClientPeriodExportFormatter>();
+        csvFormatter.FormatKey.Returns(ExportConstants.FormatCsv);
+        csvFormatter.ContentType.Returns(ExportConstants.ContentTypeCsv);
+        csvFormatter.FileExtension.Returns(".csv");
+        csvFormatter.Format(Arg.Any<ClientPeriodExportData>(), Arg.Any<ExportOptions>()).Returns(new byte[] { 9 });
+
+        var handler = new CreateClientPeriodExportQueryHandler(
+            _dataLoader,
+            [_formatter, csvFormatter],
+            _exportLogRepository,
+            _httpContextAccessor,
+            _unitOfWork,
+            _logger);
+
+        var filter = new ClientPeriodExportFilter
+        {
+            FromDate = new DateOnly(2026, 1, 1),
+            UntilDate = new DateOnly(2026, 1, 31),
+            Format = ExportConstants.FormatCsv
+        };
+
+        var result = await handler.Handle(new CreateClientPeriodExportQuery(filter), CancellationToken.None);
+
+        result.FileContent.ShouldBe(new byte[] { 9 });
+        result.ContentType.ShouldBe(ExportConstants.ContentTypeCsv);
     }
 }
