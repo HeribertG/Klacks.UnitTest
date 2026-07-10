@@ -7,6 +7,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
@@ -33,6 +34,18 @@ public class GroupCrudSkillTests
         _groupRepository.GetNoTracking(Arg.Any<Guid>()).Returns(_ => _persistedGroup);
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
             .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
+            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
+    }
+
+    private UpdateGroupSkill UpdateSkill(IGroupScopeGuard guard) =>
+        new(_groupRepository, guard, _calendarSelectionRepository, _unitOfWork);
+
+    private Group WireGroup(Guid id, Group group)
+    {
+        _groupRepository.Get(id).Returns(group);
+        _groupRepository.GetNoTracking(id).Returns(group);
+        return group;
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -102,9 +115,9 @@ public class GroupCrudSkillTests
     [Test]
     public async Task UpdateGroup_NoOp_WhenNoFieldsSupplied()
     {
-        var skill = new UpdateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _unitOfWork);
+        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
         var id = Guid.NewGuid();
-        _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Bern", ValidFrom = DateTime.UtcNow.Date });
+        WireGroup(id, new Group { Id = id, Name = "Bern", ValidFrom = DateTime.UtcNow.Date });
         var parameters = new Dictionary<string, object> { ["groupId"] = id.ToString() };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
@@ -117,9 +130,9 @@ public class GroupCrudSkillTests
     [Test]
     public async Task UpdateGroup_RenamesAndPersists()
     {
-        var skill = new UpdateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _unitOfWork);
+        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
         var id = Guid.NewGuid();
-        _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Old", ValidFrom = DateTime.UtcNow.Date });
+        WireGroup(id, new Group { Id = id, Name = "Old", ValidFrom = DateTime.UtcNow.Date });
         var parameters = new Dictionary<string, object>
         {
             ["groupId"] = id.ToString(),
@@ -220,8 +233,7 @@ public class GroupCrudSkillTests
     {
         var scopedRootId = Guid.NewGuid();
         var foreignRootId = Guid.NewGuid();
-        var skill = new UpdateGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"), _unitOfWork);
+        var skill = UpdateSkill(TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"));
         var id = Guid.NewGuid();
         _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Logistik Ost", Root = foreignRootId });
         var parameters = new Dictionary<string, object>
@@ -242,10 +254,9 @@ public class GroupCrudSkillTests
     public async Task UpdateGroup_Succeeds_WhenGroupIsInsideUserScope()
     {
         var scopedRootId = Guid.NewGuid();
-        var skill = new UpdateGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"), _unitOfWork);
+        var skill = UpdateSkill(TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"));
         var id = Guid.NewGuid();
-        _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Verkauf Nord", Root = scopedRootId });
+        WireGroup(id, new Group { Id = id, Name = "Verkauf Nord", Root = scopedRootId });
         var parameters = new Dictionary<string, object>
         {
             ["groupId"] = id.ToString(),
@@ -289,6 +300,68 @@ public class GroupCrudSkillTests
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("root-level group is outside your assigned group scope"));
         await _groupRepository.DidNotReceive().Add(Arg.Any<Group>());
+    }
+
+    [Test]
+    public async Task UpdateGroup_SetsPaymentIntervalAndCalendar_AndReportsVerified()
+    {
+        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
+        var id = Guid.NewGuid();
+        var calendarId = Guid.NewGuid();
+        var group = WireGroup(id, new Group { Id = id, Name = "Bern", ValidFrom = DateTime.UtcNow.Date });
+        _calendarSelectionRepository.Exists(calendarId).Returns(true);
+        var parameters = new Dictionary<string, object>
+        {
+            ["groupId"] = id.ToString(),
+            ["paymentInterval"] = "Weekly",
+            ["calendarId"] = calendarId.ToString()
+        };
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(result.Message, Does.Contain("verified"));
+        Assert.That(group.PaymentInterval, Is.EqualTo(PaymentInterval.Weekly));
+        Assert.That(group.CalendarSelectionId, Is.EqualTo(calendarId));
+        await _groupRepository.Received(1).Put(group);
+    }
+
+    [Test]
+    public async Task UpdateGroup_ReturnsError_WhenPaymentIntervalUnknown()
+    {
+        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
+        var id = Guid.NewGuid();
+        WireGroup(id, new Group { Id = id, Name = "Bern", ValidFrom = DateTime.UtcNow.Date });
+        var parameters = new Dictionary<string, object>
+        {
+            ["groupId"] = id.ToString(),
+            ["paymentInterval"] = "Fortnightly"
+        };
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("Invalid paymentInterval"));
+        await _groupRepository.DidNotReceive().Put(Arg.Any<Group>());
+    }
+
+    [Test]
+    public async Task UpdateGroup_ReturnsError_WhenVerificationRereadIsStale()
+    {
+        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
+        var id = Guid.NewGuid();
+        _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Old", ValidFrom = DateTime.UtcNow.Date });
+        _groupRepository.GetNoTracking(id).Returns(new Group { Id = id, Name = "Old", ValidFrom = DateTime.UtcNow.Date });
+        var parameters = new Dictionary<string, object>
+        {
+            ["groupId"] = id.ToString(),
+            ["name"] = "Bern City"
+        };
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("verification failed"));
     }
 
     [Test]
