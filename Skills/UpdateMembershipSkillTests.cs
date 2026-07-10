@@ -118,6 +118,77 @@ public class UpdateMembershipSkillTests
     }
 
     [Test]
+    public async Task Update_PersistedValuesMatch_ReportsVerified()
+    {
+        var membershipId = Guid.NewGuid();
+        var original = Membership(membershipId);
+        var persisted = Membership(membershipId);
+        persisted.ValidFrom = new DateTime(2026, 3, 1);
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(original, persisted);
+        mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
+        var skill = new UpdateMembershipSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "2026-03-01"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("verified");
+        await mediator.Received(2).Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Update_PersistedValuesMismatch_ReturnsVerificationError()
+    {
+        var membershipId = Guid.NewGuid();
+        var original = Membership(membershipId);
+        var stale = Membership(membershipId);
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(original, stale);
+        mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
+        var skill = new UpdateMembershipSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "2026-03-01"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("verification failed");
+    }
+
+    [Test]
+    public async Task Update_ReReadThrowsKeyNotFound_ReturnsVerificationError()
+    {
+        var membershipId = Guid.NewGuid();
+        var original = Membership(membershipId);
+        var mediator = Substitute.For<IMediator>();
+        var getCalls = 0;
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ++getCalls == 1 ? original : throw new KeyNotFoundException());
+        mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
+        var skill = new UpdateMembershipSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "2026-03-01"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("verification failed");
+    }
+
+    [Test]
     public async Task NoFieldsSupplied_ReturnsSuccess_WithoutPut()
     {
         var membershipId = Guid.NewGuid();

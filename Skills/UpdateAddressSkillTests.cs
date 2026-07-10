@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for update_address: loads via GetQuery&lt;AddressResource&gt;, mutates only supplied
-/// fields and dispatches PutCommand&lt;AddressResource&gt;; an unknown id yields an error.
+/// fields, dispatches PutCommand&lt;AddressResource&gt; and verifies the write by re-reading the
+/// address; an unknown id, a missing re-read or mismatching persisted fields yield an error.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -37,12 +38,13 @@ public class UpdateAddressSkillTests
     };
 
     [Test]
-    public async Task UpdateCityAndZip_DispatchesPutCommand_WithMergedValues()
+    public async Task UpdateCityAndZip_DispatchesPutCommand_WithMergedValues_AndReportsVerified()
     {
         var id = Guid.NewGuid();
+        var address = Address(id);
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
-            .Returns(Address(id));
+            .Returns(address);
         mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
         var skill = new UpdateAddressSkill(mediator);
@@ -55,6 +57,8 @@ public class UpdateAddressSkillTests
         });
 
         result.Success.ShouldBeTrue();
+        result.Message.ShouldNotBeNull();
+        result.Message!.ShouldContain("verified");
         await mediator.Received(1).Send(
             Arg.Is<PutCommand<AddressResource>>(c =>
                 c.Resource.Id == id &&
@@ -62,6 +66,54 @@ public class UpdateAddressSkillTests
                 c.Resource.Zip == "8001" &&
                 c.Resource.Street == "Alte Strasse 5"),
             Arg.Any<CancellationToken>());
+        await mediator.Received(2).Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateValidFrom_ChangesField_AndReportsVerified()
+    {
+        var id = Guid.NewGuid();
+        var address = Address(id);
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(address);
+        mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
+        var skill = new UpdateAddressSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["addressId"] = id.ToString(),
+            ["validFrom"] = "2026-09-01"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message!.ShouldContain("validFrom");
+        result.Message!.ShouldContain("verified");
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<AddressResource>>(c =>
+                c.Resource.ValidFrom == new DateTime(2026, 9, 1)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InvalidValidFrom_ReturnsError_NoPut()
+    {
+        var id = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Address(id));
+        var skill = new UpdateAddressSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["addressId"] = id.ToString(),
+            ["validFrom"] = "not-a-date"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldContain("validFrom");
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -80,5 +132,54 @@ public class UpdateAddressSkillTests
 
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReReadMismatch_ReturnsError()
+    {
+        var id = Guid.NewGuid();
+        var loaded = Address(id);
+        var stale = Address(id);
+        stale.ClientId = loaded.ClientId;
+        var calls = 0;
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => calls++ == 0 ? loaded : stale);
+        mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
+        var skill = new UpdateAddressSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["addressId"] = id.ToString(),
+            ["city"] = "Zürich"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldContain("mismatching fields");
+        result.Message!.ShouldContain("city");
+    }
+
+    [Test]
+    public async Task ReReadMissingAfterPut_ReturnsError()
+    {
+        var id = Guid.NewGuid();
+        var loaded = Address(id);
+        var calls = 0;
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => calls++ == 0 ? loaded : throw new KeyNotFoundException());
+        mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
+        var skill = new UpdateAddressSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["addressId"] = id.ToString(),
+            ["city"] = "Zürich"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldContain("could not be re-read");
     }
 }

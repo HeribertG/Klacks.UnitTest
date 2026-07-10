@@ -2,10 +2,12 @@
 
 /// <summary>
 /// Unit tests for delete_membership: dispatches DeleteCommand&lt;MembershipResource&gt; for the given id
-/// and reports success; a null result (unknown membership) yields an error.
+/// and reports success only after the verification re-read confirms the membership is gone; a null
+/// delete result (unknown membership) or a still-visible re-read yields an error.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
+using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
@@ -41,6 +43,46 @@ public class DeleteMembershipSkillTests
         await mediator.Received(1).Send(
             Arg.Is<DeleteCommand<MembershipResource>>(c => c.Id == id),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DeleteMembership_ReReadThrowsKeyNotFound_ReportsVerified()
+    {
+        var id = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<DeleteCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(new MembershipResource { Id = id, ClientId = Guid.NewGuid() });
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns<MembershipResource>(_ => throw new KeyNotFoundException());
+        var skill = new DeleteMembershipSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = id.ToString()
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("verified");
+    }
+
+    [Test]
+    public async Task DeleteMembership_StillVisibleAfterDelete_ReturnsVerificationError()
+    {
+        var id = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<DeleteCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(new MembershipResource { Id = id, ClientId = Guid.NewGuid() });
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(new MembershipResource { Id = id, ClientId = Guid.NewGuid() });
+        var skill = new DeleteMembershipSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = id.ToString()
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("verification failed");
     }
 
     [Test]

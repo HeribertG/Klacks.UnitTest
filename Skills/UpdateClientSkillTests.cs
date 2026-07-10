@@ -2,7 +2,9 @@
 
 /// <summary>
 /// Unit tests for UpdateClientSkill — id validation, partial updates, gender change side
-/// effect on LegalEntity, no-op when nothing supplied. ClientRepository + UnitOfWork mocked.
+/// effect on LegalEntity, no-op when nothing supplied, plus the self-verify path: success
+/// carries the "verified" marker, a failed re-read yields an error (rollback).
+/// ClientRepository + UnitOfWork mocked.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
@@ -32,6 +34,8 @@ public class UpdateClientSkillTests
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _countryResolver = Substitute.For<ICountryResolver>();
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
+            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
         _skill = new UpdateClientSkill(
             _clientRepository, _searchRepository, _unitOfWork, Substitute.For<ILogger<UpdateClientSkill>>(), _countryResolver);
     }
@@ -77,6 +81,7 @@ public class UpdateClientSkillTests
         var id = Guid.NewGuid();
         var existing = new Client { Id = id, FirstName = "Old", Name = "Müller", Gender = GenderEnum.Female };
         _clientRepository.Get(id).Returns(existing);
+        _clientRepository.GetNoTracking(id).Returns(existing);
         var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), ["firstName"] = "Anna" };
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
@@ -91,6 +96,7 @@ public class UpdateClientSkillTests
         var id = Guid.NewGuid();
         var existing = new Client { Id = id, FirstName = "Acme", Name = "GmbH", Gender = GenderEnum.Female, LegalEntity = false };
         _clientRepository.Get(id).Returns(existing);
+        _clientRepository.GetNoTracking(id).Returns(existing);
         var parameters = new Dictionary<string, object>
         {
             ["clientId"] = id.ToString(),
@@ -102,5 +108,49 @@ public class UpdateClientSkillTests
         Assert.That(result.Success, Is.True);
         await _clientRepository.Received(1).Put(Arg.Is<Client>(c =>
             c.Gender == GenderEnum.LegalEntity && c.LegalEntity));
+    }
+
+    [Test]
+    public async Task SuccessMessage_CarriesVerifiedMarker()
+    {
+        var id = Guid.NewGuid();
+        var existing = new Client { Id = id, FirstName = "Old", Name = "Müller" };
+        _clientRepository.Get(id).Returns(existing);
+        _clientRepository.GetNoTracking(id).Returns(existing);
+        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), ["firstName"] = "Anna" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(result.Message, Does.Contain("verified"));
+        await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenVerificationRereadIsStale()
+    {
+        var id = Guid.NewGuid();
+        _clientRepository.Get(id).Returns(new Client { Id = id, FirstName = "Old", Name = "Müller" });
+        _clientRepository.GetNoTracking(id).Returns(new Client { Id = id, FirstName = "Old", Name = "Müller" });
+        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), ["firstName"] = "Anna" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("verification failed"));
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenVerificationRereadIsMissing()
+    {
+        var id = Guid.NewGuid();
+        _clientRepository.Get(id).Returns(new Client { Id = id, FirstName = "Old", Name = "Müller" });
+        _clientRepository.GetNoTracking(id).Returns((Client?)null);
+        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), ["firstName"] = "Anna" };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("verification failed"));
     }
 }
