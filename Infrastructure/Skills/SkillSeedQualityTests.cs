@@ -73,6 +73,50 @@ public class SkillSeedQualityTests
             "skill action-specific keywords. Colliding groups: " + string.Join(" | ", collisions));
     }
 
+    [Test]
+    public void SkillNames_MustBeUnique_AcrossMainSeedFileAndEachPluginSeedFile()
+    {
+        var seedFiles = new List<string> { LocateDefinitionsFile(SkillSeedsFileName) };
+        seedFiles.AddRange(LocatePluginSeedFiles());
+
+        var offenders = new List<string>();
+
+        foreach (var seedFile in seedFiles)
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(seedFile));
+            var root = document.RootElement;
+            var skills = root.ValueKind == JsonValueKind.Array
+                ? root
+                : root.GetProperty("skills");
+
+            var duplicates = skills.EnumerateArray()
+                .Select(s => (s.TryGetProperty("name", out var n) ? n.GetString() : null) ?? string.Empty)
+                .Where(n => n.Length > 0)
+                .GroupBy(n => n.ToLowerInvariant())
+                .Where(g => g.Count() > 1)
+                .Select(g => $"{Path.GetFileName(Path.GetDirectoryName(seedFile))}/{Path.GetFileName(seedFile)}: {g.Key} (x{g.Count()})")
+                .ToList();
+
+            offenders.AddRange(duplicates);
+        }
+
+        offenders.ShouldBeEmpty(
+            "Duplicate skill names crash the application on a FRESH database: SkillSeedLoader inserts both " +
+            "rows and violates the unique index ix_agent_skills_agent_id_name, aborting startup " +
+            "(incident: release 1.0.20 shipped list_scheduling_rules/get_scheduling_defaults twice and could " +
+            "not start on empty databases). Duplicates: " + string.Join(" | ", offenders));
+    }
+
+    private static IEnumerable<string> LocatePluginSeedFiles()
+    {
+        var definitionsFile = LocateDefinitionsFile(SkillSeedsFileName);
+        var apiRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(definitionsFile)!, "..", "..", ".."));
+        var pluginsDir = Path.Combine(apiRoot, "Plugins", "Features");
+        return Directory.Exists(pluginsDir)
+            ? Directory.EnumerateFiles(pluginsDir, SkillSeedsFileName, SearchOption.AllDirectories)
+            : [];
+    }
+
     private static string LocateDefinitionsFile(string fileName)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
