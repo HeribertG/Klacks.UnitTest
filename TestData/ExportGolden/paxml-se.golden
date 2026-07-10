@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paxml>
+  <header>
+    <version>2.0</version>
+    <datum>2026-02-01T08:00:00</datum>
+  </header>
+  <lonetransaktioner>
+    <lonetrans anstid="42">
+      <lonart>1000</lonart>
+      <datum>2026-01-15</datum>
+      <antal>8.50</antal>
+    </lonetrans>
+    <lonetrans anstid="42">
+      <lonart>1010</lonart>
+      <datum>2026-01-15</datum>
+      <antal>1.25</antal>
+    </lonetrans>
+    <lonetrans anstid="42">
+      <lonart></lonart>
+      <datum>2026-01-20</datum>
+      <antal>8.00</antal>
+    </lonetrans>
+    <lonetrans anstid="77">
+      <lonart>1000</lonart>
+      <datum>2026-01-16</datum>
+      <antal>8.00</antal>
+    </lonetrans>
+  </lonetransaktioner>
+</paxml>

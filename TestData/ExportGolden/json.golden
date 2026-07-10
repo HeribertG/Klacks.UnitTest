@@ -1,0 +1,53 @@
+{
+  "orders": [
+    {
+      "orderShiftId": "a3000000-0000-4000-8000-000000000003",
+      "orderName": "Musterauftrag Z\u00FCrich S\u00FCd",
+      "orderAbbreviation": "MZS",
+      "sourceSystemId": "ERP-01",
+      "externalOrderReference": "PO-2026-0042",
+      "orderFromDate": "2026-01-01",
+      "orderUntilDate": "2026-01-31",
+      "orderStartShift": "06:00:00",
+      "orderEndShift": "22:00:00",
+      "customerId": "a4000000-0000-4000-8000-000000000004",
+      "customerNumber": 10042,
+      "customerName": "M\u00FCller \u0026 S\u00F6hne AG",
+      "customerExternalReference": "CUST-042",
+      "workEntries": [
+        {
+          "workId": "a7000000-0000-4000-8000-000000000007",
+          "employeeId": "a5000000-0000-4000-8000-000000000005",
+          "employeeName": "\u00C6bel\u00F8, Fran\u00E7ois",
+          "employeeIdNumber": 42,
+          "workDate": "2026-01-15",
+          "startTime": "06:00:00",
+          "endTime": "14:30:00",
+          "workTime": 8.5,
+          "surcharges": 1.25,
+          "information": "Fr\u00FChdienst",
+          "changes": [],
+          "expenses": [],
+          "breaks": []
+        },
+        {
+          "workId": "a8000000-0000-4000-8000-000000000008",
+          "employeeId": "a6000000-0000-4000-8000-000000000006",
+          "employeeName": "\u00D6hlund, Bj\u00F6rn",
+          "employeeIdNumber": 77,
+          "workDate": "2026-01-16",
+          "startTime": "14:00:00",
+          "endTime": "22:00:00",
+          "workTime": 8,
+          "surcharges": 0,
+          "changes": [],
+          "expenses": [],
+          "breaks": []
+        }
+      ]
+    }
+  ],
+  "startDate": "2026-01-01",
+  "endDate": "2026-01-31",
+  "exportDate": "2026-02-01T08:00:00Z"
+}

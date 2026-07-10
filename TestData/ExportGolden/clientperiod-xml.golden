@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ClientPeriodExport startDate="2026-01-01" endDate="2026-01-31" exportDate="2026-02-01T08:00:00.0000000Z" currency="EUR">
+  <Client id="a5000000-0000-4000-8000-000000000005">
+    <IdNumber>42</IdNumber>
+    <Name>Æbelø, François</Name>
+    <Type>Employee</Type>
+    <WorkEntries>
+      <Work id="a7000000-0000-4000-8000-000000000007">
+        <Date>2026-01-15</Date>
+        <StartTime>06:00</StartTime>
+        <EndTime>14:30</EndTime>
+        <Hours>8.50</Hours>
+        <Surcharges>1.25</Surcharges>
+        <Information>Frühdienst</Information>
+      </Work>
+    </WorkEntries>
+  </Client>
+</ClientPeriodExport>

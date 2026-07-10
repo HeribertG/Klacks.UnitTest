@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<OrderExport startDate="2026-01-01" endDate="2026-01-31" exportDate="2026-02-01T08:00:00.0000000Z" currency="EUR">
+  <Order id="a3000000-0000-4000-8000-000000000003">
+    <Name>Musterauftrag Zürich Süd</Name>
+    <Abbreviation>MZS</Abbreviation>
+    <SourceSystemId>ERP-01</SourceSystemId>
+    <ExternalOrderReference>PO-2026-0042</ExternalOrderReference>
+    <FromDate>2026-01-01</FromDate>
+    <UntilDate>2026-01-31</UntilDate>
+    <StartShift>06:00</StartShift>
+    <EndShift>22:00</EndShift>
+    <Customer id="a4000000-0000-4000-8000-000000000004">
+      <Number>10042</Number>
+      <Name>Müller &amp; Söhne AG</Name>
+      <ExternalCustomerReference>CUST-042</ExternalCustomerReference>
+    </Customer>
+    <WorkEntries>
+      <Work id="a7000000-0000-4000-8000-000000000007">
+        <EmployeeId>a5000000-0000-4000-8000-000000000005</EmployeeId>
+        <EmployeeName>Æbelø, François</EmployeeName>
+        <EmployeeIdNumber>42</EmployeeIdNumber>
+        <Date>2026-01-15</Date>
+        <StartTime>06:00</StartTime>
+        <EndTime>14:30</EndTime>
+        <Hours>8.50</Hours>
+        <Surcharges>1.25</Surcharges>
+        <Information>Frühdienst</Information>
+      </Work>
+      <Work id="a8000000-0000-4000-8000-000000000008">
+        <EmployeeId>a6000000-0000-4000-8000-000000000006</EmployeeId>
+        <EmployeeName>Öhlund, Björn</EmployeeName>
+        <EmployeeIdNumber>77</EmployeeIdNumber>
+        <Date>2026-01-16</Date>
+        <StartTime>14:00</StartTime>
+        <EndTime>22:00</EndTime>
+        <Hours>8.00</Hours>
+        <Surcharges>0.00</Surcharges>
+      </Work>
+    </WorkEntries>
+  </Order>
+</OrderExport>

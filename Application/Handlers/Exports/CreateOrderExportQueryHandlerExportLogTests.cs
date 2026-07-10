@@ -78,6 +78,7 @@ public class CreateOrderExportQueryHandlerExportLogTests
             _exportFormatPolicy,
             _companyInfoLoader,
             _exportLogRepository,
+            Substitute.For<IExportFormatOverrideApplier>(),
             _httpContextAccessor,
             _unitOfWork,
             _logger);

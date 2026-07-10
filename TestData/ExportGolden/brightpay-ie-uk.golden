@@ -1,0 +1,5 @@
+Works number;Description;Number of normal hours;Number of time and a half hours
+42;1000;8.50;
+42;1010;;1.25
+42;2000;8.00;
+77;1000;8.00;

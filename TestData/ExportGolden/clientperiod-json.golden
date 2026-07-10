@@ -1,0 +1,28 @@
+{
+  "clients": [
+    {
+      "clientId": "a5000000-0000-4000-8000-000000000005",
+      "clientName": "\u00C6bel\u00F8, Fran\u00E7ois",
+      "clientIdNumber": 42,
+      "clientType": 0,
+      "workEntries": [
+        {
+          "workId": "a7000000-0000-4000-8000-000000000007",
+          "workDate": "2026-01-15",
+          "startTime": "06:00:00",
+          "endTime": "14:30:00",
+          "workTime": 8.5,
+          "surcharges": 1.25,
+          "information": "Fr\u00FChdienst",
+          "changes": [],
+          "expenses": [],
+          "breaks": []
+        }
+      ],
+      "periodHours": []
+    }
+  ],
+  "startDate": "2026-01-01",
+  "endDate": "2026-01-31",
+  "exportDate": "2026-02-01T08:00:00Z"
+}

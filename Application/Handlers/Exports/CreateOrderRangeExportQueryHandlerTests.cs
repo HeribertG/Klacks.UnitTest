@@ -38,6 +38,7 @@ public class CreateOrderRangeExportQueryHandlerTests
     private ICompanyInfoLoader _companyInfoLoader = null!;
     private IExportLogRepository _exportLogRepository = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private IExportFormatOverrideApplier _overrideApplier = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<CreateOrderRangeExportQueryHandler> _logger = null!;
     private CreateOrderRangeExportQueryHandler _handler = null!;
@@ -78,9 +79,12 @@ public class CreateOrderRangeExportQueryHandlerTests
 
         _exportFormatPolicy.IsEnabledAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
+        _clientPeriodFormatter.FormatKey.Returns(ExportConstants.FormatXml);
         _clientPeriodFormatter.ContentType.Returns(ExportConstants.ContentTypeXml);
         _clientPeriodFormatter.FileExtension.Returns(".xml");
         _clientPeriodFormatter.Format(Arg.Any<ClientPeriodExportData>(), Arg.Any<ExportOptions>()).Returns([4, 5, 6]);
+
+        _overrideApplier = Substitute.For<IExportFormatOverrideApplier>();
 
         _sealedOrderIdLoader.LoadIdsForRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns([Guid.NewGuid()]);
 
@@ -116,9 +120,28 @@ public class CreateOrderRangeExportQueryHandlerTests
             _periodClosedEntryFilter,
             _companyInfoLoader,
             _exportLogRepository,
+            _overrideApplier,
             _httpContextAccessor,
             _unitOfWork,
             _logger);
+    }
+
+    [Test]
+    public async Task Handle_AppliesOverridesForOrderFormatAndClientPeriodFormat()
+    {
+        var query = new CreateOrderRangeExportQuery(new OrderRangeExportFilter
+        {
+            FromDate = FromDate,
+            UntilDate = UntilDate,
+            Format = ExportConstants.FormatXml,
+        });
+
+        await _handler.Handle(query, CancellationToken.None);
+
+        await _overrideApplier.Received(1).ApplyAsync(
+            ExportConstants.FormatXml, Arg.Any<ExportOptions>(), Arg.Any<CancellationToken>());
+        await _overrideApplier.Received(1).ApplyAsync(
+            $"{ExportOverrideConstants.ClientPeriodFormatKeyPrefix}{ExportConstants.FormatXml}", Arg.Any<ExportOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

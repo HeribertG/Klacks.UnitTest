@@ -69,6 +69,7 @@ public class CreateClientPeriodExportQueryHandlerTests
             _dataLoader,
             [_formatter],
             _exportLogRepository,
+            Substitute.For<IExportFormatOverrideApplier>(),
             _httpContextAccessor,
             _unitOfWork,
             _logger);
@@ -137,6 +138,7 @@ public class CreateClientPeriodExportQueryHandlerTests
             _dataLoader,
             [_formatter, csvFormatter],
             _exportLogRepository,
+            Substitute.For<IExportFormatOverrideApplier>(),
             _httpContextAccessor,
             _unitOfWork,
             _logger);

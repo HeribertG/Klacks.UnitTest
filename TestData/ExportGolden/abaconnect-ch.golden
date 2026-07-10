@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AbaConnectContainer>
+  <TaskCount>1</TaskCount>
+  <Task>
+    <Parameter>
+      <Application>LOHN</Application>
+      <Id>FlatPreEntry</Id>
+      <MapId>AbaDefault</MapId>
+      <Version>2020.00</Version>
+    </Parameter>
+    <Transaction>
+      <PreEntry mode="SAVE">
+        <EmployeeNumber>42</EmployeeNumber>
+        <PeriodDate>2026-01-15</PeriodDate>
+        <PeriodNumber>01</PeriodNumber>
+        <PayrollType>1000</PayrollType>
+        <Amount>8.500000</Amount>
+        <Factor>1.000000</Factor>
+      </PreEntry>
+      <PreEntry mode="SAVE">
+        <EmployeeNumber>42</EmployeeNumber>
+        <PeriodDate>2026-01-15</PeriodDate>
+        <PeriodNumber>01</PeriodNumber>
+        <PayrollType>1010</PayrollType>
+        <Amount>1.250000</Amount>
+        <Factor>1.000000</Factor>
+      </PreEntry>
+      <PreEntry mode="SAVE">
+        <EmployeeNumber>42</EmployeeNumber>
+        <PeriodDate>2026-01-20</PeriodDate>
+        <PeriodNumber>01</PeriodNumber>
+        <PayrollType>2000</PayrollType>
+        <Amount>8.000000</Amount>
+        <Factor>1.000000</Factor>
+      </PreEntry>
+      <PreEntry mode="SAVE">
+        <EmployeeNumber>77</EmployeeNumber>
+        <PeriodDate>2026-01-16</PeriodDate>
+        <PeriodNumber>01</PeriodNumber>
+        <PayrollType>1000</PayrollType>
+        <Amount>8.000000</Amount>
+        <Factor>1.000000</Factor>
+      </PreEntry>
+    </Transaction>
+  </Task>
+</AbaConnectContainer>

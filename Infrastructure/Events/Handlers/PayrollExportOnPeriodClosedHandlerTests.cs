@@ -87,6 +87,7 @@ public class PayrollExportOnPeriodClosedHandlerTests
             _exportFormatPolicy,
             _objectStorage,
             _exportLogRepository,
+            Substitute.For<IExportFormatOverrideApplier>(),
             _unitOfWork,
             _logger);
     }

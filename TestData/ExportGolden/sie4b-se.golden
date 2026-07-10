@@ -1,0 +1,20 @@
+#FLAGGA 0
+#PROGRAM "Klacks" 1.0
+#FORMAT PC8
+#GEN 20260201
+#SIETYP 4
+#FNAMN "Klacks Muster GmbH"
+#KONTO 7010 "Salaries and wages (placeholder)"
+#KONTO 2890 "Other short-term liabilities (placeholder)"
+#KONTO 7690 "Other taxable staff costs (placeholder)"
+#KONTO 7389 "Non-taxable expense reimbursement (placeholder)"
+#VER A 1 20260115 "íbelo, Franáois - Musterauftrag ZÅrich SÅd"
+{
+#TRANS 7010 {} 9.75
+#TRANS 2890 {} -9.75
+}
+#VER A 2 20260116 "ôhlund, Bjîrn - Musterauftrag ZÅrich SÅd"
+{
+#TRANS 7010 {} 8.00
+#TRANS 2890 {} -8.00
+}
