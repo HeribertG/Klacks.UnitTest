@@ -75,6 +75,7 @@ public static class SkillFeatureCoverageMap
         ["TranslationController"] = Covered("get_translation_status"),
         ["UpdateController"] = Excluded("auto-update deployment infrastructure, not a Klacksy domain feature"),
         ["VersionController"] = Covered("get_system_info"),
+        ["WhisperPluginController"] = Excluded("Whisper plugin install/uninstall rides the updater deployment infrastructure; admin settings card only, engine visibility via get_speech_settings"),
 
         ["CalendarSelectionsController"] = Gap("calendar selection management"),
         ["SelectedCalendarsController"] = Gap("calendar selection management"),
