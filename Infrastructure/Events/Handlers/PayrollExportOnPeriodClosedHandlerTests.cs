@@ -33,6 +33,7 @@ public class PayrollExportOnPeriodClosedHandlerTests
     private IMediator _mediator = null!;
     private IPayrollExportConfigRepository _configRepository = null!;
     private IPayrollExportFormatter _formatter = null!;
+    private IExportFormatPolicy _exportFormatPolicy = null!;
     private IObjectStorageService _objectStorage = null!;
     private IExportLogRepository _exportLogRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -64,6 +65,7 @@ public class PayrollExportOnPeriodClosedHandlerTests
         _mediator = Substitute.For<IMediator>();
         _configRepository = Substitute.For<IPayrollExportConfigRepository>();
         _formatter = Substitute.For<IPayrollExportFormatter>();
+        _exportFormatPolicy = Substitute.For<IExportFormatPolicy>();
         _objectStorage = Substitute.For<IObjectStorageService>();
         _exportLogRepository = Substitute.For<IExportLogRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
@@ -75,12 +77,14 @@ public class PayrollExportOnPeriodClosedHandlerTests
             .Returns(new PayrollExportGroupConfig { GroupId = GroupId, TargetSystem = PayrollExportConstants.FormatKeyDatevLug });
         _exportLogRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<ExportLog>());
+        _exportFormatPolicy.IsEnabledAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
 
         _handler = new PayrollExportOnPeriodClosedHandler(
             _featurePluginService,
             _mediator,
             _configRepository,
             [_formatter],
+            _exportFormatPolicy,
             _objectStorage,
             _exportLogRepository,
             _unitOfWork,
@@ -154,6 +158,19 @@ public class PayrollExportOnPeriodClosedHandlerTests
         EnableFeature();
         _configRepository.GetByGroupAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new PayrollExportGroupConfig { GroupId = GroupId, TargetSystem = "unregistered-target-system" });
+
+        await _handler.HandleAsync(GroupEvent(), CancellationToken.None);
+
+        await _mediator.DidNotReceive().Send(Arg.Any<GetPayrollPeriodDataQuery>(), Arg.Any<CancellationToken>());
+        await _objectStorage.DidNotReceive().UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HandleAsync_Skips_WhenTargetSystemIsDisabledInExportFormatSettings()
+    {
+        EnableFeature();
+        _exportFormatPolicy.IsEnabledAsync(PayrollExportConstants.FormatKeyDatevLug, Arg.Any<CancellationToken>())
+            .Returns(false);
 
         await _handler.HandleAsync(GroupEvent(), CancellationToken.None);
 
