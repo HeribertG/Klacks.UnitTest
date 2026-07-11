@@ -195,7 +195,7 @@ public class Sie4bSeExportFormatterTests
     private string[] FormatLines(OrderExportData data, string companyName = "")
     {
         return FormatText(data, companyName)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            .Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
     }
 
     private static OrderExportData BuildData(Action<OrderGroup> customize)

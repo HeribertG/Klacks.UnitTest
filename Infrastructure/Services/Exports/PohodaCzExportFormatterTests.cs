@@ -19,17 +19,18 @@ namespace Klacks.UnitTest.Infrastructure.Services.Exports;
 [TestFixture]
 public class PohodaCzExportFormatterTests
 {
+    private static readonly XNamespace Ns = "http://www.stormware.cz/schema/pamica/version_2/dochazka.xsd";
     private const string DochazkaZamestnance = "dochazka_zamestnance";
-    private const string Hlavicka = "hlavicka";
-    private const string CisloPracovnihoPomeru = "cislo_pracovniho_pomeru";
-    private const string Nepritomnosti = "nepritomnosti";
-    private const string Nepritomnost = "nepritomnost";
-    private const string Pritomnost = "pritomnost";
-    private const string PrescasPracovniDen = "prescas_pracovni_den";
-    private const string Hodiny = "hodiny";
-    private const string Kod = "kod";
-    private const string Od = "od";
-    private const string Do = "do";
+    private static readonly XName Hlavicka = Ns + "hlavicka";
+    private static readonly XName CisloPracovnihoPomeru = Ns + "cislo_pracovniho_pomeru";
+    private static readonly XName Nepritomnosti = Ns + "nepritomnosti";
+    private static readonly XName Nepritomnost = Ns + "nepritomnost";
+    private static readonly XName Pritomnost = Ns + "pritomnost";
+    private static readonly XName PrescasPracovniDen = Ns + "prescas_pracovni_den";
+    private static readonly XName Hodiny = Ns + "hodiny";
+    private static readonly XName Kod = Ns + "kod";
+    private static readonly XName Od = Ns + "od";
+    private static readonly XName Do = Ns + "do";
     private const string Version = "version";
 
     private PohodaCzExportFormatter _formatter = null!;
@@ -230,7 +231,7 @@ public class PohodaCzExportFormatterTests
         var result = _formatter.Format(data, Config(surchargeWageType: "P07"));
         var document = ParseSingleEntry(result.Content);
 
-        var priplatek = document.Root!.Element("mzdy")!.Element("priplatek")!;
+        var priplatek = document.Root!.Element(Ns + "mzdy")!.Element(Ns + "priplatek")!;
         priplatek.Element(Kod)!.Value.ShouldBe("P07");
         priplatek.Element(Hodiny)!.Value.ShouldBe("2:15");
         result.RecordCount.ShouldBe(1);
