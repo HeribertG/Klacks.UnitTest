@@ -2,7 +2,9 @@
 
 /// <summary>
 /// Unit tests for BmdExportFormatter verifying that the trailing ERP reference columns
-/// (extbelegnr, quellsystem, extkundenref) are declared in the header and populated per row.
+/// (extbelegnr, quellsystem, extkundenref) are declared in the header and populated per row,
+/// and that the free-text OrderAbbreviation is escaped (separator quoting + formula neutralisation)
+/// so it cannot shift columns or inject spreadsheet formulas.
 /// </summary>
 using System.Text;
 using Shouldly;
@@ -66,6 +68,22 @@ public class BmdExportFormatterErpReferencesTests
         fields[^3].ShouldBeEmpty();
         fields[^2].ShouldBeEmpty();
         fields[^1].ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Format_QuotesOrderAbbreviation_WhenItContainsSeparator()
+    {
+        var lines = FormatLines(BuildData(order => order.OrderAbbreviation = "A;B"));
+
+        lines[1].ShouldContain("10.01.2026;\"A;B\";ER");
+    }
+
+    [Test]
+    public void Format_NeutralizesFormulaInjection_InOrderAbbreviation()
+    {
+        var lines = FormatLines(BuildData(order => order.OrderAbbreviation = "=danger"));
+
+        lines[1].ShouldContain("10.01.2026;'=danger;ER");
     }
 
     private string[] FormatLines(OrderExportData data)

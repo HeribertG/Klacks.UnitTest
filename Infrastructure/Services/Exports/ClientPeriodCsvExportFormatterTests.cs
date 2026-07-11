@@ -170,6 +170,43 @@ public class ClientPeriodCsvExportFormatterTests
     }
 
     [Test]
+    public void Format_NeutralizesFormulaInjection_InClientNameAndInformation()
+    {
+        var data = new ClientPeriodExportData
+        {
+            Clients =
+            [
+                new ClientPeriodGroup
+                {
+                    ClientId = Guid.NewGuid(),
+                    ClientName = "=HYPERLINK(\"http://evil\")",
+                    ClientIdNumber = 1,
+                    ClientType = EntityTypeEnum.Employee,
+                    WorkEntries =
+                    [
+                        new ClientWorkExportEntry
+                        {
+                            WorkId = Guid.NewGuid(),
+                            WorkDate = new DateOnly(2026, 1, 5),
+                            StartTime = new TimeOnly(8, 0),
+                            EndTime = new TimeOnly(9, 0),
+                            WorkTime = 1m,
+                            Surcharges = 0m,
+                            Information = "+cmd|calc",
+                        },
+                    ],
+                },
+            ],
+        };
+
+        var bytes = _formatter.Format(data, new ExportOptions());
+        var text = Encoding.UTF8.GetString(bytes);
+
+        text.ShouldContain("'=HYPERLINK");
+        text.ShouldContain("'+cmd|calc");
+    }
+
+    [Test]
     public void Format_StartsWithUtf8Bom()
     {
         var bytes = _formatter.Format(BuildData(), new ExportOptions());

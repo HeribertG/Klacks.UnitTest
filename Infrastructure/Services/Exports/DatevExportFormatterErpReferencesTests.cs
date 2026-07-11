@@ -19,6 +19,7 @@ public class DatevExportFormatterErpReferencesTests
     private const int BeleginfoType2Index = 22;
     private const int BeleginfoContent2Index = 23;
     private const int OrderNumberIndex = 94;
+    private const int OrderAbbreviationIndex = 10;
 
     private DatevExportFormatter _formatter = null!;
 
@@ -65,6 +66,26 @@ public class DatevExportFormatterErpReferencesTests
         fields[BeleginfoContent1Index].ShouldBeEmpty();
         fields[BeleginfoType2Index].ShouldBeEmpty();
         fields[BeleginfoContent2Index].ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Format_DoublesQuotes_InOrderAbbreviation()
+    {
+        var data = BuildData(order => order.OrderAbbreviation = "A\"B");
+
+        var fields = ParseFirstDataRow(data);
+
+        fields[OrderAbbreviationIndex].ShouldBe("\"A\"\"B\"");
+    }
+
+    [Test]
+    public void Format_NeutralizesFormulaInjection_InOrderAbbreviation()
+    {
+        var data = BuildData(order => order.OrderAbbreviation = "=danger");
+
+        var fields = ParseFirstDataRow(data);
+
+        fields[OrderAbbreviationIndex].ShouldBe("\"'=danger\"");
     }
 
     private string[] ParseFirstDataRow(OrderExportData data)
