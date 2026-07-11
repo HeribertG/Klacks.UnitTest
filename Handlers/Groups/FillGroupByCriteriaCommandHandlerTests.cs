@@ -2,8 +2,9 @@
 
 /// <summary>
 /// Unit tests for FillGroupByCriteriaCommandHandler: a preview (Apply=false) never persists, an apply
-/// adds only clients that are not already members and commits once, and the contract filter is passed
-/// through to the search.
+/// adds only clients that are not already members and commits once, and the contract/city/zip-prefix/
+/// qualification filters (the latter together with the company-clock validity date) are passed through
+/// to the search.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Groups;
@@ -43,8 +44,9 @@ public class FillGroupByCriteriaCommandHandlerTests
             _searchRepository, _groupItemRepository, _unitOfWork, _companyClock);
 
         _searchRepository.SearchAsync(
-            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
-            Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<DateOnly?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult
             {
                 Items = new List<ClientSearchItem>
@@ -65,8 +67,14 @@ public class FillGroupByCriteriaCommandHandlerTests
             .Returns(1);
     }
 
-    private static FillGroupByCriteriaCommand Command(bool apply, Guid? contractId = null, DateTime? validFrom = null) =>
-        new(GroupId, "Bern", "BE", contractId, EntityTypeEnum.Employee, null, validFrom, apply, "tester");
+    private static FillGroupByCriteriaCommand Command(
+        bool apply,
+        Guid? contractId = null,
+        DateTime? validFrom = null,
+        string? city = null,
+        string? zipPrefix = null,
+        Guid? qualificationId = null) =>
+        new(GroupId, "Bern", "BE", contractId, city, zipPrefix, qualificationId, EntityTypeEnum.Employee, null, validFrom, apply, "tester");
 
     [Test]
     public async Task Preview_DoesNotPersist_AndReturnsAllMatches()
@@ -134,6 +142,48 @@ public class FillGroupByCriteriaCommandHandlerTests
         await _handler.Handle(Command(apply: true, contractId: contractId), CancellationToken.None);
 
         await _searchRepository.Received(1).SearchAsync(
-            Arg.Any<string?>(), "BE", EntityTypeEnum.Employee, contractId, Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), "BE", EntityTypeEnum.Employee, contractId,
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<DateOnly?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_PassesCityAndZipPrefixFilters_ToSearch()
+    {
+        await _handler.Handle(Command(apply: true, city: "Bern", zipPrefix: "30"), CancellationToken.None);
+
+        await _searchRepository.Received(1).SearchAsync(
+            Arg.Any<string?>(), "BE", EntityTypeEnum.Employee, Arg.Any<Guid?>(),
+            "Bern", "30", Arg.Any<Guid?>(), Arg.Any<DateOnly?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_PassesQualificationFilter_WithCompanyTodayAsValidityDate_ToSearch()
+    {
+        var qualificationId = Guid.NewGuid();
+
+        await _handler.Handle(Command(apply: true, qualificationId: qualificationId), CancellationToken.None);
+
+        await _searchRepository.Received(1).SearchAsync(
+            Arg.Any<string?>(), "BE", EntityTypeEnum.Employee, Arg.Any<Guid?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), qualificationId, DateOnly.FromDateTime(CompanyToday),
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Preview_PassesAllCriteria_ToSearch_EvenWhenApplyIsFalse()
+    {
+        var contractId = Guid.NewGuid();
+        var qualificationId = Guid.NewGuid();
+
+        await _handler.Handle(
+            Command(apply: false, contractId: contractId, city: "Bern", zipPrefix: "30", qualificationId: qualificationId),
+            CancellationToken.None);
+
+        await _searchRepository.Received(1).SearchAsync(
+            Arg.Any<string?>(), "BE", EntityTypeEnum.Employee, contractId,
+            "Bern", "30", qualificationId, DateOnly.FromDateTime(CompanyToday),
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 }
