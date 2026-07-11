@@ -213,6 +213,56 @@ public class RecipeEngineServiceSemanticFallbackTests
     }
 
     [Test]
+    public async Task LeadingDecline_NeverConsultsSemanticFallback()
+    {
+        // Transcript case 2026-07-11: "Nein, nein, nein..." answered the assistant's own question
+        // ("Willst du mehr über einen bestimmten Bereich erfahren?") and must never be ranked
+        // against the mutation recipes — even when the embedding would land two candidates in the
+        // grey zone and trigger the "two possible actions" disambiguation.
+        var message = "Nein, nein, nein, nein, nein, nein.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task LeadingDecline_WithMisheardTail_NeverConsultsSemanticFallback()
+    {
+        // STT mishearing from the same transcript ("zuhüssen" for "zuhören/wissen"): the unknown
+        // tail word must not defeat the leading-negation rule.
+        var message = "Nein, im Moment will ich nicht zuhüssen.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task LeadingNegation_WithMutationVerb_StillConsultsSemanticFallback()
+    {
+        // "Nein, erfasse stattdessen ..." corrects course instead of declining: the mutation verb
+        // re-enables the semantic fallback so the guided flow stays reachable.
+        var message = "Nein, erfasse stattdessen einen neuen Mitarbeiter für mich.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("onboard-employee", 0.82));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        plan.NeedsConfirmation.ShouldBeTrue();
+    }
+
+    [Test]
     public async Task MessageMatchingKeywordTrigger_NeverConsultsSemanticFallback()
     {
         var message = "Bitte onboard einen neuen Mitarbeiter";
