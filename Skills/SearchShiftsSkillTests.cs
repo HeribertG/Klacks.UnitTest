@@ -117,4 +117,84 @@ public class SearchShiftsSkillTests
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>());
     }
+
+    private static IMediator MediatorWithCatalog(string filteredSearch, params ShiftResource[] catalog)
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(
+                Arg.Is<GetTruncatedListQuery>(q => q.Filter.SearchString == filteredSearch),
+                Arg.Any<CancellationToken>())
+            .Returns(Result());
+        mediator.Send(
+                Arg.Is<GetTruncatedListQuery>(q => q.Filter.SearchString == string.Empty),
+                Arg.Any<CancellationToken>())
+            .Returns(Result(catalog));
+        return mediator;
+    }
+
+    [Test]
+    public async Task SearchShifts_EmptyDbFilter_FuzzyFallback_ResolvesClosestShift()
+    {
+        // 2026-07-11 transcript regression: the spoken "Dienst All-Shift" never survives the
+        // database substring filter against the camel-case shift "AllShift".
+        var allShiftId = Guid.NewGuid();
+        var mediator = MediatorWithCatalog(
+            "Dienst All-Shift",
+            new ShiftResource { Id = allShiftId, Name = "AllShift", Abbreviation = "AS" },
+            new ShiftResource { Id = Guid.NewGuid(), Name = "Nachtdienst", Abbreviation = "ND" });
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["searchString"] = "Dienst All-Shift"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("closest shift is 'AllShift'");
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("TotalCount").GetInt32().ShouldBe(1);
+        data.GetProperty("Shifts")[0].GetProperty("Id").GetGuid().ShouldBe(allShiftId);
+    }
+
+    [Test]
+    public async Task SearchShifts_EmptyDbFilter_SeveralPlausibleShifts_AsksForDisambiguation()
+    {
+        var mediator = MediatorWithCatalog(
+            "All Schift",
+            new ShiftResource { Id = Guid.NewGuid(), Name = "AllShift" },
+            new ShiftResource { Id = Guid.NewGuid(), Name = "AllShift2" });
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["searchString"] = "All Schift"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("ambiguous");
+        result.Message.ShouldContain("AllShift");
+        result.Message.ShouldContain("AllShift2");
+        result.Message.ShouldContain("do not guess");
+    }
+
+    [Test]
+    public async Task SearchShifts_EmptyDbFilter_NoPlausibleShift_ListsAvailableNames()
+    {
+        var mediator = MediatorWithCatalog(
+            "Sonderdienst",
+            new ShiftResource { Id = Guid.NewGuid(), Name = "AllShift" },
+            new ShiftResource { Id = Guid.NewGuid(), Name = "Nachtdienst" });
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["searchString"] = "Sonderdienst"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("Found 0 shift(s)");
+        result.Message.ShouldContain("Available shifts include");
+        result.Message.ShouldContain("AllShift");
+        result.Message.ShouldContain("do not invent");
+    }
 }
