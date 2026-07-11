@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 
@@ -15,6 +15,7 @@ public class ClientNameCandidateGrounderTests
     private const int MaxCandidateTerms = 3;
 
     private IClientSearchRepository _repository = null!;
+    private Klacks.Api.Application.Interfaces.IClientFuzzySearchService _fuzzySearchService = null!;
     private ILogger<ClientNameCandidateGrounder> _logger = null!;
     private ClientNameCandidateGrounder _grounder = null!;
 
@@ -22,8 +23,11 @@ public class ClientNameCandidateGrounderTests
     public void SetUp()
     {
         _repository = Substitute.For<IClientSearchRepository>();
+        _fuzzySearchService = Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>();
+        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client>());
         _logger = Substitute.For<ILogger<ClientNameCandidateGrounder>>();
-        _grounder = new ClientNameCandidateGrounder(_repository, _logger);
+        _grounder = new ClientNameCandidateGrounder(_repository, _fuzzySearchService, _logger);
     }
 
     [Test]
@@ -116,14 +120,83 @@ public class ClientNameCandidateGrounderTests
     }
 
     [Test]
-    public async Task GroundAsync_NoCandidates_RepositoryNotCalled()
+    public async Task GroundAsync_LongLowercaseMessage_RepositoryNotCalled()
     {
-        var context = new LLMContext { Message = "bitte zeige alle offenen dienste von morgen" };
+        // Above the lowercase-scan token cap the bigram fallback stays off, so a long
+        // lowercase message without markers still probes nothing.
+        var context = new LLMContext
+        {
+            Message = "bitte zeige mir doch einmal alle offenen dienste von morgen und übermorgen im überblick an danke"
+        };
 
         await _grounder.GroundAsync(context);
 
         await _repository.DidNotReceiveWithAnyArgs().SearchAsync();
         context.EntityGroundingBlock.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GroundAsync_ShortLowercaseVoiceMessage_GroundsViaBigramFallback()
+    {
+        // Voice STT delivers names all-lowercase; the trailing-bigram fallback must still
+        // ground "petra meier" under the strict (exact/phonetic) validation.
+        _repository.SearchAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = new List<ClientSearchItem>() });
+        _repository.SearchAsync(
+                "petra meier", Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult
+            {
+                Items = new List<ClientSearchItem>
+                {
+                    new() { Id = Guid.NewGuid(), IdNumber = 990002, FirstName = "Petra", LastName = "Meier" }
+                }
+            });
+        var context = new LLMContext { Message = "suche petra meier" };
+
+        await _grounder.GroundAsync(context);
+
+        context.EntityGroundingBlock.ShouldNotBeNull();
+        context.EntityGroundingBlock!.ShouldContain("Meier, Petra (#990002)");
+    }
+
+    [Test]
+    public async Task GroundAsync_ShortLowercaseMessage_StrictValidation_RejectsTrigramNoise()
+    {
+        // Fuzzy candidates for arbitrary lowercase bigrams must not leak into the prompt
+        // unless they match exactly or phonetically.
+        _repository.SearchAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = new List<ClientSearchItem>() });
+        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { new() { Id = Guid.NewGuid(), FirstName = "Andreas", Name = "Zimmermann" } });
+        var context = new LLMContext { Message = "nein das will ich nicht" };
+
+        await _grounder.GroundAsync(context);
+
+        context.EntityGroundingBlock.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GroundAsync_ContainsMiss_PhoneticFuzzyFallback_GroundsMisheardName()
+    {
+        // The 2026-07-11 core case: the misheard "Meier" finds the stored "Mayer" via the
+        // fuzzy second chance and Kölner Phonetik equality.
+        _repository.SearchAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = new List<ClientSearchItem>() });
+        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { new() { Id = Guid.NewGuid(), IdNumber = 990003, FirstName = "Petra", Name = "Mayer" } });
+        var context = new LLMContext { Message = "Ändere die Nummer von Frau Meier" };
+
+        await _grounder.GroundAsync(context);
+
+        context.EntityGroundingBlock.ShouldNotBeNull();
+        context.EntityGroundingBlock!.ShouldContain("Mayer, Petra (#990003)");
     }
 
     [Test]

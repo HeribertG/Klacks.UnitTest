@@ -82,7 +82,8 @@ public class ClientRepositoryRefactoredTests
             _mockClientFilterService,
             _mockMembershipFilterService,
             _mockSearchService,
-            _mockSortingService);
+            _mockSortingService,
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
 
         var baseQueryService = new Klacks.Api.Infrastructure.Services.Clients.ClientBaseQueryService(
             _context, mockGroupFilterService, _mockSearchFilterService);

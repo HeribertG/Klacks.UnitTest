@@ -1,4 +1,4 @@
-using Klacks.Api.Infrastructure.Scripting;
+﻿using Klacks.Api.Infrastructure.Scripting;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Infrastructure.Interfaces;
@@ -124,7 +124,8 @@ internal class ClientTests
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService);
+            clientFilterService, membershipFilterService, searchService, sortingService,
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
 
         var mappedFilter = _filterMapper.ToClientFilter(filter);
         var selectedStates = mappedFilter.FilteredStateToken?.Where(x => x.Select).Select(x => x.State).ToList();
@@ -176,7 +177,8 @@ internal class ClientTests
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService);
+            clientFilterService, membershipFilterService, searchService, sortingService,
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
         var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, _httpContextAccessor, logger);
@@ -229,7 +231,8 @@ internal class ClientTests
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService);
+            clientFilterService, membershipFilterService, searchService, sortingService,
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
         var query = new GetTruncatedListQuery(filter);
         var logger = Substitute.For<ILogger<GetTruncatedListQueryHandler>>();
         var handler = new GetTruncatedListQueryHandler(filterRepository, repository, _clientMapper, _filterMapper, _httpContextAccessor, logger);
@@ -325,7 +328,8 @@ internal class ClientTests
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var filterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService);
+            clientFilterService, membershipFilterService, searchService, sortingService,
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
 
         // Zugriff auf die private Methode �ber Reflection
         var method = typeof(ClientRepository).GetMethod("FilterBySearchStringStandard",

@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries.Clients;
@@ -122,7 +122,8 @@ internal class GetTruncatedListDeletedEntriesTests
             new Klacks.Api.Domain.Services.Clients.ClientFilterService(),
             new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(),
             new Klacks.Api.Domain.Services.Clients.ClientSearchService(),
-            new Klacks.Api.Domain.Services.Clients.ClientSortingService());
+            new Klacks.Api.Domain.Services.Clients.ClientSortingService(),
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
 
         var claims = isAdmin
             ? new[] { new Claim(ClaimTypes.Role, Roles.Admin) }

@@ -67,7 +67,8 @@ internal class GoupTests
             changeTrackingService, entityManagementService, collectionUpdateService, clientValidator, mockLogger);
 
         var clientFilterRepository = new ClientFilterRepository(dbContext, _clientGroupFilterService,
-            clientFilterService, membershipFilterService, searchService, sortingService);
+            clientFilterService, membershipFilterService, searchService, sortingService,
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
 
         var mockTreeService = Substitute.For<IGroupTreeService>();
         var mockHierarchyService = Substitute.For<IGroupHierarchyService>();

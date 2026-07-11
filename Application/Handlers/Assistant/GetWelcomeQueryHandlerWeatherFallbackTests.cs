@@ -202,7 +202,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
             ["klacksy.welcome.suggestion.view_schedule"] = "/workplace/schedule",
             ["klacksy.welcome.suggestion.review_absences"] = "/workplace/absence",
             ["klacksy.welcome.suggestion.create_employee"] = "/workplace/new-employee",
-            ["klacksy.welcome.suggestion.find_person"] = "/workplace/clients",
+            ["klacksy.welcome.suggestion.find_person"] = "/workplace/client",
         };
 
         _suggestionsRanker

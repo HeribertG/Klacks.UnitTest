@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for ClientSearchRepository.SearchAsync — verifies that an IdNumber included in the
@@ -38,7 +38,10 @@ public class ClientSearchRepositoryTests
             new Client { Id = Guid.NewGuid(), FirstName = "Heribert", Name = "Gasparoli", IdNumber = 7001, Type = EntityTypeEnum.Employee });
         _dbContext.SaveChanges();
 
-        _repository = new ClientSearchRepository(_dbContext, Substitute.For<IClientGroupFilterService>());
+        _repository = new ClientSearchRepository(
+            _dbContext,
+            Substitute.For<IClientGroupFilterService>(),
+            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
     }
 
     [TearDown]
