@@ -60,7 +60,7 @@ public class OnboardingServiceTests
     }
 
     [Test]
-    public async Task GetStateAsync_PendingAndLlmLive_OffersAndShowsCard()
+    public async Task GetStateAsync_PendingAndLlmLive_OffersAndReportsLlmLive()
     {
         SetState("pending");
         SetLlmLive(true);
@@ -69,12 +69,13 @@ public class OnboardingServiceTests
 
         result.ShouldNotBeNull();
         result!.ShouldOffer.ShouldBeTrue();
+        result.LlmLive.ShouldBeTrue();
         result.ShowCard.ShouldBeTrue();
         result.Status.ShouldBe(OnboardingStatus.Pending);
     }
 
     [Test]
-    public async Task GetStateAsync_PendingButNoLlm_DoesNotOfferButShowsCard()
+    public async Task GetStateAsync_PendingWithoutLlm_StillOffersAndReportsLlmNotLive()
     {
         SetState("pending");
         SetLlmLive(false);
@@ -82,7 +83,8 @@ public class OnboardingServiceTests
         var result = await _service.GetStateAsync(AdminRights);
 
         result.ShouldNotBeNull();
-        result!.ShouldOffer.ShouldBeFalse();
+        result!.ShouldOffer.ShouldBeTrue();
+        result.LlmLive.ShouldBeFalse();
         result.ShowCard.ShouldBeTrue();
     }
 
@@ -90,6 +92,19 @@ public class OnboardingServiceTests
     public async Task GetStateAsync_Dismissed_HidesCardAndDoesNotOffer()
     {
         SetState(OnboardingStatus.Dismissed);
+        SetLlmLive(true);
+
+        var result = await _service.GetStateAsync(AdminRights);
+
+        result.ShouldNotBeNull();
+        result!.ShowCard.ShouldBeFalse();
+        result.ShouldOffer.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task GetStateAsync_Completed_HidesCardAndDoesNotOffer()
+    {
+        SetState(OnboardingStatus.Completed);
         SetLlmLive(true);
 
         var result = await _service.GetStateAsync(AdminRights);
