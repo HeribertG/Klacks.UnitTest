@@ -16,6 +16,7 @@ public class AutonomyGateServiceTests
     private IAgentAutonomyPreferenceRepository _preferenceRepository = null!;
     private ISkillRiskClassifier _riskClassifier = null!;
     private InMemoryPendingConfirmationStore _confirmationStore = null!;
+    private TurnConfirmationScope _turnScope = null!;
     private AutonomyGateService _sut = null!;
 
     [SetUp]
@@ -24,12 +25,16 @@ public class AutonomyGateServiceTests
         _preferenceRepository = Substitute.For<IAgentAutonomyPreferenceRepository>();
         _riskClassifier = Substitute.For<ISkillRiskClassifier>();
         _confirmationStore = new InMemoryPendingConfirmationStore();
-        _sut = new AutonomyGateService(
-            _preferenceRepository,
-            _riskClassifier,
-            _confirmationStore,
-            NullLogger<AutonomyGateService>.Instance);
+        _turnScope = new TurnConfirmationScope();
+        _sut = CreateGate(_turnScope);
     }
+
+    private AutonomyGateService CreateGate(TurnConfirmationScope turnScope) => new(
+        _preferenceRepository,
+        _riskClassifier,
+        _confirmationStore,
+        turnScope,
+        NullLogger<AutonomyGateService>.Instance);
 
     private static SkillDescriptor Descriptor(string name = "test_skill")
         => new(name, "test", SkillCategory.Crud, [], [], [], null);
@@ -146,7 +151,8 @@ public class AutonomyGateServiceTests
         SetLevel(context.UserId, AutonomyLevel.Propose);
         SetRisk(SkillRiskClass.Irreversible);
         var descriptor = Descriptor("delete_shift");
-        var token = _confirmationStore.Create(context.UserId, "delete_shift", new Dictionary<string, object>());
+        var token = _confirmationStore.Create(
+            context.UserId, "delete_shift", new Dictionary<string, object> { ["id"] = "x" });
         var parameters = new Dictionary<string, object>
         {
             ["id"] = "x",
@@ -157,6 +163,76 @@ public class AutonomyGateServiceTests
 
         Assert.That(result, Is.Null);
         Assert.That(parameters, Does.Not.ContainKey(AutonomyDefaults.ConfirmationTokenParameter));
+    }
+
+    [Test]
+    public async Task Check_SensitiveToken_SameTurnRedemption_HeldAgain_NextTurnAllowed()
+    {
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.FullyAutonomous);
+        SetRisk(SkillRiskClass.Sensitive);
+        var descriptor = Descriptor("close_period");
+        var parameters = new Dictionary<string, object> { ["groupName"] = "Group A" };
+
+        var hold = await _sut.CheckAsync(descriptor, context, new Dictionary<string, object>(parameters));
+        var token = (string)hold!.Metadata!["confirmationToken"];
+
+        var sameTurn = await _sut.CheckAsync(descriptor, context, new Dictionary<string, object>(parameters)
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+        var nextTurnGate = CreateGate(new TurnConfirmationScope());
+        var nextTurn = await nextTurnGate.CheckAsync(descriptor, context, new Dictionary<string, object>(parameters)
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(sameTurn, Is.Not.Null);
+        Assert.That(nextTurn, Is.Null);
+    }
+
+    [Test]
+    public async Task Check_TokenWithDifferentParameters_HeldAgain()
+    {
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Propose);
+        SetRisk(SkillRiskClass.Sensitive);
+        var descriptor = Descriptor("close_period");
+        var token = _confirmationStore.Create(
+            context.UserId, "close_period", new Dictionary<string, object> { ["groupName"] = "Group A" });
+
+        var result = await _sut.CheckAsync(descriptor, context, new Dictionary<string, object>
+        {
+            ["groupName"] = "Group B",
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That((string)result!.Metadata!["confirmationToken"], Is.Not.EqualTo(token));
+    }
+
+    [Test]
+    public async Task Check_TokenWithDifferentParameters_IsBurned_SameActionHeldAfterwards()
+    {
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Propose);
+        SetRisk(SkillRiskClass.Sensitive);
+        var descriptor = Descriptor("close_period");
+        var storedParameters = new Dictionary<string, object> { ["groupName"] = "Group A" };
+        var token = _confirmationStore.Create(context.UserId, "close_period", storedParameters);
+
+        await _sut.CheckAsync(descriptor, context, new Dictionary<string, object>
+        {
+            ["groupName"] = "Group B",
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+        var replayWithOriginalParameters = await _sut.CheckAsync(descriptor, context, new Dictionary<string, object>
+        {
+            ["groupName"] = "Group A",
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(replayWithOriginalParameters, Is.Not.Null);
     }
 
     [Test]

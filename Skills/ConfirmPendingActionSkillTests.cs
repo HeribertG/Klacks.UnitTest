@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -13,6 +14,7 @@ public class ConfirmPendingActionSkillTests
 {
     private InMemoryPendingConfirmationStore _store = null!;
     private ISkillExecutor _skillExecutor = null!;
+    private TurnConfirmationScope _turnScope = null!;
     private ConfirmPendingActionSkill _sut = null!;
 
     [SetUp]
@@ -20,7 +22,8 @@ public class ConfirmPendingActionSkillTests
     {
         _store = new InMemoryPendingConfirmationStore();
         _skillExecutor = Substitute.For<ISkillExecutor>();
-        _sut = new ConfirmPendingActionSkill(_store, _skillExecutor);
+        _turnScope = new TurnConfirmationScope();
+        _sut = new ConfirmPendingActionSkill(_store, _skillExecutor, _turnScope);
     }
 
     private static SkillExecutionContext Ctx(Guid? userId = null) => new()
@@ -101,6 +104,29 @@ public class ConfirmPendingActionSkillTests
 
         Assert.That(first.Success, Is.True);
         Assert.That(second.Success, Is.False);
+    }
+
+    [Test]
+    public async Task SensitiveTokenFromSameTurn_ReturnsErrorAndKeepsTokenValid()
+    {
+        var context = Ctx();
+        var token = _store.Create(context.UserId, "close_period", new Dictionary<string, object>());
+        _turnScope.MarkIssuedForSensitiveSkill(token);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null));
+
+        var sameTurn = await _sut.ExecuteAsync(context, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+        var nextTurnSkill = new ConfirmPendingActionSkill(_store, _skillExecutor, new TurnConfirmationScope());
+        var nextTurn = await nextTurnSkill.ExecuteAsync(context, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(sameTurn.Success, Is.False);
+        Assert.That(nextTurn.Success, Is.True);
     }
 
     [Test]
