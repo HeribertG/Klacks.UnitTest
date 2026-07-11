@@ -87,6 +87,22 @@ public class GlobalAgentRuleSeedServiceTests
     }
 
     [Test]
+    public async Task SeedAsync_NewPageExplanationsVoiceRule_IsInsertedWithSeedSource()
+    {
+        _repository.GetActiveRulesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GlobalAgentRule>
+            {
+                new() { Name = RuleName, Content = "some text", Source = SeedSource, IsActive = true }
+            });
+
+        await CreateService().SeedAsync();
+
+        await _repository.Received(1).UpsertRuleAsync(
+            "PAGE_EXPLANATIONS_VOICE", Arg.Any<string>(), Arg.Any<int>(),
+            SeedSource, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task SeedAsync_UnchangedSeedRule_IsSkipped()
     {
         string? shippedContent = null;

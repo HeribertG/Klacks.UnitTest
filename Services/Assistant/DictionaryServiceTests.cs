@@ -115,6 +115,43 @@ public class DictionaryServiceTests
         await _repository.Received(2).GetAllAsync(Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task GetCorrectTermsAsync_ShouldReturnDistinctTerms_WhenEntriesHaveNoLanguage()
+    {
+        var result = await _service.GetCorrectTermsAsync("de");
+
+        result.ShouldBe(["Klacks", "Klacksy", "FD"]);
+    }
+
+    [Test]
+    public async Task GetCorrectTermsAsync_ShouldFilterByLanguage_AndKeepLanguageNeutralEntries()
+    {
+        _repository.GetAllAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new TranscriptionDictionaryEntry { CorrectTerm = "Spitex", Language = "de" },
+            new TranscriptionDictionaryEntry { CorrectTerm = "Home care", Language = "en" },
+            new TranscriptionDictionaryEntry { CorrectTerm = "Klacksy" },
+        ]);
+
+        var result = await _service.GetCorrectTermsAsync("de");
+
+        result.ShouldBe(["Spitex", "Klacksy"]);
+    }
+
+    [Test]
+    public async Task GetCorrectTermsAsync_ShouldIncludeAllEntries_WhenLanguageIsNull()
+    {
+        _repository.GetAllAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            new TranscriptionDictionaryEntry { CorrectTerm = "Spitex", Language = "de" },
+            new TranscriptionDictionaryEntry { CorrectTerm = "Home care", Language = "en" },
+        ]);
+
+        var result = await _service.GetCorrectTermsAsync(null);
+
+        result.ShouldBe(["Spitex", "Home care"]);
+    }
+
     [TearDown]
     public void TearDown()
     {

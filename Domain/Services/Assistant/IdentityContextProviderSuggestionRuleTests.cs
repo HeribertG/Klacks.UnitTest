@@ -1,12 +1,13 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for the voice-mode suppression of the text-only affordance rules
-/// (SUGGESTION_FORMAT follow-up chips and SUGGESTED_REPLIES_FORMAT interactive/date-picker chips)
-/// in IdentityContextProvider: voice turns omit both rules (chips are unusable hands-free and
-/// generating them delays the spoken turn) while keeping workflow-discipline rules, text turns
-/// keep everything, and the two variants are cached under separate keys so neither mode leaks
-/// into the other.
+/// Unit tests for the mode-dependent rule filtering in IdentityContextProvider: voice turns omit
+/// the text-only affordance rules (SUGGESTION_FORMAT follow-up chips, SUGGESTED_REPLIES_FORMAT
+/// interactive/date-picker chips and the markdown-heavy PAGE_EXPLANATIONS rule, unusable hands-free
+/// and delaying the spoken turn) and include the VOICE_STYLE and PAGE_EXPLANATIONS_VOICE rules so
+/// the answer is composed for the ear; text turns keep the affordance rules and PAGE_EXPLANATIONS,
+/// and omit VOICE_STYLE and PAGE_EXPLANATIONS_VOICE; workflow-discipline rules are kept in both
+/// modes; the two variants are cached under separate keys so neither mode leaks into the other.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -26,6 +27,9 @@ public class IdentityContextProviderSuggestionRuleTests
     private const string RepliesRuleContent = "append a REPLIES block";
     private const string WorkflowRuleContent = "use a GUIDED step-by-step workflow";
     private const string OtherRuleContent = "Always fill in state and country fields.";
+    private const string VoiceStyleRuleContent = "compose the answer for the ear, not the eye";
+    private const string PageExplanationsRuleContent = "walk through EVERY card in its visible order";
+    private const string PageExplanationsVoiceRuleContent = "speak the answer for the ear, per VOICE_STYLE";
 
     private IAgentSoulRepository _soulRepository = null!;
     private IGlobalAgentRuleRepository _globalRuleRepository = null!;
@@ -47,6 +51,9 @@ public class IdentityContextProviderSuggestionRuleTests
                 new() { Name = GlobalAgentRuleNames.SuggestionFormat, Content = SuggestionRuleContent, SortOrder = 2 },
                 new() { Name = GlobalAgentRuleNames.SuggestedRepliesFormat, Content = RepliesRuleContent, SortOrder = 3 },
                 new() { Name = GlobalAgentRuleNames.GuidedWorkflow, Content = WorkflowRuleContent, SortOrder = 4 },
+                new() { Name = GlobalAgentRuleNames.VoiceStyle, Content = VoiceStyleRuleContent, SortOrder = 5 },
+                new() { Name = GlobalAgentRuleNames.PageExplanations, Content = PageExplanationsRuleContent, SortOrder = 6 },
+                new() { Name = GlobalAgentRuleNames.PageExplanationsVoice, Content = PageExplanationsVoiceRuleContent, SortOrder = 7 },
             });
 
         _languageMetadata = Substitute.For<ILanguageMetadataProvider>();
@@ -59,7 +66,7 @@ public class IdentityContextProviderSuggestionRuleTests
     }
 
     [Test]
-    public async Task VoiceMode_OmitsBothTextOnlyAffordanceRules_ButKeepsWorkflowAndOtherRules()
+    public async Task VoiceMode_OmitsBothTextOnlyAffordanceRules_ButKeepsWorkflowAndOtherRulesAndVoiceStyle()
     {
         var prompt = await _sut.GetIdentityPromptAsync(Guid.NewGuid(), "en", suppressTextOnlyAffordances: true);
 
@@ -67,12 +74,16 @@ public class IdentityContextProviderSuggestionRuleTests
         prompt.ShouldNotContain(GlobalAgentRuleNames.SuggestionFormat);
         prompt.ShouldNotContain(RepliesRuleContent);
         prompt.ShouldNotContain(GlobalAgentRuleNames.SuggestedRepliesFormat);
+        prompt.ShouldNotContain(PageExplanationsRuleContent);
+        prompt.ShouldNotContain(GlobalAgentRuleNames.PageExplanations + "]");
         prompt.ShouldContain(WorkflowRuleContent);
         prompt.ShouldContain(OtherRuleContent);
+        prompt.ShouldContain(VoiceStyleRuleContent);
+        prompt.ShouldContain(PageExplanationsVoiceRuleContent);
     }
 
     [Test]
-    public async Task TextMode_KeepsAllAffordanceRules()
+    public async Task TextMode_KeepsAllAffordanceRules_ButOmitsVoiceStyle()
     {
         var prompt = await _sut.GetIdentityPromptAsync(Guid.NewGuid(), "en", suppressTextOnlyAffordances: false);
 
@@ -80,6 +91,10 @@ public class IdentityContextProviderSuggestionRuleTests
         prompt.ShouldContain(RepliesRuleContent);
         prompt.ShouldContain(WorkflowRuleContent);
         prompt.ShouldContain(OtherRuleContent);
+        prompt.ShouldContain(PageExplanationsRuleContent);
+        prompt.ShouldNotContain(VoiceStyleRuleContent);
+        prompt.ShouldNotContain(GlobalAgentRuleNames.VoiceStyle);
+        prompt.ShouldNotContain(PageExplanationsVoiceRuleContent);
     }
 
     [Test]
@@ -92,7 +107,13 @@ public class IdentityContextProviderSuggestionRuleTests
 
         voicePrompt.ShouldNotContain(SuggestionRuleContent);
         voicePrompt.ShouldNotContain(RepliesRuleContent);
+        voicePrompt.ShouldNotContain(PageExplanationsRuleContent);
+        voicePrompt.ShouldContain(VoiceStyleRuleContent);
+        voicePrompt.ShouldContain(PageExplanationsVoiceRuleContent);
         textPrompt.ShouldContain(SuggestionRuleContent);
         textPrompt.ShouldContain(RepliesRuleContent);
+        textPrompt.ShouldContain(PageExplanationsRuleContent);
+        textPrompt.ShouldNotContain(VoiceStyleRuleContent);
+        textPrompt.ShouldNotContain(PageExplanationsVoiceRuleContent);
     }
 }

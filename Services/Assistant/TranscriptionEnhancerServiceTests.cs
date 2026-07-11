@@ -11,6 +11,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
 using SettingsConstants = Klacks.Api.Application.Constants.Settings;
+using SttConstants = Klacks.Api.Application.Constants.SttProviderConstants;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 using LLMModel = Klacks.Api.Domain.Models.Assistant.LLMModel;
 using TranscriptionConstants = Klacks.Api.Application.Constants.TranscriptionConstants;
@@ -436,6 +437,76 @@ public class TranscriptionEnhancerServiceTests
 
         await Should.ThrowAsync<OperationCanceledException>(
             () => _service.EnhanceTranscriptionAsync(rawText, "en", null, callerCts.Token));
+    }
+
+    [TestCase("custom:2f5f3c9a-9d1a-4b8e-8f0e-1c2d3e4f5a6b")]
+    [TestCase("groq-whisper")]
+    [TestCase("deepgram")]
+    [TestCase("assemblyai")]
+    public async Task EnhanceTranscriptionAsync_WhenSttEngineIsServerSide_SkipsLlmCallAndReturnsPreprocessed(string engine)
+    {
+        var rawText = "um so the the meeting was uh good";
+        var setting = new SettingsModel { Type = SettingsConstants.ASSISTANT_STT_ENGINE, Value = engine };
+        _mockSettingsRepository.GetSetting(SettingsConstants.ASSISTANT_STT_ENGINE)
+            .Returns(Task.FromResult<SettingsModel?>(setting));
+        _mockProviderFactory.GetProviderForModelAsync(Arg.Any<string>()).Returns(_mockProvider);
+
+        var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
+
+        result.ShouldBe(rawText);
+        await _mockProviderFactory.DidNotReceive().GetProviderForModelAsync(Arg.Any<string>());
+        await _mockProvider.DidNotReceive().ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EnhanceTranscriptionAsync_WhenSttEngineIsBrowser_CallsLlm()
+    {
+        var rawText = "um so the the meeting was uh good";
+        var setting = new SettingsModel { Type = SettingsConstants.ASSISTANT_STT_ENGINE, Value = SttConstants.Browser };
+        _mockSettingsRepository.GetSetting(SettingsConstants.ASSISTANT_STT_ENGINE)
+            .Returns(Task.FromResult<SettingsModel?>(setting));
+        _mockProviderFactory.GetProviderForModelAsync(Arg.Any<string>()).Returns(_mockProvider);
+        _mockProvider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMProviderResponse { Success = true, Content = "The meeting was good." });
+
+        var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
+
+        result.ShouldBe("The meeting was good.");
+        await _mockProvider.Received(1).ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EnhanceTranscriptionAsync_WhenSttEngineSettingIsEmpty_CallsLlm()
+    {
+        var rawText = "um so the the meeting was uh good";
+        var setting = new SettingsModel { Type = SettingsConstants.ASSISTANT_STT_ENGINE, Value = string.Empty };
+        _mockSettingsRepository.GetSetting(SettingsConstants.ASSISTANT_STT_ENGINE)
+            .Returns(Task.FromResult<SettingsModel?>(setting));
+        _mockProviderFactory.GetProviderForModelAsync(Arg.Any<string>()).Returns(_mockProvider);
+        _mockProvider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMProviderResponse { Success = true, Content = "The meeting was good." });
+
+        var result = await _service.EnhanceTranscriptionAsync(rawText, "en");
+
+        result.ShouldBe("The meeting was good.");
+        await _mockProvider.Received(1).ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EnhanceTranscriptionAsync_ShortNumericText_CallsLlm()
+    {
+        var rawText = "9, 9, 9";
+        var setting = new SettingsModel { Type = SettingsConstants.ASSISTANT_STT_ENGINE, Value = SttConstants.Browser };
+        _mockSettingsRepository.GetSetting(SettingsConstants.ASSISTANT_STT_ENGINE)
+            .Returns(Task.FromResult<SettingsModel?>(setting));
+        _mockProviderFactory.GetProviderForModelAsync(Arg.Any<string>()).Returns(_mockProvider);
+        _mockProvider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMProviderResponse { Success = true, Content = "Nein, nein, nein." });
+
+        var result = await _service.EnhanceTranscriptionAsync(rawText, "de");
+
+        result.ShouldBe("Nein, nein, nein.");
+        await _mockProvider.Received(1).ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

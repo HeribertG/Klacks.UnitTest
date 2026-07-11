@@ -4,6 +4,7 @@ namespace Klacks.UnitTest.Services.Assistant.Providers;
 
 using System.Net;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Stt;
 using NSubstitute;
@@ -22,7 +23,7 @@ public class CustomRestSttSessionFactoryTests
         _handler = new StubHttpMessageHandler();
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_handler));
-        _factory = new CustomRestSttSessionFactory(httpClientFactory);
+        _factory = new CustomRestSttSessionFactory(httpClientFactory, Substitute.For<IDictionaryService>());
     }
 
     [TearDown]

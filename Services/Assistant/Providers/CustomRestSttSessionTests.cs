@@ -4,6 +4,7 @@ namespace Klacks.UnitTest.Services.Assistant.Providers;
 
 using System.Net;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Stt;
 using NSubstitute;
@@ -15,6 +16,7 @@ public class CustomRestSttSessionTests
 {
     private StubHttpMessageHandler _handler;
     private IHttpClientFactory _httpClientFactory;
+    private IDictionaryService _dictionaryService;
 
     [SetUp]
     public void SetUp()
@@ -22,7 +24,13 @@ public class CustomRestSttSessionTests
         _handler = new StubHttpMessageHandler();
         _httpClientFactory = Substitute.For<IHttpClientFactory>();
         _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_handler));
+        _dictionaryService = Substitute.For<IDictionaryService>();
+        _dictionaryService.GetCorrectTermsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
     }
+
+    private CustomRestSttSession MakeSession(CustomSttProvider provider, string locale)
+        => new(_httpClientFactory, provider, _dictionaryService, locale);
 
     [TearDown]
     public void TearDown()
@@ -45,7 +53,7 @@ public class CustomRestSttSessionTests
     [Test]
     public async Task ReceiveAsync_ShouldReturnNull_WhenNoAudioBuffered()
     {
-        await using var session = new CustomRestSttSession(_httpClientFactory, MakeProvider(), "de");
+        await using var session = MakeSession(MakeProvider(), "de");
 
         var result = await session.ReceiveAsync();
 
@@ -56,7 +64,7 @@ public class CustomRestSttSessionTests
     [Test]
     public async Task ReceiveAsync_ShouldPostMultipartToTranscriptionsEndpoint()
     {
-        await using var session = new CustomRestSttSession(_httpClientFactory, MakeProvider(model: "large-v3-turbo"), "de");
+        await using var session = MakeSession(MakeProvider(model: "large-v3-turbo"), "de");
         await session.SendAudioAsync([1, 2, 3]);
 
         var result = await session.ReceiveAsync();
@@ -74,7 +82,7 @@ public class CustomRestSttSessionTests
     [Test]
     public async Task ReceiveAsync_ShouldMapLocaleToWhisperLanguage()
     {
-        await using var session = new CustomRestSttSession(_httpClientFactory, MakeProvider(), "nb");
+        await using var session = MakeSession(MakeProvider(), "nb");
         await session.SendAudioAsync([1, 2, 3]);
 
         await session.ReceiveAsync();
@@ -83,9 +91,62 @@ public class CustomRestSttSessionTests
     }
 
     [Test]
+    public async Task ReceiveAsync_ShouldIncludeDomainPrompt_ForGermanLocale()
+    {
+        await using var session = MakeSession(MakeProvider(), "de");
+        await session.SendAudioAsync([1, 2, 3]);
+
+        await session.ReceiveAsync();
+
+        _handler.LastRequestBody!.ShouldContain($"name={SttProviderConstants.FormFieldPrompt}");
+        _handler.LastRequestBody.ShouldContain(WhisperDomainPromptProvider.GetPrompt("de"));
+        _handler.LastRequestBody.ShouldContain("Dienstplanung");
+    }
+
+    [Test]
+    public async Task ReceiveAsync_ShouldFallBackToEnglishDomainPrompt_ForUnknownLocale()
+    {
+        await using var session = MakeSession(MakeProvider(), "xx");
+        await session.SendAudioAsync([1, 2, 3]);
+
+        await session.ReceiveAsync();
+
+        _handler.LastRequestBody!.ShouldContain($"name={SttProviderConstants.FormFieldPrompt}");
+        _handler.LastRequestBody.ShouldContain(WhisperDomainPromptProvider.GetPrompt("en"));
+    }
+
+    [Test]
+    public async Task ReceiveAsync_ShouldAppendDictionaryTermsToPrompt()
+    {
+        _dictionaryService.GetCorrectTermsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string> { "Spitex Aarau", "Frühdienst" });
+        await using var session = MakeSession(MakeProvider(), "de");
+        await session.SendAudioAsync([1, 2, 3]);
+
+        await session.ReceiveAsync();
+
+        _handler.LastRequestBody!.ShouldContain(WhisperDomainPromptProvider.GetPrompt("de"));
+        _handler.LastRequestBody.ShouldContain("Spitex Aarau");
+        _handler.LastRequestBody.ShouldContain("Frühdienst");
+        await _dictionaryService.Received(1).GetCorrectTermsAsync("de", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReceiveAsync_ShouldOmitDomainPrompt_WhenLocaleIsEmpty()
+    {
+        await using var session = MakeSession(MakeProvider(), string.Empty);
+        await session.SendAudioAsync([1, 2, 3]);
+
+        await session.ReceiveAsync();
+
+        _handler.LastRequestBody!.ShouldNotContain($"name={SttProviderConstants.FormFieldPrompt}");
+        _handler.LastRequestBody.ShouldNotContain($"name={SttProviderConstants.FormFieldLanguage}");
+    }
+
+    [Test]
     public async Task ReceiveAsync_ShouldFallBackToDefaultModel_WhenNoModelConfigured()
     {
-        await using var session = new CustomRestSttSession(_httpClientFactory, MakeProvider(), "de");
+        await using var session = MakeSession(MakeProvider(), "de");
         await session.SendAudioAsync([1, 2, 3]);
 
         await session.ReceiveAsync();
@@ -96,13 +157,13 @@ public class CustomRestSttSessionTests
     [Test]
     public async Task ReceiveAsync_ShouldSendBearerHeader_OnlyWhenApiKeyConfigured()
     {
-        await using var withKey = new CustomRestSttSession(_httpClientFactory, MakeProvider(apiKey: "secret"), "de");
+        await using var withKey = MakeSession(MakeProvider(apiKey: "secret"), "de");
         await withKey.SendAudioAsync([1, 2, 3]);
         await withKey.ReceiveAsync();
         _handler.LastRequest!.Headers.Authorization.ShouldNotBeNull();
         _handler.LastRequest.Headers.Authorization!.Parameter.ShouldBe("secret");
 
-        await using var withoutKey = new CustomRestSttSession(_httpClientFactory, MakeProvider(), "de");
+        await using var withoutKey = MakeSession(MakeProvider(), "de");
         await withoutKey.SendAudioAsync([1, 2, 3]);
         await withoutKey.ReceiveAsync();
         _handler.LastRequest!.Headers.Authorization.ShouldBeNull();
@@ -115,7 +176,7 @@ public class CustomRestSttSessionTests
         {
             Content = new StringContent("""{"detail":"model not found"}"""),
         };
-        await using var session = new CustomRestSttSession(_httpClientFactory, MakeProvider(), "de");
+        await using var session = MakeSession(MakeProvider(), "de");
         await session.SendAudioAsync([1, 2, 3]);
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(() => session.ReceiveAsync());
