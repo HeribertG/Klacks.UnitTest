@@ -30,6 +30,39 @@ public class GroupResolverTests
     };
 
     [Test]
+    public void MisheardSpokenName_ResolvesPhonetically()
+    {
+        // STT delivers "Mayer" for the group "Meier": Levenshtein distance 2 at length 5 is
+        // beyond the fuzzy tolerance, so only the phonetic stage can bridge it.
+        var groups = new List<Group>
+        {
+            new() { Id = BernId, Name = "Meier" },
+            new() { Id = ZurichId, Name = "Zürich" }
+        };
+
+        var (group, error) = GroupResolver.Resolve(groups, "Mayer");
+
+        Assert.That(error, Is.Null);
+        Assert.That(group!.Id, Is.EqualTo(BernId));
+    }
+
+    [Test]
+    public void LabelDecoratedCamelCaseName_ResolvesViaCompactStage()
+    {
+        var camelId = Guid.NewGuid();
+        var groups = new List<Group>
+        {
+            new() { Id = camelId, Name = "NordOst" },
+            new() { Id = ZurichId, Name = "Zürich" }
+        };
+
+        var (group, error) = GroupResolver.Resolve(groups, "Gruppe Nord-Ost");
+
+        Assert.That(error, Is.Null);
+        Assert.That(group!.Id, Is.EqualTo(camelId));
+    }
+
+    [Test]
     public void ExactNameWins_OverLongerContainingGroup()
     {
         var (group, error) = GroupResolver.Resolve(TwoBernGroups(), "Bern");
