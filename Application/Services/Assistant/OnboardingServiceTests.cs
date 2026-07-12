@@ -89,6 +89,42 @@ public class OnboardingServiceTests
     }
 
     [Test]
+    public async Task GetStateAsync_EnabledKeylessProvider_ReportsLlmLive()
+    {
+        SetState("pending");
+        SetProviders(new LLMProvider { ProviderId = "ollama", IsEnabled = true, ApiKey = null, RequiresApiKey = false });
+
+        var result = await _service.GetStateAsync(AdminRights);
+
+        result.ShouldNotBeNull();
+        result!.LlmLive.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task GetStateAsync_EnabledProviderMissingRequiredKey_ReportsLlmNotLive()
+    {
+        SetState("pending");
+        SetProviders(new LLMProvider { ProviderId = "openai", IsEnabled = true, ApiKey = null, RequiresApiKey = true });
+
+        var result = await _service.GetStateAsync(AdminRights);
+
+        result.ShouldNotBeNull();
+        result!.LlmLive.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task GetStateAsync_DisabledKeylessProvider_ReportsLlmNotLive()
+    {
+        SetState("pending");
+        SetProviders(new LLMProvider { ProviderId = "ollama", IsEnabled = false, ApiKey = null, RequiresApiKey = false });
+
+        var result = await _service.GetStateAsync(AdminRights);
+
+        result.ShouldNotBeNull();
+        result!.LlmLive.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task GetStateAsync_Dismissed_HidesCardAndDoesNotOffer()
     {
         SetState(OnboardingStatus.Dismissed);
@@ -181,6 +217,11 @@ public class OnboardingServiceTests
     {
         _settingsReader.GetSetting(SettingsConstants.ONBOARDING_STATE)
             .Returns(new SettingsModel { Type = SettingsConstants.ONBOARDING_STATE, Value = value });
+    }
+
+    private void SetProviders(params LLMProvider[] providers)
+    {
+        _llmRepository.GetProvidersAsync().Returns(providers.ToList());
     }
 
     private void SetLlmLive(bool live)
