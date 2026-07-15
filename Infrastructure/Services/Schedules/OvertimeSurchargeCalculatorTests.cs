@@ -220,6 +220,9 @@ public class OvertimeSurchargeCalculatorTests
         };
     }
 
+    // Starts at 05:00 — strictly before BuildWork's 06:00 — so a same-day "other" work sorts as a prior
+    // deterministically. With identical (CurrentDate, StartTime) the calculator's partition order falls
+    // back to the Id comparison, which is random-GUID coin-flipping in a test.
     private async Task AddOtherWorkAsync(Guid clientId, DateOnly date, decimal workTime)
     {
         _context.Work.Add(new Work
@@ -228,8 +231,8 @@ public class OvertimeSurchargeCalculatorTests
             ClientId = clientId,
             CurrentDate = date,
             WorkTime = workTime,
-            StartTime = new TimeOnly(6, 0),
-            EndTime = new TimeOnly(6, 0).AddHours((double)workTime),
+            StartTime = new TimeOnly(5, 0),
+            EndTime = new TimeOnly(5, 0).AddHours((double)workTime),
         });
         await _context.SaveChangesAsync();
     }
