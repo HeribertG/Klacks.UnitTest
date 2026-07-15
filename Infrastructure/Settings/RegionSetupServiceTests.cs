@@ -583,6 +583,148 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_OvertimeTiersAndStackingMode_WritesConfiguredSettings()
+    {
+        var json = """
+            {
+              "version": 1,
+              "surcharges": {
+                "stackingMode": "additive",
+                "overtime": {
+                  "basis": "day",
+                  "tiers": [
+                    { "afterHours": 10, "rate": 0.75 },
+                    { "afterHours": 12, "rate": 1.00 }
+                  ]
+                }
+              }
+            }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.SurchargeStackingMode, "additive");
+        AssertWritten(SettingKeys.OvertimeBasis, "day");
+        AssertWritten(SettingKeys.OvertimeTier1AfterHours, "10");
+        AssertWritten(SettingKeys.OvertimeTier1Rate, "0.75");
+        AssertWritten(SettingKeys.OvertimeTier2AfterHours, "12");
+        AssertWritten(SettingKeys.OvertimeTier2Rate, "1.00");
+        _writtenSettings.ShouldNotContain(setting => setting.Type == SettingKeys.OvertimeTier3AfterHours);
+    }
+
+    [Test]
+    public async Task ApplyAsync_StackingModeInvalidValue_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "stackingMode": "sometimes" } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_OvertimeRateModeFixedPerShift_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "overtime": { "rateMode": "fixedPerShift", "tiers": [ { "afterHours": 10, "rate": 20 } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_OvertimeTiersNotAscending_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "overtime": { "tiers": [ { "afterHours": 12, "rate": 1.0 }, { "afterHours": 10, "rate": 0.75 } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_MoreThanThreeOvertimeTiers_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            {
+              "version": 1,
+              "surcharges": {
+                "overtime": {
+                  "tiers": [
+                    { "afterHours": 8, "rate": 0.25 },
+                    { "afterHours": 10, "rate": 0.5 },
+                    { "afterHours": 12, "rate": 0.75 },
+                    { "afterHours": 14, "rate": 1.0 }
+                  ]
+                }
+              }
+            }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargesMarkerAlreadyApplied_BackfillsStackingModeAndOvertimeTiersFromFile()
+    {
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupAppliedSurcharges)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupAppliedSurcharges, Value = "true" });
+        var json = """
+            {
+              "version": 1,
+              "surcharges": {
+                "stackingMode": "additive",
+                "overtime": { "basis": "week", "tiers": [ { "afterHours": 45, "rate": 0.25 } ] }
+              }
+            }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.SurchargeStackingMode, "additive");
+        AssertWritten(SettingKeys.OvertimeBasis, "week");
+        AssertWritten(SettingKeys.OvertimeTier1AfterHours, "45");
+        AssertWritten(SettingKeys.OvertimeTier1Rate, "0.25");
+        _writtenSettings.ShouldNotContain(setting => setting.Type == SettingKeys.RegionSetupAppliedSurcharges);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargesMarkerAppliedAndOvertimeTierAlreadySet_DoesNotOverwriteExistingValue()
+    {
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupAppliedSurcharges)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupAppliedSurcharges, Value = "true" });
+        _settingsRepository.GetSetting(SettingKeys.OvertimeTier1Rate)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.OvertimeTier1Rate, Value = "0.5" });
+        var json = """
+            { "version": 1, "surcharges": { "overtime": { "tiers": [ { "afterHours": 10, "rate": 0.75 } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _writtenSettings.ShouldNotContain(setting => setting.Type == SettingKeys.OvertimeTier1AfterHours);
+        _writtenSettings.ShouldNotContain(setting => setting.Type == SettingKeys.OvertimeTier1Rate);
+    }
+
+    [Test]
     public async Task ApplyAsync_SurchargesMarkerAppliedAllOtherSectionsAppliedTooAndFileMissing_DoesNotThrow()
     {
         StubAllSectionMarkersExist();
