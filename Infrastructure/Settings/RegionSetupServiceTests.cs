@@ -1206,6 +1206,24 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_FullyAppliedInstallation_StillReconcilesIndustryProfileImports()
+    {
+        StubAllSectionMarkersExist();
+        var json = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 50 } ],
+                "qualificationCatalog": [ { "name": { "de": "FaGe" } } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _addedSchedulingRules.Single().Name.ShouldBe("CH Spitex Standard");
+        _addedQualifications.Single().Name.De.ShouldBe("FaGe");
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
     public async Task ApplyAsync_IndustryProfileUnknownIndustrySlug_MapsQualificationToOthers()
     {
         var json = """
