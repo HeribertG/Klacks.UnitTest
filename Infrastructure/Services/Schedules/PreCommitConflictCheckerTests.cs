@@ -36,6 +36,7 @@ public class PreCommitConflictCheckerTests
     private IComplianceEnforcementResolver _enforcementResolver = null!;
     private ISettingsReader _settingsReader = null!;
     private IPeriodCapEvaluator _periodCapEvaluator = null!;
+    private IRestDayRotationEvaluator _restDayRotationEvaluator = null!;
 
     [SetUp]
     public void Setup()
@@ -73,7 +74,12 @@ public class PreCommitConflictCheckerTests
                 Arg.Any<CancellationToken>())
             .Returns([]);
 
-        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator);
+        _restDayRotationEvaluator = Substitute.For<IRestDayRotationEvaluator>();
+        _restDayRotationEvaluator
+            .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
+
+        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator);
     }
 
     [TearDown]
@@ -290,6 +296,43 @@ public class PreCommitConflictCheckerTests
 
         result.HasBlocking.ShouldBeFalse();
         result.NewConflicts.ShouldContain(c => c.Comment == ScheduleValidationKeys.PeriodCap && c.Type == ScheduleValidationType.Warning);
+    }
+
+    [Test]
+    public async Task RestDayRotationError_FromEvaluator_PassesThroughWithoutDoubleEscalation()
+    {
+        // The evaluator escalates Block-mode violations itself; the checker's escalation pass must
+        // surface the entry untouched (it skips anything that is already an Error).
+        var rotationEntry = new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = ClientA,
+            Date = Day,
+            Comment = ScheduleValidationKeys.RestDayRotation,
+            CommentParams = new Dictionary<string, string>
+            {
+                ["dayOfWeek"] = "Sunday",
+                ["actualFree"] = "0",
+                ["minFree"] = "2",
+                ["windowWeeks"] = "4",
+                [ComplianceRuleNames.EnforcementRuleParamKey] = ComplianceRuleNames.RestDayRotation,
+            }
+        };
+        _restDayRotationEvaluator
+            .EvaluatePlannedAsync(
+                ClientA,
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime)>>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([rotationEntry]);
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0), Day.AddDays(20))]);
+
+        result.HasBlocking.ShouldBeTrue();
+        var surfaced = result.NewConflicts.Single(c => c.Comment == ScheduleValidationKeys.RestDayRotation);
+        surfaced.Type.ShouldBe(ScheduleValidationType.Error);
+        surfaced.CommentParams[ComplianceRuleNames.EnforcementRuleParamKey].ShouldBe(ComplianceRuleNames.RestDayRotation);
     }
 
     [Test]

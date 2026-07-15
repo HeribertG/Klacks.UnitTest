@@ -35,12 +35,15 @@ public class RegionSetupServiceTests
     private ICalendarSelectionRepository _calendarSelectionRepository = null!;
     private ILanguagePluginService _languagePluginService = null!;
     private IPeriodCapRuleRepository _periodCapRuleRepository = null!;
+    private IRestDayRotationRuleRepository _restDayRotationRuleRepository = null!;
     private ISchedulingRuleImportRepository _schedulingRuleImportRepository = null!;
     private IQualificationImportRepository _qualificationImportRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private List<SettingsModel> _writtenSettings = null!;
     private List<PeriodCapRule> _existingPeriodCapRules = null!;
     private List<PeriodCapRule> _addedPeriodCapRules = null!;
+    private List<RestDayRotationRule> _existingRestDayRotationRules = null!;
+    private List<RestDayRotationRule> _addedRestDayRotationRules = null!;
     private List<SchedulingRule> _existingSchedulingRules = null!;
     private List<SchedulingRule> _addedSchedulingRules = null!;
     private List<Qualification> _existingQualifications = null!;
@@ -53,6 +56,8 @@ public class RegionSetupServiceTests
         _writtenSettings = new List<SettingsModel>();
         _existingPeriodCapRules = new List<PeriodCapRule>();
         _addedPeriodCapRules = new List<PeriodCapRule>();
+        _existingRestDayRotationRules = new List<RestDayRotationRule>();
+        _addedRestDayRotationRules = new List<RestDayRotationRule>();
         _existingSchedulingRules = new List<SchedulingRule>();
         _addedSchedulingRules = new List<SchedulingRule>();
         _existingQualifications = new List<Qualification>();
@@ -81,6 +86,15 @@ public class RegionSetupServiceTests
                 .ToList());
         _periodCapRuleRepository.When(r => r.Add(Arg.Any<PeriodCapRule>()))
             .Do(callInfo => _addedPeriodCapRules.Add(callInfo.Arg<PeriodCapRule>()));
+
+        _restDayRotationRuleRepository = Substitute.For<IRestDayRotationRuleRepository>();
+        _restDayRotationRuleRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingRestDayRotationRules
+                .Where(r => callInfo.Arg<IReadOnlyCollection<string>>().Contains(r.ImportSourceKey))
+                .ToList());
+        _restDayRotationRuleRepository.When(r => r.Add(Arg.Any<RestDayRotationRule>()))
+            .Do(callInfo => _addedRestDayRotationRules.Add(callInfo.Arg<RestDayRotationRule>()));
 
         _schedulingRuleImportRepository = Substitute.For<ISchedulingRuleImportRepository>();
         _schedulingRuleImportRepository
@@ -1077,6 +1091,53 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_RestDayRotationNewRow_InsertsRuleWithComputedHash()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restDayRotations": [ { "dayOfWeek": "sunday", "minFree": 2, "windowWeeks": 4 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var added = _addedRestDayRotationRules.Single();
+        added.DayOfWeek.ShouldBe(DayOfWeek.Sunday);
+        added.MinFreeCount.ShouldBe(2);
+        added.WindowWeeks.ShouldBe(4);
+        added.ImportSourceKey.ShouldBe("region-setup:compliance.restDayRotations:sunday:4w");
+        added.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestDayRotationMinFreeExceedsWindow_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restDayRotations": [ { "dayOfWeek": "sunday", "minFree": 5, "windowWeeks": 4 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedRestDayRotationRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestDayRotationDuplicateDayAndWindow_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restDayRotations": [
+                { "dayOfWeek": "sunday", "minFree": 2, "windowWeeks": 4 },
+                { "dayOfWeek": "Sunday", "minFree": 1, "windowWeeks": 4 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedRestDayRotationRules.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task ApplyAsync_IndustryProfileWithPresetAndQualification_InsertsBothWithImportKeys()
     {
         var json = """
@@ -1251,6 +1312,7 @@ public class RegionSetupServiceTests
             _settingsRepository,
             _calendarSelectionRepository,
             _periodCapRuleRepository,
+            _restDayRotationRuleRepository,
             _schedulingRuleImportRepository,
             _qualificationImportRepository,
             _unitOfWork,
