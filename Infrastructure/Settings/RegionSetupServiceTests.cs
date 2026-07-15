@@ -38,6 +38,7 @@ public class RegionSetupServiceTests
     private IRestDayRotationRuleRepository _restDayRotationRuleRepository = null!;
     private ISchedulingRuleImportRepository _schedulingRuleImportRepository = null!;
     private IQualificationImportRepository _qualificationImportRepository = null!;
+    private IMacroImportRepository _macroImportRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private List<SettingsModel> _writtenSettings = null!;
     private List<PeriodCapRule> _existingPeriodCapRules = null!;
@@ -48,6 +49,8 @@ public class RegionSetupServiceTests
     private List<SchedulingRule> _addedSchedulingRules = null!;
     private List<Qualification> _existingQualifications = null!;
     private List<Qualification> _addedQualifications = null!;
+    private List<Macro> _existingMacros = null!;
+    private List<Macro> _addedMacros = null!;
     private List<string> _tempFiles = null!;
 
     [SetUp]
@@ -62,6 +65,8 @@ public class RegionSetupServiceTests
         _addedSchedulingRules = new List<SchedulingRule>();
         _existingQualifications = new List<Qualification>();
         _addedQualifications = new List<Qualification>();
+        _existingMacros = new List<Macro>();
+        _addedMacros = new List<Macro>();
         _tempFiles = new List<string>();
 
         _settingsRepository = Substitute.For<ISettingsRepository>();
@@ -113,6 +118,19 @@ public class RegionSetupServiceTests
                 .ToList());
         _qualificationImportRepository.When(r => r.Add(Arg.Any<Qualification>()))
             .Do(callInfo => _addedQualifications.Add(callInfo.Arg<Qualification>()));
+
+        _macroImportRepository = Substitute.For<IMacroImportRepository>();
+        _macroImportRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingMacros
+                .Where(m => callInfo.Arg<IReadOnlyCollection<string>>().Contains(m.ImportSourceKey))
+                .ToList());
+        _macroImportRepository
+            .GetActiveFunctionHolderAsync(Arg.Any<MacroCategoryEnum>(), Arg.Any<MacroFunctionEnum>())
+            .Returns(callInfo => _existingMacros.FirstOrDefault(m =>
+                m.Category == callInfo.ArgAt<MacroCategoryEnum>(0) && m.Type == (int)callInfo.ArgAt<MacroFunctionEnum>(1)));
+        _macroImportRepository.When(r => r.Add(Arg.Any<Macro>()))
+            .Do(callInfo => _addedMacros.Add(callInfo.Arg<Macro>()));
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _unitOfWork
@@ -1434,6 +1452,132 @@ public class RegionSetupServiceTests
         _addedQualifications.Single().Category.ShouldBe(QualificationCategory.Others);
     }
 
+    [Test]
+    public async Task ApplyAsync_MacrosSectionNewMacro_CompilesAndInsertsWithImportKeys()
+    {
+        var json = """
+            { "version": 1, "macros": [ { "name": "KR Additive Special", "function": "custom", "category": "shift",
+                "content": "import hour\nOUTPUT 1, Hour" } ] }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var added = _addedMacros.Single();
+        added.Name.ShouldBe("KR Additive Special");
+        added.Category.ShouldBe(MacroCategoryEnum.Shift);
+        added.Type.ShouldBe((int)MacroFunctionEnum.Custom);
+        added.ImportSourceKey.ShouldBe("region-setup:macros:kr-additive-special");
+        added.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_MacrosSectionContentFailsProbeExecution_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "macros": [ { "name": "Broken", "content": "OUTPUT 1, NoSuchFunction(1)" } ] }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedMacros.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_MacrosSectionParserHangingContent_FailsWithinTimeoutWithoutAnyWrite()
+    {
+        // "DIM 123abc" empirically loops the SyntaxAnalyser forever - the probe timeout must convert
+        // that into a fail-fast import error instead of freezing the application start.
+        var json = """
+            { "version": 1, "macros": [ { "name": "Hang", "content": "DIM 123abc" } ] }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedMacros.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_MacrosSectionStandardFunction_DemotesSeededHolder()
+    {
+        _existingMacros.Add(new Macro
+        {
+            Id = SeededMacroIds.AllShift,
+            Name = "AllShift",
+            Content = "import hour\nOUTPUT 1, Hour",
+            Category = MacroCategoryEnum.Shift,
+            Type = (int)MacroFunctionEnum.Standard,
+        });
+        var updatedMacros = new List<Macro>();
+        _macroImportRepository.When(r => r.Update(Arg.Any<Macro>()))
+            .Do(callInfo => updatedMacros.Add(callInfo.Arg<Macro>()));
+
+        var json = """
+            { "version": 1, "macros": [ { "name": "FR Standard", "function": "standard",
+                "content": "import hour\nOUTPUT 1, Hour" } ] }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        updatedMacros.Single().Type.ShouldBe((int)MacroFunctionEnum.Custom);
+        _addedMacros.Single().Type.ShouldBe((int)MacroFunctionEnum.Standard);
+    }
+
+    [Test]
+    public async Task ApplyAsync_MacrosSectionStandardFunctionHeldByCustomerMacro_ThrowsWithoutAnyWrite()
+    {
+        _existingMacros.Add(new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "Mein Firmen-Standard",
+            Content = "import hour\nOUTPUT 1, Hour",
+            Category = MacroCategoryEnum.Shift,
+            Type = (int)MacroFunctionEnum.Standard,
+            ImportSourceKey = string.Empty,
+        });
+
+        var json = """
+            { "version": 1, "macros": [ { "name": "FR Standard", "function": "standard",
+                "content": "import hour\nOUTPUT 1, Hour" } ] }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedMacros.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_MacrosSectionCustomerEditedImport_SkipsWithoutOverwriting()
+    {
+        var firstJson = """
+            { "version": 1, "macros": [ { "name": "KR Additive Special", "content": "import hour\nOUTPUT 1, Hour" } ] }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var inserted = _addedMacros.Single();
+
+        inserted.Content = "import hour\nOUTPUT 1, 0";
+        _existingMacros.Add(inserted);
+        _addedMacros.Clear();
+        var updatedMacros = new List<Macro>();
+        _macroImportRepository.When(r => r.Update(Arg.Any<Macro>()))
+            .Do(callInfo => updatedMacros.Add(callInfo.Arg<Macro>()));
+
+        var secondJson = """
+            { "version": 1, "macros": [ { "name": "KR Additive Special", "content": "import hour\nOUTPUT 1, Hour + 1" } ] }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updatedMacros.ShouldBeEmpty();
+        _addedMacros.ShouldBeEmpty();
+    }
+
     private RegionSetupService CreateService(string? filePath)
     {
         var configuration = new ConfigurationBuilder()
@@ -1452,6 +1596,7 @@ public class RegionSetupServiceTests
             _restDayRotationRuleRepository,
             _schedulingRuleImportRepository,
             _qualificationImportRepository,
+            _macroImportRepository,
             _unitOfWork,
             NullLogger<RegionSetupService>.Instance);
     }
