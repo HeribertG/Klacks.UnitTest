@@ -1529,6 +1529,30 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_MacrosSectionStandardFunction_DemotesUneditedImportedHolder()
+    {
+        var firstJson = """
+            { "version": 1, "macros": [ { "name": "Old Standard", "function": "standard", "content": "import hour\nOUTPUT 1, Hour" } ] }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var oldHolder = _addedMacros.Single();
+        _existingMacros.Add(oldHolder);
+        _addedMacros.Clear();
+        var updatedMacros = new List<Macro>();
+        _macroImportRepository.When(r => r.Update(Arg.Any<Macro>()))
+            .Do(callInfo => updatedMacros.Add(callInfo.Arg<Macro>()));
+
+        var secondJson = """
+            { "version": 1, "macros": [ { "name": "New Standard", "function": "standard", "content": "import hour\nOUTPUT 1, Hour" } ] }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        oldHolder.Type.ShouldBe((int)MacroFunctionEnum.Custom);
+        updatedMacros.ShouldContain(oldHolder);
+        _addedMacros.Single(m => m.Name == "New Standard").Type.ShouldBe((int)MacroFunctionEnum.Standard);
+    }
+
+    [Test]
     public async Task ApplyAsync_MacrosSectionStandardFunctionHeldByCustomerMacro_ThrowsWithoutAnyWrite()
     {
         _existingMacros.Add(new Macro
