@@ -5,9 +5,11 @@
 /// Effective time computation is tested in WorkChangeEffectiveTimeServiceTests.
 /// </summary>
 using System.Linq;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
@@ -45,7 +47,7 @@ public class WorkMacroServiceTests
         _macroCompilationService = Substitute.For<IMacroCompilationService>();
         _overtimeSurchargeCalculator = Substitute.For<IOvertimeSurchargeCalculator>();
         _overtimeSurchargeCalculator.CalculateAsync(Arg.Any<Work>())
-            .Returns(OvertimeCalculationResult.None(SurchargeStackingMode.HighestWins));
+            .Returns(OvertimeCalculationResult.None());
         _logger = Substitute.For<ILogger<WorkMacroService>>();
 
         _sut = new WorkMacroService(
@@ -308,8 +310,7 @@ public class WorkMacroServiceTests
                 5.0m,
                 new List<MacroSurchargeItem> { new(SurchargeType.Night, 5.0m) }));
         _overtimeSurchargeCalculator.CalculateAsync(work).Returns(new OvertimeCalculationResult(
-            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 3.0m) },
-            SurchargeStackingMode.HighestWins));
+            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 3.0m) }));
 
         await _sut.ProcessWorkMacroAsync(work);
 
@@ -334,8 +335,7 @@ public class WorkMacroServiceTests
                 5.0m,
                 new List<MacroSurchargeItem> { new(SurchargeType.Night, 2.0m) }));
         _overtimeSurchargeCalculator.CalculateAsync(work).Returns(new OvertimeCalculationResult(
-            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 4.0m) },
-            SurchargeStackingMode.HighestWins));
+            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 4.0m) }));
 
         await _sut.ProcessWorkMacroAsync(work);
 
@@ -346,9 +346,9 @@ public class WorkMacroServiceTests
     }
 
     [Test]
-    public async Task ProcessWorkMacroAsync_Additive_AddsOvertimeOnTopOfExistingSurcharge()
+    public async Task ProcessWorkMacroAsync_AdditiveMacroFunction_AddsOvertimeOnTopOfExistingSurcharge()
     {
-        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid(), macroFunction: MacroFunctionEnum.StandardAdditive);
         var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
 
         var macroData = new MacroData();
@@ -359,8 +359,7 @@ public class WorkMacroServiceTests
                 2.0m,
                 new List<MacroSurchargeItem> { new(SurchargeType.Night, 2.0m) }));
         _overtimeSurchargeCalculator.CalculateAsync(work).Returns(new OvertimeCalculationResult(
-            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 1.0m) },
-            SurchargeStackingMode.Additive));
+            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 1.0m) }));
 
         await _sut.ProcessWorkMacroAsync(work);
 
@@ -373,7 +372,7 @@ public class WorkMacroServiceTests
     [Test]
     public async Task ProcessWorkMacroAsync_AdditiveWithFixedPerShiftNightSurcharge_AddsCleanly()
     {
-        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid(), macroFunction: MacroFunctionEnum.StandardAdditive);
         var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
 
         var macroData = new MacroData { NightRateMode = SurchargeRateMode.FixedPerShift, NightRate = 20m };
@@ -384,8 +383,7 @@ public class WorkMacroServiceTests
                 8.0m,
                 new List<MacroSurchargeItem> { new(SurchargeType.Night, 8.0m) }));
         _overtimeSurchargeCalculator.CalculateAsync(work).Returns(new OvertimeCalculationResult(
-            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 5.0m) },
-            SurchargeStackingMode.Additive));
+            new List<MacroSurchargeItem> { new(SurchargeType.Overtime1, 5.0m) }));
 
         await _sut.ProcessWorkMacroAsync(work);
 
@@ -397,7 +395,10 @@ public class WorkMacroServiceTests
         work.SurchargeItems.ShouldContain(i => i.Type == SurchargeType.Overtime1 && i.Amount == 5.0m);
     }
 
-    private async Task<Work> AddWorkAsync(Guid? shiftMacroId, decimal surcharges = 0m)
+    private async Task<Work> AddWorkAsync(
+        Guid? shiftMacroId,
+        decimal surcharges = 0m,
+        MacroFunctionEnum macroFunction = MacroFunctionEnum.Standard)
     {
         var shiftId = Guid.NewGuid();
         var work = new Work
@@ -408,6 +409,20 @@ public class WorkMacroServiceTests
             CurrentDate = DateOnly.FromDateTime(DateTime.Today),
         };
         _context.Work.Add(work);
+
+        if (shiftMacroId.HasValue)
+        {
+            _context.Macro.Add(new Macro
+            {
+                Id = shiftMacroId.Value,
+                Name = "TestMacro",
+                Content = string.Empty,
+                Description = new MultiLanguage(),
+                Category = MacroCategoryEnum.Shift,
+                Type = (int)macroFunction,
+            });
+        }
+
         await _context.SaveChangesAsync();
 
         var shift = new Shift { Id = shiftId, MacroId = shiftMacroId };

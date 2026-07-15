@@ -50,14 +50,14 @@ public class OvertimeSurchargeCalculatorTests
     public void TearDown() => _context.Dispose();
 
     [Test]
-    public async Task CalculateAsync_NoTierSettingsConfigured_ReturnsNoneWithHighestWinsDefault()
+    public async Task CalculateAsync_NoTierSettingsConfigured_ReturnsNotConfigured()
     {
         var work = BuildWork(workTime: 10m);
 
         var result = await _sut.CalculateAsync(work);
 
         result.Items.ShouldBeEmpty();
-        result.StackingMode.ShouldBe(SurchargeStackingMode.HighestWins);
+        result.IsConfigured.ShouldBeFalse();
     }
 
     [Test]
