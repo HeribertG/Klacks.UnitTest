@@ -12,8 +12,11 @@ using Klacks.Api.Application.DTOs.Config;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Settings;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Scheduling;
+using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -31,14 +34,19 @@ public class RegionSetupServiceTests
     private ISettingsRepository _settingsRepository = null!;
     private ICalendarSelectionRepository _calendarSelectionRepository = null!;
     private ILanguagePluginService _languagePluginService = null!;
+    private IPeriodCapRuleRepository _periodCapRuleRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private List<SettingsModel> _writtenSettings = null!;
+    private List<PeriodCapRule> _existingPeriodCapRules = null!;
+    private List<PeriodCapRule> _addedPeriodCapRules = null!;
     private List<string> _tempFiles = null!;
 
     [SetUp]
     public void SetUp()
     {
         _writtenSettings = new List<SettingsModel>();
+        _existingPeriodCapRules = new List<PeriodCapRule>();
+        _addedPeriodCapRules = new List<PeriodCapRule>();
         _tempFiles = new List<string>();
 
         _settingsRepository = Substitute.For<ISettingsRepository>();
@@ -54,6 +62,15 @@ public class RegionSetupServiceTests
 
         _languagePluginService = Substitute.For<ILanguagePluginService>();
         _languagePluginService.GetPlugin(Arg.Any<string>()).Returns((LanguagePluginInfo?)null);
+
+        _periodCapRuleRepository = Substitute.For<IPeriodCapRuleRepository>();
+        _periodCapRuleRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingPeriodCapRules
+                .Where(r => callInfo.Arg<IReadOnlyCollection<string>>().Contains(r.ImportSourceKey))
+                .ToList());
+        _periodCapRuleRepository.When(r => r.Add(Arg.Any<PeriodCapRule>()))
+            .Do(callInfo => _addedPeriodCapRules.Add(callInfo.Arg<PeriodCapRule>()));
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _unitOfWork
@@ -83,11 +100,10 @@ public class RegionSetupServiceTests
     }
 
     [Test]
-    public async Task ApplyAsync_MarkerExists_SkipsWithoutReadingFile()
+    public async Task ApplyAsync_AllSectionMarkersExist_SkipsWithoutReadingFile()
     {
         var missingPath = Path.Combine(Path.GetTempPath(), $"region-setup-{Guid.NewGuid()}.json");
-        _settingsRepository.GetSetting(SettingKeys.RegionSetupApplied)
-            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupApplied, Value = "ABC" });
+        StubAllSectionMarkersExist();
         var service = CreateService(missingPath);
 
         await service.ApplyAsync();
@@ -117,7 +133,7 @@ public class RegionSetupServiceTests
     [Test]
     public async Task ApplyAsync_UnknownProperty_Throws()
     {
-        var service = CreateService(WriteTempFile("""{ "regionTypo": "DE" }"""));
+        var service = CreateService(WriteTempFile("""{ "version": 1, "regionTypo": "DE" }"""));
 
         await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
     }
@@ -127,6 +143,7 @@ public class RegionSetupServiceTests
     {
         var json = """
             {
+              "version": 1,
               "locale": { "country": "DE", "timeZone": "Mars/Olympus" },
               "worktime": { "fullTime": 173 }
             }
@@ -145,6 +162,7 @@ public class RegionSetupServiceTests
     {
         var json = """
             {
+              "version": 1,
               "calendar": { "weekendDays": "Saturday,Funday" },
               "surcharges": { "nightRate": 0.25 }
             }
@@ -162,6 +180,7 @@ public class RegionSetupServiceTests
     {
         var json = """
             {
+              "version": 1,
               "languages": { "install": ["xx"] },
               "calendar": { "weekStartDay": "Monday" }
             }
@@ -180,6 +199,7 @@ public class RegionSetupServiceTests
         var calendarSelectionId = Guid.NewGuid();
         var json = """
             {
+              "version": 1,
               "region": "DE",
               "languages": { "install": ["pl", "de"] },
               "locale": {
@@ -195,7 +215,12 @@ public class RegionSetupServiceTests
                 "minRestDays": 1, "minPauseHours": 11.5
               },
               "surcharges": { "nightRate": 0.25, "holidayRate": 1.0, "we1Rate": 0.5, "we2Rate": 0.5, "we3Rate": 0 },
-              "export": { "enabledFormats": ["datev", "generic-payroll-csv"], "defaultPayrollTargetSystem": "datev-lug-bewegungsdaten" }
+              "export": { "enabledFormats": ["datev", "generic-payroll-csv"], "defaultPayrollTargetSystem": "datev-lug-bewegungsdaten" },
+              "compliance": {
+                "qualifications": { "expiredMandatoryBlocks": true, "expiryWarningDays": 30 },
+                "enforcement": { "defaultMode": "warn", "allowSupervisorOverride": true },
+                "rosterPublication": { "minLeadDays": 14, "countWorkdaysOnly": false }
+              }
             }
             """;
         _languagePluginService.GetPlugin("pl").Returns(new LanguagePluginInfo { Code = "pl" });
@@ -237,7 +262,17 @@ public class RegionSetupServiceTests
         AssertWritten(SettingKeys.EnabledExportFormats, "datev,generic-payroll-csv");
         AssertWritten(SettingKeys.DefaultPayrollTargetSystem, "datev-lug-bewegungsdaten");
         AssertWritten(SettingKeys.GlobalCalendarSelectionId, calendarSelectionId.ToString());
+        AssertWritten(SettingKeys.QualificationExpiredMandatoryBlocks, "true");
+        AssertWritten(SettingKeys.QualificationExpiryWarningDays, "30");
+        AssertWritten(SettingKeys.ComplianceEnforcementDefaultMode, "warn");
+        AssertWritten(SettingKeys.ComplianceEnforcementAllowSupervisorOverride, "true");
+        AssertWritten(SettingKeys.ComplianceRosterPublicationMinLeadDays, "14");
+        AssertWritten(SettingKeys.ComplianceRosterPublicationCountWorkdaysOnly, "false");
         AssertWritten(SettingKeys.RegionSetupApplied, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))));
+        foreach (var markerKey in AllSectionMarkerKeys)
+        {
+            AssertWritten(markerKey, "true");
+        }
     }
 
     [Test]
@@ -245,7 +280,7 @@ public class RegionSetupServiceTests
     {
         var countrywideId = Guid.NewGuid();
         var json = """
-            { "locale": { "calendarSelection": { "country": "DE", "state": "XX" } } }
+            { "version": 1, "locale": { "calendarSelection": { "country": "DE", "state": "XX" } } }
             """;
         _calendarSelectionRepository
             .GetIdsByStateAsync("DE", "XX", Arg.Any<CancellationToken>())
@@ -264,7 +299,7 @@ public class RegionSetupServiceTests
     public async Task ApplyAsync_CalendarSelectionUnresolvable_Throws()
     {
         var json = """
-            { "locale": { "calendarSelection": { "country": "ZZ", "state": "" } } }
+            { "version": 1, "locale": { "calendarSelection": { "country": "ZZ", "state": "" } } }
             """;
         var service = CreateService(WriteTempFile(json));
 
@@ -277,7 +312,7 @@ public class RegionSetupServiceTests
     public async Task ApplyAsync_OnlyCalendarBlock_WritesOnlyCalendarKeysAndMarker()
     {
         var json = """
-            { "calendar": { "weekendDays": "Friday,Saturday", "weekStartDay": "Sunday" } }
+            { "version": 1, "calendar": { "weekendDays": "Friday,Saturday", "weekStartDay": "Sunday" } }
             """;
         var service = CreateService(WriteTempFile(json));
 
@@ -288,10 +323,11 @@ public class RegionSetupServiceTests
             .GetIdsByStateAsync(default!, default!, Arg.Any<CancellationToken>());
 
         _writtenSettings.Select(setting => setting.Type).ShouldBe(
-            new[] { SettingKeys.WeekendDays, SettingKeys.WeekStartDay, SettingKeys.RegionSetupApplied },
+            new[] { SettingKeys.WeekendDays, SettingKeys.WeekStartDay, SettingKeys.RegionSetupAppliedCalendar, SettingKeys.RegionSetupApplied },
             ignoreOrder: true);
         AssertWritten(SettingKeys.WeekendDays, "Friday,Saturday");
         AssertWritten(SettingKeys.WeekStartDay, "Sunday");
+        AssertWritten(SettingKeys.RegionSetupAppliedCalendar, "true");
     }
 
     [Test]
@@ -305,7 +341,7 @@ public class RegionSetupServiceTests
         };
         _settingsRepository.GetSetting(SettingKeys.WeekStartDay).Returns(existing);
         var json = """
-            { "calendar": { "weekStartDay": "Saturday" } }
+            { "version": 1, "calendar": { "weekStartDay": "Saturday" } }
             """;
         var service = CreateService(WriteTempFile(json));
 
@@ -319,7 +355,7 @@ public class RegionSetupServiceTests
     public async Task ApplyAsync_DefaultLanguageCoreLanguage_WritesDefaultLanguageSetting()
     {
         var json = """
-            { "languages": { "default": "DE" } }
+            { "version": 1, "languages": { "default": "DE" } }
             """;
         var service = CreateService(WriteTempFile(json));
 
@@ -332,7 +368,7 @@ public class RegionSetupServiceTests
     public async Task ApplyAsync_DefaultLanguageFromInstallList_WritesDefaultLanguageSetting()
     {
         var json = """
-            { "languages": { "install": ["pl"], "default": "pl" } }
+            { "version": 1, "languages": { "install": ["pl"], "default": "pl" } }
             """;
         _languagePluginService.GetPlugin("pl").Returns(new LanguagePluginInfo { Code = "pl" });
         _languagePluginService.InstallAsync("pl").Returns(true);
@@ -348,7 +384,7 @@ public class RegionSetupServiceTests
     public async Task ApplyAsync_DefaultLanguageUnknown_ThrowsWithoutAnyWrite()
     {
         var json = """
-            { "languages": { "default": "xx" }, "calendar": { "weekStartDay": "Monday" } }
+            { "version": 1, "languages": { "default": "xx" }, "calendar": { "weekStartDay": "Monday" } }
             """;
         var service = CreateService(WriteTempFile(json));
 
@@ -363,7 +399,7 @@ public class RegionSetupServiceTests
     public async Task ApplyAsync_NoDefaultLanguage_DoesNotWriteDefaultLanguageSetting()
     {
         var json = """
-            { "languages": { "install": [] }, "calendar": { "weekStartDay": "Monday" } }
+            { "version": 1, "languages": { "install": [] }, "calendar": { "weekStartDay": "Monday" } }
             """;
         var service = CreateService(WriteTempFile(json));
 
@@ -371,6 +407,503 @@ public class RegionSetupServiceTests
 
         _writtenSettings.ShouldNotContain(setting => setting.Type == SettingKeys.DefaultLanguage);
         AssertWritten(SettingKeys.WeekStartDay, "Monday");
+    }
+
+    [Test]
+    public async Task ApplyAsync_OnlyGlobalMarkerSet_BackfillsLegacySectionMarkersWithoutRewritingSettings()
+    {
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupApplied)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupApplied, Value = "OLD-HASH" });
+        var json = """
+            {
+              "version": 1,
+              "region": "DE",
+              "languages": { "install": ["pl"], "default": "pl" },
+              "locale": {
+                "country": "DE", "state": "BY", "timeZone": "Europe/Berlin",
+                "calendarSelection": { "country": "DE", "state": "BY" }
+              },
+              "calendar": { "weekendDays": "Saturday,Sunday", "weekStartDay": "Monday" },
+              "worktime": { "defaultWorkingHours": 8 },
+              "surcharges": { "nightRate": 0.25 },
+              "export": { "defaultPayrollTargetSystem": "datev-lug-bewegungsdaten" }
+            }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        await _languagePluginService.DidNotReceiveWithAnyArgs().InstallAsync(default!);
+        await _calendarSelectionRepository.DidNotReceiveWithAnyArgs()
+            .GetIdsByStateAsync(default!, default!, Arg.Any<CancellationToken>());
+
+        _writtenSettings.Select(setting => setting.Type).ShouldBe(LegacySectionMarkerKeys, ignoreOrder: true);
+        foreach (var markerKey in LegacySectionMarkerKeys)
+        {
+            AssertWritten(markerKey, "true");
+        }
+
+        await _settingsRepository.Received(1).PutSetting(Arg.Is<SettingsModel>(setting => setting.Type == SettingKeys.RegionSetupApplied));
+    }
+
+    [Test]
+    public async Task ApplyAsync_OneSectionMarkerMissingWithoutGlobalMarker_StillAppliesThatSection()
+    {
+        // Stand-in for a schema section introduced after this migration (e.g. a future "compliance"
+        // block): no such section exists yet, so an existing section (surcharges) is reused here to
+        // prove the mechanism — its own marker is missing while every other section is already marked,
+        // and no global marker masks it, so it is applied normally rather than skipped or backfilled.
+        StubAllSectionMarkersExist();
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupAppliedSurcharges).Returns((SettingsModel?)null);
+        var json = """
+            { "version": 1, "surcharges": { "nightRate": 0.3 } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _writtenSettings.Select(setting => setting.Type).ShouldBe(
+            new[] { SettingKeys.NightRate, SettingKeys.RegionSetupAppliedSurcharges, SettingKeys.RegionSetupApplied },
+            ignoreOrder: true);
+        AssertWritten(SettingKeys.NightRate, "0.3");
+        AssertWritten(SettingKeys.RegionSetupAppliedSurcharges, "true");
+    }
+
+    [Test]
+    public async Task ApplyAsync_NightWindowInSurchargesBlock_WritesNightStartAndNightEndSettings()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "nightRate": 0.25, "nightWindow": { "start": "22:00", "end": "05:00" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.SurchargeNightStart, "22:00");
+        AssertWritten(SettingKeys.SurchargeNightEnd, "05:00");
+    }
+
+    [Test]
+    public async Task ApplyAsync_NightWindowInvalidFormat_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "nightWindow": { "start": "22h00", "end": "05:00" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargesMarkerAlreadyApplied_BackfillsNightWindowFromFile()
+    {
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupAppliedSurcharges)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupAppliedSurcharges, Value = "true" });
+        var json = """
+            { "version": 1, "surcharges": { "nightWindow": { "start": "22:00", "end": "04:00" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.SurchargeNightStart, "22:00");
+        AssertWritten(SettingKeys.SurchargeNightEnd, "04:00");
+        _writtenSettings.ShouldNotContain(setting => setting.Type == SettingKeys.RegionSetupAppliedSurcharges);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargesMarkerAppliedAndNightStartAlreadySet_DoesNotOverwriteExistingValue()
+    {
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupAppliedSurcharges)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupAppliedSurcharges, Value = "true" });
+        _settingsRepository.GetSetting(SettingKeys.SurchargeNightStart)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeNightStart, Value = "21:00" });
+        var json = """
+            { "version": 1, "surcharges": { "nightWindow": { "start": "22:00", "end": "04:00" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.SurchargeNightEnd, "04:00");
+        _writtenSettings.ShouldNotContain(setting => setting.Type == SettingKeys.SurchargeNightStart);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargeRateModesAndMinimumsPerHour_WritesConfiguredSettings()
+    {
+        var json = """
+            {
+              "version": 1,
+              "surcharges": {
+                "nightRate": 1.36,
+                "rateModes": { "night": "fixedPerHour", "holiday": "fixedPerShift" },
+                "minimumsPerHour": { "weekend1": 75.0 }
+              }
+            }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.SurchargeNightRateMode, "fixedperhour");
+        AssertWritten(SettingKeys.SurchargeHolidayRateMode, "fixedpershift");
+        AssertWritten(SettingKeys.SurchargeWE1MinimumPerHour, "75.0");
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargeRateModeInvalidValue_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "rateModes": { "night": "percentage" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargeRateModeUnknownType_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "rateModes": { "unknownType": "fixedPerHour" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SurchargesMarkerAppliedAllOtherSectionsAppliedTooAndFileMissing_DoesNotThrow()
+    {
+        StubAllSectionMarkersExist();
+        var missingPath = Path.Combine(Path.GetTempPath(), $"region-setup-{Guid.NewGuid()}.json");
+        var service = CreateService(missingPath);
+
+        await service.ApplyAsync();
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_ComplianceBlock_WritesQualificationsEnforcementAndRosterPublicationSettings()
+    {
+        var json = """
+            {
+              "version": 1,
+              "compliance": {
+                "qualifications": { "expiredMandatoryBlocks": true, "expiryWarningDays": 30 },
+                "enforcement": {
+                  "defaultMode": "warn",
+                  "rules": { "maxDailyHours": "block", "minRestHours": "Block" },
+                  "allowSupervisorOverride": true
+                },
+                "rosterPublication": { "minLeadDays": 14, "countWorkdaysOnly": true }
+              }
+            }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.QualificationExpiredMandatoryBlocks, "true");
+        AssertWritten(SettingKeys.QualificationExpiryWarningDays, "30");
+        AssertWritten(SettingKeys.ComplianceEnforcementDefaultMode, "warn");
+        AssertWritten(SettingKeys.ComplianceEnforcementMaxDailyHours, "block");
+        AssertWritten(SettingKeys.ComplianceEnforcementMinRestHours, "block");
+        AssertWritten(SettingKeys.ComplianceEnforcementAllowSupervisorOverride, "true");
+        AssertWritten(SettingKeys.ComplianceRosterPublicationMinLeadDays, "14");
+        AssertWritten(SettingKeys.ComplianceRosterPublicationCountWorkdaysOnly, "true");
+        AssertWritten(SettingKeys.RegionSetupAppliedCompliance, "true");
+    }
+
+    [Test]
+    public async Task ApplyAsync_ComplianceEnforcementModeInvalid_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "enforcement": { "defaultMode": "sometimes" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_ComplianceMarkerAlreadyApplied_SkipsSection_EvenWithoutGlobalMarker()
+    {
+        StubAllSectionMarkersExist();
+        var json = """
+            { "version": 1, "compliance": { "qualifications": { "expiredMandatoryBlocks": true } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_LegacyGlobalMarkerPresent_ComplianceSectionStillApplies()
+    {
+        // Compliance is a brand-new section, deliberately excluded from LegacySections: even an
+        // installation carrying only the legacy whole-file REGION_SETUP_APPLIED marker (no per-section
+        // markers at all) must still apply it, unlike the six pre-existing sections which backfill/skip.
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupApplied)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupApplied, Value = "legacy-hash" });
+        var json = """
+            { "version": 1, "compliance": { "qualifications": { "expiredMandatoryBlocks": true } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.QualificationExpiredMandatoryBlocks, "true");
+        AssertWritten(SettingKeys.RegionSetupAppliedCompliance, "true");
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsNewRow_InsertsRuleWithComputedHash()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 200, "warnAtPercent": 80 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _addedPeriodCapRules.Count.ShouldBe(1);
+        var added = _addedPeriodCapRules[0];
+        added.Period.ShouldBe(PeriodCapPeriod.Month);
+        added.Scope.ShouldBe(PeriodCapScope.TotalHours);
+        added.CapHours.ShouldBe(200m);
+        added.WarnAtPercent.ShouldBe(80);
+        added.ImportSourceKey.ShouldBe("region-setup:compliance.periodCaps:month:totalhours");
+        added.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsUnchangedSinceLastImport_UpdatesToNewFileValue()
+    {
+        var firstJson = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 200 } ] } }
+            """;
+        var firstService = CreateService(WriteTempFile(firstJson));
+        await firstService.ApplyAsync();
+        var inserted = _addedPeriodCapRules.Single();
+
+        // Simulate: this row is still exactly what the first import wrote (no customer edit) - seed
+        // the "existing rows" store with the SAME field values and hash the first import recorded.
+        _existingPeriodCapRules.Add(new PeriodCapRule
+        {
+            Id = inserted.Id,
+            Period = inserted.Period,
+            Scope = inserted.Scope,
+            CapHours = inserted.CapHours,
+            WarnAtPercent = inserted.WarnAtPercent,
+            ImportSourceKey = inserted.ImportSourceKey,
+            ImportContentHash = inserted.ImportContentHash,
+        });
+        _addedPeriodCapRules.Clear();
+        var updatedRules = new List<PeriodCapRule>();
+        _periodCapRuleRepository.When(r => r.Update(Arg.Any<PeriodCapRule>()))
+            .Do(callInfo => updatedRules.Add(callInfo.Arg<PeriodCapRule>()));
+
+        var secondJson = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 250 } ] } }
+            """;
+        var secondService = CreateService(WriteTempFile(secondJson));
+
+        await secondService.ApplyAsync();
+
+        updatedRules.Count.ShouldBe(1);
+        updatedRules[0].CapHours.ShouldBe(250m);
+        _addedPeriodCapRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsCustomerEditedSinceLastImport_SkipsWithoutOverwriting()
+    {
+        var firstJson = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 200 } ] } }
+            """;
+        var firstService = CreateService(WriteTempFile(firstJson));
+        await firstService.ApplyAsync();
+        var inserted = _addedPeriodCapRules.Single();
+
+        // Simulate a customer edit: the live CapHours changed to 999 but ImportContentHash was never
+        // touched (still reflects the original 200 that was imported) - an admin UI edit would behave
+        // exactly like this, since it has no reason to recompute the internal import-tracking hash.
+        _existingPeriodCapRules.Add(new PeriodCapRule
+        {
+            Id = inserted.Id,
+            Period = inserted.Period,
+            Scope = inserted.Scope,
+            CapHours = 999m,
+            WarnAtPercent = inserted.WarnAtPercent,
+            ImportSourceKey = inserted.ImportSourceKey,
+            ImportContentHash = inserted.ImportContentHash,
+        });
+        _addedPeriodCapRules.Clear();
+        var updatedRules = new List<PeriodCapRule>();
+        _periodCapRuleRepository.When(r => r.Update(Arg.Any<PeriodCapRule>()))
+            .Do(callInfo => updatedRules.Add(callInfo.Arg<PeriodCapRule>()));
+
+        var secondJson = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 250 } ] } }
+            """;
+        var secondService = CreateService(WriteTempFile(secondJson));
+
+        await secondService.ApplyAsync();
+
+        updatedRules.ShouldBeEmpty();
+        _addedPeriodCapRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsInvalidPeriod_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "fortnight", "scope": "totalHours", "capHours": 200 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedPeriodCapRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsRollingAverageNewRow_InsertsRuleWithComputedHash()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "windowWeeks": 17, "maxAverageWeeklyHours": 48 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _addedPeriodCapRules.Count.ShouldBe(1);
+        var added = _addedPeriodCapRules[0];
+        added.RollingWindowWeeks.ShouldBe(17);
+        added.MaxAverageWeeklyHours.ShouldBe(48m);
+        added.ImportSourceKey.ShouldBe("region-setup:compliance.periodCaps:rolling:17w");
+        added.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsEntryMixesFixedAndRollingFields_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 200, "windowWeeks": 17, "maxAverageWeeklyHours": 48 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedPeriodCapRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsEntryHasNeitherFixedNorRollingFields_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "warnAtPercent": 80 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedPeriodCapRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsRollingAverageEntryMissingMaxAverage_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "windowWeeks": 17 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedPeriodCapRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_VersionMissing_ThrowsWithoutAnyWrite()
+    {
+        var json = """{ "region": "DE" }""";
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_VersionUnsupported_ThrowsWithoutAnyWrite()
+    {
+        var json = """{ "version": 2, "region": "DE" }""";
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    // The six sections that existed before per-section markers were introduced. Used where a test
+    // exercises the legacy-global-marker backfill path specifically, which — by design — never
+    // touches Compliance (a brand-new section; see RegionSetupService.LegacySections).
+    private static readonly string[] LegacySectionMarkerKeys =
+    {
+        SettingKeys.RegionSetupAppliedLanguages,
+        SettingKeys.RegionSetupAppliedLocale,
+        SettingKeys.RegionSetupAppliedCalendar,
+        SettingKeys.RegionSetupAppliedWorktime,
+        SettingKeys.RegionSetupAppliedSurcharges,
+        SettingKeys.RegionSetupAppliedExport,
+    };
+
+    private static readonly string[] AllSectionMarkerKeys =
+    {
+        SettingKeys.RegionSetupAppliedLanguages,
+        SettingKeys.RegionSetupAppliedLocale,
+        SettingKeys.RegionSetupAppliedCalendar,
+        SettingKeys.RegionSetupAppliedWorktime,
+        SettingKeys.RegionSetupAppliedSurcharges,
+        SettingKeys.RegionSetupAppliedExport,
+        SettingKeys.RegionSetupAppliedCompliance,
+    };
+
+    private void StubAllSectionMarkersExist()
+    {
+        foreach (var markerKey in AllSectionMarkerKeys)
+        {
+            _settingsRepository.GetSetting(markerKey)
+                .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = markerKey, Value = "true" });
+        }
     }
 
     private RegionSetupService CreateService(string? filePath)
@@ -387,6 +920,7 @@ public class RegionSetupServiceTests
             _languagePluginService,
             _settingsRepository,
             _calendarSelectionRepository,
+            _periodCapRuleRepository,
             _unitOfWork,
             NullLogger<RegionSetupService>.Instance);
     }

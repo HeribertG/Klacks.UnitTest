@@ -79,7 +79,23 @@ public class RegionSetupFileReaderTests
     [Test]
     public async Task ReadProfileAsync_UnknownProperty_ThrowsInvalidRequest()
     {
-        var path = WriteTempFile("""{ "regionTypo": "DE" }""");
+        var path = WriteTempFile("""{ "version": 1, "regionTypo": "DE" }""");
+
+        await Should.ThrowAsync<InvalidRequestException>(() => RegionSetupFileReader.ReadProfileAsync(path));
+    }
+
+    [Test]
+    public async Task ReadProfileAsync_VersionMissing_ThrowsInvalidRequest()
+    {
+        var path = WriteTempFile("""{ "region": "DE" }""");
+
+        await Should.ThrowAsync<InvalidRequestException>(() => RegionSetupFileReader.ReadProfileAsync(path));
+    }
+
+    [Test]
+    public async Task ReadProfileAsync_VersionUnsupported_ThrowsInvalidRequest()
+    {
+        var path = WriteTempFile("""{ "version": 2, "region": "DE" }""");
 
         await Should.ThrowAsync<InvalidRequestException>(() => RegionSetupFileReader.ReadProfileAsync(path));
     }
@@ -97,6 +113,7 @@ public class RegionSetupFileReaderTests
     {
         var json = """
             {
+              "version": 1,
               "region": "DE",
               "locale": { "country": "DE", "state": "BY" },
               "seedDemoData": true
@@ -106,6 +123,7 @@ public class RegionSetupFileReaderTests
 
         var profile = await RegionSetupFileReader.ReadProfileAsync(path);
 
+        profile.Version.ShouldBe(1);
         profile.Region.ShouldBe("DE");
         profile.Locale.ShouldNotBeNull();
         profile.Locale!.Country.ShouldBe("DE");
@@ -116,7 +134,7 @@ public class RegionSetupFileReaderTests
     [Test]
     public async Task ReadProfileAsync_SeedDemoDataOmitted_IsNull()
     {
-        var path = WriteTempFile("""{ "region": "DE" }""");
+        var path = WriteTempFile("""{ "version": 1, "region": "DE" }""");
 
         var profile = await RegionSetupFileReader.ReadProfileAsync(path);
 

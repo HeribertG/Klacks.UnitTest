@@ -7,9 +7,12 @@
 /// nothing, and that a pre-existing violation is NOT attributed to the placement (before/after diff).
 /// </summary>
 
+using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Schedules;
@@ -30,6 +33,9 @@ public class PreCommitConflictCheckerTests
 
     private DataBaseContext _context = null!;
     private PreCommitConflictChecker _checker = null!;
+    private IComplianceEnforcementResolver _enforcementResolver = null!;
+    private ISettingsReader _settingsReader = null!;
+    private IPeriodCapEvaluator _periodCapEvaluator = null!;
 
     [SetUp]
     public void Setup()
@@ -52,7 +58,22 @@ public class PreCommitConflictCheckerTests
                 MaxWeeklyHours: TimeSpan.FromHours(50),
                 MinRestDays: 2));
 
-        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver);
+        _enforcementResolver = Substitute.For<IComplianceEnforcementResolver>();
+        _enforcementResolver.GetModeAsync(Arg.Any<string>()).Returns(RuleEnforcementMode.Warn);
+
+        _settingsReader = Substitute.For<ISettingsReader>();
+
+        _periodCapEvaluator = Substitute.For<IPeriodCapEvaluator>();
+        _periodCapEvaluator
+            .EvaluatePlannedAsync(
+                Arg.Any<Guid>(),
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<(DateOnly Date, decimal Hours)>>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator);
     }
 
     [TearDown]
@@ -170,5 +191,136 @@ public class PreCommitConflictCheckerTests
             [Row(new TimeOnly(12, 0), new TimeOnly(20, 0))], analyseToken: Guid.NewGuid());
 
         result.HasAny.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task BlockMode_EscalatesRestViolation_ToOverridableError()
+    {
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.MinRestHours).Returns(RuleEnforcementMode.Block);
+        SeedWork(ClientA, Day, new TimeOnly(6, 0), new TimeOnly(14, 0));
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(20, 0), new TimeOnly(23, 0))]);
+
+        result.HasBlocking.ShouldBeTrue();
+        result.HasHardBlocking.ShouldBeFalse();
+        result.HasOverridableBlocking.ShouldBeTrue();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == "schedule.error-list.rest-violation"
+            && c.Type == ScheduleValidationType.Error
+            && c.CommentParams[ComplianceRuleNames.EnforcementRuleParamKey] == ComplianceRuleNames.MinRestHours);
+    }
+
+    [Test]
+    public async Task WarnMode_LeavesRestViolation_AsNonOverridableWarning()
+    {
+        SeedWork(ClientA, Day, new TimeOnly(6, 0), new TimeOnly(14, 0));
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(20, 0), new TimeOnly(23, 0))]);
+
+        result.HasBlocking.ShouldBeFalse();
+        result.HasOverridableBlocking.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task Collision_IsNeverOverridable_EvenWhenBlockModeConfigured()
+    {
+        _enforcementResolver.GetModeAsync(Arg.Any<string>()).Returns(RuleEnforcementMode.Block);
+        SeedWork(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(16, 0));
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(12, 0), new TimeOnly(20, 0))]);
+
+        result.HasHardBlocking.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ExpiringSoonMandatoryQualification_AddsWarning_NeverBlocks()
+    {
+        var qualificationId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        _settingsReader.GetSetting(SettingKeys.QualificationExpiryWarningDays)
+            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.QualificationExpiryWarningDays, Value = "30" });
+
+        _context.ShiftRequiredQualification.Add(new Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification
+        {
+            Id = Guid.NewGuid(),
+            ShiftId = shiftId,
+            QualificationId = qualificationId,
+            IsMandatory = true,
+            MinLevel = QualificationLevel.Basic
+        });
+        _context.ClientQualification.Add(new Klacks.Api.Domain.Models.Associations.ClientQualification
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientA,
+            QualificationId = qualificationId,
+            Level = QualificationLevel.Basic,
+            ValidUntil = Day.AddDays(10)
+        });
+        _context.SaveChanges();
+
+        var row = new PlannedWorkRow(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(16, 0), shiftId);
+        var result = await _checker.CheckAsync([row]);
+
+        result.HasBlocking.ShouldBeFalse();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == QualificationValidationKeys.ExpiringSoon && c.Type == ScheduleValidationType.Warning);
+    }
+
+    [Test]
+    public async Task PeriodCapBreach_FromEvaluator_IsSurfacedAsWarning()
+    {
+        var periodCapEntry = new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Warning,
+            ClientId = ClientA,
+            Date = Day,
+            Comment = ScheduleValidationKeys.PeriodCap,
+            CommentParams = new Dictionary<string, string> { ["actualHours"] = "210.0", ["capHours"] = "200" }
+        };
+        _periodCapEvaluator
+            .EvaluatePlannedAsync(
+                ClientA,
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<(DateOnly Date, decimal Hours)>>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([periodCapEntry]);
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0), Day.AddDays(20))]);
+
+        result.HasBlocking.ShouldBeFalse();
+        result.NewConflicts.ShouldContain(c => c.Comment == ScheduleValidationKeys.PeriodCap && c.Type == ScheduleValidationType.Warning);
+    }
+
+    [Test]
+    public async Task PeriodCapBreach_BlockEnforcementFromEvaluator_IsOverridableBlocking()
+    {
+        var periodCapEntry = new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = ClientA,
+            Date = Day,
+            Comment = ScheduleValidationKeys.PeriodCap,
+            CommentParams = new Dictionary<string, string>
+            {
+                ["actualHours"] = "210.0",
+                ["capHours"] = "200",
+                [ComplianceRuleNames.EnforcementRuleParamKey] = ComplianceRuleNames.PeriodCap
+            }
+        };
+        _periodCapEvaluator
+            .EvaluatePlannedAsync(
+                ClientA,
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<(DateOnly Date, decimal Hours)>>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([periodCapEntry]);
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0), Day.AddDays(20))]);
+
+        result.HasBlocking.ShouldBeTrue();
+        result.HasOverridableBlocking.ShouldBeTrue();
+        result.HasHardBlocking.ShouldBeFalse();
     }
 }

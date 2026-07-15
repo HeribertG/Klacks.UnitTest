@@ -1,5 +1,8 @@
 ﻿using Shouldly;
 using Klacks.Api.Domain.Common;
+using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Settings;
 using Klacks.Api.Infrastructure.Persistence;
@@ -86,7 +89,7 @@ public class MacroManagementServiceTests
     }
 
     [Test]
-    public async Task DeleteMacroAsync_WithExistingMacro_ShouldRemoveFromContext()
+    public async Task DeleteMacroAsync_WithExistingCustomMacro_ShouldRemoveFromContext()
     {
         var macro = new Macro
         {
@@ -94,7 +97,7 @@ public class MacroManagementServiceTests
             Name = "ToDelete",
             Content = "DeleteContent",
             Description = new MultiLanguage { De = "Delete Description" },
-            Type = 1
+            Type = (int)MacroFunctionEnum.Custom
         };
 
         _context.Macro.Add(macro);
@@ -106,6 +109,77 @@ public class MacroManagementServiceTests
         var result = await _context.Macro.IgnoreQueryFilters().FirstOrDefaultAsync(m => m.Id == macro.Id);
         result.ShouldNotBeNull();
         result.IsDeleted.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task DeleteMacroAsync_ReferencedByActiveShifts_ThrowsWithShiftCountInMessage()
+    {
+        var macro = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "Referenced",
+            Content = "Content",
+            Description = new MultiLanguage { De = "Desc" },
+            Type = (int)MacroFunctionEnum.Custom
+        };
+        _context.Macro.Add(macro);
+        _context.Shift.AddRange(
+            new Shift { Id = Guid.NewGuid(), Name = "Shift1", MacroId = macro.Id },
+            new Shift { Id = Guid.NewGuid(), Name = "Shift2", MacroId = macro.Id });
+        await _context.SaveChangesAsync();
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => _service.DeleteMacroAsync(macro.Id));
+
+        ex.Message.ShouldContain("2");
+
+        var result = await _context.Macro.FindAsync(macro.Id);
+        result.ShouldNotBeNull();
+        result!.IsDeleted.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task DeleteMacroAsync_WithStandardFunctionType_Throws()
+    {
+        var macro = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "AllShift",
+            Content = "Content",
+            Description = new MultiLanguage { De = "Desc" },
+            Category = MacroCategoryEnum.Shift,
+            Type = (int)MacroFunctionEnum.Standard
+        };
+        _context.Macro.Add(macro);
+        await _context.SaveChangesAsync();
+
+        await Should.ThrowAsync<InvalidRequestException>(() => _service.DeleteMacroAsync(macro.Id));
+
+        var result = await _context.Macro.FindAsync(macro.Id);
+        result.ShouldNotBeNull();
+        result!.IsDeleted.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task DeleteMacroAsync_UnreferencedCustomMacro_Succeeds()
+    {
+        var macro = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "Custom",
+            Content = "Content",
+            Description = new MultiLanguage { De = "Desc" },
+            Category = MacroCategoryEnum.Unspecified,
+            Type = (int)MacroFunctionEnum.Custom
+        };
+        _context.Macro.Add(macro);
+        await _context.SaveChangesAsync();
+
+        await _service.DeleteMacroAsync(macro.Id);
+        await _context.SaveChangesAsync();
+
+        var result = await _context.Macro.IgnoreQueryFilters().FirstOrDefaultAsync(m => m.Id == macro.Id);
+        result.ShouldNotBeNull();
+        result!.IsDeleted.ShouldBeTrue();
     }
 
     [Test]

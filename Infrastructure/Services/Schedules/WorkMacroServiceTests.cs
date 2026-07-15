@@ -4,6 +4,7 @@
 /// Tests for WorkMacroService — verifies macro routing for WorkChange entries.
 /// Effective time computation is tested in WorkChangeEffectiveTimeServiceTests.
 /// </summary>
+using System.Linq;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Domain.Models.Schedules;
@@ -145,6 +146,125 @@ public class WorkMacroServiceTests
 
         workChange.Surcharges.ShouldBe(0.5m);
         await _macroCompilationService.Received(1).CompileAndExecuteAsync(macroId, macroData);
+    }
+
+    [Test]
+    public async Task ProcessWorkChangeMacroAsync_FixedPerShiftMode_OverridesToFlatRatePerShift()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
+
+        var macroData = new MacroData { NightRateMode = SurchargeRateMode.FixedPerShift, NightRate = 20m };
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), work)
+            .Returns(macroData);
+        _macroCompilationService.CompileAndExecuteAsync(macroId, macroData)
+            .Returns(new MacroExecutionResult(
+                true,
+                8.0m,
+                new List<MacroSurchargeItem> { new(SurchargeType.Night, 8.0m) }));
+
+        var workChange = new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.CorrectionEnd, ChangeTime = 0.25m,
+            StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MinValue,
+        };
+
+        await _sut.ProcessWorkChangeMacroAsync(workChange);
+
+        workChange.Surcharges.ShouldBe(20.0m);
+        workChange.SurchargeItems.ShouldHaveSingleItem();
+        workChange.SurchargeItems.Single().Type.ShouldBe(SurchargeType.Night);
+        workChange.SurchargeItems.Single().Amount.ShouldBe(20m);
+    }
+
+    [Test]
+    public async Task ProcessWorkChangeMacroAsync_FixedPerShiftMode_ZeroMacroAmount_StaysZero()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
+
+        var macroData = new MacroData { NightRateMode = SurchargeRateMode.FixedPerShift, NightRate = 20m };
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), work)
+            .Returns(macroData);
+        _macroCompilationService.CompileAndExecuteAsync(macroId, macroData)
+            .Returns(new MacroExecutionResult(
+                true,
+                0m,
+                new List<MacroSurchargeItem> { new(SurchargeType.Night, 0m) }));
+
+        var workChange = new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.CorrectionEnd, ChangeTime = 0.25m,
+            StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MinValue,
+        };
+
+        await _sut.ProcessWorkChangeMacroAsync(workChange);
+
+        workChange.Surcharges.ShouldBe(0m);
+        workChange.SurchargeItems.Single().Amount.ShouldBe(0m);
+    }
+
+    [Test]
+    public async Task ProcessWorkChangeMacroAsync_MultiplierWithMinimumPerHour_UsesFloorWhenHigher()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
+
+        var macroData = new MacroData
+        {
+            WE1RateMode = SurchargeRateMode.Multiplier,
+            WE1Rate = 0.26m,
+            WE1MinimumPerHour = 75.0m,
+        };
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), work)
+            .Returns(macroData);
+        _macroCompilationService.CompileAndExecuteAsync(macroId, macroData)
+            .Returns(new MacroExecutionResult(
+                true,
+                2.08m,
+                new List<MacroSurchargeItem> { new(SurchargeType.Weekend1, 2.08m) }));
+
+        var workChange = new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.CorrectionEnd, ChangeTime = 0.25m,
+            StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MinValue,
+        };
+
+        await _sut.ProcessWorkChangeMacroAsync(workChange);
+
+        workChange.SurchargeItems.Single().Amount.ShouldBe(600m);
+        workChange.Surcharges.ShouldBe(600m);
+    }
+
+    [Test]
+    public async Task ProcessWorkChangeMacroAsync_FixedPerHourMode_ArithmeticUnchanged()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
+
+        var macroData = new MacroData { NightRateMode = SurchargeRateMode.FixedPerHour, NightRate = 0.73m };
+        _macroDataProvider.GetMacroDataForWorkChangeAsync(Arg.Any<WorkChange>(), work)
+            .Returns(macroData);
+        _macroCompilationService.CompileAndExecuteAsync(macroId, macroData)
+            .Returns(new MacroExecutionResult(
+                true,
+                5.84m,
+                new List<MacroSurchargeItem> { new(SurchargeType.Night, 5.84m) }));
+
+        var workChange = new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.CorrectionEnd, ChangeTime = 0.25m,
+            StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MinValue,
+        };
+
+        await _sut.ProcessWorkChangeMacroAsync(workChange);
+
+        workChange.SurchargeItems.Single().Amount.ShouldBe(5.84m);
+        workChange.Surcharges.ShouldBe(5.84m);
     }
 
     private async Task<Work> AddWorkAsync(Guid? shiftMacroId, decimal surcharges = 0m)

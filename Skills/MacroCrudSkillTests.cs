@@ -53,7 +53,7 @@ public class MacroCrudSkillTests
             Arg.Is<PostCommand>(c =>
                 c.model.Name == "MyMacro" &&
                 c.model.Content == "OUTPUT 1, 0" &&
-                c.model.Type == (int)MacroTypeEnum.DefaultResult &&
+                c.model.Type == (int)MacroFunctionEnum.Custom &&
                 c.model.Description != null),
             Arg.Any<CancellationToken>());
     }

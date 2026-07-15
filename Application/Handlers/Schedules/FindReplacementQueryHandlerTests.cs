@@ -20,6 +20,8 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.UnitTest.TestHelpers;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Handlers.Schedules;
 
@@ -38,6 +40,8 @@ public class FindReplacementQueryHandlerTests
     private IScheduleEntriesService _scheduleEntries = null!;
     private IClientAvailabilityRepository _availabilityRepo = null!;
     private IPeriodHoursService _periodHours = null!;
+    private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
+    private IHttpContextAccessor _httpContextAccessor = null!;
     private FindReplacementQueryHandler _handler = null!;
 
     [SetUp]
@@ -59,8 +63,12 @@ public class FindReplacementQueryHandlerTests
             .Returns((new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31)));
         SetPeriodHours();
 
+        _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
+        _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+
         _handler = new FindReplacementQueryHandler(
-            _clientRepo, _checker, _prefRepo, _scheduleEntries, _availabilityRepo, _periodHours);
+            _clientRepo, _checker, _prefRepo, _scheduleEntries, _availabilityRepo, _periodHours,
+            _overrideAuthorizer, _httpContextAccessor, NullLogger<FindReplacementQueryHandler>.Instance);
     }
 
     private void SetPeriodHours(Dictionary<Guid, PeriodHoursResource>? byClient = null)
@@ -107,8 +115,8 @@ public class FindReplacementQueryHandlerTests
     private void SetPreferences(params ClientShiftPreference[] prefs)
         => _prefRepo.GetByShiftIdAsync(ShiftId, Arg.Any<CancellationToken>()).Returns(prefs.ToList());
 
-    private Task<ReplacementSearchResult> Find()
-        => _handler.Handle(new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null), CancellationToken.None);
+    private Task<ReplacementSearchResult> Find(bool overrideBlock = false)
+        => _handler.Handle(new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null, overrideBlock), CancellationToken.None);
 
     private static Client Member(Guid id, string name) => new() { Id = id, Name = name, FirstName = string.Empty };
 
@@ -147,6 +155,62 @@ public class FindReplacementQueryHandlerTests
 
         result.Eligible.ShouldBeEmpty();
         result.Excluded.Single().Reason.ShouldBe("schedule.error-list.rest-violation");
+    }
+
+    [Test]
+    public async Task BlockModeEscalatedRestViolation_NoOverride_StaysExcluded()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetConflicts(new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = a,
+            Date = Date,
+            Comment = "schedule.error-list.rest-violation",
+            CommentParams = new Dictionary<string, string> { ["enforcementRule"] = "minRestHours" },
+        });
+        _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(false);
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.Single().Reason.ShouldBe("schedule.error-list.rest-violation");
+    }
+
+    [Test]
+    public async Task BlockModeEscalatedRestViolation_WithAuthorizedOverride_StaysEligible()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetConflicts(new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = a,
+            Date = Date,
+            Comment = "schedule.error-list.rest-violation",
+            CommentParams = new Dictionary<string, string> { ["enforcementRule"] = "minRestHours" },
+        });
+        _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
+
+        var result = await Find(overrideBlock: true);
+
+        result.Excluded.ShouldBeEmpty();
+        result.Eligible.Single().ClientId.ShouldBe(a);
+    }
+
+    [Test]
+    public async Task Collision_NeverOverridable_EvenWhenAuthorized()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetConflicts(Conflict(a, ScheduleValidationType.Error, "schedule.error-list.collision"));
+        _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(true);
+
+        var result = await Find(overrideBlock: true);
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.Single().Reason.ShouldBe("schedule.error-list.collision");
     }
 
     [Test]

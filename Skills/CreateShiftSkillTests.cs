@@ -27,6 +27,7 @@ public class CreateShiftSkillTests
     private IClientRepository _clientRepository = null!;
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IDefaultShiftMacroResolver _defaultShiftMacroResolver = null!;
     private CreateShiftSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -39,12 +40,16 @@ public class CreateShiftSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _mediator = Substitute.For<IMediator>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _skill = new CreateShiftSkill(_shiftRepository, _groupRepository, _clientRepository, _mediator, _unitOfWork);
+        _defaultShiftMacroResolver = Substitute.For<IDefaultShiftMacroResolver>();
+        _skill = new CreateShiftSkill(
+            _shiftRepository, _groupRepository, _clientRepository, _mediator, _unitOfWork, _defaultShiftMacroResolver);
 
         _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client> { new() { Id = ClientId, Name = "Müller", Type = EntityTypeEnum.Customer } });
         _mediator.Send(Arg.Any<ListQuery>(), Arg.Any<CancellationToken>())
             .Returns(new List<MacroResource>().AsEnumerable());
+        _defaultShiftMacroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>())
+            .Returns((Guid?)null);
         _shiftRepository.FindReusableUncutOrderAsync(Arg.Any<Shift>(), Arg.Any<CancellationToken>())
             .Returns((Shift?)null);
         _shiftRepository.AddWithSealedOrderHandling(Arg.Any<Shift>())

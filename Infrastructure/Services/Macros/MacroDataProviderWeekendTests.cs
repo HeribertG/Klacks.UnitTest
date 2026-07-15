@@ -90,6 +90,20 @@ public class MacroDataProviderWeekendTests
         macroData.WeekendDay2.ShouldBe(0);
     }
 
+    [Test]
+    public async Task GetMacroDataAsync_EffectiveContractDataCarriesCountrySpecificWindow_CopiesNightStartAndNightEnd()
+    {
+        _weekConfiguration.GetWeekendDaysAsync().Returns(new HashSet<DayOfWeek> { DayOfWeek.Saturday, DayOfWeek.Sunday });
+        _contractDataProvider.GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData { NightStart = "22:00", NightEnd = "04:00" });
+        var work = CreateWork(new DateOnly(2026, 7, 11));
+
+        var macroData = await _sut.GetMacroDataAsync(work);
+
+        macroData.NightStart.ShouldBe("22:00");
+        macroData.NightEnd.ShouldBe("04:00");
+    }
+
     private static Work CreateWork(DateOnly date) => new()
     {
         Id = Guid.NewGuid(),

@@ -11,6 +11,7 @@
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Commands.Breaks;
 using Klacks.Api.Application.Commands.Schedules;
+using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
@@ -25,6 +26,7 @@ using Klacks.ScheduleRecovery.Engine;
 using Klacks.ScheduleRecovery.Model;
 using Klacks.UnitTest.ScheduleRecovery;
 using Klacks.UnitTest.TestHelpers;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Handlers.Schedules;
@@ -47,6 +49,8 @@ public class CoverAbsenceCommandHandlerTests
     private IScheduleEntriesService _scheduleEntries = null!;
     private IRecoverySnapshotBuilder _snapshotBuilder = null!;
     private IPreCommitConflictChecker _conflictChecker = null!;
+    private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
+    private IHttpContextAccessor _httpContextAccessor = null!;
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
     private CoverAbsenceCommandHandler _handler = null!;
@@ -83,9 +87,13 @@ public class CoverAbsenceCommandHandlerTests
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
+        _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
+        _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+
         _handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            _conflictChecker, _mediator, _unitOfWork, NullLogger<CoverAbsenceCommandHandler>.Instance);
+            _conflictChecker, _overrideAuthorizer, _httpContextAccessor, _mediator, _unitOfWork,
+            NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
 
     private void SetAbsentSlots(params ScheduleCell[] cells)
@@ -210,6 +218,74 @@ public class CoverAbsenceCommandHandlerTests
                 c.Resource.ReplaceClientId == CrossGroupId && c.Resource.WorkId == ClonedWorkId),
             Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task BlockedByComplianceRule_NoOverride_ReportedAsUncovered_NotMaterialised()
+    {
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(OverridableBlockingCheck());
+        _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(false);
+
+        var outcome = await Cover();
+
+        outcome.Covered.ShouldBeEmpty();
+        outcome.Uncovered.Count.ShouldBe(1);
+        outcome.Uncovered[0].Reason.ShouldBe("blocked");
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task BlockedByComplianceRule_WithAuthorizedOverride_MaterialisesAndCoversSlot()
+    {
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(OverridableBlockingCheck());
+        _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
+
+        var outcome = await _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, OverrideBlock: true), CancellationToken.None);
+
+        outcome.Covered.Count.ShouldBe(1);
+        outcome.Uncovered.ShouldBeEmpty();
+        await _mediator.Received(1).Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task StructuralBlock_NeverOverridable_ReportedAsUncovered_EvenWhenOverrideAuthorized()
+    {
+        var structuralCheck = new PreCommitCheckResult(
+        [
+            new ScheduleValidationNotificationDto
+            {
+                Type = ScheduleValidationType.Error,
+                ClientId = CandidateId,
+                Date = Date,
+                Comment = "schedule.error-list.collision",
+            }
+        ]);
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(structuralCheck);
+        _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(true);
+
+        var outcome = await _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, OverrideBlock: true), CancellationToken.None);
+
+        outcome.Covered.ShouldBeEmpty();
+        outcome.Uncovered.Count.ShouldBe(1);
+        outcome.Uncovered[0].Reason.ShouldBe("blocked");
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    private static PreCommitCheckResult OverridableBlockingCheck() => new(
+    [
+        new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = CandidateId,
+            Date = Date,
+            Comment = "schedule.error-list.rest-violation",
+            CommentParams = new Dictionary<string, string> { ["enforcementRule"] = "minRestHours" },
+        }
+    ]);
 
     [Test]
     public async Task ClonesAndFlushes_BeforeBuildingSnapshot()
