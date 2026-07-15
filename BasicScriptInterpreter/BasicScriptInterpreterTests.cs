@@ -2518,5 +2518,37 @@ output 1, r
         }
 
         #endregion
+
+        #region Malformed Input
+
+        [TestCase("DIM 123abc")]
+        [TestCase("dim 123")]
+        [TestCase("dim x, 5\noutput 1, x")]
+        public void Compile_MalformedVariableDeclaration_ReturnsErrorInsteadOfHanging(string script)
+        {
+            var compiled = CompiledScript.Compile(script, optionExplicit: true, allowExternal: false);
+
+            compiled.HasError.ShouldBeTrue();
+            compiled.Error!.Code.ShouldBe((int)InterpreterError.ParsErrors.errUnexpectedSymbol);
+        }
+
+        [Test]
+        public void Compile_MalformedImportDeclaration_ReturnsErrorInsteadOfHanging()
+        {
+            var compiled = CompiledScript.Compile("import 42", optionExplicit: true, allowExternal: true);
+
+            compiled.HasError.ShouldBeTrue();
+            compiled.Error!.Code.ShouldBe((int)InterpreterError.ParsErrors.errUnexpectedSymbol);
+        }
+
+        [Test]
+        public void Compile_ValidDimDeclaration_StillCompiles()
+        {
+            var compiled = CompiledScript.Compile("dim x, y\nx = 1\ny = 2\noutput 1, x + y", optionExplicit: true, allowExternal: false);
+
+            compiled.HasError.ShouldBeFalse($"Compilation failed: {compiled.Error?.Description}");
+        }
+
+        #endregion
     }
 }

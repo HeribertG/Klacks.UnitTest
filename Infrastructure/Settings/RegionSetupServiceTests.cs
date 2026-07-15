@@ -36,6 +36,7 @@ public class RegionSetupServiceTests
     private ILanguagePluginService _languagePluginService = null!;
     private IPeriodCapRuleRepository _periodCapRuleRepository = null!;
     private IRestDayRotationRuleRepository _restDayRotationRuleRepository = null!;
+    private ICounterRuleRepository _counterRuleRepository = null!;
     private ISchedulingRuleImportRepository _schedulingRuleImportRepository = null!;
     private IQualificationImportRepository _qualificationImportRepository = null!;
     private IMacroImportRepository _macroImportRepository = null!;
@@ -45,6 +46,8 @@ public class RegionSetupServiceTests
     private List<PeriodCapRule> _addedPeriodCapRules = null!;
     private List<RestDayRotationRule> _existingRestDayRotationRules = null!;
     private List<RestDayRotationRule> _addedRestDayRotationRules = null!;
+    private List<CounterRule> _existingCounterRules = null!;
+    private List<CounterRule> _addedCounterRules = null!;
     private List<SchedulingRule> _existingSchedulingRules = null!;
     private List<SchedulingRule> _addedSchedulingRules = null!;
     private List<Qualification> _existingQualifications = null!;
@@ -61,6 +64,8 @@ public class RegionSetupServiceTests
         _addedPeriodCapRules = new List<PeriodCapRule>();
         _existingRestDayRotationRules = new List<RestDayRotationRule>();
         _addedRestDayRotationRules = new List<RestDayRotationRule>();
+        _existingCounterRules = new List<CounterRule>();
+        _addedCounterRules = new List<CounterRule>();
         _existingSchedulingRules = new List<SchedulingRule>();
         _addedSchedulingRules = new List<SchedulingRule>();
         _existingQualifications = new List<Qualification>();
@@ -100,6 +105,15 @@ public class RegionSetupServiceTests
                 .ToList());
         _restDayRotationRuleRepository.When(r => r.Add(Arg.Any<RestDayRotationRule>()))
             .Do(callInfo => _addedRestDayRotationRules.Add(callInfo.Arg<RestDayRotationRule>()));
+
+        _counterRuleRepository = Substitute.For<ICounterRuleRepository>();
+        _counterRuleRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingCounterRules
+                .Where(r => callInfo.Arg<IReadOnlyCollection<string>>().Contains(r.ImportSourceKey))
+                .ToList());
+        _counterRuleRepository.When(r => r.Add(Arg.Any<CounterRule>()))
+            .Do(callInfo => _addedCounterRules.Add(callInfo.Arg<CounterRule>()));
 
         _schedulingRuleImportRepository = Substitute.For<ISchedulingRuleImportRepository>();
         _schedulingRuleImportRepository
@@ -1453,6 +1467,125 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_CounterRuleNewRow_InsertsRuleWithComputedHash()
+    {
+        var json = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "period": "year", "threshold": 25 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var added = _addedCounterRules.Single();
+        added.EventType.ShouldBe(CounterEventType.NightShift);
+        added.Period.ShouldBe(CounterPeriod.Year);
+        added.Threshold.ShouldBe(25);
+        added.ImportSourceKey.ShouldBe("region-setup:compliance.counterRules:nightshift:year");
+        added.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_CounterRuleUneditedRowValueChange_UpdatesRow()
+    {
+        var firstJson = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "period": "year", "threshold": 25 } ] } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var inserted = _addedCounterRules.Single();
+        _existingCounterRules.Add(inserted);
+        _addedCounterRules.Clear();
+        var updated = new List<CounterRule>();
+        _counterRuleRepository.When(r => r.Update(Arg.Any<CounterRule>()))
+            .Do(callInfo => updated.Add(callInfo.Arg<CounterRule>()));
+
+        var secondJson = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "period": "year", "threshold": 20 } ] } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updated.Single().Threshold.ShouldBe(20);
+        _addedCounterRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_CounterRuleCustomerEdited_SkipsWithoutOverwriting()
+    {
+        var firstJson = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "period": "year", "threshold": 25 } ] } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var inserted = _addedCounterRules.Single();
+        inserted.Threshold = 99;
+        _existingCounterRules.Add(inserted);
+        _addedCounterRules.Clear();
+        var updated = new List<CounterRule>();
+        _counterRuleRepository.When(r => r.Update(Arg.Any<CounterRule>()))
+            .Do(callInfo => updated.Add(callInfo.Arg<CounterRule>()));
+
+        var secondJson = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "period": "year", "threshold": 20 } ] } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updated.ShouldBeEmpty();
+        _addedCounterRules.ShouldBeEmpty();
+        inserted.Threshold.ShouldBe(99);
+    }
+
+    [Test]
+    public async Task ApplyAsync_CounterRuleHoursThresholdWithoutMatchingEvent_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "threshold": 25, "hoursThreshold": 13 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedCounterRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_CounterRuleShiftExceedingHoursWithoutHoursThreshold_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "shiftExceedingHours", "threshold": 3 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedCounterRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfileWithBoundCounterRule_BindsRowToTheBlockRule()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "CH Security 210h" } ],
+                "counterRules": [ { "event": "nightShift", "period": "year", "threshold": 25 } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        var counter = _addedCounterRules.Single();
+        counter.SchedulingRuleId.ShouldBe(rule.Id);
+        counter.ImportSourceKey.ShouldBe("region-setup:industryProfiles:security:counterRule:nightshift:year");
+    }
+
+    [Test]
     public async Task ApplyAsync_MacrosSectionNewMacro_CompilesAndInsertsWithImportKeys()
     {
         var json = """
@@ -1618,6 +1751,7 @@ public class RegionSetupServiceTests
             _calendarSelectionRepository,
             _periodCapRuleRepository,
             _restDayRotationRuleRepository,
+            _counterRuleRepository,
             _schedulingRuleImportRepository,
             _qualificationImportRepository,
             _macroImportRepository,

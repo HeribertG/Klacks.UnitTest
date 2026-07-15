@@ -37,6 +37,7 @@ public class PreCommitConflictCheckerTests
     private ISettingsReader _settingsReader = null!;
     private IPeriodCapEvaluator _periodCapEvaluator = null!;
     private IRestDayRotationEvaluator _restDayRotationEvaluator = null!;
+    private ICounterRuleEvaluator _counterRuleEvaluator = null!;
 
     [SetUp]
     public void Setup()
@@ -79,7 +80,12 @@ public class PreCommitConflictCheckerTests
             .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
 
-        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator);
+        _counterRuleEvaluator = Substitute.For<ICounterRuleEvaluator>();
+        _counterRuleEvaluator
+            .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
+
+        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator);
     }
 
     [TearDown]
