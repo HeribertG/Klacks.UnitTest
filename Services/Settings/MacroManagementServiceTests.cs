@@ -1,4 +1,4 @@
-﻿using Shouldly;
+using Shouldly;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
@@ -6,6 +6,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Settings;
 using Klacks.Api.Infrastructure.Persistence;
+using Klacks.Api.Infrastructure.Scripting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,7 @@ public class MacroManagementServiceTests
 {
     private DataBaseContext _context;
     private MacroManagementService _service;
+    private MacroCache _macroCache;
     private ILogger<MacroManagementService> _mockLogger;
     private IHttpContextAccessor _mockHttpContextAccessor;
 
@@ -32,7 +34,8 @@ public class MacroManagementServiceTests
         _mockHttpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, _mockHttpContextAccessor);
         _mockLogger = Substitute.For<ILogger<MacroManagementService>>();
-        _service = new MacroManagementService(_context, _mockLogger);
+        _macroCache = new MacroCache();
+        _service = new MacroManagementService(_context, _macroCache, _mockLogger);
     }
 
     [TearDown]
@@ -180,6 +183,50 @@ public class MacroManagementServiceTests
         var result = await _context.Macro.IgnoreQueryFilters().FirstOrDefaultAsync(m => m.Id == macro.Id);
         result.ShouldNotBeNull();
         result!.IsDeleted.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task UpdateMacroAsync_WithCachedCompilation_InvalidatesCache()
+    {
+        var macro = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "Cached",
+            Content = "output 1, 1",
+            Description = new MultiLanguage { De = "Desc" },
+            Type = (int)MacroFunctionEnum.Custom
+        };
+        _context.Macro.Add(macro);
+        await _context.SaveChangesAsync();
+        _macroCache.GetOrCompile(macro.Id, macro.Content);
+        _macroCache.Contains(macro.Id).ShouldBeTrue();
+
+        macro.Content = "output 1, 2";
+        await _service.UpdateMacroAsync(macro);
+
+        _macroCache.Contains(macro.Id).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task DeleteMacroAsync_WithCachedCompilation_InvalidatesCache()
+    {
+        var macro = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "CachedDelete",
+            Content = "output 1, 1",
+            Description = new MultiLanguage { De = "Desc" },
+            Category = MacroCategoryEnum.Unspecified,
+            Type = (int)MacroFunctionEnum.Custom
+        };
+        _context.Macro.Add(macro);
+        await _context.SaveChangesAsync();
+        _macroCache.GetOrCompile(macro.Id, macro.Content);
+        _macroCache.Contains(macro.Id).ShouldBeTrue();
+
+        await _service.DeleteMacroAsync(macro.Id);
+
+        _macroCache.Contains(macro.Id).ShouldBeFalse();
     }
 
     [Test]
