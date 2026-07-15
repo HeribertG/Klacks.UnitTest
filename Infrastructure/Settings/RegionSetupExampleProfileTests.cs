@@ -32,5 +32,9 @@ public class RegionSetupExampleProfileTests
         rollingCap.WindowWeeks.ShouldBe(24);
         rollingCap.MaxAverageWeeklyHours.ShouldBe(48m);
         profile.Compliance!.Enforcement.ShouldNotBeNull().Rules.ShouldNotBeNull().RollingAverage.ShouldBe("warn");
+
+        var healthcare = profile.IndustryProfiles.ShouldNotBeNull()["healthcare"];
+        healthcare.SchedulingRulePresets.ShouldNotBeNull().Single().Name.ShouldBe("DE Klinik Standard");
+        healthcare.QualificationCatalog.ShouldNotBeNull().Count.ShouldBe(2);
     }
 }

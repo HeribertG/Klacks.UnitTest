@@ -35,10 +35,16 @@ public class RegionSetupServiceTests
     private ICalendarSelectionRepository _calendarSelectionRepository = null!;
     private ILanguagePluginService _languagePluginService = null!;
     private IPeriodCapRuleRepository _periodCapRuleRepository = null!;
+    private ISchedulingRuleImportRepository _schedulingRuleImportRepository = null!;
+    private IQualificationImportRepository _qualificationImportRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private List<SettingsModel> _writtenSettings = null!;
     private List<PeriodCapRule> _existingPeriodCapRules = null!;
     private List<PeriodCapRule> _addedPeriodCapRules = null!;
+    private List<SchedulingRule> _existingSchedulingRules = null!;
+    private List<SchedulingRule> _addedSchedulingRules = null!;
+    private List<Qualification> _existingQualifications = null!;
+    private List<Qualification> _addedQualifications = null!;
     private List<string> _tempFiles = null!;
 
     [SetUp]
@@ -47,6 +53,10 @@ public class RegionSetupServiceTests
         _writtenSettings = new List<SettingsModel>();
         _existingPeriodCapRules = new List<PeriodCapRule>();
         _addedPeriodCapRules = new List<PeriodCapRule>();
+        _existingSchedulingRules = new List<SchedulingRule>();
+        _addedSchedulingRules = new List<SchedulingRule>();
+        _existingQualifications = new List<Qualification>();
+        _addedQualifications = new List<Qualification>();
         _tempFiles = new List<string>();
 
         _settingsRepository = Substitute.For<ISettingsRepository>();
@@ -71,6 +81,24 @@ public class RegionSetupServiceTests
                 .ToList());
         _periodCapRuleRepository.When(r => r.Add(Arg.Any<PeriodCapRule>()))
             .Do(callInfo => _addedPeriodCapRules.Add(callInfo.Arg<PeriodCapRule>()));
+
+        _schedulingRuleImportRepository = Substitute.For<ISchedulingRuleImportRepository>();
+        _schedulingRuleImportRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingSchedulingRules
+                .Where(r => callInfo.Arg<IReadOnlyCollection<string>>().Contains(r.ImportSourceKey))
+                .ToList());
+        _schedulingRuleImportRepository.When(r => r.Add(Arg.Any<SchedulingRule>()))
+            .Do(callInfo => _addedSchedulingRules.Add(callInfo.Arg<SchedulingRule>()));
+
+        _qualificationImportRepository = Substitute.For<IQualificationImportRepository>();
+        _qualificationImportRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingQualifications
+                .Where(q => callInfo.Arg<IReadOnlyCollection<string>>().Contains(q.ImportSourceKey))
+                .ToList());
+        _qualificationImportRepository.When(r => r.Add(Arg.Any<Qualification>()))
+            .Do(callInfo => _addedQualifications.Add(callInfo.Arg<Qualification>()));
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _unitOfWork
@@ -1048,6 +1076,148 @@ public class RegionSetupServiceTests
         }
     }
 
+    [Test]
+    public async Task ApplyAsync_IndustryProfileWithPresetAndQualification_InsertsBothWithImportKeys()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "healthcare": {
+                "schedulingRulePresets": [ { "name": "DE Klinik Standard", "maxDailyHours": 10, "maxWeeklyHours": 48, "nightStart": "23:00", "nightEnd": "06:00" } ],
+                "qualificationCatalog": [ { "name": { "de": "Examinierte Pflegefachkraft", "en": "Registered nurse" }, "isTimeLimited": true } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        rule.Name.ShouldBe("DE Klinik Standard");
+        rule.MaxDailyHours.ShouldBe(10m);
+        rule.MaxWeeklyHours.ShouldBe(48m);
+        rule.NightStart.ShouldBe("23:00");
+        rule.NightEnd.ShouldBe("06:00");
+        rule.ImportSourceKey.ShouldBe("region-setup:industryProfiles:healthcare:rule:de-klinik-standard");
+        rule.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+
+        var qualification = _addedQualifications.Single();
+        qualification.Name.De.ShouldBe("Examinierte Pflegefachkraft");
+        qualification.Name.En.ShouldBe("Registered nurse");
+        qualification.IsTimeLimited.ShouldBeTrue();
+        qualification.Category.ShouldBe(QualificationCategory.Healthcare);
+        qualification.ImportSourceKey.ShouldBe("region-setup:industryProfiles:healthcare:qualification:examinierte-pflegefachkraft");
+        qualification.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfilePresetUneditedRowValueChange_UpdatesRow()
+    {
+        var firstJson = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 50 } ] } } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var inserted = _addedSchedulingRules.Single();
+
+        _existingSchedulingRules.Add(inserted);
+        _addedSchedulingRules.Clear();
+        var updatedRules = new List<SchedulingRule>();
+        _schedulingRuleImportRepository.When(r => r.Update(Arg.Any<SchedulingRule>()))
+            .Do(callInfo => updatedRules.Add(callInfo.Arg<SchedulingRule>()));
+
+        var secondJson = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 45 } ] } } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updatedRules.Single().MaxWeeklyHours.ShouldBe(45m);
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfilePresetCustomerEdited_SkipsWithoutOverwriting()
+    {
+        var firstJson = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 50 } ] } } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var inserted = _addedSchedulingRules.Single();
+
+        // Simulate a customer edit: the live value changed but ImportContentHash still reflects the
+        // originally imported values.
+        inserted.MaxWeeklyHours = 42m;
+        _existingSchedulingRules.Add(inserted);
+        _addedSchedulingRules.Clear();
+        var updatedRules = new List<SchedulingRule>();
+        _schedulingRuleImportRepository.When(r => r.Update(Arg.Any<SchedulingRule>()))
+            .Do(callInfo => updatedRules.Add(callInfo.Arg<SchedulingRule>()));
+
+        var secondJson = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 45 } ] } } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updatedRules.ShouldBeEmpty();
+        _addedSchedulingRules.ShouldBeEmpty();
+        inserted.MaxWeeklyHours.ShouldBe(42m);
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfileDuplicatePresetName_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard" }, { "name": "ch spitex   STANDARD" } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedSchedulingRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfileQualificationWithoutAnyName_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": { "qualificationCatalog": [ { "isTimeLimited": true } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedQualifications.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfileQualificationWithNonCoreLanguage_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": { "qualificationCatalog": [ { "name": { "pl": "Licencja" } } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedQualifications.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfileUnknownIndustrySlug_MapsQualificationToOthers()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "hausdienste": { "qualificationCatalog": [ { "name": { "de": "Hauswartung" } } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _addedQualifications.Single().Category.ShouldBe(QualificationCategory.Others);
+    }
+
     private RegionSetupService CreateService(string? filePath)
     {
         var configuration = new ConfigurationBuilder()
@@ -1063,6 +1233,8 @@ public class RegionSetupServiceTests
             _settingsRepository,
             _calendarSelectionRepository,
             _periodCapRuleRepository,
+            _schedulingRuleImportRepository,
+            _qualificationImportRepository,
             _unitOfWork,
             NullLogger<RegionSetupService>.Instance);
     }
