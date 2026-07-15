@@ -32,6 +32,7 @@ public class PeriodCapEvaluatorTests
     private IPeriodHoursService _periodHoursService = null!;
     private IComplianceEnforcementResolver _enforcementResolver = null!;
     private IClientMembershipStartResolver _membershipStartResolver = null!;
+    private IClientContractDataProvider _contractDataProvider = null!;
     private PeriodCapEvaluator _evaluator = null!;
 
     [SetUp]
@@ -45,7 +46,12 @@ public class PeriodCapEvaluatorTests
         _membershipStartResolver = Substitute.For<IClientMembershipStartResolver>();
         _membershipStartResolver.GetValidFromAsync(Arg.Any<Guid>()).Returns((DateOnly?)null);
 
-        _evaluator = new PeriodCapEvaluator(_ruleRepository, _periodHoursService, _enforcementResolver, _membershipStartResolver);
+        _contractDataProvider = Substitute.For<IClientContractDataProvider>();
+        _contractDataProvider
+            .GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData());
+
+        _evaluator = new PeriodCapEvaluator(_ruleRepository, _periodHoursService, _enforcementResolver, _membershipStartResolver, _contractDataProvider);
     }
 
     private void StubRule(decimal capHours)
@@ -64,7 +70,7 @@ public class PeriodCapEvaluatorTests
         });
     }
 
-    private void StubRollingRule(int windowWeeks, decimal maxAverageWeeklyHours)
+    private void StubRollingRule(int windowWeeks, decimal maxAverageWeeklyHours, Guid? schedulingRuleId = null)
     {
         _ruleRepository.GetAllActiveAsync().Returns(new List<PeriodCapRule>
         {
@@ -73,10 +79,29 @@ public class PeriodCapEvaluatorTests
                 Id = Guid.NewGuid(),
                 RollingWindowWeeks = windowWeeks,
                 MaxAverageWeeklyHours = maxAverageWeeklyHours,
+                SchedulingRuleId = schedulingRuleId,
                 ImportSourceKey = $"region-setup:compliance.periodCaps:rolling:{windowWeeks}w",
                 ImportContentHash = "irrelevant-for-this-test",
             },
         });
+    }
+
+    [Test]
+    public async Task EvaluateAsync_IndustryScopedRollingRule_AppliesOnlyToMatchingContractRule()
+    {
+        var boundRuleId = Guid.NewGuid();
+        StubRollingRule(windowWeeks: 17, maxAverageWeeklyHours: 48m, schedulingRuleId: boundRuleId);
+        StubPersistedHours(hours: 17 * 60m);
+
+        _contractDataProvider
+            .GetEffectiveContractDataAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData { SchedulingRuleId = Guid.NewGuid() });
+        (await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day)).ShouldBeEmpty();
+
+        _contractDataProvider
+            .GetEffectiveContractDataAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData { SchedulingRuleId = boundRuleId });
+        (await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day)).ShouldHaveSingleItem();
     }
 
     private void StubPersistedHours(decimal hours)

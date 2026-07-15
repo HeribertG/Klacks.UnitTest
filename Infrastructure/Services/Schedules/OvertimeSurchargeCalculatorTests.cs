@@ -76,6 +76,35 @@ public class OvertimeSurchargeCalculatorTests
     }
 
     [Test]
+    public async Task CalculateAsync_IndustryRuleWithOwnTiers_OverridesGlobalSettings()
+    {
+        await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");
+        await SetSettingAsync(SettingKeys.OvertimeTier1Rate, "0.5");
+
+        var ruleId = Guid.NewGuid();
+        _context.SchedulingRules.Add(new Klacks.Api.Domain.Models.Scheduling.SchedulingRule
+        {
+            Id = ruleId,
+            Name = "Industry preset",
+            OvertimeBasis = OvertimeBasis.Day,
+            OvertimeTier1AfterHours = 10m,
+            OvertimeTier1Rate = 0.75m,
+        });
+        await _context.SaveChangesAsync();
+        _contractDataProvider.GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>())
+            .Returns(new EffectiveContractData { SchedulingRuleId = ruleId });
+
+        var work = BuildWork(workTime: 12m);
+
+        var result = await _sut.CalculateAsync(work);
+
+        // Rule tier band starts at 10 (not the global 8): overlap [10,12) = 2h * 0.75 = 1.5
+        var item = result.Items.ShouldHaveSingleItem();
+        item.Type.ShouldBe(SurchargeType.Overtime1);
+        item.Amount.ShouldBe(1.5m);
+    }
+
+    [Test]
     public async Task CalculateAsync_PriorHoursFromOtherWorkSameDay_ShiftsTierBand()
     {
         await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");

@@ -1285,6 +1285,143 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_IndustryProfileWithBoundCapAndRotation_BindsRowsToTheBlockRule()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 50 } ],
+                "periodCaps": [ { "windowWeeks": 17, "maxAverageWeeklyHours": 48 } ],
+                "restDayRotations": [ { "dayOfWeek": "sunday", "minFree": 2, "windowWeeks": 4 } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        var cap = _addedPeriodCapRules.Single();
+        cap.SchedulingRuleId.ShouldBe(rule.Id);
+        cap.ImportSourceKey.ShouldBe("region-setup:industryProfiles:spitex:periodCap:rolling:17w");
+        var rotation = _addedRestDayRotationRules.Single();
+        rotation.SchedulingRuleId.ShouldBe(rule.Id);
+        rotation.ImportSourceKey.ShouldBe("region-setup:industryProfiles:spitex:restDayRotation:sunday:4w");
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfileBoundCapReapplied_UpdatePathKeepsBinding()
+    {
+        var firstJson = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 50 } ],
+                "periodCaps": [ { "windowWeeks": 17, "maxAverageWeeklyHours": 48 } ]
+            } } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var insertedRule = _addedSchedulingRules.Single();
+        var insertedCap = _addedPeriodCapRules.Single();
+
+        _existingSchedulingRules.Add(insertedRule);
+        _existingPeriodCapRules.Add(insertedCap);
+        _addedSchedulingRules.Clear();
+        _addedPeriodCapRules.Clear();
+        var updatedCaps = new List<PeriodCapRule>();
+        _periodCapRuleRepository.When(r => r.Update(Arg.Any<PeriodCapRule>()))
+            .Do(callInfo => updatedCaps.Add(callInfo.Arg<PeriodCapRule>()));
+
+        var secondJson = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard", "maxWeeklyHours": 50 } ],
+                "periodCaps": [ { "windowWeeks": 17, "maxAverageWeeklyHours": 45 } ]
+            } } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        var updated = updatedCaps.Single();
+        updated.MaxAverageWeeklyHours.ShouldBe(45m);
+        updated.SchedulingRuleId.ShouldBe(insertedRule.Id);
+        _addedPeriodCapRules.ShouldBeEmpty();
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_GlobalAndIndustryBoundCapsMixed_GlobalRowStaysUnbound()
+    {
+        var json = """
+            { "version": 1,
+              "compliance": { "periodCaps": [ { "windowWeeks": 24, "maxAverageWeeklyHours": 48 } ] },
+              "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "CH Spitex Standard" } ],
+                "periodCaps": [ { "windowWeeks": 17, "maxAverageWeeklyHours": 48 } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        _addedPeriodCapRules.Count.ShouldBe(2);
+        _addedPeriodCapRules.Single(c => c.RollingWindowWeeks == 24).SchedulingRuleId.ShouldBeNull();
+        _addedPeriodCapRules.Single(c => c.RollingWindowWeeks == 17).SchedulingRuleId.ShouldBe(rule.Id);
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfileBoundEntitiesWithTwoPresets_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "spitex": {
+                "schedulingRulePresets": [ { "name": "A" }, { "name": "B" } ],
+                "periodCaps": [ { "windowWeeks": 17, "maxAverageWeeklyHours": 48 } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedSchedulingRules.ShouldBeEmpty();
+        _addedPeriodCapRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfilePresetWithOvertimeTiers_WritesRuleOvertimeFields()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "hausdienste": {
+                "schedulingRulePresets": [ { "name": "AT Hausbetreuung", "overtime": {
+                    "basis": "week", "rateMode": "multiplier",
+                    "tiers": [ { "afterHours": 40, "rate": 0.25 }, { "afterHours": 48, "rate": 0.5 } ] } } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        rule.OvertimeBasis.ShouldBe(OvertimeBasis.Week);
+        rule.OvertimeRateMode.ShouldBe(SurchargeRateMode.Multiplier);
+        rule.OvertimeTier1AfterHours.ShouldBe(40m);
+        rule.OvertimeTier1Rate.ShouldBe(0.25m);
+        rule.OvertimeTier2AfterHours.ShouldBe(48m);
+        rule.OvertimeTier2Rate.ShouldBe(0.5m);
+        rule.OvertimeTier3AfterHours.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ApplyAsync_IndustryProfilePresetOvertimeWithoutTiers_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "hausdienste": {
+                "schedulingRulePresets": [ { "name": "AT Hausbetreuung", "overtime": { "basis": "week" } } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task ApplyAsync_IndustryProfileUnknownIndustrySlug_MapsQualificationToOthers()
     {
         var json = """

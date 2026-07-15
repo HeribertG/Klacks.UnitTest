@@ -32,6 +32,7 @@ public class RestDayRotationEvaluatorTests
     private IRestDayRotationRuleRepository _ruleRepository = null!;
     private IComplianceEnforcementResolver _enforcementResolver = null!;
     private IClientMembershipStartResolver _membershipStartResolver = null!;
+    private IClientContractDataProvider _contractDataProvider = null!;
     private RestDayRotationEvaluator _sut = null!;
 
     [SetUp]
@@ -51,7 +52,12 @@ public class RestDayRotationEvaluatorTests
         _membershipStartResolver = Substitute.For<IClientMembershipStartResolver>();
         _membershipStartResolver.GetValidFromAsync(Arg.Any<Guid>()).Returns((DateOnly?)null);
 
-        _sut = new RestDayRotationEvaluator(_ruleRepository, _context, _enforcementResolver, _membershipStartResolver);
+        _contractDataProvider = Substitute.For<IClientContractDataProvider>();
+        _contractDataProvider
+            .GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData());
+
+        _sut = new RestDayRotationEvaluator(_ruleRepository, _context, _enforcementResolver, _membershipStartResolver, _contractDataProvider);
     }
 
     [TearDown]
@@ -204,7 +210,29 @@ public class RestDayRotationEvaluatorTests
         result.ShouldBeEmpty();
     }
 
-    private void StubRule(DayOfWeek dayOfWeek, int minFree, int windowWeeks)
+    [Test]
+    public async Task EvaluateAsync_IndustryScopedRule_AppliesOnlyToMatchingContractRule()
+    {
+        var boundRuleId = Guid.NewGuid();
+        StubRule(DayOfWeek.Sunday, minFree: 2, windowWeeks: 4, schedulingRuleId: boundRuleId);
+        var clientId = Guid.NewGuid();
+        foreach (var sunday in new[] { Sunday1, Sunday2, Sunday3, Sunday4 })
+        {
+            SeedWork(clientId, sunday, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        }
+
+        _contractDataProvider
+            .GetEffectiveContractDataAsync(clientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData { SchedulingRuleId = Guid.NewGuid() });
+        (await _sut.EvaluateAsync(clientId, "Anna", Sunday4)).ShouldBeEmpty();
+
+        _contractDataProvider
+            .GetEffectiveContractDataAsync(clientId, Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new EffectiveContractData { SchedulingRuleId = boundRuleId });
+        (await _sut.EvaluateAsync(clientId, "Anna", Sunday4)).ShouldHaveSingleItem();
+    }
+
+    private void StubRule(DayOfWeek dayOfWeek, int minFree, int windowWeeks, Guid? schedulingRuleId = null)
     {
         _ruleRepository.GetAllActiveAsync().Returns(new List<RestDayRotationRule>
         {
@@ -214,6 +242,7 @@ public class RestDayRotationEvaluatorTests
                 DayOfWeek = dayOfWeek,
                 MinFreeCount = minFree,
                 WindowWeeks = windowWeeks,
+                SchedulingRuleId = schedulingRuleId,
             },
         });
     }
