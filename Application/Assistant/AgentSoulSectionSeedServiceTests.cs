@@ -5,7 +5,10 @@
 /// seeded with the planning semantics (effective-limits pointer, Membership.ValidFrom, soft-delete,
 /// scenario isolation, guardrail awareness), and a second seed run is idempotent (no re-upsert when
 /// the seeded content is unchanged). Idempotency is proven by capture-and-replay so the test does
-/// not duplicate the section literals.
+/// not duplicate the section literals. Also covers the fresh-install ordering contract: on an empty
+/// database SeedAsync must find no default agent and skip cleanly, but once the agent has been
+/// created (mirroring SkillSeedLoader.EnsureDefaultAgentAsync, which Program.cs now awaits before
+/// this seed) all default sections are written.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -76,6 +79,39 @@ public class AgentSoulSectionSeedServiceTests
             && c.Content.Contains("religion, politics")
             && c.Content.Contains("EVERY language and culture")
             && c.Content.Contains("[USER_MOOD: FRUSTRATED]"));
+    }
+
+    [Test]
+    public async Task NoDefaultAgentYet_SkipsSeed_NoUpsertsAttempted()
+    {
+        _agents.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns((Agent?)null);
+
+        await Service().SeedAsync();
+
+        _captured.ShouldBeEmpty();
+        await _soul.DidNotReceive().UpsertSectionAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task DefaultAgentCreatedBeforeSeedRuns_AllDefaultSectionsAreSeeded()
+    {
+        Agent? defaultAgent = null;
+        _agents.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(_ => defaultAgent);
+        _agents.When(r => r.AddAsync(Arg.Any<Agent>(), Arg.Any<CancellationToken>()))
+            .Do(ci => defaultAgent = ci.ArgAt<Agent>(0));
+
+        var freshAgent = new Agent { Id = Guid.NewGuid(), Name = "klacks-default", IsActive = true, IsDefault = true };
+        _soul.GetActiveSectionsAsync(freshAgent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSoulSection>());
+        await _agents.AddAsync(freshAgent);
+
+        await Service().SeedAsync();
+
+        _captured.ShouldContain(c => c.Type == SoulSectionTypes.DomainExpertise);
+        _captured.ShouldContain(c => c.Type == "identity");
+        _captured.Count.ShouldBeGreaterThan(1);
     }
 
     [Test]

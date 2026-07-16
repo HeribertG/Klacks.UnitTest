@@ -1,6 +1,8 @@
 using Klacks.Api.Application.Services.Imports;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Imports;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.Application.Services.Imports;
 
@@ -69,5 +71,28 @@ public class ErpDefaultDropPointProviderTests
         added.BucketPrefix.ShouldBe(ErpDropPointDefaults.BucketPrefix);
         added.IsEnabled.ShouldBe(ErpDropPointDefaults.IsEnabled);
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task GetOrCreateDefaultAsync_ConcurrentInsertLosesUniqueRace_ReturnsWinnersRow()
+    {
+        var winner = new ErpDropPoint
+        {
+            Id = Guid.NewGuid(),
+            Name = ErpDropPointDefaults.Name,
+            SourceSystemId = ErpDropPointDefaults.SourceSystemId,
+            BucketPrefix = ErpDropPointDefaults.BucketPrefix,
+            CreateTime = new DateTime(2026, 7, 16, 0, 0, 0, DateTimeKind.Utc)
+        };
+        _repository.List().Returns(new List<ErpDropPoint>(), new List<ErpDropPoint> { winner });
+        _unitOfWork.CompleteAsync().ThrowsAsync(new DatabaseUpdateException(
+            "duplicate key value violates unique constraint \"ix_erp_drop_points_source_system_id\"",
+            isDuplicate: true));
+
+        var result = await _provider.GetOrCreateDefaultAsync();
+
+        result.ShouldBeSameAs(winner);
+        _repository.Received(1).Detach(Arg.Any<ErpDropPoint>());
+        await _repository.Received(2).List();
     }
 }

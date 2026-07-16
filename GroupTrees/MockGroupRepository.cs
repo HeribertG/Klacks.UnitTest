@@ -543,6 +543,11 @@ namespace Klacks.UnitTest.Mocks
             context.Group.Remove(model);
         }
 
+        public void Detach(Group model)
+        {
+            context.Entry(model).State = EntityState.Detached;
+        }
+
         public Task RepairNestedSetValues()
         {
             throw new NotImplementedException();
