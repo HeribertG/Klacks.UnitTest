@@ -16,6 +16,7 @@
 using System.Runtime.CompilerServices;
 using Klacks.Api.Application.DTOs.Config;
 using Klacks.Api.Application.Interfaces.Settings;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Services.Macros;
@@ -88,10 +89,48 @@ public class RegionSetupExampleProfileTests
         await Should.NotThrowAsync(service.ApplyAsync, $"semantic validation failed for {Path.GetFileName(path)}");
     }
 
+    [Test]
+    public async Task ShippedRegionExampleProfile_WithUnknownLanguagePluginCode_ThrowsInvalidRequestException()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, """{ "version": 1, "languages": { "install": ["xx"] } }""");
+
+            var service = CreateFreshInstallationService(tempFile);
+
+            await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
     private static string RegionsDirectory([CallerFilePath] string sourceFile = "")
     {
         var repoRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", "..", ".."));
         return Path.Combine(repoRoot, "Klacks.Api", "deploy", "onprem", "regions");
+    }
+
+    // Mirrors the real LanguagePluginService discovery: a language plugin exists iff
+    // Klacks.Api/Plugins/Languages/<code>/ is a directory. Only real, shipped plugins should be
+    // treated as installable here - anything else (e.g. "xx") must still fail validation.
+    private static HashSet<string> DiscoveredLanguagePluginCodes([CallerFilePath] string sourceFile = "")
+    {
+        var repoRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", "..", ".."));
+        var pluginsDirectory = Path.Combine(repoRoot, "Klacks.Api", "Plugins", "Languages");
+
+        if (!Directory.Exists(pluginsDirectory))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return Directory.GetDirectories(pluginsDirectory)
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static RegionSetupService CreateFreshInstallationService(string filePath)
@@ -118,8 +157,17 @@ public class RegionSetupExampleProfileTests
             .GetIdsByStateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { Guid.NewGuid() });
 
+        var discoveredPluginCodes = DiscoveredLanguagePluginCodes();
         var languagePluginService = Substitute.For<ILanguagePluginService>();
-        languagePluginService.GetPlugin(Arg.Any<string>()).Returns((LanguagePluginInfo?)null);
+        languagePluginService.GetPlugin(Arg.Any<string>()).Returns(callInfo =>
+        {
+            var code = callInfo.Arg<string>();
+            return discoveredPluginCodes.Contains(code)
+                ? new LanguagePluginInfo { Code = code, Name = code, DisplayName = code }
+                : null;
+        });
+        languagePluginService.InstallAsync(Arg.Any<string>())
+            .Returns(callInfo => Task.FromResult(discoveredPluginCodes.Contains(callInfo.Arg<string>())));
 
         var periodCapRuleRepository = Substitute.For<IPeriodCapRuleRepository>();
         periodCapRuleRepository.GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>()).Returns(new List<PeriodCapRule>());
