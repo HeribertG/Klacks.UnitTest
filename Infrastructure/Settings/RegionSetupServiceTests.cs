@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
+using Klacks.Api.Infrastructure.Services.Macros;
 using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,6 +39,7 @@ public class RegionSetupServiceTests
     private IRestDayRotationRuleRepository _restDayRotationRuleRepository = null!;
     private ICounterRuleRepository _counterRuleRepository = null!;
     private ISchedulingRuleImportRepository _schedulingRuleImportRepository = null!;
+    private ISchedulingRuleRateRevisionImportRepository _schedulingRuleRateRevisionImportRepository = null!;
     private IQualificationImportRepository _qualificationImportRepository = null!;
     private IMacroImportRepository _macroImportRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -50,6 +52,8 @@ public class RegionSetupServiceTests
     private List<CounterRule> _addedCounterRules = null!;
     private List<SchedulingRule> _existingSchedulingRules = null!;
     private List<SchedulingRule> _addedSchedulingRules = null!;
+    private List<SchedulingRuleRateRevision> _existingSchedulingRuleRateRevisions = null!;
+    private List<SchedulingRuleRateRevision> _addedSchedulingRuleRateRevisions = null!;
     private List<Qualification> _existingQualifications = null!;
     private List<Qualification> _addedQualifications = null!;
     private List<Macro> _existingMacros = null!;
@@ -68,6 +72,8 @@ public class RegionSetupServiceTests
         _addedCounterRules = new List<CounterRule>();
         _existingSchedulingRules = new List<SchedulingRule>();
         _addedSchedulingRules = new List<SchedulingRule>();
+        _existingSchedulingRuleRateRevisions = new List<SchedulingRuleRateRevision>();
+        _addedSchedulingRuleRateRevisions = new List<SchedulingRuleRateRevision>();
         _existingQualifications = new List<Qualification>();
         _addedQualifications = new List<Qualification>();
         _existingMacros = new List<Macro>();
@@ -123,6 +129,15 @@ public class RegionSetupServiceTests
                 .ToList());
         _schedulingRuleImportRepository.When(r => r.Add(Arg.Any<SchedulingRule>()))
             .Do(callInfo => _addedSchedulingRules.Add(callInfo.Arg<SchedulingRule>()));
+
+        _schedulingRuleRateRevisionImportRepository = Substitute.For<ISchedulingRuleRateRevisionImportRepository>();
+        _schedulingRuleRateRevisionImportRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingSchedulingRuleRateRevisions
+                .Where(r => callInfo.Arg<IReadOnlyCollection<string>>().Contains(r.ImportSourceKey))
+                .ToList());
+        _schedulingRuleRateRevisionImportRepository.When(r => r.Add(Arg.Any<SchedulingRuleRateRevision>()))
+            .Do(callInfo => _addedSchedulingRuleRateRevisions.Add(callInfo.Arg<SchedulingRuleRateRevision>()));
 
         _qualificationImportRepository = Substitute.For<IQualificationImportRepository>();
         _qualificationImportRepository
@@ -1201,6 +1216,184 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_IndustryProfilePresetWithRateRevisions_InsertsRevisionsAsChildRowsWithRevKeys()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "NO Vekter Standard", "nightRate": 0.22, "holidayRate": 1.0,
+                    "rateRevisions": [
+                        { "validFrom": "2027-03-01", "nightRate": 0.27, "holidayRate": 1.0 },
+                        { "validFrom": "2028-01-01", "nightRate": 0.30 }
+                    ] } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        _addedSchedulingRuleRateRevisions.Count.ShouldBe(2);
+
+        var first = _addedSchedulingRuleRateRevisions[0];
+        first.ValidFrom.ShouldBe(new DateOnly(2027, 3, 1));
+        first.NightRate.ShouldBe(0.27m);
+        first.HolidayRate.ShouldBe(1.0m);
+        first.WE1Rate.ShouldBeNull();
+        first.SchedulingRuleId.ShouldBe(rule.Id);
+        first.ImportSourceKey.ShouldBe("region-setup:industryProfiles:security:rule:no-vekter-standard:rev:2027-03-01");
+        first.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+
+        var second = _addedSchedulingRuleRateRevisions[1];
+        second.ValidFrom.ShouldBe(new DateOnly(2028, 1, 1));
+        second.NightRate.ShouldBe(0.30m);
+        second.HolidayRate.ShouldBeNull();
+        second.SchedulingRuleId.ShouldBe(rule.Id);
+        second.ImportSourceKey.ShouldBe("region-setup:industryProfiles:security:rule:no-vekter-standard:rev:2028-01-01");
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionUneditedRowValueChange_UpdatesRow()
+    {
+        var firstJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.25 } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var insertedRule = _addedSchedulingRules.Single();
+        var insertedRevision = _addedSchedulingRuleRateRevisions.Single();
+
+        _existingSchedulingRules.Add(insertedRule);
+        _existingSchedulingRuleRateRevisions.Add(insertedRevision);
+        _addedSchedulingRules.Clear();
+        _addedSchedulingRuleRateRevisions.Clear();
+        var updatedRevisions = new List<SchedulingRuleRateRevision>();
+        _schedulingRuleRateRevisionImportRepository.When(r => r.Update(Arg.Any<SchedulingRuleRateRevision>()))
+            .Do(callInfo => updatedRevisions.Add(callInfo.Arg<SchedulingRuleRateRevision>()));
+
+        var secondJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.28 } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updatedRevisions.Single().NightRate.ShouldBe(0.28m);
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionCustomerEdited_SkipsWithoutOverwriting()
+    {
+        var firstJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.25 } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var insertedRule = _addedSchedulingRules.Single();
+        var insertedRevision = _addedSchedulingRuleRateRevisions.Single();
+
+        insertedRevision.NightRate = 0.99m;
+        _existingSchedulingRules.Add(insertedRule);
+        _existingSchedulingRuleRateRevisions.Add(insertedRevision);
+        _addedSchedulingRules.Clear();
+        _addedSchedulingRuleRateRevisions.Clear();
+        var updatedRevisions = new List<SchedulingRuleRateRevision>();
+        _schedulingRuleRateRevisionImportRepository.When(r => r.Update(Arg.Any<SchedulingRuleRateRevision>()))
+            .Do(callInfo => updatedRevisions.Add(callInfo.Arg<SchedulingRuleRateRevision>()));
+
+        var secondJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.28 } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updatedRevisions.ShouldBeEmpty();
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
+        insertedRevision.NightRate.ShouldBe(0.99m);
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionNewValidFrom_InsertsWithoutTouchingExisting()
+    {
+        var firstJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.25 } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var insertedRule = _addedSchedulingRules.Single();
+        var insertedRevision = _addedSchedulingRuleRateRevisions.Single();
+
+        _existingSchedulingRules.Add(insertedRule);
+        _existingSchedulingRuleRateRevisions.Add(insertedRevision);
+        _addedSchedulingRules.Clear();
+        _addedSchedulingRuleRateRevisions.Clear();
+        var updatedRevisions = new List<SchedulingRuleRateRevision>();
+        _schedulingRuleRateRevisionImportRepository.When(r => r.Update(Arg.Any<SchedulingRuleRateRevision>()))
+            .Do(callInfo => updatedRevisions.Add(callInfo.Arg<SchedulingRuleRateRevision>()));
+
+        var secondJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [
+                    { "validFrom": "2027-03-01", "nightRate": 0.25 },
+                    { "validFrom": "2028-06-01", "nightRate": 0.31 } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        var inserted = _addedSchedulingRuleRateRevisions.Single();
+        inserted.ValidFrom.ShouldBe(new DateOnly(2028, 6, 1));
+        inserted.NightRate.ShouldBe(0.31m);
+        inserted.SchedulingRuleId.ShouldBe(insertedRule.Id);
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionDuplicateValidFrom_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [
+                    { "validFrom": "2027-03-01", "nightRate": 0.25 },
+                    { "validFrom": "2027-03-01", "nightRate": 0.28 } ] } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
+        _addedSchedulingRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionWithoutAnyRate_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01" } ] } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionOnPresetWithBoundCaps_StillBindsBothToTheSingleRule()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.30 } ] } ],
+                "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 200 } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        _addedPeriodCapRules.Single().SchedulingRuleId.ShouldBe(rule.Id);
+        _addedSchedulingRuleRateRevisions.Single().SchedulingRuleId.ShouldBe(rule.Id);
+    }
+
+    [Test]
     public async Task ApplyAsync_IndustryProfilePresetUneditedRowValueChange_UpdatesRow()
     {
         var firstJson = """
@@ -1753,8 +1946,10 @@ public class RegionSetupServiceTests
             _restDayRotationRuleRepository,
             _counterRuleRepository,
             _schedulingRuleImportRepository,
+            _schedulingRuleRateRevisionImportRepository,
             _qualificationImportRepository,
             _macroImportRepository,
+            new MacroScriptValidator(),
             _unitOfWork,
             NullLogger<RegionSetupService>.Instance);
     }
