@@ -6,6 +6,7 @@
 /// </summary>
 using System.Text;
 using Shouldly;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Infrastructure.Services.Exports;
 
@@ -100,7 +101,7 @@ public class OmegaSkExportFormatterTests
     {
         var bytes = _formatter.Format(data, new ExportOptions { CurrencyCode = "EUR" });
         return Encoding.GetEncoding(1250).GetString(bytes)
-            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+            .Split(ExportConstants.LineEnding, StringSplitOptions.RemoveEmptyEntries);
     }
 
     private static OrderExportData BuildData(Action<OrderGroup> customize)

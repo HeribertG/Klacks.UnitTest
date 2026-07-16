@@ -6,6 +6,7 @@
 /// </summary>
 using System.Text;
 using Shouldly;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Infrastructure.Services.Exports;
 
@@ -92,7 +93,7 @@ public class DatevExportFormatterErpReferencesTests
     {
         var bytes = _formatter.Format(data, new ExportOptions { CurrencyCode = "EUR" });
         var lines = Encoding.GetEncoding(1252).GetString(bytes)
-            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+            .Split(ExportConstants.LineEnding, StringSplitOptions.RemoveEmptyEntries);
         return lines[2].Split(';');
     }
 
