@@ -12,6 +12,7 @@ using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Application.Queries.Settings.Macros;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Infrastructure.Mediator;
@@ -71,6 +72,24 @@ public class MacroCrudSkillTests
 
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CreateMacro_PostRejectsScript_ReturnsValidationErrorMessage()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>())
+            .Returns<MacroResource?>(_ => throw new InvalidRequestException("compile error: bad script"));
+        var skill = new CreateMacroSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "MyMacro",
+            ["script"] = "DIM 123abc"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe("compile error: bad script");
     }
 
     [Test]
