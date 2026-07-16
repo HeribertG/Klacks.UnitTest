@@ -61,6 +61,11 @@ public class LLMServiceRecipeConfirmationGateTests
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
         provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
+        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
+        competingDetector.FindCompetingSkillNamesAsync(
+                default!, default, default!, default, default!, default)
+            .ReturnsForAnyArgs(Array.Empty<string>());
+        provider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

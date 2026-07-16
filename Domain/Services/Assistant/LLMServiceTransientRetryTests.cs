@@ -51,6 +51,11 @@ public class LLMServiceTransientRetryTests
         var serviceProvider = Substitute.For<IServiceProvider>();
         serviceProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
         serviceProvider.GetService(typeof(IKnowledgeRetrievalService)).Returns(retrieval);
+        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
+        competingDetector.FindCompetingSkillNamesAsync(
+                default!, default, default!, default, default!, default)
+            .ReturnsForAnyArgs(Array.Empty<string>());
+        serviceProvider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
         scope.ServiceProvider.Returns(serviceProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
