@@ -1,0 +1,870 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!-- edited with XMLSpy v2009 sp1 (http://www.altova.com) by Thomas Palm (DataVara AB) -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+	<xs:annotation>
+		<xs:documentation xml:lang="sv">
+			     PAXml är ett standardformat för import från ett försystem till ett löneprogram. Information www.paxml.se. Version 2.0 2012-12
+				2013-12-03 PAEK Lagt till minOccours=0 på huvudavsmitten för att underlätta för de som skriver filen sekvensiellt.
+		</xs:documentation>
+	</xs:annotation>
+	<xs:element name="paxml">
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="header" type="headerTYPE"/>
+				<xs:element name="dimensioner" type="dimensionerTYPE" minOccurs="0"/>
+				<xs:element name="resultatenheter" type="resultatenheterTYPE" minOccurs="0"/>
+				<xs:element name="koder" type="koderTYPE" minOccurs="0"/>
+				<xs:element name="resetransaktioner" type="resetransaktionerTYPE" minOccurs="0"/>
+				<xs:element name="tidtransaktioner" type="tidtransaktionerTYPE" minOccurs="0"/>
+				<xs:element name="lonetransaktioner" type="lonetransaktionerTYPE" minOccurs="0"/>
+				<xs:element name="schematransaktioner" type="schematransaktionerTYPE" minOccurs="0"/>
+				<xs:element name="personal" type="personalTYPE" minOccurs="0"/>
+				<xs:element name="loneutbetalning" type="loneutbetalningTYPE" minOccurs="0"/>
+				<xs:element name="saldon" type="saldonTYPE" minOccurs="0"/>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<!--Header-->
+	<xs:complexType name="headerTYPE">
+		<xs:all>
+			<xs:element name="format" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="version" type="stringversionTYPE"/>
+			<xs:element name="datum" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="nyexport" type="nyexportTYPE" minOccurs="0"/>
+			<xs:element name="foretagid" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="foretagorgnr" type="string12TYPE" minOccurs="0"/>
+			<xs:element name="foretagnamn" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="extraadress" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="postadress" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="postnr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="ort" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="land" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="epost" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="hemsida" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kontaktperson" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="personalansvarig" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="attestansvarig" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="telefon" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="telefax" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="programnamn" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="programlicens" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<!--Dimensioner-->
+	<xs:complexType name="dimensionerTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="dimension" type="dimensionTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="dimensionTYPE">
+		<xs:attribute name="dim" type="dimTYPE" use="required"/>
+		<xs:attribute name="namn" type="stringTYPE" use="required"/>
+		<xs:attribute name="info" type="stringTYPE"/>
+	</xs:complexType>
+	<!--Resultatenheter-->
+	<xs:complexType name="resultatenheterTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="resultatenhet" type="resultatenhetTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="resultatenhetTYPE">
+		<xs:attribute name="delete" type="booleanTYPE"/>
+		<xs:attribute name="dim" type="dimTYPE" use="required"/>
+		<xs:attribute name="id" type="stringTYPE" use="required"/>
+		<xs:attribute name="namn" type="stringTYPE" use="required"/>
+		<xs:attribute name="info" type="stringTYPE"/>
+	</xs:complexType>
+	<!--Koder-->
+	<xs:complexType name="koderTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="kod" type="kodTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="kodTYPE">
+		<xs:attribute name="id" type="stringTYPE" use="required"/>
+		<xs:attribute name="namn" type="stringTYPE" use="required"/>
+		<xs:attribute name="info" type="stringTYPE"/>
+	</xs:complexType>
+	<!--Resetransaktioner-->
+	<xs:complexType name="resetransaktionerTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="resetrans" type="resetransTYPE" minOccurs="0"/>
+		</xs:sequence>
+		<xs:attribute name="landskodstd" type="stringTYPE"/>
+	</xs:complexType>
+	<xs:complexType name="resetransTYPE">
+		<xs:all>
+			<xs:element name="tidpunkt" type="xs:dateTime"/>
+			<xs:element name="resekod" type="reskodTYPE"/>
+			<xs:element name="fortsatt" type="fortsattTYPE" minOccurs="0"/>
+			<xs:element name="landskod" type="string2TYPE" minOccurs="0"/>
+			<xs:element name="valutakod" type="string3TYPE" minOccurs="0"/>
+			<xs:element name="valutafaktor" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="belopp" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="moms" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="ftgkort" type="booleanTYPE" minOccurs="0"/>
+			<xs:element name="antdeltag" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="deltagarlista" type="deltagarlistaTYPE" minOccurs="0"/>
+			<xs:element name="varugrupp" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="specifikation" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kontonr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="bilnr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="bilmodell" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="foretag" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kontakt" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="syfte" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="ort" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kmstart" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="kmstopp" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="kilometer" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="antpass" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="antlast" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="timmar" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="samlingsid" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kundnr" type="kundnrTYPE" minOccurs="0"/>
+			<xs:element name="resenheter" type="resenheterTYPE" minOccurs="0"/>
+			<xs:element name="anteckning" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="postid" type="integerTYPE"/>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+	</xs:complexType>
+	<!-- tidstransaktioner-->
+	<xs:complexType name="tidtransaktionerTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="klar" type="handelseTYPE" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="attesterat" type="handelseTYPE" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="tidtrans" type="tidtransTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="tidtransTYPE">
+		<xs:all>
+			<xs:element name="tidkod" type="tidkodTYPE"/>
+			<xs:element name="datum" type="xs:date" minOccurs="0"/>
+			<xs:element name="datumfrom" type="xs:date" minOccurs="0"/>
+			<xs:element name="datumtom" type="xs:date" minOccurs="0"/>
+			<xs:element name="starttid" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="sluttid" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="timmar" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="omfattning" type="procentTYPE" minOccurs="0"/>
+			<xs:element name="barn" type="personnummerTYPE" minOccurs="0"/>
+			<xs:element name="samlingsid" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="semgrund" type="booleanTYPE" minOccurs="0"/>
+			<xs:element name="kontonr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kundnr" type="kundnrTYPE" minOccurs="0"/>
+			<xs:element name="resenheter" type="resenheterTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="postid" type="integerTYPE"/>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+	</xs:complexType>
+	<!--Lönetransaktioner-->
+	<xs:complexType name="lonetransaktionerTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="lonetrans" type="lonetransTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="lonetransTYPE">
+		<xs:all>
+			<xs:element name="lonkod" type="lonekodTYPE" minOccurs="0"/>
+			<xs:element name="lonart" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="benamning" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kommentar" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="datum" type="xs:date" minOccurs="0"/>
+			<xs:element name="datumfrom" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="datumtom" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="antal" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="apris" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="belopp" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="varugrupp" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="moms" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="samlingsid" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kontonr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kundnr" type="kundnrTYPE" minOccurs="0"/>
+			<xs:element name="resenheter" type="resenheterTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="postid" type="integerTYPE"/>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+	</xs:complexType>
+	<!--schematransaktioner-->
+	<xs:complexType name="schematransaktionerTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="schema" type="schemaTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="schemaTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="dag" type="dagTYPE"/>
+		</xs:sequence>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+	</xs:complexType>
+	<xs:complexType name="dagTYPE">
+		<xs:attribute name="datum" type="xs:date" use="required"/>
+		<xs:attribute name="starttid" type="xs:time"/>
+		<xs:attribute name="sluttid" type="xs:time"/>
+		<xs:attribute name="timmar" type="decimalTYPE"/>
+	</xs:complexType>
+	<!-- Personal -->
+	<xs:complexType name="personalTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="person" type="personTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="personTYPE">
+		<xs:all>
+			<xs:element name="fornamn" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="efternamn" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="extraadress" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="postadress" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="postnr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="ort" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="land" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="mobiltelefon" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="hemtelefon" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="arbetstelefon" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="epostarb" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="eposthem" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="personaltyp" type="personaltypTYPE" minOccurs="0"/>
+			<xs:element name="kategori" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="befattning" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="befattningskod" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="anstform" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="semesteravtal" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="bankclearing" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="bankkonto" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="anstdatum" type="xs:date" minOccurs="0"/>
+			<xs:element name="avgdatum" type="xs:date" minOccurs="0"/>
+			<xs:element name="lonform" type="lonformTYPE" minOccurs="0"/>
+			<xs:element name="innevarande" type="booleanTYPE" minOccurs="0"/>
+			<xs:element name="timlon" type="intAttribDatumBelopp" minOccurs="0"/>
+			<xs:element name="manlon" type="intAttribDatumBelopp" minOccurs="0"/>
+			<xs:element name="personbelopp" type="fribelopplistaTYPE" minOccurs="0"/>
+			<xs:element name="persontexter" type="fritextlistaTYPE" minOccurs="0"/>
+			<xs:element name="sysgrad" type="intAttribDatumBelopp" minOccurs="0"/>
+			<xs:element name="semesterdagar" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="skattetabell" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="skattekolumn" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="skattejamkning" type="jamkningTYPE" minOccurs="0"/>
+			<xs:element name="loneutmatning" type="utmatningTYPE" minOccurs="0"/>
+			<xs:element name="resenheter" type="resenheterTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+		<xs:attribute name="delete" type="booleanTYPE"/>
+	</xs:complexType>
+	<!-- Löneutbetalning-->
+	<xs:complexType name="loneutbetalningTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="lonebesked" type="lonebeskedTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="lonebeskedTYPE">
+		<xs:all>
+			<xs:element name="periodid" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="periodtext" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="betaldatum" type="xs:date" minOccurs="0"/>
+			<xs:element name="fornamn" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="efternamn" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="extraadress" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="postadress" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="postnr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="ort" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="land" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="clearingnr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="bankkonto" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="skattprocent" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="skattetabell" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="jamkningprc" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="jamkningbel" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="skattekolumn" type="integerTYPE" minOccurs="0"/>
+			<xs:element name="tabellskatt" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="engangsskatt" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="kapitalskatt" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="extraskatt" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="utbetalt" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="arbavgiftprc" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="arbavgiftbel" type="decimalTYPE" minOccurs="0"/>
+			<!-- Lönerader -->
+			<xs:element name="lonerader" type="loneraderTYPE" minOccurs="0"/>
+			<xs:element name="ackbruttolon" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="ackprelskatt" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="acknettolon" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="flexsaldo" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="kompsaldo" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="tidbanktim" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="tidbankbel" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="sembettot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="sembetutb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semobetot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semobeutb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semfortot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semforutb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semspatot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semspautb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semlontot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semlonutb" type="decimalTYPE" minOccurs="0"/>
+			<!-- Kontering -->
+			<xs:element name="kontering" type="konteringTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+	</xs:complexType>
+	<xs:complexType name="loneraderTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="lonrad" type="lonradTYPE"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="lonradTYPE">
+		<xs:all>
+			<xs:element name="lonart" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="font" type="fontTYPE" minOccurs="0"/>
+			<xs:element name="benamning" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kommentar" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="datumfrom" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="datumtom" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="timmar" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="arbetsdagar" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="dagar" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="enhet" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="antal" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="apris" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="belopp" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="lonetyp" type="lonetypTYPE" minOccurs="0"/>
+			<xs:element name="skattetyp" type="skattetypTYPE" minOccurs="0"/>
+			<xs:element name="skattprocent" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="avgifttyp" type="avgifttypTYPE" minOccurs="0"/>
+			<xs:element name="avgiftprocent" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="regional" type="booleanTYPE" minOccurs="0"/>
+			<xs:element name="kontonr" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kundnr" type="kundnrTYPE" minOccurs="0"/>
+			<xs:element name="resenheter" type="resenheterTYPE" minOccurs="0"/>
+			<xs:element name="statistikkod" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="kontrolluppgift" type="stringTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="radnr" type="integerTYPE"/>
+	</xs:complexType>
+	<xs:complexType name="konteringTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="transaktion" type="transaktionTYPE"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="transaktionTYPE">
+		<xs:all>
+			<xs:element name="kundnr" type="kundnrTYPE" minOccurs="0"/>
+			<xs:element name="resenheter" type="resenheterTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="kontonr" type="stringTYPE"/>
+		<xs:attribute name="belopp" type="decimalTYPE"/>
+	</xs:complexType>
+	<!-- Löneutbetalning end-->
+	<!-- Saldon -->
+	<xs:complexType name="saldonTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="saldo" type="saldoTYPE" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="saldoTYPE">
+		<xs:all>
+			<xs:element name="datum" type="xs:date" minOccurs="0"/>
+			<xs:element name="ackbruttolon" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="ackprelskatt" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="acknettolon" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="flexsaldo" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="kompsaldo" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="tidbanktim" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="tidbankbel" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="sembettot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="sembetutb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semobetot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semobeutb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semfortot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semforutb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semspatot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semspautb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semlontot" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="semlonutb" type="decimalTYPE" minOccurs="0"/>
+			<xs:element name="info" type="stringTYPE" minOccurs="0"/>
+		</xs:all>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+	</xs:complexType>
+	<!--Complex types misc-->
+	<xs:complexType name="kundnrTYPE">
+		<xs:simpleContent>
+			<xs:extension base="stringTYPE">
+				<xs:attribute name="info" type="stringTYPE"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="resenheterTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="resenhet" type="resenhetTYPE"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="resenhetTYPE">
+		<xs:attribute name="dim" type="dimTYPE" use="required"/>
+		<xs:attribute name="id" type="dimidTYPE" use="required"/>
+	</xs:complexType>
+	<xs:complexType name="handelseTYPE">
+		<xs:attribute name="postid" type="integerTYPE"/>
+		<xs:attribute name="anstid" type="stringTYPE"/>
+		<xs:attribute name="persnr" type="personnummerTYPE"/>
+		<xs:attribute name="datum" type="xs:date"/>
+		<xs:attribute name="datumfrom" type="xs:date"/>
+		<xs:attribute name="datumtom" type="xs:date"/>
+	</xs:complexType>
+	<xs:simpleType name="personnummerTYPE">
+		<xs:restriction base="xs:string">
+			<xs:minLength value="12"/>
+			<xs:maxLength value="12"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<!--Complex types Header-->
+	<xs:simpleType name="stringversionTYPE">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="3"/>
+			<xs:enumeration value="2.0"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="nyexportTYPE">
+		<xs:attribute name="datum" type="xs:date" use="required"/>
+		<xs:attribute name="datumfrom" type="xs:date"/>
+		<xs:attribute name="datumtom" type="xs:date"/>
+	</xs:complexType>
+	<!--Complex types Header end-->
+	<!--Complex types Dimensioner -->
+	<xs:simpleType name="dimTYPE">
+		<xs:restriction base="xs:int">
+			<xs:minInclusive value="1"/>
+			<xs:maxInclusive value="99"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="dimidTYPE">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="10"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<!--Complex types Dimensioner end-->
+	<!--Complex types Resetransaktioner-->
+	<xs:complexType name="fortsattTYPE">
+		<xs:simpleContent>
+			<xs:extension base="booleanTYPE">
+				<xs:attribute name="dagnr" type="integerTYPE" use="required"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="deltagarlistaTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="deltagare" type="deltagareTYPE"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="deltagareTYPE">
+		<xs:attribute name="foretag" type="stringTYPE" use="required"/>
+		<xs:attribute name="namn" type="stringTYPE" use="required"/>
+	</xs:complexType>
+	<!--Complex types Resetransaktioner end-->
+	<!-- Personal -->
+	<xs:complexType name="fribelopplistaTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="belopp" type="fribeloppTYPE"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="fribeloppTYPE">
+		<xs:simpleContent>
+			<xs:extension base="decimalTYPE">
+				<xs:attribute name="id" type="stringTYPE" use="required"/>
+				<xs:attribute name="datum" type="xs:date"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="fritextlistaTYPE">
+		<xs:sequence maxOccurs="unbounded">
+			<xs:element name="text" type="fritextTYPE"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="fritextTYPE">
+		<xs:simpleContent>
+			<xs:extension base="stringTYPE">
+				<xs:attribute name="id" type="stringTYPE" use="required"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="jamkningTYPE">
+		<xs:attribute name="procent" type="integerTYPE"/>
+		<xs:attribute name="belopp" type="decimalTYPE"/>
+		<xs:attribute name="maxbelopp" type="decimalTYPE"/>
+	</xs:complexType>
+	<xs:complexType name="utmatningTYPE">
+		<xs:attribute name="belopp" type="decimalTYPE" use="required"/>
+		<xs:attribute name="forbehall" type="decimalTYPE"/>
+	</xs:complexType>
+	<xs:complexType name="intAttribDatumBelopp">
+		<xs:simpleContent>
+			<xs:extension base="decimalTYPE">
+				<xs:attribute name="datum" type="xs:date"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<!-- Personal end-->
+	<!-- enkla typer -->
+	<xs:simpleType name="stringTYPE">
+		<xs:restriction base="xs:string"/>
+	</xs:simpleType>
+	<xs:simpleType name="string2TYPE">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="2"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="string3TYPE">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="3"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="string10TYPE">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="10"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="string12TYPE">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="12"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="integerTYPE">
+		<xs:restriction base="xs:int"/>
+	</xs:simpleType>
+	<xs:simpleType name="decimalTYPE">
+		<xs:restriction base="xs:decimal"/>
+	</xs:simpleType>
+	<xs:simpleType name="procentTYPE">
+		<xs:restriction base="xs:decimal">
+			<xs:minExclusive value="0"/>
+			<xs:fractionDigits value="2"/>
+			<xs:maxInclusive value="100"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="booleanTYPE">
+		<xs:restriction base="xs:boolean"/>
+	</xs:simpleType>
+	<xs:simpleType name="lonformTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="TIM"/>
+			<xs:enumeration value="MÅN"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="personaltypTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="ARB"/>
+			<xs:enumeration value="TJM"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="utbetperiodTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="MÅN"/>
+			<xs:enumeration value="VEC"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="tidkodTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="SJK"/>
+			<xs:enumeration value="SJK_KAR"/>
+			<xs:enumeration value="SJK_LÖN"/>
+			<xs:enumeration value="SJK_ERS"/>
+			<xs:enumeration value="SJK_PEN"/>
+			<xs:enumeration value="ASK"/>
+			<xs:enumeration value="HAV"/>
+			<xs:enumeration value="FPE"/>
+			<xs:enumeration value="VAB"/>
+			<xs:enumeration value="SMB"/>
+			<xs:enumeration value="UTB"/>
+			<xs:enumeration value="MIL"/>
+			<xs:enumeration value="SVE"/>
+			<xs:enumeration value="NÄR"/>
+			<xs:enumeration value="TJL"/>
+			<xs:enumeration value="SEM"/>
+			<xs:enumeration value="SEM_BET"/>
+			<xs:enumeration value="SEM_SPA"/>
+			<xs:enumeration value="SEM_OBE"/>
+			<xs:enumeration value="SEM_FÖR"/>
+			<xs:enumeration value="KOM"/>
+			<xs:enumeration value="PEM"/>
+			<xs:enumeration value="PER"/>
+			<xs:enumeration value="FAC"/>
+			<xs:enumeration value="ATK"/>
+			<xs:enumeration value="KON"/>
+			<xs:enumeration value="PAP"/>
+			<xs:enumeration value="ATF"/>
+			<xs:enumeration value="FR1"/>
+			<xs:enumeration value="FR2"/>
+			<xs:enumeration value="FR3"/>
+			<xs:enumeration value="FR4"/>
+			<xs:enumeration value="FR5"/>
+			<xs:enumeration value="FR6"/>
+			<xs:enumeration value="FR7"/>
+			<xs:enumeration value="FR8"/>
+			<xs:enumeration value="FR9"/>
+			<xs:enumeration value="FLX"/>
+			<xs:enumeration value="SCH"/>
+			<xs:enumeration value="TS1"/>
+			<xs:enumeration value="TS2"/>
+			<xs:enumeration value="TS3"/>
+			<xs:enumeration value="TS4"/>
+			<xs:enumeration value="TS5"/>
+			<xs:enumeration value="TS6"/>
+			<xs:enumeration value="TS7"/>
+			<xs:enumeration value="TS8"/>
+			<xs:enumeration value="TS9"/>
+			<xs:enumeration value="TID"/>
+			<xs:enumeration value="ARB"/>
+			<xs:enumeration value="MER"/>
+			<xs:enumeration value="ÖT1"/>
+			<xs:enumeration value="ÖT2"/>
+			<xs:enumeration value="ÖT3"/>
+			<xs:enumeration value="ÖT4"/>
+			<xs:enumeration value="ÖT5"/>
+			<xs:enumeration value="ÖK1"/>
+			<xs:enumeration value="ÖK2"/>
+			<xs:enumeration value="ÖK3"/>
+			<xs:enumeration value="ÖK4"/>
+			<xs:enumeration value="ÖK5"/>
+			<xs:enumeration value="OB1"/>
+			<xs:enumeration value="OB2"/>
+			<xs:enumeration value="OB3"/>
+			<xs:enumeration value="OB4"/>
+			<xs:enumeration value="OB5"/>
+			<xs:enumeration value="OS1"/>
+			<xs:enumeration value="OS2"/>
+			<xs:enumeration value="OS3"/>
+			<xs:enumeration value="OS4"/>
+			<xs:enumeration value="OS5"/>
+			<xs:enumeration value="JR1"/>
+			<xs:enumeration value="JR2"/>
+			<xs:enumeration value="JR3"/>
+			<xs:enumeration value="JS1"/>
+			<xs:enumeration value="JS2"/>
+			<xs:enumeration value="JS3"/>
+			<xs:enumeration value="BE1"/>
+			<xs:enumeration value="BE2"/>
+			<xs:enumeration value="BE3"/>
+			<xs:enumeration value="BS1"/>
+			<xs:enumeration value="BS2"/>
+			<xs:enumeration value="BS3"/>
+			<xs:enumeration value="RE1"/>
+			<xs:enumeration value="RE2"/>
+			<xs:enumeration value="RE3"/>
+			<xs:enumeration value="HLG"/>
+			<xs:enumeration value="SKI"/>
+			<xs:enumeration value="LT1"/>
+			<xs:enumeration value="LT2"/>
+			<xs:enumeration value="LT3"/>
+			<xs:enumeration value="LT4"/>
+			<xs:enumeration value="LT5"/>
+			<xs:enumeration value="LT6"/>
+			<xs:enumeration value="LT7"/>
+			<xs:enumeration value="LT8"/>
+			<xs:enumeration value="LT9"/>
+			<xs:enumeration value="NV1"/>
+			<xs:enumeration value="NV2"/>
+			<xs:enumeration value="NV3"/>
+			<xs:enumeration value="NV4"/>
+			<xs:enumeration value="NV5"/>
+			<xs:enumeration value="NV6"/>
+			<xs:enumeration value="NV7"/>
+			<xs:enumeration value="NV8"/>
+			<xs:enumeration value="NV9"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="lonekodTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="TID"/>
+			<xs:enumeration value="ARB"/>
+			<xs:enumeration value="MER"/>
+			<xs:enumeration value="ÖT1"/>
+			<xs:enumeration value="ÖT2"/>
+			<xs:enumeration value="ÖT3"/>
+			<xs:enumeration value="ÖT4"/>
+			<xs:enumeration value="ÖT5"/>
+			<xs:enumeration value="ÖK1"/>
+			<xs:enumeration value="ÖK2"/>
+			<xs:enumeration value="ÖK3"/>
+			<xs:enumeration value="ÖK4"/>
+			<xs:enumeration value="ÖK5"/>
+			<xs:enumeration value="JR1"/>
+			<xs:enumeration value="JR2"/>
+			<xs:enumeration value="JR3"/>
+			<xs:enumeration value="BE1"/>
+			<xs:enumeration value="BE2"/>
+			<xs:enumeration value="BE3"/>
+			<xs:enumeration value="RE1"/>
+			<xs:enumeration value="RE2"/>
+			<xs:enumeration value="RE3"/>
+			<xs:enumeration value="NV1"/>
+			<xs:enumeration value="NV2"/>
+			<xs:enumeration value="NV3"/>
+			<xs:enumeration value="NV4"/>
+			<xs:enumeration value="NV5"/>
+			<xs:enumeration value="NV6"/>
+			<xs:enumeration value="NV7"/>
+			<xs:enumeration value="NV8"/>
+			<xs:enumeration value="NV9"/>
+			<xs:enumeration value="OB1"/>
+			<xs:enumeration value="OB2"/>
+			<xs:enumeration value="OB3"/>
+			<xs:enumeration value="OB4"/>
+			<xs:enumeration value="OB5"/>
+	    		<xs:enumeration value="OS1"/>
+			<xs:enumeration value="OS2"/>
+			<xs:enumeration value="OS3"/>
+			<xs:enumeration value="OS4"/>
+			<xs:enumeration value="OS5"/>
+			<xs:enumeration value="HLG"/>
+			<xs:enumeration value="SKI"/>
+			<xs:enumeration value="LT1"/>
+			<xs:enumeration value="LT2"/>
+			<xs:enumeration value="LT3"/>
+			<xs:enumeration value="LT4"/>
+			<xs:enumeration value="LT5"/>
+			<xs:enumeration value="LT6"/>
+			<xs:enumeration value="LT7"/>
+			<xs:enumeration value="LT8"/>
+			<xs:enumeration value="LT9"/>
+			<xs:enumeration value="MÅNLÖN"/>
+			<xs:enumeration value="TIMLÖN"/>
+			<xs:enumeration value="BONUS"/>
+			<xs:enumeration value="PROVISION"/>
+			<xs:enumeration value="FÖRSKOTT"/>
+			<xs:enumeration value="UTLÄGG"/>
+			<xs:enumeration value="RESERS"/>
+			<xs:enumeration value="INR_FRI"/>
+			<xs:enumeration value="INR_RED"/>
+			<xs:enumeration value="INR_SKT"/>
+			<xs:enumeration value="INRHEL_FRI"/>
+			<xs:enumeration value="INRHEL_RED"/>
+			<xs:enumeration value="INRHEL_SKT"/>
+			<xs:enumeration value="INRHLV_FRI"/>
+			<xs:enumeration value="INRHLV_RED"/>
+			<xs:enumeration value="INRHLV_SKT"/>
+			<xs:enumeration value="INRDAG_SKT"/>
+			<xs:enumeration value="INRNAT_FRI"/>
+			<xs:enumeration value="INRNAT_SKT"/>
+			<xs:enumeration value="UTR_FRI"/>
+			<xs:enumeration value="UTR_RED"/>
+			<xs:enumeration value="UTR_SKT"/>
+			<xs:enumeration value="UTRHEL_FRI"/>
+			<xs:enumeration value="UTRHEL_RED"/>
+			<xs:enumeration value="UTRHEL_SKT"/>
+			<xs:enumeration value="UTRHLV_FRI"/>
+			<xs:enumeration value="UTRHLV_RED"/>
+			<xs:enumeration value="UTRHLV_SKT"/>
+			<xs:enumeration value="UTRDAG_SKT"/>
+			<xs:enumeration value="UTRNAT_FRI"/>
+			<xs:enumeration value="UTRNAT_SKT"/>
+			<xs:enumeration value="MIL_FRI"/>
+			<xs:enumeration value="MIL_SKT"/>
+			<xs:enumeration value="MILPRI_FRI"/>
+			<xs:enumeration value="MILPRI_SKT"/>
+			<xs:enumeration value="MILFTG_FRI"/>
+			<xs:enumeration value="MILFTG_SKT"/>
+			<xs:enumeration value="MILDIS_FRI"/>
+			<xs:enumeration value="MILDIS_SKT"/>
+			<xs:enumeration value="MATFRM"/>
+			<xs:enumeration value="MATFRM_FRU"/>
+			<xs:enumeration value="MATFRM_LCH"/>
+			<xs:enumeration value="MATFRM_MID"/>
+			<xs:enumeration value="UTRFRM"/>
+			<xs:enumeration value="UTRFRM_FRU"/>
+			<xs:enumeration value="UTRFRM_LCH"/>
+			<xs:enumeration value="UTRFRM_MID"/>
+			<xs:enumeration value="MATRED"/>
+			<xs:enumeration value="MATRED_FRU"/>
+			<xs:enumeration value="MATRED_LCH"/>
+			<xs:enumeration value="MATRED_MID"/>
+			<xs:enumeration value="UTRRED"/>
+			<xs:enumeration value="UTRRED_FRU"/>
+			<xs:enumeration value="UTRRED_LCH"/>
+			<xs:enumeration value="UTRRED_MID"/>
+			<xs:enumeration value="REPEXT"/>
+			<xs:enumeration value="REPEXT_FRI"/>
+			<xs:enumeration value="REPEXT_SKT"/>
+			<xs:enumeration value="REPINT"/>
+			<xs:enumeration value="REPINT_FRI"/>
+			<xs:enumeration value="REPINT_SKT"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="reskodTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="START"/>
+			<xs:enumeration value="STOPP"/>
+			<xs:enumeration value="FLYG"/>
+			<xs:enumeration value="LAND"/>
+			<xs:enumeration value="FRU_NEJ"/>
+			<xs:enumeration value="FRU_HOT"/>
+			<xs:enumeration value="FRU_BET"/>
+			<xs:enumeration value="FRU_ARB"/>
+			<xs:enumeration value="FRU_REP"/>
+			<xs:enumeration value="LUN_NEJ"/>
+			<xs:enumeration value="LUN_BET"/>
+			<xs:enumeration value="LUN_ARB"/>
+			<xs:enumeration value="LUN_REP"/>
+			<xs:enumeration value="MID_NEJ"/>
+			<xs:enumeration value="MID_BET"/>
+			<xs:enumeration value="MID_ARB"/>
+			<xs:enumeration value="MID_REP"/>
+			<xs:enumeration value="LOGI_BET"/>
+			<xs:enumeration value="LOGI_ARB"/>
+			<xs:enumeration value="MIL_PRI"/>
+			<xs:enumeration value="MIL_FTG"/>
+			<xs:enumeration value="MIL_TJT"/>
+			<xs:enumeration value="MIL_DIS"/>
+			<xs:enumeration value="UTLÄGG"/>
+			<xs:enumeration value="REPR_ENK"/>
+			<xs:enumeration value="REPR_LCH"/>
+			<xs:enumeration value="REPR_MID"/>
+			<xs:enumeration value="REPR_INT"/>
+			<xs:enumeration value="RESTID"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="lonetypTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="BRUTTO"/>
+			<xs:enumeration value="FÖRMÅN"/>
+			<xs:enumeration value="NETTO"/>
+			<xs:enumeration value="SKATT"/>
+			<xs:enumeration value="KAPITAL"/>
+			<xs:enumeration value="KAPITALSKATT"/>
+			<xs:enumeration value="PENSION"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="skattetypTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="TABELL"/>
+			<xs:enumeration value="ENGÅNGS"/>
+			<xs:enumeration value="KAPITAL"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="avgifttypTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="FULL"/>
+			<xs:enumeration value="UNGDOM"/>
+			<xs:enumeration value="PENSIONÄR"/>
+			<xs:enumeration value="AMBASSAD"/>
+			<xs:enumeration value="USA"/>
+			<xs:enumeration value="LÖNESKATT"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="fontTYPE">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="DOLD"/>
+			<xs:enumeration value="FET"/>
+		</xs:restriction>
+	</xs:simpleType>
+</xs:schema>

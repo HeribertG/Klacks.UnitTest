@@ -57,7 +57,7 @@
 		<None Update="ScheduleOptimizer\Harmonizer\Research\Scenarios\*.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
-		<None Include="..\docs\knowledge\export-samples\se-paxml-2.0.xsd">
+		<None Include="Infrastructure\Services\Exports\TestData\se-paxml-2.0.xsd">
 			<Link>Infrastructure\Services\Exports\se-paxml-2.0.xsd</Link>
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
