@@ -41,6 +41,7 @@ public class ApplyCompanyRuleCommandHandlerTests
     private ICompanyRuleRepository _registry = null!;
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private Klacks.Api.Domain.Events.IDomainEventDispatcher _eventDispatcher = null!;
     private ApplyCompanyRuleCommandHandler _sut = null!;
     private CompanyRule? _added;
 
@@ -77,7 +78,11 @@ public class ApplyCompanyRuleCommandHandlerTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<CompanyRule>>>())
             .Returns(ci => ci.ArgAt<Func<Task<CompanyRule>>>(0)());
 
-        _sut = new ApplyCompanyRuleCommandHandler(_store, _validator, _catalog, _settings, _registry, _mediator, _unitOfWork, new SettingsMapper());
+        _eventDispatcher = Substitute.For<Klacks.Api.Domain.Events.IDomainEventDispatcher>();
+
+        _sut = new ApplyCompanyRuleCommandHandler(
+            _store, _validator, _catalog, _settings, _registry, _mediator, _unitOfWork, new SettingsMapper(),
+            _eventDispatcher, Substitute.For<Microsoft.Extensions.Logging.ILogger<ApplyCompanyRuleCommandHandler>>());
     }
 
     private static ApplyCompanyRuleCommand Cmd() => new(UserId, Key);
@@ -125,6 +130,37 @@ public class ApplyCompanyRuleCommandHandlerTests
         snapshot[SettingKeys.NightRate].ShouldBe("1.25");
         await _settings.Received().PutSetting(Arg.Is<SettingsEntity>(s => s.Type == SettingKeys.NightRate && s.Value == "1.5"));
         _store.Get(UserId, Key).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_Surcharge_ChangedRelevantValue_DispatchesSurchargeSettingsChangedEvent()
+    {
+        var draft = new CompanyRuleDraft { Kind = CompanyRuleKind.SurchargeSettings, RuleText = "night pay" };
+        draft.Parameters[CompanyRuleParameterNames.NightRate] = "1.5";
+        _store.Set(UserId, Key, draft);
+
+        _settings.GetSetting(SettingKeys.NightRate).Returns(new SettingsEntity { Id = Guid.NewGuid(), Type = SettingKeys.NightRate, Value = "1.25" });
+
+        await _sut.Handle(Cmd(), CancellationToken.None);
+
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<Klacks.Api.Domain.Events.SurchargeSettingsChangedEvent>(e =>
+                e.ChangedKeys.Count == 1 && e.ChangedKeys.Contains(SettingKeys.NightRate)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_Surcharge_UnchangedValue_DoesNotDispatch()
+    {
+        var draft = new CompanyRuleDraft { Kind = CompanyRuleKind.SurchargeSettings, RuleText = "night pay" };
+        draft.Parameters[CompanyRuleParameterNames.NightRate] = "1.5";
+        _store.Set(UserId, Key, draft);
+
+        _settings.GetSetting(SettingKeys.NightRate).Returns(new SettingsEntity { Id = Guid.NewGuid(), Type = SettingKeys.NightRate, Value = "1.5" });
+
+        await _sut.Handle(Cmd(), CancellationToken.None);
+
+        await _eventDispatcher.DidNotReceiveWithAnyArgs().DispatchAsync((Klacks.Api.Domain.Events.IDomainEvent)null!, default);
     }
 
     [Test]

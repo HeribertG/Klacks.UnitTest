@@ -2,6 +2,7 @@
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Events;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Exceptions;
@@ -24,6 +25,7 @@ public class PutCommandHandlerTests
     private IUnitOfWork _unitOfWork = null!;
     private IGroupVisibilityService _groupVisibilityService = null!;
     private IEmailClientAssignmentService _emailClientAssignmentService = null!;
+    private IDomainEventDispatcher _eventDispatcher = null!;
     private ILogger<PutCommandHandler> _logger = null!;
     private PutCommandHandler _handler = null!;
 
@@ -35,6 +37,7 @@ public class PutCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _groupVisibilityService = Substitute.For<IGroupVisibilityService>();
         _emailClientAssignmentService = Substitute.For<IEmailClientAssignmentService>();
+        _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
         _logger = Substitute.For<ILogger<PutCommandHandler>>();
 
         _handler = new PutCommandHandler(
@@ -43,6 +46,7 @@ public class PutCommandHandlerTests
             _unitOfWork,
             _groupVisibilityService,
             _emailClientAssignmentService,
+            _eventDispatcher,
             _logger
         );
     }
@@ -84,15 +88,15 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
-        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
         result.ShouldNotBeNull();
-        await _clientRepository.Received(1).Put(Arg.Any<Client>());
+        await _clientRepository.Received(1).Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
 
@@ -138,7 +142,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -146,7 +150,7 @@ public class PutCommandHandlerTests
 
         (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
 
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
@@ -186,15 +190,15 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
-        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
         result.ShouldNotBeNull();
-        await _clientRepository.Received(1).Put(Arg.Any<Client>());
+        await _clientRepository.Received(1).Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
 
@@ -238,7 +242,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -246,7 +250,7 @@ public class PutCommandHandlerTests
 
         (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client groups");
 
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
@@ -310,15 +314,15 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
-        _clientRepository.Put(Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
         result.ShouldNotBeNull();
-        await _clientRepository.Received(1).Put(Arg.Any<Client>());
+        await _clientRepository.Received(1).Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
 
@@ -353,7 +357,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -361,7 +365,7 @@ public class PutCommandHandlerTests
 
         (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
 
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }
 
     [Test]
@@ -395,7 +399,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -403,7 +407,7 @@ public class PutCommandHandlerTests
 
         (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
 
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }
 
     [Test]
@@ -436,7 +440,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -444,7 +448,7 @@ public class PutCommandHandlerTests
 
         (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client groups");
 
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }
 
     [Test]
@@ -460,7 +464,7 @@ public class PutCommandHandlerTests
         };
 
         _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
-        _clientRepository.Get(clientId).Returns(Task.FromResult<Client?>(null));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(null));
 
         var command = new PutCommand<ClientResource>(updatedResource);
 
@@ -468,7 +472,145 @@ public class PutCommandHandlerTests
 
         await act.ShouldThrowAsync<KeyNotFoundException>();
 
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
+    }
+
+    [Test]
+    public async Task Handle_AdminChangesClientContract_DispatchesContractChangedEventWithEarliestFromDate()
+    {
+        var clientId = Guid.NewGuid();
+        var clientContractId = Guid.NewGuid();
+        var contractId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.ClientContracts = new List<ClientContract>
+        {
+            new ClientContract
+            {
+                Id = clientContractId,
+                ContractId = contractId,
+                IsActive = true,
+                FromDate = new DateOnly(2026, 3, 1),
+                UntilDate = null
+            }
+        };
+
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContractResource>
+            {
+                new ClientContractResource
+                {
+                    Id = clientContractId,
+                    ContractId = contractId,
+                    IsActive = true,
+                    FromDate = new DateOnly(2026, 1, 1),
+                    UntilDate = null
+                }
+            },
+            GroupItems = new List<ClientGroupItemResource>()
+        };
+
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+
+        await _handler.Handle(new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<IDomainEvent>(e =>
+                e is ContractChangedEvent &&
+                ((ContractChangedEvent)e).ContractId == contractId &&
+                ((ContractChangedEvent)e).ClientId == clientId &&
+                ((ContractChangedEvent)e).RecalculationFrom == new DateOnly(2026, 1, 1)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ClientContractsUnchanged_DoesNotDispatchContractChangedEvent()
+    {
+        var clientId = Guid.NewGuid();
+        var clientContractId = Guid.NewGuid();
+        var contractId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Old Name");
+        existingClient.ClientContracts = new List<ClientContract>
+        {
+            new ClientContract
+            {
+                Id = clientContractId,
+                ContractId = contractId,
+                IsActive = true,
+                FromDate = new DateOnly(2026, 3, 1),
+                UntilDate = null
+            }
+        };
+
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "New Name",
+            ClientContracts = new List<ClientContractResource>
+            {
+                new ClientContractResource
+                {
+                    Id = clientContractId,
+                    ContractId = contractId,
+                    IsActive = true,
+                    FromDate = new DateOnly(2026, 3, 1),
+                    UntilDate = null
+                }
+            },
+            GroupItems = new List<ClientGroupItemResource>()
+        };
+
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+
+        await _handler.Handle(new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        await _eventDispatcher.DidNotReceive().DispatchAsync(Arg.Any<IDomainEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AdminRemovesClientContract_DispatchesContractChangedEventForRemovedContract()
+    {
+        var clientId = Guid.NewGuid();
+        var contractId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.ClientContracts = new List<ClientContract>
+        {
+            new ClientContract
+            {
+                Id = Guid.NewGuid(),
+                ContractId = contractId,
+                IsActive = true,
+                FromDate = new DateOnly(2026, 2, 1),
+                UntilDate = null
+            }
+        };
+
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContractResource>(),
+            GroupItems = new List<ClientGroupItemResource>()
+        };
+
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(true));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+
+        await _handler.Handle(new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<IDomainEvent>(e =>
+                e is ContractChangedEvent &&
+                ((ContractChangedEvent)e).ContractId == contractId &&
+                ((ContractChangedEvent)e).RecalculationFrom == new DateOnly(2026, 2, 1)),
+            Arg.Any<CancellationToken>());
     }
 
     private static Client CreateTestClient(Guid clientId, string name)

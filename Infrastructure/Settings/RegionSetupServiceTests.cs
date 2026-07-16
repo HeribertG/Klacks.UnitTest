@@ -15,6 +15,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Settings;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Events;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Scheduling;
@@ -45,6 +46,8 @@ public class RegionSetupServiceTests
     private IQualificationImportRepository _qualificationImportRepository = null!;
     private IMacroImportRepository _macroImportRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IDomainEventDispatcher _eventDispatcher = null!;
+    private List<IDomainEvent> _dispatchedEvents = null!;
     private List<SettingsModel> _writtenSettings = null!;
     private List<PeriodCapRule> _existingPeriodCapRules = null!;
     private List<PeriodCapRule> _addedPeriodCapRules = null!;
@@ -184,6 +187,12 @@ public class RegionSetupServiceTests
         _unitOfWork
             .ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
             .Returns(callInfo => callInfo.Arg<Func<Task<int>>>()());
+
+        _dispatchedEvents = new List<IDomainEvent>();
+        _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
+        _eventDispatcher
+            .DispatchAsync(Arg.Do<IDomainEvent>(domainEvent => _dispatchedEvents.Add(domainEvent)), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
     }
 
     [TearDown]
@@ -2273,6 +2282,56 @@ public class RegionSetupServiceTests
         _addedMacros.ShouldBeEmpty();
     }
 
+    [Test]
+    public async Task ApplyAsync_ImportChangesSurchargeRelevantSetting_DispatchesSurchargeSettingsChangedEventWithChangedKey()
+    {
+        var json = """
+            { "version": 1, "surcharges": { "nightRate": 25 } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var dispatched = _dispatchedEvents.OfType<SurchargeSettingsChangedEvent>().ToList();
+        dispatched.Count.ShouldBe(1);
+        dispatched.Single().ChangedKeys.ShouldBe(new[] { SettingKeys.NightRate });
+    }
+
+    [Test]
+    public async Task ApplyAsync_ReImportWithIdenticalSurchargeValues_DoesNotDispatchSurchargeSettingsChangedEvent()
+    {
+        _settingsRepository.GetSetting(SettingKeys.NightRate)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.NightRate, Value = "25" });
+        _settingsRepository.GetSettingNoTracking(SettingKeys.NightRate)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.NightRate, Value = "25" });
+        var json = """
+            { "version": 1, "surcharges": { "nightRate": 25 } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _dispatchedEvents.OfType<SurchargeSettingsChangedEvent>().ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_NightWindowBackfill_DispatchesSurchargeSettingsChangedEventWithBackfilledKeys()
+    {
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupAppliedSurcharges)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupAppliedSurcharges, Value = "true" });
+        var json = """
+            { "version": 1, "surcharges": { "nightWindow": { "start": "22:00", "end": "04:00" } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var dispatched = _dispatchedEvents.OfType<SurchargeSettingsChangedEvent>().ToList();
+        dispatched.Count.ShouldBe(1);
+        dispatched.Single().ChangedKeys.ShouldBe(
+            new[] { SettingKeys.SurchargeNightStart, SettingKeys.SurchargeNightEnd });
+    }
+
     private RegionSetupService CreateService(string? filePath)
     {
         var configuration = new ConfigurationBuilder()
@@ -2296,6 +2355,7 @@ public class RegionSetupServiceTests
             _macroImportRepository,
             new MacroScriptValidator(),
             _unitOfWork,
+            _eventDispatcher,
             NullLogger<RegionSetupService>.Instance);
     }
 

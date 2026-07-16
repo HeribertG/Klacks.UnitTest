@@ -252,6 +252,7 @@ public class RegionSetupExampleProfileTests
             macroImportRepository,
             new MacroScriptValidator(),
             unitOfWork,
+            Substitute.For<Klacks.Api.Domain.Events.IDomainEventDispatcher>(),
             NullLogger<RegionSetupService>.Instance);
     }
 }
