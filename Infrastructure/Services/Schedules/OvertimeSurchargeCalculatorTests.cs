@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Microsoft.EntityFrameworkCore;
@@ -233,6 +234,123 @@ public class OvertimeSurchargeCalculatorTests
         var result = await _sut.CalculateAsync(work);
 
         result.Items.ShouldBeEmpty();
+    }
+
+    // Discriminating three-way resolution (Phase 2, dated overtime revisions). One 12h work, three
+    // deliberately distinct ladders so a green assertion proves the branch, not just the code path:
+    //   settings tier1 = after-8 x 0.5   -> [8,12) = 2.0
+    //   base rule tier1 = after-10 x 0.75 -> [10,12) = 1.5   (differs from settings on purpose)
+    //   revision tier1 = after-6 x 1.0   -> [6,12) = 6.0
+
+    [Test]
+    public async Task CalculateAsync_ApplicableRevisionWithOvertime_OverridesBaseRuleAndSettings()
+    {
+        await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");
+        await SetSettingAsync(SettingKeys.OvertimeTier1Rate, "0.5");
+        var ruleId = await SeedRuleWithBaseOvertimeAsync(baseAfterHours: 10m, baseRate: 0.75m);
+        await AddOvertimeRevisionAsync(ruleId, new DateOnly(2027, 1, 1), overtimeAfterHours: 6m, overtimeRate: 1.0m);
+
+        var work = BuildWork(workTime: 12m, date: new DateOnly(2027, 6, 1));
+
+        var result = await _sut.CalculateAsync(work);
+
+        result.Items.Single().Type.ShouldBe(SurchargeType.Overtime1);
+        result.Items.Single().Amount.ShouldBe(6.0m);
+    }
+
+    [Test]
+    public async Task CalculateAsync_WorkDateBeforeRevision_UsesBaseRuleLadder_Retroactive()
+    {
+        await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");
+        await SetSettingAsync(SettingKeys.OvertimeTier1Rate, "0.5");
+        var ruleId = await SeedRuleWithBaseOvertimeAsync(baseAfterHours: 10m, baseRate: 0.75m);
+        await AddOvertimeRevisionAsync(ruleId, new DateOnly(2027, 1, 1), overtimeAfterHours: 6m, overtimeRate: 1.0m);
+
+        // February work recomputed later must still see the pre-revision ladder, not the revision.
+        var work = BuildWork(workTime: 12m, date: new DateOnly(2026, 2, 15));
+
+        var result = await _sut.CalculateAsync(work);
+
+        result.Items.Single().Amount.ShouldBe(1.5m);
+    }
+
+    [Test]
+    public async Task CalculateAsync_ApplicableRevisionWithoutOvertime_FallsToSettingsNotBaseRule()
+    {
+        await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");
+        await SetSettingAsync(SettingKeys.OvertimeTier1Rate, "0.5");
+        var ruleId = await SeedRuleWithBaseOvertimeAsync(baseAfterHours: 10m, baseRate: 0.75m);
+        // Applicable revision that sets only a rate, no overtime -> full snapshot omits overtime -> settings.
+        await AddOvertimeRevisionAsync(ruleId, new DateOnly(2027, 1, 1), overtimeAfterHours: null, overtimeRate: null);
+
+        var work = BuildWork(workTime: 12m, date: new DateOnly(2027, 6, 1));
+
+        var result = await _sut.CalculateAsync(work);
+
+        // 2.0 (settings [8,12)) proves it did NOT fall to the base rule ladder (1.5, [10,12)).
+        result.Items.Single().Amount.ShouldBe(2.0m);
+    }
+
+    [Test]
+    public async Task CalculateAsync_MultipleOvertimeRevisions_UsesLatestOnOrBeforeWorkDate()
+    {
+        await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");
+        await SetSettingAsync(SettingKeys.OvertimeTier1Rate, "0.5");
+        var ruleId = await SeedRuleWithBaseOvertimeAsync(baseAfterHours: 10m, baseRate: 0.75m);
+        await AddOvertimeRevisionAsync(ruleId, new DateOnly(2027, 1, 1), overtimeAfterHours: 6m, overtimeRate: 1.0m);
+        await AddOvertimeRevisionAsync(ruleId, new DateOnly(2028, 1, 1), overtimeAfterHours: 6m, overtimeRate: 2.0m);
+
+        var early = await _sut.CalculateAsync(BuildWork(workTime: 12m, date: new DateOnly(2027, 6, 1)));
+        var late = await _sut.CalculateAsync(BuildWork(workTime: 12m, date: new DateOnly(2028, 6, 1)));
+
+        early.Items.Single().Amount.ShouldBe(6.0m);   // [6,12) * 1.0
+        late.Items.Single().Amount.ShouldBe(12.0m);   // [6,12) * 2.0
+    }
+
+    [Test]
+    public async Task CalculateAsync_NoRevisions_BaseRuleLadderUnchanged_RegressionGuard()
+    {
+        await SetSettingAsync(SettingKeys.OvertimeTier1AfterHours, "8");
+        await SetSettingAsync(SettingKeys.OvertimeTier1Rate, "0.5");
+        await SeedRuleWithBaseOvertimeAsync(baseAfterHours: 10m, baseRate: 0.75m);
+
+        var work = BuildWork(workTime: 12m, date: new DateOnly(2027, 6, 1));
+
+        var result = await _sut.CalculateAsync(work);
+
+        result.Items.Single().Amount.ShouldBe(1.5m);
+    }
+
+    private async Task<Guid> SeedRuleWithBaseOvertimeAsync(decimal baseAfterHours, decimal baseRate)
+    {
+        var ruleId = Guid.NewGuid();
+        _context.SchedulingRules.Add(new SchedulingRule
+        {
+            Id = ruleId,
+            Name = "Industry preset",
+            OvertimeBasis = OvertimeBasis.Day,
+            OvertimeTier1AfterHours = baseAfterHours,
+            OvertimeTier1Rate = baseRate,
+        });
+        await _context.SaveChangesAsync();
+        _contractDataProvider.GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>())
+            .Returns(new EffectiveContractData { SchedulingRuleId = ruleId });
+        return ruleId;
+    }
+
+    private async Task AddOvertimeRevisionAsync(Guid ruleId, DateOnly validFrom, decimal? overtimeAfterHours, decimal? overtimeRate)
+    {
+        _context.SchedulingRuleRateRevisions.Add(new SchedulingRuleRateRevision
+        {
+            Id = Guid.NewGuid(),
+            SchedulingRuleId = ruleId,
+            ValidFrom = validFrom,
+            NightRate = 0.5m,
+            OvertimeBasis = overtimeAfterHours.HasValue ? OvertimeBasis.Day : null,
+            OvertimeTier1AfterHours = overtimeAfterHours,
+            OvertimeTier1Rate = overtimeRate,
+        });
+        await _context.SaveChangesAsync();
     }
 
     private Work BuildWork(decimal workTime, Guid? clientId = null, DateOnly? date = null, Guid? analyseToken = null)

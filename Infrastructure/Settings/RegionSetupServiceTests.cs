@@ -6,9 +6,11 @@
 /// and full/partial application of languages, settings, calendar selection and marker hash.
 /// </summary>
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Klacks.Api.Application.DTOs.Config;
+using Klacks.Api.Application.Services.Setup;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Settings;
 using Klacks.Api.Domain.Constants;
@@ -1311,6 +1313,48 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_RateRevisionWithLegacyPhase1Hash_TreatedAsUneditedAndUpgraded()
+    {
+        // A row imported under Phase 1 carries the six-field legacy digest (before the eight overtime
+        // fields joined the hash). The legacy fallback must recognise it as unedited: Update with the
+        // full digest, never frozen as customer-edited.
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.25 } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+        var insertedRule = _addedSchedulingRules.Single();
+        var insertedRevision = _addedSchedulingRuleRateRevisions.Single();
+
+        insertedRevision.ImportContentHash = ComputeLegacyRateRevisionHash(insertedRevision);
+        _existingSchedulingRules.Add(insertedRule);
+        _existingSchedulingRuleRateRevisions.Add(insertedRevision);
+        _addedSchedulingRules.Clear();
+        _addedSchedulingRuleRateRevisions.Clear();
+        var updatedRevisions = new List<SchedulingRuleRateRevision>();
+        _schedulingRuleRateRevisionImportRepository.When(r => r.Update(Arg.Any<SchedulingRuleRateRevision>()))
+            .Do(callInfo => updatedRevisions.Add(callInfo.Arg<SchedulingRuleRateRevision>()));
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        var updated = updatedRevisions.Single();
+        updated.ImportContentHash.ShouldNotBe(ComputeLegacyRateRevisionHash(updated));
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
+    }
+
+    private static string ComputeLegacyRateRevisionHash(SchedulingRuleRateRevision revision) =>
+        ImportContentHasher.ComputeHash(
+            revision.ValidFrom.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            FormatLegacyDecimal(revision.NightRate),
+            FormatLegacyDecimal(revision.HolidayRate),
+            FormatLegacyDecimal(revision.WE1Rate),
+            FormatLegacyDecimal(revision.WE2Rate),
+            FormatLegacyDecimal(revision.WE3Rate));
+
+    private static string FormatLegacyDecimal(decimal? value) =>
+        value?.ToString("F4", CultureInfo.InvariantCulture) ?? string.Empty;
+
+    [Test]
     public async Task ApplyAsync_RateRevisionNewValidFrom_InsertsWithoutTouchingExisting()
     {
         var firstJson = """
@@ -1374,6 +1418,96 @@ public class RegionSetupServiceTests
 
         _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
         _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionWithOvertimeOnly_PersistsOvertimeLadderWithoutRates()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [
+                    { "validFrom": "2027-03-01", "overtime": { "basis": "week", "rateMode": "fixedPerHour",
+                        "tiers": [ { "afterHours": 38, "rate": 0.30 }, { "afterHours": 45, "rate": 0.50 } ] } } ] } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var revision = _addedSchedulingRuleRateRevisions.Single();
+        revision.NightRate.ShouldBeNull();
+        revision.OvertimeBasis.ShouldBe(OvertimeBasis.Week);
+        revision.OvertimeRateMode.ShouldBe(SurchargeRateMode.FixedPerHour);
+        revision.OvertimeTier1AfterHours.ShouldBe(38m);
+        revision.OvertimeTier1Rate.ShouldBe(0.30m);
+        revision.OvertimeTier2AfterHours.ShouldBe(45m);
+        revision.OvertimeTier2Rate.ShouldBe(0.50m);
+        revision.OvertimeTier3AfterHours.ShouldBeNull();
+        revision.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionOvertimeTiersNotAscending_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [
+                    { "validFrom": "2027-03-01", "overtime": { "tiers": [
+                        { "afterHours": 45, "rate": 0.50 }, { "afterHours": 38, "rate": 0.30 } ] } } ] } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionOvertimeRateModeFixedPerShift_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [
+                    { "validFrom": "2027-03-01", "overtime": { "rateMode": "fixedPerShift",
+                        "tiers": [ { "afterHours": 40, "rate": 0.25 } ] } } ] } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RateRevisionOvertimeRateChangedOnly_UpdatesRow()
+    {
+        var firstJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [
+                    { "validFrom": "2027-03-01", "overtime": { "tiers": [ { "afterHours": 40, "rate": 0.25 } ] } } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var insertedRule = _addedSchedulingRules.Single();
+        var insertedRevision = _addedSchedulingRuleRateRevisions.Single();
+
+        _existingSchedulingRules.Add(insertedRule);
+        _existingSchedulingRuleRateRevisions.Add(insertedRevision);
+        _addedSchedulingRules.Clear();
+        _addedSchedulingRuleRateRevisions.Clear();
+        var updatedRevisions = new List<SchedulingRuleRateRevision>();
+        _schedulingRuleRateRevisionImportRepository.When(r => r.Update(Arg.Any<SchedulingRuleRateRevision>()))
+            .Do(callInfo => updatedRevisions.Add(callInfo.Arg<SchedulingRuleRateRevision>()));
+
+        var secondJson = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [
+                    { "validFrom": "2027-03-01", "overtime": { "tiers": [ { "afterHours": 40, "rate": 0.35 } ] } } ] } ] } } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        updatedRevisions.Single().OvertimeTier1Rate.ShouldBe(0.35m);
+        _addedSchedulingRuleRateRevisions.ShouldBeEmpty();
     }
 
     [Test]
