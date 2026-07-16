@@ -268,6 +268,7 @@ public class RejectAnalyseScenarioCommandHandlerTests
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IAnalyseScenarioService _scenarioService = null!;
+    private IWizardRunCaptureRepository _captureRepository = null!;
     private RejectAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -276,9 +277,10 @@ public class RejectAnalyseScenarioCommandHandlerTests
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
+        _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
 
         var logger = Substitute.For<ILogger<RejectAnalyseScenarioCommandHandler>>();
-        _handler = new RejectAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
+        _handler = new RejectAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, _captureRepository, logger);
     }
 
     [Test]
@@ -366,6 +368,55 @@ public class RejectAnalyseScenarioCommandHandlerTests
         scenario.Status.ShouldBe(AnalyseScenarioStatus.Rejected);
         scenario.RejectReason.ShouldBeNull();
         scenario.RejectReasonText.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Should_Set_Capture_Outcome_Rejected_When_Capture_Exists()
+    {
+        // Arrange
+        var scenarioId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var scenario = new AnalyseScenario
+        {
+            Id = scenarioId,
+            Name = "With Capture",
+            Token = Guid.NewGuid(),
+            Status = AnalyseScenarioStatus.Active
+        };
+        _repository.Get(scenarioId).Returns(scenario);
+        _captureRepository.GetByScenarioIdAsync(scenarioId, Arg.Any<CancellationToken>())
+            .Returns(new WizardRunCapture { Id = captureId, ScenarioId = scenarioId });
+        var command = new RejectAnalyseScenarioCommand(scenarioId);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        await _captureRepository.Received(1).SetOutcomeAsync(captureId, CaptureOutcome.Rejected, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Should_Not_Set_Capture_Outcome_When_No_Capture()
+    {
+        // Arrange
+        var scenarioId = Guid.NewGuid();
+        var scenario = new AnalyseScenario
+        {
+            Id = scenarioId,
+            Name = "No Capture",
+            Token = Guid.NewGuid(),
+            Status = AnalyseScenarioStatus.Active
+        };
+        _repository.Get(scenarioId).Returns(scenario);
+        _captureRepository.GetByScenarioIdAsync(scenarioId, Arg.Any<CancellationToken>())
+            .Returns((WizardRunCapture?)null);
+        var command = new RejectAnalyseScenarioCommand(scenarioId);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        await _captureRepository.DidNotReceive().SetOutcomeAsync(Arg.Any<Guid>(), Arg.Any<CaptureOutcome>(), Arg.Any<CancellationToken>());
     }
 }
 

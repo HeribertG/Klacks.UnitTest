@@ -21,9 +21,36 @@ public class WizardResultCacheTests
 
         cache.Store(jobId, scenario, token);
 
-        cache.TryGet(jobId, out var retrieved, out var analyseToken, out _).ShouldBeTrue();
+        cache.TryGet(jobId, out var retrieved, out var analyseToken, out _, out _, out _).ShouldBeTrue();
         retrieved.ShouldBeSameAs(scenario);
         analyseToken.ShouldBe(token);
+    }
+
+    [Test]
+    public void Store_Then_TryGet_ReturnsSubScoreJsonAndStage0()
+    {
+        var cache = new WizardResultCache();
+        var jobId = Guid.NewGuid();
+        var scenario = new CoreScenario { Id = "s" };
+
+        cache.Store(jobId, scenario, null, null, "{\"engine\":\"tokenEvolution\"}", 3);
+
+        cache.TryGet(jobId, out _, out _, out _, out var subScoreJson, out var stage0).ShouldBeTrue();
+        subScoreJson.ShouldBe("{\"engine\":\"tokenEvolution\"}");
+        stage0.ShouldBe(3);
+    }
+
+    [Test]
+    public void Store_WithoutScore_DefaultsToEmptyJsonAndZeroStage0()
+    {
+        var cache = new WizardResultCache();
+        var jobId = Guid.NewGuid();
+
+        cache.Store(jobId, new CoreScenario { Id = "s" }, null);
+
+        cache.TryGet(jobId, out _, out _, out _, out var subScoreJson, out var stage0).ShouldBeTrue();
+        subScoreJson.ShouldBe(string.Empty);
+        stage0.ShouldBe(0);
     }
 
     [Test]
@@ -35,7 +62,7 @@ public class WizardResultCacheTests
 
         cache.Store(jobId, scenario, null);
 
-        cache.TryGet(jobId, out _, out var analyseToken, out _).ShouldBeTrue();
+        cache.TryGet(jobId, out _, out var analyseToken, out _, out _, out _).ShouldBeTrue();
         analyseToken.ShouldBeNull();
     }
 
@@ -44,7 +71,7 @@ public class WizardResultCacheTests
     {
         var cache = new WizardResultCache();
 
-        cache.TryGet(Guid.NewGuid(), out var scenario, out var analyseToken, out _).ShouldBeFalse();
+        cache.TryGet(Guid.NewGuid(), out var scenario, out var analyseToken, out _, out _, out _).ShouldBeFalse();
         scenario.ShouldBeNull();
         analyseToken.ShouldBeNull();
     }
@@ -58,6 +85,6 @@ public class WizardResultCacheTests
 
         cache.Invalidate(jobId);
 
-        cache.TryGet(jobId, out _, out _, out _).ShouldBeFalse();
+        cache.TryGet(jobId, out _, out _, out _, out _, out _).ShouldBeFalse();
     }
 }

@@ -4,6 +4,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Services.Schedules;
@@ -21,6 +22,7 @@ public class Wizard4RunnerTests
 
     private IHarmonizerApplyService _applyService = null!;
     private IAnalyseScenarioRepository _repository = null!;
+    private IWizardRunCaptureRepository _captureRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private HarmonizerResultCache _resultCache = null!;
     private Wizard4Runner _runner = null!;
@@ -30,6 +32,7 @@ public class Wizard4RunnerTests
     {
         _applyService = Substitute.For<IHarmonizerApplyService>();
         _repository = Substitute.For<IAnalyseScenarioRepository>();
+        _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _resultCache = new HarmonizerResultCache();
 
@@ -40,6 +43,7 @@ public class Wizard4RunnerTests
             _resultCache,
             _applyService,
             _repository,
+            _captureRepository,
             _unitOfWork,
             Substitute.For<ILogger<Wizard4Runner>>());
     }
@@ -68,7 +72,7 @@ public class Wizard4RunnerTests
         var scenarioId = Guid.NewGuid();
         var resource = new AnalyseScenarioResource { Id = scenarioId, Name = "Optimizer" };
         _applyService
-            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
+            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>())
             .Returns((resource, (IReadOnlyList<Guid>)Array.Empty<Guid>()));
         var scenario = new AnalyseScenario { Id = scenarioId, Token = Guid.NewGuid() };
         _repository.Get(scenarioId).Returns(scenario);
@@ -80,12 +84,74 @@ public class Wizard4RunnerTests
 
         created.ShouldNotBeNull();
         created!.Id.ShouldBe(scenarioId);
-        await _applyService.Received(1).ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), "Optimizer");
+        await _applyService.Received(1).ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), "Optimizer", false);
         scenario.SubScoreJson.ShouldNotBeNull();
         scenario.ChurnRatio.ShouldNotBeNull();
         scenario.CreatedByUser.ShouldBe("wizard4");
         await _repository.Received(1).Put(scenario);
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Materialize_WritesWizard4Capture_WithCreatedWorkIds()
+    {
+        var scenarioId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        var runGroupId = Guid.NewGuid();
+        var workIds = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
+        var resource = new AnalyseScenarioResource
+        {
+            Id = scenarioId,
+            Name = "Optimizer",
+            GroupId = groupId,
+            FromDate = new DateOnly(2026, 4, 1),
+            UntilDate = new DateOnly(2026, 4, 30),
+        };
+        _applyService
+            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>())
+            .Returns((resource, (IReadOnlyList<Guid>)workIds));
+        var scenario = new AnalyseScenario { Id = scenarioId, Token = Guid.NewGuid(), RunGroupId = runGroupId };
+        _repository.Get(scenarioId).Returns(scenario);
+
+        WizardRunCapture? captured = null;
+        IReadOnlyList<Guid>? capturedWorkIds = null;
+        await _captureRepository.AddAsync(Arg.Do<WizardRunCapture>(c => captured = c),
+            Arg.Do<IReadOnlyList<Guid>>(ids => capturedWorkIds = ids),
+            Arg.Any<CancellationToken>());
+
+        var result = Result(baselineScalar: 0.50, bestFitness: 0.90);
+        await _runner.MaterializeCandidateIfImprovedAsync(result, Bitmap(CellSymbol.Early), groupId, CancellationToken.None);
+
+        captured.ShouldNotBeNull();
+        captured!.Engine.ShouldBe(WizardEngine.Wizard4);
+        captured.ApplyKind.ShouldBe(WizardApplyKind.Scenario);
+        captured.ScenarioId.ShouldBe(scenarioId);
+        captured.GroupId.ShouldBe(groupId);
+        captured.RunGroupId.ShouldBe(runGroupId);
+        captured.ChurnAtApply.ShouldNotBeNull();
+        captured.SubScoreJson.ShouldNotBeNullOrEmpty();
+        capturedWorkIds.ShouldBe(workIds);
+    }
+
+    [Test]
+    public async Task Materialize_CaptureFailureDoesNotBreakRun()
+    {
+        var scenarioId = Guid.NewGuid();
+        var resource = new AnalyseScenarioResource { Id = scenarioId, Name = "Optimizer" };
+        _applyService
+            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>())
+            .Returns((resource, (IReadOnlyList<Guid>)new List<Guid> { Guid.NewGuid() }));
+        _repository.Get(scenarioId).Returns(new AnalyseScenario { Id = scenarioId, Token = Guid.NewGuid() });
+        _captureRepository
+            .AddAsync(Arg.Any<WizardRunCapture>(), Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("db down"));
+
+        var result = Result(baselineScalar: 0.50, bestFitness: 0.90);
+
+        var created = await _runner.MaterializeCandidateIfImprovedAsync(result, Bitmap(CellSymbol.Early), Guid.NewGuid(), CancellationToken.None);
+
+        created.ShouldNotBeNull();
+        created!.Id.ShouldBe(scenarioId);
     }
 
     [Test]
@@ -98,6 +164,6 @@ public class Wizard4RunnerTests
 
         created.ShouldBeNull();
         await _applyService.DidNotReceive().ApplyAsScenarioAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>());
+            Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 }
