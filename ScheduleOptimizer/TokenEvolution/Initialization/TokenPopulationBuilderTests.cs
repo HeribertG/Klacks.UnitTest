@@ -64,7 +64,8 @@ public class TokenPopulationBuilderTests
             new Klacks.ScheduleOptimizer.TokenEvolution.Auction.AuctionTokenStrategy(),
             new CoverageFirstTokenStrategy(),
             new GreedyTokenStrategy(),
-            new RandomTokenStrategy());
+            new RandomTokenStrategy(),
+            new WarmStartTokenStrategy());
 
         var population = builder.BuildPopulation(context, populationSize: 10, rng: new Random(42));
 
@@ -84,7 +85,8 @@ public class TokenPopulationBuilderTests
         var coverageFirst = new CountingStrategy(() => coverageInvocations++);
         var greedy = new CountingStrategy(() => greedyInvocations++);
         var random = new CountingStrategy(() => randomInvocations++);
-        var builder = new TokenPopulationBuilder(auction, coverageFirst, greedy, random);
+        var builder = new TokenPopulationBuilder(
+            auction, coverageFirst, greedy, random, new WarmStartTokenStrategy());
 
         builder.BuildPopulation(context, populationSize: 10, rng: new Random(0));
 
@@ -125,7 +127,8 @@ public class TokenPopulationBuilderTests
             new Klacks.ScheduleOptimizer.TokenEvolution.Auction.AuctionTokenStrategy(),
             new CoverageFirstTokenStrategy(),
             new GreedyTokenStrategy(),
-            new RandomTokenStrategy());
+            new RandomTokenStrategy(),
+            new WarmStartTokenStrategy());
 
         var population = builder.BuildPopulation(lockedContext, populationSize: 5, rng: new Random(0));
 
