@@ -185,4 +185,41 @@ public class RecipeTriggerMatcherTests
         // Assert
         Assert.That(result, Is.True);
     }
+
+    [Test]
+    public void IsVetoed_When_A_NoneOf_Condition_Matches()
+    {
+        // Arrange
+        var trigger = AddClientToGroupTrigger();
+
+        // Act
+        var result = RecipeTriggerMatcher.IsVetoed(trigger, "Füge den Dienst zur Gruppe Bern hinzu");
+
+        // Assert
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void IsVetoed_Is_False_When_No_NoneOf_Condition_Matches()
+    {
+        // Arrange
+        var trigger = AddClientToGroupTrigger();
+
+        // Act
+        var result = RecipeTriggerMatcher.IsVetoed(trigger, "Füge Hans zur Gruppe Bern hinzu");
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void IsVetoed_Is_False_For_Null_Trigger_Or_Blank_Message()
+    {
+        // Arrange
+        var trigger = AddClientToGroupTrigger();
+
+        // Act & Assert
+        Assert.That(RecipeTriggerMatcher.IsVetoed(null, "Füge den Dienst hinzu"), Is.False);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "  "), Is.False);
+    }
 }

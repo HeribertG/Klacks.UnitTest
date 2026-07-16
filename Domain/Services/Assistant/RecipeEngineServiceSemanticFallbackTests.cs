@@ -4,7 +4,8 @@
 /// Unit tests for RecipeEngineService's semantic fallback — verifies that a message which does
 /// not match any recipe's keyword trigger can still resolve the recipe via a strong-confidence
 /// KnowledgeIndex hit (Kind=Recipe), while a weak or missing hit correctly falls through to no
-/// match.
+/// match, and that a recipe's noneOf guard vetoes semantic candidates the same way it vetoes the
+/// keyword trigger.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -198,6 +199,94 @@ public class RecipeEngineServiceSemanticFallbackTests
         plan!.AlternativeGoal.ShouldBeNull();
         plan.ConfirmationInstruction.ShouldContain(OnboardRecipe.Goal);
         plan.ConfirmationInstruction.ShouldContain("yes/no");
+    }
+
+    [Test]
+    public async Task SemanticHit_OnRecipeVetoedByItsNoneOfGuard_DoesNotResolve()
+    {
+        // Live regression 2026-07-16: "neue Firmenregel: max. 3 Nachtschichten, hart blockieren"
+        // belongs to the start_company_rule skill. The recipe's noneOf exclusion vocabulary must
+        // block the semantic path too — otherwise the excluded message re-enters the recipe flow
+        // through the embedding ranking and hijacks the turn away from the skill.
+        var guardedRecipe = new AgentRecipe
+        {
+            Id = Guid.NewGuid(),
+            Name = "create-shift-order",
+            Goal = "Create a new shift order.",
+            TriggerJson = """{"allOf":[{"anyWordStart":["erstell"]},{"anySubstring":["bestellung"]}],"noneOf":[{"anySubstring":["firmenregel"]}]}""",
+            StepsJson = """[{"kind":"mutate","skill":"create_shift"}]""",
+            IsEnabled = true,
+        };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRecipe> { guardedRecipe });
+
+        var message = "Wir haben eine neue Firmenregel, maximal drei Nachtschichten pro Woche, hart blockieren.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(RecipeResult("create-shift-order", 0.82));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SemanticTopCandidateVetoed_FallsThroughToNextEligibleCandidate()
+    {
+        var guardedRecipe = new AgentRecipe
+        {
+            Id = Guid.NewGuid(),
+            Name = "create-shift-order",
+            Goal = "Create a new shift order.",
+            TriggerJson = """{"allOf":[{"anyWordStart":["erstell"]},{"anySubstring":["bestellung"]}],"noneOf":[{"anySubstring":["firmenregel"]}]}""",
+            StepsJson = """[{"kind":"mutate","skill":"create_shift"}]""",
+            IsEnabled = true,
+        };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRecipe> { OnboardRecipe, guardedRecipe });
+
+        var message = "Etwas mit Firmenregel, das keinem Keyword-Trigger entspricht.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new RetrievalResult(
+            [
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "create-shift-order", Text = "x" }, 0.75),
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "x" }, 0.60),
+            ]));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        plan.NeedsConfirmation.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task SemanticRunnerUpVetoed_IsNotSurfacedAsAlternative()
+    {
+        var guardedRecipe = new AgentRecipe
+        {
+            Id = Guid.NewGuid(),
+            Name = "create-shift-order",
+            Goal = "Create a new shift order.",
+            TriggerJson = """{"allOf":[{"anyWordStart":["erstell"]},{"anySubstring":["bestellung"]}],"noneOf":[{"anySubstring":["firmenregel"]}]}""",
+            StepsJson = """[{"kind":"mutate","skill":"create_shift"}]""",
+            IsEnabled = true,
+        };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRecipe> { OnboardRecipe, guardedRecipe });
+
+        var message = "Etwas mit Firmenregel, das keinem Keyword-Trigger entspricht.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new RetrievalResult(
+            [
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "x" }, 0.72),
+                new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "create-shift-order", Text = "x" }, 0.70),
+            ]));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        plan.AlternativeGoal.ShouldBeNull();
     }
 
     [Test]

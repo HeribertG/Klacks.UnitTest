@@ -6,7 +6,10 @@
 /// utterances that exposed the bug now resolve to bulk-add-employees-to-nearest-group, while the
 /// criteria-based "add to one named group" phrasing still resolves to bulk-add-employees-to-group and
 /// the customer phrasing still resolves to bulk-add-customers-to-nearest-group. This locks the
-/// allOf/noneOf disjointness that RecipeSeedQualityTests does not cover.
+/// allOf/noneOf disjointness that RecipeSeedQualityTests does not cover. Also locks that company-rule
+/// intake utterances (start_company_rule territory) never engage any recipe: "neue Firmenregel: max. 3
+/// Nachtschichten" used to fire create-shift-order via anyWordStart "neu" + anySubstring "schicht" and
+/// hijacked the turn into the order-name ask step instead of the start_company_rule skill.
 /// </summary>
 
 using System.Text.Json;
@@ -59,6 +62,27 @@ public class RecipeRoutingTests
     public void EmployeeCriteriaUtterances_RouteToCriteriaRecipe(string utterance)
     {
         Assert.That(Resolve(utterance), Is.EqualTo("bulk-add-employees-to-group"));
+    }
+
+    [Test]
+    [TestCase("Klacksy, wir haben eine neue Firmenregel: maximal 3 Nachtschichten pro Woche, hart blockieren.")]
+    [TestCase("Neue Firmenregel: Nachtzuschlag 25% ab 23 Uhr")]
+    [TestCase("Neue Hausregel: kein Dienst länger als 10 Stunden, blockieren")]
+    [TestCase("Bitte lege eine neue Firmenregel an: maximal 2 Wochenendschichten pro Monat")]
+    [TestCase("Wir haben eine neue Regel: maximal 3 Nachtschichten pro Woche")]
+    [TestCase("New company rule: max 3 night shifts per week, block hard")]
+    [TestCase("Neue Betriebsregel: Sonntagsdienste nur mit Zustimmung, bitte nur warnen")]
+    public void CompanyRuleIntakeUtterances_DoNotEngageAnyRecipe(string utterance)
+    {
+        Assert.That(Resolve(utterance), Is.Null);
+    }
+
+    [Test]
+    [TestCase("Erstelle eine neue Bestellung für den Kunden Migros")]
+    [TestCase("Lege einen neuen Dienst an")]
+    public void ShiftOrderUtterances_StillRouteToCreateShiftOrderRecipe(string utterance)
+    {
+        Assert.That(Resolve(utterance), Is.EqualTo("create-shift-order"));
     }
 
     [Test]
