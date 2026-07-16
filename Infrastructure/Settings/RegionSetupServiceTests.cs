@@ -87,6 +87,23 @@ public class RegionSetupServiceTests
         _settingsRepository
             .AddSetting(Arg.Do<SettingsModel>(setting => _writtenSettings.Add(setting)))
             .Returns(callInfo => callInfo.Arg<SettingsModel>());
+        _settingsRepository
+            .UpsertSettingAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(async callInfo =>
+            {
+                var type = callInfo.ArgAt<string>(0);
+                var value = callInfo.ArgAt<string>(1);
+                var existing = await _settingsRepository.GetSetting(type);
+                if (existing is not null)
+                {
+                    existing.Value = value;
+                    await _settingsRepository.PutSetting(existing);
+                }
+                else
+                {
+                    await _settingsRepository.AddSetting(new SettingsModel { Id = Guid.NewGuid(), Type = type, Value = value });
+                }
+            });
 
         _calendarSelectionRepository = Substitute.For<ICalendarSelectionRepository>();
         _calendarSelectionRepository
@@ -1834,6 +1851,38 @@ public class RegionSetupServiceTests
         await CreateService(WriteTempFile(secondJson)).ApplyAsync();
 
         updated.Single().Threshold.ShouldBe(20);
+        _addedCounterRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_CounterRuleUneditedRow_LeavesCustomerEnforcementOverrideUntouched()
+    {
+        // Enforcement is not part of any of the three import sets (not hashed, not written by the import
+        // apply path, not in CounterRuleImportValues). A per-rule override therefore does NOT count as a
+        // customer edit (the value fields are unchanged, so the row is "unedited" and re-imported), and
+        // the Update path must leave the override in place while it refreshes the value fields.
+        var firstJson = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "period": "year", "threshold": 25 } ] } }
+            """;
+        await CreateService(WriteTempFile(firstJson)).ApplyAsync();
+        var inserted = _addedCounterRules.Single();
+        inserted.Enforcement = RuleEnforcementMode.Block;
+        _existingCounterRules.Add(inserted);
+        _addedCounterRules.Clear();
+        var updated = new List<CounterRule>();
+        _counterRuleRepository.When(r => r.Update(Arg.Any<CounterRule>()))
+            .Do(callInfo => updated.Add(callInfo.Arg<CounterRule>()));
+
+        var secondJson = """
+            { "version": 1, "compliance": { "counterRules": [
+                { "event": "nightShift", "period": "year", "threshold": 20 } ] } }
+            """;
+        await CreateService(WriteTempFile(secondJson)).ApplyAsync();
+
+        var row = updated.Single();
+        row.Threshold.ShouldBe(20);
+        row.Enforcement.ShouldBe(RuleEnforcementMode.Block);
         _addedCounterRules.ShouldBeEmpty();
     }
 

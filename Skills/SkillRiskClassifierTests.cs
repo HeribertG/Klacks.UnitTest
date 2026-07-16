@@ -95,6 +95,27 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Crud)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
+    // The company-rule apply/revert skills persist high-impact, only partially reversible changes and
+    // must always require human confirmation (Sensitive).
+    [TestCase("apply_company_rule")]
+    [TestCase("revert_company_rule")]
+    public void Classify_CompanyRuleWriters_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // The company-rule intake steps that only touch the ephemeral in-memory draft must never be gated.
+    // start/set/cancel carry a Crud category and are allow-listed; preview carries a Query category.
+    [TestCase("start_company_rule", SkillCategory.Crud)]
+    [TestCase("set_company_rule_parameters", SkillCategory.Crud)]
+    [TestCase("cancel_company_rule", SkillCategory.Crud)]
+    [TestCase("preview_company_rule", SkillCategory.Query)]
+    [TestCase("list_company_rules", SkillCategory.Query)]
+    public void Classify_CompanyRuleDraftAndReadSkills_ReturnsReadOnly(string name, SkillCategory category)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
     [TestCase(SkillCategory.Query)]
     [TestCase(SkillCategory.Read)]
     [TestCase(SkillCategory.Validation)]

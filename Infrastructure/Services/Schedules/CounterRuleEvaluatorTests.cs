@@ -204,6 +204,47 @@ public class CounterRuleEvaluatorTests
     }
 
     [Test]
+    public async Task EvaluateAsync_RuleBlockOverride_GlobalWarn_EscalatesToError()
+    {
+        // Global mode is Warn (SetUp); the rule's own Block override must win for this rule only.
+        StubRule(CounterEventType.NightShift, CounterPeriod.Year, threshold: 1, enforcement: RuleEnforcementMode.Block);
+        var clientId = Guid.NewGuid();
+        SeedWork(clientId, new DateOnly(2026, 3, 3), new TimeOnly(23, 0), new TimeOnly(6, 0));
+
+        var entry = (await _sut.EvaluateAsync(clientId, "Anna", Monday)).ShouldHaveSingleItem();
+
+        entry.Type.ShouldBe(ScheduleValidationType.Error);
+        entry.CommentParams[ComplianceRuleNames.EnforcementRuleParamKey].ShouldBe(ComplianceRuleNames.CounterRule);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_RuleWarnOverride_GlobalBlock_StaysWarning()
+    {
+        StubRule(CounterEventType.NightShift, CounterPeriod.Year, threshold: 1, enforcement: RuleEnforcementMode.Warn);
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.CounterRule).Returns(RuleEnforcementMode.Block);
+        var clientId = Guid.NewGuid();
+        SeedWork(clientId, new DateOnly(2026, 3, 3), new TimeOnly(23, 0), new TimeOnly(6, 0));
+
+        var entry = (await _sut.EvaluateAsync(clientId, "Anna", Monday)).ShouldHaveSingleItem();
+
+        entry.Type.ShouldBe(ScheduleValidationType.Warning);
+        entry.CommentParams.ContainsKey(ComplianceRuleNames.EnforcementRuleParamKey).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task EvaluateAsync_RuleNullOverride_FollowsGlobalBlockMode()
+    {
+        StubRule(CounterEventType.NightShift, CounterPeriod.Year, threshold: 1, enforcement: null);
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.CounterRule).Returns(RuleEnforcementMode.Block);
+        var clientId = Guid.NewGuid();
+        SeedWork(clientId, new DateOnly(2026, 3, 3), new TimeOnly(23, 0), new TimeOnly(6, 0));
+
+        var entry = (await _sut.EvaluateAsync(clientId, "Anna", Monday)).ShouldHaveSingleItem();
+
+        entry.Type.ShouldBe(ScheduleValidationType.Error);
+    }
+
+    [Test]
     public async Task EvaluateAsync_IndustryScopedRule_AppliesOnlyToMatchingContractRule()
     {
         var boundRuleId = Guid.NewGuid();
@@ -227,7 +268,8 @@ public class CounterRuleEvaluatorTests
         CounterPeriod period,
         int threshold,
         decimal? hoursThreshold = null,
-        Guid? schedulingRuleId = null)
+        Guid? schedulingRuleId = null,
+        RuleEnforcementMode? enforcement = null)
     {
         _ruleRepository.GetAllActiveAsync().Returns(new List<CounterRule>
         {
@@ -239,6 +281,7 @@ public class CounterRuleEvaluatorTests
                 Threshold = threshold,
                 HoursThreshold = hoursThreshold,
                 SchedulingRuleId = schedulingRuleId,
+                Enforcement = enforcement,
             },
         });
     }
