@@ -53,7 +53,10 @@ public class OvertimeCascadeServiceTests
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
         _weekConfiguration.GetWeekStartAsync(Arg.Any<DateOnly>()).Returns(_monday);
 
-        var calculator = new OvertimeSurchargeCalculator(_context, _contractDataProvider, _weekConfiguration);
+        var calculator = new OvertimeSurchargeCalculator(
+            _context,
+            new OvertimeConfigResolver(_context, _contractDataProvider),
+            _weekConfiguration);
 
         _reprocessed = new List<Work>();
         _workMacroService = Substitute.For<IWorkMacroService>();

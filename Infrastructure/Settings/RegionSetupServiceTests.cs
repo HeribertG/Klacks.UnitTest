@@ -1100,6 +1100,168 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_PeriodCapsOvertimeHoursScope_InsertsRuleWithOvertimeScopeAndComputedHash()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "year", "scope": "overtimeHours", "capHours": 200 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _addedPeriodCapRules.Count.ShouldBe(1);
+        var added = _addedPeriodCapRules[0];
+        added.Period.ShouldBe(PeriodCapPeriod.Year);
+        added.Scope.ShouldBe(PeriodCapScope.OvertimeHours);
+        added.CapHours.ShouldBe(200m);
+        added.CustomPeriodWeeks.ShouldBeNull();
+        added.ImportSourceKey.ShouldBe("region-setup:compliance.periodCaps:year:overtimehours");
+
+        // A null customPeriodWeeks must NOT contribute an extra field to the hash material - the hash of
+        // a month/quarter/year row has to stay byte-identical to the pre-customWeeks six-field scheme.
+        added.ImportContentHash.ShouldBe(ImportContentHasher.ComputeHash(
+            PeriodCapPeriod.Year.ToString(),
+            PeriodCapScope.OvertimeHours.ToString(),
+            200m.ToString("F4", CultureInfo.InvariantCulture),
+            string.Empty,
+            string.Empty,
+            string.Empty));
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsCustomWeeks_InsertsRuleWithCustomPeriodWeeks()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "customWeeks", "customPeriodWeeks": 4, "scope": "overtimeHours", "capHours": 25 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _addedPeriodCapRules.Count.ShouldBe(1);
+        var added = _addedPeriodCapRules[0];
+        added.Period.ShouldBe(PeriodCapPeriod.CustomWeeks);
+        added.Scope.ShouldBe(PeriodCapScope.OvertimeHours);
+        added.CapHours.ShouldBe(25m);
+        added.CustomPeriodWeeks.ShouldBe(4);
+        added.ImportSourceKey.ShouldBe("region-setup:compliance.periodCaps:customweeks4w:overtimehours");
+
+        // For customWeeks rows the window width IS part of the hash material, appended as seventh field.
+        added.ImportContentHash.ShouldBe(ImportContentHasher.ComputeHash(
+            PeriodCapPeriod.CustomWeeks.ToString(),
+            PeriodCapScope.OvertimeHours.ToString(),
+            25m.ToString("F4", CultureInfo.InvariantCulture),
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            "4"));
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsTwoCustomWeeksWindows_BothImportedWithDistinctSourceKeys()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [
+                { "period": "customWeeks", "customPeriodWeeks": 4, "scope": "overtimeHours", "capHours": 25 },
+                { "period": "customWeeks", "customPeriodWeeks": 52, "scope": "overtimeHours", "capHours": 200 }
+            ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        _addedPeriodCapRules.Count.ShouldBe(2);
+        _addedPeriodCapRules.Select(r => r.ImportSourceKey).ShouldBe(new[]
+        {
+            "region-setup:compliance.periodCaps:customweeks4w:overtimehours",
+            "region-setup:compliance.periodCaps:customweeks52w:overtimehours",
+        });
+        _addedPeriodCapRules[0].CustomPeriodWeeks.ShouldBe(4);
+        _addedPeriodCapRules[1].CustomPeriodWeeks.ShouldBe(52);
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsCustomWeeksWithoutCustomPeriodWeeks_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "customWeeks", "scope": "overtimeHours", "capHours": 25 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedPeriodCapRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsCustomPeriodWeeksWithMonthPeriod_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "customPeriodWeeks": 4, "scope": "totalHours", "capHours": 200 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedPeriodCapRules.ShouldBeEmpty();
+    }
+
+    [TestCase(0)]
+    [TestCase(105)]
+    public async Task ApplyAsync_PeriodCapsCustomPeriodWeeksOutOfRange_ThrowsWithoutAnyWrite(int weeks)
+    {
+        var json = $$"""
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "customWeeks", "customPeriodWeeks": {{weeks}}, "scope": "overtimeHours", "capHours": 25 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedPeriodCapRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_PeriodCapsRowImportedBeforeCustomWeeksExisted_StillRecognizedAsUneditedAndUpdated()
+    {
+        // Rows imported before the customWeeks feature were hashed from exactly six fields (no
+        // customPeriodWeeks material). Recomputing the live hash of such a row with the extended method
+        // must yield the SAME hash - otherwise every pre-existing row would falsely look customer-edited
+        // and file updates would be skipped forever. This seeds a row with the literal old-scheme hash.
+        var legacyHash = ImportContentHasher.ComputeHash(
+            PeriodCapPeriod.Month.ToString(),
+            PeriodCapScope.TotalHours.ToString(),
+            200m.ToString("F4", CultureInfo.InvariantCulture),
+            string.Empty,
+            string.Empty,
+            string.Empty);
+        _existingPeriodCapRules.Add(new PeriodCapRule
+        {
+            Id = Guid.NewGuid(),
+            Period = PeriodCapPeriod.Month,
+            Scope = PeriodCapScope.TotalHours,
+            CapHours = 200m,
+            WarnAtPercent = null,
+            CustomPeriodWeeks = null,
+            ImportSourceKey = "region-setup:compliance.periodCaps:month:totalhours",
+            ImportContentHash = legacyHash,
+        });
+        var updatedRules = new List<PeriodCapRule>();
+        _periodCapRuleRepository.When(r => r.Update(Arg.Any<PeriodCapRule>()))
+            .Do(callInfo => updatedRules.Add(callInfo.Arg<PeriodCapRule>()));
+
+        var json = """
+            { "version": 1, "compliance": { "periodCaps": [ { "period": "month", "scope": "totalHours", "capHours": 250 } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        updatedRules.Count.ShouldBe(1);
+        updatedRules[0].CapHours.ShouldBe(250m);
+        _addedPeriodCapRules.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task ApplyAsync_VersionMissing_ThrowsWithoutAnyWrite()
     {
         var json = """{ "region": "DE" }""";

@@ -44,7 +44,12 @@ public class OvertimeSurchargeCalculatorTests
 
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
 
-        _sut = new OvertimeSurchargeCalculator(_context, _contractDataProvider, _weekConfiguration);
+        // The real OvertimeConfigResolver (not a mock) keeps the existing config-resolution scenarios
+        // meaningful after the extraction: they still exercise the moved chain end to end.
+        _sut = new OvertimeSurchargeCalculator(
+            _context,
+            new OvertimeConfigResolver(_context, _contractDataProvider),
+            _weekConfiguration);
     }
 
     [TearDown]

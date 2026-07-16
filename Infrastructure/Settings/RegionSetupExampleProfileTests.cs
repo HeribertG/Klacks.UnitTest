@@ -54,6 +54,46 @@ public class RegionSetupExampleProfileTests
         healthcare.QualificationCatalog.ShouldNotBeNull().Count.ShouldBe(2);
     }
 
+    [Test]
+    public async Task ShippedSwedishExampleProfile_CarriesStatutoryOvertimeCaps()
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "se.json"));
+
+        var caps = profile.Compliance.ShouldNotBeNull().PeriodCaps.ShouldNotBeNull();
+        caps.Count.ShouldBe(3);
+        caps.Single(c => c.WindowWeeks != null).MaxAverageWeeklyHours.ShouldBe(48m);
+        var yearCap = caps.Single(c => c.Period == "year");
+        yearCap.Scope.ShouldBe("overtimeHours");
+        yearCap.CapHours.ShouldBe(200m);
+        var monthCap = caps.Single(c => c.Period == "month");
+        monthCap.Scope.ShouldBe("overtimeHours");
+        monthCap.CapHours.ShouldBe(50m);
+    }
+
+    [Test]
+    public async Task ShippedNorwegianExampleProfile_CarriesStatutoryCustomWeekOvertimeCaps()
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "no.json"));
+
+        var caps = profile.Compliance.ShouldNotBeNull().PeriodCaps.ShouldNotBeNull();
+        caps.Count.ShouldBe(3);
+        caps.ShouldAllBe(c => c.Period == "customWeeks" && c.Scope == "overtimeHours");
+        caps.Single(c => c.CustomPeriodWeeks == 1).CapHours.ShouldBe(10m);
+        caps.Single(c => c.CustomPeriodWeeks == 4).CapHours.ShouldBe(25m);
+        caps.Single(c => c.CustomPeriodWeeks == 52).CapHours.ShouldBe(200m);
+    }
+
+    [Test]
+    public async Task ShippedFinnishExampleProfile_CarriesRollingAverageCapInsteadOfOvertimeCap()
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "fi.json"));
+
+        var cap = profile.Compliance.ShouldNotBeNull().PeriodCaps.ShouldNotBeNull().Single();
+        cap.WindowWeeks.ShouldBe(17);
+        cap.MaxAverageWeeklyHours.ShouldBe(48m);
+        cap.Scope.ShouldBeNull();
+    }
+
     private static IEnumerable<TestCaseData> AllRegionProfilePaths()
     {
         foreach (var path in Directory.GetFiles(RegionsDirectory(), "*.json").OrderBy(p => p, StringComparer.Ordinal))
