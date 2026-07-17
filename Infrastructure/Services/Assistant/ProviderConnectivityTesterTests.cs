@@ -1,11 +1,15 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for ProviderConnectivityTester: HTTP status classification and base-URL handling.
+/// Tests for ProviderConnectivityTester: HTTP status classification, base-URL handling and the
+/// upfront scheme allow-list. The private/loopback address block itself (enforced via
+/// PrivateNetworkBlockingConnectCallback at actual connect time) is covered by
+/// PrivateNetworkBlockingConnectCallbackTests, since it lives below this fake HttpMessageHandler.
 /// </summary>
 
 using System.Net;
 using Klacks.Api.Application.DTOs.Assistant;
+using Klacks.Api.Infrastructure.Security;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -90,16 +94,44 @@ public class ProviderConnectivityTesterTests
         result.ShouldBe(ProviderConnectivityStatus.Unreachable);
     }
 
+    [TestCase("ftp://api.example.com/v1/")]
+    [TestCase("file:///etc/passwd")]
+    public async Task TestAsync_DisallowedScheme_ReturnsUnreachable(string baseUrl)
+    {
+        var result = await _tester.TestAsync(baseUrl);
+
+        result.ShouldBe(ProviderConnectivityStatus.Unreachable);
+        _handler.LastRequestUri.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task TestAsync_PrivateNetworkGuardBlocksConnection_ReturnsUnreachable()
+    {
+        _handler.ExceptionToThrow = new HttpRequestException(
+            "guard tripped",
+            new PrivateNetworkAccessBlockedException("blocked for test"));
+
+        var result = await _tester.TestAsync("http://looks-public.example.com/v1/");
+
+        result.ShouldBe(ProviderConnectivityStatus.Unreachable);
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
         public HttpStatusCode ResponseStatus { get; set; } = HttpStatusCode.OK;
         public bool ThrowOnSend { get; set; }
+        public Exception? ExceptionToThrow { get; set; }
         public string? LastRequestUri { get; private set; }
         public string? LastAuthorization { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
             if (ThrowOnSend)
             {
                 throw new HttpRequestException("network down");
