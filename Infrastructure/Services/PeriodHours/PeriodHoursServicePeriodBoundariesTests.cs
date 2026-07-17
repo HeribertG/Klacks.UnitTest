@@ -11,7 +11,9 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.PeriodHours;
@@ -116,6 +118,8 @@ public class PeriodHoursServicePeriodBoundariesTests
             var offset = ((int)date.DayOfWeek - (int)effectiveStartDay + 7) % 7;
             return Task.FromResult(date.AddDays(-offset));
         });
+        var onCallConfigResolver = Substitute.For<IOnCallConfigResolver>();
+        onCallConfigResolver.ResolveAsync().Returns(new OnCallConfig(false, 1m, 0m, false));
 
         return new PeriodHoursService(
             _context,
@@ -123,6 +127,7 @@ public class PeriodHoursServicePeriodBoundariesTests
             notificationService,
             clientGroupFilterService,
             contractDataProvider,
-            weekConfiguration);
+            weekConfiguration,
+            onCallConfigResolver);
     }
 }

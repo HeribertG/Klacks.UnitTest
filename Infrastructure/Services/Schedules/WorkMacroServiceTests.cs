@@ -157,6 +157,25 @@ public class WorkMacroServiceTests
     }
 
     [Test]
+    public async Task ProcessWorkChangeMacroAsync_OnCallOverMidnight_DerivesChangeTimeFromWindow()
+    {
+        // On-call is Within-style, so ChangeTime is derived from Start/End with the same 24h wrap as
+        // TravelWithin. A 22:00 -> 06:00 presence window must persist as ChangeTime 8, not the sent 0.
+        var work = await AddWorkAsync(shiftMacroId: null);
+
+        var workChange = new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.OnCallPresence, ChangeTime = 0m,
+            StartTime = new TimeOnly(22, 0), EndTime = new TimeOnly(6, 0),
+        };
+
+        await _sut.ProcessWorkChangeMacroAsync(workChange);
+
+        workChange.ChangeTime.ShouldBe(8m);
+    }
+
+    [Test]
     public async Task ProcessWorkChangeMacroAsync_FixedPerShiftMode_OverridesToFlatRatePerShift()
     {
         var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid());

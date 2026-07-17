@@ -148,6 +148,39 @@ public class RegionSetupExampleProfileTests
     }
 
     [Test]
+    public async Task ShippedSwissExampleProfile_CarriesOnCallShowcase()
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "ch.json"));
+
+        profile.Region.ShouldBe("CH");
+        var onCall = profile.Worktime.ShouldNotBeNull().OnCall.ShouldNotBeNull();
+        onCall.Enabled.ShouldBe(true);
+        onCall.PresenceCountsPercent.ShouldBe(100);
+        onCall.StandbyCountsPercent.ShouldBe(25);
+        onCall.IncludeInPeriodCaps.ShouldBe(false);
+    }
+
+    [Test]
+    public async Task OnCallWithPercentAboveHundred_ThrowsInvalidRequestException()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(
+                tempFile,
+                """{ "version": 1, "worktime": { "onCall": { "enabled": true, "presenceCountsPercent": 150 } } }""");
+
+            var service = CreateFreshInstallationService(tempFile);
+
+            await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Test]
     public async Task CompensatoryRestWithAutoPlanTrue_ThrowsInvalidRequestException()
     {
         var tempFile = Path.GetTempFileName();

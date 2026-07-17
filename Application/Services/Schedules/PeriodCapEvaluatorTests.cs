@@ -39,6 +39,8 @@ public class PeriodCapEvaluatorTests
     private IOvertimeConfigResolver _overtimeConfigResolver = null!;
     private IClientWorkHoursProvider _workHoursProvider = null!;
     private IWeekConfiguration _weekConfiguration = null!;
+    private IOnCallConfigResolver _onCallConfigResolver = null!;
+    private IClientOnCallHoursProvider _onCallHoursProvider = null!;
     private PeriodCapEvaluator _evaluator = null!;
 
     [SetUp]
@@ -76,6 +78,15 @@ public class PeriodCapEvaluatorTests
                 return date.AddDays(-offset);
             });
 
+        // On-call disabled by default: no subtraction from the cap baseline, so all existing cases are
+        // unaffected. Individual on-call tests re-stub these two.
+        _onCallConfigResolver = Substitute.For<IOnCallConfigResolver>();
+        _onCallConfigResolver.ResolveAsync().Returns(new OnCallConfig(false, 1m, 0m, false));
+        _onCallHoursProvider = Substitute.For<IClientOnCallHoursProvider>();
+        _onCallHoursProvider
+            .GetWeightedOnCallHoursAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<OnCallConfig>())
+            .Returns(0m);
+
         _evaluator = new PeriodCapEvaluator(
             _ruleRepository,
             _periodHoursService,
@@ -84,7 +95,9 @@ public class PeriodCapEvaluatorTests
             _contractDataProvider,
             _overtimeConfigResolver,
             _workHoursProvider,
-            _weekConfiguration);
+            _weekConfiguration,
+            _onCallConfigResolver,
+            _onCallHoursProvider);
     }
 
     private void StubRule(decimal capHours)
@@ -142,6 +155,79 @@ public class PeriodCapEvaluatorTests
         _periodHoursService
             .CalculatePeriodHoursAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>())
             .Returns(new PeriodHoursResource { Hours = hours, Surcharges = 0m, GuaranteedHours = 0m });
+    }
+
+    private void StubOnCall(bool enabled, bool includeInPeriodCaps, decimal weightedHours)
+    {
+        _onCallConfigResolver.ResolveAsync().Returns(new OnCallConfig(enabled, 1.0m, 0.25m, includeInPeriodCaps));
+        _onCallHoursProvider
+            .GetWeightedOnCallHoursAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<OnCallConfig>())
+            .Returns(weightedHours);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OnCallExcludedFromCaps_SubtractsWeightedFromBaseline_NoBreach()
+    {
+        StubRule(capHours: 200m);
+        StubPersistedHours(hours: 210m); // baseline already includes 20 weighted on-call hours
+        StubOnCall(enabled: true, includeInPeriodCaps: false, weightedHours: 20m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // 210 - 20 = 190 <= cap 200 -> on-call must not push the cap over.
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OnCallIncludedInCaps_NotSubtracted_ReturnsWarning()
+    {
+        StubRule(capHours: 200m);
+        StubPersistedHours(hours: 210m);
+        StubOnCall(enabled: true, includeInPeriodCaps: true, weightedHours: 20m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // includeInPeriodCaps -> no subtraction -> 210 > 200.
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        _onCallHoursProvider.DidNotReceiveWithAnyArgs()
+            .GetWeightedOnCallHoursAsync(default, default, default, default, default!);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_RollingAverage_OnCallExcluded_SubtractsFromBaseline()
+    {
+        StubRollingRule(windowWeeks: 2, maxAverageWeeklyHours: 48m);
+        StubPersistedHours(hours: 100m); // 100/2 = 50 > 48 without the on-call subtraction
+        StubOnCall(enabled: true, includeInPeriodCaps: false, weightedHours: 20m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // (100 - 20) / 2 = 40 <= 48 -> no breach.
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OvertimeCapScope_OnCallNeverLeaksIntoOvertime_Regression()
+    {
+        StubOvertimeRule(capHours: 10m);
+        StubOvertimeConfig(OvertimeBasis.Week, tier1AfterHours: 40m);
+        StubWorkHours(
+            (MondayInMarch, 10m),
+            (MondayInMarch.AddDays(1), 10m),
+            (MondayInMarch.AddDays(2), 10m),
+            (MondayInMarch.AddDays(3), 10m),
+            (MondayInMarch.AddDays(4), 8m)); // 48h week -> 8h overtime, under cap 10
+        // A large on-call amount that WOULD blow past the cap if it leaked into the overtime bucket.
+        StubOnCall(enabled: true, includeInPeriodCaps: false, weightedHours: 100m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // Overtime is fed exclusively from Work rows (IClientWorkHoursProvider); on-call can neither add
+        // to nor be subtracted from the overtime bucket. The on-call provider is never consulted here.
+        result.ShouldBeEmpty();
+        _onCallHoursProvider.DidNotReceiveWithAnyArgs()
+            .GetWeightedOnCallHoursAsync(default, default, default, default, default!);
     }
 
     [Test]
