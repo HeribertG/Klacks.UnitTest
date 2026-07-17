@@ -71,6 +71,21 @@ public class RegionSetupExampleProfileTests
     }
 
     [Test]
+    public async Task ShippedEmiratiExampleProfile_CarriesMiddayRestrictedTimeWindow()
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "ae.json"));
+
+        profile.Region.ShouldBe("AE");
+        var window = profile.Compliance.ShouldNotBeNull().RestrictedTimeWindows.ShouldNotBeNull().Single();
+        window.SeasonFrom.ShouldBe("06-15");
+        window.SeasonTo.ShouldBe("09-15");
+        window.DailyStart.ShouldBe("12:30");
+        window.DailyEnd.ShouldBe("15:00");
+        window.AppliesToGroupTag.ShouldBe("outdoor");
+        profile.Compliance!.Enforcement.ShouldNotBeNull().Rules.ShouldNotBeNull().RestrictedTimeWindow.ShouldBe("block");
+    }
+
+    [Test]
     public async Task ShippedNorwegianExampleProfile_CarriesStatutoryCustomWeekOvertimeCaps()
     {
         var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "no.json"));
@@ -81,6 +96,32 @@ public class RegionSetupExampleProfileTests
         caps.Single(c => c.CustomPeriodWeeks == 1).CapHours.ShouldBe(10m);
         caps.Single(c => c.CustomPeriodWeeks == 4).CapHours.ShouldBe(25m);
         caps.Single(c => c.CustomPeriodWeeks == 52).CapHours.ShouldBe(200m);
+    }
+
+    [Test]
+    public async Task ShippedDutchExampleProfile_CarriesDualStatutoryRollingAverageCapsAndNoStatutorySurcharges()
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "nl.json"));
+
+        profile.Region.ShouldBe("NL");
+        profile.Languages.ShouldNotBeNull().Install.ShouldNotBeNull().ShouldContain("nl");
+        profile.Languages!.Default.ShouldBe("nl");
+
+        var caps = profile.Compliance.ShouldNotBeNull().PeriodCaps.ShouldNotBeNull();
+        caps.Count.ShouldBe(2);
+        caps.ShouldAllBe(c => c.WindowWeeks != null && c.MaxAverageWeeklyHours != null && c.Scope == null);
+        caps.Single(c => c.WindowWeeks == 16).MaxAverageWeeklyHours.ShouldBe(48m);
+        caps.Single(c => c.WindowWeeks == 4).MaxAverageWeeklyHours.ShouldBe(55m);
+
+        profile.Worktime.ShouldNotBeNull().MaxDailyHours.ShouldBe(12m);
+        profile.Worktime!.MaxWeeklyHours.ShouldBe(60m);
+
+        profile.Surcharges.ShouldNotBeNull().NightWindow.ShouldNotBeNull().Start.ShouldBe("00:00");
+        profile.Surcharges!.NightWindow!.End.ShouldBe("06:00");
+        profile.Surcharges!.NightRate.ShouldBeNull();
+        profile.Surcharges!.HolidayRate.ShouldBeNull();
+        profile.Compliance!.RestDayRotations.ShouldBeNull();
+        profile.Compliance!.CounterRules.ShouldBeNull();
     }
 
     [Test]
@@ -270,6 +311,13 @@ public class RegionSetupExampleProfileTests
         var counterRuleRepository = Substitute.For<ICounterRuleRepository>();
         counterRuleRepository.GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>()).Returns(new List<CounterRule>());
 
+        var restrictedTimeWindowRuleRepository = Substitute.For<Klacks.Api.Domain.Interfaces.Scheduling.IRestrictedTimeWindowRuleRepository>();
+        restrictedTimeWindowRuleRepository.GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(new List<Klacks.Api.Domain.Models.Scheduling.RestrictedTimeWindowRule>());
+
+        var groupRepository = Substitute.For<Klacks.Api.Application.Interfaces.IGroupRepository>();
+        groupRepository.List().Returns(new List<Klacks.Api.Domain.Models.Associations.Group>());
+
         var schedulingRuleImportRepository = Substitute.For<ISchedulingRuleImportRepository>();
         schedulingRuleImportRepository.GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>()).Returns(new List<SchedulingRule>());
 
@@ -298,6 +346,8 @@ public class RegionSetupExampleProfileTests
             periodCapRuleRepository,
             restDayRotationRuleRepository,
             counterRuleRepository,
+            restrictedTimeWindowRuleRepository,
+            groupRepository,
             schedulingRuleImportRepository,
             schedulingRuleRateRevisionImportRepository,
             qualificationImportRepository,

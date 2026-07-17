@@ -79,6 +79,9 @@ public class PeriodValidationLoaderCompensatoryRestTests
         var counterRuleEvaluator = Substitute.For<ICounterRuleEvaluator>();
         counterRuleEvaluator.EvaluateAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
+        var restrictedTimeWindowEvaluator = Substitute.For<IRestrictedTimeWindowEvaluator>();
+        restrictedTimeWindowEvaluator.EvaluateRangeAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
 
         _sut = new PeriodValidationLoader(
             _context,
@@ -87,6 +90,7 @@ public class PeriodValidationLoaderCompensatoryRestTests
             periodCapEvaluator,
             restDayRotationEvaluator,
             counterRuleEvaluator,
+            restrictedTimeWindowEvaluator,
             reconciler,
             evaluator);
     }

@@ -85,7 +85,12 @@ public class PreCommitConflictCheckerTests
             .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
 
-        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator);
+        var restrictedTimeWindowEvaluator = Substitute.For<IRestrictedTimeWindowEvaluator>();
+        restrictedTimeWindowEvaluator
+            .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime, Guid? ShiftId)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
+
+        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, restrictedTimeWindowEvaluator);
     }
 
     [TearDown]

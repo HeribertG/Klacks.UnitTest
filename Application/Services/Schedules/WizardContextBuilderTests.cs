@@ -66,7 +66,11 @@ public class WizardContextBuilderTests
         warmStartBuilder
             .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<CoreWarmStartAssignment>)new List<CoreWarmStartAssignment>());
-        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder, _availabilityService, warmStartBuilder);
+        var restrictedWindowBuilder = Substitute.For<IWizardRestrictedWindowBuilder>();
+        restrictedWindowBuilder
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<CoreRestrictedTimeWindow>)new List<CoreRestrictedTimeWindow>());
+        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder, _availabilityService, warmStartBuilder, restrictedWindowBuilder);
     }
 
     [Test]

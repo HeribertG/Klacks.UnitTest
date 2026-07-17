@@ -23,6 +23,7 @@ using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Services.Macros;
 using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
@@ -41,6 +42,8 @@ public class RegionSetupServiceTests
     private IPeriodCapRuleRepository _periodCapRuleRepository = null!;
     private IRestDayRotationRuleRepository _restDayRotationRuleRepository = null!;
     private ICounterRuleRepository _counterRuleRepository = null!;
+    private Klacks.Api.Domain.Interfaces.Scheduling.IRestrictedTimeWindowRuleRepository _restrictedTimeWindowRuleRepository = null!;
+    private Klacks.Api.Application.Interfaces.IGroupRepository _groupRepository = null!;
     private ISchedulingRuleImportRepository _schedulingRuleImportRepository = null!;
     private ISchedulingRuleRateRevisionImportRepository _schedulingRuleRateRevisionImportRepository = null!;
     private IQualificationImportRepository _qualificationImportRepository = null!;
@@ -55,6 +58,8 @@ public class RegionSetupServiceTests
     private List<RestDayRotationRule> _addedRestDayRotationRules = null!;
     private List<CounterRule> _existingCounterRules = null!;
     private List<CounterRule> _addedCounterRules = null!;
+    private List<Klacks.Api.Domain.Models.Scheduling.RestrictedTimeWindowRule> _existingRestrictedTimeWindowRules = null!;
+    private List<Klacks.Api.Domain.Models.Scheduling.RestrictedTimeWindowRule> _addedRestrictedTimeWindowRules = null!;
     private List<SchedulingRule> _existingSchedulingRules = null!;
     private List<SchedulingRule> _addedSchedulingRules = null!;
     private List<SchedulingRuleRateRevision> _existingSchedulingRuleRateRevisions = null!;
@@ -75,6 +80,8 @@ public class RegionSetupServiceTests
         _addedRestDayRotationRules = new List<RestDayRotationRule>();
         _existingCounterRules = new List<CounterRule>();
         _addedCounterRules = new List<CounterRule>();
+        _existingRestrictedTimeWindowRules = new List<Klacks.Api.Domain.Models.Scheduling.RestrictedTimeWindowRule>();
+        _addedRestrictedTimeWindowRules = new List<Klacks.Api.Domain.Models.Scheduling.RestrictedTimeWindowRule>();
         _existingSchedulingRules = new List<SchedulingRule>();
         _addedSchedulingRules = new List<SchedulingRule>();
         _existingSchedulingRuleRateRevisions = new List<SchedulingRuleRateRevision>();
@@ -142,6 +149,18 @@ public class RegionSetupServiceTests
                 .ToList());
         _counterRuleRepository.When(r => r.Add(Arg.Any<CounterRule>()))
             .Do(callInfo => _addedCounterRules.Add(callInfo.Arg<CounterRule>()));
+
+        _restrictedTimeWindowRuleRepository = Substitute.For<Klacks.Api.Domain.Interfaces.Scheduling.IRestrictedTimeWindowRuleRepository>();
+        _restrictedTimeWindowRuleRepository
+            .GetBySourceKeysAsync(Arg.Any<IReadOnlyCollection<string>>())
+            .Returns(callInfo => _existingRestrictedTimeWindowRules
+                .Where(r => callInfo.Arg<IReadOnlyCollection<string>>().Contains(r.ImportSourceKey))
+                .ToList());
+        _restrictedTimeWindowRuleRepository.When(r => r.Add(Arg.Any<Klacks.Api.Domain.Models.Scheduling.RestrictedTimeWindowRule>()))
+            .Do(callInfo => _addedRestrictedTimeWindowRules.Add(callInfo.Arg<Klacks.Api.Domain.Models.Scheduling.RestrictedTimeWindowRule>()));
+
+        _groupRepository = Substitute.For<Klacks.Api.Application.Interfaces.IGroupRepository>();
+        _groupRepository.List().Returns(new List<Klacks.Api.Domain.Models.Associations.Group>());
 
         _schedulingRuleImportRepository = Substitute.For<ISchedulingRuleImportRepository>();
         _schedulingRuleImportRepository
@@ -2114,6 +2133,167 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowNewEntry_InsertsWithImportKeys()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "06-15", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "15:00", "appliesToGroupTag": "outdoor" } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var added = _addedRestrictedTimeWindowRules.Single();
+        added.SeasonFromMonth.ShouldBe(6);
+        added.SeasonFromDay.ShouldBe(15);
+        added.SeasonToMonth.ShouldBe(9);
+        added.SeasonToDay.ShouldBe(15);
+        added.DailyStart.ShouldBe(new TimeOnly(12, 30));
+        added.DailyEnd.ShouldBe(new TimeOnly(15, 0));
+        added.AppliesToGroupTag.ShouldBe("outdoor");
+        added.ImportSourceKey.ShouldBe("region-setup:compliance.restrictedTimeWindows:06-15:09-15:1230-1500:outdoor");
+        added.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowNoTag_UsesWildcardSourceKeyAndParsesWrapSeason()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "11-15", "seasonTo": "02-15", "dailyStart": "12:00", "dailyEnd": "14:00" } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var added = _addedRestrictedTimeWindowRules.Single();
+        added.AppliesToGroupTag.ShouldBe(string.Empty);
+        added.SeasonFromMonth.ShouldBe(11);
+        added.SeasonToMonth.ShouldBe(2);
+        added.ImportSourceKey.ShouldEndWith(":*");
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowUneditedReapply_UpdatesInPlaceWithoutInsert()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "06-15", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "15:00", "appliesToGroupTag": "outdoor" } ] } }
+            """;
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+        var inserted = _addedRestrictedTimeWindowRules.Single();
+        _existingRestrictedTimeWindowRules.Add(inserted);
+        _addedRestrictedTimeWindowRules.Clear();
+        var updated = new List<RestrictedTimeWindowRule>();
+        _restrictedTimeWindowRuleRepository.When(r => r.Update(Arg.Any<RestrictedTimeWindowRule>()))
+            .Do(callInfo => updated.Add(callInfo.Arg<RestrictedTimeWindowRule>()));
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        updated.Single().ImportSourceKey.ShouldBe(inserted.ImportSourceKey);
+        _addedRestrictedTimeWindowRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowCustomerEdited_SkipsWithoutOverwriting()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "06-15", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "15:00", "appliesToGroupTag": "outdoor" } ] } }
+            """;
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+        var inserted = _addedRestrictedTimeWindowRules.Single();
+        inserted.DailyEnd = new TimeOnly(16, 0);
+        _existingRestrictedTimeWindowRules.Add(inserted);
+        _addedRestrictedTimeWindowRules.Clear();
+        var updated = new List<RestrictedTimeWindowRule>();
+        _restrictedTimeWindowRuleRepository.When(r => r.Update(Arg.Any<RestrictedTimeWindowRule>()))
+            .Do(callInfo => updated.Add(callInfo.Arg<RestrictedTimeWindowRule>()));
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        updated.ShouldBeEmpty();
+        _addedRestrictedTimeWindowRules.ShouldBeEmpty();
+        inserted.DailyEnd.ShouldBe(new TimeOnly(16, 0));
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowInvalidSeason_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "13-40", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "15:00" } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedRestrictedTimeWindowRules.ShouldBeEmpty();
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowEqualDailyBounds_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "06-15", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "12:30" } ] } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        _addedRestrictedTimeWindowRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowTagWithoutMatchingGroup_LogsWarningOnceAndStillPersists()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "06-15", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "15:00", "appliesToGroupTag": "outdoor" },
+                { "seasonFrom": "07-01", "seasonTo": "08-31", "dailyStart": "10:00", "dailyEnd": "11:00", "appliesToGroupTag": "outdoor" } ] } }
+            """;
+        var logger = Substitute.For<ILogger<RegionSetupService>>();
+        var service = CreateService(WriteTempFile(json), logger);
+
+        await service.ApplyAsync();
+
+        _addedRestrictedTimeWindowRules.Count.ShouldBe(2);
+        logger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("outdoor")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public async Task ApplyAsync_RestrictedTimeWindowTagWithMatchingGroup_DoesNotLogWarning()
+    {
+        var json = """
+            { "version": 1, "compliance": { "restrictedTimeWindows": [
+                { "seasonFrom": "06-15", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "15:00", "appliesToGroupTag": "outdoor" } ] } }
+            """;
+        _groupRepository.List().Returns(new List<Klacks.Api.Domain.Models.Associations.Group>
+        {
+            new() { Name = "Outdoor" }
+        });
+        var logger = Substitute.For<ILogger<RegionSetupService>>();
+        var service = CreateService(WriteTempFile(json), logger);
+
+        await service.ApplyAsync();
+
+        _addedRestrictedTimeWindowRules.Count.ShouldBe(1);
+        logger.DidNotReceive().Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
     public async Task ApplyAsync_IndustryProfileWithBoundCounterRule_BindsRowToTheBlockRule()
     {
         var json = """
@@ -2332,7 +2512,7 @@ public class RegionSetupServiceTests
             new[] { SettingKeys.SurchargeNightStart, SettingKeys.SurchargeNightEnd });
     }
 
-    private RegionSetupService CreateService(string? filePath)
+    private RegionSetupService CreateService(string? filePath, ILogger<RegionSetupService>? logger = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -2349,6 +2529,8 @@ public class RegionSetupServiceTests
             _periodCapRuleRepository,
             _restDayRotationRuleRepository,
             _counterRuleRepository,
+            _restrictedTimeWindowRuleRepository,
+            _groupRepository,
             _schedulingRuleImportRepository,
             _schedulingRuleRateRevisionImportRepository,
             _qualificationImportRepository,
@@ -2356,7 +2538,7 @@ public class RegionSetupServiceTests
             new MacroScriptValidator(),
             _unitOfWork,
             _eventDispatcher,
-            NullLogger<RegionSetupService>.Instance);
+            logger ?? NullLogger<RegionSetupService>.Instance);
     }
 
     private string WriteTempFile(string content)
