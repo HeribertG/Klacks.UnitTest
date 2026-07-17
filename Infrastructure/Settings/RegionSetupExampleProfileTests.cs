@@ -94,6 +94,58 @@ public class RegionSetupExampleProfileTests
         cap.Scope.ShouldBeNull();
     }
 
+    [Test]
+    public async Task ShippedItalianExampleProfile_CarriesCompensatoryRestDeadline()
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(RegionsDirectory(), "it.json"));
+
+        var compensatoryRest = profile.Compliance.ShouldNotBeNull().CompensatoryRest.ShouldNotBeNull();
+        compensatoryRest.Enabled.ShouldBe(true);
+        compensatoryRest.DeadlineDays.ShouldBe(3);
+        compensatoryRest.AutoPlan.ShouldBe(false);
+        profile.Compliance!.Enforcement.ShouldNotBeNull().Rules.ShouldNotBeNull().CompensatoryRest.ShouldBe("warn");
+    }
+
+    [Test]
+    public async Task CompensatoryRestWithAutoPlanTrue_ThrowsInvalidRequestException()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(
+                tempFile,
+                """{ "version": 1, "compliance": { "compensatoryRest": { "enabled": true, "deadlineDays": 14, "autoPlan": true } } }""");
+
+            var service = CreateFreshInstallationService(tempFile);
+
+            await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Test]
+    public async Task CompensatoryRestWithoutDeadlineDays_ThrowsInvalidRequestException()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(
+                tempFile,
+                """{ "version": 1, "compliance": { "compensatoryRest": { "enabled": true } } }""");
+
+            var service = CreateFreshInstallationService(tempFile);
+
+            await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
     private static IEnumerable<TestCaseData> AllRegionProfilePaths()
     {
         foreach (var path in Directory.GetFiles(RegionsDirectory(), "*.json").OrderBy(p => p, StringComparer.Ordinal))
