@@ -334,7 +334,7 @@ public class LLMModelSyncServiceTests
     }
 
     [Test]
-    public async Task SyncAllProvidersAsync_NewModel_FailsTest_InsertsDisabled()
+    public async Task SyncAllProvidersAsync_NewModel_FailsTest_InsertsAsDeleted()
     {
         var provider = Substitute.For<ILLMProvider>();
         provider.ProviderId.Returns("openai");
@@ -357,6 +357,49 @@ public class LLMModelSyncServiceTests
 
         inserted.ShouldNotBeNull();
         inserted!.IsEnabled.ShouldBeFalse();
+        inserted.IsDeleted.ShouldBeTrue();
+        inserted.DeletedTime.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task SyncAllProvidersAsync_ReappearingModel_FailsTest_StaysDeleted()
+    {
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProviderId.Returns("google");
+        provider.ProviderName.Returns("Google");
+        provider.GetAvailableModelsAsync().Returns(
+            Task.FromResult<List<LLMModelDiscovery>?>([new LLMModelDiscovery("gemini-2.0-flash", "Gemini 2.0 Flash")]));
+        provider.TestModelAsync(Arg.Any<string>()).Returns(
+            Task.FromResult(new LLMModelTestResult("gemini-2.0-flash", "Gemini 2.0 Flash", false,
+                "This model models/gemini-2.0-flash is no longer available.", 300)));
+
+        _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>())
+             .Returns(c => c.Arg<LLMSyncNotification>());
+
+        var deletedModel = new LLMModel
+        {
+            Id = Guid.NewGuid(),
+            ModelId = "gemini-2-0-flash",
+            ApiModelId = "gemini-2.0-flash",
+            ProviderId = "google",
+            IsEnabled = false,
+            IsDeleted = true,
+            DeletedTime = DateTime.UtcNow.AddDays(-1),
+            ModelName = "Gemini 2.0 Flash"
+        };
+        _repo.GetModelsByProviderIncludingDeletedAsync("google").Returns([deletedModel]);
+
+        LLMModel? updated = null;
+        _repo.UpdateModelAsync(Arg.Do<LLMModel>(m => updated = m))
+             .Returns(c => c.Arg<LLMModel>());
+
+        await _sut.SyncAllProvidersAsync();
+
+        await _repo.DidNotReceive().CreateModelAsync(Arg.Any<LLMModel>());
+        updated.ShouldNotBeNull();
+        updated!.IsDeleted.ShouldBeTrue();
+        updated.IsEnabled.ShouldBeFalse();
     }
 
     [Test]
