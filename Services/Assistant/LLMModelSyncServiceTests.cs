@@ -362,7 +362,7 @@ public class LLMModelSyncServiceTests
     }
 
     [Test]
-    public async Task SyncAllProvidersAsync_ReappearingModel_FailsTest_StaysDeleted()
+    public async Task SyncAllProvidersAsync_ReappearingModel_FailsTest_StaysDeletedWithoutRewriteOrNotification()
     {
         var provider = Substitute.For<ILLMProvider>();
         provider.ProviderId.Returns("google");
@@ -390,16 +390,63 @@ public class LLMModelSyncServiceTests
         };
         _repo.GetModelsByProviderIncludingDeletedAsync("google").Returns([deletedModel]);
 
-        LLMModel? updated = null;
-        _repo.UpdateModelAsync(Arg.Do<LLMModel>(m => updated = m))
-             .Returns(c => c.Arg<LLMModel>());
+        await _sut.SyncAllProvidersAsync();
+
+        // A provider that keeps advertising an already soft-deleted, still-failing model
+        // must be a no-op: no re-insert, no DeletedTime re-stamp, and no duplicate
+        // sync-log notification on every cycle.
+        await _repo.DidNotReceive().CreateModelAsync(Arg.Any<LLMModel>());
+        await _repo.DidNotReceive().UpdateModelAsync(Arg.Any<LLMModel>());
+        await _repo.DidNotReceive().CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>());
+    }
+
+    [Test]
+    public async Task SyncAllProvidersAsync_NewModelAndStillFailingDeletedModel_NotificationExcludesStaleModel()
+    {
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProviderId.Returns("google");
+        provider.ProviderName.Returns("Google");
+        provider.GetAvailableModelsAsync().Returns(
+            Task.FromResult<List<LLMModelDiscovery>?>(
+            [
+                new LLMModelDiscovery("gemini-3.5-flash", "Gemini 3.5 Flash"),
+                new LLMModelDiscovery("gemini-2.0-flash", "Gemini 2.0 Flash")
+            ]));
+        provider.TestModelAsync("gemini-3.5-flash").Returns(
+            Task.FromResult(new LLMModelTestResult("gemini-3.5-flash", "Gemini 3.5 Flash", true, null, 100)));
+        provider.TestModelAsync("gemini-2.0-flash").Returns(
+            Task.FromResult(new LLMModelTestResult("gemini-2.0-flash", "Gemini 2.0 Flash", false,
+                "This model models/gemini-2.0-flash is no longer available.", 300)));
+
+        _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.CreateModelAsync(Arg.Any<LLMModel>()).Returns(c => c.Arg<LLMModel>());
+
+        var deletedModel = new LLMModel
+        {
+            Id = Guid.NewGuid(),
+            ModelId = "gemini-2-0-flash",
+            ApiModelId = "gemini-2.0-flash",
+            ProviderId = "google",
+            IsEnabled = false,
+            IsDeleted = true,
+            DeletedTime = DateTime.UtcNow.AddDays(-1),
+            ModelName = "Gemini 2.0 Flash"
+        };
+        _repo.GetModelsByProviderIncludingDeletedAsync("google").Returns([deletedModel]);
+
+        LLMSyncNotification? notification = null;
+        _repo.CreateSyncNotificationAsync(Arg.Do<LLMSyncNotification>(n => notification = n))
+             .Returns(c => c.Arg<LLMSyncNotification>());
 
         await _sut.SyncAllProvidersAsync();
 
-        await _repo.DidNotReceive().CreateModelAsync(Arg.Any<LLMModel>());
-        updated.ShouldNotBeNull();
-        updated!.IsDeleted.ShouldBeTrue();
-        updated.IsEnabled.ShouldBeFalse();
+        notification.ShouldNotBeNull();
+        notification!.NewModelsCount.ShouldBe(1);
+        notification.NewModelNames.ShouldContain("Gemini 3.5 Flash");
+        notification.NewModelNames.ShouldNotContain("Gemini 2.0 Flash");
+        notification.FailedModelsCount.ShouldBe(0);
+        notification.ModelTestResults.Count().ShouldBe(1);
+        notification.ModelTestResults[0].ApiModelId.ShouldBe("gemini-3.5-flash");
     }
 
     [Test]
