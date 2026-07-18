@@ -356,7 +356,9 @@ public class RegionSetupServiceTests
                 "qualifications": { "expiredMandatoryBlocks": true, "expiryWarningDays": 30 },
                 "enforcement": { "defaultMode": "warn", "allowSupervisorOverride": true },
                 "rosterPublication": { "minLeadDays": 14, "countWorkdaysOnly": false }
-              }
+              },
+              "industryProfiles": { "healthcare": {} },
+              "activeIndustries": [ "healthcare" ]
             }
             """;
         _languagePluginService.GetPlugin("pl").Returns(new LanguagePluginInfo { Code = "pl" });
@@ -404,6 +406,7 @@ public class RegionSetupServiceTests
         AssertWritten(SettingKeys.ComplianceEnforcementAllowSupervisorOverride, "true");
         AssertWritten(SettingKeys.ComplianceRosterPublicationMinLeadDays, "14");
         AssertWritten(SettingKeys.ComplianceRosterPublicationCountWorkdaysOnly, "false");
+        AssertWritten(SettingKeys.ActiveIndustries, "healthcare");
         AssertWritten(SettingKeys.RegionSetupApplied, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))));
         foreach (var markerKey in AllSectionMarkerKeys)
         {
@@ -1335,6 +1338,7 @@ public class RegionSetupServiceTests
         SettingKeys.RegionSetupAppliedSurcharges,
         SettingKeys.RegionSetupAppliedExport,
         SettingKeys.RegionSetupAppliedCompliance,
+        SettingKeys.RegionSetupAppliedIndustries,
     };
 
     private void StubAllSectionMarkersExist()
@@ -1414,6 +1418,7 @@ public class RegionSetupServiceTests
         rule.NightEnd.ShouldBe("06:00");
         rule.ImportSourceKey.ShouldBe("region-setup:industryProfiles:healthcare:rule:de-klinik-standard");
         rule.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+        rule.Industry.ShouldBe("healthcare");
 
         var qualification = _addedQualifications.Single();
         qualification.Name.De.ShouldBe("Examinierte Pflegefachkraft");
@@ -1422,6 +1427,257 @@ public class RegionSetupServiceTests
         qualification.Category.ShouldBe(QualificationCategory.Healthcare);
         qualification.ImportSourceKey.ShouldBe("region-setup:industryProfiles:healthcare:qualification:examinierte-pflegefachkraft");
         qualification.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+        qualification.Industry.ShouldBe("healthcare");
+    }
+
+    [Test]
+    public async Task ApplyAsync_QualificationImportedByOlderBinaryWithoutIndustry_UneditedUpdateBackfillsIndustry()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "healthcare": {
+                "qualificationCatalog": [ { "name": { "de": "Pflegefachkraft" } } ] } } }
+            """;
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+        var insertedQualification = _addedQualifications.Single();
+
+        insertedQualification.Industry = string.Empty;
+        _existingQualifications.Add(insertedQualification);
+        _addedQualifications.Clear();
+        var updatedQualifications = new List<Qualification>();
+        _qualificationImportRepository.When(r => r.Update(Arg.Any<Qualification>()))
+            .Do(callInfo => updatedQualifications.Add(callInfo.Arg<Qualification>()));
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        _addedQualifications.ShouldBeEmpty();
+        updatedQualifications.Single().Industry.ShouldBe("healthcare");
+    }
+
+    [Test]
+    public async Task ApplyAsync_HomecareQualificationWithLegacyOthersCategory_UneditedRowIsReclassifiedToSpitex()
+    {
+        _existingQualifications.Add(new Qualification
+        {
+            Id = Guid.NewGuid(),
+            Name = new MultiLanguage { De = "Pflegehelferin" },
+            IsTimeLimited = false,
+            Category = QualificationCategory.Others,
+            Industry = "homecare",
+            ImportSourceKey = "region-setup:industryProfiles:homecare:qualification:pflegehelferin",
+            ImportContentHash = ImportContentHasher.ComputeHash(
+                "Pflegehelferin", string.Empty, string.Empty, string.Empty, "false", nameof(QualificationCategory.Others)),
+        });
+        var updatedQualifications = new List<Qualification>();
+        _qualificationImportRepository.When(r => r.Update(Arg.Any<Qualification>()))
+            .Do(callInfo => updatedQualifications.Add(callInfo.Arg<Qualification>()));
+        var json = """
+            { "version": 1, "industryProfiles": { "homecare": {
+                "qualificationCatalog": [ { "name": { "de": "Pflegehelferin" } } ] } } }
+            """;
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        _addedQualifications.ShouldBeEmpty();
+        var updated = updatedQualifications.Single();
+        updated.Category.ShouldBe(QualificationCategory.Spitex);
+        updated.Industry.ShouldBe("homecare");
+        updated.ImportContentHash.ShouldBe(ImportContentHasher.ComputeHash(
+            "Pflegehelferin", string.Empty, string.Empty, string.Empty, "false", nameof(QualificationCategory.Spitex)));
+    }
+
+    [Test]
+    public async Task ApplyAsync_HomecareQualificationCustomerEdited_SkipsAndKeepsOthersCategory()
+    {
+        var edited = new Qualification
+        {
+            Id = Guid.NewGuid(),
+            Name = new MultiLanguage { De = "Pflegehilfe SRK" },
+            IsTimeLimited = false,
+            Category = QualificationCategory.Others,
+            Industry = "homecare",
+            ImportSourceKey = "region-setup:industryProfiles:homecare:qualification:pflegehelferin",
+            ImportContentHash = ImportContentHasher.ComputeHash(
+                "Pflegehelferin", string.Empty, string.Empty, string.Empty, "false", nameof(QualificationCategory.Others)),
+        };
+        _existingQualifications.Add(edited);
+        var updatedQualifications = new List<Qualification>();
+        _qualificationImportRepository.When(r => r.Update(Arg.Any<Qualification>()))
+            .Do(callInfo => updatedQualifications.Add(callInfo.Arg<Qualification>()));
+        var json = """
+            { "version": 1, "industryProfiles": { "homecare": {
+                "qualificationCatalog": [ { "name": { "de": "Pflegehelferin" } } ] } } }
+            """;
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        _addedQualifications.ShouldBeEmpty();
+        updatedQualifications.ShouldBeEmpty();
+        edited.Category.ShouldBe(QualificationCategory.Others);
+        edited.Name.De.ShouldBe("Pflegehilfe SRK");
+    }
+
+    [Test]
+    public async Task ApplyAsync_PresetImportedByOlderBinaryWithoutIndustry_UneditedUpdateBackfillsIndustry()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "healthcare": {
+                "schedulingRulePresets": [ { "name": "Preset A", "maxDailyHours": 10 } ] } } }
+            """;
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+        var insertedRule = _addedSchedulingRules.Single();
+
+        insertedRule.Industry = string.Empty;
+        _existingSchedulingRules.Add(insertedRule);
+        _addedSchedulingRules.Clear();
+        var updatedRules = new List<SchedulingRule>();
+        _schedulingRuleImportRepository.When(r => r.Update(Arg.Any<SchedulingRule>()))
+            .Do(callInfo => updatedRules.Add(callInfo.Arg<SchedulingRule>()));
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        _addedSchedulingRules.ShouldBeEmpty();
+        updatedRules.Single().Industry.ShouldBe("healthcare");
+    }
+
+    [Test]
+    public async Task ApplyAsync_ActiveIndustriesUnknownSlug_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "activeIndustries": [ "security" ], "industryProfiles": { "healthcare": {} } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_ActiveIndustriesEmptyList_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "activeIndustries": [], "industryProfiles": { "healthcare": {} } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_ActiveIndustriesWithoutIndustryProfiles_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "activeIndustries": [ "healthcare" ] }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_ActiveIndustriesValid_WritesSettingAndMarkerOnceOnly()
+    {
+        var json = """
+            { "version": 1, "activeIndustries": [ "Healthcare", "homecare" ], "industryProfiles": { "healthcare": {}, "homecare": {} } }
+            """;
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        AssertWritten(SettingKeys.ActiveIndustries, "healthcare,homecare");
+        AssertWritten(SettingKeys.RegionSetupAppliedIndustries, "true");
+
+        _writtenSettings.Clear();
+        StubAllSectionMarkersExist();
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        _writtenSettings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_GlobalMarkerPresentWithoutIndustriesMarker_StillAppliesActiveIndustries()
+    {
+        _settingsRepository.GetSetting(SettingKeys.RegionSetupApplied)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionSetupApplied, Value = "OLDHASH" });
+        var json = """
+            { "version": 1, "activeIndustries": [ "healthcare" ], "industryProfiles": { "healthcare": {} } }
+            """;
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        AssertWritten(SettingKeys.ActiveIndustries, "healthcare");
+        AssertWritten(SettingKeys.RegionSetupAppliedIndustries, "true");
+    }
+
+    [Test]
+    public async Task ApplyAsync_PackageBlock_WritesCountryAndVersionSettings()
+    {
+        var json = """
+            { "version": 1, "package": { "country": "DE", "version": "1.2.0" } }
+            """;
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        AssertWritten(SettingKeys.RegionPackageCountry, "de");
+        AssertWritten(SettingKeys.RegionPackageVersion, "1.2.0");
+    }
+
+    [Test]
+    public async Task ApplyAsync_PackageWithoutVersion_ThrowsWithoutAnyWrite()
+    {
+        var json = """
+            { "version": 1, "package": { "country": "de" } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+    }
+
+    [Test]
+    public async Task ApplyAsync_PackageVersionChangedOnFullyAppliedInstallation_UpdatesOnlyChangedSetting()
+    {
+        StubAllSectionMarkersExist();
+        _settingsRepository.GetSettingNoTracking(SettingKeys.RegionPackageCountry)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionPackageCountry, Value = "de" });
+        _settingsRepository.GetSettingNoTracking(SettingKeys.RegionPackageVersion)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionPackageVersion, Value = "1.0.0" });
+        var json = """
+            { "version": 1, "package": { "country": "de", "version": "2.0.0" } }
+            """;
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        AssertWritten(SettingKeys.RegionPackageVersion, "2.0.0");
+        _writtenSettings.Any(setting => setting.Type == SettingKeys.RegionPackageCountry).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ApplyAsync_PackageUnchangedOnFullyAppliedInstallation_WritesNothing()
+    {
+        StubAllSectionMarkersExist();
+        _settingsRepository.GetSettingNoTracking(SettingKeys.RegionPackageCountry)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionPackageCountry, Value = "de" });
+        _settingsRepository.GetSettingNoTracking(SettingKeys.RegionPackageVersion)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.RegionPackageVersion, Value = "2.0.0" });
+        var json = """
+            { "version": 1, "package": { "country": "de", "version": "2.0.0" } }
+            """;
+
+        await CreateService(WriteTempFile(json)).ApplyAsync();
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
     }
 
     [Test]
