@@ -117,6 +117,9 @@ public static class SkillFeatureCoverageMap
         ["WorksController"] = Covered("place_work", "delete_work", "confirm_work", "unconfirm_work", "read_schedule_state"),
 
         ["SchedulingRulesController"] = Covered("list_scheduling_rules", "create_scheduling_rule", "update_scheduling_rule", "delete_scheduling_rule", "get_scheduling_defaults", "update_scheduling_defaults"),
+        ["CounterRulesController"] = Excluded("admin settings CRUD for counter rules (compliance event thresholds); admin settings card only, no Klacksy chat skill in this iteration"),
+        ["PeriodCapRulesController"] = Excluded("admin settings CRUD for period-cap rules (compliance hour caps); admin settings card only, no Klacksy chat skill in this iteration"),
+        ["RestrictedTimeWindowRulesController"] = Excluded("admin settings CRUD for restricted time-window rules (compliance forbidden windows); admin settings card only, no Klacksy chat skill in this iteration"),
 
         ["BranchController"] = Covered("list_branches", "create_branch", "update_branch", "delete_branch"),
         ["CalendarRulesController"] = Covered("import_calendar_rules", "validate_calendar_rule", "list_holidays_for_period", "validate_holiday_overlap"),
