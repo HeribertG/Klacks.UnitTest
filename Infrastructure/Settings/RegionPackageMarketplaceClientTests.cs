@@ -4,7 +4,8 @@
 /// Unit tests for the marketplace region-package client: latest-version lookup maps the wire payload
 /// (countryCode/version/minKlacksVersion), a 404 yields a not-found result while invalid JSON, server
 /// errors and network exceptions yield a failed result (or null for downloads) instead of throwing,
-/// and the download call requests the full profile artifact with industry=all.
+/// the download call requests the full profile artifact with industry=all and captures the optional
+/// X-Klacks-Signature response header together with the exact response bytes.
 /// </summary>
 
 using System.Net;
@@ -26,22 +27,31 @@ public class RegionPackageMarketplaceClientTests
     {
         private readonly HttpStatusCode _status;
         private readonly string _body;
+        private readonly string? _signatureHeader;
 
         public Uri? LastRequestUri { get; private set; }
 
-        public StubHandler(HttpStatusCode status, string body)
+        public StubHandler(HttpStatusCode status, string body, string? signatureHeader = null)
         {
             _status = status;
             _body = body;
+            _signatureHeader = signatureHeader;
         }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             LastRequestUri = request.RequestUri;
-            return Task.FromResult(new HttpResponseMessage(_status)
+            var response = new HttpResponseMessage(_status)
             {
                 Content = new StringContent(_body, Encoding.UTF8, "application/json"),
-            });
+            };
+
+            if (_signatureHeader != null)
+            {
+                response.Headers.Add(RegionPackageMarketplaceClient.SignatureHeaderName, _signatureHeader);
+            }
+
+            return Task.FromResult(response);
         }
     }
 
@@ -153,46 +163,63 @@ public class RegionPackageMarketplaceClientTests
     }
 
     [Test]
-    public async Task DownloadProfileJsonAsync_Success_ReturnsBodyAndRequestsFullProfileArtifact()
+    public async Task DownloadProfileAsync_Success_ReturnsBodyAndRequestsFullProfileArtifact()
     {
         const string profileJson = """{ "version": 1 }""";
         var handler = new StubHandler(HttpStatusCode.OK, profileJson);
         var client = CreateClient(handler);
 
-        var result = await client.DownloadProfileJsonAsync("ch", CancellationToken.None);
+        var result = await client.DownloadProfileAsync("ch", CancellationToken.None);
 
-        result.ShouldBe(profileJson);
+        result.ShouldNotBeNull();
+        result!.ProfileJson.ShouldBe(profileJson);
+        result.Content.ShouldBe(Encoding.UTF8.GetBytes(profileJson));
+        result.Signature.ShouldBeNull();
         handler.LastRequestUri.ShouldNotBeNull();
         handler.LastRequestUri!.ToString().ShouldBe($"{BaseUrl}/api/regions/ch/download?industry=all&artifact=profileJson");
     }
 
     [Test]
-    public async Task DownloadProfileJsonAsync_ServerError_ReturnsNull()
+    public async Task DownloadProfileAsync_SignatureHeaderPresent_ReturnsSignature()
+    {
+        const string profileJson = """{ "version": 1 }""";
+        const string signature = "c2lnbmVkLXBheWxvYWQ=";
+        var client = CreateClient(new StubHandler(HttpStatusCode.OK, profileJson, signature));
+
+        var result = await client.DownloadProfileAsync("ch", CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.Signature.ShouldBe(signature);
+        result.ProfileJson.ShouldBe(profileJson);
+    }
+
+    [Test]
+    public async Task DownloadProfileAsync_ServerError_ReturnsNull()
     {
         var client = CreateClient(new StubHandler(HttpStatusCode.InternalServerError, string.Empty));
 
-        var result = await client.DownloadProfileJsonAsync("ch", CancellationToken.None);
+        var result = await client.DownloadProfileAsync("ch", CancellationToken.None);
 
         result.ShouldBeNull();
     }
 
     [Test]
-    public async Task DownloadProfileJsonAsync_HandlerThrowsHttpRequestException_ReturnsNullInsteadOfThrowing()
+    public async Task DownloadProfileAsync_HandlerThrowsHttpRequestException_ReturnsNullInsteadOfThrowing()
     {
         var client = CreateClient(new ThrowingHandler());
 
-        var result = await client.DownloadProfileJsonAsync("ch", CancellationToken.None);
+        var result = await client.DownloadProfileAsync("ch", CancellationToken.None);
 
         result.ShouldBeNull();
     }
 
     [Test]
-    public async Task DownloadProfileJsonAsync_ResponseLargerThanLimit_ReturnsNull()
+    public async Task DownloadProfileAsync_ResponseLargerThanLimit_ReturnsNull()
     {
         const int oversizeBytes = 11 * 1024 * 1024;
         var client = CreateClient(new StubHandler(HttpStatusCode.OK, new string('x', oversizeBytes)));
 
-        var result = await client.DownloadProfileJsonAsync("ch", CancellationToken.None);
+        var result = await client.DownloadProfileAsync("ch", CancellationToken.None);
 
         result.ShouldBeNull();
     }

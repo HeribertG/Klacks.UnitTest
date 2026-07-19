@@ -5,10 +5,16 @@
 /// identity, upToDate/updated/updateAvailableAutoOff/blockedByMinVersion/packageNotFound/conflict/
 /// error status transitions, strict semantic-version parsing of installed, marketplace and
 /// minKlacksVersion strings, the guarantee that a failed import never advances
-/// REGION_PACKAGE_VERSION and that ACTIVE_INDUSTRIES is never written by the auto-update.
+/// REGION_PACKAGE_VERSION, that ACTIVE_INDUSTRIES is never written by the auto-update, and that a
+/// download rejected by the signature verifier is reported as signatureRejected and never applied —
+/// including an unsigned download when a vendor public key is configured (signature-stripping
+/// downgrade), independent of the RequireSignedRegionPackages flag.
 /// </summary>
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Klacks.Api.Application.Configuration;
 using Klacks.Api.Application.DTOs.Config;
 using Klacks.Api.Application.DTOs.Setup;
 using Klacks.Api.Application.Interfaces;
@@ -18,6 +24,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -37,6 +44,7 @@ public class RegionPackageUpdateRunnerTests
 
     private ISettingsRepository _settingsRepository = null!;
     private IRegionPackageMarketplaceClient _marketplaceClient = null!;
+    private IRegionPackageSignatureVerifier _signatureVerifier = null!;
     private IRegionEntityImportService _entityImportService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private Dictionary<string, string> _settingValues = null!;
@@ -70,19 +78,29 @@ public class RegionPackageUpdateRunnerTests
             });
 
         _marketplaceClient = Substitute.For<IRegionPackageMarketplaceClient>();
+        _signatureVerifier = Substitute.For<IRegionPackageSignatureVerifier>();
+        _signatureVerifier
+            .Verify(Arg.Any<byte[]>(), Arg.Any<string?>())
+            .Returns(RegionPackageSignatureVerification.Ok());
         _entityImportService = Substitute.For<IRegionEntityImportService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
     }
 
-    private RegionPackageUpdateRunner CreateRunner()
+    private RegionPackageUpdateRunner CreateRunner(IRegionPackageSignatureVerifier? signatureVerifier = null)
     {
         return new RegionPackageUpdateRunner(
             _settingsRepository,
             _marketplaceClient,
+            signatureVerifier ?? _signatureVerifier,
             _entityImportService,
             _unitOfWork,
             new FixedTimeProvider(),
             NullLogger<RegionPackageUpdateRunner>.Instance);
+    }
+
+    private static MarketplaceRegionPackageDownload Download(string profileJson, string? signature = null)
+    {
+        return new MarketplaceRegionPackageDownload(Encoding.UTF8.GetBytes(profileJson), profileJson, signature);
     }
 
     private void StubInstalledPackage(string country = "ch", string version = "1.0.0")
@@ -133,7 +151,7 @@ public class RegionPackageUpdateRunnerTests
         status.AvailableVersion.ShouldBe("1.2.0");
         status.LastError.ShouldBeNull();
         status.LastCheckUtc.ShouldBe(FixedUtcNow.UtcDateTime);
-        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileJsonAsync(default!, default);
+        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileAsync(default!, default);
         await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
     }
 
@@ -142,7 +160,7 @@ public class RegionPackageUpdateRunnerTests
     {
         StubInstalledPackage(version: "1.0.9");
         StubLatest("1.0.10");
-        _marketplaceClient.DownloadProfileJsonAsync("ch", Arg.Any<CancellationToken>()).Returns("""{ "version": 1 }""");
+        _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns(Download("""{ "version": 1 }"""));
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
@@ -163,7 +181,7 @@ public class RegionPackageUpdateRunnerTests
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
-        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileJsonAsync(default!, default);
+        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileAsync(default!, default);
         await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
         _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
         var status = GetWrittenStatus();
@@ -180,7 +198,7 @@ public class RegionPackageUpdateRunnerTests
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
-        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileJsonAsync(default!, default);
+        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileAsync(default!, default);
         await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
         _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
         var status = GetWrittenStatus();
@@ -193,7 +211,7 @@ public class RegionPackageUpdateRunnerTests
     {
         StubInstalledPackage(version: "1.0.0");
         StubLatest("1.1.0");
-        _marketplaceClient.DownloadProfileJsonAsync("ch", Arg.Any<CancellationToken>()).Returns("""{ "version": 1 }""");
+        _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns(Download("""{ "version": 1 }"""));
         _entityImportService
             .ApplyEntityImportsAsync(Arg.Any<RegionSetupProfile>())
             .Returns<Task>(_ => throw new InvalidRequestException("customer macro 'X' currently carries the standard function"));
@@ -212,7 +230,7 @@ public class RegionPackageUpdateRunnerTests
     {
         StubInstalledPackage(version: "1.0.0");
         StubLatest("1.1.0");
-        _marketplaceClient.DownloadProfileJsonAsync("ch", Arg.Any<CancellationToken>()).Returns("""{ "version": 1 }""");
+        _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns(Download("""{ "version": 1 }"""));
         _entityImportService
             .ApplyEntityImportsAsync(Arg.Any<RegionSetupProfile>())
             .Returns<Task>(_ => throw new InvalidOperationException("database gone"));
@@ -258,7 +276,7 @@ public class RegionPackageUpdateRunnerTests
         status.LastError.ShouldBeNull();
         _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
         _upsertedSettings.Select(s => s.Type).ShouldBe(new[] { SettingKeys.RegionPackageUpdateStatus });
-        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileJsonAsync(default!, default);
+        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileAsync(default!, default);
         await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
     }
 
@@ -270,7 +288,7 @@ public class RegionPackageUpdateRunnerTests
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
-        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileJsonAsync(default!, default);
+        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileAsync(default!, default);
         await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
         _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
         var status = GetWrittenStatus();
@@ -286,7 +304,7 @@ public class RegionPackageUpdateRunnerTests
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
-        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileJsonAsync(default!, default);
+        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileAsync(default!, default);
         await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
         _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
         var status = GetWrittenStatus();
@@ -302,7 +320,7 @@ public class RegionPackageUpdateRunnerTests
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
-        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileJsonAsync(default!, default);
+        await _marketplaceClient.DidNotReceiveWithAnyArgs().DownloadProfileAsync(default!, default);
         await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
         _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("broken");
         var status = GetWrittenStatus();
@@ -315,7 +333,7 @@ public class RegionPackageUpdateRunnerTests
     {
         StubInstalledPackage(version: "1.0.0");
         StubLatest("1.1.0");
-        _marketplaceClient.DownloadProfileJsonAsync("ch", Arg.Any<CancellationToken>()).Returns("""{ "version": 1, "unknownField": true }""");
+        _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns(Download("""{ "version": 1, "unknownField": true }"""));
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
@@ -329,7 +347,7 @@ public class RegionPackageUpdateRunnerTests
     {
         StubInstalledPackage(version: "1.0.0");
         StubLatest("1.1.0");
-        _marketplaceClient.DownloadProfileJsonAsync("ch", Arg.Any<CancellationToken>()).Returns((string?)null);
+        _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns((MarketplaceRegionPackageDownload?)null);
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
@@ -342,7 +360,7 @@ public class RegionPackageUpdateRunnerTests
     {
         StubInstalledPackage(version: "1.0.0");
         StubLatest("1.1.0");
-        _marketplaceClient.DownloadProfileJsonAsync("ch", Arg.Any<CancellationToken>()).Returns("""{ "version": 1 }""");
+        _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns(Download("""{ "version": 1 }"""));
 
         await CreateRunner().RunCycleAsync(CancellationToken.None);
 
@@ -350,5 +368,139 @@ public class RegionPackageUpdateRunnerTests
         _upsertedSettings.Select(s => s.Type).ShouldBe(
             new[] { SettingKeys.RegionPackageVersion, SettingKeys.RegionPackageUpdateStatus },
             ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task RunCycleAsync_VerifierRejects_ReportsSignatureRejectedAndKeepsVersion()
+    {
+        StubInstalledPackage(version: "1.0.0");
+        StubLatest("1.1.0");
+        _marketplaceClient.DownloadProfileAsync("ch", Arg.Any<CancellationToken>()).Returns(Download("""{ "version": 1 }"""));
+        _signatureVerifier
+            .Verify(Arg.Any<byte[]>(), Arg.Any<string?>())
+            .Returns(RegionPackageSignatureVerification.Rejected("signature does not match"));
+
+        await CreateRunner().RunCycleAsync(CancellationToken.None);
+
+        await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
+        _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
+        var status = GetWrittenStatus();
+        status.LastResult.ShouldBe(RegionPackageUpdateResults.SignatureRejected);
+        status.AvailableVersion.ShouldBe("1.1.0");
+        status.LastError.ShouldContain("signature does not match");
+    }
+
+    private static (RegionPackageSignatureVerifier Verifier, RSA Rsa) CreateRealVerifier(bool requireSigned, bool withPublicKey = true)
+    {
+        var rsa = RSA.Create(2048);
+        var options = new UpdateTrustOptions
+        {
+            SignaturePublicKey = withPublicKey ? rsa.ExportSubjectPublicKeyInfoPem() : string.Empty,
+            RequireSignedRegionPackages = requireSigned
+        };
+
+        var verifier = new RegionPackageSignatureVerifier(
+            Options.Create(options),
+            NullLogger<RegionPackageSignatureVerifier>.Instance);
+        return (verifier, rsa);
+    }
+
+    private static string SignWith(RSA rsa, string profileJson)
+    {
+        var payload = Encoding.UTF8.GetBytes(profileJson);
+        return Convert.ToBase64String(rsa.SignData(payload, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
+    }
+
+    [Test]
+    public async Task RunCycleAsync_ValidVendorSignature_ImportsAndAdvancesVersion()
+    {
+        StubInstalledPackage(version: "1.0.0");
+        StubLatest("1.1.0");
+        var (verifier, rsa) = CreateRealVerifier(requireSigned: true);
+        using var _ = rsa;
+        const string profileJson = """{ "version": 1 }""";
+        _marketplaceClient
+            .DownloadProfileAsync("ch", Arg.Any<CancellationToken>())
+            .Returns(Download(profileJson, SignWith(rsa, profileJson)));
+
+        await CreateRunner(verifier).RunCycleAsync(CancellationToken.None);
+
+        await _entityImportService.Received(1).ApplyEntityImportsAsync(Arg.Any<RegionSetupProfile>());
+        _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.1.0");
+        GetWrittenStatus().LastResult.ShouldBe(RegionPackageUpdateResults.Updated);
+    }
+
+    [Test]
+    public async Task RunCycleAsync_TamperedPayload_RejectsWithSignatureRejectedStatus()
+    {
+        StubInstalledPackage(version: "1.0.0");
+        StubLatest("1.1.0");
+        var (verifier, rsa) = CreateRealVerifier(requireSigned: false);
+        using var _ = rsa;
+        const string signedJson = """{ "version": 1 }""";
+        const string tamperedJson = """{ "version": 1, "injected": true }""";
+        _marketplaceClient
+            .DownloadProfileAsync("ch", Arg.Any<CancellationToken>())
+            .Returns(Download(tamperedJson, SignWith(rsa, signedJson)));
+
+        await CreateRunner(verifier).RunCycleAsync(CancellationToken.None);
+
+        await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
+        _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
+        GetWrittenStatus().LastResult.ShouldBe(RegionPackageUpdateResults.SignatureRejected);
+    }
+
+    [Test]
+    public async Task RunCycleAsync_MissingSignature_RequiredSetting_RejectsWithoutImport()
+    {
+        StubInstalledPackage(version: "1.0.0");
+        StubLatest("1.1.0");
+        var (verifier, rsa) = CreateRealVerifier(requireSigned: true);
+        using var _ = rsa;
+        _marketplaceClient
+            .DownloadProfileAsync("ch", Arg.Any<CancellationToken>())
+            .Returns(Download("""{ "version": 1 }"""));
+
+        await CreateRunner(verifier).RunCycleAsync(CancellationToken.None);
+
+        await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
+        _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
+        GetWrittenStatus().LastResult.ShouldBe(RegionPackageUpdateResults.SignatureRejected);
+    }
+
+    [Test]
+    public async Task RunCycleAsync_MissingSignature_NotRequiredSetting_KeyConfigured_RejectsWithSignatureRejectedStatus()
+    {
+        StubInstalledPackage(version: "1.0.0");
+        StubLatest("1.1.0");
+        var (verifier, rsa) = CreateRealVerifier(requireSigned: false);
+        using var _ = rsa;
+        _marketplaceClient
+            .DownloadProfileAsync("ch", Arg.Any<CancellationToken>())
+            .Returns(Download("""{ "version": 1 }"""));
+
+        await CreateRunner(verifier).RunCycleAsync(CancellationToken.None);
+
+        await _entityImportService.DidNotReceiveWithAnyArgs().ApplyEntityImportsAsync(default!);
+        _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.0.0");
+        GetWrittenStatus().LastResult.ShouldBe(RegionPackageUpdateResults.SignatureRejected);
+    }
+
+    [Test]
+    public async Task RunCycleAsync_MissingSignature_NotRequiredSetting_NoKeyConfigured_ImportsAndAdvancesVersion()
+    {
+        StubInstalledPackage(version: "1.0.0");
+        StubLatest("1.1.0");
+        var (verifier, rsa) = CreateRealVerifier(requireSigned: false, withPublicKey: false);
+        using var _ = rsa;
+        _marketplaceClient
+            .DownloadProfileAsync("ch", Arg.Any<CancellationToken>())
+            .Returns(Download("""{ "version": 1 }"""));
+
+        await CreateRunner(verifier).RunCycleAsync(CancellationToken.None);
+
+        await _entityImportService.Received(1).ApplyEntityImportsAsync(Arg.Any<RegionSetupProfile>());
+        _settingValues[SettingKeys.RegionPackageVersion].ShouldBe("1.1.0");
+        GetWrittenStatus().LastResult.ShouldBe(RegionPackageUpdateResults.Updated);
     }
 }
