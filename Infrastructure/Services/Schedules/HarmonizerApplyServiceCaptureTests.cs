@@ -5,6 +5,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
@@ -33,6 +34,8 @@ public class HarmonizerApplyServiceCaptureTests
     private IAnalyseScenarioService _scenarioService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IWizardRunCaptureRepository _captureRepository = null!;
+    private IScenarioComplianceService _scenarioComplianceService = null!;
+    private IScheduleTimelineService _timelineService = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
     private readonly Guid _shiftId = Guid.NewGuid();
@@ -64,6 +67,11 @@ public class HarmonizerApplyServiceCaptureTests
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
+        _scenarioComplianceService = Substitute.For<IScenarioComplianceService>();
+        _scenarioComplianceService
+            .EvaluateAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new ScenarioComplianceReport([], []));
+        _timelineService = Substitute.For<IScheduleTimelineService>();
 
         _mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
             .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
@@ -81,10 +89,12 @@ public class HarmonizerApplyServiceCaptureTests
 
     private HarmonizerApplyService BuildHarmonizerSut() => new(
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
+        _scenarioComplianceService, _timelineService,
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HolisticHarmonizerApplyService BuildHolisticSut() => new(
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
+        _scenarioComplianceService, _timelineService,
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HarmonyBitmap BestBitmap()
@@ -116,7 +126,7 @@ public class HarmonizerApplyServiceCaptureTests
         await _captureRepository.AddAsync(Arg.Do<WizardRunCapture>(c => captured = c),
             Arg.Do<IReadOnlyList<Guid>>(ids => capturedWorkIds = ids), Arg.Any<CancellationToken>());
 
-        var (_, createdIds) = await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, groupId, CancellationToken.None);
+        var (_, createdIds, _) = await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, groupId, CancellationToken.None);
 
         createdIds.ShouldBe(_createdIds);
         captured.ShouldNotBeNull();
@@ -165,8 +175,37 @@ public class HarmonizerApplyServiceCaptureTests
             .AddAsync(Arg.Any<WizardRunCapture>(), Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("db down"));
 
-        var (_, createdIds) = await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None);
+        var (_, createdIds, _) = await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None);
 
         createdIds.ShouldBe(_createdIds);
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_EvaluatesComplianceByDefault_AndReturnsReport()
+    {
+        var jobId = StoreScenarioSourceResult(Guid.NewGuid());
+        var report = new ScenarioComplianceReport([], []);
+        _scenarioComplianceService
+            .EvaluateAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(report);
+
+        var (_, _, complianceReport) = await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None);
+
+        complianceReport.ShouldBe(report);
+        await _scenarioComplianceService.Received(1).EvaluateAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_EvaluateComplianceFalse_SkipsEvaluationAndReturnsNull()
+    {
+        var jobId = StoreScenarioSourceResult(Guid.NewGuid());
+
+        var (_, _, complianceReport) = await BuildHarmonizerSut().ApplyAsScenarioAsync(
+            jobId, Guid.NewGuid(), CancellationToken.None, namePrefixOverride: null, captureRun: true, evaluateCompliance: false);
+
+        complianceReport.ShouldBeNull();
+        await _scenarioComplianceService.DidNotReceive().EvaluateAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 }

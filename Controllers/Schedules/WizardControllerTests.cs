@@ -70,12 +70,37 @@ public class WizardControllerTests
     {
         var jobId = Guid.NewGuid();
         var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
-        _applyService.ApplyAsync(jobId, Arg.Any<CancellationToken>()).Returns(ids);
+        _applyService.ApplyAsync(jobId, false, Arg.Any<CancellationToken>())
+            .Returns(new WizardApplyOutcome(ids, [], [], OverrideApplied: false));
 
         var result = await _sut.Apply(new ApplyWizardRequest(jobId), CancellationToken.None);
 
         var ok = result.Result.ShouldBeOfType<OkObjectResult>();
-        ok.Value.ShouldBeOfType<ApplyWizardResponse>().CreatedWorkIds.ShouldBeEquivalentTo(ids);
+        var response = ok.Value.ShouldBeOfType<ApplyWizardResponse>();
+        response.CreatedWorkIds.ShouldBeEquivalentTo(ids);
+        response.ComplianceViolations.ShouldBeEmpty();
+        response.SkippedPlacements.ShouldBeEmpty();
+        response.OverrideApplied.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task Apply_ForwardsOverrideBlock_AndSurfacesPartitionReport()
+    {
+        var jobId = Guid.NewGuid();
+        var skipped = new List<SkippedPlacementDto>
+        {
+            new(Guid.NewGuid(), new DateOnly(2026, 4, 21), Guid.NewGuid(), "schedule.error-list.period-cap"),
+        };
+        _applyService.ApplyAsync(jobId, true, Arg.Any<CancellationToken>())
+            .Returns(new WizardApplyOutcome([], [], skipped, OverrideApplied: true));
+
+        var result = await _sut.Apply(new ApplyWizardRequest(jobId, OverrideBlock: true), CancellationToken.None);
+
+        var ok = result.Result.ShouldBeOfType<OkObjectResult>();
+        var response = ok.Value.ShouldBeOfType<ApplyWizardResponse>();
+        response.SkippedPlacements.ShouldBe(skipped);
+        response.OverrideApplied.ShouldBeTrue();
+        await _applyService.Received(1).ApplyAsync(jobId, true, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -188,8 +213,8 @@ public class WizardControllerTests
     {
         var jobId = Guid.NewGuid();
         _applyService
-            .ApplyAsync(jobId, Arg.Any<CancellationToken>())
-            .Returns<IReadOnlyList<Guid>>(_ => throw new InvalidOperationException("No cached result"));
+            .ApplyAsync(jobId, Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns<WizardApplyOutcome>(_ => throw new InvalidOperationException("No cached result"));
 
         var result = await _sut.Apply(new ApplyWizardRequest(jobId), CancellationToken.None);
 

@@ -42,7 +42,7 @@ public class EvaluateScenarioQueryHandlerTests
         _entries = Substitute.For<IScheduleEntriesService>();
         _loader = Substitute.For<IPeriodValidationLoader>();
 
-        _loader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _loader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(new List<PeriodIssueDto>());
     }
 
@@ -164,7 +164,7 @@ public class EvaluateScenarioQueryHandlerTests
     {
         _scenarioRepo.GetByTokenAsync(Token, Arg.Any<CancellationToken>()).Returns(Scenario());
         SetGrid([], []);
-        _loader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _loader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(new List<PeriodIssueDto>
             {
                 new()
@@ -194,6 +194,6 @@ public class EvaluateScenarioQueryHandlerTests
 
         await Handler().Handle(new EvaluateScenarioQuery(null, Token), CancellationToken.None);
 
-        await _loader.Received(1).LoadAsync(From, Until, GroupId, Token, Arg.Any<CancellationToken>());
+        await _loader.Received(1).LoadAsync(From, Until, GroupId, Token, Arg.Any<int?>(), Arg.Any<CancellationToken>());
     }
 }

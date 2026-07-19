@@ -72,8 +72,8 @@ public class Wizard4RunnerTests
         var scenarioId = Guid.NewGuid();
         var resource = new AnalyseScenarioResource { Id = scenarioId, Name = "Optimizer" };
         _applyService
-            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>())
-            .Returns((resource, (IReadOnlyList<Guid>)Array.Empty<Guid>()));
+            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns((resource, (IReadOnlyList<Guid>)Array.Empty<Guid>(), (ScenarioComplianceReport?)null));
         var scenario = new AnalyseScenario { Id = scenarioId, Token = Guid.NewGuid() };
         _repository.Get(scenarioId).Returns(scenario);
 
@@ -84,7 +84,7 @@ public class Wizard4RunnerTests
 
         created.ShouldNotBeNull();
         created!.Id.ShouldBe(scenarioId);
-        await _applyService.Received(1).ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), "Optimizer", false);
+        await _applyService.Received(1).ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), "Optimizer", false, false);
         scenario.SubScoreJson.ShouldNotBeNull();
         scenario.ChurnRatio.ShouldNotBeNull();
         scenario.CreatedByUser.ShouldBe("wizard4");
@@ -108,8 +108,8 @@ public class Wizard4RunnerTests
             UntilDate = new DateOnly(2026, 4, 30),
         };
         _applyService
-            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>())
-            .Returns((resource, (IReadOnlyList<Guid>)workIds));
+            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns((resource, (IReadOnlyList<Guid>)workIds, (ScenarioComplianceReport?)null));
         var scenario = new AnalyseScenario { Id = scenarioId, Token = Guid.NewGuid(), RunGroupId = runGroupId };
         _repository.Get(scenarioId).Returns(scenario);
 
@@ -139,8 +139,8 @@ public class Wizard4RunnerTests
         var scenarioId = Guid.NewGuid();
         var resource = new AnalyseScenarioResource { Id = scenarioId, Name = "Optimizer" };
         _applyService
-            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>())
-            .Returns((resource, (IReadOnlyList<Guid>)new List<Guid> { Guid.NewGuid() }));
+            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns((resource, (IReadOnlyList<Guid>)new List<Guid> { Guid.NewGuid() }, (ScenarioComplianceReport?)null));
         _repository.Get(scenarioId).Returns(new AnalyseScenario { Id = scenarioId, Token = Guid.NewGuid() });
         _captureRepository
             .AddAsync(Arg.Any<WizardRunCapture>(), Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
@@ -164,6 +164,6 @@ public class Wizard4RunnerTests
 
         created.ShouldBeNull();
         await _applyService.DidNotReceive().ApplyAsScenarioAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>());
     }
 }

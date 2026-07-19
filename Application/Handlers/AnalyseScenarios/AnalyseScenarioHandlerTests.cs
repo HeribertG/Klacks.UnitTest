@@ -226,9 +226,18 @@ public class AcceptAnalyseScenarioCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         var softeningRepository = Substitute.For<Klacks.Api.Domain.Interfaces.IWorkSofteningRepository>();
+        var complianceService = Substitute.For<Klacks.Api.Application.Interfaces.Schedules.IScenarioComplianceService>();
+        complianceService
+            .EvaluateAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new ScenarioComplianceReport([], []));
+        var overrideAuthorizer = Substitute.For<Klacks.Api.Application.Interfaces.Schedules.ISupervisorOverrideAuthorizer>();
+        var timelineService = Substitute.For<IScheduleTimelineService>();
+        var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
 
         var logger = Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>();
-        _handler = new AcceptAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, softeningRepository, logger);
+        _handler = new AcceptAnalyseScenarioCommandHandler(
+            _repository, _scenarioService, _unitOfWork, softeningRepository,
+            complianceService, overrideAuthorizer, timelineService, httpContextAccessor, logger);
     }
 
     [Test]

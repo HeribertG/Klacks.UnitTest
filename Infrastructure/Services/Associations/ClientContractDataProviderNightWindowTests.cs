@@ -89,10 +89,34 @@ public class ClientContractDataProviderNightWindowTests
         result.NightEnd.ShouldBe("06:00");
     }
 
+    [Test]
+    public async Task GetEffectiveContractDataAsync_EditedNightWindowSettings_YieldDifferentEffectiveWindow()
+    {
+        var clientId = Guid.NewGuid();
+        await SeedSettingsAsync("22:00", "04:00");
+        var before = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        await UpdateSettingAsync(SettingKeys.SurchargeNightStart, "21:00");
+        await UpdateSettingAsync(SettingKeys.SurchargeNightEnd, "05:00");
+        var after = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        before.NightStart.ShouldBe("22:00");
+        before.NightEnd.ShouldBe("04:00");
+        after.NightStart.ShouldBe("21:00");
+        after.NightEnd.ShouldBe("05:00");
+    }
+
     private async Task SeedSettingsAsync(string nightStart, string nightEnd)
     {
         _context.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeNightStart, Value = nightStart });
         _context.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeNightEnd, Value = nightEnd });
+        await _context.SaveChangesAsync();
+    }
+
+    private async Task UpdateSettingAsync(string type, string value)
+    {
+        var row = _context.Settings.Single(s => s.Type == type);
+        row.Value = value;
         await _context.SaveChangesAsync();
     }
 

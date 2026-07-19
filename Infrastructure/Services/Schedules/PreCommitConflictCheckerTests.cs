@@ -10,6 +10,7 @@
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Settings;
@@ -90,7 +91,7 @@ public class PreCommitConflictCheckerTests
             .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime, Guid? ShiftId)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
 
-        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, _enforcementResolver, _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, restrictedTimeWindowEvaluator);
+        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, restrictedTimeWindowEvaluator);
     }
 
     [TearDown]

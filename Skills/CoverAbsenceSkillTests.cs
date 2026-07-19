@@ -33,7 +33,8 @@ public class CoverAbsenceSkillTests
             .Returns(new CoverAbsenceOutcome(
                 Guid.NewGuid(), Guid.NewGuid(), "Absence cover 10.03.26",
                 new List<CoveredSlot> { new(ShiftId, new DateOnly(2026, 3, 10), Guid.NewGuid(), "Bob") },
-                new List<UncoveredSlot> { new(Guid.NewGuid(), new DateOnly(2026, 3, 10), "locked") }));
+                new List<UncoveredSlot> { new(Guid.NewGuid(), new DateOnly(2026, 3, 10), "locked") },
+                new List<Klacks.Api.Application.DTOs.Notifications.ScheduleValidationNotificationDto>()));
     }
 
     private static SkillExecutionContext Ctx() => new()

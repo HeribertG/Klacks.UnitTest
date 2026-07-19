@@ -88,6 +88,24 @@ public class ClientContractDataProviderRateModeTests
     }
 
     [Test]
+    public async Task GetEffectiveContractDataAsync_DistinctRateModesPerKey_MapEachToItsOwnProperty()
+    {
+        _context.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeNightRateMode, Value = "fixedPerHour" });
+        _context.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeHolidayRateMode, Value = "fixedPerShift" });
+        _context.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeWE2RateMode, Value = "fixedPerHour" });
+        _context.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeWE3RateMode, Value = "fixedPerShift" });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), new DateOnly(2026, 7, 15));
+
+        result.NightRateMode.ShouldBe(SurchargeRateMode.FixedPerHour);
+        result.HolidayRateMode.ShouldBe(SurchargeRateMode.FixedPerShift);
+        result.WE1RateMode.ShouldBe(SurchargeRateMode.Multiplier);
+        result.WE2RateMode.ShouldBe(SurchargeRateMode.FixedPerHour);
+        result.WE3RateMode.ShouldBe(SurchargeRateMode.FixedPerShift);
+    }
+
+    [Test]
     public async Task GetEffectiveContractDataAsync_MinimumPerHourConfigured_IsParsed()
     {
         _context.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeWE1MinimumPerHour, Value = "75.0" });

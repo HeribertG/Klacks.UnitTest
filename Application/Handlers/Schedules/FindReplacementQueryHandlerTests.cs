@@ -214,6 +214,77 @@ public class FindReplacementQueryHandlerTests
     }
 
     [Test]
+    public async Task BlockEscalatedEnforcementError_OutsideLegacyCommentSet_IsHardExcluded()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetConflicts(new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = a,
+            Date = Date,
+            Comment = "schedule.error-list.restricted-time-window",
+            CommentParams = new Dictionary<string, string> { ["enforcementRule"] = "restrictedTimeWindow" },
+        });
+        _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(false);
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.Single().Reason.ShouldBe("schedule.error-list.restricted-time-window");
+    }
+
+    [Test]
+    public async Task BlockEscalatedEnforcementError_WithAuthorizedOverride_StaysEligible()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetConflicts(new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = a,
+            Date = Date,
+            Comment = "schedule.error-list.period-cap",
+            CommentParams = new Dictionary<string, string> { ["enforcementRule"] = "periodCap" },
+        });
+        _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
+
+        var result = await Find(overrideBlock: true);
+
+        result.Excluded.ShouldBeEmpty();
+        result.Eligible.Single().ClientId.ShouldBe(a);
+    }
+
+    [Test]
+    public async Task ErrorWithoutEnforcementTag_OutsideLegacyCommentSet_IsExcluded_EvenWhenAuthorized()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetConflicts(Conflict(a, ScheduleValidationType.Error, "schedule.error-list.counter-rule"));
+        _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(true);
+
+        var result = await Find(overrideBlock: true);
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.Single().Reason.ShouldBe("schedule.error-list.counter-rule");
+    }
+
+    [Test]
+    public async Task WarningOutsideLegacyCommentSet_StaysSoftConflict_NotExcluded()
+    {
+        var a = Guid.NewGuid();
+        SetMembers(Member(a, "Anna"));
+        SetConflicts(Conflict(a, ScheduleValidationType.Warning, "schedule.error-list.restricted-time-window"));
+
+        var result = await Find();
+
+        result.Excluded.ShouldBeEmpty();
+        var candidate = result.Eligible.Single();
+        candidate.ClientId.ShouldBe(a);
+        candidate.SoftConflicts.Single().Comment.ShouldBe("schedule.error-list.restricted-time-window");
+    }
+
+    [Test]
     public async Task Blacklisted_IsExcluded()
     {
         var a = Guid.NewGuid();

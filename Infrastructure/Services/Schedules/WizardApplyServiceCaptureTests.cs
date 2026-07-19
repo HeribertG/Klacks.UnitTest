@@ -4,6 +4,7 @@ using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
@@ -27,6 +28,7 @@ public class WizardApplyServiceCaptureTests
     private IUnitOfWork _unitOfWork = null!;
     private IWorkSofteningRepository _softeningRepository = null!;
     private IWizardRunCaptureRepository _captureRepository = null!;
+    private ICompliancePartitionService _partitionService = null!;
     private WizardApplyService _sut = null!;
 
     private readonly List<Guid> _createdIds = new() { Guid.NewGuid(), Guid.NewGuid() };
@@ -41,9 +43,18 @@ public class WizardApplyServiceCaptureTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _softeningRepository = Substitute.For<IWorkSofteningRepository>();
         _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
+        _partitionService = Substitute.For<ICompliancePartitionService>();
 
         _mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
             .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
+
+        _partitionService
+            .PartitionAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new CompliancePartitionResult(
+                Enumerable.Range(0, ci.Arg<IReadOnlyList<PlannedWorkRow>>().Count).ToList(),
+                [],
+                [],
+                OverrideApplied: false));
 
         _sut = new WizardApplyService(
             _cache,
@@ -53,6 +64,7 @@ public class WizardApplyServiceCaptureTests
             _unitOfWork,
             _softeningRepository,
             _captureRepository,
+            _partitionService,
             NullLogger<WizardApplyService>.Instance);
     }
 
@@ -93,9 +105,9 @@ public class WizardApplyServiceCaptureTests
             Arg.Do<IReadOnlyList<Guid>>(ids => capturedWorkIds = ids),
             Arg.Any<CancellationToken>());
 
-        var result = await _sut.ApplyAsync(jobId, CancellationToken.None);
+        var result = await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
 
-        result.ShouldBe(_createdIds);
+        result.CreatedWorkIds.ShouldBe(_createdIds);
         captured.ShouldNotBeNull();
         captured!.Engine.ShouldBe(WizardEngine.TokenEvolution);
         captured.ApplyKind.ShouldBe(WizardApplyKind.Direct);
@@ -117,9 +129,9 @@ public class WizardApplyServiceCaptureTests
             .AddAsync(Arg.Any<WizardRunCapture>(), Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("db down"));
 
-        var result = await _sut.ApplyAsync(jobId, CancellationToken.None);
+        var result = await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
 
-        result.ShouldBe(_createdIds);
+        result.CreatedWorkIds.ShouldBe(_createdIds);
     }
 
     [Test]
@@ -142,9 +154,9 @@ public class WizardApplyServiceCaptureTests
         await _captureRepository.AddAsync(Arg.Do<WizardRunCapture>(c => captured = c),
             Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>());
 
-        var (resource, createdIds) = await _sut.ApplyAsScenarioAsync(jobId, groupId, CancellationToken.None);
+        var (resource, outcome) = await _sut.ApplyAsScenarioAsync(jobId, groupId, overrideBlock: false, CancellationToken.None);
 
-        createdIds.ShouldBe(_createdIds);
+        outcome.CreatedWorkIds.ShouldBe(_createdIds);
         captured.ShouldNotBeNull();
         captured!.ApplyKind.ShouldBe(WizardApplyKind.Scenario);
         captured.ScenarioId.ShouldBe(scenarioId);

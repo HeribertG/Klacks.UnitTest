@@ -48,7 +48,7 @@ public class DetectConflictsSkillTests
     {
         var loader = Substitute.For<IPeriodValidationLoader>();
         loader.LoadAsync(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(issues);
         return loader;
     }
@@ -125,7 +125,7 @@ public class DetectConflictsSkillTests
         result.Success.ShouldBeTrue();
         DataAsJson(result).GetProperty("IsScenario").GetBoolean().ShouldBeTrue();
         await loader.Received(1).LoadAsync(
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), GroupId, token, Arg.Any<CancellationToken>());
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), GroupId, token, Arg.Any<int?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -137,7 +137,7 @@ public class DetectConflictsSkillTests
         await skill.ExecuteAsync(Ctx(), Params());
 
         await loader.Received(1).LoadAsync(
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), GroupId, (Guid?)null, Arg.Any<CancellationToken>());
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), GroupId, (Guid?)null, Arg.Any<int?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

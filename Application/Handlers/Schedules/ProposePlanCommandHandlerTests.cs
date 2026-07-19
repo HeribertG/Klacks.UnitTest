@@ -4,10 +4,11 @@
 /// Unit tests for ProposePlanCommandHandler: it creates the scenario, clones the real schedule under
 /// the token and flushes BEFORE the guardrail check, writes clean placements via BulkAddWorks, skips
 /// blocking placements into the rejected list, and rejects placements whose shift cannot be resolved.
+/// The partition/override semantics are exercised through the REAL CompliancePartitionService and
+/// SupervisorOverrideAuthorizer wired over a substituted checker, so the handler seam stays covered.
 /// </summary>
 
 using System.Security.Claims;
-using System.Security.Principal;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.DTOs.Notifications;
@@ -15,12 +16,14 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.Api.Infrastructure.Services.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -82,9 +85,14 @@ public class ProposePlanCommandHandlerTests
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _httpContextAccessor.HttpContext.Returns(new DefaultHttpContext { User = AnonymousUser() });
 
+        var partitionService = new CompliancePartitionService(
+            _checker,
+            new SupervisorOverrideAuthorizer(_enforcementResolver, _httpContextAccessor),
+            _httpContextAccessor,
+            Substitute.For<ILogger<CompliancePartitionService>>());
+
         _handler = new ProposePlanCommandHandler(
-            _shiftRepo, _scenarioRepo, _scenarioService, _checker, _mediator, _unitOfWork,
-            _enforcementResolver, _httpContextAccessor, Substitute.For<ILogger<ProposePlanCommandHandler>>());
+            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork);
     }
 
     private static ClaimsPrincipal AnonymousUser() => new(new ClaimsIdentity());
