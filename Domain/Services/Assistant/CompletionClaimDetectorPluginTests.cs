@@ -20,7 +20,7 @@ public class CompletionClaimDetectorPluginTests
             completionClaims:
             [
                 "已创建", "已删除", "erfolgreich abgeschlossen",
-                "作成しました", "đã tạo", "قمت بإنشاء", "utworzono", "vytvořeno",
+                "作成しました", "đã tạo", "قمت بإنشاء", "utworzono", "vytvořeno", "생성했습니다",
             ]);
     }
 
@@ -38,6 +38,7 @@ public class CompletionClaimDetectorPluginTests
     [TestCase("لقد قمت بإنشاء العميل بنجاح.", TestName = "ar_first_person_created")]
     [TestCase("Utworzono klienta pomyślnie.", TestName = "pl_impersonal_created")]
     [TestCase("Úspěšně vytvořeno.", TestName = "cs_impersonal_done")]
+    [TestCase("고객을 생성했습니다.", TestName = "ko_polite_past_created_whole_token")]
     public void ClaimsCompletion_True_For_RealisticCompletionSentences(string response)
     {
         CompletionClaimDetector.ClaimsCompletion(response).ShouldBeTrue(response);
@@ -47,6 +48,7 @@ public class CompletionClaimDetectorPluginTests
     [TestCase("Aby utworzyć klienta, kliknij przycisk Dodaj.", TestName = "pl_howto_infinitive_not_matched")]
     [TestCase("Để tạo khách hàng, hãy nhấn nút Thêm.", TestName = "vi_howto_infinitive_not_matched")]
     [TestCase("لإنشاء عميل، انقر على زر الإضافة.", TestName = "ar_howto_verbal_noun_not_matched")]
+    [TestCase("고객을 생성하려면 새로 만들기를 클릭합니다.", TestName = "ko_howto_present_not_matched")]
     public void ClaimsCompletion_False_For_HowToAnswers(string response)
     {
         CompletionClaimDetector.ClaimsCompletion(response)
