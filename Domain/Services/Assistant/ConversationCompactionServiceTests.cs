@@ -23,7 +23,7 @@ public class ConversationCompactionServiceTests
         "{\"openTasks\":[\"Finish the roster\"],\"decisions\":[\"Use the night shift\"],\"facts\":[\"Prefers mornings\"]}";
 
     private ILLMRepository _repository = null!;
-    private ILLMProviderFactory _providerFactory = null!;
+    private ICheapestModelResolver _cheapestModelResolver = null!;
     private Providers.ILLMProvider _provider = null!;
     private ConversationCompactionService _service = null!;
 
@@ -31,11 +31,11 @@ public class ConversationCompactionServiceTests
     public void SetUp()
     {
         _repository = Substitute.For<ILLMRepository>();
-        _providerFactory = Substitute.For<ILLMProviderFactory>();
+        _cheapestModelResolver = Substitute.For<ICheapestModelResolver>();
         _provider = Substitute.For<Providers.ILLMProvider>();
         _service = new ConversationCompactionService(
             Substitute.For<ILogger<ConversationCompactionService>>(),
-            _providerFactory,
+            _cheapestModelResolver,
             _repository);
     }
 
@@ -55,17 +55,15 @@ public class ConversationCompactionServiceTests
                 new() { Role = "user", Content = "How do I plan the week?" },
                 new() { Role = "assistant", Content = "Let us start with the roster." }
             });
-        _repository.GetModelsAsync(true).Returns(new List<LLMModel>
+        var cheapModel = new LLMModel
         {
-            new()
-            {
-                ModelId = CheapModelId,
-                ApiModelId = "api-m-1",
-                CostPerInputToken = 0.1m,
-                CostPerOutputToken = 0.1m
-            }
-        });
-        _providerFactory.GetProviderForModelAsync(CheapModelId).Returns(_provider);
+            ModelId = CheapModelId,
+            ApiModelId = "api-m-1",
+            CostPerInputToken = 0.1m,
+            CostPerOutputToken = 0.1m
+        };
+        _cheapestModelResolver.ResolveAsync(Arg.Any<CancellationToken>())
+            .Returns(((LLMModel?)cheapModel, (Providers.ILLMProvider?)_provider));
 
         return conversation;
     }

@@ -6,13 +6,14 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class ConfirmPendingActionSkillTests
 {
-    private InMemoryPendingConfirmationStore _store = null!;
+    private IPendingConfirmationStore _store = null!;
     private ISkillExecutor _skillExecutor = null!;
     private TurnConfirmationScope _turnScope = null!;
     private ConfirmPendingActionSkill _sut = null!;
@@ -20,7 +21,7 @@ public class ConfirmPendingActionSkillTests
     [SetUp]
     public void Setup()
     {
-        _store = new InMemoryPendingConfirmationStore();
+        _store = PendingStoreTestFactory.CreateConfirmationStore();
         _skillExecutor = Substitute.For<ISkillExecutor>();
         _turnScope = new TurnConfirmationScope();
         _sut = new ConfirmPendingActionSkill(_store, _skillExecutor, _turnScope);
@@ -52,7 +53,7 @@ public class ConfirmPendingActionSkillTests
         await _skillExecutor.Received(1).ExecuteAsync(
             Arg.Is<SkillInvocation>(i =>
                 i.SkillName == "set_autonomy_level" &&
-                (string)i.Parameters["level"] == "0"),
+                i.Parameters["level"].ToString() == "0"),
             Arg.Is<SkillExecutionContext>(c => c.BypassAutonomyGate),
             Arg.Any<CancellationToken>());
     }

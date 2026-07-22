@@ -4,8 +4,9 @@
 /// Unit tests for <see cref="ApplyCompanyRuleCommandHandler"/> covering each rule kind: surcharge writes
 /// a snapshot and the new values, counter rules resolve the optional scheduling-rule scope and reject an
 /// ambiguous or unknown name, and custom macros reject a name collision. An incomplete draft missing a
-/// required parameter is rejected before anything is persisted. Uses the real draft store, catalog and
-/// validator with a substituted settings repository, company-rule repository and mediator.
+/// required parameter is rejected before anything is persisted. Uses the real persistent draft store
+/// (backed by an EF InMemory database), catalog and validator with a substituted settings repository,
+/// company-rule repository and mediator.
 /// </summary>
 
 using System.Text.Json;
@@ -17,11 +18,13 @@ using Klacks.Api.Application.Handlers.CompanyRules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Settings;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using MacroCommands = Klacks.Api.Application.Commands.Settings.Macros;
 using MacroQueries = Klacks.Api.Application.Queries.Settings.Macros;
 using SettingsEntity = Klacks.Api.Domain.Models.Settings.Settings;
@@ -34,7 +37,7 @@ public class ApplyCompanyRuleCommandHandlerTests
     private static readonly Guid UserId = Guid.NewGuid();
     private const string Key = "conv-1";
 
-    private InMemoryPendingCompanyRuleDraftStore _store = null!;
+    private IPendingCompanyRuleDraftStore _store = null!;
     private CompanyRuleParameterCatalog _catalog = null!;
     private CompanyRuleDraftValidator _validator = null!;
     private ISettingsRepository _settings = null!;
@@ -48,7 +51,7 @@ public class ApplyCompanyRuleCommandHandlerTests
     [SetUp]
     public void Setup()
     {
-        _store = new InMemoryPendingCompanyRuleDraftStore();
+        _store = PendingStoreTestFactory.CreateCompanyRuleDraftStore();
         _catalog = new CompanyRuleParameterCatalog();
         _validator = new CompanyRuleDraftValidator(_catalog);
         _settings = Substitute.For<ISettingsRepository>();

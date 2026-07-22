@@ -4,8 +4,8 @@
 /// Unit tests for the company-rule intake skills: start creates a draft and returns the checklist,
 /// set validates and stores only valid parameters, preview summarises the draft, apply/revert relay the
 /// mediator outcome, cancel clears the draft and list projects the registry. Draft-store interactions use
-/// the real in-memory store and the real catalog/validator; persistence is dispatched through a
-/// substituted mediator.
+/// the real persistent store (backed by an EF InMemory database) and the real catalog/validator;
+/// persistence of the applied rule itself is dispatched through a substituted mediator.
 /// </summary>
 
 using Klacks.Api.Application.Commands.CompanyRules;
@@ -15,6 +15,7 @@ using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills.CompanyRules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Macros;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
@@ -22,13 +23,14 @@ using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Domain.Services.Settings;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class CompanyRuleSkillTests
 {
-    private InMemoryPendingCompanyRuleDraftStore _store = null!;
+    private IPendingCompanyRuleDraftStore _store = null!;
     private CompanyRuleParameterCatalog _catalog = null!;
     private CompanyRuleDraftValidator _validator = null!;
 
@@ -37,7 +39,7 @@ public class CompanyRuleSkillTests
     [SetUp]
     public void Setup()
     {
-        _store = new InMemoryPendingCompanyRuleDraftStore();
+        _store = PendingStoreTestFactory.CreateCompanyRuleDraftStore();
         _catalog = new CompanyRuleParameterCatalog();
         _validator = new CompanyRuleDraftValidator(_catalog);
     }

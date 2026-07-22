@@ -6,6 +6,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Skills;
@@ -15,7 +16,7 @@ public class AutonomyGateServiceTests
 {
     private IAgentAutonomyPreferenceRepository _preferenceRepository = null!;
     private ISkillRiskClassifier _riskClassifier = null!;
-    private InMemoryPendingConfirmationStore _confirmationStore = null!;
+    private IPendingConfirmationStore _confirmationStore = null!;
     private TurnConfirmationScope _turnScope = null!;
     private AutonomyGateService _sut = null!;
 
@@ -24,7 +25,7 @@ public class AutonomyGateServiceTests
     {
         _preferenceRepository = Substitute.For<IAgentAutonomyPreferenceRepository>();
         _riskClassifier = Substitute.For<ISkillRiskClassifier>();
-        _confirmationStore = new InMemoryPendingConfirmationStore();
+        _confirmationStore = PendingStoreTestFactory.CreateConfirmationStore();
         _turnScope = new TurnConfirmationScope();
         _sut = CreateGate(_turnScope);
     }
