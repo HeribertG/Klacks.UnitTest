@@ -88,8 +88,11 @@ public class SkillRiskClassifierTests
     }
 
     // Read-only skills that happen to carry a write (Crud) category are allow-listed explicitly.
+    // create_plan only drafts a plan + returns its own confirmation; execution is deferred behind
+    // confirm_pending_action, so its proposal call must stay un-gated at every autonomy level.
     [TestCase("find_customer_candidates")]
     [TestCase("find_split_shift_candidates")]
+    [TestCase("create_plan")]
     public void Classify_ReadOnlyExtras_WithCrudCategory_ReturnsReadOnly(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Crud)), Is.EqualTo(SkillRiskClass.ReadOnly));
