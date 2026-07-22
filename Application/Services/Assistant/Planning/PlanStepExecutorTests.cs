@@ -11,6 +11,7 @@ using Klacks.Api.Application.Services.Assistant.Planning;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Planning;
@@ -420,5 +421,208 @@ public class PlanStepExecutorTests
 
         Assert.That(result, Is.Null);
         await _planRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentPlan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_CreateEmployeeThenGetClientDetails_BridgesEmployeeIdToRealClientIdParam()
+    {
+        var employeeId = Guid.NewGuid();
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "create_employee", new(), "get_client_details", true)
+        });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillRegistry.GetSkillByName("get_client_details")
+            .Returns(BuildVerifyDescriptorFromSeeds("get_client_details"));
+
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "create_employee"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { EmployeeId = employeeId, FirstName = "Ada", LastName = "Lovelace" }));
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "get_client_details"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ok = true }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Is<SkillInvocation>(i =>
+                i.SkillName == "get_client_details" &&
+                i.Parameters.ContainsKey("clientId") &&
+                (Guid)i.Parameters["clientId"] == employeeId),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_CreateShiftThenGetShiftDetails_ResolvesShiftIdByCaseInsensitiveMatch()
+    {
+        var shiftId = Guid.NewGuid();
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "create_shift", new(), "get_shift_details", true)
+        });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillRegistry.GetSkillByName("get_shift_details")
+            .Returns(BuildVerifyDescriptorFromSeeds("get_shift_details"));
+
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "create_shift"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new
+            {
+                ShiftId = shiftId,
+                SealedOrderId = Guid.NewGuid(),
+                ClientId = Guid.NewGuid(),
+                MacroId = Guid.NewGuid()
+            }));
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "get_shift_details"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ok = true }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Is<SkillInvocation>(i =>
+                i.SkillName == "get_shift_details" &&
+                i.Parameters.ContainsKey("shiftId") &&
+                (Guid)i.Parameters["shiftId"] == shiftId),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_PlaceWorkThenCheckAvailability_DoesNotMisMapShiftIdIntoClientId()
+    {
+        var clientId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "place_work", new(), "check_client_availability", true)
+        });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillRegistry.GetSkillByName("check_client_availability")
+            .Returns(BuildVerifyDescriptorFromSeeds("check_client_availability"));
+
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "place_work"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new
+            {
+                ShiftId = shiftId,
+                ShiftName = "Early",
+                ClientId = clientId,
+                Date = new DateOnly(2026, 6, 1)
+            }));
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "check_client_availability"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ok = true }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Is<SkillInvocation>(i =>
+                i.SkillName == "check_client_availability" &&
+                (Guid)i.Parameters["clientId"] == clientId &&
+                (Guid)i.Parameters["ShiftId"] == shiftId),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_AmbiguousGenericIdVerify_LeavesParamUnbridgedAndLogsNote()
+    {
+        var recordingLogger = new RecordingLogger();
+        var sut = new PlanStepExecutor(
+            _planRepository, _skillExecutor, _skillRegistry, _riskClassifier,
+            _autonomyRepository, _notificationService, recordingLogger);
+
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "create_shift", new(), "read_entity", true)
+        });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        var verifyDescriptor = new SkillDescriptor(
+            "read_entity", "desc", SkillCategory.Read,
+            new[] { new SkillParameter("id", "the id", SkillParameterType.String, true) },
+            Array.Empty<string>(), Array.Empty<LLMCapability>(), null);
+        _skillRegistry.GetSkillByName("read_entity").Returns(verifyDescriptor);
+
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "create_shift"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ShiftId = Guid.NewGuid(), ClientId = Guid.NewGuid() }));
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "read_entity"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ok = true }));
+
+        var result = await sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Is<SkillInvocation>(i => i.SkillName == "read_entity" && !i.Parameters.ContainsKey("id")),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        Assert.That(recordingLogger.Messages.Any(m => m.Contains("parameter bridge") && m.Contains("'id'")),
+            Is.True, "expected an ambiguity note to be logged for the unbridged 'id' parameter");
+    }
+
+    private static SkillDescriptor BuildVerifyDescriptorFromSeeds(string skillName)
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(LocateSkillSeeds()));
+        var skill = doc.RootElement.GetProperty("skills").EnumerateArray()
+            .FirstOrDefault(s => s.TryGetProperty("name", out var n) && n.GetString() == skillName);
+        if (skill.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException($"Skill '{skillName}' not found in skill-seeds.json");
+        }
+
+        var parameters = new List<SkillParameter>();
+        if (skill.TryGetProperty("parameters", out var paramsEl) && paramsEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var p in paramsEl.EnumerateArray())
+            {
+                var name = p.GetProperty("name").GetString()!;
+                var required = p.TryGetProperty("required", out var r) && r.ValueKind == JsonValueKind.True;
+                parameters.Add(new SkillParameter(name, string.Empty, SkillParameterType.String, required));
+            }
+        }
+
+        return new SkillDescriptor(
+            skillName, "desc", SkillCategory.Read, parameters,
+            Array.Empty<string>(), Array.Empty<LLMCapability>(), null);
+    }
+
+    private static string LocateSkillSeeds()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            var candidate = Path.Combine(
+                dir.FullName, "Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException(
+            "Could not locate Klacks.Api/Application/Skills/Definitions/skill-seeds.json by walking up from the test base directory.");
+    }
+
+    private sealed class RecordingLogger : ILogger<PlanStepExecutor>
+    {
+        public List<string> Messages { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 }
