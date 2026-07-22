@@ -69,7 +69,7 @@ public class AddBreakSkillTests
     public async Task MainSchedule_RecountConfirms_ReportsVerified()
     {
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { ClientId });
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
@@ -83,7 +83,7 @@ public class AddBreakSkillTests
     public async Task MainSchedule_RecountFindsNothing_ReturnsError()
     {
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
@@ -93,15 +93,19 @@ public class AddBreakSkillTests
     }
 
     [Test]
-    public async Task ScenarioWrite_SkipsRecount_AndDoesNotClaimVerified()
+    public async Task ScenarioWrite_RecountsWithToken_AndReportsVerified()
     {
-        var result = await _skill.ExecuteAsync(Ctx(), Params(analyseToken: Guid.NewGuid()));
+        var token = Guid.NewGuid();
+        _breakRepository.GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, token, Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { ClientId });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(analyseToken: token));
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("Scenario write"));
-        Assert.That(result.Message, Does.Not.Contain("(verified)"));
-        await _breakRepository.DidNotReceive().GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        Assert.That(result.Message, Does.Contain("(verified)"));
+        await _breakRepository.Received(1).GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, token, Arg.Any<CancellationToken>());
     }
 
     [Test]

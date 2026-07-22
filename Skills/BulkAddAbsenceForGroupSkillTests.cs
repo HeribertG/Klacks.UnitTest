@@ -77,7 +77,7 @@ public class BulkAddAbsenceForGroupSkillTests
     public async Task Preview_DoesNotSendBulkCommand_AndCountsMembers()
     {
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: false));
@@ -91,7 +91,7 @@ public class BulkAddAbsenceForGroupSkillTests
     public async Task Apply_PlacesAbsenceForAllMembers_AndReportsVerified()
     {
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>(), new List<Guid> { C1, C2, C3 });
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
@@ -107,7 +107,7 @@ public class BulkAddAbsenceForGroupSkillTests
     public async Task Apply_SkipsMembersWhoAlreadyHaveTheAbsence()
     {
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { C1 }, new List<Guid> { C2, C3 });
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
@@ -122,7 +122,7 @@ public class BulkAddAbsenceForGroupSkillTests
     public async Task Apply_WarnsWhenRecountConfirmsFewerThanAttempted()
     {
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>(), new List<Guid> { C1 });
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
@@ -137,7 +137,7 @@ public class BulkAddAbsenceForGroupSkillTests
         var manyMembers = Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToList();
         _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId).Returns(manyMembers);
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
@@ -155,7 +155,7 @@ public class BulkAddAbsenceForGroupSkillTests
         _memberService.GetAllClientIdsFromGroupAndSubgroups(BernGroupId).Returns(manyMembers);
         var alreadyHave = manyMembers.Take(60).ToList();
         _breakRepository.GetClientIdsWithBreakOnDate(
-            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(alreadyHave, manyMembers);
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
