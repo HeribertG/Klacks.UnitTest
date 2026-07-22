@@ -450,6 +450,84 @@ public class LLMModelSyncServiceTests
     }
 
     [Test]
+    public async Task SyncAllProvidersAsync_NonChatModel_SkipsProbeAndInsertsAsDeleted()
+    {
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProviderId.Returns("openai");
+        provider.ProviderName.Returns("OpenAI");
+        provider.GetAvailableModelsAsync().Returns(
+            Task.FromResult<List<LLMModelDiscovery>?>(
+            [
+                new LLMModelDiscovery("gpt-5", "GPT-5"),
+                new LLMModelDiscovery("text-embedding-3-large", "Text Embedding 3 Large")
+            ]));
+        provider.TestModelAsync("gpt-5").Returns(
+            Task.FromResult(new LLMModelTestResult("gpt-5", "GPT-5", true, null, 100)));
+
+        _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.GetModelsByProviderIncludingDeletedAsync("openai").Returns([]);
+        _repo.CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>())
+             .Returns(c => c.Arg<LLMSyncNotification>());
+
+        var inserted = new List<LLMModel>();
+        _repo.CreateModelAsync(Arg.Do<LLMModel>(m => inserted.Add(m)))
+             .Returns(c => c.Arg<LLMModel>());
+
+        await _sut.SyncAllProvidersAsync();
+
+        // The non-chat model must never reach the chat/completions probe...
+        await provider.DidNotReceive().TestModelAsync("text-embedding-3-large");
+        // ...while a genuine chat model in the same list is still probed.
+        await provider.Received(1).TestModelAsync("gpt-5");
+
+        var chatModel = inserted.Single(m => m.ApiModelId == "gpt-5");
+        chatModel.IsEnabled.ShouldBeTrue();
+        chatModel.IsDeleted.ShouldBeFalse();
+
+        var embeddingModel = inserted.Single(m => m.ApiModelId == "text-embedding-3-large");
+        embeddingModel.IsEnabled.ShouldBeFalse();
+        embeddingModel.IsDeleted.ShouldBeTrue();
+        embeddingModel.DeletedTime.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task SyncAllProvidersAsync_AlreadyDeletedNonChatModel_SkipsProbeAndDoesNotRewrite()
+    {
+        var provider = Substitute.For<ILLMProvider>();
+        provider.ProviderId.Returns("openai");
+        provider.ProviderName.Returns("OpenAI");
+        provider.GetAvailableModelsAsync().Returns(
+            Task.FromResult<List<LLMModelDiscovery>?>(
+                [new LLMModelDiscovery("whisper-1", "Whisper 1")]));
+
+        _factory.GetEnabledProvidersAsync().Returns([provider]);
+        _repo.CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>())
+             .Returns(c => c.Arg<LLMSyncNotification>());
+
+        var deletedNonChat = new LLMModel
+        {
+            Id = Guid.NewGuid(),
+            ModelId = "whisper-1",
+            ApiModelId = "whisper-1",
+            ProviderId = "openai",
+            IsEnabled = false,
+            IsDeleted = true,
+            DeletedTime = DateTime.UtcNow.AddDays(-2),
+            ModelName = "Whisper 1"
+        };
+        _repo.GetModelsByProviderIncludingDeletedAsync("openai").Returns([deletedNonChat]);
+
+        await _sut.SyncAllProvidersAsync();
+
+        // A previously soft-deleted non-chat model must be a no-op every cycle:
+        // no re-probe, no rewrite, no duplicate notification.
+        await provider.DidNotReceive().TestModelAsync(Arg.Any<string>());
+        await _repo.DidNotReceive().CreateModelAsync(Arg.Any<LLMModel>());
+        await _repo.DidNotReceive().UpdateModelAsync(Arg.Any<LLMModel>());
+        await _repo.DidNotReceive().CreateSyncNotificationAsync(Arg.Any<LLMSyncNotification>());
+    }
+
+    [Test]
     public async Task SyncAllProvidersAsync_NewModel_FailsTest_NotificationHasFailedCount()
     {
         var provider = Substitute.For<ILLMProvider>();
