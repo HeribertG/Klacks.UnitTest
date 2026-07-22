@@ -2,6 +2,7 @@
 
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Associations;
+using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
@@ -28,6 +29,16 @@ public class UpdateMembershipSkillTests
         ValidUntil = null
     };
 
+    private static UpdateMembershipSkill Skill(
+        IMediator mediator,
+        IPendingConfirmationStore? store = null,
+        ClientResource? client = null)
+    {
+        mediator.Send(Arg.Any<GetQuery<ClientResource>>(), Arg.Any<CancellationToken>())
+            .Returns(client ?? new ClientResource());
+        return new UpdateMembershipSkill(mediator, store ?? Substitute.For<IPendingConfirmationStore>());
+    }
+
     [Test]
     public async Task UpdateValidFromAndType_DispatchesPutCommand()
     {
@@ -37,7 +48,7 @@ public class UpdateMembershipSkillTests
             .Returns(Membership(membershipId));
         mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -66,7 +77,7 @@ public class UpdateMembershipSkillTests
             .Returns(membership);
         mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -86,7 +97,7 @@ public class UpdateMembershipSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns<MembershipResource>(_ => throw new KeyNotFoundException());
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -105,7 +116,7 @@ public class UpdateMembershipSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(Membership(membershipId));
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -129,7 +140,7 @@ public class UpdateMembershipSkillTests
             .Returns(original, persisted);
         mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -153,7 +164,7 @@ public class UpdateMembershipSkillTests
             .Returns(original, stale);
         mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -176,7 +187,7 @@ public class UpdateMembershipSkillTests
             .Returns(_ => ++getCalls == 1 ? original : throw new KeyNotFoundException());
         mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -195,7 +206,7 @@ public class UpdateMembershipSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(Membership(membershipId));
-        var skill = new UpdateMembershipSkill(mediator);
+        var skill = Skill(mediator);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -204,5 +215,88 @@ public class UpdateMembershipSkillTests
 
         result.Success.ShouldBeTrue();
         await mediator.DidNotReceive().Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ValidFromMoreThan50YearsInPast_RequiresConfirmation_NoPut()
+    {
+        var membershipId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Membership(membershipId));
+        var store = Substitute.For<IPendingConfirmationStore>();
+        store.Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>())
+            .Returns("confirm-token");
+        var skill = Skill(mediator, store);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "1850-01-01"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Type.ShouldBe(SkillResultType.Confirmation);
+        result.Message.ShouldContain("50 years in the past");
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>());
+        store.Received(1).Create(
+            Arg.Any<Guid>(), "update_membership", Arg.Any<IReadOnlyDictionary<string, object>>());
+    }
+
+    [Test]
+    public async Task ValidFromBeforeClientBirthdate_RequiresConfirmation_NoPut()
+    {
+        var membershipId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Membership(membershipId));
+        var store = Substitute.For<IPendingConfirmationStore>();
+        store.Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>())
+            .Returns("confirm-token");
+        var client = new ClientResource { Birthdate = new DateTime(2005, 6, 15) };
+        var skill = Skill(mediator, store, client);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "2000-01-01"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Type.ShouldBe(SkillResultType.Confirmation);
+        result.Message.ShouldContain("before the employee's birthdate");
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ImplausibleValidFrom_WithOverrideFlag_DispatchesPutCommand_WithoutConfirmation()
+    {
+        var membershipId = Guid.NewGuid();
+        var original = Membership(membershipId);
+        var persisted = Membership(membershipId);
+        persisted.ValidFrom = new DateTime(1850, 1, 1);
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(original, persisted);
+        mediator.Send(Arg.Any<PutCommand<MembershipResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<MembershipResource>)ci[0]).Resource);
+        var store = Substitute.For<IPendingConfirmationStore>();
+        var skill = Skill(mediator, store);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["membershipId"] = membershipId.ToString(),
+            ["validFrom"] = "1850-01-01",
+            ["validFromPlausibilityConfirmed"] = "true"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Type.ShouldNotBe(SkillResultType.Confirmation);
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<MembershipResource>>(c => c.Resource.ValidFrom == new DateTime(1850, 1, 1)),
+            Arg.Any<CancellationToken>());
+        store.DidNotReceive().Create(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
+        await mediator.DidNotReceive().Send(Arg.Any<GetQuery<ClientResource>>(), Arg.Any<CancellationToken>());
     }
 }

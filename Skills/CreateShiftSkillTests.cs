@@ -31,6 +31,7 @@ public class CreateShiftSkillTests
     private CreateShiftSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
+    private static readonly Guid DefaultMacroId = Guid.NewGuid();
 
     [SetUp]
     public void Setup()
@@ -49,7 +50,7 @@ public class CreateShiftSkillTests
         _mediator.Send(Arg.Any<ListQuery>(), Arg.Any<CancellationToken>())
             .Returns(new List<MacroResource>().AsEnumerable());
         _defaultShiftMacroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>())
-            .Returns((Guid?)null);
+            .Returns(DefaultMacroId);
         _shiftRepository.FindReusableUncutOrderAsync(Arg.Any<Shift>(), Arg.Any<CancellationToken>())
             .Returns((Shift?)null);
         _shiftRepository.AddWithSealedOrderHandling(Arg.Any<Shift>())
@@ -106,5 +107,19 @@ public class CreateShiftSkillTests
         await _shiftRepository.Received(1).AddWithSealedOrderHandling(
             Arg.Is<Shift>(s => s.Status == ShiftStatus.SealedOrder));
         await _shiftRepository.Received(1).FindReusableUncutOrderAsync(Arg.Any<Shift>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RefusesAndDoesNotPersist_WhenNoShiftMacroConfigured_AndMacroIdOmitted()
+    {
+        _defaultShiftMacroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>())
+            .Returns((Guid?)null);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("category 'Shift'").And.Contain("list_macros"));
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

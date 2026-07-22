@@ -9,6 +9,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Settings;
@@ -23,6 +24,7 @@ public class CreateEmployeeSkillTests
     private IClientSearchRepository _searchRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ICountryResolver _countryResolver = null!;
+    private IPendingConfirmationStore _confirmationStore = null!;
     private CreateEmployeeSkill _skill = null!;
     private Client? _persistedClient;
 
@@ -40,6 +42,10 @@ public class CreateEmployeeSkillTests
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _countryResolver = Substitute.For<ICountryResolver>();
+        _confirmationStore = Substitute.For<IPendingConfirmationStore>();
+        _confirmationStore
+            .Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>())
+            .Returns("confirm-token");
 
         var ch = MakeCountry("CH", "+41", "Schweiz", "Switzerland");
         var de = MakeCountry("DE", "+49", "Deutschland", "Germany");
@@ -56,7 +62,8 @@ public class CreateEmployeeSkillTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
             .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
 
-        _skill = new CreateEmployeeSkill(_clientRepository, _searchRepository, _unitOfWork, _countryResolver);
+        _skill = new CreateEmployeeSkill(
+            _clientRepository, _searchRepository, _unitOfWork, _countryResolver, _confirmationStore);
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -327,6 +334,55 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Contain("verified"));
+    }
+
+    [Test]
+    public async Task RequiresConfirmation_AndDoesNotPersist_WhenValidFromMoreThan50YearsInPast()
+    {
+        var parameters = CompleteParameters();
+        parameters["memberSince"] = "1850-01-01";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Type, Is.EqualTo(SkillResultType.Confirmation));
+        Assert.That(result.Message, Does.Contain("50 years in the past"));
+        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _confirmationStore.Received(1).Create(
+            Arg.Any<Guid>(), "create_employee", Arg.Any<IReadOnlyDictionary<string, object>>());
+    }
+
+    [Test]
+    public async Task RequiresConfirmation_WhenValidFromBeforeBirthdate()
+    {
+        var parameters = CompleteParameters();
+        parameters["memberSince"] = "2000-01-01";
+        parameters["birthdate"] = "2005-06-15";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Type, Is.EqualTo(SkillResultType.Confirmation));
+        Assert.That(result.Message, Does.Contain("before the employee's birthdate"));
+        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
+    }
+
+    [Test]
+    public async Task Persists_WhenImplausibleValidFrom_ButOverrideFlagConfirmsIt()
+    {
+        var parameters = CompleteParameters();
+        parameters["memberSince"] = "1850-01-01";
+        parameters["validFromPlausibilityConfirmed"] = "true";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(result.Type, Is.Not.EqualTo(SkillResultType.Confirmation));
+        await _clientRepository.Received(1).Add(Arg.Any<Client>());
+        await _unitOfWork.Received(1).CompleteAsync();
+        _confirmationStore.DidNotReceive().Create(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
     }
 
     [TestCase("0791021402", "CH", "+41", "791021402")]
