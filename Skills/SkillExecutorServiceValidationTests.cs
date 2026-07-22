@@ -24,6 +24,7 @@ public class SkillExecutorServiceValidationTests
     private IGenericSkillDispatcher _genericDispatcher = null!;
     private IAutonomyGate _autonomyGate = null!;
     private IEntityChangeNotifier _entityChangeNotifier = null!;
+    private IRecentEntityRegistrar _recentEntityRegistrar = null!;
     private SkillExecutorService _sut = null!;
 
     [SetUp]
@@ -35,6 +36,7 @@ public class SkillExecutorServiceValidationTests
         _genericDispatcher = Substitute.For<IGenericSkillDispatcher>();
         _autonomyGate = Substitute.For<IAutonomyGate>();
         _entityChangeNotifier = Substitute.For<IEntityChangeNotifier>();
+        _recentEntityRegistrar = Substitute.For<IRecentEntityRegistrar>();
         _sut = new SkillExecutorService(
             _registry,
             _usageTracker,
@@ -42,6 +44,7 @@ public class SkillExecutorServiceValidationTests
             _genericDispatcher,
             _autonomyGate,
             _entityChangeNotifier,
+            _recentEntityRegistrar,
             Substitute.For<ILogger<SkillExecutorService>>());
 
         var descriptor = new SkillDescriptor(

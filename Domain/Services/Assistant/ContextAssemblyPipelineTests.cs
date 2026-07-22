@@ -27,6 +27,7 @@ public class ContextAssemblyPipelineTests
     private IMemoryRetrievalService _memory = null!;
     private ISentimentAnalyzer _sentiment = null!;
     private IPendingUserNoteRepository _pendingNotes = null!;
+    private IRecentEntityRepository _recentEntities = null!;
     private ContextAssemblyPipeline _sut = null!;
 
     [SetUp]
@@ -37,6 +38,7 @@ public class ContextAssemblyPipelineTests
         _memory = Substitute.For<IMemoryRetrievalService>();
         _sentiment = Substitute.For<ISentimentAnalyzer>();
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
+        _recentEntities = Substitute.For<IRecentEntityRepository>();
 
         _identity.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(IdentityText);
@@ -47,10 +49,13 @@ public class ContextAssemblyPipelineTests
             .Returns(new SentimentResult(SentimentMood.Neutral, 0f));
         _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(0);
+        _recentEntities.GetRecentAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new List<RecentEntityRow>());
 
         _sut = new ContextAssemblyPipeline(
             _identity, _ontology, _memory, _sentiment, new RuleContextProvider(),
             _pendingNotes,
+            _recentEntities,
             NullLogger<ContextAssemblyPipeline>.Instance);
     }
 
@@ -233,5 +238,47 @@ public class ContextAssemblyPipelineTests
         Assert.That(result, Does.Not.Contain("PENDING_NOTES"));
         await _pendingNotes.DidNotReceive().CountPendingAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_InjectsRecentEntitiesBlock_WhenPresent()
+    {
+        var userId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        _recentEntities.GetRecentAsync(userId, "conv-1", Arg.Any<CancellationToken>()).Returns(new List<RecentEntityRow>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                ConversationId = "conv-1",
+                EntityType = "shift",
+                EntityId = shiftId,
+                DisplayName = "Frühdienst",
+                Action = "created",
+                CreatedAtUtc = DateTime.UtcNow
+            }
+        });
+
+        // A terse follow-up ("del it" = 6 chars) is below MinLengthForSemanticEnrichment and hits the
+        // early return; the block must still be present, which asserts it is placed before that return.
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "del it", userId: userId, conversationId: "conv-1");
+
+        Assert.That(result, Does.Contain("[RECENTLY_TOUCHED]"));
+        Assert.That(result, Does.Contain(shiftId.ToString()));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoRecentEntitiesBlock_WhenConversationIdMissing()
+    {
+        var userId = Guid.NewGuid();
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "hello there", userId: userId);
+
+        Assert.That(result, Does.Not.Contain("[RECENTLY_TOUCHED]"));
+        await _recentEntities.DidNotReceive().GetRecentAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }
