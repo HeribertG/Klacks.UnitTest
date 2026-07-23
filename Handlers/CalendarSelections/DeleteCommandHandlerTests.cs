@@ -27,11 +27,13 @@ public class DeleteCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
         var logger = Substitute.For<ILogger<DeleteCommandHandler>>();
+        var holidayCache = Substitute.For<IHolidayCalculatorCache>();
         _handler = new DeleteCommandHandler(
             _calendarSelectionRepository,
             _settingsRepository,
             new ScheduleMapper(),
             _unitOfWork,
+            holidayCache,
             logger);
     }
 

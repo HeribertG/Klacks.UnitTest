@@ -24,7 +24,7 @@ public class ScheduleValidationBuilderTests
         _entries = [];
     }
 
-    private static SchedulingPolicy Policy(double maxWeeklyHours = 50, int minRestDays = 2)
+    private static SchedulingPolicy Policy(double maxWeeklyHours = 50, decimal minRestDays = 2)
         => new(
             MinRestHours: TimeSpan.FromHours(11),
             MaxDailyHours: TimeSpan.FromHours(10),
@@ -99,6 +99,30 @@ public class ScheduleValidationBuilderTests
         AddWorkDays(3);
 
         ScheduleValidationBuilder.AddMinRestDays(_entries, _timeline, "Test", Monday, Monday.AddDays(2), Policy());
+
+        _entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AddMinRestDays_FractionalThreshold_OneRestDayViolates()
+    {
+        // Spain (ET Art. 37.1) requires 1.5 rest days/week on average - one whole rest day must
+        // still be flagged (1 >= 1.5 is false).
+        AddWorkDays(6);
+
+        ScheduleValidationBuilder.AddMinRestDays(_entries, _timeline, "Test", Monday, Sunday, Policy(minRestDays: 1.5m));
+
+        _entries.Count.ShouldBe(1);
+        _entries[0].CommentParams["actualDays"].ShouldBe("1");
+        _entries[0].CommentParams["minDays"].ShouldBe("1.5");
+    }
+
+    [Test]
+    public void AddMinRestDays_FractionalThreshold_TwoRestDaysDoNotViolate()
+    {
+        AddWorkDays(5);
+
+        ScheduleValidationBuilder.AddMinRestDays(_entries, _timeline, "Test", Monday, Sunday, Policy(minRestDays: 1.5m));
 
         _entries.ShouldBeEmpty();
     }

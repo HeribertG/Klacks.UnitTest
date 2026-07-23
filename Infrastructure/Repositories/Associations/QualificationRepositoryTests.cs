@@ -24,7 +24,7 @@ public class QualificationRepositoryTests
         _context.Qualification.AddRange(
             new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Zusatzausbildung" }, Industry = string.Empty },
             new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Anästhesiepflege" }, Industry = "healthcare" },
-            new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Bewachung" }, Industry = "Security" });
+            new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Bewachung" }, Industry = "security" });
         _context.SaveChanges();
     }
 
@@ -43,7 +43,7 @@ public class QualificationRepositoryTests
     }
 
     [Test]
-    public async Task GetSelectableAsync_MixedCaseSlugAndRowValue_MatchesCaseInsensitively()
+    public async Task GetSelectableAsync_MixedCaseSlug_NormalizesToLowercaseAndMatchesPersistedRow()
     {
         var result = await _repository.GetSelectableAsync(new[] { "SECURITY" });
 
@@ -56,5 +56,29 @@ public class QualificationRepositoryTests
         var result = await _repository.GetAllAsync();
 
         result.Count.ShouldBe(3);
+    }
+
+    [Test]
+    public async Task GetSelectableAsync_EmptySlugCollection_ReturnsOnlyIndustryLessRows()
+    {
+        var result = await _repository.GetSelectableAsync(Array.Empty<string>());
+
+        result.Select(q => q.Name.De).ShouldBe(new[] { "Zusatzausbildung" });
+    }
+
+    [Test]
+    public async Task GetByIndustryAsync_MixedCaseArgument_NormalizesToLowercaseAndMatchesPersistedRow()
+    {
+        var result = await _repository.GetByIndustryAsync("SECURITY");
+
+        result.Select(q => q.Name.De).ShouldBe(new[] { "Bewachung" });
+    }
+
+    [Test]
+    public async Task GetByIndustryAsync_NoRowForIndustry_ReturnsEmpty()
+    {
+        var result = await _repository.GetByIndustryAsync("logistics");
+
+        result.ShouldBeEmpty();
     }
 }

@@ -82,7 +82,7 @@ public class SchedulingRuleReadSkillsTests
         data.GetProperty("MaxDailyHours").GetDouble().ShouldBe(SchedulingPolicyDefaults.MaxDailyHours);
         data.GetProperty("MaxConsecutiveDays").GetInt32().ShouldBe(SchedulingPolicyDefaults.MaxConsecutiveDays);
         data.GetProperty("MaxWeeklyHours").GetDouble().ShouldBe(SchedulingPolicyDefaults.MaxWeeklyHours);
-        data.GetProperty("MinRestDays").GetInt32().ShouldBe(SchedulingPolicyDefaults.MinRestDays);
+        data.GetProperty("MinRestDays").GetDecimal().ShouldBe(SchedulingPolicyDefaults.MinRestDays);
         data.GetProperty("IsFallback").GetBoolean().ShouldBeTrue();
     }
 }

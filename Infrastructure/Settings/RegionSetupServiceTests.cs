@@ -1417,8 +1417,6 @@ public class RegionSetupServiceTests
         rule.NightStart.ShouldBe("23:00");
         rule.NightEnd.ShouldBe("06:00");
         rule.ImportSourceKey.ShouldBe("region-setup:industryProfiles:healthcare:rule:de-klinik-standard");
-        rule.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
-        rule.Industry.ShouldBe("healthcare");
 
         var qualification = _addedQualifications.Single();
         qualification.Name.De.ShouldBe("Examinierte Pflegefachkraft");
@@ -1428,6 +1426,24 @@ public class RegionSetupServiceTests
         qualification.ImportSourceKey.ShouldBe("region-setup:industryProfiles:healthcare:qualification:examinierte-pflegefachkraft");
         qualification.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
         qualification.Industry.ShouldBe("healthcare");
+    }
+
+    [Test]
+    public async Task ApplyAsync_SchedulingRulePresetWithFractionalMinRestDays_DeserializesAndImports()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "healthcare": {
+                "schedulingRulePresets": [ { "name": "ES Sanidad Standard", "minRestDays": 1.5 } ]
+            } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        var rule = _addedSchedulingRules.Single();
+        rule.MinRestDays.ShouldBe(1.5m);
+        rule.ImportContentHash.ShouldNotBeNullOrWhiteSpace();
+        rule.Industry.ShouldBe("healthcare");
     }
 
     [Test]
@@ -1544,6 +1560,21 @@ public class RegionSetupServiceTests
     {
         var json = """
             { "version": 1, "activeIndustries": [ "security" ], "industryProfiles": { "healthcare": {} } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().AddSetting(default!);
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(default!);
+        _addedSchedulingRules.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApplyAsync_ActiveIndustriesContainsCustomMarker_ThrowsWithoutAnyWrite()
+    {
+        var json = $$"""
+            { "version": 1, "activeIndustries": [ "{{IndustrySlugs.Custom}}" ], "industryProfiles": { "healthcare": {} } }
             """;
         var service = CreateService(WriteTempFile(json));
 

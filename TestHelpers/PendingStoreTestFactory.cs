@@ -1,3 +1,5 @@
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Assistant;
@@ -28,6 +30,13 @@ internal static class PendingStoreTestFactory
         var scopeFactory = CreateScopeFactory<IPendingCompanyRuleDraftRepository>(
             context => new PendingCompanyRuleDraftRepository(context));
         return new PersistentPendingCompanyRuleDraftStore(scopeFactory);
+    }
+
+    public static IPendingPlanningProfileDraftStore CreatePlanningProfileDraftStore()
+    {
+        var scopeFactory = CreateScopeFactory<IPendingPlanningProfileDraftRepository>(
+            context => new PendingPlanningProfileDraftRepository(context));
+        return new PersistentPendingPlanningProfileDraftStore(scopeFactory);
     }
 
     private static IServiceScopeFactory CreateScopeFactory<TRepository>(Func<DataBaseContext, TRepository> createRepository)

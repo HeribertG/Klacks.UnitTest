@@ -119,6 +119,25 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
+    // apply_planning_profile creates real SchedulingRule rows and flips ACTIVE_INDUSTRIES, so it must
+    // always require human confirmation (Sensitive) even at the Autonomous default level.
+    [Test]
+    public void Classify_ApplyPlanningProfile_ReturnsSensitive()
+    {
+        Assert.That(_sut.Classify(Descriptor("apply_planning_profile")), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // The planning-profile intake steps that only touch the ephemeral draft must never be gated.
+    // start/set/cancel carry a Crud category and are allow-listed; preview carries a Query category.
+    [TestCase("start_planning_profile_setup", SkillCategory.Crud)]
+    [TestCase("set_planning_profile_parameters", SkillCategory.Crud)]
+    [TestCase("cancel_planning_profile_setup", SkillCategory.Crud)]
+    [TestCase("preview_planning_profile", SkillCategory.Query)]
+    public void Classify_PlanningProfileDraftAndReadSkills_ReturnsReadOnly(string name, SkillCategory category)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
     [TestCase(SkillCategory.Query)]
     [TestCase(SkillCategory.Read)]
     [TestCase(SkillCategory.Validation)]

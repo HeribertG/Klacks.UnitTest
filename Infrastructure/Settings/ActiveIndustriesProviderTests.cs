@@ -79,4 +79,30 @@ public class ActiveIndustriesProviderTests
 
         result.ShouldBeNull();
     }
+
+    [TestCase("custom")]
+    [TestCase("Custom")]
+    [TestCase(" CUSTOM ")]
+    public async Task GetActiveIndustrySlugsAsync_CustomMarker_ReturnsEmptyNonNullCollection(string value)
+    {
+        _settingsReader.GetSetting(SettingKeys.ActiveIndustries)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.ActiveIndustries, Value = value });
+
+        var result = await _provider.GetActiveIndustrySlugsAsync();
+
+        result.ShouldNotBeNull();
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GetActiveIndustrySlugsAsync_LegacyMultiSlugList_ReturnsAllNormalized()
+    {
+        _settingsReader.GetSetting(SettingKeys.ActiveIndustries)
+            .Returns(new SettingsModel { Id = Guid.NewGuid(), Type = SettingKeys.ActiveIndustries, Value = "healthcare,security" });
+
+        var result = await _provider.GetActiveIndustrySlugsAsync();
+
+        result.ShouldNotBeNull();
+        result.ShouldBe(new[] { "healthcare", "security" });
+    }
 }

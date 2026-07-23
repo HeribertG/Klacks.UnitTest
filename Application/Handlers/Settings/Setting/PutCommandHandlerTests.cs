@@ -4,12 +4,16 @@
 /// Tests for the settings PutCommandHandler dispatch of SurchargeSettingsChangedEvent: a
 /// surcharge-relevant key whose stored value actually changed dispatches exactly one event after the
 /// commit, an irrelevant key or an unchanged value dispatches nothing, a previously missing relevant
-/// setting counts as changed, and a dispatcher failure never breaks the committed update.
+/// setting counts as changed, and a dispatcher failure never breaks the committed update. Also
+/// covers the ACTIVE_INDUSTRIES value guard: an invalid value is rejected before anything is
+/// persisted, a valid value passes through unchanged.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Settings.Settings;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Events;
+using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Services.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using SettingHandlers = Klacks.Api.Application.Handlers.Settings.Setting;
 using SettingsEntity = Klacks.Api.Domain.Models.Settings.Settings;
@@ -43,6 +47,7 @@ public class PutCommandHandlerTests
             _encryptionService,
             _unitOfWork,
             _eventDispatcher,
+            new SettingValueValidator(),
             NullLogger<SettingHandlers.PutCommandHandler>.Instance);
     }
 
@@ -108,5 +113,28 @@ public class PutCommandHandlerTests
 
         result.ShouldNotBeNull();
         result!.Value.ShouldBe("1.5");
+    }
+
+    [Test]
+    public async Task Handle_ActiveIndustriesWithUnknownSlug_ThrowsAndDoesNotPersist()
+    {
+        var command = new PutCommand(BuildSetting(SettingKeys.ActiveIndustries, "not-a-slug"));
+
+        await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(command, CancellationToken.None));
+
+        await _settingsRepository.DidNotReceiveWithAnyArgs().PutSetting(Arg.Any<SettingsEntity>());
+        await _unitOfWork.DidNotReceiveWithAnyArgs().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_ActiveIndustriesWithKnownSlug_Persists()
+    {
+        var command = new PutCommand(BuildSetting(SettingKeys.ActiveIndustries, "healthcare"));
+
+        var result = await _sut.Handle(command, CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.Value.ShouldBe("healthcare");
+        await _settingsRepository.Received(1).PutSetting(Arg.Any<SettingsEntity>());
     }
 }

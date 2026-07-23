@@ -120,6 +120,7 @@ public static class SkillFeatureCoverageMap
         ["CounterRulesController"] = Excluded("admin settings CRUD for counter rules (compliance event thresholds); admin settings card only, no Klacksy chat skill in this iteration"),
         ["PeriodCapRulesController"] = Excluded("admin settings CRUD for period-cap rules (compliance hour caps); admin settings card only, no Klacksy chat skill in this iteration"),
         ["RestrictedTimeWindowRulesController"] = Excluded("admin settings CRUD for restricted time-window rules (compliance forbidden windows); admin settings card only, no Klacksy chat skill in this iteration"),
+        ["IndustryTemplatesController"] = Covered("start_planning_profile_setup", "set_planning_profile_parameters", "preview_planning_profile", "apply_planning_profile", "cancel_planning_profile_setup"),
 
         ["BranchController"] = Covered("list_branches", "create_branch", "update_branch", "delete_branch"),
         ["CalendarRulesController"] = Covered("import_calendar_rules", "validate_calendar_rule", "list_holidays_for_period", "validate_holiday_overlap"),
