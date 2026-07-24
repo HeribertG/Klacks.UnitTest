@@ -2,8 +2,8 @@
 
 /// <summary>
 /// Phase 4a (hero, live) tests: after a skill executes, an active sequential successor raises a
-/// proactive suggestion event into the trigger pipeline with human-readable labels; no successor
-/// raises nothing.
+/// proactive suggestion event into the trigger pipeline with human-readable labels, targeted at
+/// the executing user only; no successor raises nothing.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.SkillGraph;
@@ -34,8 +34,9 @@ public class SkillSequenceProactiveNotifierTests
     }
 
     [Test]
-    public async Task Notify_WithActiveSuccessor_RaisesSuggestionEventWithLabels()
+    public async Task Notify_WithActiveSuccessor_RaisesSuggestionEventWithLabelsTargetedAtExecutingUser()
     {
+        var executingUserId = Guid.NewGuid();
         var (sut, trigger) = Build(
             new List<SkillRelation> { Seq("aa", "bb", 0.85) },
             new List<AgentSkill> { Skill("aa", "Add a note"), Skill("bb", "Send an email") });
@@ -43,12 +44,13 @@ public class SkillSequenceProactiveNotifierTests
         trigger.When(t => t.OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>()))
             .Do(ci => captured = ci.Arg<IAgentTriggerEvent>());
 
-        await sut.NotifyAfterSkillAsync("aa");
+        await sut.NotifyAfterSkillAsync("aa", executingUserId);
 
         captured.ShouldNotBeNull();
         captured!.Kind.ShouldBe(AgentTriggerKinds.SkillSequenceSuggestion);
         captured.Summary.ShouldContain("Add a note");
         captured.Summary.ShouldContain("Send an email");
+        captured.TargetUserId.ShouldBe(executingUserId);
     }
 
     [Test]
@@ -56,7 +58,7 @@ public class SkillSequenceProactiveNotifierTests
     {
         var (sut, trigger) = Build(new List<SkillRelation>(), new List<AgentSkill> { Skill("aa", "Add a note") });
 
-        await sut.NotifyAfterSkillAsync("aa");
+        await sut.NotifyAfterSkillAsync("aa", Guid.NewGuid());
 
         await trigger.DidNotReceive().OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>());
     }

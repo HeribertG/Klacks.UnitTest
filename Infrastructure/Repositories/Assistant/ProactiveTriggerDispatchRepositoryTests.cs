@@ -5,8 +5,10 @@
 /// (user, kind, dedup key), and after a failed SaveChangesAsync the poisoned row is detached so
 /// the change tracker stays clean and subsequent records in the same scope still succeed.
 /// Also covers the inbox surface: listing own rows newest first with unread filter and take,
-/// counting unread rows, and marking single rows (ownership enforced) or all rows as read.
+/// counting unread rows, and marking single rows (ownership enforced) as read.
 /// Uses a shared in-memory DataBaseContext, mirroring the neighbouring repository tests.
+/// MarkAllReadAsync uses ExecuteUpdateAsync, which the EF in-memory provider does not support,
+/// so it is intentionally not covered here (same as the other ExecuteUpdateAsync repositories).
 /// </summary>
 
 using Klacks.Api.Domain.Models.Assistant;
@@ -224,26 +226,6 @@ public class ProactiveTriggerDispatchRepositoryTests
         var result = await new ProactiveTriggerDispatchRepository(context).MarkReadAsync(Guid.NewGuid(), "user-a");
 
         result.ShouldBeFalse();
-    }
-
-    [Test]
-    public async Task MarkAllReadAsync_MarksAllOwnUnreadRows_LeavesOtherUsersUntouched()
-    {
-        var foreignId = Guid.NewGuid();
-        using (var seedContext = CreateContext())
-        {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
-            await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
-            await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-2"));
-            await repository.RecordAsync(Row(foreignId, "user-b", "dedup-3"));
-        }
-
-        using var context = CreateContext();
-        await new ProactiveTriggerDispatchRepository(context).MarkAllReadAsync("user-a");
-
-        using var verify = CreateContext();
-        (await verify.AgentTriggerDispatches.CountAsync(d => d.UserId == "user-a" && d.ReadAtUtc == null)).ShouldBe(0);
-        (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == foreignId)).ReadAtUtc.ShouldBeNull();
     }
 
     [Test]

@@ -39,7 +39,6 @@ public class AgentTriggerServiceTests
         _activityTracker = Substitute.For<IUserActivityTracker>();
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-        // Default: the users used across the dispatch tests are planners, so the audience gate is a no-op there.
         SetPlanners("user-a", "user-b");
         _sut = new AgentTriggerService(_rateLimiter, _preferenceService, _notificationService,
             _dispatchRepository, _activityTracker, _planningAudienceResolver, NullLogger<AgentTriggerService>.Instance);
@@ -47,6 +46,10 @@ public class AgentTriggerServiceTests
 
     private void SetPlanners(params string[] userIds) =>
         _planningAudienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase));
+
+    private void SetAdmins(params string[] userIds) =>
+        _planningAudienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase));
 
     private static UnstaffedShiftTriggerEvent MakeEvent(int daysUntil = 2) =>
@@ -213,7 +216,6 @@ public class AgentTriggerServiceTests
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
-        // UnstaffedShift with daysUntil=1 is High severity, but is an i18n event.
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
@@ -401,14 +403,47 @@ public class AgentTriggerServiceTests
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
     }
+
+    [Test]
+    public async Task OnEventAsync_SkillSequenceSuggestion_ReachesOnlyTheTargetUser_NeverOtherConnectedUsers()
+    {
+        var target = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        _notificationService.GetConnectedUserIds().Returns(new[] { target.ToString(), other.ToString() });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        await _sut.OnEventAsync(new SkillSequenceSuggestionTriggerEvent("Add a note", "Send an email", target));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == target.ToString()), Arg.Any<CancellationToken>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == other.ToString()), Arg.Any<CancellationToken>());
+        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_AdminOnly_RecordsForOfflineAdminsViaAdminAudience_NeverForConnectedNonAdmins()
+    {
+        const string offlineAdmin = "admin-1";
+        const string connectedEmployee = "employee-1";
+        _notificationService.GetConnectedUserIds().Returns(new[] { connectedEmployee });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetAdmins(offlineAdmin);
+
+        await _sut.OnEventAsync(new OrderImportFailedTriggerEvent(Guid.NewGuid(), "orders.csv", "parse error"));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == offlineAdmin), Arg.Any<CancellationToken>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == connectedEmployee), Arg.Any<CancellationToken>());
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
+        await _planningAudienceResolver.Received(1).GetAdminUserIdsAsync(Arg.Any<CancellationToken>());
+        await _planningAudienceResolver.DidNotReceiveWithAnyArgs().GetPlanningUserIdsAsync(default);
+    }
 }
 
 [TestFixture]
 public class OperationalTriggerEventDedupKeyTests
 {
-    // Regression guard: i18n summaries are identical per event type, so each event MUST override
-    // DedupKey with discriminating fields — otherwise the second alert of the same kind is dropped.
-
     [Test]
     public void AllOperationalEvents_HaveDiscriminatingDedupKey_NotEqualToSummary()
     {
@@ -429,7 +464,6 @@ public class OperationalTriggerEventDedupKeyTests
         var groupId = Guid.NewGuid();
         var endDate = new DateOnly(2026, 6, 30);
 
-        // Same group + period end, only the days-until countdown differs → same dedup key (alert once).
         var threeDays = new PeriodCloseDueTriggerEvent(groupId, "Group", endDate, 3);
         var oneDay = new PeriodCloseDueTriggerEvent(groupId, "Group", endDate, 1);
 
