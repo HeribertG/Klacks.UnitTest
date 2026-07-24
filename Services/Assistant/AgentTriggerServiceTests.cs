@@ -2,9 +2,13 @@
 
 /// <summary>
 /// Unit tests for AgentTriggerService — verifies notification dispatch per connected user,
-/// rate-limit gating, severity-tag prefix and graceful handling when no users are connected.
+/// rate-limit gating, severity-tag prefix, graceful handling when no users are connected,
+/// that each dispatch record carries content key, params, severity and the sent message id,
+/// and that overlong summary param values are capped so the persisted JSON never exceeds
+/// the database column limit while always staying valid JSON.
 /// </summary>
 
+using System.Text.Json;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -54,6 +58,16 @@ public class AgentTriggerServiceTests
         public IReadOnlyDictionary<string, object?> Payload => new Dictionary<string, object?>();
     }
 
+    private sealed record ParamsBroadcastEvent(IReadOnlyDictionary<string, string> Params) : IAgentTriggerEvent
+    {
+        public string Kind => "test_params";
+        public string Severity => AgentTriggerSeverity.Low;
+        public string Summary => "Params summary.";
+        public IReadOnlyDictionary<string, object?> Payload => new Dictionary<string, object?>();
+        public IReadOnlyDictionary<string, string>? SummaryParams => Params;
+    }
+
+
     [Test]
     public async Task OnEventAsync_NoConnectedUsers_SkipsDispatch()
     {
@@ -73,8 +87,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(MakeEvent());
 
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
         _rateLimiter.Received(1).RecordFire("user-a", AgentTriggerKinds.UnstaffedShift);
         _rateLimiter.Received(1).RecordFire("user-b", AgentTriggerKinds.UnstaffedShift);
     }
@@ -88,8 +102,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(MakeEvent());
 
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
-        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
     }
 
     [Test]
@@ -102,8 +116,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(MakeEvent());
 
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
-        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
     }
 
     [Test]
@@ -144,7 +158,7 @@ public class AgentTriggerServiceTests
             "user-a",
             Arg.Is<string>(s => s.StartsWith("[HIGH]")),
             Arg.Any<string?>(),
-            Arg.Any<IReadOnlyDictionary<string, string>?>());
+            Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
     }
 
     [Test]
@@ -160,7 +174,8 @@ public class AgentTriggerServiceTests
             "user-a",
             Arg.Is<string>(s => s == ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.UnstaffedShift),
             Arg.Any<string?>(),
-            Arg.Is<IReadOnlyDictionary<string, string>?>(p => p != null && p.ContainsKey("date") && p.ContainsKey("days")));
+            Arg.Is<IReadOnlyDictionary<string, string>?>(p => p != null && p.ContainsKey("date") && p.ContainsKey("days")),
+            Arg.Any<string?>());
     }
 
     [Test]
@@ -175,9 +190,9 @@ public class AgentTriggerServiceTests
         await _sut.OnEventAsync(MakeEvent());
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
-            planner, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+            planner, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync(
-            employee, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+            employee, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
     }
 
     [Test]
@@ -202,7 +217,94 @@ public class AgentTriggerServiceTests
         await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Broadcast."));
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
-            "employee-1", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+            "employee-1", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_Dispatch_RecordsContentKeySeverityAndCouplesMessageIdToRowId()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        string? sentMessageId = null;
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _notificationService
+            .When(n => n.SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>()))
+            .Do(ci => sentMessageId = ci.ArgAt<string?>(4));
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+
+        var triggerEvent = MakeEvent();
+        await _sut.OnEventAsync(triggerEvent);
+
+        Assert.That(sentMessageId, Is.Not.Null.And.Not.Empty);
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.Id.ToString(), Is.EqualTo(sentMessageId));
+        Assert.That(recordedRow.UserId, Is.EqualTo("user-a"));
+        Assert.That(recordedRow.TriggerKind, Is.EqualTo(triggerEvent.Kind));
+        Assert.That(recordedRow.DedupKey, Is.EqualTo(triggerEvent.DedupKey));
+        Assert.That(recordedRow.ContentKey, Is.EqualTo(triggerEvent.Summary));
+        Assert.That(recordedRow.Severity, Is.EqualTo(triggerEvent.Severity));
+        Assert.That(recordedRow.ContentParamsJson, Does.Contain("date"));
+        Assert.That(recordedRow.Reaction, Is.EqualTo(ProactiveReaction.None));
+        Assert.That(recordedRow.ReactionAtUtc, Is.Null);
+    }
+
+    [Test]
+    public async Task OnEventAsync_OverlongParamValue_CapsValueAndKeepsJsonWithinColumnLimit()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+        var overlongValue = new string('x', 6000);
+
+        await _sut.OnEventAsync(new ParamsBroadcastEvent(new Dictionary<string, string> { ["error"] = overlongValue }));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ContentParamsJson, Is.Not.Null);
+        Assert.That(recordedRow.ContentParamsJson!.Length, Is.LessThanOrEqualTo(ProactiveTriggerDispatchLimits.ContentParamsJsonMaxLength));
+        var deserialized = JsonSerializer.Deserialize<Dictionary<string, string>>(recordedRow.ContentParamsJson);
+        Assert.That(deserialized, Is.Not.Null);
+        Assert.That(deserialized!["error"], Has.Length.EqualTo(ProactiveTriggerDispatchLimits.ContentParamValueMaxLength));
+        Assert.That(deserialized["error"], Does.EndWith(ProactiveTriggerDispatchLimits.TruncationSuffix));
+    }
+
+    [Test]
+    public async Task OnEventAsync_ParamsExceedColumnLimitEvenAfterCapping_StoresNullInsteadOfInvalidJson()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+        var manyParams = Enumerable.Range(0, 6)
+            .ToDictionary(i => $"param{i}", i => new string('x', 900));
+
+        await _sut.OnEventAsync(new ParamsBroadcastEvent(manyParams));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ContentParamsJson, Is.Null);
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            "user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_SendFails_DoesNotRecordDispatchOrRateLimiterFire()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _notificationService
+            .SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>())
+            .Returns(Task.FromException(new InvalidOperationException("send failed")));
+
+        await _sut.OnEventAsync(MakeEvent());
+
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
+        _rateLimiter.DidNotReceiveWithAnyArgs().RecordFire(default!, default!);
     }
 
     [Test]
@@ -215,8 +317,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("sport", target));
 
-        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
-        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
     }
 }
 
