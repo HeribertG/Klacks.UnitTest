@@ -1,11 +1,13 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for AgentTriggerService — verifies notification dispatch per connected user,
-/// rate-limit gating, severity-tag prefix, graceful handling when no users are connected,
-/// that each dispatch record carries content key, params, severity and the sent message id,
-/// and that overlong summary param values are capped so the persisted JSON never exceeds
-/// the database column limit while always staying valid JSON.
+/// Unit tests for AgentTriggerService — verifies the severity routing matrix (high goes to the
+/// live chat push, medium/low operational alerts only to the persisted inbox plus a lightweight
+/// inbox-changed signal, companion events always reach the chat), that the recipient set derives
+/// from the event audience so offline planners still get inbox rows, that preference, dedup and
+/// rate-limit gates block before anything is persisted, that rows are persisted before the live
+/// push so a failed push keeps the message reachable via the inbox, and that overlong summary
+/// param values are capped so the persisted JSON never exceeds the database column limit.
 /// </summary>
 
 using System.Text.Json;
@@ -69,62 +71,101 @@ public class AgentTriggerServiceTests
 
 
     [Test]
-    public async Task OnEventAsync_NoConnectedUsers_SkipsDispatch()
+    public async Task OnEventAsync_CompanionBroadcast_NoConnectedUsers_PersistsAndSendsNothing()
     {
         _notificationService.GetConnectedUserIds().Returns(Array.Empty<string>());
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Broadcast."));
 
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
     }
 
     [Test]
-    public async Task OnEventAsync_DispatchesToEachConnectedUser_AndRecordsFire()
+    public async Task OnEventAsync_HighSeverity_ConnectedPlanners_LivePushesAndRecordsFire()
     {
         var users = new[] { "user-a", "user-b" };
         _notificationService.GetConnectedUserIds().Returns(users);
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
         await _notificationService.Received(1).SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
         _rateLimiter.Received(1).RecordFire("user-a", AgentTriggerKinds.UnstaffedShift);
         _rateLimiter.Received(1).RecordFire("user-b", AgentTriggerKinds.UnstaffedShift);
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
     }
 
     [Test]
-    public async Task OnEventAsync_RateLimited_SkipsThatUser()
+    public async Task OnEventAsync_MediumSeverity_ConnectedPlanner_RecordsAndSignalsInboxWithoutChatPush()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        _dispatchRepository.CountUnreadAsync("user-a", Arg.Any<CancellationToken>()).Returns(3);
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 5));
+
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        _rateLimiter.Received(1).RecordFire("user-a", AgentTriggerKinds.UnstaffedShift);
+        await _notificationService.Received(1).SendProactiveInboxChangedAsync("user-a", 3);
+    }
+
+    [Test]
+    public async Task OnEventAsync_PlannersOnly_OfflinePlanners_RecordsInboxRowsWithoutAnyPush()
+    {
+        _notificationService.GetConnectedUserIds().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
+        _rateLimiter.Received(1).RecordFire("user-a", AgentTriggerKinds.UnstaffedShift);
+        _rateLimiter.Received(1).RecordFire("user-b", AgentTriggerKinds.UnstaffedShift);
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_RateLimited_BlocksThatUserBeforePersist()
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a", "user-b" });
         _rateLimiter.ShouldFire("user-a", Arg.Any<string>()).Returns(true);
         _rateLimiter.ShouldFire("user-b", Arg.Any<string>()).Returns(false);
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task OnEventAsync_MutedByPreference_SkipsThatUser()
+    public async Task OnEventAsync_MutedByPreference_BlocksThatUserBeforePersist()
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a", "user-b" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _preferenceService.IsAllowedAsync("user-a", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _preferenceService.IsAllowedAsync("user-b", Arg.Any<string>(), Arg.Any<string>()).Returns(false);
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task OnEventAsync_AlreadyDispatched_SkipsDedup()
+    public async Task OnEventAsync_AlreadyDispatched_DedupBlocksBeforePersist()
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
         _dispatchRepository
             .WasDispatchedAsync("user-a", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -132,18 +173,23 @@ public class AgentTriggerServiceTests
         await _sut.OnEventAsync(MakeEvent());
 
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
+        _rateLimiter.DidNotReceiveWithAnyArgs().RecordFire(default!, default!);
     }
 
     [Test]
-    public async Task OnEventAsync_UserActiveInConversation_SkipsThatUser()
+    public async Task OnEventAsync_UserActiveInConversation_PersistsAndSignalsInboxInsteadOfChatPush()
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
         _activityTracker.IsRecentlyActive("user-a", Arg.Any<TimeSpan>()).Returns(true);
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _notificationService.Received(1).SendProactiveInboxChangedAsync("user-a", Arg.Any<int>());
     }
 
     [Test]
@@ -179,7 +225,7 @@ public class AgentTriggerServiceTests
     }
 
     [Test]
-    public async Task OnEventAsync_PlannersOnly_DeliversOnlyToConnectedPlanners()
+    public async Task OnEventAsync_PlannersOnly_LivePushesOnlyToPlanners_NeverToConnectedEmployees()
     {
         const string planner = "planner-1";
         const string employee = "employee-1";
@@ -187,28 +233,31 @@ public class AgentTriggerServiceTests
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners(planner);
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             planner, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync(
             employee, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == employee), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task OnEventAsync_PlannersOnly_NoConnectedPlanner_SkipsDispatch()
+    public async Task OnEventAsync_PlannersOnly_OnlyEmployeesConnected_RecordsForOfflinePlannerWithoutPush()
     {
+        const string offlinePlanner = "some-other-planner";
         _notificationService.GetConnectedUserIds().Returns(new[] { "employee-1", "employee-2" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-        SetPlanners("some-other-planner");
+        SetPlanners(offlinePlanner);
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == offlinePlanner), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task OnEventAsync_BroadcastEvent_IgnoresAudienceGate()
+    public async Task OnEventAsync_CompanionBroadcast_LivePushesToConnectedUsersEvenAtLowSeverity()
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "employee-1" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
@@ -218,6 +267,7 @@ public class AgentTriggerServiceTests
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             "employee-1", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "employee-1"), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -225,6 +275,7 @@ public class AgentTriggerServiceTests
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
         string? sentMessageId = null;
         ProactiveTriggerDispatchRow? recordedRow = null;
         _notificationService
@@ -293,7 +344,7 @@ public class AgentTriggerServiceTests
     }
 
     [Test]
-    public async Task OnEventAsync_SendFails_DoesNotRecordDispatchOrRateLimiterFire()
+    public async Task OnEventAsync_SendFails_RowStaysPersistedAndBudgetCounted_MessageReachableViaInbox()
     {
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
@@ -301,14 +352,29 @@ public class AgentTriggerServiceTests
             .SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>())
             .Returns(Task.FromException(new InvalidOperationException("send failed")));
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
-        await _dispatchRepository.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
-        _rateLimiter.DidNotReceiveWithAnyArgs().RecordFire(default!, default!);
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        _rateLimiter.Received(1).RecordFire("user-a", AgentTriggerKinds.UnstaffedShift);
     }
 
     [Test]
-    public async Task OnEventAsync_TargetedEvent_DispatchesOnlyToTargetUser()
+    public async Task OnEventAsync_PersistFails_DoesNotCountBudgetOrPush()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _dispatchRepository
+            .RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("persist failed")));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        _rateLimiter.DidNotReceiveWithAnyArgs().RecordFire(default!, default!);
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+    }
+
+    [Test]
+    public async Task OnEventAsync_TargetedCompanionEvent_LivePushesOnlyToConnectedTargetUser()
     {
         var target = Guid.NewGuid();
         var other = Guid.NewGuid();
@@ -319,6 +385,21 @@ public class AgentTriggerServiceTests
 
         await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == other.ToString()), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_TargetedCompanionEvent_OfflineTarget_RecordsInboxRowWithoutPush()
+    {
+        var target = Guid.NewGuid();
+        _notificationService.GetConnectedUserIds().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("sport", target));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == target.ToString()), Arg.Any<CancellationToken>());
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
     }
 }
 
