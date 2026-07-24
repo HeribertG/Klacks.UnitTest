@@ -36,6 +36,8 @@ public class SkillRiskClassifierTests
     [TestCase("create_user")]
     [TestCase("update_calendar_selection")]
     [TestCase("delete_calendar_selection")]
+    [TestCase("delete_macro")]
+    [TestCase("delete_contract")]
     public void Classify_SensitiveSkills_ReturnsSensitive(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));

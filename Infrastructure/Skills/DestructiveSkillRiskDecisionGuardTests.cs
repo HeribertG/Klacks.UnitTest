@@ -79,11 +79,6 @@ public class DestructiveSkillRiskDecisionGuardTests
                 "Soft-deletes a single communication entry (email, phone or note) on a client " +
                 "addressed by UUID; the client record itself is untouched and the entry is " +
                 "re-enterable.",
-            ["delete_contract"] =
-                "Soft-deletes a contract TEMPLATE only; existing client-contract assignments are " +
-                "not touched and the skill itself recommends validUntil over deletion. ESCALATION " +
-                "CANDIDATE: contract templates are wage-base master data, so an accidental delete " +
-                "can silently affect hour and surcharge calculation going forward.",
             ["delete_expense"] =
                 "Deletes a single expense row; day-lock rules are enforced and period-hour " +
                 "recalculation plus schedule notifications run automatically, so the books stay " +
@@ -94,11 +89,6 @@ public class DestructiveSkillRiskDecisionGuardTests
             ["delete_llm_provider"] =
                 "Removes one LLM provider configuration row; purely technical admin configuration " +
                 "with no cascade into business data, restorable by re-entering the configuration.",
-            ["delete_macro"] =
-                "Single settings row behind an admin permission check and re-creatable from the " +
-                "macro manual. ESCALATION CANDIDATE: macros are the calculation scripts feeding " +
-                "surcharge and payroll computation — the same blast radius that put " +
-                "update_calendar_selection and delete_calendar_selection into SensitiveSkills.",
             ["delete_qualification"] =
                 "Soft-deletes one qualification master row after verifying it exists (by id or " +
                 "unambiguous name); qualifications drive candidate matching in planning, not " +
