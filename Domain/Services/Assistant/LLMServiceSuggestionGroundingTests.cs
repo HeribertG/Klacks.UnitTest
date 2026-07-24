@@ -41,7 +41,8 @@ public class LLMServiceSuggestionGroundingTests
             pendingConfirmationStore: null!,
             recipeEngine: null!,
             slotExtractor: null!,
-            suggestionEntityNameReader: _nameReader);
+            suggestionEntityNameReader: _nameReader,
+            contextBudgetPolicy: null!);
     }
 
     [Test]

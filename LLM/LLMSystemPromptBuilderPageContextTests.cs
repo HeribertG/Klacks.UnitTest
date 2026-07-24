@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for LLMSystemPromptBuilder focused on AssistantPageContext rendering
-/// (S1 of the autonomy roadmap — "=== CURRENT VIEW ===" block).
+/// (S1 of the autonomy roadmap — "=== CURRENT VIEW ===" block) and its placement in the volatile
+/// system-prompt segment rather than the stable one (P1b of the Klacksy memory redesign).
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -49,38 +50,38 @@ public class LLMSystemPromptBuilderPageContextTests
     }
 
     [Test]
-    public async Task BuildSystemPromptAsync_WithoutPageContext_DoesNotRenderCurrentView()
+    public void BuildVolatileAdditions_WithoutPageContext_ReturnsNull()
     {
         var context = CreateContext(null);
 
-        var result = await _builder.BuildSystemPromptAsync(context);
+        var result = LLMSystemPromptBuilder.BuildVolatileAdditions(context);
 
-        Assert.That(result, Does.Not.Contain(CurrentViewMarker));
+        Assert.That(result, Is.Null);
     }
 
     [Test]
-    public async Task BuildSystemPromptAsync_WithEmptyPageContext_DoesNotRenderCurrentView()
+    public void BuildVolatileAdditions_WithEmptyPageContext_ReturnsNull()
     {
         var context = CreateContext(new AssistantPageContext());
 
-        var result = await _builder.BuildSystemPromptAsync(context);
+        var result = LLMSystemPromptBuilder.BuildVolatileAdditions(context);
 
-        Assert.That(result, Does.Not.Contain(CurrentViewMarker));
+        Assert.That(result, Is.Null);
     }
 
     [Test]
-    public async Task BuildSystemPromptAsync_WithRouteOnly_RendersRouteLine()
+    public void BuildVolatileAdditions_WithRouteOnly_RendersRouteLine()
     {
         var context = CreateContext(new AssistantPageContext { CurrentRoute = "/schedule" });
 
-        var result = await _builder.BuildSystemPromptAsync(context);
+        var result = LLMSystemPromptBuilder.BuildVolatileAdditions(context);
 
         Assert.That(result, Does.Contain(CurrentViewMarker));
         Assert.That(result, Does.Contain("route: /schedule"));
     }
 
     [Test]
-    public async Task BuildSystemPromptAsync_WithAllFields_RendersAllLines()
+    public void BuildVolatileAdditions_WithAllFields_RendersAllLines()
     {
         var pc = new AssistantPageContext
         {
@@ -92,12 +93,36 @@ public class LLMSystemPromptBuilderPageContextTests
         };
         var context = CreateContext(pc);
 
-        var result = await _builder.BuildSystemPromptAsync(context);
+        var result = LLMSystemPromptBuilder.BuildVolatileAdditions(context);
 
         Assert.That(result, Does.Contain("route: /schedule"));
         Assert.That(result, Does.Contain("selectedGroupId: 11111111-1111-1111-1111-111111111111"));
         Assert.That(result, Does.Contain("selectedPeriodFrom: 2026-06-01"));
         Assert.That(result, Does.Contain("selectedPeriodUntil: 2026-06-30"));
         Assert.That(result, Does.Contain("selectedClientId: 22222222-2222-2222-2222-222222222222"));
+    }
+
+    [Test]
+    public void BuildVolatileAdditions_WithEntityGroundingBlock_IsIncluded()
+    {
+        var context = CreateContext(null);
+        context.EntityGroundingBlock = "=== ENTITY GROUNDING ===\n- Anna Muster (#42)";
+
+        var result = LLMSystemPromptBuilder.BuildVolatileAdditions(context);
+
+        Assert.That(result, Does.Contain("ENTITY GROUNDING"));
+    }
+
+    [Test]
+    public async Task BuildSystemPromptAsync_WithPageContextAndEntityGrounding_NeverRendersEitherInStableSegment()
+    {
+        var pc = new AssistantPageContext { CurrentRoute = "/schedule" };
+        var context = CreateContext(pc);
+        context.EntityGroundingBlock = "=== ENTITY GROUNDING ===\n- Anna Muster (#42)";
+
+        var result = await _builder.BuildSystemPromptAsync(context);
+
+        Assert.That(result, Does.Not.Contain(CurrentViewMarker));
+        Assert.That(result, Does.Not.Contain("ENTITY GROUNDING"));
     }
 }

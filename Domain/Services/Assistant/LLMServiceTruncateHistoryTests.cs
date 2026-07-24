@@ -121,4 +121,39 @@ public class LLMServiceTruncateHistoryTests
         result[^1].Content.ShouldBe("newest-kept");
         result.ShouldNotContain(m => m.Content == new string('a', 40));
     }
+
+    [Test]
+    public void AdaptiveMaxHistoryMessages_DefaultsTo20_WhenNotPassed()
+    {
+        var history = History(25);
+
+        var result = LLMService.TruncateHistory(history, LargeBudget, null);
+
+        result.Count.ShouldBe(21);
+        result[0].Content.ShouldContain("Showing last 20 of 25 messages");
+    }
+
+    [Test]
+    public void AdaptiveMaxHistoryMessages_TighterCap_TruncatesToSmallerCount()
+    {
+        var history = History(25);
+
+        var result = LLMService.TruncateHistory(history, LargeBudget, null, maxHistoryMessages: 8);
+
+        result.Count.ShouldBe(9);
+        result[0].Role.ShouldBe("system");
+        result[0].Content.ShouldContain("Showing last 8 of 25 messages");
+        result[^1].Content.ShouldBe("message-24");
+    }
+
+    [Test]
+    public void AdaptiveMaxHistoryMessages_LargerCap_KeepsMoreMessages()
+    {
+        var history = History(45);
+
+        var result = LLMService.TruncateHistory(history, LargeBudget, null, maxHistoryMessages: 40);
+
+        result.Count.ShouldBe(41);
+        result[0].Content.ShouldContain("Showing last 40 of 45 messages");
+    }
 }

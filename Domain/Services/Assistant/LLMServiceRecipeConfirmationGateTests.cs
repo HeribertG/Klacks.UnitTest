@@ -94,7 +94,8 @@ public class LLMServiceRecipeConfirmationGateTests
             pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
             slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
-            suggestionEntityNameReader: null!);
+            suggestionEntityNameReader: null!,
+            contextBudgetPolicy: null!);
     }
 
     private static LLMContext Context(string message) => new()

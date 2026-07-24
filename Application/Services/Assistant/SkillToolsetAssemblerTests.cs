@@ -140,14 +140,14 @@ public class SkillToolsetAssemblerTests
     {
         return CreateAssembler().AssembleAsync(
             _agent, userRights ?? new List<string>(), UserMessage,
-            conversationId: null, currentRoute: null, UserId, language: null, CancellationToken.None);
+            conversationId: null, currentRoute: null, UserId, language: null, cancellationToken: CancellationToken.None);
     }
 
     [Test]
     public async Task AssembleAsync_NullAgent_ReturnsEmptyToolsetWithoutDomainContext()
     {
         var result = await CreateAssembler().AssembleAsync(
-            null, new List<string>(), UserMessage, null, null, UserId, null, CancellationToken.None);
+            null, new List<string>(), UserMessage, null, null, UserId, null, cancellationToken: CancellationToken.None);
 
         result.Functions.ShouldBeEmpty();
         result.HasDomainSkillContext.ShouldBeFalse();
@@ -263,6 +263,11 @@ public class SkillToolsetAssemblerTests
         }
 
         var assembler = CreateAssembler();
+        var providerOrchestrator = new LLMProviderOrchestrator(
+            Substitute.For<ILogger<LLMProviderOrchestrator>>(),
+            Substitute.For<ILLMProviderFactory>(),
+            Substitute.For<ILLMRepository>());
+        var budgetPolicy = new ContextBudgetPolicy();
 
         LLMContext? streamingContext = null;
         var streamingLLMService = Substitute.For<ILLMService>();
@@ -273,6 +278,8 @@ public class SkillToolsetAssemblerTests
             streamingLLMService, _skillCache, assembler,
             Substitute.For<IPlanningScopeEnricher>(),
             Substitute.For<IEntityCandidateGrounder>(),
+            providerOrchestrator,
+            budgetPolicy,
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
 
         LLMContext? nonStreamingContext = null;
@@ -282,7 +289,9 @@ public class SkillToolsetAssemblerTests
         var handler = new ProcessLLMMessageCommandHandler(
             nonStreamingLLMService, Substitute.For<IAgentRepository>(), _skillCache, assembler,
             Substitute.For<IPlanningScopeEnricher>(),
-            Substitute.For<IEntityCandidateGrounder>());
+            Substitute.For<IEntityCandidateGrounder>(),
+            providerOrchestrator,
+            budgetPolicy);
 
         await foreach (var _ in orchestrator.ProcessStreamAsync(
             new LLMStreamRequest { Message = UserMessage, UserId = UserId }, CancellationToken.None))

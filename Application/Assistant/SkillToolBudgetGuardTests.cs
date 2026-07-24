@@ -9,6 +9,7 @@
 /// </summary>
 
 using System.Text.Json;
+using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Constants;
 
 namespace Klacks.UnitTest.Application.Assistant;
@@ -31,6 +32,23 @@ public class SkillToolBudgetGuardTests
                 $"alwaysOn skills ({alwaysOn}) + DefaultTopK ({KnowledgeIndexConstants.DefaultTopK}) exceed " +
                 $"MaxToolsForProvider ({KnowledgeIndexConstants.MaxToolsForProvider}); retrieved skills would be " +
                 "truncated away and become unreachable via chat. Raise the cap or reduce alwaysOn skills.");
+    }
+
+    [Test]
+    public void AlwaysOnSkillCount_FitsWithinAdaptiveMinToolsForProvider()
+    {
+        var seedPath = LocateSkillSeeds();
+        using var doc = JsonDocument.Parse(File.ReadAllText(seedPath));
+
+        var alwaysOn = doc.RootElement.GetProperty("skills").EnumerateArray()
+            .Count(s => s.TryGetProperty("alwaysOn", out var v) && v.ValueKind == JsonValueKind.True);
+
+        alwaysOn.ShouldBeLessThan(
+            ContextBudgetPolicy.MinToolsForProvider,
+            $"alwaysOn skill count ({alwaysOn}) leaves no headroom under MinToolsForProvider " +
+            $"({ContextBudgetPolicy.MinToolsForProvider}); the tightest adaptive tool-budget tier " +
+            "(small-context models) would squeeze out every deterministically guaranteed skill " +
+            "(page-explain, recipe steps, ...). Raise MinToolsForProvider or reduce alwaysOn skills.");
     }
 
     private const int MaxAlwaysOnSkills = 10;

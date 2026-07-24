@@ -81,7 +81,8 @@ public class LLMServiceTransientRetryTests
             pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
             slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
-            suggestionEntityNameReader: null!);
+            suggestionEntityNameReader: null!,
+            contextBudgetPolicy: null!);
     }
 
     private static LLMProviderRequest Request() => new()

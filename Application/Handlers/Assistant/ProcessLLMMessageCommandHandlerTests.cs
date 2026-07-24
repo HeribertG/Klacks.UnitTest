@@ -108,9 +108,16 @@ public class ProcessLLMMessageCommandHandlerTests
 
     private ProcessLLMMessageCommandHandler CreateHandler()
     {
+        var providerOrchestrator = new LLMProviderOrchestrator(
+            Substitute.For<ILogger<LLMProviderOrchestrator>>(),
+            Substitute.For<ILLMProviderFactory>(),
+            Substitute.For<ILLMRepository>());
+
         return new ProcessLLMMessageCommandHandler(
             _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher,
-            Substitute.For<IEntityCandidateGrounder>());
+            Substitute.For<IEntityCandidateGrounder>(),
+            providerOrchestrator,
+            new ContextBudgetPolicy());
     }
 
     private static AgentSkill CreateSkill(string name)

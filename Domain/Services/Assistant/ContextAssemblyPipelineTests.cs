@@ -44,7 +44,8 @@ public class ContextAssemblyPipelineTests
         _identity.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(IdentityText);
         _ontology.RenderWorldModelBlock(Arg.Any<int>()).Returns(OntologyText);
-        _memory.RetrieveRelevantMemoriesAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _memory.RetrieveRelevantMemoriesAsync(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>())
             .Returns(MemoryText);
         _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
             .Returns(new SentimentResult(SentimentMood.Neutral, 0f));
@@ -133,7 +134,7 @@ public class ContextAssemblyPipelineTests
         Assert.That(result.VolatilePrompt, Does.Not.Contain(MemoryText));
         await _sentiment.DidNotReceive().AnalyzeSentimentAsync(Arg.Any<string>());
         await _memory.DidNotReceive().RetrieveRelevantMemoriesAsync(
-            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -143,7 +144,7 @@ public class ContextAssemblyPipelineTests
 
         await _sentiment.Received(1).AnalyzeSentimentAsync(Arg.Any<string>());
         await _memory.Received(1).RetrieveRelevantMemoriesAsync(
-            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
