@@ -46,7 +46,7 @@ public class ContextAssemblyPipelineTests
         _ontology.RenderWorldModelBlock(Arg.Any<int>()).Returns(OntologyText);
         _memory.RetrieveRelevantMemoriesAsync(
                 Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>())
-            .Returns(MemoryText);
+            .Returns(new MemoryRetrievalResult(MemoryText, Array.Empty<Guid>()));
         _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
             .Returns(new SentimentResult(SentimentMood.Neutral, 0f));
         _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -145,6 +145,20 @@ public class ContextAssemblyPipelineTests
         await _sentiment.Received(1).AnalyzeSentimentAsync(Arg.Any<string>());
         await _memory.Received(1).RetrieveRelevantMemoriesAsync(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_CarriesInjectedMemoryIds_FromMemoryRetrievalResult()
+    {
+        var injectedId = Guid.NewGuid();
+        _memory.RetrieveRelevantMemoriesAsync(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>())
+            .Returns(new MemoryRetrievalResult(MemoryText, new[] { injectedId }));
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "please show me my open shifts for tomorrow");
+
+        result.InjectedMemoryIds.ShouldNotBeNull();
+        result.InjectedMemoryIds.ShouldContain(injectedId);
     }
 
     [Test]
