@@ -4,11 +4,13 @@
 /// Unit tests for ConversationCompactionService: a valid structured JSON model response is stored
 /// as structured JSON, a non-JSON response falls back to truncated free text, an existing legacy
 /// free-text summary is migrated into the structured facts on the next run, and the compaction is
-/// skipped below the message-count threshold or when there are no old messages to summarize.
+/// skipped below the message-count threshold or when there are no old messages to summarize. Also
+/// covers the parametrized CompactIfNeededAsync(conversationId, minMessages) overload used by the
+/// task-boundary trigger, which must respect its own threshold independently of the default one.
 /// </summary>
 
 using Microsoft.Extensions.Logging;
-using Providers = Klacks.Api.Domain.Services.Assistant.Providers;
+using LlmProviders = Klacks.Api.Domain.Services.Assistant.Providers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -24,7 +26,7 @@ public class ConversationCompactionServiceTests
 
     private ILLMRepository _repository = null!;
     private ICheapestModelResolver _cheapestModelResolver = null!;
-    private Providers.ILLMProvider _provider = null!;
+    private LlmProviders.ILLMProvider _provider = null!;
     private ConversationCompactionService _service = null!;
 
     [SetUp]
@@ -32,7 +34,7 @@ public class ConversationCompactionServiceTests
     {
         _repository = Substitute.For<ILLMRepository>();
         _cheapestModelResolver = Substitute.For<ICheapestModelResolver>();
-        _provider = Substitute.For<Providers.ILLMProvider>();
+        _provider = Substitute.For<LlmProviders.ILLMProvider>();
         _service = new ConversationCompactionService(
             Substitute.For<ILogger<ConversationCompactionService>>(),
             _cheapestModelResolver,
@@ -63,15 +65,15 @@ public class ConversationCompactionServiceTests
             CostPerOutputToken = 0.1m
         };
         _cheapestModelResolver.ResolveAsync(Arg.Any<CancellationToken>())
-            .Returns(((LLMModel?)cheapModel, (Providers.ILLMProvider?)_provider));
+            .Returns(((LLMModel?)cheapModel, (LlmProviders.ILLMProvider?)_provider));
 
         return conversation;
     }
 
     private void ArrangeProviderResponse(string content)
     {
-        _provider.ProcessAsync(Arg.Any<Providers.LLMProviderRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new Providers.LLMProviderResponse { Success = true, Content = content });
+        _provider.ProcessAsync(Arg.Any<LlmProviders.LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new LlmProviders.LLMProviderResponse { Success = true, Content = content });
     }
 
     [Test]
@@ -124,7 +126,7 @@ public class ConversationCompactionServiceTests
 
         conversation.Summary.ShouldBe("old");
         await _provider.DidNotReceive()
-            .ProcessAsync(Arg.Any<Providers.LLMProviderRequest>(), Arg.Any<CancellationToken>());
+            .ProcessAsync(Arg.Any<LlmProviders.LLMProviderRequest>(), Arg.Any<CancellationToken>());
         await _repository.DidNotReceive().UpdateConversationAsync(Arg.Any<LLMConversation>());
     }
 
@@ -139,5 +141,31 @@ public class ConversationCompactionServiceTests
 
         conversation.Summary.ShouldBe("old");
         await _repository.DidNotReceive().UpdateConversationAsync(Arg.Any<LLMConversation>());
+    }
+
+    [Test]
+    public async Task ParametrizedOverload_BelowGivenMinMessages_DoesNothing()
+    {
+        var conversation = ArrangeReadyConversation(existingSummary: "old", messageCount: 8);
+
+        await _service.CompactIfNeededAsync(ConvId, minMessages: 10);
+
+        conversation.Summary.ShouldBe("old");
+        await _provider.DidNotReceive()
+            .ProcessAsync(Arg.Any<LlmProviders.LLMProviderRequest>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().UpdateConversationAsync(Arg.Any<LLMConversation>());
+    }
+
+    [Test]
+    public async Task ParametrizedOverload_AtOrAboveGivenMinMessages_ProceedsEvenBelowDefaultThreshold()
+    {
+        var conversation = ArrangeReadyConversation(existingSummary: null, messageCount: 10);
+        ArrangeProviderResponse(StructuredResponse);
+
+        await _service.CompactIfNeededAsync(ConvId, minMessages: 10);
+
+        ConversationSummaryCodec.TryParse(conversation.Summary, out var stored).ShouldBeTrue();
+        stored.Facts.ShouldContain("Prefers mornings");
+        await _repository.Received(1).UpdateConversationAsync(conversation);
     }
 }

@@ -1,8 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for ContextAssemblyPipeline, focused on the Klacks ontology world-model
-/// block injection (S1 of the autonomy roadmap).
+/// Unit tests for ContextAssemblyPipeline, covering the Klacks ontology world-model
+/// block injection (S1 of the autonomy roadmap) and the stable/volatile prompt-cache split
+/// (P1 of the Klacksy memory redesign).
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -64,7 +65,7 @@ public class ContextAssemblyPipelineTests
     {
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
-        Assert.That(result, Does.Contain(OntologyText));
+        Assert.That(result.StablePrompt, Does.Contain(OntologyText));
     }
 
     [Test]
@@ -90,17 +91,16 @@ public class ContextAssemblyPipelineTests
     }
 
     [Test]
-    public async Task AssembleSoulAndMemoryPromptAsync_PlacesOntologyBetweenIdentityAndMemory()
+    public async Task AssembleSoulAndMemoryPromptAsync_PlacesOntologyAfterIdentityInStableSegment()
     {
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
-        var identityIdx = result.IndexOf(IdentityText, StringComparison.Ordinal);
-        var ontologyIdx = result.IndexOf(OntologyText, StringComparison.Ordinal);
-        var memoryIdx = result.IndexOf(MemoryText, StringComparison.Ordinal);
+        var identityIdx = result.StablePrompt.IndexOf(IdentityText, StringComparison.Ordinal);
+        var ontologyIdx = result.StablePrompt.IndexOf(OntologyText, StringComparison.Ordinal);
 
         Assert.That(identityIdx, Is.GreaterThanOrEqualTo(0));
         Assert.That(ontologyIdx, Is.GreaterThan(identityIdx));
-        Assert.That(memoryIdx, Is.GreaterThan(ontologyIdx));
+        Assert.That(result.VolatilePrompt, Does.Contain(MemoryText));
     }
 
     [Test]
@@ -118,9 +118,9 @@ public class ContextAssemblyPipelineTests
 
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
-        Assert.That(result, Does.Not.Contain("WORLD MODEL"));
-        Assert.That(result, Does.Contain(IdentityText));
-        Assert.That(result, Does.Contain(MemoryText));
+        Assert.That(result.StablePrompt, Does.Not.Contain("WORLD MODEL"));
+        Assert.That(result.StablePrompt, Does.Contain(IdentityText));
+        Assert.That(result.VolatilePrompt, Does.Contain(MemoryText));
     }
 
     [Test]
@@ -128,9 +128,9 @@ public class ContextAssemblyPipelineTests
     {
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "ja");
 
-        Assert.That(result, Does.Contain(IdentityText));
-        Assert.That(result, Does.Contain(OntologyText));
-        Assert.That(result, Does.Not.Contain(MemoryText));
+        Assert.That(result.StablePrompt, Does.Contain(IdentityText));
+        Assert.That(result.StablePrompt, Does.Contain(OntologyText));
+        Assert.That(result.VolatilePrompt, Does.Not.Contain(MemoryText));
         await _sentiment.DidNotReceive().AnalyzeSentimentAsync(Arg.Any<string>());
         await _memory.DidNotReceive().RetrieveRelevantMemoriesAsync(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
@@ -152,9 +152,9 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "cover Anna's absence next week", null, new[] { "cover_absence", "get_user_context" });
 
-        Assert.That(result, Does.Contain(SchedulingMarker));
-        var ontologyIdx = result.IndexOf(OntologyText, StringComparison.Ordinal);
-        var nudgeIdx = result.IndexOf(SchedulingMarker, StringComparison.Ordinal);
+        Assert.That(result.StablePrompt, Does.Contain(SchedulingMarker));
+        var ontologyIdx = result.StablePrompt.IndexOf(OntologyText, StringComparison.Ordinal);
+        var nudgeIdx = result.StablePrompt.IndexOf(SchedulingMarker, StringComparison.Ordinal);
         Assert.That(nudgeIdx, Is.GreaterThan(ontologyIdx));
     }
 
@@ -164,7 +164,7 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "what is my name and email address", null, new[] { "get_user_context", "search_employees" });
 
-        Assert.That(result, Does.Not.Contain(SchedulingMarker));
+        Assert.That(result.StablePrompt, Does.Not.Contain(SchedulingMarker));
     }
 
     [Test]
@@ -172,7 +172,7 @@ public class ContextAssemblyPipelineTests
     {
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
-        Assert.That(result, Does.Not.Contain(SchedulingMarker));
+        Assert.That(result.StablePrompt, Does.Not.Contain(SchedulingMarker));
     }
 
     [Test]
@@ -181,8 +181,8 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "ok", null, new[] { "place_work" });
 
-        Assert.That(result, Does.Contain(SchedulingMarker));
-        Assert.That(result, Does.Not.Contain(MemoryText));
+        Assert.That(result.StablePrompt, Does.Contain(SchedulingMarker));
+        Assert.That(result.VolatilePrompt, Does.Not.Contain(MemoryText));
     }
 
     [Test]
@@ -191,8 +191,8 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "thanks, that is good to know", hasDomainSkillContext: false);
 
-        Assert.That(result, Does.Not.Contain(OntologyText));
-        Assert.That(result, Does.Contain(IdentityText));
+        Assert.That(result.StablePrompt, Does.Not.Contain(OntologyText));
+        Assert.That(result.StablePrompt, Does.Contain(IdentityText));
     }
 
     [Test]
@@ -201,7 +201,7 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "ok do it now please", null, new[] { "place_work" }, hasDomainSkillContext: false);
 
-        Assert.That(result, Does.Contain(OntologyText));
+        Assert.That(result.StablePrompt, Does.Contain(OntologyText));
     }
 
     [Test]
@@ -213,7 +213,7 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "hello there", userId: userId);
 
-        Assert.That(result, Does.Contain("[PENDING_NOTES: 2]"));
+        Assert.That(result.VolatilePrompt, Does.Contain("[PENDING_NOTES: 2]"));
     }
 
     [Test]
@@ -225,7 +225,7 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "hello there", userId: userId);
 
-        Assert.That(result, Does.Not.Contain("PENDING_NOTES"));
+        Assert.That(result.VolatilePrompt, Does.Not.Contain("PENDING_NOTES"));
     }
 
     [Test]
@@ -235,7 +235,7 @@ public class ContextAssemblyPipelineTests
 
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
 
-        Assert.That(result, Does.Not.Contain("PENDING_NOTES"));
+        Assert.That(result.VolatilePrompt, Does.Not.Contain("PENDING_NOTES"));
         await _pendingNotes.DidNotReceive().CountPendingAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
@@ -265,8 +265,8 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "del it", userId: userId, conversationId: "conv-1");
 
-        Assert.That(result, Does.Contain("[RECENTLY_TOUCHED]"));
-        Assert.That(result, Does.Contain(shiftId.ToString()));
+        Assert.That(result.VolatilePrompt, Does.Contain("[RECENTLY_TOUCHED]"));
+        Assert.That(result.VolatilePrompt, Does.Contain(shiftId.ToString()));
     }
 
     [Test]
@@ -277,8 +277,72 @@ public class ContextAssemblyPipelineTests
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "hello there", userId: userId);
 
-        Assert.That(result, Does.Not.Contain("[RECENTLY_TOUCHED]"));
+        Assert.That(result.VolatilePrompt, Does.Not.Contain("[RECENTLY_TOUCHED]"));
         await _recentEntities.DidNotReceive().GetRecentAsync(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_StableSegment_NeverContainsVolatileMarkers()
+    {
+        var userId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), userId, Arg.Any<CancellationToken>()).Returns(3);
+        _recentEntities.GetRecentAsync(userId, "conv-1", Arg.Any<CancellationToken>()).Returns(new List<RecentEntityRow>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                ConversationId = "conv-1",
+                EntityType = "shift",
+                EntityId = shiftId,
+                DisplayName = "Frühdienst",
+                Action = "created",
+                CreatedAtUtc = DateTime.UtcNow
+            }
+        });
+        _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
+            .Returns(new SentimentResult(SentimentMood.Frustrated, 0.9f));
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "please show me my open shifts for tomorrow", userId: userId, conversationId: "conv-1");
+
+        Assert.That(result.StablePrompt, Does.Not.Contain("PENDING_NOTES"));
+        Assert.That(result.StablePrompt, Does.Not.Contain("[RECENTLY_TOUCHED]"));
+        Assert.That(result.StablePrompt, Does.Not.Contain("USER_MOOD"));
+        Assert.That(result.StablePrompt, Does.Not.Contain(MemoryText));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_VolatileSegment_ContainsAllPerTurnMarkers()
+    {
+        var userId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), userId, Arg.Any<CancellationToken>()).Returns(3);
+        _recentEntities.GetRecentAsync(userId, "conv-1", Arg.Any<CancellationToken>()).Returns(new List<RecentEntityRow>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                ConversationId = "conv-1",
+                EntityType = "shift",
+                EntityId = shiftId,
+                DisplayName = "Frühdienst",
+                Action = "created",
+                CreatedAtUtc = DateTime.UtcNow
+            }
+        });
+        _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
+            .Returns(new SentimentResult(SentimentMood.Frustrated, 0.9f));
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "please show me my open shifts for tomorrow", userId: userId, conversationId: "conv-1");
+
+        Assert.That(result.VolatilePrompt, Does.Contain("PENDING_NOTES"));
+        Assert.That(result.VolatilePrompt, Does.Contain("[RECENTLY_TOUCHED]"));
+        Assert.That(result.VolatilePrompt, Does.Contain("USER_MOOD"));
+        Assert.That(result.VolatilePrompt, Does.Contain(MemoryText));
     }
 }

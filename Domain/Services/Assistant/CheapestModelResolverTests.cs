@@ -6,7 +6,7 @@
 /// enabled.
 /// </summary>
 
-using Providers = Klacks.Api.Domain.Services.Assistant.Providers;
+using LlmProviders = Klacks.Api.Domain.Services.Assistant.Providers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -31,7 +31,7 @@ public class CheapestModelResolverTests
     [Test]
     public async Task ResolveAsync_ReturnsCheapestModelAndItsProvider()
     {
-        var provider = Substitute.For<Providers.ILLMProvider>();
+        var provider = Substitute.For<LlmProviders.ILLMProvider>();
         _repository.GetModelsAsync(true).Returns(new List<LLMModel>
         {
             new() { ModelId = ExpensiveModelId, CostPerInputToken = 1.0m, CostPerOutputToken = 1.0m },

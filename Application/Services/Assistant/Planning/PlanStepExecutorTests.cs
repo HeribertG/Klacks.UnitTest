@@ -2,8 +2,9 @@
 
 /// <summary>
 /// Unit tests for PlanStepExecutor — covers happy path, HITL pause, verify-skill, failure handling,
-/// $prev placeholder resolution, and ApproveAndContinueAsync resume semantics. ISkillExecutor +
-/// IAgentPlanRepository are mocked.
+/// $prev placeholder resolution, ApproveAndContinueAsync resume semantics, and the task-boundary
+/// compaction trigger fired on plan completion (but not on abort/failure). ISkillExecutor +
+/// IAgentPlanRepository + ILLMBackgroundTaskService are mocked.
 /// </summary>
 
 using System.Text.Json;
@@ -25,7 +26,10 @@ public class PlanStepExecutorTests
     private ISkillRiskClassifier _riskClassifier = null!;
     private IAgentAutonomyPreferenceRepository _autonomyRepository = null!;
     private IAssistantNotificationService _notificationService = null!;
+    private ILLMBackgroundTaskService _backgroundTaskService = null!;
     private PlanStepExecutor _sut = null!;
+
+    private const int TaskBoundaryMinMessages = 10;
 
     [SetUp]
     public void Setup()
@@ -39,6 +43,7 @@ public class PlanStepExecutorTests
         _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((AgentAutonomyPreferenceRow?)null);
         _notificationService = Substitute.For<IAssistantNotificationService>();
+        _backgroundTaskService = Substitute.For<ILLMBackgroundTaskService>();
         _sut = new PlanStepExecutor(
             _planRepository,
             _skillExecutor,
@@ -46,6 +51,7 @@ public class PlanStepExecutorTests
             _riskClassifier,
             _autonomyRepository,
             _notificationService,
+            _backgroundTaskService,
             NullLogger<PlanStepExecutor>.Instance);
     }
 
@@ -57,7 +63,7 @@ public class PlanStepExecutorTests
         UserPermissions = new List<string> { "Admin" }
     };
 
-    private static AgentPlan CreatePlan(IEnumerable<PlanStep> steps)
+    private static AgentPlan CreatePlan(IEnumerable<PlanStep> steps, Guid? sessionId = null)
     {
         var stepsJson = JsonSerializer.Serialize(steps.ToList());
         return new AgentPlan
@@ -65,6 +71,7 @@ public class PlanStepExecutorTests
             Id = Guid.NewGuid(),
             AgentId = Guid.NewGuid(),
             UserId = "user-1",
+            SessionId = sessionId,
             Goal = "test goal",
             StepsJson = stepsJson,
             Status = PlanStatus.Drafting,
@@ -159,6 +166,94 @@ public class PlanStepExecutorTests
         Assert.That(result.Status, Is.EqualTo(PlanStatus.Failed));
         Assert.That(result.LastErrorMessage, Is.EqualTo("group not found"));
         Assert.That(result.CurrentStepIndex, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_PlanCompletesWithSessionId_TriggersTaskBoundaryCompaction()
+    {
+        var sessionId = Guid.NewGuid();
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_a", new(), null, true) }, sessionId);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        _backgroundTaskService.Received(1).TriggerConversationCompaction(
+            sessionId.ToString(), TaskBoundaryMinMessages);
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_EmptyPlanCompletesWithSessionId_TriggersTaskBoundaryCompaction()
+    {
+        var sessionId = Guid.NewGuid();
+        var plan = CreatePlan(Array.Empty<PlanStep>(), sessionId);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        _backgroundTaskService.Received(1).TriggerConversationCompaction(
+            sessionId.ToString(), TaskBoundaryMinMessages);
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_PlanCompletesWithoutSessionId_SkipsCompactionTriggerSilently()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_a", new(), null, true) });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+        _backgroundTaskService.DidNotReceive().TriggerConversationCompaction(
+            Arg.Any<string>(), Arg.Any<int>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_PlanFailed_DoesNotTriggerCompaction()
+    {
+        var sessionId = Guid.NewGuid();
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_broken", new(), null, true) }, sessionId);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.Error("group not found"));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Failed));
+        _backgroundTaskService.DidNotReceive().TriggerConversationCompaction(
+            Arg.Any<string>(), Arg.Any<int>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_PlanAborted_DoesNotTriggerCompaction()
+    {
+        var sessionId = Guid.NewGuid();
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "skill_a", new(), null, true),
+            new PlanStep(2, "skill_b", new(), null, true)
+        }, sessionId);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        using var cts = new CancellationTokenSource();
+        _skillExecutor.ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "skill_a"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                cts.Cancel();
+                return SkillResult.SuccessResult(new { id = "ok" });
+            });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext(), cts.Token);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Aborted));
+        _backgroundTaskService.DidNotReceive().TriggerConversationCompaction(
+            Arg.Any<string>(), Arg.Any<int>());
     }
 
     [Test]
@@ -532,7 +627,7 @@ public class PlanStepExecutorTests
         var recordingLogger = new RecordingLogger();
         var sut = new PlanStepExecutor(
             _planRepository, _skillExecutor, _skillRegistry, _riskClassifier,
-            _autonomyRepository, _notificationService, recordingLogger);
+            _autonomyRepository, _notificationService, _backgroundTaskService, recordingLogger);
 
         var plan = CreatePlan(new[]
         {

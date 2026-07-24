@@ -3,7 +3,9 @@
 /// <summary>
 /// Unit tests for AutoMemoryExtractionService — verifies that extracted facts containing
 /// internal entity names are discarded before storage while clean facts are stored,
-/// so leaked internal terminology can never re-enter the agent memory.
+/// so leaked internal terminology can never re-enter the agent memory. Also verifies the
+/// service resolves its cheap model exclusively through the shared ICheapestModelResolver
+/// instead of duplicating that lookup.
 /// </summary>
 
 using Klacks.Api.Domain.Services.Assistant;
@@ -15,8 +17,7 @@ namespace Klacks.UnitTest.Services.Assistant;
 [TestFixture]
 public class AutoMemoryExtractionServiceTests
 {
-    private ILLMProviderFactory _providerFactory = null!;
-    private ILLMRepository _llmRepository = null!;
+    private ICheapestModelResolver _cheapestModelResolver = null!;
     private IAgentMemoryRepository _memoryRepository = null!;
     private IEmbeddingService _embeddingService = null!;
     private ILLMProvider _provider = null!;
@@ -25,22 +26,20 @@ public class AutoMemoryExtractionServiceTests
     [SetUp]
     public void SetUp()
     {
-        _providerFactory = Substitute.For<ILLMProviderFactory>();
-        _llmRepository = Substitute.For<ILLMRepository>();
+        _cheapestModelResolver = Substitute.For<ICheapestModelResolver>();
         _memoryRepository = Substitute.For<IAgentMemoryRepository>();
         _embeddingService = Substitute.For<IEmbeddingService>();
         _provider = Substitute.For<ILLMProvider>();
 
         var model = new LLMModel { ModelId = "cheap-model", ApiModelId = "cheap-model" };
-        _llmRepository.GetModelsAsync(onlyEnabled: true).Returns(new List<LLMModel> { model });
-        _providerFactory.GetProviderForModelAsync("cheap-model").Returns(_provider);
+        _cheapestModelResolver.ResolveAsync(Arg.Any<CancellationToken>())
+            .Returns(((LLMModel?)model, (ILLMProvider?)_provider));
         _embeddingService.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((float[]?)null);
 
         _service = new AutoMemoryExtractionService(
             Substitute.For<ILogger<AutoMemoryExtractionService>>(),
-            _providerFactory,
-            _llmRepository,
+            _cheapestModelResolver,
             _memoryRepository,
             _embeddingService);
     }
@@ -117,5 +116,28 @@ public class AutoMemoryExtractionServiceTests
         await _memoryRepository.Received(1).AddAsync(
             Arg.Is<AgentMemory>(m => m.Key == "Firmen_Standort" && m.UserId == null),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExtractAndStoreMemoriesAsync_ResolvesModelThroughSharedCheapestModelResolver()
+    {
+        SetupExtractionResponse(
+            "[{\"key\":\"Firmen_Standort\",\"content\":\"Die Firma hat ihren Hauptsitz in Bern.\",\"category\":\"fact\",\"importance\":8}]");
+
+        await _service.ExtractAndStoreMemoriesAsync(Guid.NewGuid(), "frage", "antwort", "user");
+
+        await _cheapestModelResolver.Received(1).ResolveAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NoModelAvailableFromResolver_NoExtractionAttempted()
+    {
+        _cheapestModelResolver.ResolveAsync(Arg.Any<CancellationToken>())
+            .Returns(((LLMModel?)null, (ILLMProvider?)null));
+
+        await _service.ExtractAndStoreMemoriesAsync(Guid.NewGuid(), "frage", "antwort", "user");
+
+        await _provider.DidNotReceive().ProcessAsync(Arg.Any<LLMProviderRequest>());
+        await _memoryRepository.DidNotReceive().AddAsync(Arg.Any<AgentMemory>(), Arg.Any<CancellationToken>());
     }
 }
