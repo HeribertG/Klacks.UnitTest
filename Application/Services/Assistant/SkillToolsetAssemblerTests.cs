@@ -31,6 +31,8 @@ public class SkillToolsetAssemblerTests
     private const string NeighbourSkillName = "add_client_to_group";
     private const string RestrictedSkillName = "manage_settings";
     private const string RequiredRight = "CanManageSettings";
+    private const string MultiPermissionSkillName = "propose_customer_grouping";
+    private const string MultiPermissionRequirement = "CanEditClients,CanViewGroups";
     private const string UserMessage = "Bitte such mir die passenden Mitarbeitenden zusammen";
     private const string UserId = "user-1";
 
@@ -83,7 +85,8 @@ public class SkillToolsetAssemblerTests
                 CreateSkill(AlwaysOnSkillName, alwaysOn: true),
                 CreateSkill(RetrievedSkillName),
                 CreateSkill(NeighbourSkillName),
-                CreateSkill(RestrictedSkillName, requiredPermission: RequiredRight)
+                CreateSkill(RestrictedSkillName, requiredPermission: RequiredRight),
+                CreateSkill(MultiPermissionSkillName, requiredPermission: MultiPermissionRequirement)
             });
 
         SetupRetrievalResult(new RetrievalResult([]));
@@ -193,6 +196,28 @@ public class SkillToolsetAssemblerTests
         var result = await AssembleAsync();
 
         result.Functions.ShouldNotContain(f => f.Name == RestrictedSkillName);
+    }
+
+    [Test]
+    public async Task AssembleAsync_CommaSeparatedPermission_UserHasAllRequiredRights_IsIncluded()
+    {
+        SetupRetrievalResult(RetrievalHit(MultiPermissionSkillName));
+        var userRights = new List<string> { "CanEditClients", "CanViewGroups" };
+
+        var result = await AssembleAsync(userRights);
+
+        result.Functions.ShouldContain(f => f.Name == MultiPermissionSkillName);
+    }
+
+    [Test]
+    public async Task AssembleAsync_CommaSeparatedPermission_UserHasOnlyOneRight_IsExcluded()
+    {
+        SetupRetrievalResult(RetrievalHit(MultiPermissionSkillName));
+        var userRights = new List<string> { "CanEditClients" };
+
+        var result = await AssembleAsync(userRights);
+
+        result.Functions.ShouldNotContain(f => f.Name == MultiPermissionSkillName);
     }
 
     [Test]
