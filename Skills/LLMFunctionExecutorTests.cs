@@ -5,6 +5,9 @@
 /// injection: navigate_to onto an explainable route executes the explain_page_* skill
 /// (level=elements) and appends its content to the navigation result, while non-explainable
 /// routes, other skills and injection failures leave the navigation result untouched.
+/// Also verifies that UiAction skills route through the skill bridge (no chokepoint bypass) and
+/// that UI action steps and replayed original parameters are lifted from the bridge result onto
+/// the function call for the frontend.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -218,6 +221,89 @@ public class LLMFunctionExecutorTests
 
         Assert.That(_executor.NavigationRoute, Is.EqualTo("/workplace/shift"));
         Assert.That(_executor.NavigationTarget, Is.Null);
+    }
+
+    private void SetupUiActionSkill(string skillName, string handlerConfig)
+    {
+        var agent = new Agent { Id = Guid.NewGuid(), Name = "default", IsDefault = true };
+        _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(agent);
+        _agentSkillRepository.GetEnabledAsync(agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                new()
+                {
+                    AgentId = agent.Id,
+                    Name = skillName,
+                    ExecutionType = LlmExecutionTypes.UiAction,
+                    HandlerConfig = handlerConfig
+                }
+            });
+    }
+
+    [Test]
+    public async Task UiActionSkill_RoutesThroughSkillBridge_AndLiftsStepsFromResult()
+    {
+        const string bridgeSteps = "{\"steps\":[{\"action\":\"navigate\",\"route\":\"/workplace/settings\"}]}";
+        SetupUiActionSkill("update_branch", "{\"steps\":[{\"action\":\"stale-repo-config\"}]}");
+        SetupBridgeFor("update_branch", new SkillBridgeResult
+        {
+            Success = true,
+            Message = "Function 'update_branch' will be executed as UI action in the user's browser.",
+            UiActionSteps = bridgeSteps
+        });
+        var call = new LLMFunctionCall { FunctionName = "update_branch", Parameters = new() { ["name"] = "North" } };
+
+        await _executor.ProcessFunctionCallsAsync(Ctx(), new List<LLMFunctionCall> { call });
+
+        Assert.That(call.UiActionSteps, Is.EqualTo(bridgeSteps));
+        Assert.That(call.Success, Is.True);
+        await _skillBridge.Received(1).ExecuteSkillFromLLMCallAsync(
+            Arg.Is<LLMFunctionCall>(c => c.FunctionName == "update_branch"),
+            Arg.Is<SkillExecutionContext>(c => c.SupportsUiActions),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UiActionSkill_HeldByGate_HasNoStepsAndRequiresConfirmation()
+    {
+        SetupUiActionSkill("update_branch", "{\"steps\":[{\"action\":\"navigate\"}]}");
+        SetupBridgeFor("update_branch", new SkillBridgeResult
+        {
+            Success = false,
+            Message = "User confirmation required",
+            ResultType = nameof(Klacks.Api.Domain.Enums.SkillResultType.Confirmation)
+        });
+        var call = new LLMFunctionCall { FunctionName = "update_branch", Parameters = new() { ["name"] = "North" } };
+
+        var result = await _executor.ProcessFunctionCallsAsync(Ctx(), new List<LLMFunctionCall> { call });
+
+        Assert.That(call.UiActionSteps, Is.Null);
+        Assert.That(call.RequiresConfirmation, Is.True);
+        Assert.That(result, Does.Contain("Confirmation required"));
+    }
+
+    [Test]
+    public async Task ConfirmedUiActionReplay_LiftsStepsAndOriginalParametersOntoTheConfirmCall()
+    {
+        const string bridgeSteps = "{\"steps\":[{\"action\":\"setValue\",\"selector\":\"branches-modal-name\"}]}";
+        var originalParameters = new Dictionary<string, object> { ["branchId"] = "7", ["name"] = "North" };
+        SetupBridgeFor("confirm_pending_action", new SkillBridgeResult
+        {
+            Success = true,
+            Message = "replayed",
+            UiActionSteps = bridgeSteps,
+            UiActionParameters = originalParameters
+        });
+        var call = new LLMFunctionCall
+        {
+            FunctionName = "confirm_pending_action",
+            Parameters = new() { ["confirmation_token"] = "token-1" }
+        };
+
+        await _executor.ProcessFunctionCallsAsync(Ctx(), new List<LLMFunctionCall> { call });
+
+        Assert.That(call.UiActionSteps, Is.EqualTo(bridgeSteps));
+        Assert.That(call.Parameters, Is.SameAs(originalParameters));
     }
 
     [Test]

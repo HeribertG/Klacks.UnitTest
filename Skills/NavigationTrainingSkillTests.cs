@@ -3,7 +3,7 @@
 /// <summary>
 /// Unit tests for the navigation-training skills — list_navigation_targets (status
 /// aggregation, obsolete filtering), update_navigation_synonyms (additive merge,
-/// needs-review status, unknown target, verify failure) and list_navigation_feedback.
+/// needs-review status passed to the command, unknown target, verify failure) and list_navigation_feedback.
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Klacksy;
@@ -68,7 +68,7 @@ public class NavigationTrainingSkillTests
     }
 
     [Test]
-    public async Task UpdateSynonyms_MergesAdditively_AndSetsNeedsReview()
+    public async Task UpdateSynonyms_MergesAdditively_AndPassesNeedsReviewStatusToCommand()
     {
         var target = Target("dashboard", deSynonyms: new[] { "übersicht" });
         _mediator.Send(Arg.Any<GetNavigationTargetsQuery>(), Arg.Any<CancellationToken>())
@@ -92,7 +92,8 @@ public class NavigationTrainingSkillTests
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldContain("Added 2 synonym(s)");
-        result.Message.ShouldContain("needs-review");
+        result.Message.ShouldContain("verified");
+        result.Message.ShouldNotContain("needs-review");
         await _mediator.Received(1).Send(
             Arg.Is<UpdateNavigationTargetSynonymsCommand>(c =>
                 c.TargetId == "dashboard"

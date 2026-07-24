@@ -57,8 +57,10 @@ public class SkillRiskClassifierTests
     [TestCase("reopen_period")]
     [TestCase("create_branch")]
     [TestCase("create_contract")]
+    [TestCase("add_expense")]
     [TestCase("delete_work")]
     [TestCase("cancel_wizard_job")]
+    [TestCase("delete_email")]
     public void Classify_InverseMappedOrExtraSkills_ReturnsReversible(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Reversible));
@@ -173,5 +175,17 @@ public class SkillRiskClassifierTests
     public void Classify_UnknownCrudSkill_DefaultsToIrreversible()
     {
         Assert.That(_sut.Classify(Descriptor("brand_new_writer")), Is.EqualTo(SkillRiskClass.Irreversible));
+    }
+
+    // The three non-mutating UiActions must stay un-gated: search_in_list and select_group classify
+    // ReadOnly via their Query category, start_guided_tour (Action category, only launches the
+    // onboarding tour overlay) is allow-listed explicitly. All mutating UiActions keep the
+    // Irreversible default (see update_general_settings above).
+    [TestCase("search_in_list", SkillCategory.Query)]
+    [TestCase("select_group", SkillCategory.Query)]
+    [TestCase("start_guided_tour", SkillCategory.Action)]
+    public void Classify_NonMutatingUiActions_ReturnsReadOnly(string name, SkillCategory category)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 }
