@@ -34,6 +34,8 @@ public class SkillRiskClassifierTests
     [TestCase("create_personal_access_token")]
     [TestCase("close_period")]
     [TestCase("create_user")]
+    [TestCase("update_calendar_selection")]
+    [TestCase("delete_calendar_selection")]
     public void Classify_SensitiveSkills_ReturnsSensitive(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
@@ -67,6 +69,7 @@ public class SkillRiskClassifierTests
     [TestCase("delete_shift")]
     [TestCase("update_general_settings")]
     [TestCase("email_schedule_to_client")]
+    [TestCase("create_calendar_selection")]
     public void Classify_UnmappedWriters_ReturnsIrreversible(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Irreversible));

@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Klacks.Api.Application.Services.Assistant.Autonomy;
+using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -59,6 +60,17 @@ public class AutonomyGateServiceTests
     {
         _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(riskClass);
     }
+
+    // Uses the REAL SkillRiskClassifier (not the mocked _riskClassifier) so Classify() actually
+    // runs end-to-end: this is the durable regression guard that a future refactor of the gate or
+    // the risk-class enum cannot silently un-gate update/delete_calendar_selection (payroll-relevant,
+    // owner decision) or accidentally gate create_calendar_selection (deliberately autonomous).
+    private AutonomyGateService CreateGateWithRealRiskClassifier() => new(
+        _preferenceRepository,
+        new SkillRiskClassifier(),
+        _confirmationStore,
+        _turnScope,
+        NullLogger<AutonomyGateService>.Instance);
 
     [Test]
     public async Task Check_ReadOnlySkill_AlwaysAllowed_EvenAtProposeLevel()
@@ -315,5 +327,35 @@ public class AutonomyGateServiceTests
 
         Assert.That(result, Is.Null);
         await _preferenceRepository.DidNotReceive().GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // End-to-end regression guard (real SkillRiskClassifier, no mock): proves the full
+    // Classifier -> Gate chain for the calendar-selection skills specifically, so a future change
+    // to SkillRiskClassifier or SkillRiskClass cannot silently drop the owner-mandated confirmation.
+    [TestCase("update_calendar_selection")]
+    [TestCase("delete_calendar_selection")]
+    public async Task Check_CalendarSelectionSensitiveSkills_RealClassifier_HeldForConfirmation(string skillName)
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Autonomous);
+
+        var result = await gate.CheckAsync(Descriptor(skillName), context, new Dictionary<string, object>());
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
+    }
+
+    [Test]
+    public async Task Check_CreateCalendarSelection_RealClassifier_AllowedAtAutonomousLevel()
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Autonomous);
+
+        var result = await gate.CheckAsync(
+            Descriptor("create_calendar_selection"), context, new Dictionary<string, object>());
+
+        Assert.That(result, Is.Null);
     }
 }
