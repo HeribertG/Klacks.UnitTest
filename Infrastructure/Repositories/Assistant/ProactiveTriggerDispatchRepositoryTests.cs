@@ -5,7 +5,8 @@
 /// (user, kind, dedup key), and after a failed SaveChangesAsync the poisoned row is detached so
 /// the change tracker stays clean and subsequent records in the same scope still succeed.
 /// Also covers the inbox surface: listing own rows newest first with unread filter and take,
-/// counting unread rows, and marking single rows (ownership enforced) as read.
+/// counting unread rows, loading recent reactions per kind for dismiss-streak learning, and
+/// marking single rows (ownership enforced) as read.
 /// Uses a shared in-memory DataBaseContext, mirroring the neighbouring repository tests.
 /// MarkAllReadAsync uses ExecuteUpdateAsync, which the EF in-memory provider does not support,
 /// so it is intentionally not covered here (same as the other ExecuteUpdateAsync repositories).
@@ -134,6 +135,42 @@ public class ProactiveTriggerDispatchRepositoryTests
             .ListForUserAsync("user-a", unreadOnly: false, take: 2);
 
         result.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task GetRecentReactionsAsync_ReturnsOnlyOwnReactedRowsOfKind_NewestReactionFirst_RespectsTake()
+    {
+        static ProactiveTriggerDispatchRow ReactedRow(string userId, string kind, string dedupKey, ProactiveReaction reaction, DateTime? reactionAtUtc) => new()
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TriggerKind = kind,
+            DedupKey = dedupKey,
+            Reaction = reaction,
+            ReactionAtUtc = reactionAtUtc
+        };
+
+        var baseTime = new DateTime(2026, 7, 24, 12, 0, 0, DateTimeKind.Utc);
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            await repository.RecordAsync(ReactedRow("user-a", "test_kind", "dedup-1", ProactiveReaction.Dismissed, baseTime.AddMinutes(-3)));
+            await repository.RecordAsync(ReactedRow("user-a", "test_kind", "dedup-2", ProactiveReaction.Helpful, baseTime.AddMinutes(-2)));
+            await repository.RecordAsync(ReactedRow("user-a", "test_kind", "dedup-3", ProactiveReaction.Dismissed, baseTime.AddMinutes(-1)));
+            await repository.RecordAsync(ReactedRow("user-a", "test_kind", "dedup-4", ProactiveReaction.None, null));
+            await repository.RecordAsync(ReactedRow("user-a", "other_kind", "dedup-5", ProactiveReaction.Dismissed, baseTime));
+            await repository.RecordAsync(ReactedRow("user-b", "test_kind", "dedup-6", ProactiveReaction.Dismissed, baseTime));
+        }
+
+        using var context = CreateContext();
+        var result = await new ProactiveTriggerDispatchRepository(context)
+            .GetRecentReactionsAsync("user-a", "test_kind", take: 2);
+
+        result.Count.ShouldBe(2);
+        result[0].DedupKey.ShouldBe("dedup-3");
+        result[0].Reaction.ShouldBe(ProactiveReaction.Dismissed);
+        result[1].DedupKey.ShouldBe("dedup-2");
+        result[1].Reaction.ShouldBe(ProactiveReaction.Helpful);
     }
 
     [Test]

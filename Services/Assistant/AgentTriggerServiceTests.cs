@@ -72,6 +72,16 @@ public class AgentTriggerServiceTests
         public IReadOnlyDictionary<string, string>? SummaryParams => Params;
     }
 
+    private sealed record ActionBroadcastEvent(string? Route, IReadOnlyDictionary<string, string>? Params) : IAgentTriggerEvent
+    {
+        public string Kind => "test_action";
+        public string Severity => AgentTriggerSeverity.Low;
+        public string Summary => "Action summary.";
+        public IReadOnlyDictionary<string, object?> Payload => new Dictionary<string, object?>();
+        public string? ActionRoute => Route;
+        public IReadOnlyDictionary<string, string>? ActionParams => Params;
+    }
+
 
     [Test]
     public async Task OnEventAsync_CompanionBroadcast_NoConnectedUsers_PersistsAndSendsNothing()
@@ -93,8 +103,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
         _rateLimiter.Received(1).RecordFire("user-a", AgentTriggerKinds.UnstaffedShift);
@@ -143,8 +153,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
-        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
     }
 
@@ -158,8 +168,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
-        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
-        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync("user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync("user-b", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
     }
 
@@ -207,7 +217,7 @@ public class AgentTriggerServiceTests
             "user-a",
             Arg.Is<string>(s => s.StartsWith("[HIGH]")),
             Arg.Any<string?>(),
-            Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+            Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
     }
 
     [Test]
@@ -223,7 +233,7 @@ public class AgentTriggerServiceTests
             Arg.Is<string>(s => s == ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.UnstaffedShift),
             Arg.Any<string?>(),
             Arg.Is<IReadOnlyDictionary<string, string>?>(p => p != null && p.ContainsKey("date") && p.ContainsKey("days")),
-            Arg.Any<string?>());
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
     }
 
     [Test]
@@ -238,9 +248,9 @@ public class AgentTriggerServiceTests
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
-            planner, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+            planner, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _notificationService.DidNotReceive().SendProactiveMessageAsync(
-            employee, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+            employee, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == employee), Arg.Any<CancellationToken>());
     }
 
@@ -268,7 +278,7 @@ public class AgentTriggerServiceTests
         await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Broadcast."));
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
-            "employee-1", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+            "employee-1", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "employee-1"), Arg.Any<CancellationToken>());
     }
 
@@ -281,7 +291,7 @@ public class AgentTriggerServiceTests
         string? sentMessageId = null;
         ProactiveTriggerDispatchRow? recordedRow = null;
         _notificationService
-            .When(n => n.SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>()))
+            .When(n => n.SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>()))
             .Do(ci => sentMessageId = ci.ArgAt<string?>(4));
         _dispatchRepository
             .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
@@ -342,7 +352,7 @@ public class AgentTriggerServiceTests
         Assert.That(recordedRow, Is.Not.Null);
         Assert.That(recordedRow!.ContentParamsJson, Is.Null);
         await _notificationService.Received(1).SendProactiveMessageAsync(
-            "user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+            "user-a", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
     }
 
     [Test]
@@ -351,7 +361,7 @@ public class AgentTriggerServiceTests
         _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _notificationService
-            .SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>())
+            .SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>())
             .Returns(Task.FromException(new InvalidOperationException("send failed")));
 
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
@@ -385,8 +395,8 @@ public class AgentTriggerServiceTests
 
         await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("sport", target));
 
-        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
-        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == other.ToString()), Arg.Any<CancellationToken>());
     }
 
@@ -416,8 +426,8 @@ public class AgentTriggerServiceTests
 
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == target.ToString()), Arg.Any<CancellationToken>());
         await _dispatchRepository.DidNotReceive().RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == other.ToString()), Arg.Any<CancellationToken>());
-        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
-        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>());
+        await _notificationService.Received(1).SendProactiveMessageAsync(target.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(other.ToString(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
     }
 
@@ -438,6 +448,105 @@ public class AgentTriggerServiceTests
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
         await _planningAudienceResolver.Received(1).GetAdminUserIdsAsync(Arg.Any<CancellationToken>());
         await _planningAudienceResolver.DidNotReceiveWithAnyArgs().GetPlanningUserIdsAsync(default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_EventWithAction_PersistsActionAndForwardsItInLivePush()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        string? sentKind = null;
+        string? sentActionRoute = null;
+        IReadOnlyDictionary<string, string>? sentActionParams = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+        _notificationService
+            .When(n => n.SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>()))
+            .Do(ci =>
+            {
+                sentKind = ci.ArgAt<string?>(5);
+                sentActionRoute = ci.ArgAt<string?>(6);
+                sentActionParams = ci.ArgAt<IReadOnlyDictionary<string, string>?>(7);
+            });
+        var groupId = Guid.NewGuid();
+        var triggerEvent = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 1, groupId);
+
+        await _sut.OnEventAsync(triggerEvent);
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ActionRoute, Is.EqualTo(ProactiveActionRoutes.Schedule));
+        Assert.That(recordedRow.ActionParamsJson, Is.Not.Null);
+        var persistedParams = JsonSerializer.Deserialize<Dictionary<string, string>>(recordedRow.ActionParamsJson!);
+        Assert.That(persistedParams, Is.Not.Null);
+        Assert.That(persistedParams![ProactiveActionParamKeys.GroupId], Is.EqualTo(groupId.ToString()));
+        Assert.That(persistedParams[ProactiveActionParamKeys.Date], Is.EqualTo("2026-08-03"));
+        Assert.That(sentKind, Is.EqualTo(AgentTriggerKinds.UnstaffedShift));
+        Assert.That(sentActionRoute, Is.EqualTo(ProactiveActionRoutes.Schedule));
+        Assert.That(sentActionParams, Is.Not.Null);
+        Assert.That(sentActionParams![ProactiveActionParamKeys.GroupId], Is.EqualTo(groupId.ToString()));
+    }
+
+    [Test]
+    public async Task OnEventAsync_EventWithoutAction_PersistsNullActionFields()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Broadcast."));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ActionRoute, Is.Null);
+        Assert.That(recordedRow.ActionParamsJson, Is.Null);
+    }
+
+    [Test]
+    public async Task OnEventAsync_OverlongActionParamValue_CapsValueAndKeepsJsonWithinColumnLimit()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+        var overlongValue = new string('x', 1500);
+
+        await _sut.OnEventAsync(new ActionBroadcastEvent(
+            ProactiveActionRoutes.Schedule,
+            new Dictionary<string, string> { ["target"] = overlongValue }));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ActionParamsJson, Is.Not.Null);
+        Assert.That(recordedRow.ActionParamsJson!.Length, Is.LessThanOrEqualTo(ProactiveTriggerDispatchLimits.ActionParamsJsonMaxLength));
+        var deserialized = JsonSerializer.Deserialize<Dictionary<string, string>>(recordedRow.ActionParamsJson);
+        Assert.That(deserialized, Is.Not.Null);
+        Assert.That(deserialized!["target"], Has.Length.EqualTo(ProactiveTriggerDispatchLimits.ContentParamValueMaxLength));
+        Assert.That(deserialized["target"], Does.EndWith(ProactiveTriggerDispatchLimits.TruncationSuffix));
+    }
+
+    [Test]
+    public async Task OnEventAsync_ActionParamsExceedColumnLimitEvenAfterCapping_StoresNullActionParamsButKeepsRoute()
+    {
+        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+        var manyParams = Enumerable.Range(0, 3)
+            .ToDictionary(i => $"param{i}", i => new string('x', 900));
+
+        await _sut.OnEventAsync(new ActionBroadcastEvent(ProactiveActionRoutes.Schedule, manyParams));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ActionRoute, Is.EqualTo(ProactiveActionRoutes.Schedule));
+        Assert.That(recordedRow.ActionParamsJson, Is.Null);
     }
 }
 
@@ -479,13 +588,163 @@ public class OperationalTriggerEventDedupKeyTests
         var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, null);
         var scenario = new ScenarioPendingTriggerEvent(Guid.NewGuid(), 80, null, "GE");
         var contract = new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), "Jane", new DateOnly(2026, 6, 30), 5);
+        var availabilityGap = new AvailabilityGapTriggerEvent(Guid.NewGuid(), "Jane", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 10);
+        var periodOverdue = new PeriodOverdueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 10);
+        var missingCoreData = new ClientMissingCoreDataTriggerEvent(Guid.NewGuid(), "Jane", ClientMissingCoreDataTriggerEvent.AddressField);
 
-        foreach (var ev in new IAgentTriggerEvent[] { drift, period, unstaffed, lockConflict, scenario, contract })
+        foreach (var ev in new IAgentTriggerEvent[] { drift, period, unstaffed, lockConflict, scenario, contract, availabilityGap, periodOverdue, missingCoreData })
         {
             Assert.That(ev.PlannersOnly, Is.True, $"{ev.Kind} must be planners-only");
             Assert.That(ev.Summary, Does.StartWith(ProactiveMessageMarkers.I18nPrefix), $"{ev.Kind} must use an i18n summary");
             Assert.That(ev.SummaryParams, Is.Not.Null.And.Not.Empty, $"{ev.Kind} must carry summary params");
         }
+    }
+
+    [Test]
+    public void DataQualityEvents_HaveDiscriminatingDedupKeys()
+    {
+        var clientA = Guid.NewGuid();
+        var clientB = Guid.NewGuid();
+        var august = new DateOnly(2026, 8, 1);
+        var september = new DateOnly(2026, 9, 1);
+
+        var gapA = new AvailabilityGapTriggerEvent(clientA, "A", august, new DateOnly(2026, 8, 31), 10);
+        var gapB = new AvailabilityGapTriggerEvent(clientB, "B", august, new DateOnly(2026, 8, 31), 10);
+        var gapNextMonth = new AvailabilityGapTriggerEvent(clientA, "A", september, new DateOnly(2026, 9, 30), 10);
+        Assert.That(gapA.DedupKey, Is.Not.EqualTo(gapA.Summary));
+        Assert.That(gapA.DedupKey, Is.Not.EqualTo(gapB.DedupKey));
+        Assert.That(gapA.DedupKey, Is.Not.EqualTo(gapNextMonth.DedupKey));
+
+        var overdueA = new PeriodOverdueTriggerEvent(clientA, "GE", new DateOnly(2026, 6, 30), 10);
+        var overdueB = new PeriodOverdueTriggerEvent(clientB, "BE", new DateOnly(2026, 6, 30), 10);
+        var overdueNextPeriod = new PeriodOverdueTriggerEvent(clientA, "GE", new DateOnly(2026, 7, 31), 10);
+        Assert.That(overdueA.DedupKey, Is.Not.EqualTo(overdueA.Summary));
+        Assert.That(overdueA.DedupKey, Is.Not.EqualTo(overdueB.DedupKey));
+        Assert.That(overdueA.DedupKey, Is.Not.EqualTo(overdueNextPeriod.DedupKey));
+
+        var missingAddress = new ClientMissingCoreDataTriggerEvent(clientA, "A", ClientMissingCoreDataTriggerEvent.AddressField);
+        var missingContact = new ClientMissingCoreDataTriggerEvent(clientA, "A", ClientMissingCoreDataTriggerEvent.ContactField);
+        var missingAddressOther = new ClientMissingCoreDataTriggerEvent(clientB, "B", ClientMissingCoreDataTriggerEvent.AddressField);
+        Assert.That(missingAddress.DedupKey, Is.Not.EqualTo(missingAddress.Summary));
+        Assert.That(missingAddress.DedupKey, Is.Not.EqualTo(missingContact.DedupKey));
+        Assert.That(missingAddress.DedupKey, Is.Not.EqualTo(missingAddressOther.DedupKey));
+    }
+
+    [Test]
+    public void DataQualityEvents_DedupKeysAreStableAcrossChangingMagnitude()
+    {
+        var clientId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+
+        var gapFar = new AvailabilityGapTriggerEvent(clientId, "A", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 20);
+        var gapNear = new AvailabilityGapTriggerEvent(clientId, "A", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 3);
+        Assert.That(gapFar.DedupKey, Is.EqualTo(gapNear.DedupKey));
+
+        var overdueYoung = new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 8);
+        var overdueOld = new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 25);
+        Assert.That(overdueYoung.DedupKey, Is.EqualTo(overdueOld.DedupKey));
+    }
+
+    [Test]
+    public void DataQualityEvents_CarryContractedI18nKeysAndParams()
+    {
+        var gap = new AvailabilityGapTriggerEvent(Guid.NewGuid(), "Jane", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 10);
+        Assert.That(gap.Summary, Is.EqualTo("i18n:assistant.proactive.availabilityGap"));
+        Assert.That(gap.SummaryParams.Keys, Is.EquivalentTo(new[] { "name", "from", "until" }));
+        Assert.That(gap.SummaryParams["from"], Is.EqualTo("01.08.2026"));
+        Assert.That(gap.SummaryParams["until"], Is.EqualTo("31.08.2026"));
+
+        var overdue = new PeriodOverdueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 10);
+        Assert.That(overdue.Summary, Is.EqualTo("i18n:assistant.proactive.periodOverdue"));
+        Assert.That(overdue.SummaryParams.Keys, Is.EquivalentTo(new[] { "group", "periodEnd", "days" }));
+        Assert.That(overdue.SummaryParams["periodEnd"], Is.EqualTo("30.06.2026"));
+        Assert.That(overdue.SummaryParams["days"], Is.EqualTo("10"));
+
+        var missingAddress = new ClientMissingCoreDataTriggerEvent(Guid.NewGuid(), "Jane", ClientMissingCoreDataTriggerEvent.AddressField);
+        Assert.That(missingAddress.Summary, Is.EqualTo("i18n:assistant.proactive.clientMissingAddress"));
+        Assert.That(missingAddress.SummaryParams.Keys, Is.EquivalentTo(new[] { "name" }));
+        Assert.That(missingAddress.Severity, Is.EqualTo(AgentTriggerSeverity.Medium));
+
+        var missingContact = new ClientMissingCoreDataTriggerEvent(Guid.NewGuid(), "Jane", ClientMissingCoreDataTriggerEvent.ContactField);
+        Assert.That(missingContact.Summary, Is.EqualTo("i18n:assistant.proactive.clientMissingContact"));
+        Assert.That(missingContact.SummaryParams.Keys, Is.EquivalentTo(new[] { "name" }));
+        Assert.That(missingContact.Severity, Is.EqualTo(AgentTriggerSeverity.Low));
+    }
+
+    [Test]
+    public void OperationalEvents_CarryContractedActionRoutesAndParams()
+    {
+        var groupId = Guid.NewGuid();
+        var clientId = Guid.NewGuid();
+        var scenarioId = Guid.NewGuid();
+
+        var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, groupId);
+        Assert.That(unstaffed.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(unstaffed.ActionParams, Is.Not.Null);
+        Assert.That(unstaffed.ActionParams!["groupId"], Is.EqualTo(groupId.ToString()));
+        Assert.That(unstaffed.ActionParams["date"], Is.EqualTo("2026-08-03"));
+
+        var unstaffedWithoutGroup = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, null);
+        Assert.That(unstaffedWithoutGroup.ActionParams!.Keys, Is.EquivalentTo(new[] { "date" }));
+
+        var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, groupId);
+        Assert.That(lockConflict.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(lockConflict.ActionParams!.Keys, Is.EquivalentTo(new[] { "date", "groupId" }));
+
+        var drift = new TargetHoursDriftTriggerEvent(clientId, "Jane", -20m, "2026-06");
+        Assert.That(drift.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(drift.ActionParams!["clientId"], Is.EqualTo(clientId.ToString()));
+        Assert.That(drift.ActionParams["period"], Is.EqualTo("2026-06"));
+
+        var periodClose = new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3);
+        Assert.That(periodClose.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(periodClose.ActionParams!["groupId"], Is.EqualTo(groupId.ToString()));
+        Assert.That(periodClose.ActionParams["date"], Is.EqualTo("2026-06-30"));
+
+        var periodOverdue = new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 10);
+        Assert.That(periodOverdue.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(periodOverdue.ActionParams!["groupId"], Is.EqualTo(groupId.ToString()));
+
+        var scenario = new ScenarioPendingTriggerEvent(scenarioId, 80, groupId, "GE");
+        Assert.That(scenario.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(scenario.ActionParams!["scenarioId"], Is.EqualTo(scenarioId.ToString()));
+        Assert.That(scenario.ActionParams["groupId"], Is.EqualTo(groupId.ToString()));
+
+        var contract = new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), clientId, "Jane", new DateOnly(2026, 6, 30), 5);
+        Assert.That(contract.ActionRoute, Is.EqualTo("/workplace/edit-address"));
+        Assert.That(contract.ActionParams!.Keys, Is.EquivalentTo(new[] { "clientId" }));
+        Assert.That(contract.ActionParams["clientId"], Is.EqualTo(clientId.ToString()));
+
+        var missingCoreData = new ClientMissingCoreDataTriggerEvent(clientId, "Jane", ClientMissingCoreDataTriggerEvent.AddressField);
+        Assert.That(missingCoreData.ActionRoute, Is.EqualTo("/workplace/edit-address"));
+        Assert.That(missingCoreData.ActionParams!["clientId"], Is.EqualTo(clientId.ToString()));
+
+        var gap = new AvailabilityGapTriggerEvent(clientId, "Jane", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 10);
+        Assert.That(gap.ActionRoute, Is.EqualTo("/workplace/client-availability"));
+        Assert.That(gap.ActionParams!["clientId"], Is.EqualTo(clientId.ToString()));
+        Assert.That(gap.ActionParams["date"], Is.EqualTo("2026-08-01"));
+    }
+
+    [Test]
+    public void MuteSuggestionEvent_IsTargetedCompanionEvent_WithPerKindDedupKey()
+    {
+        var userId = Guid.NewGuid();
+        IAgentTriggerEvent suggestion = new MuteSuggestionTriggerEvent(AgentTriggerKinds.TargetHoursDrift, userId);
+        IAgentTriggerEvent otherKindSuggestion = new MuteSuggestionTriggerEvent(AgentTriggerKinds.UnstaffedShift, userId);
+
+        Assert.That(suggestion.Kind, Is.EqualTo(AgentTriggerKinds.MuteSuggestion));
+        Assert.That(suggestion.PlannersOnly, Is.False);
+        Assert.That(suggestion.AdminOnly, Is.False);
+        Assert.That(suggestion.TargetUserId, Is.EqualTo(userId));
+        Assert.That(suggestion.Severity, Is.EqualTo(AgentTriggerSeverity.Low));
+        Assert.That(suggestion.Summary, Is.EqualTo("i18n:assistant.proactive.muteSuggestion"));
+        Assert.That(suggestion.SummaryParams, Is.Not.Null);
+        Assert.That(suggestion.SummaryParams!["kind"], Is.EqualTo(AgentTriggerKinds.TargetHoursDrift));
+        Assert.That(suggestion.DedupKey, Is.EqualTo("mute-suggestion:target_hours_drift"));
+        Assert.That(suggestion.DedupKey, Is.Not.EqualTo(otherKindSuggestion.DedupKey));
+        Assert.That(suggestion.DedupKey, Is.Not.EqualTo(suggestion.Summary));
+        Assert.That(suggestion.ActionRoute, Is.Null);
+        Assert.That(suggestion.ActionParams, Is.Null);
     }
 }
 

@@ -2,9 +2,10 @@
 
 /// <summary>
 /// Unit tests for GetProactiveMessagesQueryHandler — verifies mapping of dispatch rows to inbox
-/// DTOs (content key, deserialized params, severity, reaction, timestamps), the empty-params
-/// fallback for missing or invalid JSON, and normalization of the take parameter to the
-/// configured default and maximum.
+/// DTOs (content key, deserialized params, severity, trigger kind, action route and params,
+/// reaction, timestamps), the empty-params fallback for missing or invalid JSON, the null action
+/// params for missing or invalid JSON, and normalization of the take parameter to the configured
+/// default and maximum.
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Assistant;
@@ -28,7 +29,7 @@ public class GetProactiveMessagesQueryHandlerTests
         _sut = new GetProactiveMessagesQueryHandler(_dispatchRepository);
     }
 
-    private static ProactiveTriggerDispatchRow MakeRow(string? contentParamsJson = null) => new()
+    private static ProactiveTriggerDispatchRow MakeRow(string? contentParamsJson = null, string? actionRoute = null, string? actionParamsJson = null) => new()
     {
         Id = Guid.NewGuid(),
         UserId = UserId,
@@ -37,6 +38,8 @@ public class GetProactiveMessagesQueryHandlerTests
         ContentKey = "i18n:proactive.unstaffedShift",
         ContentParamsJson = contentParamsJson,
         Severity = "medium",
+        ActionRoute = actionRoute,
+        ActionParamsJson = actionParamsJson,
         Reaction = ProactiveReaction.Helpful,
         CreateTime = new DateTime(2026, 7, 24, 10, 0, 0, DateTimeKind.Utc),
         ReadAtUtc = new DateTime(2026, 7, 24, 11, 0, 0, DateTimeKind.Utc)
@@ -62,9 +65,49 @@ public class GetProactiveMessagesQueryHandlerTests
         Assert.That(dto.ContentParams["date"], Is.EqualTo("24.07.2026"));
         Assert.That(dto.ContentParams["days"], Is.EqualTo("2"));
         Assert.That(dto.Severity, Is.EqualTo(row.Severity));
+        Assert.That(dto.Kind, Is.EqualTo(row.TriggerKind));
         Assert.That(dto.Reaction, Is.EqualTo(nameof(ProactiveReaction.Helpful)));
         Assert.That(dto.CreatedUtc, Is.EqualTo(row.CreateTime));
         Assert.That(dto.ReadAtUtc, Is.EqualTo(row.ReadAtUtc));
+    }
+
+    [Test]
+    public async Task Handle_RowWithAction_MapsActionRouteAndParams()
+    {
+        var row = MakeRow(
+            actionRoute: "/workplace/schedule",
+            actionParamsJson: """{"groupId":"3e2f6f9a-6f4b-4d47-9d5e-0a1b2c3d4e5f","date":"2026-08-03"}""");
+        SetupRows(row);
+
+        var result = await _sut.Handle(new GetProactiveMessagesQuery { UserId = UserId }, CancellationToken.None);
+
+        var dto = result[0];
+        Assert.That(dto.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(dto.ActionParams, Is.Not.Null);
+        Assert.That(dto.ActionParams!["groupId"], Is.EqualTo("3e2f6f9a-6f4b-4d47-9d5e-0a1b2c3d4e5f"));
+        Assert.That(dto.ActionParams["date"], Is.EqualTo("2026-08-03"));
+    }
+
+    [Test]
+    public async Task Handle_RowWithoutAction_YieldsNullActionFields()
+    {
+        SetupRows(MakeRow());
+
+        var result = await _sut.Handle(new GetProactiveMessagesQuery { UserId = UserId }, CancellationToken.None);
+
+        Assert.That(result[0].ActionRoute, Is.Null);
+        Assert.That(result[0].ActionParams, Is.Null);
+    }
+
+    [Test]
+    public async Task Handle_InvalidActionParamsJson_YieldsNullActionParams()
+    {
+        SetupRows(MakeRow(actionRoute: "/workplace/schedule", actionParamsJson: "not-json"));
+
+        var result = await _sut.Handle(new GetProactiveMessagesQuery { UserId = UserId }, CancellationToken.None);
+
+        Assert.That(result[0].ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(result[0].ActionParams, Is.Null);
     }
 
     [Test]
