@@ -156,8 +156,9 @@ public class SkillToolsetAssemblerProposalConfirmationTests
 
     // Deliberate widening: an "unrelated" message cannot be told apart from the answer to a follow-up
     // question the model just asked, and guessing wrong closes the toolset on exactly the turn that needs
-    // it. Surfacing the skill is safe on its own — it is classified Sensitive, so the autonomy gate still
-    // demands an explicit confirmation token before anything is written.
+    // it. Since apply_grouping is no longer gated at the default autonomy level, what holds the call back
+    // is now the catalogue text alone ("only after the user has seen the preview AND confirms"), plus the
+    // fact that re-applying an already-applied grouping is a no-op.
     [Test]
     public async Task UnrelatedMessage_WithAnOutstandingHint_StillGuaranteesTheApplySkill()
     {

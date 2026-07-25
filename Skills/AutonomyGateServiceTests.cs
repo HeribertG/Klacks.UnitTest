@@ -359,21 +359,18 @@ public class AutonomyGateServiceTests
         Assert.That(result, Is.Null);
     }
 
-    // Closes the reported confirmation gap end-to-end: the grouping apply skill rewrites the group
-    // membership of the whole customer/employee/extern base (per entityType). No SetLevel here on
-    // purpose — the repository returns null, so the gate falls back to AutonomyDefaults.DefaultLevel,
-    // which is the situation of a user who never configured an autonomy level. A classifier-only test
-    // would still pass if IsAllowed later let Sensitive through; this one would not.
+    // Counterpart to the removal of apply_grouping from the sensitive list (owner decision): at the
+    // Autonomous default level the apply must run straight through, because the preview it belongs to
+    // was already confirmed by the user. No SetLevel here on purpose — the repository returns null, so
+    // the gate falls back to AutonomyDefaults.DefaultLevel, i.e. a user who never configured a level.
     [TestCase("apply_grouping")]
-    public async Task Check_GroupingApplySkills_RealClassifier_HeldForConfirmation_WithoutAutonomyRow(string skillName)
+    public async Task Check_GroupingApplySkill_RealClassifier_NotHeld_AtDefaultAutonomyLevel(string skillName)
     {
         var gate = CreateGateWithRealRiskClassifier();
 
         var result = await gate.CheckAsync(Descriptor(skillName), Context(), new Dictionary<string, object>());
 
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
-        Assert.That(result.Metadata, Does.ContainKey("confirmationToken"));
+        Assert.That(result, Is.Null);
     }
 
     // Counterpart: the bulk group writers that default to apply=false must stay un-gated, because the

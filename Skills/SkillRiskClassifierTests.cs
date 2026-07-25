@@ -145,13 +145,15 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
-    // The grouping apply skill rewrites the membership of the whole customer/employee/extern base (per
-    // entityType) in one transaction, so it must always require human confirmation — exactly like the
-    // single delete_membership that is already Sensitive.
+    // The grouping apply skill is deliberately NOT Sensitive (owner decision): it is the second half of
+    // a propose/apply pair, so the user already approved the full preview before it is ever called. The
+    // extra gate asked a second time for the same action and, because the token does not survive into
+    // the next turn's history, kept failing to be redeemed. Irreversible still gates it below the
+    // Autonomous default level, so a deliberately lowered autonomy level keeps its confirmation.
     [TestCase("apply_grouping")]
-    public void Classify_GroupingApplySkills_ReturnsSensitive(string name)
+    public void Classify_GroupingApplySkill_IsNotSensitive(string name)
     {
-        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Irreversible));
     }
 
     // Counterpart to the test above: the bulk group writers that default to apply=false must NOT be
