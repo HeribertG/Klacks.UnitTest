@@ -1,11 +1,12 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Verifies the read side of the proposal/apply pairing in SkillToolsetAssembler: on a bare affirmation
-/// turn an outstanding proposal hint puts the paired apply skill into the toolset, while a refusal, an
-/// unrelated message, an aged hint or a merely gate-held confirmation (the other purpose of the same
-/// store) do not. The affirmation and refusal signals come from the shared multilingual detectors, so
-/// the guarantee is exercised in several languages without any new word list.
+/// Verifies the read side of the proposal/apply pairing in SkillToolsetAssembler: while a proposal hint
+/// is outstanding, the paired apply skill is in the toolset regardless of how the user phrases the reply
+/// — a bare "ja", but equally the bare answer to a follow-up question the model asked, such as a date.
+/// Only an explicit refusal drops it; a missing hint, a discarded hint or a merely gate-held confirmation
+/// (the other purpose of the same store) never produce it. The refusal signal comes from the shared
+/// multilingual detector, so no new word list is involved in any language.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
@@ -23,14 +24,19 @@ namespace Klacks.UnitTest.Application.Services.Assistant;
 public class SkillToolsetAssemblerProposalConfirmationTests
 {
     private const string AlwaysOnSkillName = "navigate_to";
-    private const string ApplySkillName = "apply_customer_grouping";
+    private const string ApplySkillName = "apply_grouping";
     private const string GatedSkillName = "delete_group";
     private const string Affirmation = "Ja";
     private const string Refusal = "Nein, lass es";
     private const string UnrelatedMessage = "Zeig mir die Auswertung";
 
-    private static readonly TimeSpan ForceWindow =
-        TimeSpan.FromSeconds(AutonomyDefaults.ConfirmationForceWindowSeconds);
+    // The reported live failure: the model asked "from which date should the memberships start?" and the
+    // user answered with nothing but the date. It contains no word token at all, so it is neither an
+    // affirmation nor a refusal.
+    private const string BareDateAnswer = "2026-06-01";
+
+    private static readonly TimeSpan ProposalHintWindow =
+        TimeSpan.FromSeconds(AutonomyDefaults.ProposalHintWindowSeconds);
 
     private ISkillCacheService _skillCache = null!;
     private IKnowledgeRetrievalService _retrieval = null!;
@@ -122,17 +128,44 @@ public class SkillToolsetAssemblerProposalConfirmationTests
 
         FunctionNames(result).ShouldNotContain(ApplySkillName);
         _confirmationStore.PeekLatestForUser(
-            _userId, ForceWindow, PendingConfirmationPurposes.ProposalHint).ShouldBeNull();
+            _userId, ProposalHintWindow, PendingConfirmationPurposes.ProposalHint).ShouldBeNull();
     }
 
     [Test]
-    public async Task UnrelatedMessage_WithAnOutstandingHint_DoesNotGuaranteeTheApplySkill()
+    public async Task BareDateAnswer_WithAnOutstandingHint_GuaranteesThePairedApplySkill()
+    {
+        _confirmationStore.CreateProposalHint(_userId, ApplySkillName);
+
+        var result = await AssembleAsync(BareDateAnswer);
+
+        FunctionNames(result).ShouldContain(ApplySkillName);
+    }
+
+    [TestCase("2026-06-01")]
+    [TestCase("ab dem 1.6.2026")]
+    [TestCase("Employee")]
+    [TestCase("Zürich")]
+    public async Task AnyNonRefusingAnswer_WithAnOutstandingHint_GuaranteesThePairedApplySkill(string message)
+    {
+        _confirmationStore.CreateProposalHint(_userId, ApplySkillName);
+
+        var result = await AssembleAsync(message);
+
+        FunctionNames(result).ShouldContain(ApplySkillName);
+    }
+
+    // Deliberate widening: an "unrelated" message cannot be told apart from the answer to a follow-up
+    // question the model just asked, and guessing wrong closes the toolset on exactly the turn that needs
+    // it. Surfacing the skill is safe on its own — it is classified Sensitive, so the autonomy gate still
+    // demands an explicit confirmation token before anything is written.
+    [Test]
+    public async Task UnrelatedMessage_WithAnOutstandingHint_StillGuaranteesTheApplySkill()
     {
         _confirmationStore.CreateProposalHint(_userId, ApplySkillName);
 
         var result = await AssembleAsync(UnrelatedMessage);
 
-        FunctionNames(result).ShouldNotContain(ApplySkillName);
+        FunctionNames(result).ShouldContain(ApplySkillName);
     }
 
     [Test]

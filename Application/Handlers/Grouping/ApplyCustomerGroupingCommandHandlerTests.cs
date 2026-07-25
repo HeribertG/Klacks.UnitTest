@@ -8,7 +8,8 @@
 /// whose membership no longer exists, and does nothing when a customer already sits in the target with
 /// nothing to retire. The reported ended-membership count must be the applied truth: only retires that
 /// actually found a live membership are counted, so the proposal's announced number can be confirmed
-/// rather than merely repeated.
+/// rather than merely repeated. A caller-supplied ValidFrom must reach the written membership unchanged
+/// and be reported back, because a start date silently replaced by today is invisible in the answer.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Grouping;
@@ -27,6 +28,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
     private static readonly Guid Canton = Guid.NewGuid();
     private static readonly Guid City = Guid.NewGuid();
     private static readonly DateTime CompanyToday = new(2099, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime RequestedValidFrom = new(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private ICustomerGroupingPlanner _planner = null!;
     private IGroupItemRepository _groupItemRepository = null!;
@@ -144,6 +146,37 @@ public class ApplyCustomerGroupingCommandHandlerTests
         result.VerifiedCount.ShouldBe(0);
         result.UnassignedCount.ShouldBe(1);
         result.EndedMembershipCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Handle_ExplicitValidFrom_IsWrittenInsteadOfCompanyToday_AndReported()
+    {
+        SetProposal(new CustomerGroupingAssignment(
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
+        _groupItemRepository.GetByClientAndGroup(ClientId, Canton).Returns((GroupItem?)null);
+        _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns((GroupItem?)null);
+
+        var result = await _handler.Handle(
+            new ApplyCustomerGroupingCommand(EntityTypeEnum.Customer, RequestedValidFrom), CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(g => g.ValidFrom == RequestedValidFrom));
+        result.AppliedValidFrom.ShouldBe(RequestedValidFrom);
+    }
+
+    [Test]
+    public async Task Handle_WithoutValidFrom_FallsBackToCompanyToday_AndReportsIt()
+    {
+        SetProposal(new CustomerGroupingAssignment(
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
+        _groupItemRepository.GetByClientAndGroup(ClientId, Canton).Returns((GroupItem?)null);
+        _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns((GroupItem?)null);
+
+        var result = await _handler.Handle(new ApplyCustomerGroupingCommand(), CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(g => g.ValidFrom == CompanyToday));
+        result.AppliedValidFrom.ShouldBe(CompanyToday);
     }
 
     private void SetProposal(CustomerGroupingAssignment assignment)
