@@ -337,4 +337,37 @@ public class ScheduleMapperTests
         result.Qualifications[0].Name.ShouldNotBeNull();
         result.Qualifications[0].Name.IsEmpty.ShouldBeTrue();
     }
+
+    [Test]
+    public void ToContractEntity_ResourceWithIndividualPeriodId_MapsIndividualPeriodId()
+    {
+        var individualPeriodId = Guid.NewGuid();
+        var resource = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = Guid.NewGuid(),
+            Name = "Custom cycle contract",
+            IndividualPeriodId = individualPeriodId,
+        };
+
+        var result = _mapper.ToContractEntity(resource);
+
+        result.IndividualPeriodId.ShouldBe(individualPeriodId);
+    }
+
+    [Test]
+    public void UpdateContractEntity_ResourceWithIndividualPeriodId_UpdatesTargetIndividualPeriodId()
+    {
+        var individualPeriodId = Guid.NewGuid();
+        var target = new Contract { Id = Guid.NewGuid(), Name = "Original" };
+        var source = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = target.Id,
+            Name = "Updated",
+            IndividualPeriodId = individualPeriodId,
+        };
+
+        _mapper.UpdateContractEntity(target, source);
+
+        target.IndividualPeriodId.ShouldBe(individualPeriodId);
+    }
 }

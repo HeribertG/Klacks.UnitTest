@@ -249,4 +249,69 @@ public class ContractRepositoryTests
         // Assert
         result.ShouldBeNull();
     }
+
+    [Test]
+    public async Task CountActiveContractsByIndividualPeriodAsync_WithActiveContracts_ReturnsCount()
+    {
+        // Arrange
+        var individualPeriodId = Guid.NewGuid();
+        var contracts = new List<Contract>
+        {
+            new Contract
+            {
+                Id = Guid.NewGuid(),
+                Name = "Active Contract 1",
+                ValidFrom = DateTime.UtcNow,
+                IndividualPeriodId = individualPeriodId,
+            },
+            new Contract
+            {
+                Id = Guid.NewGuid(),
+                Name = "Active Contract 2",
+                ValidFrom = DateTime.UtcNow,
+                IndividualPeriodId = individualPeriodId,
+            },
+            new Contract
+            {
+                Id = Guid.NewGuid(),
+                Name = "Unrelated Contract",
+                ValidFrom = DateTime.UtcNow,
+                IndividualPeriodId = Guid.NewGuid(),
+            },
+        };
+
+        dbContext.Contract.AddRange(contracts);
+        await dbContext.SaveChangesAsync();
+
+        // Act
+        var count = await contractRepository.CountActiveContractsByIndividualPeriodAsync(individualPeriodId);
+
+        // Assert
+        count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task CountActiveContractsByIndividualPeriodAsync_WithOnlySoftDeletedContracts_ReturnsZero()
+    {
+        // Arrange
+        var individualPeriodId = Guid.NewGuid();
+        var contract = new Contract
+        {
+            Id = Guid.NewGuid(),
+            Name = "Deleted Contract",
+            ValidFrom = DateTime.UtcNow,
+            IndividualPeriodId = individualPeriodId,
+        };
+
+        dbContext.Contract.Add(contract);
+        await dbContext.SaveChangesAsync();
+        await contractRepository.Delete(contract.Id);
+        await dbContext.SaveChangesAsync();
+
+        // Act
+        var count = await contractRepository.CountActiveContractsByIndividualPeriodAsync(individualPeriodId);
+
+        // Assert
+        count.ShouldBe(0);
+    }
 }

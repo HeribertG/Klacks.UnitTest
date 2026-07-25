@@ -1,8 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for PeriodHoursService.GetPeriodBoundariesAsync, focused on how the Weekly/Biweekly payment
-/// interval boundaries react to a configured (non-default) week start day.
+/// Tests for PeriodHoursService period boundary resolution: how the Weekly/Biweekly payment interval
+/// boundaries react to a configured (non-default) week start day, and how the contract scoped
+/// resolution handles PaymentInterval.Individual.
 /// </summary>
 
 namespace Klacks.UnitTest.Infrastructure.Services.PeriodHours;
@@ -10,9 +11,12 @@ namespace Klacks.UnitTest.Infrastructure.Services.PeriodHours;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Persistence;
@@ -92,6 +96,168 @@ public class PeriodHoursServicePeriodBoundariesTests
 
         (end.DayNumber - start.DayNumber).ShouldBe(13);
         start.DayOfWeek.ShouldBe(DayOfWeek.Sunday);
+    }
+
+    [Test]
+    public async Task GetPeriodBoundariesAsync_GlobalIntervalIndividual_FallsBackToCalendarMonth()
+    {
+        // Arrange
+        // The global setting cannot name an IndividualPeriod, so month boundaries stay the documented
+        // fallback for the 20 existing call sites; only the log warning is new.
+        await SeedPaymentIntervalAsync(PaymentInterval.Individual);
+        var service = CreateService(weekStartDay: null);
+
+        // Act
+        var (start, end) = await service.GetPeriodBoundariesAsync(new DateOnly(2026, 7, 8));
+
+        // Assert
+        start.ShouldBe(new DateOnly(2026, 7, 1));
+        end.ShouldBe(new DateOnly(2026, 7, 31));
+    }
+
+    [Test]
+    public async Task GetPeriodBoundariesForContractAsync_IndividualWithMatchingPeriod_ReturnsCustomBoundaries()
+    {
+        // Arrange
+        var contractId = await SeedIndividualContractAsync(
+            (new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 28)),
+            (new DateOnly(2026, 1, 29), new DateOnly(2026, 2, 25)));
+        var service = CreateService(weekStartDay: null);
+
+        // Act
+        var (start, end) = await service.GetPeriodBoundariesForContractAsync(contractId, new DateOnly(2026, 2, 10));
+
+        // Assert
+        start.ShouldBe(new DateOnly(2026, 1, 29));
+        end.ShouldBe(new DateOnly(2026, 2, 25));
+    }
+
+    [Test]
+    public async Task GetPeriodBoundariesForContractAsync_IndividualWithOpenPeriodAndSuccessor_EndsBeforeSuccessor()
+    {
+        // Arrange
+        var contractId = await SeedIndividualContractAsync(
+            (new DateOnly(2026, 1, 1), null),
+            (new DateOnly(2026, 4, 1), new DateOnly(2026, 6, 30)));
+        var service = CreateService(weekStartDay: null);
+
+        // Act
+        var (start, end) = await service.GetPeriodBoundariesForContractAsync(contractId, new DateOnly(2026, 2, 15));
+
+        // Assert
+        start.ShouldBe(new DateOnly(2026, 1, 1));
+        end.ShouldBe(new DateOnly(2026, 3, 31));
+    }
+
+    [Test]
+    public async Task GetPeriodBoundariesForContractAsync_IndividualWithoutLinkedIndividualPeriod_Throws()
+    {
+        // Arrange
+        var contractId = Guid.NewGuid();
+        _context.Contract.Add(new Contract
+        {
+            Id = contractId,
+            Name = "Individual without period",
+            PaymentInterval = PaymentInterval.Individual,
+            ValidFrom = new DateTime(2026, 1, 1)
+        });
+        await _context.SaveChangesAsync();
+        var service = CreateService(weekStartDay: null);
+
+        // Act
+        var act = async () => await service.GetPeriodBoundariesForContractAsync(contractId, new DateOnly(2026, 2, 10));
+
+        // Assert
+        var ex = await Should.ThrowAsync<InvalidRequestException>(act);
+        ex.Message.ShouldContain("no individual period assigned");
+    }
+
+    [Test]
+    public async Task GetPeriodBoundariesForContractAsync_IndividualWithDateOutsideAllPeriods_Throws()
+    {
+        // Arrange
+        var contractId = await SeedIndividualContractAsync(
+            (new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31)),
+            (new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31)));
+        var service = CreateService(weekStartDay: null);
+
+        // Act
+        var act = async () => await service.GetPeriodBoundariesForContractAsync(contractId, new DateOnly(2026, 2, 15));
+
+        // Assert
+        await Should.ThrowAsync<InvalidRequestException>(act);
+    }
+
+    [Test]
+    public async Task GetPeriodBoundariesForContractAsync_NonIndividualContract_UsesContractIntervalNotGlobalSetting()
+    {
+        // Arrange
+        // Global setting says Weekly, the contract says Monthly: the contract must win.
+        await SeedPaymentIntervalAsync(PaymentInterval.Weekly);
+        var contractId = Guid.NewGuid();
+        _context.Contract.Add(new Contract
+        {
+            Id = contractId,
+            Name = "Monthly contract",
+            PaymentInterval = PaymentInterval.Monthly,
+            ValidFrom = new DateTime(2026, 1, 1)
+        });
+        await _context.SaveChangesAsync();
+        var service = CreateService(weekStartDay: null);
+
+        // Act
+        var (start, end) = await service.GetPeriodBoundariesForContractAsync(contractId, new DateOnly(2026, 7, 8));
+
+        // Assert
+        start.ShouldBe(new DateOnly(2026, 7, 1));
+        end.ShouldBe(new DateOnly(2026, 7, 31));
+    }
+
+    [Test]
+    public async Task GetPeriodBoundariesForContractAsync_UnknownContract_Throws()
+    {
+        // Arrange
+        var service = CreateService(weekStartDay: null);
+
+        // Act
+        var act = async () => await service.GetPeriodBoundariesForContractAsync(Guid.NewGuid(), new DateOnly(2026, 2, 10));
+
+        // Assert
+        await Should.ThrowAsync<InvalidRequestException>(act);
+    }
+
+    private async Task<Guid> SeedIndividualContractAsync(params (DateOnly FromDate, DateOnly? UntilDate)[] periods)
+    {
+        var individualPeriodId = Guid.NewGuid();
+        _context.IndividualPeriod.Add(new IndividualPeriod
+        {
+            Id = individualPeriodId,
+            Name = "Payroll 2026"
+        });
+
+        foreach (var (fromDate, untilDate) in periods)
+        {
+            _context.Period.Add(new Period
+            {
+                Id = Guid.NewGuid(),
+                IndividualPeriodId = individualPeriodId,
+                FromDate = fromDate,
+                UntilDate = untilDate
+            });
+        }
+
+        var contractId = Guid.NewGuid();
+        _context.Contract.Add(new Contract
+        {
+            Id = contractId,
+            Name = "Individual contract",
+            PaymentInterval = PaymentInterval.Individual,
+            IndividualPeriodId = individualPeriodId,
+            ValidFrom = new DateTime(2026, 1, 1)
+        });
+
+        await _context.SaveChangesAsync();
+        return contractId;
     }
 
     private async Task SeedPaymentIntervalAsync(PaymentInterval interval)
