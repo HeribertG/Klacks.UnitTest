@@ -358,4 +358,38 @@ public class AutonomyGateServiceTests
 
         Assert.That(result, Is.Null);
     }
+
+    // Closes the reported confirmation gap end-to-end: the grouping apply skills rewrite the group
+    // membership of the whole customer/employee base. No SetLevel here on purpose — the repository
+    // returns null, so the gate falls back to AutonomyDefaults.DefaultLevel, which is the situation of
+    // a user who never configured an autonomy level. A classifier-only test would still pass if
+    // IsAllowed later let Sensitive through; this one would not.
+    [TestCase("apply_customer_grouping")]
+    [TestCase("apply_employee_grouping")]
+    public async Task Check_GroupingApplySkills_RealClassifier_HeldForConfirmation_WithoutAutonomyRow(string skillName)
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+
+        var result = await gate.CheckAsync(Descriptor(skillName), Context(), new Dictionary<string, object>());
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
+        Assert.That(result.Metadata, Does.ContainKey("confirmationToken"));
+    }
+
+    // Counterpart: the bulk group writers that default to apply=false must stay un-gated, because the
+    // gate classifies by skill name only and would otherwise hold their read-only preview call too.
+    [TestCase("fill_group_by_criteria")]
+    [TestCase("bulk_add_shifts_to_group")]
+    [TestCase("bulk_add_absence_for_group")]
+    [TestCase("add_selected_clients_to_group")]
+    [TestCase("group_ungrouped_by_city_name")]
+    public async Task Check_PreviewDefaultBulkGroupWriters_RealClassifier_NotHeldAtDefaultLevel(string skillName)
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+
+        var result = await gate.CheckAsync(Descriptor(skillName), Context(), new Dictionary<string, object>());
+
+        Assert.That(result, Is.Null);
+    }
 }

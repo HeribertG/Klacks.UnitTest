@@ -1,20 +1,33 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for CustomerGroupingPlanner: assigns a customer to the nearest geocoded group and retires
-/// the coarser ancestor (canton) it replaces, leaves non-location memberships (qualification groups)
-/// untouched, reports customers without coordinates as unassigned, and is a no-op for customers already
-/// sitting in their nearest group.
+/// Unit tests for CustomerGroupingPlanner: an exact city-name match takes precedence over the geographic
+/// nearest-anchor path (and works when no group carries coordinates at all), duplicate group names are
+/// never matched, the main address wins over workplace/invoicing addresses while those still serve as a
+/// fallback, the coarser ancestor (canton) it replaces is retired, non-location memberships (qualification
+/// groups) stay untouched, clients that cannot be placed get a distinguishable reason, and a client already
+/// sitting in its target group is a no-op. Scenario memberships (AnalyseToken set) are invisible to the
+/// planner: they are never retired and never make a client count as already placed, and the retired
+/// memberships are reported with their group names so a preview can show what would end.
 /// </summary>
 
 using Klacks.Api.Application.Services.Grouping;
-using Klacks.Api.Application.Interfaces.Grouping;
 
 namespace Klacks.UnitTest.Application.Services.Grouping;
 
 [TestFixture]
 public class CustomerGroupingPlannerTests
 {
+    private const string ReasonNoUsableAddress = "no address with a city or coordinates";
+    private const string ReasonNoAnchors = "no group carries coordinates and no group name matches an address city";
+    private const string ReasonNoGeoAnchors = "address city matches no group name and no group carries coordinates";
+    private const string ReasonNoMatch = "address city matches no group name and the address has no coordinates";
+
+    private const string MatchCityNameMainAddress = "city name (main address)";
+    private const string MatchCityNameWorkplaceAddress = "city name (workplace address)";
+    private const string MatchCityNameInvoicingAddress = "city name (invoicing address)";
+    private const string MatchCoordinatesMainAddress = "nearest coordinates (main address)";
+
     private static readonly Guid CantonZh = Guid.NewGuid();
     private static readonly Guid CityZurich = Guid.NewGuid();
     private static readonly Guid CityWinterthur = Guid.NewGuid();
@@ -52,6 +65,8 @@ public class CustomerGroupingPlannerTests
         var assignment = proposal.Assignments.ShouldHaveSingleItem();
         assignment.TargetGroupId.ShouldBe(CityZurich);
         assignment.RetireGroupIds.ShouldContain(CantonZh);
+        assignment.MatchReason.ShouldBe(MatchCoordinatesMainAddress);
+        assignment.DistanceKm.ShouldNotBeNull();
     }
 
     [Test]
@@ -69,7 +84,50 @@ public class CustomerGroupingPlannerTests
     }
 
     [Test]
-    public async Task BuildProposal_CustomerWithoutCoordinates_IsUnassigned()
+    public async Task BuildProposal_ScenarioMembership_IsNotRetired()
+    {
+        var customer = Customer("Tom", "Widmer", 47.38, 8.54, new[] { CantonZh });
+        AddScenarioMembership(customer, CityWinterthur);
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(CityZurich);
+        assignment.RetireGroupIds.ShouldBe(new[] { CantonZh });
+        assignment.RetireGroupIds.ShouldNotContain(CityWinterthur);
+        assignment.CurrentGroupNames.ShouldBe(new[] { "ZH" });
+    }
+
+    [Test]
+    public async Task BuildProposal_OnlyScenarioMembershipInTargetGroup_StillPlansTheRealMove()
+    {
+        var customer = Customer("Uwe", "Ammann", 47.38, 8.54, Array.Empty<Guid>());
+        AddScenarioMembership(customer, CityZurich);
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(CityZurich);
+        assignment.CurrentGroupNames.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task BuildProposal_RetireGroupNames_NameTheRetiredMemberships()
+    {
+        var customer = Customer("Vera", "Sigg", 47.38, 8.54, new[] { CantonZh, QualificationGroup });
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.RetireGroupNames.ShouldBe(new[] { "ZH" });
+        assignment.RetireGroupNames.Count.ShouldBe(assignment.RetireGroupIds.Count);
+    }
+
+    [Test]
+    public async Task BuildProposal_ClientWithoutAnyAddress_IsUnassignedWithNoAddressReason()
     {
         var customer = Customer("Cara", "Frei", null, null, new[] { CantonZh });
         SetCustomers(customer);
@@ -77,7 +135,21 @@ public class CustomerGroupingPlannerTests
         var proposal = await _planner.BuildProposalAsync();
 
         proposal.Assignments.ShouldBeEmpty();
-        proposal.Unassigned.ShouldHaveSingleItem().Reason.ShouldBe("no geocoded address");
+        var unassigned = proposal.Unassigned.ShouldHaveSingleItem();
+        unassigned.ClientName.ShouldBe("Cara Frei");
+        unassigned.Reason.ShouldBe(ReasonNoUsableAddress);
+    }
+
+    [Test]
+    public async Task BuildProposal_CityMatchesNoGroupAndNoCoordinates_IsUnassignedWithNoMatchReason()
+    {
+        var customer = CustomerWithAddresses("Gina", "Vogel", new[] { CantonZh }, AddressWith("Genf"));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        proposal.Assignments.ShouldBeEmpty();
+        proposal.Unassigned.ShouldHaveSingleItem().Reason.ShouldBe(ReasonNoMatch);
     }
 
     [Test]
@@ -141,6 +213,197 @@ public class CustomerGroupingPlannerTests
     }
 
     [Test]
+    public async Task BuildProposal_CityNameMatch_WinsOverNearerGeocodedGroup()
+    {
+        var canton = Guid.NewGuid();
+        var cityZurich = Guid.NewGuid();
+        var cityWinterthur = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = canton, Name = "ZH", Root = canton, Lft = 1, Rgt = 6 },
+            new() { Id = cityZurich, Name = "Zürich", Root = canton, Lft = 2, Rgt = 3 },
+            new() { Id = cityWinterthur, Name = "Winterthur", Root = canton, Lft = 4, Rgt = 5, Latitude = 47.5000, Longitude = 8.7241 }
+        });
+        var customer = CustomerWithAddresses(
+            "Hans", "Berg", new[] { canton }, AddressWith("Zürich", 47.5000, 8.7241));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        proposal.AnchorGroupCount.ShouldBe(2);
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(cityZurich);
+        assignment.DistanceKm.ShouldBeNull();
+        assignment.MatchReason.ShouldBe(MatchCityNameMainAddress);
+        assignment.RetireGroupIds.ShouldContain(canton);
+    }
+
+    [Test]
+    public async Task BuildProposal_NoGroupHasCoordinates_StillAssignsByCityName_AndRetiresCanton()
+    {
+        var canton = Guid.NewGuid();
+        var cityZurich = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = canton, Name = "ZH", Root = canton, Lft = 1, Rgt = 4 },
+            new() { Id = cityZurich, Name = " zürich ", Root = canton, Lft = 2, Rgt = 3 }
+        });
+        var customer = CustomerWithAddresses("Ida", "Stark", new[] { canton }, AddressWith("Zürich"));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        proposal.AnchorGroupCount.ShouldBe(1);
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(cityZurich);
+        assignment.DistanceKm.ShouldBeNull();
+        assignment.RetireGroupIds.ShouldContain(canton);
+    }
+
+    [Test]
+    public async Task BuildProposal_DuplicateGroupName_IsNotMatched_AndReportsNoAnchors()
+    {
+        var firstZurich = Guid.NewGuid();
+        var secondZurich = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = firstZurich, Name = "Zürich", Root = firstZurich, Lft = 1, Rgt = 2 },
+            new() { Id = secondZurich, Name = "Zürich", Root = secondZurich, Lft = 1, Rgt = 2 }
+        });
+        var customer = CustomerWithAddresses("Jan", "Weber", Array.Empty<Guid>(), AddressWith("Zürich"));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        proposal.AnchorGroupCount.ShouldBe(0);
+        proposal.Assignments.ShouldBeEmpty();
+        proposal.Unassigned.ShouldHaveSingleItem().Reason.ShouldBe(ReasonNoAnchors);
+    }
+
+    [Test]
+    public async Task BuildProposal_HasCoordinatesButNoGroupIsGeocoded_ReportsNoGeoAnchorsReason()
+    {
+        var cityBern = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = cityBern, Name = "Bern", Root = cityBern, Lft = 1, Rgt = 2 }
+        });
+        var matched = CustomerWithAddresses("Rita", "Good", Array.Empty<Guid>(), AddressWith("Bern"));
+        var stranded = CustomerWithAddresses(
+            "Sven", "Bach", Array.Empty<Guid>(), AddressWith("Genf", 46.2044, 6.1432));
+        SetCustomers(matched, stranded);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        proposal.AnchorGroupCount.ShouldBe(1);
+        proposal.Assignments.ShouldHaveSingleItem().TargetGroupId.ShouldBe(cityBern);
+        proposal.Unassigned.ShouldHaveSingleItem().Reason.ShouldBe(ReasonNoGeoAnchors);
+    }
+
+    [Test]
+    public async Task BuildProposal_DuplicateGroupName_FallsBackToNearestGeocodedGroup()
+    {
+        var firstZurich = Guid.NewGuid();
+        var secondZurich = Guid.NewGuid();
+        var cityBern = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = firstZurich, Name = "Zürich", Root = firstZurich, Lft = 1, Rgt = 2 },
+            new() { Id = secondZurich, Name = "Zürich", Root = secondZurich, Lft = 1, Rgt = 2 },
+            new() { Id = cityBern, Name = "Bern", Root = cityBern, Lft = 1, Rgt = 2, Latitude = 46.9480, Longitude = 7.4474 }
+        });
+        var customer = CustomerWithAddresses(
+            "Kim", "Frei", Array.Empty<Guid>(), AddressWith("Zürich", 46.9480, 7.4474));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(cityBern);
+        assignment.MatchReason.ShouldBe(MatchCoordinatesMainAddress);
+        assignment.DistanceKm.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task BuildProposal_OnlyWorkplaceAddress_IsMatchedByCityName()
+    {
+        var customer = CustomerWithAddresses(
+            "Lea", "Suter",
+            new[] { CantonZh },
+            AddressWith("Winterthur", type: AddressTypeEnum.Workplace));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(CityWinterthur);
+        assignment.MatchReason.ShouldBe(MatchCityNameWorkplaceAddress);
+        assignment.RetireGroupIds.ShouldContain(CantonZh);
+    }
+
+    [Test]
+    public async Task BuildProposal_OnlyInvoicingAddress_IsMatchedByCityName()
+    {
+        var customer = CustomerWithAddresses(
+            "Mia", "Brun",
+            new[] { CantonZh },
+            AddressWith("Winterthur", type: AddressTypeEnum.InvoicingAddress));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(CityWinterthur);
+        assignment.MatchReason.ShouldBe(MatchCityNameInvoicingAddress);
+    }
+
+    [Test]
+    public async Task BuildProposal_MainAddress_WinsOverWorkplaceAddress()
+    {
+        var customer = CustomerWithAddresses(
+            "Nora", "Kunz",
+            new[] { CantonZh },
+            AddressWith("Zürich", type: AddressTypeEnum.Workplace, validFrom: new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc)),
+            AddressWith("Winterthur", validFrom: new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(CityWinterthur);
+        assignment.MatchReason.ShouldBe(MatchCityNameMainAddress);
+    }
+
+    [Test]
+    public async Task BuildProposal_NewestMainAddress_Wins()
+    {
+        var customer = CustomerWithAddresses(
+            "Olga", "Hess",
+            new[] { CantonZh },
+            AddressWith("Zürich", validFrom: new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc)),
+            AddressWith("Winterthur", validFrom: new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        proposal.Assignments.ShouldHaveSingleItem().TargetGroupId.ShouldBe(CityWinterthur);
+    }
+
+    [Test]
+    public async Task BuildProposal_DeletedAddress_IsIgnored()
+    {
+        var deleted = AddressWith("Winterthur", validFrom: new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        deleted.IsDeleted = true;
+        var active = AddressWith("Zürich", validFrom: new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var customer = CustomerWithAddresses("Pia", "Roth", new[] { CantonZh }, deleted, active);
+        SetCustomers(customer);
+
+        var proposal = await _planner.BuildProposalAsync();
+
+        proposal.Assignments.ShouldHaveSingleItem().TargetGroupId.ShouldBe(CityZurich);
+    }
+
+    [Test]
     public async Task BuildProposal_ForEmployees_QueriesEmployeeType_AndAssignsToNearestCity()
     {
         var employee = ClientOfType(EntityTypeEnum.Employee, "Gina", "Vogel", 47.38, 8.54, new[] { CantonZh });
@@ -171,6 +434,17 @@ public class CustomerGroupingPlannerTests
             .GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>());
     }
 
+    private static void AddScenarioMembership(Client client, Guid groupId)
+    {
+        client.GroupItems.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = client.Id,
+            GroupId = groupId,
+            AnalyseToken = Guid.NewGuid()
+        });
+    }
+
     private void SetCustomers(params Client[] customers)
     {
         _clientRepository
@@ -184,11 +458,39 @@ public class CustomerGroupingPlannerTests
     private static Client ClientOfType(
         EntityTypeEnum type, string firstName, string lastName, double? lat, double? lon, IEnumerable<Guid> groupIds)
     {
-        var clientId = Guid.NewGuid();
-        var addresses = new List<Address>();
-        if (lat.HasValue && lon.HasValue)
+        var addresses = lat.HasValue && lon.HasValue
+            ? new[] { AddressWith(string.Empty, lat, lon) }
+            : Array.Empty<Address>();
+
+        return BuildClient(type, firstName, lastName, groupIds, addresses);
+    }
+
+    private static Client CustomerWithAddresses(
+        string firstName, string lastName, IEnumerable<Guid> groupIds, params Address[] addresses)
+        => BuildClient(EntityTypeEnum.Customer, firstName, lastName, groupIds, addresses);
+
+    private static Address AddressWith(
+        string city,
+        double? lat = null,
+        double? lon = null,
+        AddressTypeEnum type = AddressTypeEnum.Employee,
+        DateTime? validFrom = null)
+        => new()
         {
-            addresses.Add(new Address { ClientId = clientId, Latitude = lat, Longitude = lon });
+            City = city,
+            Latitude = lat,
+            Longitude = lon,
+            Type = type,
+            ValidFrom = validFrom
+        };
+
+    private static Client BuildClient(
+        EntityTypeEnum type, string firstName, string lastName, IEnumerable<Guid> groupIds, Address[] addresses)
+    {
+        var clientId = Guid.NewGuid();
+        foreach (var address in addresses)
+        {
+            address.ClientId = clientId;
         }
 
         return new Client
@@ -197,8 +499,10 @@ public class CustomerGroupingPlannerTests
             FirstName = firstName,
             Name = lastName,
             Type = type,
-            Addresses = addresses,
-            GroupItems = groupIds.Select(g => new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = g }).ToList()
+            Addresses = addresses.ToList(),
+            GroupItems = groupIds
+                .Select(g => new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = g })
+                .ToList()
         };
     }
 }

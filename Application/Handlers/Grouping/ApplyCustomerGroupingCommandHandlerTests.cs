@@ -6,7 +6,9 @@
 /// transaction, re-reads the newly added memberships to confirm them, rolls the whole batch back by
 /// throwing a SkillVerificationException when the database does not confirm every add, skips a retire
 /// whose membership no longer exists, and does nothing when a customer already sits in the target with
-/// nothing to retire.
+/// nothing to retire. The reported ended-membership count must be the applied truth: only retires that
+/// actually found a live membership are counted, so the proposal's announced number can be confirmed
+/// rather than merely repeated.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Grouping;
@@ -52,7 +54,8 @@ public class ApplyCustomerGroupingCommandHandlerTests
     public async Task Handle_MovesCustomer_RetiresCantonAndAddsCity_AndVerifies()
     {
         SetProposal(new CustomerGroupingAssignment(
-            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }));
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
         var cantonMembership = new GroupItem { Id = Guid.NewGuid(), ClientId = ClientId, GroupId = Canton };
         _groupItemRepository.GetByClientAndGroup(ClientId, Canton).Returns(cantonMembership);
         _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns((GroupItem?)null);
@@ -68,13 +71,31 @@ public class ApplyCustomerGroupingCommandHandlerTests
             Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1), Arg.Any<CancellationToken>());
         result.MovedCount.ShouldBe(1);
         result.VerifiedCount.ShouldBe(1);
+        result.EndedMembershipCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Handle_RetireMembershipAlreadyGone_IsNotCountedAsEnded()
+    {
+        SetProposal(new CustomerGroupingAssignment(
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", null, new[] { Canton }, new[] { "ZH" },
+            "city name (main address)"));
+        _groupItemRepository.GetByClientAndGroup(ClientId, Canton).Returns((GroupItem?)null);
+        _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns((GroupItem?)null);
+
+        var result = await _handler.Handle(new ApplyCustomerGroupingCommand(), CancellationToken.None);
+
+        _groupItemRepository.DidNotReceive().Remove(Arg.Any<GroupItem>());
+        result.MovedCount.ShouldBe(1);
+        result.EndedMembershipCount.ShouldBe(0);
     }
 
     [Test]
     public async Task Handle_TargetAlreadyPresent_DoesNotAddDuplicate_AndVerifiesNothing()
     {
         SetProposal(new CustomerGroupingAssignment(
-            ClientId, "Anna Meier", new[] { "ZH", "Zürich" }, City, "Zürich", 3.2, new[] { Canton }));
+            ClientId, "Anna Meier", new[] { "ZH", "Zürich" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
         _groupItemRepository.GetByClientAndGroup(ClientId, Canton)
             .Returns(new GroupItem { Id = Guid.NewGuid(), ClientId = ClientId, GroupId = Canton });
         _groupItemRepository.GetByClientAndGroup(ClientId, City)
@@ -87,13 +108,15 @@ public class ApplyCustomerGroupingCommandHandlerTests
             Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
         result.MovedCount.ShouldBe(1);
         result.VerifiedCount.ShouldBe(0);
+        result.EndedMembershipCount.ShouldBe(1);
     }
 
     [Test]
     public async Task Handle_VerificationMismatch_ThrowsAndRollsBack()
     {
         SetProposal(new CustomerGroupingAssignment(
-            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }));
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
         _groupItemRepository.GetByClientAndGroup(ClientId, Canton)
             .Returns(new GroupItem { Id = Guid.NewGuid(), ClientId = ClientId, GroupId = Canton });
         _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns((GroupItem?)null);
@@ -120,6 +143,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
         result.MovedCount.ShouldBe(0);
         result.VerifiedCount.ShouldBe(0);
         result.UnassignedCount.ShouldBe(1);
+        result.EndedMembershipCount.ShouldBe(0);
     }
 
     private void SetProposal(CustomerGroupingAssignment assignment)

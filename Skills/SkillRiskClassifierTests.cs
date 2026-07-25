@@ -145,6 +145,39 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
+    // The two grouping apply skills rewrite the membership of the whole customer/employee base in one
+    // transaction, so they must always require human confirmation — exactly like the single
+    // delete_membership that is already Sensitive.
+    [TestCase("apply_customer_grouping")]
+    [TestCase("apply_employee_grouping")]
+    public void Classify_GroupingApplySkills_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // Counterpart to the test above: the bulk group writers that default to apply=false must NOT be
+    // Sensitive. Classify() only sees the skill name, never the parameters, so listing them would gate
+    // their read-only preview call too — breaking the dry-run-then-apply idiom (and, for the four that
+    // are recipe mutate steps, stalling the recipe on its own preview). Their preview stays un-gated
+    // and the apply call keeps the Irreversible default.
+    [TestCase("fill_group_by_criteria")]
+    [TestCase("group_ungrouped_by_city_name")]
+    [TestCase("bulk_add_shifts_to_group")]
+    [TestCase("bulk_add_absence_for_group")]
+    [TestCase("add_selected_clients_to_group")]
+    public void Classify_PreviewDefaultBulkGroupWriters_StayIrreversible(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Irreversible));
+    }
+
+    // The read-only dry runs that precede the apply skills must never be gated.
+    [TestCase("propose_customer_grouping")]
+    [TestCase("propose_employee_grouping")]
+    public void Classify_GroupingProposalSkills_ReturnsReadOnly(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Query)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
     [TestCase(SkillCategory.Query)]
     [TestCase(SkillCategory.Read)]
     [TestCase(SkillCategory.Validation)]

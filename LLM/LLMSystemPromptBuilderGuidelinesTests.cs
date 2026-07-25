@@ -97,10 +97,14 @@ public class LLMSystemPromptBuilderGuidelinesTests
         result.ShouldNotContain("TOOL CALL BATCHING");
     }
 
-    [Test]
-    public async Task BuildSystemPromptAsync_WithNavigateToSkill_ForbidsNarratingInternalRetries()
+    private const string NoInternalNarrationRule = "Never narrate internal steps, retries, or corrections";
+    private const string NoInternalIdentifiersRule = "Never expose internal identifiers to the user";
+    private const string NavigationGuideHeader = "NAVIGATION RESPONSE GUIDE";
+    private const string NavigationOnlyRule = "Never mention or compare fields you only saw in a tool result";
+
+    private static LLMContext CreateNavigationContext()
     {
-        var context = new LLMContext
+        return new LLMContext
         {
             UserId = "user-123",
             UserRights = new List<string> { "CanViewSettings", "CanEditSettings" },
@@ -110,13 +114,57 @@ public class LLMSystemPromptBuilderGuidelinesTests
             },
             Language = "en"
         };
+    }
+
+    [Test]
+    public async Task BuildSystemPromptAsync_WithNavigateToSkill_ContainsNavigationGuideAndDisclosureRules()
+    {
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        var result = await _builder.BuildSystemPromptAsync(CreateNavigationContext());
+
+        result.ShouldContain(NavigationGuideHeader);
+        result.ShouldContain(NavigationOnlyRule);
+        result.ShouldContain(NoInternalNarrationRule);
+        result.ShouldContain(NoInternalIdentifiersRule);
+    }
+
+    [Test]
+    public async Task BuildSystemPromptAsync_WithoutNavigateToSkill_StillContainsDisclosureRules()
+    {
+        var context = CreateContext();
         _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
 
         var result = await _builder.BuildSystemPromptAsync(context);
 
-        result.ShouldContain("Never narrate internal steps, retries, or corrections");
-        result.ShouldContain("Never mention or compare fields you only saw in a tool result");
-        result.ShouldContain("Never expose internal identifiers to the user");
+        result.ShouldContain(NoInternalNarrationRule);
+        result.ShouldContain(NoInternalIdentifiersRule);
+        result.ShouldNotContain(NavigationGuideHeader);
+        result.ShouldNotContain(NavigationOnlyRule);
+    }
+
+    [Test]
+    public async Task BuildSystemPromptAsync_WithNavigateToSkill_DoesNotDuplicateDisclosureRules()
+    {
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        var result = await _builder.BuildSystemPromptAsync(CreateNavigationContext());
+
+        CountOccurrences(result, NoInternalNarrationRule).ShouldBe(1);
+        CountOccurrences(result, NoInternalIdentifiersRule).ShouldBe(1);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = haystack.IndexOf(needle, StringComparison.Ordinal);
+        while (index >= 0)
+        {
+            count++;
+            index = haystack.IndexOf(needle, index + needle.Length, StringComparison.Ordinal);
+        }
+
+        return count;
     }
 
     [Test]
