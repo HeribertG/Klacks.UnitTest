@@ -40,6 +40,7 @@ public class GroupingIntentResolverTests
 
         result.ShouldContain("geocode_location_groups");
         result.ShouldContain("set_group_location");
+        result.ShouldContain("check_group_geocoding_status");
     }
 
     [TestCase("Ja, wende die Gruppierung an")]

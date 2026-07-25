@@ -1,4 +1,5 @@
-﻿using Klacks.Api.Domain.Common;
+﻿using Klacks.Api.Application.DTOs.Grouping;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Models.Associations;
@@ -46,8 +47,42 @@ namespace Klacks.UnitTest.Mocks
 
             group.Latitude = latitude;
             group.Longitude = longitude;
+            group.GeocodingAttempted = true;
             await context.SaveChangesAsync(cancellationToken);
             return true;
+        }
+
+        public async Task<bool> MarkGeocodingAttemptedAsync(Guid groupId, CancellationToken cancellationToken = default)
+        {
+            var group = await context.Group.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+            if (group == null)
+            {
+                return false;
+            }
+
+            group.GeocodingAttempted = true;
+            await context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        public async Task<IReadOnlyList<Guid>> GetUnattemptedGeocodingCandidateIdsAsync(CancellationToken cancellationToken = default)
+        {
+            return await context.Group
+                .Where(g => !g.GeocodingAttempted && g.Latitude == null)
+                .Select(g => g.Id)
+                .ToListAsync(cancellationToken);
+        }
+
+        public async Task<GroupGeocodingStatus> GetGeocodingStatusAsync(CancellationToken cancellationToken = default)
+        {
+            var total = await context.Group.CountAsync(cancellationToken);
+            var withCoordinates = await context.Group.CountAsync(g => g.Latitude != null, cancellationToken);
+            var attemptedNotAPlaceOrFailed = await context.Group
+                .CountAsync(g => g.GeocodingAttempted && g.Latitude == null, cancellationToken);
+            var pending = await context.Group
+                .CountAsync(g => !g.GeocodingAttempted && g.Latitude == null, cancellationToken);
+
+            return new GroupGeocodingStatus(total, withCoordinates, attemptedNotAPlaceOrFailed, pending);
         }
 
         public async Task<Group> AddChildNode(Guid parentId, Group newGroup)

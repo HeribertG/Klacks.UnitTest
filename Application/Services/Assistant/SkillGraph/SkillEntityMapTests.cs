@@ -53,7 +53,7 @@ public class SkillEntityMapTests
     [
         "propose_grouping", "apply_grouping",
         "add_client_to_nearest_group", "group_ungrouped_by_city_name",
-        "geocode_location_groups", "set_group_location"
+        "geocode_location_groups", "set_group_location", "check_group_geocoding_status"
     ];
 
     [Test]

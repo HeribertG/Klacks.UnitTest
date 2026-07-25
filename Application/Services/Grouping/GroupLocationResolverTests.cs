@@ -71,6 +71,42 @@ public class GroupLocationResolverTests
     }
 
     [Test]
+    public async Task Resolve_NotAPlace_MarksGeocodingAttempted()
+    {
+        HaveGroup("Pflege Level 3");
+        _classifier.ClassifyAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(GroupPlaceClassification.NotAPlace);
+
+        await _resolver.ResolveAsync(GroupId);
+
+        await _groupRepository.Received(1).MarkGeocodingAttemptedAsync(GroupId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Resolve_GeocodeFailed_MarksGeocodingAttempted()
+    {
+        HaveGroup("Nirgendwo");
+        _classifier.ClassifyAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new GroupPlaceClassification(true, "Nirgendwo", null, 0.9));
+        _geocoder.GeocodeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(((double?)null, (double?)null));
+
+        await _resolver.ResolveAsync(GroupId);
+
+        await _groupRepository.Received(1).MarkGeocodingAttemptedAsync(GroupId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Resolve_AlreadyHasCoordinates_DoesNotMarkGeocodingAttemptedAgain()
+    {
+        HaveGroup("Zürich", 47.37, 8.54);
+
+        await _resolver.ResolveAsync(GroupId);
+
+        await _groupRepository.DidNotReceive().MarkGeocodingAttemptedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Resolve_LowConfidencePlace_LeavesUntouched()
     {
         HaveGroup("Bern-wöchentlich");
