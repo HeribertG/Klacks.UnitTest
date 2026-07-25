@@ -119,8 +119,8 @@ public class AutonomyGateServiceTests
     [TestCase(SkillRiskClass.Reversible, true)]
     [TestCase(SkillRiskClass.ScenarioGated, true)]
     [TestCase(SkillRiskClass.Irreversible, true)]
-    [TestCase(SkillRiskClass.Sensitive, false)]
-    public async Task Check_AutonomousLevel_AllowsEverythingExceptSensitive(SkillRiskClass riskClass, bool allowed)
+    [TestCase(SkillRiskClass.Sensitive, true)]
+    public async Task Check_AutonomousLevel_AllowsEveryRiskClass(SkillRiskClass riskClass, bool allowed)
     {
         var context = Context();
         SetLevel(context.UserId, AutonomyLevel.Autonomous);
@@ -131,11 +131,29 @@ public class AutonomyGateServiceTests
         Assert.That(result == null, Is.EqualTo(allowed));
     }
 
-    [Test]
-    public async Task Check_SensitiveSkill_HeldEvenAtFullyAutonomous()
+    // Sensitive deliberately no longer overrides the configured level (owner decision). The old special
+    // case confirmed even at FullyAutonomous, i.e. it ignored the very setting it claimed to respect,
+    // and the confirmation could not be answered reliably because the token does not survive the turn.
+    [TestCase(AutonomyLevel.FullyAutonomous)]
+    [TestCase(AutonomyLevel.Autonomous)]
+    public async Task Check_SensitiveSkill_AllowedFromAutonomousUpwards(AutonomyLevel level)
     {
         var context = Context();
-        SetLevel(context.UserId, AutonomyLevel.FullyAutonomous);
+        SetLevel(context.UserId, level);
+        SetRisk(SkillRiskClass.Sensitive);
+
+        var result = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
+
+        Assert.That(result, Is.Null);
+    }
+
+    // Counterpart: lowering the level is what brings the confirmation back, and it must still do so.
+    [TestCase(AutonomyLevel.Assisted)]
+    [TestCase(AutonomyLevel.Propose)]
+    public async Task Check_SensitiveSkill_StillHeldBelowAutonomous(AutonomyLevel level)
+    {
+        var context = Context();
+        SetLevel(context.UserId, level);
         SetRisk(SkillRiskClass.Sensitive);
 
         var result = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
@@ -182,7 +200,9 @@ public class AutonomyGateServiceTests
     public async Task Check_SensitiveToken_SameTurnRedemption_HeldAgain_NextTurnAllowed()
     {
         var context = Context();
-        SetLevel(context.UserId, AutonomyLevel.FullyAutonomous);
+        // Below Autonomous on purpose: since the Sensitive special case was dropped, that is the only
+        // situation where a sensitive skill is gated at all — and the same-turn ban applies exactly then.
+        SetLevel(context.UserId, AutonomyLevel.Propose);
         SetRisk(SkillRiskClass.Sensitive);
         var descriptor = Descriptor("close_period");
         var parameters = new Dictionary<string, object> { ["groupName"] = "Group A" };
@@ -329,21 +349,27 @@ public class AutonomyGateServiceTests
         await _preferenceRepository.DidNotReceive().GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // End-to-end regression guard (real SkillRiskClassifier, no mock): proves the full
-    // Classifier -> Gate chain for the calendar-selection skills specifically, so a future change
-    // to SkillRiskClassifier or SkillRiskClass cannot silently drop the owner-mandated confirmation.
+    // End-to-end regression guard (real SkillRiskClassifier, no mock): proves the full Classifier -> Gate
+    // chain for the calendar-selection skills specifically. Since the Sensitive special case was dropped
+    // (owner decision), the confirmation is tied to the configured level rather than to the class, so the
+    // guard now pins both directions — a future classifier change that moved these skills out of the
+    // sensitive list would break the lowered-level case below.
     [TestCase("update_calendar_selection")]
     [TestCase("delete_calendar_selection")]
-    public async Task Check_CalendarSelectionSensitiveSkills_RealClassifier_HeldForConfirmation(string skillName)
+    public async Task Check_CalendarSelectionSensitiveSkills_RealClassifier_HeldOnlyBelowAutonomous(string skillName)
     {
         var gate = CreateGateWithRealRiskClassifier();
         var context = Context();
+
         SetLevel(context.UserId, AutonomyLevel.Autonomous);
+        var atDefault = await gate.CheckAsync(Descriptor(skillName), context, new Dictionary<string, object>());
 
-        var result = await gate.CheckAsync(Descriptor(skillName), context, new Dictionary<string, object>());
+        SetLevel(context.UserId, AutonomyLevel.Assisted);
+        var lowered = await gate.CheckAsync(Descriptor(skillName), context, new Dictionary<string, object>());
 
-        Assert.That(result, Is.Not.Null);
-        Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
+        Assert.That(atDefault, Is.Null);
+        Assert.That(lowered, Is.Not.Null);
+        Assert.That(lowered!.Type, Is.EqualTo(SkillResultType.Confirmation));
     }
 
     [Test]
