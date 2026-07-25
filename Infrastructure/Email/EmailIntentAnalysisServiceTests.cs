@@ -38,7 +38,7 @@ public class EmailIntentAnalysisServiceTests
         EnableFeature(true);
 
         _service = new EmailIntentAnalysisService(
-            _assignmentService, _llmService, _settingsRepository,
+            _assignmentService, Substitute.For<IPlanningAudienceResolver>(), _llmService, _settingsRepository,
             Substitute.For<ILogger<EmailIntentAnalysisService>>());
     }
 
