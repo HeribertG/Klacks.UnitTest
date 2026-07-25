@@ -50,6 +50,16 @@ public class ProactiveTriggerDispatchRepositoryTests
         Severity = "low"
     };
 
+    private static ProactiveTriggerDispatchRow DedupOnlyRow(Guid id, string userId, string dedupKey) => new()
+    {
+        Id = id,
+        UserId = userId,
+        TriggerKind = "test_kind",
+        DedupKey = dedupKey,
+        ContentKey = null,
+        Severity = "low"
+    };
+
     [Test]
     public async Task RecordAsync_PersistsRow()
     {
@@ -190,6 +200,55 @@ public class ProactiveTriggerDispatchRepositoryTests
         var count = await new ProactiveTriggerDispatchRepository(context).CountUnreadAsync("user-a");
 
         count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ListForUserAsync_ExcludesRowsWithoutContentKey()
+    {
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
+            await repository.RecordAsync(DedupOnlyRow(Guid.NewGuid(), "user-a", "dedup-2"));
+        }
+
+        using var context = CreateContext();
+        var rows = await new ProactiveTriggerDispatchRepository(context).ListForUserAsync("user-a", unreadOnly: false, take: 50);
+
+        rows.Count.ShouldBe(1);
+        rows[0].DedupKey.ShouldBe("dedup-1");
+    }
+
+    [Test]
+    public async Task CountUnreadAsync_ExcludesRowsWithoutContentKey()
+    {
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
+            await repository.RecordAsync(DedupOnlyRow(Guid.NewGuid(), "user-a", "dedup-2"));
+        }
+
+        using var context = CreateContext();
+        var count = await new ProactiveTriggerDispatchRepository(context).CountUnreadAsync("user-a");
+
+        count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task WasDispatchedAsync_StillSeesRowsWithoutContentKey()
+    {
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            await repository.RecordAsync(DedupOnlyRow(Guid.NewGuid(), "user-a", "dedup-1"));
+        }
+
+        using var context = CreateContext();
+        var wasDispatched = await new ProactiveTriggerDispatchRepository(context)
+            .WasDispatchedAsync("user-a", "test_kind", "dedup-1");
+
+        wasDispatched.ShouldBeTrue();
     }
 
     [Test]
