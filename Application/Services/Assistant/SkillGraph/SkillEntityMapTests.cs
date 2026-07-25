@@ -49,6 +49,26 @@ public class SkillEntityMapTests
         }
     }
 
+    private static readonly string[] GroupingAndGeocodingSkills =
+    [
+        "propose_employee_grouping", "apply_employee_grouping",
+        "propose_customer_grouping", "apply_customer_grouping",
+        "add_client_to_nearest_group", "group_ungrouped_by_city_name",
+        "geocode_location_groups", "set_group_location"
+    ];
+
+    [Test]
+    public void GroupingAndGeocodingSkills_AreMapped()
+    {
+        foreach (var skill in GroupingAndGeocodingSkills)
+        {
+            SkillEntityMap.Map.Keys.ShouldContain(
+                skill,
+                $"'{skill}' is unmapped: the substrate prior derives no edge for it and " +
+                "EntityChangeNotifier cannot resolve an entity from its name, so no page reload is pushed.");
+        }
+    }
+
     [Test]
     public void Map_HasNoBlankKeys()
     {

@@ -1,9 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for GroupingIntentResolver — verifies it guarantees the real grouping skills on
-/// geographic grouping / assignment requests and stays silent on read-only group questions so the
-/// tool set is not needlessly widened.
+/// Unit tests for GroupingIntentResolver — verifies it guarantees the real grouping skills, including
+/// the two that give a group coordinates, on geographic grouping / assignment requests, and stays
+/// silent on read-only group questions so the tool set is not needlessly widened.
 /// </summary>
 
 using Klacks.Api.Domain.Services.Assistant;
@@ -27,6 +27,19 @@ public class GroupingIntentResolverTests
         result.ShouldContain("apply_employee_grouping");
         result.ShouldContain("add_client_to_nearest_group");
         result.ShouldContain("group_ungrouped_by_city_name");
+    }
+
+    [TestCase("Gruppiere die Mitarbeiter nach Adresse")]
+    [TestCase("Kunden nach Region gruppieren")]
+    [TestCase("Bestimme die Standorte der Gruppen automatisch")]
+    [TestCase("determine the location of the groups automatically")]
+    [TestCase("Setze den Standort der Gruppe Bern")]
+    public void GuaranteedSkillNames_Returns_GeocodingSkills_For_GroupingIntent(string message)
+    {
+        var result = GroupingIntentResolver.GuaranteedSkillNames(message);
+
+        result.ShouldContain("geocode_location_groups");
+        result.ShouldContain("set_group_location");
     }
 
     [TestCase("Welche Gruppen gibt es?")]
