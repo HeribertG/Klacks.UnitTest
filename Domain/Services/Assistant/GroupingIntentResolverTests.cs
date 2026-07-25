@@ -71,4 +71,41 @@ public class GroupingIntentResolverTests
     {
         GroupingIntentResolver.GuaranteedSkillNames(null).ShouldBeEmpty();
     }
+
+    [Test]
+    public void Configure_AddsPluginGroupingAndLocationTokens_DetectedAsGroupingIntent()
+    {
+        GroupingIntentResolver.Configure(
+            groupingTokens: ["grupuj", "grupę"],
+            locationOrAssignmentTokens: ["adres", "najbliż"]);
+
+        var result = GroupingIntentResolver.GuaranteedSkillNames("Proszę pogrupuj klientów według adresu");
+
+        result.ShouldContain("propose_grouping");
+        result.ShouldContain("apply_grouping");
+    }
+
+    [Test]
+    public void Configure_PluginLocationToken_CombinesWithCoreGroupingToken()
+    {
+        GroupingIntentResolver.Configure(
+            groupingTokens: [],
+            locationOrAssignmentTokens: ["おうち近く"]);
+
+        var result = GroupingIntentResolver.GuaranteedSkillNames("group them by おうち近く");
+
+        result.ShouldContain("propose_grouping");
+    }
+
+    [Test]
+    public void Configure_PluginGroupingToken_CombinesWithCoreLocationToken()
+    {
+        GroupingIntentResolver.Configure(
+            groupingTokens: ["ryhmit"],
+            locationOrAssignmentTokens: []);
+
+        var result = GroupingIntentResolver.GuaranteedSkillNames("ryhmitä asiakkaat their address");
+
+        result.ShouldContain("propose_grouping");
+    }
 }
