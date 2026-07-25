@@ -62,6 +62,51 @@ public class ReceivedEmailRepositoryTests : BaseRepositoryTest
         count.ShouldBe(1);
     }
 
+    [Test]
+    public async Task GetUnprocessedAsync_ReturnsOnlyEmailsWithoutProcessedAt()
+    {
+        var unprocessed = CreateEmail("unprocessed-message-id");
+        var processed = CreateEmail("processed-message-id");
+        processed.ProcessedAt = DateTime.UtcNow;
+
+        await TestDbContext.ReceivedEmails.AddRangeAsync(unprocessed, processed);
+        await TestDbContext.SaveChangesAsync();
+
+        var result = await _repository.GetUnprocessedAsync(50);
+
+        result.Count.ShouldBe(1);
+        result[0].Id.ShouldBe(unprocessed.Id);
+    }
+
+    [Test]
+    public async Task GetUnprocessedAsync_ReturnsTrackedEntities_SoMutationsCanBeSaved()
+    {
+        var unprocessed = CreateEmail("trackable-message-id");
+        await TestDbContext.ReceivedEmails.AddAsync(unprocessed);
+        await TestDbContext.SaveChangesAsync();
+
+        var result = await _repository.GetUnprocessedAsync(50);
+        result[0].ProcessedAt = DateTime.UtcNow;
+        await TestDbContext.SaveChangesAsync();
+
+        var reloaded = await _repository.GetUnprocessedAsync(50);
+        reloaded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GetUnprocessedAsync_RespectsTakeLimit()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            await TestDbContext.ReceivedEmails.AddAsync(CreateEmail($"limit-message-id-{i}"));
+        }
+        await TestDbContext.SaveChangesAsync();
+
+        var result = await _repository.GetUnprocessedAsync(2);
+
+        result.Count.ShouldBe(2);
+    }
+
     private async Task<ReceivedEmail> SeedActiveAndSoftDeletedEmailAsync()
     {
         var activeEmail = CreateEmail("active-message-id");
