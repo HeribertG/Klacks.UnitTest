@@ -71,7 +71,7 @@ public static class SkillFeatureCoverageMap
         ["DashboardController"] = Covered("get_dashboard_summary", "get_client_locations_overview", "interpret_resource_monitor"),
         ["LanguageConfigController"] = Covered("list_languages", "install_language_pack", "uninstall_language_pack"),
         ["LoadFileController"] = Excluded("binary file upload/download infrastructure, not chat-addressable"),
-        ["RouteOptimizationController"] = Gap("route optimization; geographic grouping is covered by propose_customer_grouping/apply_customer_grouping but route planning itself is not"),
+        ["RouteOptimizationController"] = Gap("route optimization; geographic grouping is covered by propose_grouping/apply_grouping but route planning itself is not"),
         ["ScheduleChangesController"] = Gap("schedule change history; rollback_my_last_change/verify_my_last_action only cover the assistant's own session"),
         ["TranslationController"] = Covered("get_translation_status"),
         ["UpdateController"] = Excluded("auto-update deployment infrastructure, not a Klacksy domain feature"),

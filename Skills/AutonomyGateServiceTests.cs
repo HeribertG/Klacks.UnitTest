@@ -359,13 +359,12 @@ public class AutonomyGateServiceTests
         Assert.That(result, Is.Null);
     }
 
-    // Closes the reported confirmation gap end-to-end: the grouping apply skills rewrite the group
-    // membership of the whole customer/employee base. No SetLevel here on purpose — the repository
-    // returns null, so the gate falls back to AutonomyDefaults.DefaultLevel, which is the situation of
-    // a user who never configured an autonomy level. A classifier-only test would still pass if
-    // IsAllowed later let Sensitive through; this one would not.
-    [TestCase("apply_customer_grouping")]
-    [TestCase("apply_employee_grouping")]
+    // Closes the reported confirmation gap end-to-end: the grouping apply skill rewrites the group
+    // membership of the whole customer/employee/extern base (per entityType). No SetLevel here on
+    // purpose — the repository returns null, so the gate falls back to AutonomyDefaults.DefaultLevel,
+    // which is the situation of a user who never configured an autonomy level. A classifier-only test
+    // would still pass if IsAllowed later let Sensitive through; this one would not.
+    [TestCase("apply_grouping")]
     public async Task Check_GroupingApplySkills_RealClassifier_HeldForConfirmation_WithoutAutonomyRow(string skillName)
     {
         var gate = CreateGateWithRealRiskClassifier();

@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -103,6 +104,7 @@ public class ProcessLLMMessageCommandHandlerTests
         return new SkillToolsetAssembler(
             _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
             _pendingUserNoteRepository, _recipeEngine,
+            PendingStoreTestFactory.CreateConfirmationStore(),
             Substitute.For<ILogger<SkillToolsetAssembler>>());
     }
 

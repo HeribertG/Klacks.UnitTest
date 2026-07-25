@@ -18,7 +18,7 @@ public class InternalIdentifierRedactorTests
     [TestCase("Error: Skill 'group_ungrouped_by_city_name' not found")]
     [TestCase("Function 'search_employees' is not available.")]
     [TestCase("Error executing add_client_to_nearest_group: timeout")]
-    [TestCase("Use fill_group_by_criteria first, then propose_employee_grouping.")]
+    [TestCase("Use fill_group_by_criteria first, then propose_grouping.")]
     public void Redact_RemovesInternalSkillNames(string rawResult)
     {
         var redacted = InternalIdentifierRedactor.Redact(rawResult);

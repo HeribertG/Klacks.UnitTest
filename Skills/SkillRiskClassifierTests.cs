@@ -145,11 +145,10 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
-    // The two grouping apply skills rewrite the membership of the whole customer/employee base in one
-    // transaction, so they must always require human confirmation — exactly like the single
-    // delete_membership that is already Sensitive.
-    [TestCase("apply_customer_grouping")]
-    [TestCase("apply_employee_grouping")]
+    // The grouping apply skill rewrites the membership of the whole customer/employee/extern base (per
+    // entityType) in one transaction, so it must always require human confirmation — exactly like the
+    // single delete_membership that is already Sensitive.
+    [TestCase("apply_grouping")]
     public void Classify_GroupingApplySkills_ReturnsSensitive(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
@@ -170,9 +169,8 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Irreversible));
     }
 
-    // The read-only dry runs that precede the apply skills must never be gated.
-    [TestCase("propose_customer_grouping")]
-    [TestCase("propose_employee_grouping")]
+    // The read-only dry run that precedes the apply skill must never be gated.
+    [TestCase("propose_grouping")]
     public void Classify_GroupingProposalSkills_ReturnsReadOnly(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Query)), Is.EqualTo(SkillRiskClass.ReadOnly));

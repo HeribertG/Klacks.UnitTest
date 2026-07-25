@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -31,7 +32,7 @@ public class SkillToolsetAssemblerTests
     private const string NeighbourSkillName = "add_client_to_group";
     private const string RestrictedSkillName = "manage_settings";
     private const string RequiredRight = "CanManageSettings";
-    private const string MultiPermissionSkillName = "propose_customer_grouping";
+    private const string MultiPermissionSkillName = "propose_grouping";
     private const string MultiPermissionRequirement = "CanEditClients,CanViewGroups";
     private const string UserMessage = "Bitte such mir die passenden Mitarbeitenden zusammen";
     private const string UserId = "user-1";
@@ -97,6 +98,7 @@ public class SkillToolsetAssemblerTests
         return new SkillToolsetAssembler(
             _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
             _pendingUserNoteRepository, _recipeEngine,
+            PendingStoreTestFactory.CreateConfirmationStore(),
             Substitute.For<ILogger<SkillToolsetAssembler>>());
     }
 

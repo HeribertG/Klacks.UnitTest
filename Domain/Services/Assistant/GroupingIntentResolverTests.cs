@@ -23,8 +23,8 @@ public class GroupingIntentResolverTests
     {
         var result = GroupingIntentResolver.GuaranteedSkillNames(message);
 
-        result.ShouldContain("propose_employee_grouping");
-        result.ShouldContain("apply_employee_grouping");
+        result.ShouldContain("propose_grouping");
+        result.ShouldContain("apply_grouping");
         result.ShouldContain("add_client_to_nearest_group");
         result.ShouldContain("group_ungrouped_by_city_name");
     }
@@ -42,11 +42,23 @@ public class GroupingIntentResolverTests
         result.ShouldContain("set_group_location");
     }
 
+    [TestCase("Ja, wende die Gruppierung an")]
+    [TestCase("Ja, gruppiere sie")]
+    [TestCase("yes, apply the grouping")]
+    public void GuaranteedSkillNames_Returns_GroupingSkills_For_ConfirmationOnlyMessage(string message)
+    {
+        var result = GroupingIntentResolver.GuaranteedSkillNames(message);
+
+        result.ShouldContain("propose_grouping");
+        result.ShouldContain("apply_grouping");
+    }
+
     [TestCase("Welche Gruppen gibt es?")]
     [TestCase("Zeig mir die Gruppen")]
     [TestCase("Erstelle eine Gruppe Bern")]
     [TestCase("Liste alle Gruppen")]
     [TestCase("Wie viele Mitarbeiter gibt es?")]
+    [TestCase("Nein, nicht gruppieren")]
     [TestCase("")]
     [TestCase("   ")]
     public void GuaranteedSkillNames_Empty_For_ReadOnly_Or_Unrelated(string message)

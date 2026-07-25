@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using NSubstitute.ExceptionExtensions;
 
@@ -41,6 +42,7 @@ public class LLMFunctionExecutorTests
             Substitute.For<ILogger<LLMFunctionExecutor>>(),
             _agentSkillRepository,
             _agentRepository,
+            PendingStoreTestFactory.CreateConfirmationStore(),
             _skillBridge);
     }
 
