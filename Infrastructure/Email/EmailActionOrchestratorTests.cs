@@ -89,6 +89,7 @@ public class EmailActionOrchestratorTests
         ClientId = ClientId,
         ClientType = type,
         Intent = intent,
+        Confidence = EmailConfidence.High,
         FromDate = new DateOnly(2026, 7, 10),
         UntilDate = new DateOnly(2026, 7, 12)
     };
@@ -99,6 +100,7 @@ public class EmailActionOrchestratorTests
         ClientId = ClientId,
         ClientType = EntityTypeEnum.Employee,
         Intent = EmailIntent.AvailabilityAnnouncement,
+        Confidence = EmailConfidence.High,
         FromDate = fromDate,
         UntilDate = untilDate,
         StartHour = startHour,
@@ -112,6 +114,7 @@ public class EmailActionOrchestratorTests
         ClientId = ClientId,
         ClientType = EntityTypeEnum.Employee,
         Intent = EmailIntent.ShiftPreference,
+        Confidence = EmailConfidence.High,
         FromDate = fromDate,
         UntilDate = untilDate,
         ScheduleCommands = scheduleCommands,
@@ -541,6 +544,67 @@ public class EmailActionOrchestratorTests
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("no unambiguous planning command");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [TestCase(EmailIntent.WorkCancellation)]
+    [TestCase(EmailIntent.VacationRequest)]
+    [TestCase(EmailIntent.DayOffWish)]
+    public async Task LowConfidence_DegradesToSuggestion_EvenAtFullyAutonomous(EmailIntent intent)
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var analysis = Analysis(intent);
+        analysis.Confidence = EmailConfidence.Low;
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("ambiguous");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task UnknownConfidence_DegradesToSuggestion_SameAsLow()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var analysis = Analysis(EmailIntent.DayOffWish);
+        analysis.Confidence = EmailConfidence.Unknown;
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Availability_LowConfidence_DegradesToSuggestion()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var analysis = AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), startHour: 8, endHour: 16);
+        analysis.Confidence = EmailConfidence.Low;
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("ambiguous");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_LowConfidence_DegradesToSuggestion()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var analysis = ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY");
+        analysis.Confidence = EmailConfidence.Low;
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("ambiguous");
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
     }
 }

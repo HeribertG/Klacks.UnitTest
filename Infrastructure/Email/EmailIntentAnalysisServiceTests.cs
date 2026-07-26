@@ -280,4 +280,67 @@ public class EmailIntentAnalysisServiceTests
         result!.Intent.ShouldBe(EmailIntent.ShiftPreference);
         result.ScheduleCommands.ShouldBeNull();
     }
+
+    [TestCase("high", EmailConfidence.High)]
+    [TestCase("low", EmailConfidence.Low)]
+    [TestCase("HIGH", EmailConfidence.High)]
+    public async Task Confidence_IsMappedFromLlmReply(string confidence, EmailConfidence expected)
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies($$"""{"intent":"AvailabilityAnnouncement","confidence":"{{confidence}}","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07"}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Confidence.ShouldBe(expected);
+    }
+
+    [Test]
+    public async Task MissingConfidence_MapsToUnknown_NeverSilentlyHigh()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07"}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Confidence.ShouldBe(EmailConfidence.Unknown);
+    }
+
+    [Test]
+    public async Task Customer_AlwaysHighConfidence_EvenIfLlmSaysLow()
+    {
+        ResolvesTo(EntityTypeEnum.Customer);
+        LlmReplies("""{"intent":"CustomerMessage","confidence":"low","summary":"Kunde schreibt etwas.","fromDate":null,"untilDate":null}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Confidence.ShouldBe(EmailConfidence.High);
+    }
+
+    [Test]
+    public async Task UnparsableReply_DegradesToLowConfidence()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("Sorry, I cannot help with that.");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Confidence.ShouldBe(EmailConfidence.Low);
+    }
+
+    [Test]
+    public async Task LlmThrows_DegradesToLowConfidence()
+    {
+        ResolvesTo(EntityTypeEnum.Employee);
+        _llmService.ProcessAsync(Arg.Any<LLMContext>())
+            .Returns<LLMResponse>(_ => throw new InvalidOperationException("provider down"));
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.Confidence.ShouldBe(EmailConfidence.Low);
+    }
 }
