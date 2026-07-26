@@ -8,6 +8,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
@@ -21,10 +22,23 @@ public class CheckClientAvailabilitySkillTests
     private IClientAvailabilityRepository _availabilityRepository = null!;
     private IBreakRepository _breakRepository = null!;
     private IScheduleCommandRepository _scheduleCommandRepository = null!;
+    private IScheduleCommandKeywordProvider _keywordProvider = null!;
     private CheckClientAvailabilitySkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly DateOnly Date = new(2026, 8, 3);
+
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
+    {
+        FreeToken = "FREE",
+        NegFreeToken = "-FREE",
+        EarlyToken = "EARLY",
+        NegEarlyToken = "-EARLY",
+        LateToken = "LATE",
+        NegLateToken = "-LATE",
+        NightToken = "NIGHT",
+        NegNightToken = "-NIGHT",
+    };
 
     [SetUp]
     public void SetUp()
@@ -33,6 +47,7 @@ public class CheckClientAvailabilitySkillTests
         _availabilityRepository = Substitute.For<IClientAvailabilityRepository>();
         _breakRepository = Substitute.For<IBreakRepository>();
         _scheduleCommandRepository = Substitute.For<IScheduleCommandRepository>();
+        _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
 
         _clientRepository.Get(ClientId).Returns(new Client { Id = ClientId, FirstName = "Anna", Name = "Muster" });
         _availabilityRepository.GetByClientAndDateRange(ClientId, Date, Date)
@@ -42,9 +57,10 @@ public class CheckClientAvailabilitySkillTests
         _scheduleCommandRepository
             .GetByClientsAndDateRangeAsync(Arg.Any<IReadOnlyList<Guid>>(), Date, Date, null, Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleCommand>());
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
         _skill = new CheckClientAvailabilitySkill(
-            _clientRepository, _availabilityRepository, _breakRepository, _scheduleCommandRepository);
+            _clientRepository, _availabilityRepository, _breakRepository, _scheduleCommandRepository, _keywordProvider);
     }
 
     private static SkillExecutionContext Context() => new()

@@ -8,6 +8,7 @@
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
 
@@ -16,9 +17,22 @@ namespace Klacks.UnitTest.Skills;
 [TestFixture]
 public class AddScheduleCommandsRangeSkillTests
 {
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
+    {
+        FreeToken = "FREE",
+        NegFreeToken = "-FREE",
+        EarlyToken = "EARLY",
+        NegEarlyToken = "-EARLY",
+        LateToken = "LATE",
+        NegLateToken = "-LATE",
+        NightToken = "NIGHT",
+        NegNightToken = "-NIGHT",
+    };
+
     private IScheduleCommandRepository _scheduleCommandRepository = null!;
     private IClientRepository _clientRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IScheduleCommandKeywordProvider _keywordProvider = null!;
     private AddScheduleCommandsRangeSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -29,14 +43,16 @@ public class AddScheduleCommandsRangeSkillTests
         _scheduleCommandRepository = Substitute.For<IScheduleCommandRepository>();
         _clientRepository = Substitute.For<IClientRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
 
         _clientRepository.Exists(ClientId).Returns(true);
         _scheduleCommandRepository.GetByClientsAndDateRangeAsync(
                 Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
                 Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns([]);
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
-        _skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, _unitOfWork);
+        _skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, _unitOfWork, _keywordProvider);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -123,6 +139,31 @@ public class AddScheduleCommandsRangeSkillTests
         var result = await _skill.ExecuteAsync(Context(), Parameters(from: "2026-07-14", until: "2026-07-10"));
 
         result.Success.ShouldBeFalse();
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
+    [Test]
+    public async Task ConfiguredKeyword_IsAcceptedInsteadOfEnglishDefault()
+    {
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords with { FreeToken = "URLAUB" });
+        var added = new List<ScheduleCommand>();
+        await _scheduleCommandRepository.Add(Arg.Do<ScheduleCommand>(c => added.Add(c)));
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters(keyword: "urlaub"));
+
+        result.Success.ShouldBeTrue(result.Message);
+        added.ShouldAllBe(c => c.CommandKeyword == "URLAUB");
+    }
+
+    [Test]
+    public async Task EnglishDefault_IsRejected_WhenKeywordWasRenamed()
+    {
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords with { FreeToken = "URLAUB" });
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters(keyword: "FREE"));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Invalid commandKeyword");
         await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
     }
 }

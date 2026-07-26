@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.ScheduleRecovery.Model;
@@ -20,6 +21,21 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
     private static readonly Guid Shift2 = new("00000000-0000-0000-0000-000000000102");
     private static readonly DateOnly KeywordDay = new(2026, 6, 10);
     private static readonly DateOnly OpenDay = new(2026, 6, 11);
+
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
+    {
+        FreeToken = "FREE",
+        NegFreeToken = "-FREE",
+        EarlyToken = "EARLY",
+        NegEarlyToken = "-EARLY",
+        LateToken = "LATE",
+        NegLateToken = "-LATE",
+        NightToken = "NIGHT",
+        NegNightToken = "-NIGHT",
+    };
+
+    private static readonly IReadOnlyDictionary<string, Klacks.ScheduleOptimizer.Models.ScheduleCommandKeyword> DefaultKeywordMap =
+        ScheduleCommandKeywordMapper.BuildMap(DefaultKeywords);
 
     private static HashSet<(Guid AgentId, DateOnly Date)> KeywordDays(params (Guid, DateOnly)[] days)
         => new(days);
@@ -93,7 +109,7 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
             new() { ClientId = AgentB, CurrentDate = KeywordDay, CommandKeyword = "not-a-keyword" },
         };
 
-        var days = RecoverySnapshotBuilder.ExtractKeywordDays(commands);
+        var days = RecoverySnapshotBuilder.ExtractKeywordDays(commands, DefaultKeywordMap);
 
         days.ShouldContain((AgentA, KeywordDay));
         days.ShouldContain((AgentA, OpenDay));

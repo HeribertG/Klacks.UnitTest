@@ -11,8 +11,10 @@ using AppSettings = Klacks.Api.Application.Constants.Settings;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Email;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Email;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Email;
 using Microsoft.Extensions.Logging;
 
@@ -21,9 +23,22 @@ namespace Klacks.UnitTest.Infrastructure.Email;
 [TestFixture]
 public class EmailIntentAnalysisServiceTests
 {
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
+    {
+        FreeToken = "FREE",
+        NegFreeToken = "-FREE",
+        EarlyToken = "EARLY",
+        NegEarlyToken = "-EARLY",
+        LateToken = "LATE",
+        NegLateToken = "-LATE",
+        NightToken = "NIGHT",
+        NegNightToken = "-NIGHT",
+    };
+
     private IEmailClientAssignmentService _assignmentService = null!;
     private ILLMService _llmService = null!;
     private ISettingsRepository _settingsRepository = null!;
+    private IScheduleCommandKeywordProvider _keywordProvider = null!;
     private EmailIntentAnalysisService _service = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -34,12 +49,14 @@ public class EmailIntentAnalysisServiceTests
         _assignmentService = Substitute.For<IEmailClientAssignmentService>();
         _llmService = Substitute.For<ILLMService>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
+        _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
         EnableFeature(true);
 
         _service = new EmailIntentAnalysisService(
             _assignmentService, Substitute.For<IPlanningAudienceResolver>(), _llmService, _settingsRepository,
-            Substitute.For<ILogger<EmailIntentAnalysisService>>());
+            _keywordProvider, Substitute.For<ILogger<EmailIntentAnalysisService>>());
     }
 
     private void EnableFeature(bool enabled)
@@ -279,6 +296,43 @@ public class EmailIntentAnalysisServiceTests
         result.ShouldNotBeNull();
         result!.Intent.ShouldBe(EmailIntent.ShiftPreference);
         result.ScheduleCommands.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ConfiguredKeyword_IsAcceptedAndPreservedInScheduleCommands()
+    {
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords with { EarlyToken = "FRUEHDIENST" });
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"ShiftPreference","summary":"Kann nur früh arbeiten.","fromDate":"2026-08-03","untilDate":"2026-08-07","scheduleCommands":"fruehdienst"}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.ScheduleCommands.ShouldBe("FRUEHDIENST");
+    }
+
+    [Test]
+    public async Task EnglishDefaultKeyword_IsDropped_WhenKeywordWasRenamed()
+    {
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords with { EarlyToken = "FRUEHDIENST" });
+        ResolvesTo(EntityTypeEnum.Employee);
+        LlmReplies("""{"intent":"ShiftPreference","summary":"Kann nur früh arbeiten.","fromDate":"2026-08-03","untilDate":"2026-08-07","scheduleCommands":"EARLY"}""");
+
+        var result = await _service.AnalyzeAsync(Email());
+
+        result.ShouldNotBeNull();
+        result!.ScheduleCommands.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Prompt_EmbedsCurrentlyConfiguredKeywordTokens()
+    {
+        var keywords = DefaultKeywords with { FreeToken = "URLAUB", NegNightToken = "KEINE_NACHT" };
+
+        var prompt = EmailIntentAnalysisService.BuildPrompt(Email(), EntityTypeEnum.Employee, "body", keywords);
+
+        prompt.ShouldContain("URLAUB");
+        prompt.ShouldContain("KEINE_NACHT");
     }
 
     [TestCase("high", EmailConfidence.High)]

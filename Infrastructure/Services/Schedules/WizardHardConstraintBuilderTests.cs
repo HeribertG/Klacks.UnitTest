@@ -3,6 +3,7 @@
 using Shouldly;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
@@ -18,6 +19,18 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 [TestFixture]
 public class WizardHardConstraintBuilderTests
 {
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
+    {
+        FreeToken = "FREE",
+        NegFreeToken = "-FREE",
+        EarlyToken = "EARLY",
+        NegEarlyToken = "-EARLY",
+        LateToken = "LATE",
+        NegLateToken = "-LATE",
+        NightToken = "NIGHT",
+        NegNightToken = "-NIGHT",
+    };
+
     private DataBaseContext _context = null!;
     private WizardHardConstraintBuilder _sut = null!;
 
@@ -29,7 +42,9 @@ public class WizardHardConstraintBuilderTests
             .Options;
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
-        _sut = new WizardHardConstraintBuilder(_context);
+        var keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
+        keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
+        _sut = new WizardHardConstraintBuilder(_context, keywordProvider);
     }
 
     [TearDown]

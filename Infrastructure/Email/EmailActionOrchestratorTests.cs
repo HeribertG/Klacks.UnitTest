@@ -11,6 +11,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Associations;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Email;
@@ -28,12 +29,27 @@ public class EmailActionOrchestratorTests
     private ISkillExecutor _skillExecutor = null!;
     private IGroupMembershipService _groupMembershipService = null!;
     private Klacks.Api.Application.Interfaces.IAbsenceRepository _absenceRepository = null!;
+    private Klacks.Api.Application.Interfaces.IWorkRepository _workRepository = null!;
+    private ISealedDayRepository _sealedDayRepository = null!;
+    private IScheduleCommandKeywordProvider _keywordProvider = null!;
     private IClientContractDataProvider _contractDataProvider = null!;
     private EmailActionOrchestrator _orchestrator = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid AdminGuid = Guid.NewGuid();
     private static readonly Guid GroupId = Guid.NewGuid();
+
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
+    {
+        FreeToken = "FREE",
+        NegFreeToken = "-FREE",
+        EarlyToken = "EARLY",
+        NegEarlyToken = "-EARLY",
+        LateToken = "LATE",
+        NegLateToken = "-LATE",
+        NightToken = "NIGHT",
+        NegNightToken = "-NIGHT",
+    };
 
     [SetUp]
     public void SetUp()
@@ -43,6 +59,9 @@ public class EmailActionOrchestratorTests
         _skillExecutor = Substitute.For<ISkillExecutor>();
         _groupMembershipService = Substitute.For<IGroupMembershipService>();
         _absenceRepository = Substitute.For<Klacks.Api.Application.Interfaces.IAbsenceRepository>();
+        _workRepository = Substitute.For<Klacks.Api.Application.Interfaces.IWorkRepository>();
+        _sealedDayRepository = Substitute.For<ISealedDayRepository>();
+        _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
         _contractDataProvider = Substitute.For<IClientContractDataProvider>();
 
         SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0 });
@@ -55,12 +74,18 @@ public class EmailActionOrchestratorTests
             AbsenceType("Krankheit", "Sickness"),
             AbsenceType("Ferien", "Vacation")
         ]);
+        _workRepository.GetByClientAndDateRangeAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work>());
+        _sealedDayRepository.IsDayLockedAsync(Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "done"));
 
         _orchestrator = new EmailActionOrchestrator(
             _autonomyPreferences, _audienceResolver, _skillExecutor,
-            _groupMembershipService, _absenceRepository, _contractDataProvider,
+            _groupMembershipService, _absenceRepository, _workRepository,
+            _sealedDayRepository, _keywordProvider, _contractDataProvider,
             Substitute.For<ILogger<EmailActionOrchestrator>>());
     }
 
@@ -606,5 +631,177 @@ public class EmailActionOrchestratorTests
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("ambiguous");
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task WorkCancellation_SealedPeriod_DegradesToSuggestion()
+    {
+        AdminLevel(AutonomyLevel.Autonomous);
+        _sealedDayRepository.IsDayLockedAsync(Arg.Any<DateOnly>(), ClientId, Arg.Any<CancellationToken>()).Returns(true);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("sealed");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task WorkCancellation_UnsealedButAlreadyPlanned_StillExecutes()
+    {
+        AdminLevel(AutonomyLevel.Autonomous);
+        _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+
+        outcome!.Executed.ShouldBeTrue();
+    }
+
+    [TestCase(EmailIntent.VacationRequest)]
+    [TestCase(EmailIntent.DayOffWish)]
+    public async Task AlreadyPlannedPeriod_DegradesToSuggestion(EmailIntent intent)
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(intent));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("already has scheduled shifts");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Availability_AlreadyPlannedPeriod_DegradesToSuggestion()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17)));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("already has scheduled shifts");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_AlreadyPlannedPeriod_DegradesToSuggestion()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("already has scheduled shifts");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task DayOffWish_DefaultsToFree_WhenNoScheduleCommandsSet()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+
+        outcome!.Executed.ShouldBeTrue();
+        invocations[0].Parameters["commandKeyword"].ShouldBe("FREE");
+    }
+
+    [Test]
+    public async Task DayOffWish_NegFree_PlacesNegFreeKeyword()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+        var analysis = Analysis(EmailIntent.DayOffWish);
+        analysis.ScheduleCommands = "-FREE";
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome!.Executed.ShouldBeTrue();
+        invocations[0].Parameters["commandKeyword"].ShouldBe("-FREE");
+    }
+
+    [Test]
+    public async Task DayOffWish_ContradictingKeywords_OnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var analysis = Analysis(EmailIntent.DayOffWish);
+        analysis.ScheduleCommands = "FREE,-FREE";
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("contradict");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task DayOffWish_UsesConfiguredKeyword_NotEnglishDefault()
+    {
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords with { FreeToken = "URLAUB" });
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+
+        outcome!.Executed.ShouldBeTrue();
+        invocations[0].Parameters["commandKeyword"].ShouldBe("URLAUB");
+    }
+
+    [Test]
+    public async Task ShiftPreference_ContradictionDetected_WithNonPrefixedRenamedTokens()
+    {
+        _keywordProvider.GetAsync(Arg.Any<CancellationToken>())
+            .Returns(DefaultKeywords with { EarlyToken = "FRUEH", NegEarlyToken = "KEIN_FRUEH" });
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "FRUEH,KEIN_FRUEH"));
+
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("contradict");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_IgnoresUnrelatedFreeToken_EvenIfPresentInScheduleCommands()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var invocations = CaptureSkillInvocations();
+        var analysis = ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,FREE");
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        invocations[0].Parameters["commandKeyword"].ShouldBe("EARLY");
+    }
+
+    [Test]
+    public async Task WorkCancellation_RangeOverCap_OnlySuggests_WithoutExecutingDayLoop()
+    {
+        AdminLevel(AutonomyLevel.Autonomous);
+        var analysis = Analysis(EmailIntent.WorkCancellation);
+        analysis.FromDate = new DateOnly(2026, 1, 1);
+        analysis.UntilDate = new DateOnly(2026, 12, 31);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("maximum");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+        await _sealedDayRepository.DidNotReceiveWithAnyArgs().IsDayLockedAsync(default, default, default);
     }
 }
