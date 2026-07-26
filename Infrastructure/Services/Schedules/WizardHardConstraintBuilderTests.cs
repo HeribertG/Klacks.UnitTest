@@ -9,6 +9,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -19,17 +20,7 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 [TestFixture]
 public class WizardHardConstraintBuilderTests
 {
-    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
-    {
-        FreeToken = "FREE",
-        NegFreeToken = "-FREE",
-        EarlyToken = "EARLY",
-        NegEarlyToken = "-EARLY",
-        LateToken = "LATE",
-        NegLateToken = "-LATE",
-        NightToken = "NIGHT",
-        NegNightToken = "-NIGHT",
-    };
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
     private DataBaseContext _context = null!;
     private WizardHardConstraintBuilder _sut = null!;

@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Email;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Email;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Infrastructure.Email;
@@ -23,17 +24,7 @@ namespace Klacks.UnitTest.Infrastructure.Email;
 [TestFixture]
 public class EmailIntentAnalysisServiceTests
 {
-    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
-    {
-        FreeToken = "FREE",
-        NegFreeToken = "-FREE",
-        EarlyToken = "EARLY",
-        NegEarlyToken = "-EARLY",
-        LateToken = "LATE",
-        NegLateToken = "-LATE",
-        NightToken = "NIGHT",
-        NegNightToken = "-NIGHT",
-    };
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
     private IEmailClientAssignmentService _assignmentService = null!;
     private ILLMService _llmService = null!;

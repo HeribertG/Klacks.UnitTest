@@ -15,6 +15,8 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 [TestFixture]
 public class ScheduleCommandKeywordProviderTests
 {
+    private readonly Dictionary<string, string> _settingsValues = new();
+
     private ISettingsReader _settingsReader = null!;
     private ILogger<ScheduleCommandKeywordProvider> _logger = null!;
     private ScheduleCommandKeywordProvider _provider = null!;
@@ -22,7 +24,10 @@ public class ScheduleCommandKeywordProviderTests
     [SetUp]
     public void SetUp()
     {
+        _settingsValues.Clear();
         _settingsReader = Substitute.For<ISettingsReader>();
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>())
+            .Returns(_ => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(_settingsValues));
         _logger = Substitute.For<ILogger<ScheduleCommandKeywordProvider>>();
         _provider = new ScheduleCommandKeywordProvider(_settingsReader, _logger);
     }
@@ -107,6 +112,5 @@ public class ScheduleCommandKeywordProviderTests
             Arg.Any<Func<object, Exception?, string>>());
     }
 
-    private void SetSetting(string type, string value) =>
-        _settingsReader.GetSetting(type).Returns(new Klacks.Api.Domain.Models.Settings.Settings { Type = type, Value = value });
+    private void SetSetting(string type, string value) => _settingsValues[type] = value;
 }

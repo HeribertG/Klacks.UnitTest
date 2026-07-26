@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Email;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Email;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Infrastructure.Email;
@@ -39,17 +40,7 @@ public class EmailActionOrchestratorTests
     private static readonly Guid AdminGuid = Guid.NewGuid();
     private static readonly Guid GroupId = Guid.NewGuid();
 
-    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
-    {
-        FreeToken = "FREE",
-        NegFreeToken = "-FREE",
-        EarlyToken = "EARLY",
-        NegEarlyToken = "-EARLY",
-        LateToken = "LATE",
-        NegLateToken = "-LATE",
-        NightToken = "NIGHT",
-        NegNightToken = "-NIGHT",
-    };
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
     [SetUp]
     public void SetUp()
@@ -76,8 +67,9 @@ public class EmailActionOrchestratorTests
         ]);
         _workRepository.GetByClientAndDateRangeAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work>());
-        _sealedDayRepository.IsDayLockedAsync(Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _sealedDayRepository.FindFirstLockedDateForClientAsync(
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns((DateOnly?)null);
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "done"));
@@ -637,7 +629,9 @@ public class EmailActionOrchestratorTests
     public async Task WorkCancellation_SealedPeriod_DegradesToSuggestion()
     {
         AdminLevel(AutonomyLevel.Autonomous);
-        _sealedDayRepository.IsDayLockedAsync(Arg.Any<DateOnly>(), ClientId, Arg.Any<CancellationToken>()).Returns(true);
+        _sealedDayRepository.FindFirstLockedDateForClientAsync(
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), ClientId, Arg.Any<CancellationToken>())
+            .Returns(DateOnly.FromDateTime(DateTime.Today));
 
         var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
 
@@ -802,6 +796,6 @@ public class EmailActionOrchestratorTests
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("maximum");
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
-        await _sealedDayRepository.DidNotReceiveWithAnyArgs().IsDayLockedAsync(default, default, default);
+        await _sealedDayRepository.DidNotReceiveWithAnyArgs().FindFirstLockedDateForClientAsync(default, default, default, default);
     }
 }

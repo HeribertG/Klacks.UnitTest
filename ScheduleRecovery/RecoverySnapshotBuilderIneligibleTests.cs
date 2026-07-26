@@ -4,6 +4,7 @@ using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.ScheduleRecovery.Model;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.ScheduleRecovery;
 
@@ -22,17 +23,7 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
     private static readonly DateOnly KeywordDay = new(2026, 6, 10);
     private static readonly DateOnly OpenDay = new(2026, 6, 11);
 
-    private static readonly ScheduleCommandKeywordSet DefaultKeywords = new()
-    {
-        FreeToken = "FREE",
-        NegFreeToken = "-FREE",
-        EarlyToken = "EARLY",
-        NegEarlyToken = "-EARLY",
-        LateToken = "LATE",
-        NegLateToken = "-LATE",
-        NightToken = "NIGHT",
-        NegNightToken = "-NIGHT",
-    };
+    private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
     private static readonly IReadOnlyDictionary<string, Klacks.ScheduleOptimizer.Models.ScheduleCommandKeyword> DefaultKeywordMap =
         ScheduleCommandKeywordMapper.BuildMap(DefaultKeywords);
