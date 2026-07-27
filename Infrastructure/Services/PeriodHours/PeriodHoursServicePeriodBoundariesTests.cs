@@ -284,16 +284,12 @@ public class PeriodHoursServicePeriodBoundariesTests
             var offset = ((int)date.DayOfWeek - (int)effectiveStartDay + 7) % 7;
             return Task.FromResult(date.AddDays(-offset));
         });
-        var onCallConfigResolver = Substitute.For<IOnCallConfigResolver>();
-        onCallConfigResolver.ResolveAsync().Returns(new OnCallConfig(false, 1m, 0m, false));
-
         return new PeriodHoursService(
             _context,
             logger,
             notificationService,
             clientGroupFilterService,
             contractDataProvider,
-            weekConfiguration,
-            onCallConfigResolver);
+            weekConfiguration);
     }
 }

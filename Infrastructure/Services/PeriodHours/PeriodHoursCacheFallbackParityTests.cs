@@ -1,12 +1,12 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Cross-path invariant for on-call hours: the two entry points that attribute a client's period
+/// Cross-path invariant for period hours: the two entry points that attribute a client's period
 /// hours - <c>PeriodHoursService.GetPeriodHoursAsync</c> (the cache-populating core path, exercised here
 /// through its private <c>CalculatePeriodHoursForClientsAsync</c> helper since no <c>ClientPeriodHours</c>
 /// row exists) and <c>WorkRepository.GetPeriodHoursForClients</c> (the cache-miss fallback used when the
-/// cache row is absent) - MUST weight on-call work changes identically, otherwise a client's displayed
-/// hours would silently depend on whether its period happened to be cached. Both entry points share the
+/// cache row is absent) - MUST weight work changes identically, otherwise a client's displayed hours
+/// would silently depend on whether its period happened to be cached. Both entry points share the
 /// same public shape (client IDs + date range in, <c>Dictionary&lt;Guid, PeriodHoursResource&gt;</c> out),
 /// so their <c>Hours</c> values are compared directly against each other and against one hand-computed
 /// expectation, which guards against a shared bug making both paths equally wrong.
@@ -32,7 +32,6 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
-using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 
 [TestFixture]
 public class PeriodHoursCacheFallbackParityTests
@@ -59,8 +58,6 @@ public class PeriodHoursCacheFallbackParityTests
     [Test]
     public async Task PeriodHours_CachePathAndFallbackPath_ProduceIdenticalHours()
     {
-        SeedOnCallSettings(enabled: true, presencePercent: 100, standbyPercent: 25);
-
         var work = new Work
         {
             Id = Guid.NewGuid(),
@@ -73,31 +70,7 @@ public class PeriodHoursCacheFallbackParityTests
         };
         _context.Work.Add(work);
 
-        _context.WorkChange.Add(new WorkChange
-        {
-            Id = Guid.NewGuid(),
-            WorkId = work.Id,
-            Work = work,
-            Type = WorkChangeType.OnCallPresence,
-            ChangeTime = 8m,
-            AnalyseToken = null,
-            StartTime = new TimeOnly(20, 0),
-            EndTime = new TimeOnly(4, 0),
-        });
-        _context.WorkChange.Add(new WorkChange
-        {
-            Id = Guid.NewGuid(),
-            WorkId = work.Id,
-            Work = work,
-            Type = WorkChangeType.OnCallStandby,
-            ChangeTime = 8m,
-            AnalyseToken = null,
-            StartTime = new TimeOnly(4, 0),
-            EndTime = new TimeOnly(12, 0),
-        });
-
-        // Non-on-call control: a plain correction. Both paths add its raw ChangeTime unweighted, so it
-        // proves the on-call factor is applied selectively and does not leak onto unrelated change types.
+        // Plain correction. Both paths add its raw ChangeTime unweighted.
         _context.WorkChange.Add(new WorkChange
         {
             Id = Guid.NewGuid(),
@@ -116,17 +89,13 @@ public class PeriodHoursCacheFallbackParityTests
             .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
             .Returns(new Dictionary<Guid, EffectiveContractData>());
 
-        // Core path: real OnCallConfigResolver over the same context, so it reads the identical Settings
-        // rows the fallback reads below - the actual thing under test is whether the two calculation
-        // branches agree, not whether config resolution agrees (that is already covered elsewhere).
         var periodHoursService = new PeriodHoursService(
             _context,
             Substitute.For<ILogger<PeriodHoursService>>(),
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IClientGroupFilterService>(),
             contractDataProvider,
-            Substitute.For<IWeekConfiguration>(),
-            new OnCallConfigResolver(_context));
+            Substitute.For<IWeekConfiguration>());
 
         var workRepository = new WorkRepository(
             _context,
@@ -145,19 +114,11 @@ public class PeriodHoursCacheFallbackParityTests
         // BuildFallbackPeriodHours/CalculateWorkChangeAdjustments cache-miss branch.
         var fallback = await workRepository.GetPeriodHoursForClients(clientIds, Start, End);
 
-        // 5 (work) + 8 * 1.0 (presence) + 8 * 0.25 (standby) + 2 (correction control) = 17.
-        const decimal expectedHours = 17m;
+        // 5 (work) + 2 (correction) = 7.
+        const decimal expectedHours = 7m;
 
         core[ClientId].Hours.ShouldBe(expectedHours);
         fallback[ClientId].Hours.ShouldBe(expectedHours);
         core[ClientId].Hours.ShouldBe(fallback[ClientId].Hours);
-    }
-
-    private void SeedOnCallSettings(bool enabled, int presencePercent, int standbyPercent)
-    {
-        _context.Settings.Add(new SettingsModel { Type = SettingKeys.WorktimeOnCallEnabled, Value = enabled ? "true" : "false" });
-        _context.Settings.Add(new SettingsModel { Type = SettingKeys.WorktimeOnCallPresenceCountsPercent, Value = presencePercent.ToString() });
-        _context.Settings.Add(new SettingsModel { Type = SettingKeys.WorktimeOnCallStandbyCountsPercent, Value = standbyPercent.ToString() });
-        _context.SaveChanges();
     }
 }
