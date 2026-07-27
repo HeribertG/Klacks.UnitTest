@@ -19,7 +19,7 @@ public class ContextAssemblyPipelineTests
     private const string IdentityText = "You are Klacksy, the Klacks assistant.";
     private const string OntologyText = "=== KLACKS WORLD MODEL ===\n- Client\n  * Client --hasMany--> Contract\n=== END WORLD MODEL ===";
     private const string MemoryText = "[MEMORIES]\n- user prefers Bern group.";
-    private const int ExpectedOntologyTokenBudget = 1500;
+    private const int ExpectedOntologyTokenBudget = IKlacksOntologyService.DefaultMaxTokens;
 
     private const string SchedulingMarker = "[SCHEDULING CONTEXT]";
 

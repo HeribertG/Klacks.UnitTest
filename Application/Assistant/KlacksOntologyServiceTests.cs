@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for the WP-P0.1 ontology constraint additions: the always-on world-model block must
-/// carry the planning entity facts (Membership planning horizon, replacement token inheritance,
-/// effective-limits pointer to the read skills).
+/// Unit tests for the curated ontology: the world-model block must carry the planning entity facts
+/// (Membership planning horizon, replacement token inheritance, effective-limits pointer to the read
+/// skills, absence catalog vs. event, shift status lifecycle) plus the cross-cutting rules, and it
+/// must stay inside its token budget.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Ontology;
@@ -78,6 +79,67 @@ public class KlacksOntologyServiceTests
                 block.ShouldContain($"- {entity}");
             }
         }
+    }
+
+    [Test]
+    public void Absence_IsDeclaredAsCatalog_AndBreakAsTheEvent()
+    {
+        Service().GetConstraints("Absence")
+            .ShouldContain(c => c.Contains("CATALOG") && c.Contains("the event is Break"));
+        Service().GetConstraints("Break")
+            .ShouldContain(c => c.Contains("AbsenceId"));
+    }
+
+    [Test]
+    public void Shift_StatusLifecycle_ForbidsOriginalShiftNextToItsSplits()
+    {
+        Service().GetConstraints("Shift")
+            .ShouldContain(c => c.Contains("never both") && c.Contains("double-books"));
+    }
+
+    [Test]
+    public void Communication_TypeEnum_IsMarkedAsNonContiguous()
+    {
+        Service().GetConstraints("Communication")
+            .ShouldContain(c => c.Contains("NOT contiguous") && c.Contains("EmergencyPhone"));
+    }
+
+    [Test]
+    public void GroupItem_DeleteVersusClose_IsInConstraints()
+    {
+        Service().GetConstraints("GroupItem")
+            .ShouldContain(c => c.Contains("strict") && c.Contains("future-relative"));
+    }
+
+    [Test]
+    public void ClientAvailability_PositivePerDaySemantics_AndPrecedence_AreInConstraints()
+    {
+        var constraints = Service().GetConstraints("ClientAvailability");
+
+        constraints.ShouldContain(c => c.Contains("POSITIVE") && c.Contains("PER DAY"));
+        constraints.ShouldContain(c => c.Contains("Break > ScheduleCommand keyword > availability"));
+    }
+
+    [Test]
+    public void WorldModelBlock_CarriesTheGlobalRules_SoftDeleteScenarioAndMultiLanguage()
+    {
+        var block = Service().RenderWorldModelBlock();
+
+        block.ShouldContain("soft-deleted");
+        block.ShouldContain("AnalyseToken");
+        block.ShouldContain("MultiLanguage");
+    }
+
+    [Test]
+    public void RenderWorldModelBlock_DropsTheGlobalRules_WhenTheBudgetIsTooSmallForThem()
+    {
+        // The per-entity facts outrank the cross-cutting preamble: on a tiny budget the block must still
+        // be a valid document, not one that spends everything on the preamble.
+        var block = Service().RenderWorldModelBlock(maxTokens: 100);
+
+        block.ShouldNotContain("MultiLanguage");
+        block.ShouldContain("=== KLACKS WORLD MODEL ===");
+        block.ShouldContain("=== END WORLD MODEL ===");
     }
 
     [Test]
