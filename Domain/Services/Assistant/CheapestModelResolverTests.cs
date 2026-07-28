@@ -57,4 +57,55 @@ public class CheapestModelResolverTests
         provider.ShouldBeNull();
         await _providerFactory.DidNotReceive().GetProviderForModelAsync(Arg.Any<string>());
     }
+
+    [Test]
+    public async Task ResolveAsync_NoModelCarriesACost_FallsBackToTheDefaultModel()
+    {
+        var provider = Substitute.For<LlmProviders.ILLMProvider>();
+        _repository.GetModelsAsync(true).Returns(new List<LLMModel>
+        {
+            new() { ModelId = ExpensiveModelId, CostPerInputToken = 0m, CostPerOutputToken = 0m },
+            new() { ModelId = CheapModelId, CostPerInputToken = 0m, CostPerOutputToken = 0m, IsDefault = true }
+        });
+        _providerFactory.GetProviderForModelAsync(CheapModelId).Returns(provider);
+
+        var (model, resolvedProvider) = await _resolver.ResolveAsync();
+
+        model.ShouldNotBeNull();
+        model!.ModelId.ShouldBe(CheapModelId);
+        resolvedProvider.ShouldBe(provider);
+    }
+
+    [Test]
+    public async Task ResolveAsync_UnpricedModelIsCheaperOnPaper_IsIgnoredInFavourOfAPricedOne()
+    {
+        var provider = Substitute.For<LlmProviders.ILLMProvider>();
+        _repository.GetModelsAsync(true).Returns(new List<LLMModel>
+        {
+            new() { ModelId = ExpensiveModelId, CostPerInputToken = 0m, CostPerOutputToken = 0m },
+            new() { ModelId = CheapModelId, CostPerInputToken = 0.05m, CostPerOutputToken = 0.05m }
+        });
+        _providerFactory.GetProviderForModelAsync(CheapModelId).Returns(provider);
+
+        var (model, _) = await _resolver.ResolveAsync();
+
+        model.ShouldNotBeNull();
+        model!.ModelId.ShouldBe(CheapModelId);
+    }
+
+    [Test]
+    public async Task ResolveAsync_NoCostsAndNoDefaultModel_StillResolvesSomething()
+    {
+        var provider = Substitute.For<LlmProviders.ILLMProvider>();
+        _repository.GetModelsAsync(true).Returns(new List<LLMModel>
+        {
+            new() { ModelId = ExpensiveModelId, CostPerInputToken = 0m, CostPerOutputToken = 0m }
+        });
+        _providerFactory.GetProviderForModelAsync(ExpensiveModelId).Returns(provider);
+
+        var (model, _) = await _resolver.ResolveAsync();
+
+        model.ShouldNotBeNull();
+        model!.ModelId.ShouldBe(ExpensiveModelId);
+    }
 }
