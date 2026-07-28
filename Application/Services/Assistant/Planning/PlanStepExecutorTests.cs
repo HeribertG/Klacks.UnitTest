@@ -16,6 +16,12 @@
 /// pre-existing tests keep exercising the unchanged path; a handful of tests pass origin:
 /// AgentPlanOrigin.SelfReflection to cover the Phase-4 effective-level override (irreversible runs
 /// without pausing and without ever reading the user's autonomy row, Sensitive still pauses).
+/// A further group of ApproveAndContinueAsync tests covers the resume-identity override: a SelfReflection
+/// plan with a matching approved GoalCandidate resumes with UserName/UserPermissions/SessionId replaced by
+/// that candidate's frozen OwnerPermissionsCsv, GoalSelfReflectionAuditConstants.AuditUserName, and
+/// SessionId (UserId/TenantId are left as the resuming caller supplied them); a UserGoal plan, a
+/// missing/unapproved candidate, and an empty OwnerPermissionsCsv all fall back to the supplied context
+/// unchanged.
 /// </summary>
 
 using System.Text.Json;
@@ -269,6 +275,132 @@ public class PlanStepExecutorTests
         Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
         await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
             Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApproveAndContinueAsync_SelfReflectionWithApprovedCandidate_ResumesUnderFrozenIdentity()
+    {
+        var candidateId = Guid.NewGuid();
+        var plan = CreatePlan(
+            new[]
+            {
+                new PlanStep(1, "skill_destructive", new(), null, false),
+                new PlanStep(2, "skill_followup", new(), null, true)
+            },
+            origin: AgentPlanOrigin.SelfReflection);
+        plan.Status = PlanStatus.PausedForApproval;
+        plan.CurrentStepIndex = 0;
+
+        var candidate = new GoalCandidate
+        {
+            Id = candidateId,
+            PlanId = plan.Id,
+            Status = GoalCandidateStatus.Approved,
+            OwnerPermissionsCsv = "clients.read,clients.write"
+        };
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var suppliedContext = CreateSkillContext();
+        var expectedSessionId = GoalSelfReflectionAuditConstants.SessionIdPrefix + candidateId;
+        var result = await _sut.ApproveAndContinueAsync(plan.Id, suppliedContext);
+
+        result.Status.ShouldBe(PlanStatus.Completed);
+        await _skillExecutor.Received(2).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c =>
+                c.UserName == GoalSelfReflectionAuditConstants.AuditUserName &&
+                c.UserPermissions.SequenceEqual(new[] { "clients.read", "clients.write" }) &&
+                c.SessionId == expectedSessionId),
+            Arg.Any<CancellationToken>());
+        await _goalCandidateRepository.Received(1).GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApproveAndContinueAsync_UserGoalOrigin_ResumesUnderSuppliedContextUnchanged()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_followup", new(), null, true) },
+            origin: AgentPlanOrigin.UserGoal);
+        plan.Status = PlanStatus.PausedForApproval;
+        plan.CurrentStepIndex = 0;
+
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var suppliedContext = CreateSkillContext();
+        var result = await _sut.ApproveAndContinueAsync(plan.Id, suppliedContext);
+
+        result.Status.ShouldBe(PlanStatus.Completed);
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c =>
+                c.UserName == suppliedContext.UserName &&
+                c.UserPermissions.SequenceEqual(suppliedContext.UserPermissions) &&
+                c.SessionId == suppliedContext.SessionId),
+            Arg.Any<CancellationToken>());
+        await _goalCandidateRepository.DidNotReceive().GetByPlanIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApproveAndContinueAsync_SelfReflectionWithoutApprovedCandidate_FallsBackToSuppliedContextWithoutCrashing()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_followup", new(), null, true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        plan.Status = PlanStatus.PausedForApproval;
+        plan.CurrentStepIndex = 0;
+
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns((GoalCandidate?)null);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var suppliedContext = CreateSkillContext();
+        var result = await _sut.ApproveAndContinueAsync(plan.Id, suppliedContext);
+
+        result.Status.ShouldBe(PlanStatus.Completed);
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c =>
+                c.UserName == suppliedContext.UserName &&
+                c.SessionId == suppliedContext.SessionId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApproveAndContinueAsync_SelfReflectionWithEmptyOwnerPermissionsCsv_FallsBackToSuppliedContextWithoutCrashing()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_followup", new(), null, true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        plan.Status = PlanStatus.PausedForApproval;
+        plan.CurrentStepIndex = 0;
+
+        var candidate = new GoalCandidate
+        {
+            PlanId = plan.Id,
+            Status = GoalCandidateStatus.Approved,
+            OwnerPermissionsCsv = "   "
+        };
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var suppliedContext = CreateSkillContext();
+        var result = await _sut.ApproveAndContinueAsync(plan.Id, suppliedContext);
+
+        result.Status.ShouldBe(PlanStatus.Completed);
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c =>
+                c.UserName == suppliedContext.UserName &&
+                c.SessionId == suppliedContext.SessionId),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
