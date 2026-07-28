@@ -4,7 +4,10 @@
 /// Unit tests for PlanStepExecutor — covers happy path, HITL pause, verify-skill, failure handling,
 /// $prev placeholder resolution, ApproveAndContinueAsync resume semantics, and the task-boundary
 /// compaction trigger fired on plan completion (but not on abort/failure). ISkillExecutor +
-/// IAgentPlanRepository + ILLMBackgroundTaskService are mocked.
+/// IAgentPlanRepository + ILLMBackgroundTaskService are mocked. Unless a test overrides it, every skill
+/// name resolves to a registered descriptor classified as SkillRiskClass.Reversible, so plain steps run
+/// through at the default autonomy level (Autonomous) without pausing; tests that exercise the pause
+/// decision mock ISkillRegistry/ISkillRiskClassifier explicitly for the skill under test.
 /// </summary>
 
 using System.Text.Json;
@@ -39,7 +42,9 @@ public class PlanStepExecutorTests
         _skillRegistry = Substitute.For<ISkillRegistry>();
         _riskClassifier = Substitute.For<ISkillRiskClassifier>();
         _autonomyRepository = Substitute.For<IAgentAutonomyPreferenceRepository>();
-        _skillRegistry.GetSkillByName(Arg.Any<string>()).Returns((SkillDescriptor?)null);
+        _skillRegistry.GetSkillByName(Arg.Any<string>())
+            .Returns(callInfo => BuildDefaultDescriptor(callInfo.Arg<string>()));
+        _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.Reversible);
         _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((AgentAutonomyPreferenceRow?)null);
         _notificationService = Substitute.For<IAssistantNotificationService>();
@@ -106,6 +111,9 @@ public class PlanStepExecutorTests
             new PlanStep(1, "skill_safe", new(), null, true),
             new PlanStep(2, "skill_destructive", new(), null, false)
         });
+        var destructiveDescriptor = BuildDefaultDescriptor("skill_destructive");
+        _skillRegistry.GetSkillByName("skill_destructive").Returns(destructiveDescriptor);
+        _riskClassifier.Classify(destructiveDescriptor).Returns(SkillRiskClass.Irreversible);
         _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(new { id = "ok" }));
@@ -311,6 +319,9 @@ public class PlanStepExecutorTests
             new PlanStep(1, "skill_safe", new(), null, true),
             new PlanStep(2, "skill_destructive", new(), null, false)
         });
+        var destructiveDescriptor = BuildDefaultDescriptor("skill_destructive");
+        _skillRegistry.GetSkillByName("skill_destructive").Returns(destructiveDescriptor);
+        _riskClassifier.Classify(destructiveDescriptor).Returns(SkillRiskClass.Irreversible);
         var context = CreateSkillContext();
         _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
         _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
@@ -338,6 +349,115 @@ public class PlanStepExecutorTests
         _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
         _skillRegistry.GetSkillByName("delete_system_user").Returns(descriptor);
         _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Sensitive);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.FullyAutonomous });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.PausedForApproval));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_UnknownSkill_PausesForApproval()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_unregistered", new(), null, true) });
+        _skillRegistry.GetSkillByName("skill_unregistered").Returns((SkillDescriptor?)null);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.PausedForApproval));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_IrreversibleStep_AtAutonomous_PausesForApproval()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_irreversible", new(), null, true) });
+        var descriptor = BuildDefaultDescriptor("skill_irreversible");
+        _skillRegistry.GetSkillByName("skill_irreversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Irreversible);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.Autonomous });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.PausedForApproval));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_IrreversibleStep_AtFullyAutonomous_RunsWithoutPause()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_irreversible", new(), null, true) });
+        var descriptor = BuildDefaultDescriptor("skill_irreversible");
+        _skillRegistry.GetSkillByName("skill_irreversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Irreversible);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.FullyAutonomous });
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_ReversibleStep_AtAssisted_RunsWithoutPause()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_reversible", new(), null, true) });
+        var descriptor = BuildDefaultDescriptor("skill_reversible");
+        _skillRegistry.GetSkillByName("skill_reversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Reversible);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.Assisted });
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_ReversibleStep_AtPropose_PausesForApproval()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_reversible", new(), null, true) });
+        var descriptor = BuildDefaultDescriptor("skill_reversible");
+        _skillRegistry.GetSkillByName("skill_reversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Reversible);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.Propose });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.PausedForApproval));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_SensitiveStep_AtFullyAutonomous_PausesForApproval()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_sensitive", new(), null, true) });
+        var descriptor = BuildDefaultDescriptor("skill_sensitive");
+        _skillRegistry.GetSkillByName("skill_sensitive").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Sensitive);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
         _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
             .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.FullyAutonomous });
 
@@ -656,6 +776,10 @@ public class PlanStepExecutorTests
         Assert.That(recordingLogger.Messages.Any(m => m.Contains("parameter bridge") && m.Contains("'id'")),
             Is.True, "expected an ambiguity note to be logged for the unbridged 'id' parameter");
     }
+
+    private static SkillDescriptor BuildDefaultDescriptor(string skillName) => new(
+        skillName, "desc", SkillCategory.Crud,
+        Array.Empty<SkillParameter>(), Array.Empty<string>(), Array.Empty<LLMCapability>(), null);
 
     private static SkillDescriptor BuildVerifyDescriptorFromSeeds(string skillName)
     {
