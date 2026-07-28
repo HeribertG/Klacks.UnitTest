@@ -15,6 +15,7 @@ using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Klacks.Api.Application.Commands.Assistant;
+using Klacks.Api.Application.Configuration;
 using Klacks.Api.Application.DTOs.Assistant;
 using Klacks.Api.Application.Queries.Assistant;
 using Klacks.Api.Domain.Constants;
@@ -23,6 +24,9 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.Assistant;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 [TestFixture]
 public class GoalCandidatesControllerTests
@@ -33,6 +37,8 @@ public class GoalCandidatesControllerTests
 
     private IMediator _mediator = null!;
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
+    private IServiceScopeFactory _scopeFactory = null!;
+    private BackgroundServiceOptions _backgroundServiceOptions = null!;
     private GoalCandidatesController _controller = null!;
 
     [SetUp]
@@ -42,8 +48,15 @@ public class GoalCandidatesControllerTests
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _planningAudienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PlannerUserId });
+        _scopeFactory = Substitute.For<IServiceScopeFactory>();
+        _backgroundServiceOptions = new BackgroundServiceOptions();
 
-        _controller = new GoalCandidatesController(_mediator, _planningAudienceResolver);
+        _controller = new GoalCandidatesController(
+            _mediator,
+            _planningAudienceResolver,
+            _scopeFactory,
+            Options.Create(_backgroundServiceOptions),
+            NullLogger<GoalCandidatesController>.Instance);
         SetUser(PlannerUserId);
     }
 
@@ -146,5 +159,132 @@ public class GoalCandidatesControllerTests
                 c.UserPermissions.Contains(Roles.Admin) &&
                 c.UserPermissions.Contains(Permissions.CanEditClients)),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SetDecision_ApprovedAndDraftingFlagOff_DoesNotTriggerBackgroundPlanDraft()
+    {
+        _mediator.Send(Arg.Any<SetGoalCandidateDecisionCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        await _controller.SetDecision(
+            CandidateId, new SetGoalCandidateDecisionRequest { Decision = GoalCandidateStatus.Approved }, CancellationToken.None);
+
+        _scopeFactory.DidNotReceive().CreateScope();
+    }
+
+    [Test]
+    public async Task SetDecision_RejectedEvenWithDraftingFlagOn_DoesNotTriggerBackgroundPlanDraft()
+    {
+        _backgroundServiceOptions.GoalReflectionPlanDrafting = true;
+        _mediator.Send(Arg.Any<SetGoalCandidateDecisionCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        await _controller.SetDecision(
+            CandidateId, new SetGoalCandidateDecisionRequest { Decision = GoalCandidateStatus.Rejected }, CancellationToken.None);
+
+        _scopeFactory.DidNotReceive().CreateScope();
+    }
+
+    [Test]
+    public async Task SetDecision_HandlerReturnsFalseEvenWithDraftingFlagOn_DoesNotTriggerBackgroundPlanDraft()
+    {
+        _backgroundServiceOptions.GoalReflectionPlanDrafting = true;
+        _mediator.Send(Arg.Any<SetGoalCandidateDecisionCommand>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        await _controller.SetDecision(
+            CandidateId, new SetGoalCandidateDecisionRequest { Decision = GoalCandidateStatus.Approved }, CancellationToken.None);
+
+        _scopeFactory.DidNotReceive().CreateScope();
+    }
+
+    [Test]
+    public async Task SetDecision_ApprovedAndDraftingFlagOn_TriggersBackgroundPlanDraft()
+    {
+        _backgroundServiceOptions.GoalReflectionPlanDrafting = true;
+        _mediator.Send(Arg.Any<SetGoalCandidateDecisionCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var draftService = Substitute.For<IGoalPlanDraftService>();
+        var invoked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        draftService.DraftForCandidateAsync(CandidateId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                invoked.TrySetResult(true);
+                return (Guid?)null;
+            });
+
+        var provider = Substitute.For<IServiceProvider>();
+        provider.GetService(typeof(IGoalPlanDraftService)).Returns(draftService);
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.Returns(provider);
+        _scopeFactory.CreateScope().Returns(scope);
+
+        await _controller.SetDecision(
+            CandidateId, new SetGoalCandidateDecisionRequest { Decision = GoalCandidateStatus.Approved }, CancellationToken.None);
+
+        var completed = await Task.WhenAny(invoked.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        completed.ShouldBe(invoked.Task);
+        _scopeFactory.Received(1).CreateScope();
+    }
+
+    [Test]
+    public async Task SetDecision_DraftSucceeds_TriggersPhase4GoalPlanExecution()
+    {
+        _backgroundServiceOptions.GoalReflectionPlanDrafting = true;
+        _mediator.Send(Arg.Any<SetGoalCandidateDecisionCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var planId = Guid.NewGuid();
+        var draftService = Substitute.For<IGoalPlanDraftService>();
+        draftService.DraftForCandidateAsync(CandidateId, Arg.Any<CancellationToken>()).Returns(planId);
+
+        var executionService = Substitute.For<IGoalPlanExecutionService>();
+        var invoked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        executionService.ExecuteForCandidateAsync(CandidateId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                invoked.TrySetResult(true);
+                return true;
+            });
+
+        var provider = Substitute.For<IServiceProvider>();
+        provider.GetService(typeof(IGoalPlanDraftService)).Returns(draftService);
+        provider.GetService(typeof(IGoalPlanExecutionService)).Returns(executionService);
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.Returns(provider);
+        _scopeFactory.CreateScope().Returns(scope);
+
+        await _controller.SetDecision(
+            CandidateId, new SetGoalCandidateDecisionRequest { Decision = GoalCandidateStatus.Approved }, CancellationToken.None);
+
+        var completed = await Task.WhenAny(invoked.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        completed.ShouldBe(invoked.Task);
+        await executionService.Received(1).ExecuteForCandidateAsync(CandidateId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SetDecision_DraftReturnsNull_DoesNotTriggerPhase4GoalPlanExecution()
+    {
+        _backgroundServiceOptions.GoalReflectionPlanDrafting = true;
+        _mediator.Send(Arg.Any<SetGoalCandidateDecisionCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var draftService = Substitute.For<IGoalPlanDraftService>();
+        var invoked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        draftService.DraftForCandidateAsync(CandidateId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                invoked.TrySetResult(true);
+                return (Guid?)null;
+            });
+
+        var provider = Substitute.For<IServiceProvider>();
+        provider.GetService(typeof(IGoalPlanDraftService)).Returns(draftService);
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.Returns(provider);
+        _scopeFactory.CreateScope().Returns(scope);
+
+        await _controller.SetDecision(
+            CandidateId, new SetGoalCandidateDecisionRequest { Decision = GoalCandidateStatus.Approved }, CancellationToken.None);
+
+        var completed = await Task.WhenAny(invoked.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        completed.ShouldBe(invoked.Task);
+        provider.DidNotReceive().GetService(typeof(IGoalPlanExecutionService));
     }
 }

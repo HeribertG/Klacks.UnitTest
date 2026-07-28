@@ -2,16 +2,26 @@
 
 /// <summary>
 /// Unit tests for PlanStepExecutor — covers happy path, HITL pause, verify-skill, failure handling,
-/// $prev placeholder resolution, ApproveAndContinueAsync resume semantics, and the task-boundary
-/// compaction trigger fired on plan completion (but not on abort/failure). ISkillExecutor +
-/// IAgentPlanRepository + ILLMBackgroundTaskService are mocked. Unless a test overrides it, every skill
-/// name resolves to a registered descriptor classified as SkillRiskClass.Reversible, so plain steps run
-/// through at the default autonomy level (Autonomous) without pausing; tests that exercise the pause
-/// decision mock ISkillRegistry/ISkillRiskClassifier explicitly for the skill under test.
+/// $prev placeholder resolution, ApproveAndContinueAsync resume semantics, the task-boundary
+/// compaction trigger fired on plan completion (but not on abort/failure), and the proactive
+/// PlanPausedForApprovalTriggerEvent fired via IAgentTriggerService whenever a plan pauses for
+/// approval. ISkillExecutor + IAgentPlanRepository + ILLMBackgroundTaskService + IAgentTriggerService
+/// are mocked. Unless a test overrides it, every skill name resolves to a registered descriptor
+/// classified as SkillRiskClass.Reversible, so plain steps run through at the default autonomy level
+/// (Autonomous) without pausing; tests that exercise the pause decision mock
+/// ISkillRegistry/ISkillRiskClassifier explicitly for the skill under test. CreatePlan defaults
+/// AgentPlan.UserId to the non-Guid literal "user-1" (matching the pre-existing fixture data), so
+/// existing tests never trigger the new proactive event by accident; tests that assert on the trigger
+/// pass an explicit Guid-shaped UserId. CreatePlan defaults Origin to AgentPlanOrigin.UserGoal so all
+/// pre-existing tests keep exercising the unchanged path; a handful of tests pass origin:
+/// AgentPlanOrigin.SelfReflection to cover the Phase-4 effective-level override (irreversible runs
+/// without pausing and without ever reading the user's autonomy row, Sensitive still pauses).
 /// </summary>
 
 using System.Text.Json;
 using Klacks.Api.Application.Services.Assistant.Planning;
+using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -30,6 +40,8 @@ public class PlanStepExecutorTests
     private IAgentAutonomyPreferenceRepository _autonomyRepository = null!;
     private IAssistantNotificationService _notificationService = null!;
     private ILLMBackgroundTaskService _backgroundTaskService = null!;
+    private IAgentTriggerService _triggerService = null!;
+    private IGoalCandidateRepository _goalCandidateRepository = null!;
     private PlanStepExecutor _sut = null!;
 
     private const int TaskBoundaryMinMessages = 10;
@@ -49,6 +61,10 @@ public class PlanStepExecutorTests
             .Returns((AgentAutonomyPreferenceRow?)null);
         _notificationService = Substitute.For<IAssistantNotificationService>();
         _backgroundTaskService = Substitute.For<ILLMBackgroundTaskService>();
+        _triggerService = Substitute.For<IAgentTriggerService>();
+        _goalCandidateRepository = Substitute.For<IGoalCandidateRepository>();
+        _goalCandidateRepository.GetByPlanIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns((GoalCandidate?)null);
         _sut = new PlanStepExecutor(
             _planRepository,
             _skillExecutor,
@@ -57,6 +73,8 @@ public class PlanStepExecutorTests
             _autonomyRepository,
             _notificationService,
             _backgroundTaskService,
+            _triggerService,
+            _goalCandidateRepository,
             NullLogger<PlanStepExecutor>.Instance);
     }
 
@@ -68,19 +86,21 @@ public class PlanStepExecutorTests
         UserPermissions = new List<string> { "Admin" }
     };
 
-    private static AgentPlan CreatePlan(IEnumerable<PlanStep> steps, Guid? sessionId = null)
+    private static AgentPlan CreatePlan(
+        IEnumerable<PlanStep> steps, Guid? sessionId = null, string? userId = null, string? origin = null)
     {
         var stepsJson = JsonSerializer.Serialize(steps.ToList());
         return new AgentPlan
         {
             Id = Guid.NewGuid(),
             AgentId = Guid.NewGuid(),
-            UserId = "user-1",
+            UserId = userId ?? "user-1",
             SessionId = sessionId,
             Goal = "test goal",
             StepsJson = stepsJson,
             Status = PlanStatus.Drafting,
-            CurrentStepIndex = 0
+            CurrentStepIndex = 0,
+            Origin = origin ?? AgentPlanOrigin.UserGoal
         };
     }
 
@@ -124,6 +144,96 @@ public class PlanStepExecutorTests
         Assert.That(result.CurrentStepIndex, Is.EqualTo(1));
         await _skillExecutor.Received(1).ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "skill_safe"),
             Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_PausesForApproval_FiresPlanPausedTriggerWithTargetUserIdAndDedupKey()
+    {
+        var userId = Guid.NewGuid();
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "skill_destructive", new(), null, false)
+        }, userId: userId.ToString());
+        var destructiveDescriptor = BuildDefaultDescriptor("skill_destructive");
+        _skillRegistry.GetSkillByName("skill_destructive").Returns(destructiveDescriptor);
+        _riskClassifier.Classify(destructiveDescriptor).Returns(SkillRiskClass.Irreversible);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
+        await _triggerService.Received(1).OnEventAsync(
+            Arg.Is<PlanPausedForApprovalTriggerEvent>(e =>
+                e.PlanId == plan.Id &&
+                e.StepIndex == 0 &&
+                e.TargetUserId == userId &&
+                e.DedupKey == $"{plan.Id}:0"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_TriggerServiceThrows_PlanStillPausesCleanlyWithoutCrashing()
+    {
+        var userId = Guid.NewGuid();
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "skill_destructive", new(), null, false)
+        }, userId: userId.ToString());
+        var destructiveDescriptor = BuildDefaultDescriptor("skill_destructive");
+        _skillRegistry.GetSkillByName("skill_destructive").Returns(destructiveDescriptor);
+        _riskClassifier.Classify(destructiveDescriptor).Returns(SkillRiskClass.Irreversible);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _triggerService.OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("trigger dispatch boom")));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
+        result.CurrentStepIndex.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_CompletesWithoutPausing_DoesNotFirePlanPausedTrigger()
+    {
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "skill_a", new(), null, true),
+            new PlanStep(2, "skill_b", new(), null, true)
+        }, userId: Guid.NewGuid().ToString());
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.Completed);
+        await _triggerService.DidNotReceive().OnEventAsync(
+            Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_PausesForApproval_UserIdNull_SkipsTriggerWithoutCrashing()
+    {
+        var plan = new AgentPlan
+        {
+            Id = Guid.NewGuid(),
+            AgentId = Guid.NewGuid(),
+            UserId = null,
+            Goal = "test goal",
+            StepsJson = JsonSerializer.Serialize(new[] { new PlanStep(1, "skill_destructive", new(), null, false) }),
+            Status = PlanStatus.Drafting,
+            CurrentStepIndex = 0
+        };
+        var destructiveDescriptor = BuildDefaultDescriptor("skill_destructive");
+        _skillRegistry.GetSkillByName("skill_destructive").Returns(destructiveDescriptor);
+        _riskClassifier.Classify(destructiveDescriptor).Returns(SkillRiskClass.Irreversible);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
+        await _triggerService.DidNotReceive().OnEventAsync(
+            Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -355,6 +465,112 @@ public class PlanStepExecutorTests
         var result = await _sut.ExecutePlanAsync(plan.Id, context);
 
         Assert.That(result.Status, Is.EqualTo(PlanStatus.PausedForApproval));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_SelfReflectionOrigin_IrreversibleStep_RunsWithoutPauseDespiteLowUserLevel()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_irreversible", new(), null, true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        var descriptor = BuildDefaultDescriptor("skill_irreversible");
+        _skillRegistry.GetSkillByName("skill_irreversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Irreversible);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>())
+            .Returns(new GoalCandidate { PlanId = plan.Id, Status = GoalCandidateStatus.Approved });
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.Propose });
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        result.Status.ShouldBe(PlanStatus.Completed);
+        await _autonomyRepository.DidNotReceive().GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_SelfReflectionOriginWithoutApprovedCandidate_FallsBackToUserLevelAndPauses()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_irreversible", new(), null, true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        var descriptor = BuildDefaultDescriptor("skill_irreversible");
+        _skillRegistry.GetSkillByName("skill_irreversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Irreversible);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>())
+            .Returns((GoalCandidate?)null);
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.Propose });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_SelfReflectionOriginWithRejectedCandidate_FallsBackToUserLevelAndPauses()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_irreversible", new(), null, true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        var descriptor = BuildDefaultDescriptor("skill_irreversible");
+        _skillRegistry.GetSkillByName("skill_irreversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Irreversible);
+        var context = CreateSkillContext();
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>())
+            .Returns(new GoalCandidate { PlanId = plan.Id, Status = GoalCandidateStatus.Rejected });
+        _autonomyRepository.GetAsync(context.UserId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = context.UserId.ToString(), Level = AutonomyLevel.Propose });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, context);
+
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_SelfReflectionOrigin_SensitiveStep_StillPauses()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_sensitive", new(), null, true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        var descriptor = BuildDefaultDescriptor("skill_sensitive");
+        _skillRegistry.GetSkillByName("skill_sensitive").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Sensitive);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
+        await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
+            Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_UserGoalOrigin_IrreversibleStep_StillPausesAtDefaultLevel()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_irreversible", new(), null, true) },
+            origin: AgentPlanOrigin.UserGoal);
+        var descriptor = BuildDefaultDescriptor("skill_irreversible");
+        _skillRegistry.GetSkillByName("skill_irreversible").Returns(descriptor);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Irreversible);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
         await _skillExecutor.DidNotReceive().ExecuteAsync(Arg.Any<SkillInvocation>(),
             Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
     }
@@ -747,7 +963,8 @@ public class PlanStepExecutorTests
         var recordingLogger = new RecordingLogger();
         var sut = new PlanStepExecutor(
             _planRepository, _skillExecutor, _skillRegistry, _riskClassifier,
-            _autonomyRepository, _notificationService, _backgroundTaskService, recordingLogger);
+            _autonomyRepository, _notificationService, _backgroundTaskService, _triggerService,
+            _goalCandidateRepository, recordingLogger);
 
         var plan = CreatePlan(new[]
         {
