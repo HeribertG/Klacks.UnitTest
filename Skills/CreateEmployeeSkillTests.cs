@@ -284,6 +284,7 @@ public class CreateEmployeeSkillTests
         Assert.That(captured, Is.Not.Null);
         Assert.That(captured!.Membership, Is.Not.Null);
         Assert.That(captured.Membership!.ValidFrom.Date, Is.EqualTo(new DateTime(2026, 7, 1)));
+        Assert.That(captured.Membership!.ValidFrom.Kind, Is.EqualTo(DateTimeKind.Utc), "ValidFrom is written to a timestamptz column and must carry Kind=Utc, or Npgsql rejects it at SaveChanges.");
     }
 
     [TestCase("", "CH")]
