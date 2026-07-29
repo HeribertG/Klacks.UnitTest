@@ -5,7 +5,9 @@
 /// </summary>
 /// <param name="context">In-memory EF context seeded with contracts and works</param>
 using Shouldly;
+using Klacks.Api.Application.DTOs.Dashboard;
 using Klacks.Api.Application.Handlers.Dashboard;
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Dashboard;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
@@ -284,5 +286,37 @@ public class GetResourceMonitorQueryHandlerTests
         var saturday = result.DailyData.First(d => d.Date == new DateOnly(2026, 1, 3));
         saturday.WunschCount.ShouldBe(Math.Round(5.0 / 7.0, 2), 0.005);
         saturday.MaxCount.ShouldBe(Math.Round(6.0 / 7.0, 2), 0.005);
+    }
+
+    // The period bounds reach a timestamptz column through GetAbsences, so Npgsql rejects them unless
+    // they carry Kind=Utc. The in-memory provider used by the tests above ignores Kind entirely, which
+    // is why this has to be asserted on the repository call rather than through a query.
+    [Test]
+    public async Task Handle_PassesAbsencePeriodBoundsAsUtc()
+    {
+        var readRepository = Substitute.For<IResourceMonitorReadRepository>();
+        readRepository.GetEmployeeClientIds(Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid>());
+        readRepository.GetActiveContracts(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ClientContract>());
+        readRepository.GetActiveShifts(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<DashboardShiftRow>());
+        readRepository.GetContainedShiftIds(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid>());
+        readRepository.GetAbsences(Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<DashboardAbsenceRow>());
+
+        var groupVisibilityService = Substitute.For<IGroupVisibilityService>();
+        groupVisibilityService.GetVisibilityScopeAsync().Returns(GroupVisibilityScope.Unrestricted());
+        var handler = new GetResourceMonitorQueryHandler(
+            readRepository, groupVisibilityService, Substitute.For<ILogger<GetResourceMonitorQueryHandler>>());
+
+        await handler.Handle(new GetResourceMonitorQuery(2026, null), CancellationToken.None);
+
+        await readRepository.Received(1).GetAbsences(
+            Arg.Is<DateTime>(d => d.Kind == DateTimeKind.Utc),
+            Arg.Is<DateTime>(d => d.Kind == DateTimeKind.Utc),
+            Arg.Any<IReadOnlyCollection<Guid>?>(),
+            Arg.Any<CancellationToken>());
     }
 }
