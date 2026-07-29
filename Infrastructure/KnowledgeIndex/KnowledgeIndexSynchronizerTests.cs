@@ -1,8 +1,9 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using System.Security.Cryptography;
 using System.Text;
 using Shouldly;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -21,6 +22,7 @@ public class KnowledgeIndexSynchronizerTests
     private IAgentRecipeRepository _recipeRepository = null!;
     private IEmbeddingProvider _embeddings = null!;
     private IKnowledgeIndexRepository _repo = null!;
+    private ISkillPhraseRepository _phrases = null!;
 
     [SetUp]
     public void Setup()
@@ -31,10 +33,39 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings = Substitute.For<IEmbeddingProvider>();
         _embeddings.EmbeddingSpaceId.Returns("test-space");
         _repo = Substitute.For<IKnowledgeIndexRepository>();
+        _phrases = Substitute.For<ISkillPhraseRepository>();
+        _phrases.GetAllActiveAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<SkillPhrase>)new List<SkillPhrase>());
     }
 
     private static byte[] HashFor(string spaceId, string embeddingText) =>
         SHA256.HashData(Encoding.UTF8.GetBytes(spaceId + "\n" + embeddingText));
+
+    private void GivenPhrases(params SkillPhrase[] phrases) =>
+        _phrases.GetAllActiveAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<SkillPhrase>)phrases.ToList());
+
+    private static SkillPhrase Keyword(string ownerKind, string ownerName, string phrase, int sortOrder) =>
+        new()
+        {
+            OwnerKind = ownerKind,
+            OwnerName = ownerName,
+            Language = null,
+            Kind = SkillPhraseKinds.Keyword,
+            Phrase = phrase,
+            SortOrder = sortOrder
+        };
+
+    private static SkillPhrase Synonym(string ownerKind, string ownerName, string language, string phrase, int sortOrder) =>
+        new()
+        {
+            OwnerKind = ownerKind,
+            OwnerName = ownerName,
+            Language = language,
+            Kind = SkillPhraseKinds.Synonym,
+            Phrase = phrase,
+            SortOrder = sortOrder
+        };
 
     [Test]
     public async Task SyncAsync_SkipsEntriesWithUnchangedHash()
@@ -53,7 +84,7 @@ public class KnowledgeIndexSynchronizerTests
                 { (KnowledgeEntryKind.Skill, "X"), existingHash }
             });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
@@ -80,7 +111,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.Received(1).EmbedBatchAsync(
@@ -102,7 +133,7 @@ public class KnowledgeIndexSynchronizerTests
                 { (KnowledgeEntryKind.Skill, "OrphanSkill"), new byte[] { 1, 2, 3 } }
             });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).DeleteAsync(
@@ -126,7 +157,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.Received(1).EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
@@ -140,24 +171,22 @@ public class KnowledgeIndexSynchronizerTests
     {
         var descriptor = new SkillDescriptor(
             "explain_page_dashboard", "Explains the dashboard page.", SkillCategory.System,
-            [], [], [], null)
-        {
-            TriggerKeywords = new[] { "abdeckung", "bestätigung" },
-            Synonyms = new Dictionary<string, List<string>>
-            {
-                ["de"] = ["was sehe ich hier"],
-                ["fr"] = ["tableau de bord"]
-            }
-        };
+            [], [], [], null);
 
         _skillRegistry.GetAllSkills().Returns([descriptor]);
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Skill, "explain_page_dashboard", "abdeckung", 0),
+            Keyword(SkillPhraseOwnerKinds.Skill, "explain_page_dashboard", "bestätigung", 1),
+            Synonym(SkillPhraseOwnerKinds.Skill, "explain_page_dashboard", "de", "was sehe ich hier", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "explain_page_dashboard", "fr", "tableau de bord", 0));
+
         _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
             .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
 
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -182,7 +211,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -201,25 +230,24 @@ public class KnowledgeIndexSynchronizerTests
             Id = Guid.NewGuid(),
             Name = "onboard-employee",
             Goal = "Onboard a new employee end to end.",
-            TriggerJson = """
-                {
-                  "allOf": [ { "anyWordStart": ["onboard", "einstell"], "anySubstring": ["neuer mitarbeiter"] } ],
-                  "noneOf": []
-                }
-                """,
             StepsJson = """[{"kind":"mutate","skill":"create_employee"},{"kind":"mutate","skill":"add_client_to_group"}]""",
-            IsEnabled = true,
-            Synonyms = new Dictionary<string, List<string>> { ["fr"] = ["intégrer un employé"] }
+            IsEnabled = true
         };
 
         _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe> { recipe });
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Recipe, "onboard-employee", "onboard", 0),
+            Keyword(SkillPhraseOwnerKinds.Recipe, "onboard-employee", "einstell", 1),
+            Keyword(SkillPhraseOwnerKinds.Recipe, "onboard-employee", "neuer mitarbeiter", 2),
+            Synonym(SkillPhraseOwnerKinds.Recipe, "onboard-employee", "fr", "intégrer un employé", 0));
+
         _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
             .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
 
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -252,7 +280,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.Arg<IReadOnlyList<string>>().Select(_ => new float[384]).ToArray());
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo);
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -261,5 +289,78 @@ public class KnowledgeIndexSynchronizerTests
                 list.Any(e => e.Kind == KnowledgeEntryKind.Skill && e.SourceId == "X") &&
                 list.Any(e => e.Kind == KnowledgeEntryKind.Recipe && e.SourceId == "some-recipe")),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SyncAsync_SynonymsAreDedupedAcrossLanguages_ShorterLanguageTagFirst()
+    {
+        var descriptor = new SkillDescriptor("S", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenPhrases(
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "pt-BR", "partilhado", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "en", "Gemeinsam", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "en", "shared", 1),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "de", "gemeinsam", 0));
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        await sync.SyncAsync(CancellationToken.None);
+
+        captured.Single().Text.ShouldBe("S. Desc\nParameters: \nSynonyms: gemeinsam, shared, partilhado");
+    }
+
+    [Test]
+    public async Task SyncAsync_SkillKeywordsAreNotDeduped()
+    {
+        var descriptor = new SkillDescriptor("S", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "plan", 0),
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "Plan", 1),
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "plan", 2));
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        await sync.SyncAsync(CancellationToken.None);
+
+        captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: plan, Plan, plan");
+    }
+
+    [Test]
+    public async Task SyncAsync_RecipeKeywordsAreEmittedVerbatimWithoutASecondDedup()
+    {
+        _skillRegistry.GetAllSkills().Returns([]);
+
+        var recipe = new AgentRecipe { Id = Guid.NewGuid(), Name = "r", Goal = "Goal.", IsEnabled = true };
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe> { recipe });
+
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Recipe, "r", "plan", 0),
+            Keyword(SkillPhraseOwnerKinds.Recipe, "r", "Plan", 1));
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        await sync.SyncAsync(CancellationToken.None);
+
+        captured.Single().Text.ShouldBe("r. Goal.\nKeywords: plan, Plan");
+    }
+
+    private List<KnowledgeEntry> CaptureUpsertedEntries()
+    {
+        var captured = new List<KnowledgeEntry>();
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<IReadOnlyList<string>>().Select(_ => new float[384]).ToArray());
+        _repo.When(r => r.UpsertAsync(Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>()))
+            .Do(callInfo => captured.AddRange(callInfo.Arg<IReadOnlyList<KnowledgeEntry>>()));
+
+        return captured;
     }
 }
