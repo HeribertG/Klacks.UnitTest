@@ -187,12 +187,38 @@ public class KnowledgeRetrievalServiceTests
         _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([pageSkill]);
 
+        // Just below the cutoff, not far below: any boost factor above 1.12 would carry this score over
+        // the cutoff. So the entry can only stay out if the filter runs on the raw score — which is the
+        // invariant this test is named for. A score of cutoff/2 would pass even with the order reversed.
+        var subCutoffScore = KnowledgeIndexConstants.DefaultScoreCutoff * 0.9;
+
         _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new double[] { KnowledgeIndexConstants.DefaultScoreCutoff - 0.01 });
+            .Returns(new double[] { subCutoffScore });
 
         var result = await _service.RetrieveAsync(
             "query", [], false, 5, "/workplace/schedule/week", CancellationToken.None);
 
         result.IsEmpty.ShouldBeTrue();
+    }
+
+    // Both scores are measured cross-encoder output from the hard golden set: correct targets can sit
+    // deep in the reranker's lower mode and still be ranked correctly. A route boost must not reorder
+    // across that gap — the boosted entry here scores seven times lower than the entry it displaces.
+    [Test]
+    public async Task RetrieveAsync_RouteBoost_DoesNotLiftAMuchWeakerSkillOverAStrongerOne()
+    {
+        var pageSkill = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "create_absence", Text = "Creates an absence." };
+        var stronger = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "get_period_hours", Text = "Returns period hours." };
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([pageSkill, stronger]);
+
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.002, 0.0139 });
+
+        var result = await _service.RetrieveAsync(
+            "query", [], false, 5, "/workplace/absence", CancellationToken.None);
+
+        result.Candidates[0].Entry.SourceId.ShouldBe("get_period_hours");
     }
 }
