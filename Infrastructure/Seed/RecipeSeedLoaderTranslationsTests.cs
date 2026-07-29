@@ -96,7 +96,7 @@ public class RecipeSeedLoaderTranslationsTests
     {
         var environment = Substitute.For<IWebHostEnvironment>();
         environment.ContentRootPath.Returns(_contentRoot);
-        return new RecipeSeedLoader(_repository, environment, NullLogger<RecipeSeedLoader>.Instance);
+        return new RecipeSeedLoader(_repository, Substitute.For<ISkillPhraseRepository>(), environment, NullLogger<RecipeSeedLoader>.Instance);
     }
 
     private static string SeedJson(int version) =>

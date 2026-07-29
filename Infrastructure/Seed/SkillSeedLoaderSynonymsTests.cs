@@ -158,6 +158,7 @@ public class SkillSeedLoaderSynonymsTests
         return new SkillSeedLoader(
             _skillRepository,
             _agentRepository,
+            Substitute.For<ISkillPhraseRepository>(),
             _featurePluginService,
             environment,
             NullLogger<SkillSeedLoader>.Instance);

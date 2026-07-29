@@ -63,7 +63,7 @@ public class RecipeSeedLoaderSynonymsTests
 
         var environment = Substitute.For<IWebHostEnvironment>();
         environment.ContentRootPath.Returns(_contentRoot);
-        var loader = new RecipeSeedLoader(_repository, environment, NullLogger<RecipeSeedLoader>.Instance);
+        var loader = new RecipeSeedLoader(_repository, Substitute.For<ISkillPhraseRepository>(), environment, NullLogger<RecipeSeedLoader>.Instance);
 
         await loader.LoadAsync();
 

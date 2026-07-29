@@ -26,6 +26,7 @@ public class LanguagePluginRecipeSynonymsInstallerTests
 
     private string _pluginDirectory = null!;
     private IAgentRecipeRepository _repository = null!;
+    private ISkillPhraseRepository _phraseRepository = null!;
     private IServiceScope _scope = null!;
     private LanguagePluginContentInstaller _installer = null!;
     private AgentRecipe _matching = null!;
@@ -46,8 +47,11 @@ public class LanguagePluginRecipeSynonymsInstallerTests
         _repository = Substitute.For<IAgentRecipeRepository>();
         _repository.GetAllEnabledAsync().Returns(new List<AgentRecipe> { _matching, _unlisted });
 
+        _phraseRepository = Substitute.For<ISkillPhraseRepository>();
+
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_repository);
+        provider.GetService(typeof(ISkillPhraseRepository)).Returns(_phraseRepository);
         _scope = Substitute.For<IServiceScope>();
         _scope.ServiceProvider.Returns(provider);
 
