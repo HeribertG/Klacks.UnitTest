@@ -78,6 +78,30 @@ public class SkillRecipeTriggerCrossQualityTests
 
     private sealed record SkillUnderTest(string Name, IReadOnlyList<string> Keywords);
 
+    // triggerKeywords is an object keyed by language since the keyword rebuild; the flat array is
+    // still accepted so a partially migrated seed file does not make this gate silently pass on an
+    // empty phrase list.
+    private static IReadOnlyList<string> ReadKeywordPhrases(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            return [.. element.EnumerateArray()
+                .Where(k => k.ValueKind == JsonValueKind.String)
+                .Select(k => k.GetString()!)];
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            return [.. element.EnumerateObject()
+                .Where(g => g.Value.ValueKind == JsonValueKind.Array)
+                .SelectMany(g => g.Value.EnumerateArray())
+                .Where(k => k.ValueKind == JsonValueKind.String)
+                .Select(k => k.GetString()!)];
+        }
+
+        return [];
+    }
+
     [Test]
     public void SkillTriggerPhrases_MustNotFullyMatchAForeignRecipeTrigger()
     {
@@ -328,11 +352,9 @@ public class SkillRecipeTriggerCrossQualityTests
             }
 
             var keywords = new List<string>();
-            if (skill.TryGetProperty("triggerKeywords", out var kw) && kw.ValueKind == JsonValueKind.Array)
+            if (skill.TryGetProperty("triggerKeywords", out var kw))
             {
-                keywords.AddRange(kw.EnumerateArray()
-                    .Where(k => k.ValueKind == JsonValueKind.String)
-                    .Select(k => k.GetString()!));
+                keywords.AddRange(ReadKeywordPhrases(kw));
             }
 
             result.Add(new SkillUnderTest(name.GetString()!, keywords));

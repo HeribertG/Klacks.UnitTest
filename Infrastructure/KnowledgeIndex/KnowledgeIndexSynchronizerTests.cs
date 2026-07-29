@@ -350,6 +350,84 @@ public class KnowledgeIndexSynchronizerTests
         captured.Single().Text.ShouldBe("r. Goal.\nKeywords: plan, Plan");
     }
 
+    [Test]
+    public async Task SyncAsync_SynonymAlsoPresentAsKeyword_IsEmittedOnceInTheKeywordSection()
+    {
+        var descriptor = new SkillDescriptor("S", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "heartbeat", 0),
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "monitoring", 1),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "de", "heartbeat", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "de", "überwachung", 1),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "en", "monitoring", 0));
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        await sync.SyncAsync(CancellationToken.None);
+
+        captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: heartbeat, monitoring\nSynonyms: überwachung");
+    }
+
+    [Test]
+    public async Task SyncAsync_SynonymDuplicatesAKeywordInDifferentCasing_IsStillRemoved()
+    {
+        var descriptor = new SkillDescriptor("S", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "Plan", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "de", "plan", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "de", "entwurf", 1));
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        await sync.SyncAsync(CancellationToken.None);
+
+        captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: Plan\nSynonyms: entwurf");
+    }
+
+    [Test]
+    public async Task SyncAsync_EverySynonymDuplicatesAKeyword_OmitsTheSynonymSectionEntirely()
+    {
+        var descriptor = new SkillDescriptor("S", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "token", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "de", "token", 0),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "en", "Token", 0));
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        await sync.SyncAsync(CancellationToken.None);
+
+        captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: token");
+    }
+
+    [Test]
+    public async Task SyncAsync_KeywordDuplicationWithinItsOwnSection_IsNotAffectedByTheSynonymDedup()
+    {
+        var descriptor = new SkillDescriptor("S", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenPhrases(
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "plan", 0),
+            Keyword(SkillPhraseOwnerKinds.Skill, "S", "plan", 1),
+            Synonym(SkillPhraseOwnerKinds.Skill, "S", "de", "entwurf", 0));
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        await sync.SyncAsync(CancellationToken.None);
+
+        captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: plan, plan\nSynonyms: entwurf");
+    }
+
     private List<KnowledgeEntry> CaptureUpsertedEntries()
     {
         var captured = new List<KnowledgeEntry>();

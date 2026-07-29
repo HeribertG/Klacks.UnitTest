@@ -31,13 +31,24 @@ public class SkillSeedQualityTests
 
         foreach (var skill in document.RootElement.GetProperty("skills").EnumerateArray())
         {
-            if (!skill.TryGetProperty("triggerKeywords", out var keywords) ||
-                keywords.ValueKind != JsonValueKind.Array)
+            if (!skill.TryGetProperty("triggerKeywords", out var keywords))
             {
                 continue;
             }
 
-            var normalizedTerms = keywords.EnumerateArray()
+            // Since the keyword rebuild this is an object keyed by language. Reading only arrays here
+            // made the gate skip every skill and pass on nothing at all.
+            var phrases = keywords.ValueKind switch
+            {
+                JsonValueKind.Array => keywords.EnumerateArray().ToList(),
+                JsonValueKind.Object => keywords.EnumerateObject()
+                    .Where(g => g.Value.ValueKind == JsonValueKind.Array)
+                    .SelectMany(g => g.Value.EnumerateArray())
+                    .ToList(),
+                _ => []
+            };
+
+            var normalizedTerms = phrases
                 .Select(k => (k.GetString() ?? string.Empty).Trim().ToLowerInvariant())
                 .Where(k => k.Length > 0)
                 .Distinct()

@@ -101,7 +101,7 @@ public class SkillSeedLoaderPhraseTests
     }
 
     [Test]
-    public async Task VersionBump_WritesTriggerKeywordsInListOrder()
+    public async Task VersionBump_LegacyFlatKeywordArray_LandsInTheUndeterminedGroup()
     {
         GivenStoredSkill();
         WriteSeedFile(version: 2, synonymsJson: "\"triggerKeywords\":[\"gruppe\",\"team\",\"abteilung\"],");
@@ -115,7 +115,30 @@ public class SkillSeedLoaderPhraseTests
 
         keywords.Select(p => p.Phrase).ShouldBe(["gruppe", "team", "abteilung"]);
         keywords.Select(p => p.SortOrder).ShouldBe([0, 1, 2]);
-        keywords.ShouldAllBe(p => p.Source == SkillPhraseSources.Seed && p.Language == null);
+        keywords.ShouldAllBe(p =>
+            p.Source == SkillPhraseSources.Seed && p.Language == SkillPhraseLanguages.Undetermined);
+    }
+
+    [Test]
+    public async Task VersionBump_GroupedKeywords_StoreOneLanguagePerGroupAndMapMulToNull()
+    {
+        GivenStoredSkill();
+        WriteSeedFile(
+            version: 2,
+            synonymsJson: "\"triggerKeywords\":{\"de\":[\"gruppe\",\"team\"],\"en\":[\"group\"],\"mul\":[\"smtp\"],\"und\":[\"cron\"]},");
+
+        await CreateLoader().LoadAsync();
+
+        var keywords = await _context.SkillPhrases.AsNoTracking()
+            .Where(p => p.Kind == SkillPhraseKinds.Keyword)
+            .ToListAsync();
+
+        keywords.Select(p => (p.Language, p.Phrase))
+            .ShouldBe(
+                [(null, "smtp"), ("de", "gruppe"), ("de", "team"), ("en", "group"),
+                 (SkillPhraseLanguages.Undetermined, "cron")],
+                ignoreOrder: true);
+        keywords.ShouldAllBe(p => p.Source == SkillPhraseSources.Seed);
     }
 
     [Test]
