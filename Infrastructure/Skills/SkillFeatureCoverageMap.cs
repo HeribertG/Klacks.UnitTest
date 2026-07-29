@@ -52,6 +52,7 @@ public static class SkillFeatureCoverageMap
         ["ClientShiftPreferencesController"] = Covered("set_shift_preferences"),
         ["ContractsController"] = Covered("list_contracts", "get_contract_details", "create_contract", "update_contract", "delete_contract", "assign_contract_to_client", "assign_contract_by_name"),
         ["IndividualPeriodsController"] = Excluded("admin settings CRUD for custom (individual) contract pay-period definitions used by PaymentInterval.Individual contracts; admin settings card only, no Klacksy chat skill in this iteration"),
+        ["MonthlyTargetHoursController"] = Excluded("admin settings CRUD for the company-wide monthly target hours table used by PaymentInterval.MonthlyTargetHours contracts; admin settings card only, no Klacksy chat skill in this iteration"),
         ["GroupItemsController"] = Covered("add_client_to_group", "add_client_to_group_by_name", "remove_client_from_group"),
         ["GroupVisibilitiesController"] = Covered("set_user_group_scope", "get_user_group_scope"),
         ["GroupsController"] = Covered("list_groups", "list_groups_hierarchical", "create_group", "update_group", "delete_group", "set_group_location"),

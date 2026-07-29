@@ -370,4 +370,71 @@ public class ScheduleMapperTests
 
         target.IndividualPeriodId.ShouldBe(individualPeriodId);
     }
+
+    [Test]
+    public void ToContractEntity_ResourceWithPercent_MapsPercent()
+    {
+        var resource = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = Guid.NewGuid(),
+            Name = "Monthly target hours contract",
+            PaymentInterval = PaymentInterval.MonthlyTargetHours,
+            Percent = 60m,
+        };
+
+        var result = _mapper.ToContractEntity(resource);
+
+        result.Percent.ShouldBe(60m);
+        result.PaymentInterval.ShouldBe(PaymentInterval.MonthlyTargetHours);
+    }
+
+    [Test]
+    public void UpdateContractEntity_ResourceWithPercent_UpdatesTargetPercent()
+    {
+        var target = new Contract { Id = Guid.NewGuid(), Name = "Original", Percent = 100m };
+        var source = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = target.Id,
+            Name = "Updated",
+            PaymentInterval = PaymentInterval.MonthlyTargetHours,
+            Percent = 60m,
+        };
+
+        _mapper.UpdateContractEntity(target, source);
+
+        target.Percent.ShouldBe(60m);
+    }
+
+    [Test]
+    public void UpdateContractEntity_ResourceWithoutPercent_ClearsTargetPercent()
+    {
+        var target = new Contract { Id = Guid.NewGuid(), Name = "Original", Percent = 60m };
+        var source = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = target.Id,
+            Name = "Updated",
+            PaymentInterval = PaymentInterval.Monthly,
+            Percent = null,
+        };
+
+        _mapper.UpdateContractEntity(target, source);
+
+        target.Percent.ShouldBeNull();
+    }
+
+    [Test]
+    public void ToContractResource_ContractWithPercent_MapsPercent()
+    {
+        var contract = new Contract
+        {
+            Id = Guid.NewGuid(),
+            Name = "Monthly target hours contract",
+            PaymentInterval = PaymentInterval.MonthlyTargetHours,
+            Percent = 60m,
+        };
+
+        var result = _mapper.ToContractResource(contract);
+
+        result.Percent.ShouldBe(60m);
+    }
 }
