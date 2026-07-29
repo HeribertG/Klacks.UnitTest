@@ -64,18 +64,13 @@ public class SkillRecipeTriggerCrossQualityTests
         ("fill_group_by_criteria", "add-employee-to-group"),
         ("update_address", "record-employee-address-change"),
         ("analyze_group_semantics", "add-employee-to-group"),
-        ("list_sealed_orders", "seal-shift-order"),
-        ("explain_shift_lifecycle_order_to_shift", "seal-shift-order"),
-        ("explain_page_schedule", "seal-shift-order"),
         ("explain_page_schedule", "close-payroll-period"),
         ("explain_page_absence", "add-absence-for-employee"),
         ("explain_page_absence", "remove-absence-for-employee"),
         ("explain_page_absence", "move-absence-for-employee"),
         ("explain_page_availability", "record-availability-for-employee"),
         ("explain_page_shifts", "create-shift-order"),
-        ("explain_page_shifts", "seal-shift-order"),
         ("explain_page_employees", "onboard-employee"),
-        ("explain_page_period_closing", "seal-shift-order"),
         ("explain_page_period_closing", "close-payroll-period"),
     ];
 
