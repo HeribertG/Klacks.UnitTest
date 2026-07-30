@@ -140,4 +140,60 @@ public class GetGoalCandidatesQueryHandlerTests
         dto.CreatedUtc.ShouldBe(candidate.CreateTime);
         dto.DecidedUtc.ShouldBe(candidate.DecidedUtc);
     }
+
+    [Test]
+    public async Task Handle_CandidateWithGoalType_ResolvesCatalogueKeysAndParameters()
+    {
+        var candidate = MakeCandidate(OwnerUserId);
+        candidate.GoalType = AgentTriggerKinds.TargetHoursDrift;
+        candidate.RationaleParamsJson = "{\"count\":\"7\",\"days\":\"7\"}";
+        _goalCandidateRepository
+            .GetForUserAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<GoalCandidate> { candidate });
+
+        var result = await _sut.Handle(new GetGoalCandidatesQuery { UserId = OwnerUserId }, CancellationToken.None);
+
+        var definition = GoalTypeCatalog.ByTriggerKind[AgentTriggerKinds.TargetHoursDrift];
+        var dto = result.Single();
+        dto.GoalType.ShouldBe(AgentTriggerKinds.TargetHoursDrift);
+        dto.TitleKey.ShouldBe(definition.TitleKey);
+        dto.RationaleKey.ShouldBe(definition.RationaleKey);
+        dto.RationaleParams!["count"].ShouldBe("7");
+        dto.RationaleParams!["days"].ShouldBe("7");
+    }
+
+    [Test]
+    public async Task Handle_CandidateWithoutGoalType_LeavesKeysNullSoTheClientFallsBackToStoredText()
+    {
+        var candidate = MakeCandidate(OwnerUserId);
+        candidate.GoalType = null;
+        _goalCandidateRepository
+            .GetForUserAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<GoalCandidate> { candidate });
+
+        var result = await _sut.Handle(new GetGoalCandidatesQuery { UserId = OwnerUserId }, CancellationToken.None);
+
+        var dto = result.Single();
+        dto.TitleKey.ShouldBeNull();
+        dto.RationaleKey.ShouldBeNull();
+        dto.RationaleParams.ShouldBeNull();
+        dto.Title.ShouldBe(candidate.Title);
+    }
+
+    [Test]
+    public async Task Handle_UnparsableRationaleParams_StillListsTheCandidate()
+    {
+        var candidate = MakeCandidate(OwnerUserId);
+        candidate.GoalType = AgentTriggerKinds.TargetHoursDrift;
+        candidate.RationaleParamsJson = "{not json";
+        _goalCandidateRepository
+            .GetForUserAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<GoalCandidate> { candidate });
+
+        var result = await _sut.Handle(new GetGoalCandidatesQuery { UserId = OwnerUserId }, CancellationToken.None);
+
+        var dto = result.Single();
+        dto.RationaleParams.ShouldBeNull();
+        dto.TitleKey.ShouldNotBeNull();
+    }
 }

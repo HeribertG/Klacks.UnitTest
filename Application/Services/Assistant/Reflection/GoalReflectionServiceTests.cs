@@ -1,18 +1,19 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for GoalReflectionService — covers both the Phase 1 shadow-mode contract (no signals
-/// means no LLM call and no persistence, a valid LLM response persists candidates with
-/// Status = Shadow, a missing/unparsable/broken 'confidence' field always degrades to Unknown, a
-/// dedup hit is skipped, one user's failure never stops reflection for the other users) and the
-/// Phase 2 delivery-flag contract (delivery on persists Status = Proposed; delivery on filters out
-/// non-planner users before the LLM is even called). IGoalSignalSource, IGoalCandidateRepository,
-/// ICheapestModelResolver, ILLMProvider and IPlanningAudienceResolver are mocked.
+/// Unit tests for GoalReflectionService — covers the catalogue-selection contract (the model returns
+/// goal types, never prose; a type the user has no signal for is discarded; the same type twice in one
+/// response is discarded; the persisted candidate carries the goal type, the interpolation parameters
+/// and the catalogue's canonical English wording), the confidence contract (a missing, unparsable or
+/// unexpected value always degrades to Unknown), the shadow/delivery flag contract (Status = Shadow
+/// versus Status = Proposed, planners only) and the robustness contract (no signals means no LLM call,
+/// broken JSON persists nothing, one user's failure never stops the others). IGoalSignalSource,
+/// IGoalCandidateRepository, ICheapestModelResolver, ILLMProvider and IPlanningAudienceResolver are mocked.
 /// </summary>
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Reflection;
 
-using System.Reflection;
+using System.Text.Json;
 using Klacks.Api.Application.Configuration;
 using Klacks.Api.Application.Services.Assistant.Reflection;
 using Klacks.Api.Domain.Constants;
@@ -27,6 +28,8 @@ public class GoalReflectionServiceTests
 {
     private const string UserA = "user-a";
     private const string UserB = "user-b";
+    private const int LookbackDays = 7;
+    private const int OccurrenceCount = 3;
 
     private IGoalSignalSource _signalSource = null!;
     private IGoalCandidateRepository _goalCandidateRepository = null!;
@@ -75,8 +78,19 @@ public class GoalReflectionServiceTests
             NullLogger<GoalReflectionService>.Instance);
     }
 
-    private static GoalSignal Signal(string userId, string summary = "recurring signal") =>
-        new(userId, AgentTriggerKinds.UnstaffedShift, summary, 3, DateTime.UtcNow.AddDays(-2), DateTime.UtcNow);
+    private static GoalSignal Signal(
+        string userId,
+        string kind = AgentTriggerKinds.UnstaffedShift,
+        string summary = "recurring observation") =>
+        new(userId, kind, summary, OccurrenceCount, DateTime.UtcNow.AddDays(-2), DateTime.UtcNow, LookbackDays);
+
+    private static string Response(params string[] candidateJson) =>
+        "{\"candidates\":[" + string.Join(",", candidateJson) + "]}";
+
+    private static string Candidate(string goalType, string? confidence = "high") =>
+        confidence == null
+            ? $"{{\"goalType\":\"{goalType}\"}}"
+            : $"{{\"goalType\":\"{goalType}\",\"confidence\":\"{confidence}\"}}";
 
     private void SetLlmResponse(string content) =>
         _provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
@@ -95,14 +109,16 @@ public class GoalReflectionServiceTests
     }
 
     [Test]
-    public async Task RunReflectionCycleAsync_ValidResponseWithTwoCandidates_PersistsBothAsShadow()
+    public async Task RunReflectionCycleAsync_TwoSelectedGoalTypes_PersistsBothAsShadow()
     {
-        _signalSource.CollectAsync(Arg.Any<CancellationToken>()).Returns(new List<GoalSignal> { Signal(UserA) });
-        SetLlmResponse(
-            "{\"candidates\":[" +
-            "{\"title\":\"Tighten contract renewals\",\"rationale\":\"seen 3x\",\"confidence\":\"high\"}," +
-            "{\"title\":\"Review availability gaps\",\"rationale\":\"seen 2x\",\"confidence\":\"low\"}" +
-            "]}");
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>()).Returns(new List<GoalSignal>
+        {
+            Signal(UserA, AgentTriggerKinds.UnstaffedShift),
+            Signal(UserA, AgentTriggerKinds.ContractExpiringSoon)
+        });
+        SetLlmResponse(Response(
+            Candidate(AgentTriggerKinds.UnstaffedShift),
+            Candidate(AgentTriggerKinds.ContractExpiringSoon, "low")));
 
         var result = await _sut.RunReflectionCycleAsync();
 
@@ -111,32 +127,108 @@ public class GoalReflectionServiceTests
         _persistedCandidates.ShouldAllBe(c => c.Status == GoalCandidateStatus.Shadow);
         _persistedCandidates.ShouldAllBe(c => c.OwnerPermissionsCsv == null);
         _persistedCandidates.ShouldAllBe(c => c.UserId == UserA);
-        _persistedCandidates.Single(c => c.Title == "Tighten contract renewals").Confidence.ShouldBe(GoalCandidateConfidence.High);
-        _persistedCandidates.Single(c => c.Title == "Review availability gaps").Confidence.ShouldBe(GoalCandidateConfidence.Low);
+        _persistedCandidates.Single(c => c.GoalType == AgentTriggerKinds.UnstaffedShift)
+            .Confidence.ShouldBe(GoalCandidateConfidence.High);
+        _persistedCandidates.Single(c => c.GoalType == AgentTriggerKinds.ContractExpiringSoon)
+            .Confidence.ShouldBe(GoalCandidateConfidence.Low);
+    }
+
+    [Test]
+    public async Task RunReflectionCycleAsync_SelectedGoalType_PersistsCatalogueWordingAndParameters()
+    {
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA, AgentTriggerKinds.TargetHoursDrift) });
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.TargetHoursDrift)));
+
+        await _sut.RunReflectionCycleAsync();
+
+        var definition = GoalTypeCatalog.ByTriggerKind[AgentTriggerKinds.TargetHoursDrift];
+        var persisted = _persistedCandidates.ShouldHaveSingleItem();
+        persisted.GoalType.ShouldBe(AgentTriggerKinds.TargetHoursDrift);
+        persisted.SignalSource.ShouldBe(AgentTriggerKinds.TargetHoursDrift);
+        persisted.Title.ShouldBe(definition.PlannerTitle);
+        persisted.Rationale.ShouldBe(string.Format(definition.PlannerRationaleFormat, OccurrenceCount, LookbackDays));
+
+        var parameters = JsonSerializer.Deserialize<Dictionary<string, string>>(persisted.RationaleParamsJson!)!;
+        parameters[GoalCandidateRationaleParams.Count].ShouldBe(OccurrenceCount.ToString());
+        parameters[GoalCandidateRationaleParams.Days].ShouldBe(LookbackDays.ToString());
+    }
+
+    [Test]
+    public async Task RunReflectionCycleAsync_PromptCarriesNoTriggerIdentifierInsideTheDescription()
+    {
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA, AgentTriggerKinds.TargetHoursDrift, "an hour deviation was noticed") });
+        SetLlmResponse(Response());
+
+        await _sut.RunReflectionCycleAsync();
+
+        await _provider.Received(1).ProcessAsync(
+            Arg.Is<LLMProviderRequest>(r => r.Message.Contains("an hour deviation was noticed")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunReflectionCycleAsync_GoalTypeWithoutMatchingSignal_IsDiscarded()
+    {
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA, AgentTriggerKinds.UnstaffedShift) });
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.OrderImportFailed)));
+
+        var result = await _sut.RunReflectionCycleAsync();
+
+        result.ShouldBe(0);
+        _persistedCandidates.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task RunReflectionCycleAsync_UnknownGoalType_IsDiscarded()
+    {
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA) });
+        SetLlmResponse(Response(Candidate("invent_something_new")));
+
+        var result = await _sut.RunReflectionCycleAsync();
+
+        result.ShouldBe(0);
+        _persistedCandidates.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task RunReflectionCycleAsync_SameGoalTypeTwiceInOneResponse_PersistsItOnce()
+    {
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA, AgentTriggerKinds.PeriodOverdue) });
+        SetLlmResponse(Response(
+            Candidate(AgentTriggerKinds.PeriodOverdue),
+            Candidate(AgentTriggerKinds.PeriodOverdue, "low")));
+
+        var result = await _sut.RunReflectionCycleAsync();
+
+        result.ShouldBe(1);
+        _persistedCandidates.ShouldHaveSingleItem().GoalType.ShouldBe(AgentTriggerKinds.PeriodOverdue);
     }
 
     [Test]
     public async Task RunReflectionCycleAsync_ConfidenceFieldMissing_DefaultsToUnknown()
     {
         _signalSource.CollectAsync(Arg.Any<CancellationToken>()).Returns(new List<GoalSignal> { Signal(UserA) });
-        SetLlmResponse("{\"candidates\":[{\"title\":\"Do the thing\",\"rationale\":\"why not\"}]}");
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.UnstaffedShift, confidence: null)));
 
         await _sut.RunReflectionCycleAsync();
 
-        _persistedCandidates.Count.ShouldBe(1);
-        _persistedCandidates.Single().Confidence.ShouldBe(GoalCandidateConfidence.Unknown);
+        _persistedCandidates.ShouldHaveSingleItem().Confidence.ShouldBe(GoalCandidateConfidence.Unknown);
     }
 
     [Test]
     public async Task RunReflectionCycleAsync_ConfidenceFieldUnparsableValue_DefaultsToUnknown()
     {
         _signalSource.CollectAsync(Arg.Any<CancellationToken>()).Returns(new List<GoalSignal> { Signal(UserA) });
-        SetLlmResponse("{\"candidates\":[{\"title\":\"Do the thing\",\"rationale\":\"why not\",\"confidence\":\"maybe\"}]}");
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.UnstaffedShift, "maybe")));
 
         await _sut.RunReflectionCycleAsync();
 
-        _persistedCandidates.Count.ShouldBe(1);
-        _persistedCandidates.Single().Confidence.ShouldBe(GoalCandidateConfidence.Unknown);
+        _persistedCandidates.ShouldHaveSingleItem().Confidence.ShouldBe(GoalCandidateConfidence.Unknown);
     }
 
     [Test]
@@ -155,7 +247,7 @@ public class GoalReflectionServiceTests
     public async Task RunReflectionCycleAsync_DedupHit_SkipsPersistence()
     {
         _signalSource.CollectAsync(Arg.Any<CancellationToken>()).Returns(new List<GoalSignal> { Signal(UserA) });
-        SetLlmResponse("{\"candidates\":[{\"title\":\"Already proposed\",\"rationale\":\"again\",\"confidence\":\"high\"}]}");
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.UnstaffedShift)));
         _goalCandidateRepository
             .ExistsRecentAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -170,7 +262,11 @@ public class GoalReflectionServiceTests
     public async Task RunReflectionCycleAsync_OneUserThrows_OtherUserIsStillProcessed()
     {
         _signalSource.CollectAsync(Arg.Any<CancellationToken>())
-            .Returns(new List<GoalSignal> { Signal(UserA, "throws-marker"), Signal(UserB, "healthy-marker") });
+            .Returns(new List<GoalSignal>
+            {
+                Signal(UserA, AgentTriggerKinds.UnstaffedShift, "throws-marker"),
+                Signal(UserB, AgentTriggerKinds.UnstaffedShift, "healthy-marker")
+            });
 
         _provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
@@ -184,16 +280,14 @@ public class GoalReflectionServiceTests
                 return new LLMProviderResponse
                 {
                     Success = true,
-                    Content = "{\"candidates\":[{\"title\":\"Healthy candidate\",\"rationale\":\"ok\",\"confidence\":\"high\"}]}"
+                    Content = Response(Candidate(AgentTriggerKinds.UnstaffedShift))
                 };
             });
 
         var result = await _sut.RunReflectionCycleAsync();
 
         result.ShouldBe(1);
-        _persistedCandidates.Count.ShouldBe(1);
-        _persistedCandidates.Single().UserId.ShouldBe(UserB);
-        _persistedCandidates.Single().Title.ShouldBe("Healthy candidate");
+        _persistedCandidates.ShouldHaveSingleItem().UserId.ShouldBe(UserB);
     }
 
     [Test]
@@ -201,7 +295,7 @@ public class GoalReflectionServiceTests
     {
         _options.GoalReflectionDelivery = false;
         _signalSource.CollectAsync(Arg.Any<CancellationToken>()).Returns(new List<GoalSignal> { Signal(UserA) });
-        SetLlmResponse("{\"candidates\":[{\"title\":\"Tighten contract renewals\",\"rationale\":\"seen 3x\",\"confidence\":\"high\"}]}");
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.UnstaffedShift)));
 
         await _sut.RunReflectionCycleAsync();
 
@@ -216,7 +310,7 @@ public class GoalReflectionServiceTests
         _planningAudienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase) { UserA });
         _signalSource.CollectAsync(Arg.Any<CancellationToken>()).Returns(new List<GoalSignal> { Signal(UserA) });
-        SetLlmResponse("{\"candidates\":[{\"title\":\"Tighten contract renewals\",\"rationale\":\"seen 3x\",\"confidence\":\"high\"}]}");
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.UnstaffedShift)));
 
         var result = await _sut.RunReflectionCycleAsync();
 

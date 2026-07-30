@@ -3,8 +3,9 @@
 /// <summary>
 /// Unit tests for GoalPlanExecutionService — the Phase 4 unattended-execution gate of the
 /// self-directed-goals roadmap. Covers every brake in isolation (feature flag off, candidate not
-/// approved, missing PlanId, confidence Low/Unknown, an admin below Autonomous, no admin at all, and a
-/// missing/empty frozen permissions CSV) each proving execution is never started, plus the happy path
+/// approved, missing PlanId, confidence Low/Unknown, an admin below Autonomous, no admin at all, an
+/// admin without any stored autonomy level, and a missing/empty frozen permissions CSV) each proving
+/// execution is never started, plus the happy path
 /// proving the frozen owner permissions and the fixed audit user name reach the SkillExecutionContext
 /// handed to IPlanChatService.StartBackgroundExecution.
 /// </summary>
@@ -250,15 +251,32 @@ public class GoalPlanExecutionServiceTests
     }
 
     [Test]
-    public async Task ExecuteForCandidateAsync_NoAdminRowFallsBackToDefaultLevel_AllowsExecution()
+    public async Task ExecuteForCandidateAsync_AdminWithoutStoredAutonomyLevel_DoesNotStartExecution()
     {
         var candidate = MakeCandidate();
         _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
 
         var result = await _sut.ExecuteForCandidateAsync(candidate.Id, CancellationToken.None);
 
-        result.ShouldBeTrue();
-        _planChatService.Received(1).StartBackgroundExecution(
-            candidate.PlanId!.Value, Arg.Any<SkillExecutionContext>(), false);
+        result.ShouldBeFalse();
+        _planChatService.DidNotReceive().StartBackgroundExecution(
+            Arg.Any<Guid>(), Arg.Any<SkillExecutionContext>(), Arg.Any<bool>());
+    }
+
+    [Test]
+    public async Task ExecuteForCandidateAsync_SecondAdminWithoutStoredAutonomyLevel_DoesNotStartExecution()
+    {
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase) { AdminAId, AdminBId });
+        var candidate = MakeCandidate();
+        _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _autonomyRepository.GetAsync(AdminAId, Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = AdminAId, Level = AutonomyLevel.FullyAutonomous });
+
+        var result = await _sut.ExecuteForCandidateAsync(candidate.Id, CancellationToken.None);
+
+        result.ShouldBeFalse();
+        _planChatService.DidNotReceive().StartBackgroundExecution(
+            Arg.Any<Guid>(), Arg.Any<SkillExecutionContext>(), Arg.Any<bool>());
     }
 }

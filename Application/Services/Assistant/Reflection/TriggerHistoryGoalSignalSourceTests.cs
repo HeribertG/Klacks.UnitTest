@@ -2,8 +2,10 @@
 
 /// <summary>
 /// Unit tests for TriggerHistoryGoalSignalSource — covers the (UserId, TriggerKind) aggregation,
-/// the exclusion of self-referential/meta trigger kinds (CuriosityQuestion, MuteSuggestion) and the
-/// empty-history path. IProactiveTriggerDispatchRepository is mocked; no database involved.
+/// the exclusion of self-referential/meta trigger kinds (CuriosityQuestion, MuteSuggestion), the
+/// exclusion of kinds without a GoalTypeCatalog entry, the summary being built from the catalogue's
+/// plain-language description rather than the trigger identifier, and the empty-history path.
+/// IProactiveTriggerDispatchRepository is mocked; no database involved.
 /// </summary>
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Reflection;
@@ -110,5 +112,30 @@ public class TriggerHistoryGoalSignalSourceTests
         var signals = await _sut.CollectAsync();
 
         signals.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task CollectAsync_KindWithoutCatalogueEntry_IsExcluded()
+    {
+        SetupRows(Row(UserA, "some_future_trigger_kind", DateTime.UtcNow));
+
+        var signals = await _sut.CollectAsync();
+
+        signals.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task CollectAsync_Summary_UsesCatalogueDescriptionAndNotTheTriggerIdentifier()
+    {
+        SetupRows(Row(UserA, AgentTriggerKinds.TargetHoursDrift, DateTime.UtcNow));
+
+        var signals = await _sut.CollectAsync();
+
+        var signal = signals.ShouldHaveSingleItem();
+        var definition = GoalTypeCatalog.ByTriggerKind[AgentTriggerKinds.TargetHoursDrift];
+        signal.Summary.ShouldContain(definition.SignalDescription);
+        signal.Summary.ShouldNotContain(AgentTriggerKinds.TargetHoursDrift);
+        signal.LookbackDays.ShouldBeGreaterThan(0);
+        signal.Summary.ShouldContain(signal.LookbackDays.ToString());
     }
 }
