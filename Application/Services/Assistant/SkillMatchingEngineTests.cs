@@ -8,6 +8,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 
 namespace Klacks.UnitTest.Application.Services.Assistant;
@@ -171,5 +172,77 @@ public class SkillMatchingEngineTests
         var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "zeig mir den dienstplan");
 
         result.ShouldBe(["skill_alpha", "skill_beta"]);
+    }
+
+    private static AgentSkill AnchorSkill(string name, params string[] anchors) =>
+        new()
+        {
+            Name = name,
+            Category = CrudCategory,
+            TriggerKeywords = System.Text.Json.JsonSerializer.Serialize(
+                new Dictionary<string, string[]> { [SkillPhraseLanguages.Multiple] = anchors })
+        };
+
+    [Test]
+    public void ShortAnchor_MatchesAsWholeWord()
+    {
+        var skills = new[] { AnchorSkill("configure_smtp", "api") };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "wo trage ich den API-Key ein");
+
+        result.ShouldBe(["configure_smtp"]);
+    }
+
+    [Test]
+    public void ShortAnchor_DoesNotMatchInsideAnotherWord()
+    {
+        var skills = new[] { AnchorSkill("configure_smtp", "api") };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "das ging sehr rapide");
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void ShortAnchor_MatchesWhenFollowedByNonLatinScript()
+    {
+        var skills = new[] { AnchorSkill("configure_smtp", "api") };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "apiキーはどこで設定しますか");
+
+        result.ShouldBe(["configure_smtp"]);
+    }
+
+    [Test]
+    public void ShortAnchor_DoesNotMatchAtStartOfLongerLatinWord()
+    {
+        var skills = new[] { AnchorSkill("get_identity", "id") };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "das war eine gute Idee");
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void ShortPhrase_WithoutAnchorTag_StaysSilenced()
+    {
+        var skills = new[]
+        {
+            Skill("noisy_skill", null, new Dictionary<string, List<string>> { ["de"] = ["ein", "ab"] })
+        };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "ein Termin ab morgen");
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void ShortAnchor_BelowTwoCharacters_StaysSilenced()
+    {
+        var skills = new[] { AnchorSkill("noisy_skill", "a") };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "a b c");
+
+        result.ShouldBeEmpty();
     }
 }
