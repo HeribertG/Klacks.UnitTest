@@ -123,6 +123,9 @@ public class PutCommandHandlerTests
             MinimumHours = 80m,
             MaximumHours = 120m,
             NightRate = nightRate,
+            WE1Rate = 0m,
+            WE2Rate = 0m,
+            WE3Rate = 0m,
             PaymentInterval = Klacks.Api.Domain.Enums.PaymentInterval.Monthly,
             ValidFrom = validFrom,
         };
