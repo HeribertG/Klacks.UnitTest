@@ -82,6 +82,51 @@ public class SlackMessagingProviderTests
     }
 
     [Test]
+    public async Task SendAsync_Flags_TooManyRequests_As_Throttled()
+    {
+        // Arrange
+        _handler.Response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("{\"ok\":false,\"error\":\"ratelimited\"}", Encoding.UTF8, "application/json")
+        };
+
+        // Act
+        var result = await _sut.SendAsync(new SendMessageRequest("C123", "Hello"), ConfigWithToken);
+
+        // Assert
+        result.Success.ShouldBeFalse();
+        result.IsThrottled.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task SendAsync_Does_Not_Flag_An_Outage_As_Throttled()
+    {
+        // Arrange
+        _handler.Response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+
+        // Act
+        var result = await _sut.SendAsync(new SendMessageRequest("C123", "Hello"), ConfigWithToken);
+
+        // Assert
+        result.Success.ShouldBeFalse();
+        result.IsThrottled.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task SendAsync_Does_Not_Flag_A_Permanent_Error_As_Throttled()
+    {
+        // Arrange
+        _handler.Response = JsonResponse("{\"ok\":false,\"error\":\"channel_not_found\"}");
+
+        // Act
+        var result = await _sut.SendAsync(new SendMessageRequest("C404", "Hello"), ConfigWithToken);
+
+        // Assert
+        result.Success.ShouldBeFalse();
+        result.IsThrottled.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task SendAsync_Uses_DefaultChannel_When_Recipient_Is_Empty()
     {
         // Arrange
