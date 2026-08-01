@@ -10,14 +10,20 @@ repository, a commit or a chat transcript. Copy live-credentials.local.example.j
 live-credentials.local.json, fill in your values, then run this script.
 
 .PARAMETER Provider
-Which provider to verify. Currently: Slack.
+Which provider to verify. Currently: Slack, WhatsApp, Line.
 
 .EXAMPLE
 powershell -File run-live-test.ps1 -Provider Slack
+
+.EXAMPLE
+powershell -File run-live-test.ps1 -Provider WhatsApp
+
+.EXAMPLE
+powershell -File run-live-test.ps1 -Provider Line
 #>
 
 param(
-    [ValidateSet('Slack')]
+    [ValidateSet('Slack', 'WhatsApp', 'Line')]
     [string]$Provider = 'Slack'
 )
 
@@ -59,6 +65,36 @@ switch ($Provider) {
 
         $filter = 'FullyQualifiedName~SlackLiveVerification'
     }
+    'WhatsApp' {
+        Set-RequiredVariable -Name 'WHATSAPP_ACCESS_TOKEN'   -Value $credentials.whatsapp.accessToken  -Hint 'whatsapp.accessToken'
+        Set-RequiredVariable -Name 'WHATSAPP_PHONE_NUMBER_ID' -Value $credentials.whatsapp.phoneNumberId -Hint 'whatsapp.phoneNumberId'
+        Set-RequiredVariable -Name 'WHATSAPP_RECIPIENT'       -Value $credentials.whatsapp.recipient    -Hint 'whatsapp.recipient'
+
+        if (-not [string]::IsNullOrWhiteSpace($credentials.whatsapp.appSecret)) {
+            $env:WHATSAPP_APP_SECRET = $credentials.whatsapp.appSecret
+        }
+
+        Write-Host "Reply from the recipient phone to the test number NOW, before continuing." -ForegroundColor Yellow
+        Write-Host "WhatsApp only accepts plain text while that 24 hour window is open." -ForegroundColor Yellow
+        Write-Host ""
+
+        $filter = 'FullyQualifiedName~WhatsAppLiveVerification'
+    }
+    'Line' {
+        Set-RequiredVariable -Name 'LINE_CHANNEL_ACCESS_TOKEN' -Value $credentials.line.channelAccessToken -Hint 'line.channelAccessToken'
+        Set-RequiredVariable -Name 'LINE_USER_ID'              -Value $credentials.line.userId             -Hint 'line.userId'
+
+        if (-not [string]::IsNullOrWhiteSpace($credentials.line.channelSecret)) {
+            $env:LINE_CHANNEL_SECRET = $credentials.line.channelSecret
+        }
+
+        Write-Host "LINE has no conversation window - no precondition to arrange." -ForegroundColor Cyan
+        Write-Host "The recipient account must have added the bot as a friend." -ForegroundColor Yellow
+        Write-Host "Step5 sends a deliberately over-long message to find the real limit." -ForegroundColor Yellow
+        Write-Host ""
+
+        $filter = 'FullyQualifiedName~LineLiveVerification'
+    }
 }
 
 $repoRoot = Resolve-Path (Join-Path $scriptDir '..\..\..\..')
@@ -82,5 +118,12 @@ $testExit = $LASTEXITCODE
 Remove-Item env:SLACK_BOT_TOKEN -ErrorAction SilentlyContinue
 Remove-Item env:SLACK_CHANNEL -ErrorAction SilentlyContinue
 Remove-Item env:SLACK_SIGNING_SECRET -ErrorAction SilentlyContinue
+Remove-Item env:WHATSAPP_ACCESS_TOKEN -ErrorAction SilentlyContinue
+Remove-Item env:WHATSAPP_PHONE_NUMBER_ID -ErrorAction SilentlyContinue
+Remove-Item env:WHATSAPP_RECIPIENT -ErrorAction SilentlyContinue
+Remove-Item env:WHATSAPP_APP_SECRET -ErrorAction SilentlyContinue
+Remove-Item env:LINE_CHANNEL_ACCESS_TOKEN -ErrorAction SilentlyContinue
+Remove-Item env:LINE_USER_ID -ErrorAction SilentlyContinue
+Remove-Item env:LINE_CHANNEL_SECRET -ErrorAction SilentlyContinue
 
 exit $testExit
