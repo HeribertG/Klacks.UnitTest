@@ -10,7 +10,7 @@ repository, a commit or a chat transcript. Copy live-credentials.local.example.j
 live-credentials.local.json, fill in your values, then run this script.
 
 .PARAMETER Provider
-Which provider to verify. Currently: Slack, WhatsApp, Line.
+Which provider to verify. Currently: Slack, WhatsApp, Line, Signal, Teams.
 
 .EXAMPLE
 powershell -File run-live-test.ps1 -Provider Slack
@@ -20,10 +20,16 @@ powershell -File run-live-test.ps1 -Provider WhatsApp
 
 .EXAMPLE
 powershell -File run-live-test.ps1 -Provider Line
+
+.EXAMPLE
+powershell -File run-live-test.ps1 -Provider Signal
+
+.EXAMPLE
+powershell -File run-live-test.ps1 -Provider Teams
 #>
 
 param(
-    [ValidateSet('Slack', 'WhatsApp', 'Line')]
+    [ValidateSet('Slack', 'WhatsApp', 'Line', 'Signal', 'Teams')]
     [string]$Provider = 'Slack'
 )
 
@@ -95,6 +101,27 @@ switch ($Provider) {
 
         $filter = 'FullyQualifiedName~LineLiveVerification'
     }
+    'Signal' {
+        Set-RequiredVariable -Name 'SIGNAL_API_URL'   -Value $credentials.signal.apiUrl    -Hint 'signal.apiUrl'
+        Set-RequiredVariable -Name 'SIGNAL_NUMBER'    -Value $credentials.signal.number    -Hint 'signal.number'
+        Set-RequiredVariable -Name 'SIGNAL_RECIPIENT' -Value $credentials.signal.recipient -Hint 'signal.recipient'
+
+        Write-Host "A signal-cli-rest-api container must be running and the sender number registered." -ForegroundColor Yellow
+        Write-Host "Step1 checks reachability separately, so a red Step2 means the number, not the container." -ForegroundColor Cyan
+        Write-Host ""
+
+        $filter = 'FullyQualifiedName~SignalLiveVerification'
+    }
+    'Teams' {
+        Set-RequiredVariable -Name 'TEAMS_WEBHOOK_URL' -Value $credentials.teams.webhookUrl -Hint 'teams.webhookUrl'
+
+        Write-Host "WARNING: this run posts TWO VISIBLE CARDS into the configured Teams channel." -ForegroundColor Red
+        Write-Host "ValidateConfigAsync has no read-only path - it posts 'Klacks connection test'." -ForegroundColor Yellow
+        Write-Host "A pass only proves the flow accepted the request; check the channel to confirm delivery." -ForegroundColor Yellow
+        Write-Host ""
+
+        $filter = 'FullyQualifiedName~TeamsLiveVerification'
+    }
 }
 
 $repoRoot = Resolve-Path (Join-Path $scriptDir '..\..\..\..')
@@ -125,5 +152,9 @@ Remove-Item env:WHATSAPP_APP_SECRET -ErrorAction SilentlyContinue
 Remove-Item env:LINE_CHANNEL_ACCESS_TOKEN -ErrorAction SilentlyContinue
 Remove-Item env:LINE_USER_ID -ErrorAction SilentlyContinue
 Remove-Item env:LINE_CHANNEL_SECRET -ErrorAction SilentlyContinue
+Remove-Item env:SIGNAL_API_URL -ErrorAction SilentlyContinue
+Remove-Item env:SIGNAL_NUMBER -ErrorAction SilentlyContinue
+Remove-Item env:SIGNAL_RECIPIENT -ErrorAction SilentlyContinue
+Remove-Item env:TEAMS_WEBHOOK_URL -ErrorAction SilentlyContinue
 
 exit $testExit
