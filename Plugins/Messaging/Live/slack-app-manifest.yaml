@@ -1,0 +1,35 @@
+# Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+# Slack app manifest for verifying SlackMessagingProvider against a real workspace.
+# Paste this at https://api.slack.com/apps -> Create New App -> From an app manifest.
+#
+# Scope rationale:
+#   chat:write        - required by chat.postMessage, the only call the outbound path makes.
+#   chat:write.public - lets the bot post to a public channel it has NOT been invited to.
+#                       Without it, posting to a channel the bot is not a member of fails
+#                       with not_in_channel even though the token is valid.
+#
+# Deliberately NOT enabled here: event_subscriptions. Slack verifies the request URL the
+# moment it is saved, so it can only be switched on once Klacks is reachable from the
+# internet. The inbound webhook path needs channels:history added at that point.
+
+display_information:
+  name: Klacks Messaging Test
+  description: Outbound verification of the Klacks messaging plugin
+  background_color: "#2c2d30"
+
+features:
+  bot_user:
+    display_name: Klacks
+    always_online: false
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.public
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -26,3 +26,7 @@ nunit_random_seed.tmp
 
 # Source link
 *.sourcelink.json
+
+# Local credentials for live provider verification (never commit)
+*.local.json
+*.local.ps1
