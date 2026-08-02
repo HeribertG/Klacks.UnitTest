@@ -11,6 +11,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.ClientAvailabilities;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Mediator;
 
@@ -21,6 +22,8 @@ public class GetAvailabilityOverviewSkillTests
 {
     private IMediator _mediator = null!;
     private IClientAvailabilityRepository _availabilityRepository = null!;
+    private IGroupRepository _groupRepository = null!;
+    private IGroupScopeGuard _groupScopeGuard = null!;
     private GetAvailabilityOverviewSkill _skill = null!;
 
     private static readonly Guid OpenClientId = Guid.NewGuid();
@@ -65,7 +68,12 @@ public class GetAvailabilityOverviewSkillTests
         });
         _availabilityRepository.GetByDateRange(Date, Date).Returns(Task.FromResult(entries));
 
-        _skill = new GetAvailabilityOverviewSkill(_mediator, _availabilityRepository);
+        _groupRepository = Substitute.For<IGroupRepository>();
+        _groupScopeGuard = Substitute.For<IGroupScopeGuard>();
+        _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Unrestricted());
+
+        _skill = new GetAvailabilityOverviewSkill(_mediator, _availabilityRepository, _groupRepository, _groupScopeGuard);
     }
 
     private static SkillExecutionContext Context() => new()

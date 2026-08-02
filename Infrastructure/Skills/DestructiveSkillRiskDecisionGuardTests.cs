@@ -75,6 +75,10 @@ public class DestructiveSkillRiskDecisionGuardTests
                 "Removes one PLANNED absence placeholder and is the registered inverse of " +
                 "add_break_placeholder; re-adding restores the exact state, so the practical risk " +
                 "matches the Reversible class even though the registry direction defaults it here.",
+            ["delete_counter_rule"] =
+                "Soft-deletes one event-counter threshold row; the evaluator only raises a warning " +
+                "or error notification against real work rows and never rewrites recorded hours or " +
+                "wages, and create_counter_rule restores every field identically.",
             ["delete_communication"] =
                 "Soft-deletes a single communication entry (email, phone or note) on a client " +
                 "addressed by UUID; the client record itself is untouched and the entry is " +
@@ -83,16 +87,40 @@ public class DestructiveSkillRiskDecisionGuardTests
                 "Deletes a single expense row; day-lock rules are enforced and period-hour " +
                 "recalculation plus schedule notifications run automatically, so the books stay " +
                 "consistent and redoing the entry in the UI is equally fast.",
+            ["delete_export_format_override"] =
+                "Soft-deletes the patch override for one export format key, which only reverts that " +
+                "format to its shipped default; set_export_format_override recreates an equivalent " +
+                "row once the caller supplies the patch again, since the delete does not echo the " +
+                "removed patch back.",
+            ["delete_individual_period"] =
+                "Cascades the soft-delete only to the aggregate's own child period rows and is " +
+                "blocked while any non-deleted contract still references it; an assigned individual " +
+                "period has no effect on hour computation today, so a wrong delete cannot change a " +
+                "computed value, and create_individual_period restores name and stretches.",
             ["delete_llm_model"] =
                 "Removes one LLM model configuration row; technical admin configuration without " +
                 "business or personal data, re-created by the provider model sync or manually.",
             ["delete_llm_provider"] =
                 "Removes one LLM provider configuration row; purely technical admin configuration " +
                 "with no cascade into business data, restorable by re-entering the configuration.",
+            ["delete_period_cap_rule"] =
+                "Soft-deletes one statutory hours or overtime cap row; the evaluator only raises a " +
+                "warning or error notification against persisted hours and never recomputes them, " +
+                "and create_period_cap_rule restores every field identically.",
             ["delete_qualification"] =
                 "Soft-deletes one qualification master row after verifying it exists (by id or " +
                 "unambiguous name); qualifications drive candidate matching in planning, not " +
                 "payroll computation, and the entry is re-creatable.",
+            ["delete_report_template"] =
+                "Soft-deletes a report template that no other table references; the create skill " +
+                "restores name, description, type and the row flags, but a hand-built layout has to " +
+                "be rebuilt on the reports page, and no wage, period-close or computed value is " +
+                "touched either way.",
+            ["delete_restricted_time_window_rule"] =
+                "Soft-deletes one seasonal forbidden-hours rule; the evaluator only raises a warning " +
+                "or error notification against real work rows and never rewrites recorded hours or " +
+                "wages, and create_restricted_time_window_rule restores season bounds, daily window " +
+                "and group tag identically.",
             ["delete_schedule_note"] =
                 "Soft-deletes one informational schedule note by UUID and echoes the deleted " +
                 "note's client and date back; notes carry no planning or payroll semantics.",
@@ -114,6 +142,15 @@ public class DestructiveSkillRiskDecisionGuardTests
                 "Removes a single group assignment row with a symmetric inverse " +
                 "(add_client_to_group re-creates it from the same two names); unlike the " +
                 "Sensitive delete_membership it does not move the plannability boundary.",
+            ["remove_client_contract"] =
+                "Removes the ClientContract row linking one person to a contract template; the " +
+                "template itself is never touched and the assignment is re-created identically by " +
+                "assign_contract_by_name from the same client and contract names.",
+            ["remove_client_qualification"] =
+                "Removes the ClientQualification row recording that one person holds a " +
+                "qualification; the catalogue entry stays for everyone else and " +
+                "set_client_qualification restores the row from the same client, qualification " +
+                "and level.",
             ["remove_container_template_task"] =
                 "Removes one task from a container weekday template under the container edit " +
                 "lock; affects future template-based planning only and the task can be re-added " +
