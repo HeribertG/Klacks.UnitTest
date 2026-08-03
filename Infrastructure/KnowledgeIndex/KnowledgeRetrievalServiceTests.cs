@@ -1,10 +1,11 @@
-﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Shouldly;
 using Klacks.Api.KnowledgeIndex.Application.Constants;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Application.Services;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -29,6 +30,72 @@ public class KnowledgeRetrievalServiceTests
             .Returns(new float[384]);
 
         _service = new KnowledgeRetrievalService(_embeddings, _reranker, _repo);
+    }
+
+    // The whole point of the [retrieval] line is that it emits at runtime. A stopwatch that never
+    // reaches a log is indistinguishable from no instrumentation at all, and the numbers it reports
+    // are the only ones this chain has - so the wiring is pinned here rather than assumed.
+    [Test]
+    public async Task RetrieveAsync_EmitsOneRetrievalLineCarryingCandidateCountAndPassOrdinal()
+    {
+        var logger = new CapturingLogger();
+        var counter = new RetrievalCallCounter();
+        var service = new KnowledgeRetrievalService(_embeddings, _reranker, _repo, logger, counter);
+
+        var skill = new KnowledgeEntry
+        {
+            Kind = KnowledgeEntryKind.Skill,
+            SourceId = "ListOpenShifts",
+            Text = "ListOpenShifts. Returns open shifts."
+        };
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([skill]);
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.9 });
+
+        await service.RetrieveAsync("open shifts", [], false, 5, currentRoute: null, CancellationToken.None);
+        await service.RetrieveAsync("open shifts", [], false, 5, currentRoute: null, CancellationToken.None);
+
+        var lines = logger.Messages.Where(m => m.Contains("[retrieval]")).ToList();
+
+        lines.Count.ShouldBe(2);
+        lines[0].ShouldContain("call=1");
+        lines[1].ShouldContain("call=2");
+        lines[0].ShouldContain("cands=1");
+        lines[0].ShouldContain($"chars={skill.Text.Length}");
+    }
+
+    // The query must never reach the log in clear text - it carries whatever the user typed.
+    [Test]
+    public async Task RetrieveAsync_RetrievalLineHashesTheQueryInsteadOfLoggingIt()
+    {
+        var logger = new CapturingLogger();
+        var service = new KnowledgeRetrievalService(_embeddings, _reranker, _repo, logger, new RetrievalCallCounter());
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "s", Text = "t" }]);
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.9 });
+
+        await service.RetrieveAsync("streng geheime anfrage", [], false, 5, currentRoute: null, CancellationToken.None);
+
+        var line = logger.Messages.Single(m => m.Contains("[retrieval]"));
+        line.ShouldNotContain("streng geheime anfrage");
+        line.ShouldContain("query=");
+    }
+
+    private sealed class CapturingLogger : ILogger<KnowledgeRetrievalService>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
     }
 
     [Test]
