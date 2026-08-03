@@ -129,9 +129,9 @@ public class SkillPhraseRepositoryTests
     }
 
     [Test]
-    public async Task ReplaceForLanguage_KeywordRowsAreAddressedByNullLanguage()
+    public async Task ReplaceForLanguage_KeywordRowsAreAddressedByTheirReservedTag()
     {
-        await GivenPhraseAsync(null, SkillPhraseSources.Seed, "gruppe", kind: SkillPhraseKinds.Keyword);
+        await GivenPhraseAsync(SkillPhraseLanguages.Multiple, SkillPhraseSources.Seed, "gruppe", kind: SkillPhraseKinds.Keyword);
         await GivenPhraseAsync("de", SkillPhraseSources.Seed, "gruppe");
 
         await _repository.ReplaceForLanguageAsync(
@@ -139,7 +139,7 @@ public class SkillPhraseRepositoryTests
             SkillName,
             SkillPhraseKinds.Keyword,
             SkillPhraseSources.Seed,
-            null,
+            SkillPhraseLanguages.Multiple,
             ["team"]);
 
         var rows = await ActiveRowsAsync();
@@ -151,15 +151,15 @@ public class SkillPhraseRepositoryTests
     [Test]
     public async Task ReplaceForLanguage_WithAllSourcesScope_RemovesForeignSourcesToo()
     {
-        await GivenPhraseAsync(null, SkillPhraseSources.Seed, "gruppe", kind: SkillPhraseKinds.Keyword);
-        await GivenPhraseAsync(null, SkillPhraseSources.LanguagePack, "grupa", kind: SkillPhraseKinds.Keyword);
+        await GivenPhraseAsync(SkillPhraseLanguages.Multiple, SkillPhraseSources.Seed, "gruppe", kind: SkillPhraseKinds.Keyword);
+        await GivenPhraseAsync(SkillPhraseLanguages.Multiple, SkillPhraseSources.LanguagePack, "grupa", kind: SkillPhraseKinds.Keyword);
 
         await _repository.ReplaceForLanguageAsync(
             SkillPhraseOwnerKinds.Skill,
             SkillName,
             SkillPhraseKinds.Keyword,
             SkillPhraseSources.Admin,
-            null,
+            SkillPhraseLanguages.Multiple,
             ["team"],
             SkillPhraseReplaceScope.AllSourcesOfOwner);
 

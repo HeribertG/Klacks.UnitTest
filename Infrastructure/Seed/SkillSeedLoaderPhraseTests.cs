@@ -120,7 +120,7 @@ public class SkillSeedLoaderPhraseTests
     }
 
     [Test]
-    public async Task VersionBump_GroupedKeywords_StoreOneLanguagePerGroupAndMapMulToNull()
+    public async Task VersionBump_GroupedKeywords_StoreOneLanguagePerGroupAndKeepReservedTagsVerbatim()
     {
         GivenStoredSkill();
         WriteSeedFile(
@@ -133,10 +133,14 @@ public class SkillSeedLoaderPhraseTests
             .Where(p => p.Kind == SkillPhraseKinds.Keyword)
             .ToListAsync();
 
+        // "mul" is stored verbatim, not folded into null or an empty string. It is the only tag the
+        // keyword matcher accepts as an anchor, and mapping it away made it unrepresentable in this
+        // table - which is what would have silently dropped every anchor phrase had the matcher been
+        // migrated onto it.
         keywords.Select(p => (p.Language, p.Phrase))
             .ShouldBe(
-                [(null, "smtp"), ("de", "gruppe"), ("de", "team"), ("en", "group"),
-                 (SkillPhraseLanguages.Undetermined, "cron")],
+                [(SkillPhraseLanguages.Multiple, "smtp"), ("de", "gruppe"), ("de", "team"),
+                 ("en", "group"), (SkillPhraseLanguages.Undetermined, "cron")],
                 ignoreOrder: true);
         keywords.ShouldAllBe(p => p.Source == SkillPhraseSources.Seed);
     }
