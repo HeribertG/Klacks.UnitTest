@@ -134,7 +134,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         SetPendingConfirmation(_pendingRecipeStore);
         var message = "Nein, das brauche ich nicht.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
 
         var plan = await _service.ResolveOrResumeRecipeAsync(
@@ -151,7 +151,7 @@ public class LLMServiceRecipeConfirmationGateTests
         // affirmation (including an unrelated question) discards the pending recipe.
         SetPendingConfirmation(_pendingRecipeStore);
         var message = "Zeig mir die Gruppenliste.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
 
         var plan = await _service.ResolveOrResumeRecipeAsync(
@@ -180,7 +180,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         _pendingRecipeStore.Peek(UserId, ConversationId).Returns((PendingRecipe?)null);
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([new RetrievalCandidate(
                 new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "irrelevant" },
                 0.82)]));
@@ -242,7 +242,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         _pendingRecipeStore.Peek(UserId, ConversationId).Returns((PendingRecipe?)null);
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([new RetrievalCandidate(
                 new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "irrelevant" },
                 0.82)]));

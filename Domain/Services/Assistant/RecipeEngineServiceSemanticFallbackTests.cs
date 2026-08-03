@@ -75,7 +75,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task MessageWithoutTriggerKeyword_ButStrongSemanticHit_ResolvesTheRecipe()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -90,7 +90,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // A recipe matched purely by meaning (no explicit trigger keyword) must not start its flow
         // directly — the chat loop gates it behind a confirmation question (expensive false positives).
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -104,7 +104,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task MessageWithoutTriggerKeyword_WeakSemanticHit_DoesNotResolve()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.2));
 
         var plan = await _service.ResolveAsync(message);
@@ -118,7 +118,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // A cross-lingual query can land in the grey zone (0.4..0.7) against the de/en embedding text.
         // It must still surface the recipe, but only behind the confirmation gate — never start directly.
         var message = "Neuen Mitarbeiter, bitte.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.55));
 
         var plan = await _service.ResolveAsync(message);
@@ -132,7 +132,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task MessageWithoutTriggerKeyword_BelowGreyZone_DoesNotResolve()
     {
         var message = "Nachricht knapp unter der Grauzone.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.39));
 
         var plan = await _service.ResolveAsync(message);
@@ -158,7 +158,7 @@ public class RecipeEngineServiceSemanticFallbackTests
             .Returns(new List<AgentRecipe> { OnboardRecipe, groupRecipe });
 
         var message = "Etwas Neues anlegen.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult(
             [
                 new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "x" }, 0.72),
@@ -192,7 +192,7 @@ public class RecipeEngineServiceSemanticFallbackTests
             .Returns(new List<AgentRecipe> { OnboardRecipe, groupRecipe });
 
         var message = "Etwas Neues anlegen.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult(
             [
                 new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "x" }, 0.82),
@@ -227,7 +227,7 @@ public class RecipeEngineServiceSemanticFallbackTests
             .Returns(new List<AgentRecipe> { guardedRecipe });
 
         var message = "Wir haben eine neue Firmenregel, maximal drei Nachtschichten pro Woche, hart blockieren.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("create-shift-order", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -251,7 +251,7 @@ public class RecipeEngineServiceSemanticFallbackTests
             .Returns(new List<AgentRecipe> { OnboardRecipe, guardedRecipe });
 
         var message = "Etwas mit Firmenregel, das keinem Keyword-Trigger entspricht.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult(
             [
                 new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "create-shift-order", Text = "x" }, 0.75),
@@ -281,7 +281,7 @@ public class RecipeEngineServiceSemanticFallbackTests
             .Returns(new List<AgentRecipe> { OnboardRecipe, guardedRecipe });
 
         var message = "Etwas mit Firmenregel, das keinem Keyword-Trigger entspricht.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult(
             [
                 new RetrievalCandidate(new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "x" }, 0.72),
@@ -299,7 +299,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task MessageWithoutTriggerKeyword_NoRetrievalHits_DoesNotResolve()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
 
         var plan = await _service.ResolveAsync(message);
@@ -315,7 +315,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // against the mutation recipes — even when the embedding would land two candidates in the
         // grey zone and trigger the "two possible actions" disambiguation.
         var message = "Nein, nein, nein, nein, nein, nein.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -331,7 +331,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // STT mishearing from the same transcript ("zuhüssen" for "zuhören/wissen"): the unknown
         // tail word must not defeat the leading-negation rule.
         var message = "Nein, im Moment will ich nicht zuhüssen.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -347,7 +347,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // "Nein, erfasse stattdessen ..." corrects course instead of declining: the mutation verb
         // re-enables the semantic fallback so the guided flow stays reachable.
         var message = "Nein, erfasse stattdessen einen neuen Mitarbeiter für mich.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -423,7 +423,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // The competing-skill check exists for the unconfirmed keyword fast path only; semantic
         // matches already pass the confirmation gate, so an extra detection would be wasted work.
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -437,7 +437,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task SemanticFallback_RetrievalThrows_IsSwallowedAndReturnsNull()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter anlegen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns<RetrievalResult>(_ => throw new InvalidOperationException("boom"));
 
         var plan = await _service.ResolveAsync(message);
@@ -449,7 +449,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task GuaranteedSkillNamesAsync_MessageWithoutTriggerKeyword_ButStrongSemanticHit_GuaranteesStepSkills()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
@@ -461,7 +461,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task GuaranteedSkillNamesAsync_MessageWithoutTriggerKeyword_WeakSemanticHit_ReturnsEmpty()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.2));
 
         var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
@@ -485,7 +485,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task GuaranteedSkillNamesThenResolve_SameMessage_RunsSemanticFallbackOnlyOnce()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
@@ -502,7 +502,7 @@ public class RecipeEngineServiceSemanticFallbackTests
     public async Task GuaranteedSkillNamesThenResolve_SameMessageWithoutAnyMatch_RunsSemanticFallbackOnlyOnce()
     {
         var message = "Irgendwas ganz anderes, das mit keinem Rezept zu tun hat.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
 
         var skills = await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, message);
@@ -521,7 +521,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // action. The mutation-intent gate must keep the semantic fallback from hijacking the turn into
         // a recipe confirmation. The stubbed strong hit proves the gate — not a weak score — blocks it.
         var message = "Welche Gruppen gibt es bei uns?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.82));
 
         var plan = await _service.ResolveAsync(message);
@@ -538,7 +538,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         // question-gate must let it reach the guided flow (positive mutation-signal gating would starve
         // exactly these terse phrasings). Counterpart to the read-question suppression above.
         var message = "Neuen Mitarbeiter, bitte.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(RecipeResult("onboard-employee", 0.64));
 
         var plan = await _service.ResolveAsync(message);

@@ -58,7 +58,7 @@ public class SkillToolsetAssemblerProposalConfirmationTests
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
 
         _retrievalQueryBuilder = Substitute.For<IRetrievalQueryBuilder>();
