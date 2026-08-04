@@ -34,6 +34,7 @@ public class SlackOwnerBridgeServiceTests
     private IOwnerMessengerReader _ownerMessengerReader = null!;
     private IMessagingService _messagingService = null!;
     private ISettingsRepository _settingsRepository = null!;
+    private IUnitOfWork _unitOfWork = null!;
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private IMediator _mediator = null!;
     private SlackOwnerBridgeService _sut = null!;
@@ -44,6 +45,7 @@ public class SlackOwnerBridgeServiceTests
         _ownerMessengerReader = Substitute.For<IOwnerMessengerReader>();
         _messagingService = Substitute.For<IMessagingService>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
+        _unitOfWork = Substitute.For<IUnitOfWork>();
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _mediator = Substitute.For<IMediator>();
 
@@ -54,6 +56,7 @@ public class SlackOwnerBridgeServiceTests
             _ownerMessengerReader,
             _messagingService,
             _settingsRepository,
+            _unitOfWork,
             _planningAudienceResolver,
             _mediator,
             NullLogger<SlackOwnerBridgeService>.Instance);
@@ -85,6 +88,57 @@ public class SlackOwnerBridgeServiceTests
         await _settingsRepository.Received(1).UpsertSettingAsync(SettingsConstants.SLACK_OWNER_BRIDGE_WATERMARK, Arg.Any<string>());
         await _messagingService.DidNotReceive().GetMessagesAsync(
             Arg.Any<Guid?>(), Arg.Any<MessageDirection?>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunCycleAsync_FirstEverCycle_CommitsTheWatermarkInsteadOfOnlyStagingIt()
+    {
+        SetUpOwnerAlias();
+        _settingsRepository.GetSetting(SettingsConstants.SLACK_OWNER_BRIDGE_WATERMARK).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
+
+        await _sut.RunCycleAsync();
+
+        // UpsertSettingAsync alone only stages the row on the DbContext. Without the commit the
+        // watermark never lands, every later cycle sees null again, takes this same first-ever
+        // branch and returns 0 - the bridge would never process a single message.
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task RunCycleAsync_AfterProcessing_CommitsTheAdvancedWatermark()
+    {
+        SetUpOwnerAlias();
+        SetUpWatermark(DateTime.UtcNow.AddMinutes(-5));
+        _messagingService.GetMessagesAsync(
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+            .Returns(new List<Message> { BuildMessage(DateTime.UtcNow, content: "Test") });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMResponse { Message = "Antwort" });
+
+        await _sut.RunCycleAsync();
+
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task RunCycleAsync_NewMessage_PassesTheConfiguredDefaultLanguageToTheLlm()
+    {
+        SetUpOwnerAlias();
+        SetUpWatermark(DateTime.UtcNow.AddMinutes(-5));
+        _settingsRepository.GetSetting(SettingKeys.DefaultLanguage).Returns(
+            new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.DefaultLanguage, Value = "de" });
+        _messagingService.GetMessagesAsync(
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+            .Returns(new List<Message> { BuildMessage(DateTime.UtcNow, content: "Wie weit bist du") });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMResponse { Message = "Antwort" });
+
+        await _sut.RunCycleAsync();
+
+        // No browser session exists behind an inbound message, so without this the model answers
+        // in English no matter which language was written to it.
+        await _mediator.Received(1).Send(
+            Arg.Is<ProcessLLMMessageCommand>(c => c.Language == "de"), Arg.Any<CancellationToken>());
     }
 
     [Test]
