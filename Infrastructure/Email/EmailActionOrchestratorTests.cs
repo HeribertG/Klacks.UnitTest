@@ -11,6 +11,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Associations;
+using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
@@ -34,6 +35,7 @@ public class EmailActionOrchestratorTests
     private ISealedDayRepository _sealedDayRepository = null!;
     private IScheduleCommandKeywordProvider _keywordProvider = null!;
     private IClientContractDataProvider _contractDataProvider = null!;
+    private IEmailCapacityAdvisor _capacityAdvisor = null!;
     private EmailActionOrchestrator _orchestrator = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -74,11 +76,24 @@ public class EmailActionOrchestratorTests
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "done"));
 
+        _capacityAdvisor = Substitute.For<IEmailCapacityAdvisor>();
+        _capacityAdvisor.JudgeAsync(
+                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
+            .Returns(EmailCapacityVerdict.NotEvaluated());
+
         _orchestrator = new EmailActionOrchestrator(
             _autonomyPreferences, _audienceResolver, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
+            _capacityAdvisor,
             Substitute.For<ILogger<EmailActionOrchestrator>>());
+    }
+
+    private void CapacityGap(string note = "Capacity reserve is not sufficient.")
+    {
+        _capacityAdvisor.JudgeAsync(
+                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
+            .Returns(new EmailCapacityVerdict(true, true, note));
     }
 
     private void AdminLevel(AutonomyLevel level)
@@ -160,6 +175,85 @@ public class EmailActionOrchestratorTests
         var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.CustomerMessage, EntityTypeEnum.Customer));
 
         outcome.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task CapacityGap_BlocksTheAutomaticPlaceholder_EvenAtFullyAutonomous()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        CapacityGap();
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+
+        // Recording the placeholder is what consumes the reserve, so a gap must never be written
+        // automatically - the planner decides whether the team can carry it.
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task CapacityGap_ReportsTheReasonInsteadOfAPlainSuggestion()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        CapacityGap("Capacity reserve for group 'Bern' is not sufficient: 3 time window(s) exceed the 80% ceiling.");
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+
+        outcome!.Description.ShouldContain("not sufficient");
+        outcome.Description.ShouldContain("80% ceiling");
+    }
+
+    [Test]
+    public async Task CapacityNote_AlsoReachesThePlannerWhenTheLevelOnlySuggests()
+    {
+        AdminLevel(AutonomyLevel.Propose);
+        _capacityAdvisor.JudgeAsync(
+                Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
+            .Returns(new EmailCapacityVerdict(true, false, "Capacity reserve holds: peak utilization 55% stays within the 80% ceiling."));
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+
+        // The figure is what lets a planner judge the suggestion; withholding it below FullyAutonomous
+        // would make the capacity check useless in exactly the setup most installations run.
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("peak utilization 55%");
+    }
+
+    [Test]
+    public async Task TrainingWording_PicksTheTrainingAbsenceType_NotTheVacationOne()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var training = AbsenceType("Schulung", "Training");
+        _absenceRepository.List().Returns([AbsenceType("Ferien", "Vacation"), training]);
+        var captured = CaptureSkillInvocations();
+
+        var email = Email();
+        email.Subject = "Anmeldung Schulung Erste Hilfe";
+
+        var outcome = await _orchestrator.ExecuteAsync(email, Analysis(EmailIntent.VacationRequest));
+
+        outcome!.Executed.ShouldBeTrue();
+        captured.ShouldContain(i => i.SkillName == "add_break_placeholder"
+                                    && (Guid)i.Parameters["absenceId"] == training.Id);
+    }
+
+    [Test]
+    public async Task WithoutTrainingWording_TheVacationAbsenceTypeIsUsed()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var vacation = AbsenceType("Ferien", "Vacation");
+        _absenceRepository.List().Returns([vacation, AbsenceType("Schulung", "Training")]);
+        var captured = CaptureSkillInvocations();
+
+        var email = Email();
+        email.Subject = "Ferienwunsch Juli";
+
+        var outcome = await _orchestrator.ExecuteAsync(email, Analysis(EmailIntent.VacationRequest));
+
+        outcome!.Executed.ShouldBeTrue();
+        captured.ShouldContain(i => i.SkillName == "add_break_placeholder"
+                                    && (Guid)i.Parameters["absenceId"] == vacation.Id);
     }
 
     [Test]
