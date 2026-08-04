@@ -23,6 +23,7 @@ public class SubmitCorrectionCommandHandlerTests
     private const int HashPrefixLength = 16;
 
     private ISkillSelectionTrajectoryRepository _repository = null!;
+    private ILLMBackgroundTaskService _backgroundTasks = null!;
     private ILogger<SubmitCorrectionCommandHandler> _logger = null!;
     private SubmitCorrectionCommandHandler _handler = null!;
 
@@ -30,8 +31,9 @@ public class SubmitCorrectionCommandHandlerTests
     public void SetUp()
     {
         _repository = Substitute.For<ISkillSelectionTrajectoryRepository>();
+        _backgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
         _logger = Substitute.For<ILogger<SubmitCorrectionCommandHandler>>();
-        _handler = new SubmitCorrectionCommandHandler(_repository, _logger);
+        _handler = new SubmitCorrectionCommandHandler(_repository, _backgroundTasks, _logger);
     }
 
     [Test]
@@ -57,6 +59,91 @@ public class SubmitCorrectionCommandHandlerTests
         existing.WasCorrected.ShouldBeTrue();
         existing.CorrectionType.ShouldBe(CorrectionTypes.WrongSkill);
         await _repository.Received(1).UpdateAsync(existing, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_WrongSkillCorrection_TriggersAReflectionScopedToTheChosenSkill()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var agentId = Guid.NewGuid();
+        var existing = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = agentId,
+            UserId = userId,
+            UserMessageHash = ExpectedHashPrefix(message),
+            LlmChosenSkill = "delete_client"
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill
+        }, CancellationToken.None);
+
+        _backgroundTasks.Received(1).TriggerReflection(Arg.Is<TurnReflectionRequest>(r =>
+            r.AgentId == agentId &&
+            r.Trigger == ReflectionTriggers.UserCorrection &&
+            r.ScopeKey == "delete_client"));
+    }
+
+    [Test]
+    public async Task Handle_NoneNeededCorrection_TriggersNoReflection()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var existing = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = Guid.NewGuid(),
+            UserId = userId,
+            UserMessageHash = ExpectedHashPrefix(message),
+            LlmChosenSkill = "delete_client"
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.NoneNeeded
+        }, CancellationToken.None);
+
+        // NoneNeeded says the turn was fine after all; drawing a lesson from it would teach a mistake
+        // that never happened.
+        _backgroundTasks.DidNotReceive().TriggerReflection(Arg.Any<TurnReflectionRequest>());
+    }
+
+    [Test]
+    public async Task Handle_CorrectionWithoutAChosenSkill_TriggersNoReflection()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var existing = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = Guid.NewGuid(),
+            UserId = userId,
+            UserMessageHash = ExpectedHashPrefix(message),
+            LlmChosenSkill = null
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill
+        }, CancellationToken.None);
+
+        // Without a subject the lesson would have no scope and would apply everywhere.
+        _backgroundTasks.DidNotReceive().TriggerReflection(Arg.Any<TurnReflectionRequest>());
     }
 
     [Test]
