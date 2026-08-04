@@ -12,6 +12,11 @@ namespace Klacks.UnitTest.Infrastructure.KnowledgeIndex;
 [TestFixture]
 public class ToolsetCacheShadowTests
 {
+    // The existing cases are about keying and reuse, not about risk, so every skill they use counts
+    // as read-only and their expectations stay unaffected by the writes= figures.
+    private static readonly IReadOnlySet<string> ReadOnlyAll =
+        new HashSet<string>(StringComparer.Ordinal) { "a", "b", "c" };
+
     private CapturingLogger _logger = null!;
     private ToolsetCacheShadow _shadow = null!;
 
@@ -30,7 +35,7 @@ public class ToolsetCacheShadowTests
     [Test]
     public void ObserveAndRecord_FirstTimeForASignature_ReportsAMiss()
     {
-        _shadow.ObserveAndRecord(["search_employees"], [], ["a", "b"]);
+        _shadow.ObserveAndRecord(["search_employees"], [], ["a", "b"], ReadOnlyAll);
 
         Line().ShouldContain("hit=0");
     }
@@ -38,8 +43,8 @@ public class ToolsetCacheShadowTests
     [Test]
     public void ObserveAndRecord_SameSignatureAndSameResult_ReportsAgreement()
     {
-        _shadow.ObserveAndRecord(["search_employees"], [], ["a", "b"]);
-        _shadow.ObserveAndRecord(["search_employees"], [], ["b", "a"]);
+        _shadow.ObserveAndRecord(["search_employees"], [], ["a", "b"], ReadOnlyAll);
+        _shadow.ObserveAndRecord(["search_employees"], [], ["b", "a"], ReadOnlyAll);
 
         var second = _logger.Messages[^1];
         second.ShouldContain("hit=1");
@@ -51,8 +56,8 @@ public class ToolsetCacheShadowTests
     [Test]
     public void ObserveAndRecord_SameSignatureButDifferentResult_ReportsDisagreementWithCounts()
     {
-        _shadow.ObserveAndRecord(["search_employees"], [], ["a", "b"]);
-        _shadow.ObserveAndRecord(["search_employees"], [], ["b", "c"]);
+        _shadow.ObserveAndRecord(["search_employees"], [], ["a", "b"], ReadOnlyAll);
+        _shadow.ObserveAndRecord(["search_employees"], [], ["b", "c"], ReadOnlyAll);
 
         var second = _logger.Messages[^1];
         second.ShouldContain("hit=1");
@@ -65,8 +70,8 @@ public class ToolsetCacheShadowTests
     [Test]
     public void ObserveAndRecord_SameSignatureDifferentPermissions_DoesNotReuseTheEntry()
     {
-        _shadow.ObserveAndRecord(["search_employees"], ["right-a"], ["a"]);
-        _shadow.ObserveAndRecord(["search_employees"], ["right-b"], ["a"]);
+        _shadow.ObserveAndRecord(["search_employees"], ["right-a"], ["a"], ReadOnlyAll);
+        _shadow.ObserveAndRecord(["search_employees"], ["right-b"], ["a"], ReadOnlyAll);
 
         _logger.Messages[^1].ShouldContain("hit=0");
     }
@@ -76,9 +81,9 @@ public class ToolsetCacheShadowTests
     [Test]
     public void ObserveAndRecord_AfterInvalidate_DoesNotReusePreviousEntries()
     {
-        _shadow.ObserveAndRecord(["search_employees"], [], ["a"]);
+        _shadow.ObserveAndRecord(["search_employees"], [], ["a"], ReadOnlyAll);
         _shadow.Invalidate();
-        _shadow.ObserveAndRecord(["search_employees"], [], ["a"]);
+        _shadow.ObserveAndRecord(["search_employees"], [], ["a"], ReadOnlyAll);
 
         _logger.Messages[^1].ShouldContain("hit=0");
     }
@@ -88,7 +93,7 @@ public class ToolsetCacheShadowTests
     [Test]
     public void ObserveAndRecord_NoKeywordMatch_ReportsNotApplicable()
     {
-        _shadow.ObserveAndRecord([], [], ["a"]);
+        _shadow.ObserveAndRecord([], [], ["a"], ReadOnlyAll);
 
         Line().ShouldContain("applicable=0");
     }
@@ -105,9 +110,49 @@ public class ToolsetCacheShadowTests
         var shadow = new ToolsetCacheShadow(
             new MemoryCache(new MemoryCacheOptions { SizeLimit = 1000 }), configuration, _logger);
 
-        shadow.ObserveAndRecord(["search_employees"], [], ["a"]);
+        shadow.ObserveAndRecord(["search_employees"], [], ["a"], ReadOnlyAll);
 
         _logger.Messages.ShouldBeEmpty();
+    }
+
+    // The writes figure is what tells the evaluation whether a "read-only turns may use the cache"
+    // rule would still cover enough traffic to be worth having.
+    [Test]
+    public void ObserveAndRecord_AllSkillsReadOnly_ReportsZeroWrites()
+    {
+        _shadow.ObserveAndRecord(["search_employees"], [], ["a", "b"], ReadOnlyAll);
+
+        Line().ShouldContain("writes=0");
+    }
+
+    [Test]
+    public void ObserveAndRecord_SomeSkillsWrite_CountsOnlyThose()
+    {
+        _shadow.ObserveAndRecord(["delete_client"], [], ["a", "delete_client", "update_client"], ReadOnlyAll);
+
+        Line().ShouldContain("writes=2");
+    }
+
+    // Deliberately conservative: a skill disabled between writing and reading an entry must count as
+    // the dangerous kind, never as harmless.
+    [Test]
+    public void ObserveAndRecord_SkillNotInTheReadOnlySet_CountsAsWriting()
+    {
+        _shadow.ObserveAndRecord(["search_employees"], [], ["unknown_skill"], ReadOnlyAll);
+
+        Line().ShouldContain("writes=1");
+    }
+
+    [Test]
+    public void ObserveAndRecord_OnAHit_ReportsWritesForBothSides()
+    {
+        _shadow.ObserveAndRecord(["delete_client"], [], ["a", "delete_client"], ReadOnlyAll);
+        _shadow.ObserveAndRecord(["delete_client"], [], ["a", "b"], ReadOnlyAll);
+
+        var second = _logger.Messages[^1];
+        second.ShouldContain("hit=1");
+        second.ShouldContain("writes=0");
+        second.ShouldContain("cachedWrites=1");
     }
 
     private string Line() => _logger.Messages.Single(m => m.Contains("[cache-shadow]"));
