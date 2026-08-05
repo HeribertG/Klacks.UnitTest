@@ -49,8 +49,11 @@ public class AnswerGroundingSentinelProbeTests
     private AnswerGroundingSentinelProbe Probe(string mode = "Shadow")
     {
         var options = new AnswerGroundingOptions(mode);
+        var nameResolver = Substitute.For<IAnswerGroundingNameResolver>();
+        nameResolver.ResolveClientNamesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
         var evaluator = new AnswerGroundingEvaluator(options, _repository, _memoryRepository,
-            _backgroundTasks, NullLogger<AnswerGroundingEvaluator>.Instance);
+            nameResolver, _backgroundTasks, NullLogger<AnswerGroundingEvaluator>.Instance);
         return new AnswerGroundingSentinelProbe(options, evaluator, _repository,
             NullLogger<AnswerGroundingSentinelProbe>.Instance);
     }

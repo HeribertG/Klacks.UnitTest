@@ -31,6 +31,7 @@ public class AnswerGroundingEvaluatorTests
     {
         _finding = null;
         _counter = null;
+        _nameResolver = null!;
         _repository = Substitute.For<IAnswerGroundingRepository>();
         _repository.AddFindingAsync(Arg.Do<AnswerGroundingFinding>(f => _finding = f), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
@@ -42,12 +43,22 @@ public class AnswerGroundingEvaluatorTests
     }
 
     private ILLMBackgroundTaskService _backgroundTasks = null!;
+    private IAnswerGroundingNameResolver _nameResolver = null!;
 
     private AnswerGroundingEvaluator Evaluator(string mode = "Shadow")
     {
         _backgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
+        _nameResolver ??= EmptyNameResolver();
         return new AnswerGroundingEvaluator(new AnswerGroundingOptions(mode), _repository, _memoryRepository,
-            _backgroundTasks, NullLogger<AnswerGroundingEvaluator>.Instance);
+            _nameResolver, _backgroundTasks, NullLogger<AnswerGroundingEvaluator>.Instance);
+    }
+
+    private static IAnswerGroundingNameResolver EmptyNameResolver()
+    {
+        var resolver = Substitute.For<IAnswerGroundingNameResolver>();
+        resolver.ResolveClientNamesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string>());
+        return resolver;
     }
 
     private static LLMContext Ctx(string message = "Wie sieht der Plan aus?") => new()
@@ -239,5 +250,84 @@ public class AnswerGroundingEvaluatorTests
         _counter.ShouldNotBeNull();
         _counter!.TurnsNoVerdict.ShouldBe(1);
         _counter.TurnsWithFindings.ShouldBe(0);
+    }
+
+    private void ResolverReturns(params string[] names)
+    {
+        _nameResolver = Substitute.For<IAnswerGroundingNameResolver>();
+        _nameResolver.ResolveClientNamesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(names.ToList());
+    }
+
+    [Test]
+    public async Task UncoveredResolvedName_WritesTierTwoFinding_WithoutPersistingTheNameValue()
+    {
+        ResolverReturns("Anna Meier");
+
+        await Evaluator().EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Die Schicht von Anna Meier wurde angepasst.", [DataCall("""{"Count":1}""")]);
+
+        _finding.ShouldNotBeNull();
+        _finding!.Tier.ShouldBe(2);
+        _finding.PrimaryClaimKind.ShouldBe("Name");
+        _finding.UncoveredClaimsJson.ShouldContain("Name");
+        _finding.UncoveredClaimsJson.ShouldNotContain("Anna");
+        _finding.UncoveredClaimsJson.ShouldNotContain("Meier");
+    }
+
+    [Test]
+    public async Task NameCoveredByUserMessage_IsClean_WithoutResolverCall()
+    {
+        _nameResolver = Substitute.For<IAnswerGroundingNameResolver>();
+
+        await Evaluator().EvaluateAsync(Guid.NewGuid(),
+            Ctx("Wo arbeitet Anna Meier diese Woche?"),
+            "Anna Meier arbeitet diese Woche im Westen.", []);
+
+        _finding.ShouldBeNull();
+        _counter!.TurnsClean.ShouldBe(1);
+        await _nameResolver.DidNotReceive()
+            .ResolveClientNamesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UnresolvedNameCandidates_StaySilent()
+    {
+        await Evaluator().EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Die Neue Planung ist fertig.", [DataCall("""{"Count":1}""")]);
+
+        _finding.ShouldBeNull();
+        _counter!.TurnsClean.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task UncoveredUuid_BeatsUncoveredName()
+    {
+        ResolverReturns("Anna Meier");
+
+        await Evaluator().EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Anna Meier hat die Schicht 3f2a0c1d-9b4e-4f6a-8c2d-1234567890ab übernommen.",
+            [DataCall("""{"Count":1}""")]);
+
+        _finding.ShouldNotBeNull();
+        _finding!.Tier.ShouldBe(1);
+        _finding.PrimaryClaimKind.ShouldBe("Uuid");
+    }
+
+    [Test]
+    public async Task ActiveMode_RepeatedNameScope_LessonIsStructuralWithoutTheName()
+    {
+        ResolverReturns("Anna Meier");
+        _repository.CountFindingsAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(2);
+        var evaluator = Evaluator("Active");
+
+        await evaluator.EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Die Schicht von Anna Meier wurde angepasst.", [DataCall("""{"Count":1}""")]);
+
+        _backgroundTasks.Received(1).TriggerReflection(Arg.Is<TurnReflectionRequest>(r =>
+            r.WhatWentWrong.Contains("name value(s)") &&
+            !r.WhatWentWrong.Contains("Anna") &&
+            !r.WhatWentWrong.Contains("Meier")));
     }
 }
