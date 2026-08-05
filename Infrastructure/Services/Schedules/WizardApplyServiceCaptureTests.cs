@@ -163,5 +163,29 @@ public class WizardApplyServiceCaptureTests
         captured.GroupId.ShouldBe(groupId);
         captured.RunGroupId.ShouldNotBeNull();
         captured.Engine.ShouldBe(WizardEngine.TokenEvolution);
+
+        await _captureRepository.DidNotReceiveWithAnyArgs().SupersedeOpenDirectCapturesAsync(
+            default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task ApplyAsync_SupersedesOpenDirectCapturesOfTheSamePeriod()
+    {
+        var jobId = Guid.NewGuid();
+        StoreScenario(jobId);
+
+        WizardRunCapture? captured = null;
+        await _captureRepository.AddAsync(Arg.Do<WizardRunCapture>(c => captured = c),
+            Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>());
+
+        await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
+
+        captured.ShouldNotBeNull();
+        await _captureRepository.Received(1).SupersedeOpenDirectCapturesAsync(
+            captured!.Id,
+            WizardEngine.TokenEvolution,
+            captured.PeriodFrom,
+            captured.PeriodUntil,
+            Arg.Any<CancellationToken>());
     }
 }

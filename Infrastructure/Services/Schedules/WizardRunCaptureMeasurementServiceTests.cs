@@ -98,4 +98,149 @@ public class WizardRunCaptureMeasurementServiceTests
         await _repository.DidNotReceiveWithAnyArgs().SetMeasurementAsync(
             default, default, default, default, default, default);
     }
+
+    [Test]
+    public async Task MeasureAsync_CaptureWithAnyOutcome_IsNoOp()
+    {
+        var capture = Capture(outcome: CaptureOutcome.Superseded);
+
+        await _sut.MeasureAsync(capture, CaptureOutcome.Accepted);
+
+        await _repository.DidNotReceiveWithAnyArgs().SetMeasurementAsync(
+            default, default, default, default, default, default);
+    }
+
+    private WizardRunCapture ScenarioCapture(Guid scenarioId)
+    {
+        var capture = Capture();
+        capture.ApplyKind = WizardApplyKind.Scenario;
+        capture.ScenarioId = scenarioId;
+        _repository.LoadMeasurementDataAsync(capture, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardRunMeasurementData(
+                new[] { Cell(isDeleted: false) },
+                new HashSet<(Guid, DateOnly)>()));
+        return capture;
+    }
+
+    private void ScenarioState(Guid scenarioId, AnalyseScenarioStatus status, bool isDeleted = false)
+        => _repository.GetScenarioStateAsync(scenarioId, Arg.Any<CancellationToken>())
+            .Returns(new CaptureScenarioState(status, isDeleted));
+
+    [Test]
+    public async Task MeasureResolvedAsync_DirectApplyOnSeal_MeasuresAsAccepted()
+    {
+        var capture = Capture();
+        _repository.LoadMeasurementDataAsync(capture, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardRunMeasurementData(
+                new[] { Cell(isDeleted: false) },
+                new HashSet<(Guid, DateOnly)>()));
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: true);
+
+        await _repository.Received(1).SetMeasurementAsync(
+            capture.Id, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<DateTime>(),
+            CaptureOutcome.Accepted, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task MeasureResolvedAsync_DirectApplyOnFallback_MeasuresAsExpired()
+    {
+        var capture = Capture();
+        _repository.LoadMeasurementDataAsync(capture, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardRunMeasurementData(
+                new[] { Cell(isDeleted: false) },
+                new HashSet<(Guid, DateOnly)>()));
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: false);
+
+        await _repository.Received(1).SetMeasurementAsync(
+            capture.Id, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<DateTime>(),
+            CaptureOutcome.Expired, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task MeasureResolvedAsync_PromotedScenarioOnSeal_MeasuresAsAccepted()
+    {
+        var scenarioId = Guid.NewGuid();
+        var capture = ScenarioCapture(scenarioId);
+        ScenarioState(scenarioId, AnalyseScenarioStatus.Accepted);
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: true);
+
+        await _repository.Received(1).SetMeasurementAsync(
+            capture.Id, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<DateTime>(),
+            CaptureOutcome.Accepted, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task MeasureResolvedAsync_UndecidedScenarioOnSeal_StampsSupersededWithoutMeasuring()
+    {
+        var scenarioId = Guid.NewGuid();
+        var capture = ScenarioCapture(scenarioId);
+        ScenarioState(scenarioId, AnalyseScenarioStatus.Active);
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: true);
+
+        await _repository.Received(1).SetOutcomeAsync(
+            capture.Id, CaptureOutcome.Superseded, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceiveWithAnyArgs().LoadMeasurementDataAsync(default!, default!, default);
+        await _repository.DidNotReceiveWithAnyArgs().SetMeasurementAsync(
+            default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task MeasureResolvedAsync_UndecidedScenarioOnFallback_StampsExpired()
+    {
+        var scenarioId = Guid.NewGuid();
+        var capture = ScenarioCapture(scenarioId);
+        ScenarioState(scenarioId, AnalyseScenarioStatus.Active);
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: false);
+
+        await _repository.Received(1).SetOutcomeAsync(
+            capture.Id, CaptureOutcome.Expired, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task MeasureResolvedAsync_DeletedScenario_StampsRejectedWithoutMeasuring()
+    {
+        var scenarioId = Guid.NewGuid();
+        var capture = ScenarioCapture(scenarioId);
+        ScenarioState(scenarioId, AnalyseScenarioStatus.Active, isDeleted: true);
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: true);
+
+        await _repository.Received(1).SetOutcomeAsync(
+            capture.Id, CaptureOutcome.Rejected, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceiveWithAnyArgs().LoadMeasurementDataAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task MeasureResolvedAsync_RejectedScenario_StampsRejectedWithoutMeasuring()
+    {
+        var scenarioId = Guid.NewGuid();
+        var capture = ScenarioCapture(scenarioId);
+        ScenarioState(scenarioId, AnalyseScenarioStatus.Rejected);
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: true);
+
+        await _repository.Received(1).SetOutcomeAsync(
+            capture.Id, CaptureOutcome.Rejected, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceiveWithAnyArgs().SetMeasurementAsync(
+            default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task MeasureResolvedAsync_MissingScenarioRow_StampsRejected()
+    {
+        var scenarioId = Guid.NewGuid();
+        var capture = ScenarioCapture(scenarioId);
+        _repository.GetScenarioStateAsync(scenarioId, Arg.Any<CancellationToken>())
+            .Returns((CaptureScenarioState?)null);
+
+        await _sut.MeasureResolvedAsync(capture, periodSealed: true);
+
+        await _repository.Received(1).SetOutcomeAsync(
+            capture.Id, CaptureOutcome.Rejected, Arg.Any<CancellationToken>());
+    }
 }

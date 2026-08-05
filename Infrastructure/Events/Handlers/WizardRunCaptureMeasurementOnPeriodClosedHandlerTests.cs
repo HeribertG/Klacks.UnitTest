@@ -41,7 +41,7 @@ public class WizardRunCaptureMeasurementOnPeriodClosedHandlerTests
     };
 
     [Test]
-    public async Task HandleAsync_MeasuresEachUnmeasuredCaptureAsAccepted()
+    public async Task HandleAsync_ResolvesEachUnmeasuredCaptureAsSealed()
     {
         var c1 = Capture();
         var c2 = Capture();
@@ -51,8 +51,9 @@ public class WizardRunCaptureMeasurementOnPeriodClosedHandlerTests
 
         await _sut.HandleAsync(SealEvent());
 
-        await _measurementService.Received(1).MeasureAsync(c1, CaptureOutcome.Accepted, Arg.Any<CancellationToken>());
-        await _measurementService.Received(1).MeasureAsync(c2, CaptureOutcome.Accepted, Arg.Any<CancellationToken>());
+        await _measurementService.Received(1).MeasureResolvedAsync(c1, true, Arg.Any<CancellationToken>());
+        await _measurementService.Received(1).MeasureResolvedAsync(c2, true, Arg.Any<CancellationToken>());
+        await _measurementService.DidNotReceiveWithAnyArgs().MeasureAsync(default!, default, default);
     }
 
     [Test]
@@ -63,12 +64,12 @@ public class WizardRunCaptureMeasurementOnPeriodClosedHandlerTests
         _repository.GetUnmeasuredForSealAsync(
                 Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), GroupId, Arg.Any<CancellationToken>())
             .Returns(new[] { failing, healthy });
-        _measurementService.MeasureAsync(failing, Arg.Any<CaptureOutcome>(), Arg.Any<CancellationToken>())
+        _measurementService.MeasureResolvedAsync(failing, Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("boom"));
 
         await Should.NotThrowAsync(() => _sut.HandleAsync(SealEvent()));
 
-        await _measurementService.Received(1).MeasureAsync(healthy, CaptureOutcome.Accepted, Arg.Any<CancellationToken>());
+        await _measurementService.Received(1).MeasureResolvedAsync(healthy, true, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -81,6 +82,6 @@ public class WizardRunCaptureMeasurementOnPeriodClosedHandlerTests
         await _sut.HandleAsync(SealEvent());
 
         await _measurementService.DidNotReceiveWithAnyArgs()
-            .MeasureAsync(default!, default, default);
+            .MeasureResolvedAsync(default!, default, default);
     }
 }

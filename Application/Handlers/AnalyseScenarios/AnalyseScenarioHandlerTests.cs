@@ -435,6 +435,7 @@ public class DeleteAnalyseScenarioCommandHandlerTests
     private IAnalyseScenarioRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IAnalyseScenarioService _scenarioService = null!;
+    private IWizardRunCaptureRepository _captureRepository = null!;
     private DeleteAnalyseScenarioCommandHandler _handler = null!;
 
     [SetUp]
@@ -443,9 +444,10 @@ public class DeleteAnalyseScenarioCommandHandlerTests
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
+        _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
 
         var logger = Substitute.For<ILogger<DeleteAnalyseScenarioCommandHandler>>();
-        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
+        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, _captureRepository, logger);
     }
 
     [Test]
@@ -503,6 +505,129 @@ public class DeleteAnalyseScenarioCommandHandlerTests
         // Assert
         result.ShouldBeTrue();
         await _repository.Received(1).Delete(scenarioId);
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Should_Stamp_Linked_Capture_As_Rejected_When_Scenario_Is_Deleted()
+    {
+        // Arrange
+        var scenarioId = Guid.NewGuid();
+        _repository.Get(scenarioId).Returns(new AnalyseScenario
+        {
+            Id = scenarioId,
+            Name = "To Delete",
+            Token = Guid.NewGuid(),
+            Status = AnalyseScenarioStatus.Active,
+        });
+        var capture = new WizardRunCapture { Id = Guid.NewGuid(), ScenarioId = scenarioId };
+        _captureRepository.GetByScenarioIdAsync(scenarioId, Arg.Any<CancellationToken>()).Returns(capture);
+
+        // Act
+        await _handler.Handle(new DeleteAnalyseScenarioCommand(scenarioId), CancellationToken.None);
+
+        // Assert
+        await _captureRepository.Received(1).SetOutcomeAsync(
+            capture.Id, CaptureOutcome.Rejected, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Should_Not_Stamp_Any_Outcome_When_Scenario_Has_No_Capture()
+    {
+        // Arrange
+        var scenarioId = Guid.NewGuid();
+        _repository.Get(scenarioId).Returns(new AnalyseScenario
+        {
+            Id = scenarioId,
+            Name = "To Delete",
+            Token = Guid.NewGuid(),
+            Status = AnalyseScenarioStatus.Active,
+        });
+        _captureRepository.GetByScenarioIdAsync(scenarioId, Arg.Any<CancellationToken>())
+            .Returns((WizardRunCapture?)null);
+
+        // Act
+        await _handler.Handle(new DeleteAnalyseScenarioCommand(scenarioId), CancellationToken.None);
+
+        // Assert
+        await _captureRepository.DidNotReceiveWithAnyArgs().SetOutcomeAsync(default, default, default);
+    }
+}
+
+[TestFixture]
+public class DeleteAllAnalyseScenariosCommandHandlerTests
+{
+    private IAnalyseScenarioRepository _repository = null!;
+    private IUnitOfWork _unitOfWork = null!;
+    private IAnalyseScenarioService _scenarioService = null!;
+    private IWizardRunCaptureRepository _captureRepository = null!;
+    private DeleteAllAnalyseScenariosCommandHandler _handler = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _repository = Substitute.For<IAnalyseScenarioRepository>();
+        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _scenarioService = Substitute.For<IAnalyseScenarioService>();
+        _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
+
+        var logger = Substitute.For<ILogger<DeleteAllAnalyseScenariosCommandHandler>>();
+        _handler = new DeleteAllAnalyseScenariosCommandHandler(
+            _repository, _scenarioService, _unitOfWork, _captureRepository, logger);
+    }
+
+    private static AnalyseScenario Scenario() => new()
+    {
+        Id = Guid.NewGuid(),
+        Token = Guid.NewGuid(),
+        Name = "To delete",
+        Status = AnalyseScenarioStatus.Active,
+    };
+
+    [Test]
+    public async Task Should_Stamp_Every_Linked_Capture_As_Rejected()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var first = Scenario();
+        var second = Scenario();
+        _repository.GetByGroupAsync(groupId, Arg.Any<CancellationToken>())
+            .Returns(new List<AnalyseScenario> { first, second });
+
+        var firstCapture = new WizardRunCapture { Id = Guid.NewGuid(), ScenarioId = first.Id };
+        var secondCapture = new WizardRunCapture { Id = Guid.NewGuid(), ScenarioId = second.Id };
+        _captureRepository.GetByScenarioIdAsync(first.Id, Arg.Any<CancellationToken>()).Returns(firstCapture);
+        _captureRepository.GetByScenarioIdAsync(second.Id, Arg.Any<CancellationToken>()).Returns(secondCapture);
+
+        // Act
+        var result = await _handler.Handle(new DeleteAllAnalyseScenariosCommand(groupId), CancellationToken.None);
+
+        // Assert
+        result.ShouldBeTrue();
+        await _repository.Received(1).Delete(first.Id);
+        await _repository.Received(1).Delete(second.Id);
+        await _captureRepository.Received(1).SetOutcomeAsync(
+            firstCapture.Id, CaptureOutcome.Rejected, Arg.Any<CancellationToken>());
+        await _captureRepository.Received(1).SetOutcomeAsync(
+            secondCapture.Id, CaptureOutcome.Rejected, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Should_Skip_Scenarios_Without_Capture()
+    {
+        // Arrange
+        var groupId = Guid.NewGuid();
+        var scenario = Scenario();
+        _repository.GetByGroupAsync(groupId, Arg.Any<CancellationToken>())
+            .Returns(new List<AnalyseScenario> { scenario });
+        _captureRepository.GetByScenarioIdAsync(scenario.Id, Arg.Any<CancellationToken>())
+            .Returns((WizardRunCapture?)null);
+
+        // Act
+        await _handler.Handle(new DeleteAllAnalyseScenariosCommand(groupId), CancellationToken.None);
+
+        // Assert
+        await _captureRepository.DidNotReceiveWithAnyArgs().SetOutcomeAsync(default, default, default);
         await _unitOfWork.Received(1).CompleteAsync();
     }
 }

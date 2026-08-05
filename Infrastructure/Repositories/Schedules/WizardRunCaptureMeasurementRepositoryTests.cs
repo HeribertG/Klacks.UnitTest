@@ -387,6 +387,50 @@ public class WizardRunCaptureMeasurementRepositoryTests
     }
 
     [Test]
+    public async Task GetUnmeasuredForSealAsync_ExcludesCapturesCarryingAnyOutcome()
+    {
+        var groupId = Guid.NewGuid();
+        var pending = NewCapture(groupId);
+        var superseded = NewCapture(groupId, outcome: CaptureOutcome.Superseded);
+        var expired = NewCapture(groupId, outcome: CaptureOutcome.Expired);
+        var accepted = NewCapture(groupId, outcome: CaptureOutcome.Accepted);
+        foreach (var capture in new[] { pending, superseded, expired, accepted })
+        {
+            await _sut.AddAsync(capture, Array.Empty<Guid>());
+        }
+
+        var found = await _sut.GetUnmeasuredForSealAsync(PeriodFrom, PeriodUntil, groupId);
+
+        found.Select(c => c.Id).ShouldBe(new[] { pending.Id });
+    }
+
+    [Test]
+    public async Task GetUnmeasuredExpiredAsync_ExcludesCapturesCarryingAnyOutcome()
+    {
+        var pending = NewCapture();
+        var superseded = NewCapture(outcome: CaptureOutcome.Superseded);
+        await _sut.AddAsync(pending, Array.Empty<Guid>());
+        await _sut.AddAsync(superseded, Array.Empty<Guid>());
+
+        var found = await _sut.GetUnmeasuredExpiredAsync(PeriodUntil.AddDays(1));
+
+        found.Select(c => c.Id).ShouldBe(new[] { pending.Id });
+    }
+
+    [Test]
+    public async Task SetMeasurementAsync_DoesNotOverwriteSupersededCapture()
+    {
+        var capture = NewCapture(outcome: CaptureOutcome.Superseded);
+        await _sut.AddAsync(capture, Array.Empty<Guid>());
+
+        await _sut.SetMeasurementAsync(capture.Id, 0.5, 0.5, DateTime.UtcNow, CaptureOutcome.Accepted);
+
+        var stored = await _context.WizardRunCapture.SingleAsync(c => c.Id == capture.Id);
+        stored.Outcome.ShouldBe(CaptureOutcome.Superseded);
+        stored.MeasuredAt.ShouldBeNull();
+    }
+
+    [Test]
     public async Task GetUnmeasuredForSealAsync_NullGroup_MatchesAllGroups()
     {
         var a = NewCapture(Guid.NewGuid());

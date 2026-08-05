@@ -107,4 +107,78 @@ public class WizardRunCaptureRepositoryTests
     {
         await Should.NotThrowAsync(() => _sut.SetOutcomeAsync(Guid.NewGuid(), CaptureOutcome.Rejected));
     }
+
+    [Test]
+    public async Task SupersedeOpenDirectCapturesAsync_StampsOnlyOpenOverlappingDirectCapturesOfSameEngine()
+    {
+        var older = MakeCapture();
+        var newer = MakeCapture();
+        var scenarioCapture = MakeCapture(scenarioId: Guid.NewGuid(), kind: WizardApplyKind.Scenario);
+        var otherEngine = MakeCapture();
+        otherEngine.Engine = WizardEngine.Harmonizer;
+        var alreadyResolved = MakeCapture();
+        alreadyResolved.Outcome = CaptureOutcome.Rejected;
+        var nonOverlapping = MakeCapture();
+        nonOverlapping.PeriodFrom = new DateOnly(2026, 6, 1);
+        nonOverlapping.PeriodUntil = new DateOnly(2026, 6, 30);
+
+        foreach (var capture in new[] { older, newer, scenarioCapture, otherEngine, alreadyResolved, nonOverlapping })
+        {
+            await _sut.AddAsync(capture, new[] { Guid.NewGuid() });
+        }
+
+        var count = await _sut.SupersedeOpenDirectCapturesAsync(
+            newer.Id, WizardEngine.TokenEvolution, newer.PeriodFrom, newer.PeriodUntil);
+
+        count.ShouldBe(1);
+        (await _context.WizardRunCapture.SingleAsync(c => c.Id == older.Id)).Outcome
+            .ShouldBe(CaptureOutcome.Superseded);
+        (await _context.WizardRunCapture.SingleAsync(c => c.Id == newer.Id)).Outcome.ShouldBeNull();
+        (await _context.WizardRunCapture.SingleAsync(c => c.Id == scenarioCapture.Id)).Outcome.ShouldBeNull();
+        (await _context.WizardRunCapture.SingleAsync(c => c.Id == otherEngine.Id)).Outcome.ShouldBeNull();
+        (await _context.WizardRunCapture.SingleAsync(c => c.Id == alreadyResolved.Id)).Outcome
+            .ShouldBe(CaptureOutcome.Rejected);
+        (await _context.WizardRunCapture.SingleAsync(c => c.Id == nonOverlapping.Id)).Outcome.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SupersedeOpenDirectCapturesAsync_SkipsAlreadyMeasuredCaptures()
+    {
+        var measured = MakeCapture();
+        measured.MeasuredAt = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc);
+        await _sut.AddAsync(measured, new[] { Guid.NewGuid() });
+
+        var count = await _sut.SupersedeOpenDirectCapturesAsync(
+            Guid.NewGuid(), WizardEngine.TokenEvolution, measured.PeriodFrom, measured.PeriodUntil);
+
+        count.ShouldBe(0);
+        (await _context.WizardRunCapture.SingleAsync()).Outcome.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetScenarioStateAsync_ReturnsStateOfSoftDeletedScenario()
+    {
+        var scenario = new AnalyseScenario
+        {
+            Id = Guid.NewGuid(),
+            Token = Guid.NewGuid(),
+            Name = "soft deleted",
+            Status = AnalyseScenarioStatus.Active,
+            IsDeleted = true,
+        };
+        _context.AnalyseScenarios.Add(scenario);
+        await _context.SaveChangesAsync();
+
+        var state = await _sut.GetScenarioStateAsync(scenario.Id);
+
+        state.ShouldNotBeNull();
+        state!.IsDeleted.ShouldBeTrue();
+        state.Status.ShouldBe(AnalyseScenarioStatus.Active);
+    }
+
+    [Test]
+    public async Task GetScenarioStateAsync_ReturnsNull_WhenRowIsGone()
+    {
+        (await _sut.GetScenarioStateAsync(Guid.NewGuid())).ShouldBeNull();
+    }
 }
