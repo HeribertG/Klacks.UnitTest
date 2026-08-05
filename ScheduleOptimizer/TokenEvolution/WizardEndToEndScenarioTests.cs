@@ -15,6 +15,8 @@ namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution;
 [TestFixture]
 public class WizardEndToEndScenarioTests
 {
+    private static readonly Guid FdShiftId = new("00000000-0000-0000-0000-000000000311");
+
     [Test]
     public void MinimalFixture_GaFinalScenario_ViolationBreakdown()
     {
@@ -44,9 +46,9 @@ public class WizardEndToEndScenarioTests
 
         var shifts = new[]
         {
-            new CoreShift("shift1", "FD", date1.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
-            new CoreShift("shift2", "FD", date2.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
-            new CoreShift("shift3", "FD", date3.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+            new CoreShift(FdShiftId.ToString(), "FD", date1.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+            new CoreShift(FdShiftId.ToString(), "FD", date2.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
+            new CoreShift(FdShiftId.ToString(), "FD", date3.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0),
         };
 
         var contractDays = new[]

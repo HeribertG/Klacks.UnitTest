@@ -20,7 +20,7 @@ using NUnit.Framework;
 
 namespace Klacks.UnitTest.ScheduleOptimizer.Harmonizer.Research;
 
-[TestFixture]
+[TestFixture, Explicit("Research benchmark - run manually; multi-seed comparison of conductor/evolution/annealing arms.")]
 [Category("HarmonizerResearch")]
 public class HarmonizerBenchmarkTests
 {

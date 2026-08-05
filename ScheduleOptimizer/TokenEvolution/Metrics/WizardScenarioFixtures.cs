@@ -7,11 +7,28 @@ namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution.Metrics;
 /// <summary>
 /// Code fixtures for the wizard regression test suite. Each method returns a deterministic
 /// CoreWizardContext that drives the SlotAuctioneer for the corresponding scenario.
+/// Shift ids are stable Guids repeated across all days of the period - the production wire
+/// format built by WizardShiftBuilder - so the Guid-gated Stage 0 checks (qualification,
+/// blacklist, restricted window) are reachable instead of silently disabled.
 /// </summary>
 internal static class WizardScenarioFixtures
 {
     private const double FullTimeHours = 180;
     private const double SlotHours = 8;
+
+    private const int NightWindowStartMinutes = 22 * 60;
+    private const int NightWindowEndMinutes = 6 * 60;
+    private const int SeasonStartMonth = 1;
+    private const int SeasonStartDay = 1;
+    private const int SeasonEndMonth = 12;
+    private const int SeasonEndDay = 31;
+
+    private const string BlacklistedAgentId = "E-NightOnly";
+    private const string UnqualifiedAgentId = "C-PT1";
+
+    public static readonly Guid EarlyShiftId = new("00000000-0000-0000-0000-000000000301");
+    public static readonly Guid LateShiftId = new("00000000-0000-0000-0000-000000000302");
+    public static readonly Guid NightShiftId = new("00000000-0000-0000-0000-000000000303");
 
     public static CoreWizardContext BernFiveFullTimeHomogeneous()
     {
@@ -31,18 +48,60 @@ internal static class WizardScenarioFixtures
 
     public static CoreWizardContext HeterogeneousMix()
     {
-        var from = new DateOnly(2026, 5, 1);
-        var until = new DateOnly(2026, 5, 31);
-        var agents = new[]
+        var inputs = HeterogeneousMixInputs();
+        return BaseContext(inputs.From, inputs.Until, inputs.Agents, inputs.Shifts);
+    }
+
+    /// <summary>
+    /// Same agents and shifts as <see cref="HeterogeneousMix"/>, but carrying eligibility data:
+    /// <see cref="BlacklistedAgentId"/> is blacklisted for the early shift and
+    /// <see cref="UnqualifiedAgentId"/> lacks the qualification for the night shift on every day
+    /// of the period. Used by the guard tests that prove the Stage 0 checks really fire.
+    /// </summary>
+    public static CoreWizardContext HeterogeneousMixWithEligibilityData()
+    {
+        var inputs = HeterogeneousMixInputs();
+        var preferences = new[]
         {
-            FullTimeAgent("A-FT1"),
-            FullTimeAgent("B-FT2"),
-            PartTimeAgent("C-PT1", 90),
-            PartTimeAgent("D-PT2", 90),
-            NightSpecialistAgent("E-NightOnly"),
+            new CoreShiftPreference(BlacklistedAgentId, EarlyShiftId, ShiftPreferenceKind.Blacklist),
         };
-        var shifts = BuildThreeShiftsPerDay(from, until);
-        return BaseContext(from, until, agents, shifts);
+        var ineligible = new HashSet<(string, Guid, DateOnly)>();
+        for (var d = inputs.From; d <= inputs.Until; d = d.AddDays(1))
+        {
+            ineligible.Add((UnqualifiedAgentId, NightShiftId, d));
+        }
+
+        return BaseContext(
+            inputs.From,
+            inputs.Until,
+            inputs.Agents,
+            inputs.Shifts,
+            shiftPreferences: preferences,
+            ineligibleAssignments: ineligible);
+    }
+
+    /// <summary>
+    /// Same agents and shifts as <see cref="HeterogeneousMix"/> plus a year-round K16 window that
+    /// blocks the night shift between 22:00 and 06:00.
+    /// </summary>
+    public static CoreWizardContext HeterogeneousMixWithRestrictedNightWindow()
+    {
+        var inputs = HeterogeneousMixInputs();
+        var window = new CoreRestrictedTimeWindow(
+            FromMonth: SeasonStartMonth,
+            FromDay: SeasonStartDay,
+            ToMonth: SeasonEndMonth,
+            ToDay: SeasonEndDay,
+            DailyStartMinutes: NightWindowStartMinutes,
+            DailyEndMinutes: NightWindowEndMinutes,
+            RestrictedShiftIds: new HashSet<Guid> { NightShiftId });
+
+        return BaseContext(
+            inputs.From,
+            inputs.Until,
+            inputs.Agents,
+            inputs.Shifts,
+            restrictedTimeWindows: [window]);
     }
 
     public static CoreWizardContext BoundaryWithPriorWorks()
@@ -69,6 +128,22 @@ internal static class WizardScenarioFixtures
             SchedulingMinPauseHours = 11,
             BoundaryLockedWorks = boundaryLocked,
         };
+    }
+
+    private static (DateOnly From, DateOnly Until, IReadOnlyList<CoreAgent> Agents, IReadOnlyList<CoreShift> Shifts)
+        HeterogeneousMixInputs()
+    {
+        var from = new DateOnly(2026, 5, 1);
+        var until = new DateOnly(2026, 5, 31);
+        var agents = new[]
+        {
+            FullTimeAgent("A-FT1"),
+            FullTimeAgent("B-FT2"),
+            PartTimeAgent(UnqualifiedAgentId, 90),
+            PartTimeAgent("D-PT2", 90),
+            NightSpecialistAgent(BlacklistedAgentId),
+        };
+        return (from, until, agents, BuildThreeShiftsPerDay(from, until));
     }
 
     private static CoreAgent FullTimeAgent(string id) => new(
@@ -117,9 +192,9 @@ internal static class WizardScenarioFixtures
         for (var d = from; d <= until; d = d.AddDays(1))
         {
             var iso = d.ToString("yyyy-MM-dd");
-            shifts.Add(new CoreShift($"{iso}-E", "Frueh", iso, "06:00", "14:00", SlotHours, 1, 0));
-            shifts.Add(new CoreShift($"{iso}-L", "Spaet", iso, "14:00", "22:00", SlotHours, 1, 0));
-            shifts.Add(new CoreShift($"{iso}-N", "Nacht", iso, "22:00", "06:00", SlotHours, 1, 0));
+            shifts.Add(new CoreShift(EarlyShiftId.ToString(), "Frueh", iso, "06:00", "14:00", SlotHours, 1, 0));
+            shifts.Add(new CoreShift(LateShiftId.ToString(), "Spaet", iso, "14:00", "22:00", SlotHours, 1, 0));
+            shifts.Add(new CoreShift(NightShiftId.ToString(), "Nacht", iso, "22:00", "06:00", SlotHours, 1, 0));
         }
         return shifts;
     }
@@ -128,7 +203,10 @@ internal static class WizardScenarioFixtures
         DateOnly from,
         DateOnly until,
         IReadOnlyList<CoreAgent> agents,
-        IReadOnlyList<CoreShift> shifts) => new()
+        IReadOnlyList<CoreShift> shifts,
+        IReadOnlyList<CoreShiftPreference>? shiftPreferences = null,
+        IReadOnlySet<(string AgentId, Guid ShiftId, DateOnly Date)>? ineligibleAssignments = null,
+        IReadOnlyList<CoreRestrictedTimeWindow>? restrictedTimeWindows = null) => new()
         {
             PeriodFrom = from,
             PeriodUntil = until,
@@ -138,6 +216,9 @@ internal static class WizardScenarioFixtures
             SchedulingMaxDailyHours = 10,
             SchedulingMaxWeeklyHours = 50,
             SchedulingMinPauseHours = 11,
+            ShiftPreferences = shiftPreferences ?? [],
+            IneligibleAssignments = ineligibleAssignments ?? new HashSet<(string, Guid, DateOnly)>(),
+            RestrictedTimeWindows = restrictedTimeWindows ?? [],
         };
 
     private static IReadOnlyList<CoreLockedWork> BuildBoundaryLockedRun(string agentId, DateOnly lastDayBeforePeriod, int runLengthDays)
@@ -155,7 +236,7 @@ internal static class WizardScenarioFixtures
                 TotalHours: (decimal)SlotHours,
                 StartAt: start,
                 EndAt: start.AddHours(SlotHours),
-                ShiftRefId: Guid.Empty,
+                ShiftRefId: EarlyShiftId,
                 LocationContext: null)
             {
                 Surcharges = 0,
