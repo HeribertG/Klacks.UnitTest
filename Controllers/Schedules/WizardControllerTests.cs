@@ -46,8 +46,7 @@ public class WizardControllerTests
                 new DateOnly(2026, 4, 30),
                 new[] { Guid.NewGuid() },
                 null,
-                null),
-            CancellationToken.None);
+                null));
 
         var ok = result.Result.ShouldBeOfType<OkObjectResult>();
         ok.Value.ShouldBeOfType<StartWizardResponse>().JobId.ShouldBe(expectedJobId);
@@ -114,8 +113,7 @@ public class WizardControllerTests
                 new DateOnly(2026, 4, 30),
                 agents,
                 null,
-                null),
-            CancellationToken.None);
+                null));
 
         var badRequest = result.Result.ShouldBeOfType<BadRequestObjectResult>();
         var error = badRequest.Value.ShouldBeOfType<WizardLimitErrorResponse>();
@@ -135,8 +133,7 @@ public class WizardControllerTests
                 new DateOnly(2026, 4, 30),
                 new[] { Guid.NewGuid() },
                 shifts,
-                null),
-            CancellationToken.None);
+                null));
 
         result.Result.ShouldBeOfType<BadRequestObjectResult>();
         await _runner.DidNotReceive().StartAsync(Arg.Any<WizardContextRequest>(), Arg.Any<CancellationToken>());

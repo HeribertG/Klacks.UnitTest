@@ -218,4 +218,60 @@ public class WizardHardConstraintBuilderTests
         result.ScheduleCommands.Count().ShouldBe(1);
         result.ScheduleCommands[0].Keyword.ShouldBe(ScheduleCommandKeyword.Free);
     }
+
+    [Test]
+    public async Task BuildAsync_LockedNightShift_EndsOnTheFollowingDay()
+    {
+        var agent = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 22);
+
+        _context.Work.Add(new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            CurrentDate = date,
+            ShiftId = Guid.NewGuid(),
+            StartTime = new TimeOnly(22, 0),
+            EndTime = new TimeOnly(6, 0),
+            WorkTime = 8m,
+            LockLevel = WorkLockLevel.Confirmed,
+            AnalyseToken = null,
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, date, date, analyseToken: null, CancellationToken.None);
+
+        result.LockedWorks.Count().ShouldBe(1);
+        var locked = result.LockedWorks[0];
+        locked.StartAt.ShouldBe(date.ToDateTime(new TimeOnly(22, 0)));
+        locked.EndAt.ShouldBe(date.AddDays(1).ToDateTime(new TimeOnly(6, 0)));
+        locked.EndAt.ShouldBeGreaterThan(locked.StartAt);
+    }
+
+    [Test]
+    public async Task BuildAsync_LockedDayShift_KeepsSameDayEnd()
+    {
+        var agent = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 22);
+
+        _context.Work.Add(new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            CurrentDate = date,
+            ShiftId = Guid.NewGuid(),
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            WorkTime = 8m,
+            LockLevel = WorkLockLevel.Confirmed,
+            AnalyseToken = null,
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, date, date, analyseToken: null, CancellationToken.None);
+
+        result.LockedWorks[0].EndAt.ShouldBe(date.ToDateTime(new TimeOnly(16, 0)));
+    }
 }

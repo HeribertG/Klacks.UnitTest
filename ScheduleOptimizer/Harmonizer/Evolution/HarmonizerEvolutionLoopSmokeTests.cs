@@ -61,15 +61,99 @@ public class HarmonizerEvolutionLoopSmokeTests
         result.GenerationFitness.Count.ShouldBe(1);
     }
 
-    private static HarmonizerEvolutionLoop BuildLoop(int seedSeed, TimeSpan? maxRuntime = null)
+    [Test]
+    public void Run_ResultNeverWorseThanSeed()
+    {
+        // Adversarial evaluator: only the untouched seed is optimal, every conductor move makes it worse.
+        // Without the raw seed in the population the loop can only return a degraded plan.
+        var seedBitmap = EvolutionSmokeTestFixtures.BuildChaoticBitmap();
+        var reference = BitmapCloner.Clone(seedBitmap);
+        var evaluator = new SeedFavouringEvaluator(reference);
+        var seedFitness = evaluator.Evaluate(reference).Fitness;
+        var loop = BuildLoop(seedSeed: 42, fitness: evaluator);
+
+        var result = loop.Run(seedBitmap);
+
+        result.Best.Fitness.ShouldBe(seedFitness, 1e-9);
+        CountDifferences(reference, result.Best.Bitmap).ShouldBe(0);
+    }
+
+    [Test]
+    public void Run_ConductorOnlyConfig_PopulationTwoZeroGenerations()
+    {
+        var seedBitmap = EvolutionSmokeTestFixtures.BuildChaoticBitmap();
+        var evaluator = new HarmonyFitnessEvaluator(new HarmonyScorer());
+        var seedFitness = evaluator.Evaluate(BitmapCloner.Clone(seedBitmap)).Fitness;
+        var loop = BuildLoop(seedSeed: 42, populationSize: 2, maxGenerations: 0);
+
+        var result = loop.Run(seedBitmap);
+
+        result.GenerationFitness.Count.ShouldBe(1);
+        result.Best.Fitness.ShouldBeGreaterThanOrEqualTo(seedFitness - 1e-9);
+    }
+
+    [Test]
+    public void Run_PopulationOfOne_HoldsOnlyTheRawSeed()
+    {
+        var seedBitmap = EvolutionSmokeTestFixtures.BuildChaoticBitmap();
+        var reference = BitmapCloner.Clone(seedBitmap);
+        var loop = BuildLoop(seedSeed: 42, populationSize: 1, maxGenerations: 0);
+
+        var result = loop.Run(seedBitmap);
+
+        // No conductor pass fits into a population of one, so the seed comes back untouched.
+        CountDifferences(reference, result.Best.Bitmap).ShouldBe(0);
+        result.Best.ConductorTrace.RowTraces.Count.ShouldBe(reference.RowCount);
+        result.Best.ConductorTrace.RowTraces.ShouldAllBe(t => t.MovesApplied == 0);
+    }
+
+    private static int CountDifferences(HarmonyBitmap left, HarmonyBitmap right)
+    {
+        var differences = 0;
+        for (var r = 0; r < left.RowCount; r++)
+        {
+            for (var d = 0; d < left.DayCount; d++)
+            {
+                if (!Equals(left.GetCell(r, d), right.GetCell(r, d)))
+                {
+                    differences++;
+                }
+            }
+        }
+        return differences;
+    }
+
+    private sealed class SeedFavouringEvaluator : IBitmapFitnessEvaluator
+    {
+        private const double PenaltyPerChangedCell = 0.01;
+
+        private readonly HarmonyBitmap _reference;
+
+        public SeedFavouringEvaluator(HarmonyBitmap reference) => _reference = reference;
+
+        public FitnessResult Evaluate(HarmonyBitmap bitmap)
+        {
+            var fitness = 1.0 - (CountDifferences(_reference, bitmap) * PenaltyPerChangedCell);
+            var rowScores = new double[bitmap.RowCount];
+            Array.Fill(rowScores, fitness);
+            return new FitnessResult(fitness, rowScores);
+        }
+    }
+
+    private static HarmonizerEvolutionLoop BuildLoop(
+        int seedSeed,
+        TimeSpan? maxRuntime = null,
+        IBitmapFitnessEvaluator? fitness = null,
+        int populationSize = 6,
+        int maxGenerations = 8)
     {
         var scorer = new HarmonyScorer();
         var validator = new BitmapReplaceValidator();
-        var fitness = new HarmonyFitnessEvaluator(scorer);
+        var evaluator = fitness ?? new HarmonyFitnessEvaluator(scorer);
         var stochasticMutation = new StochasticBitmapMutation(validator);
         var config = new HarmonizerEvolutionConfig(
-            PopulationSize: 6,
-            MaxGenerations: 8,
+            PopulationSize: populationSize,
+            MaxGenerations: maxGenerations,
             EliteCount: 2,
             TournamentSize: 3,
             StochasticMutationsPerOffspring: 2,
@@ -85,6 +169,6 @@ public class HarmonizerEvolutionLoopSmokeTests
             return new HarmonizerConductor(scorer, mutation, emergency);
         };
 
-        return new HarmonizerEvolutionLoop(fitness, stochasticMutation, conductorFactory, config);
+        return new HarmonizerEvolutionLoop(evaluator, stochasticMutation, conductorFactory, config);
     }
 }
