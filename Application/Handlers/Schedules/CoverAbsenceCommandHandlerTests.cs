@@ -345,4 +345,51 @@ public class CoverAbsenceCommandHandlerTests
         order.IndexOf("clone").ShouldBeLessThan(order.IndexOf("complete"));
         order.IndexOf("complete").ShouldBeLessThan(order.IndexOf("snapshot"));
     }
+
+    [Test]
+    public async Task CoveredSlot_CarriesTheEscalationTierItNeeded()
+    {
+        var outcome = await Cover();
+
+        outcome.Covered.Count.ShouldBe(1);
+        // A free in-group candidate is the cheapest tier; the UI shows how far the engine had to reach.
+        outcome.Covered[0].Tier.ShouldBe(0);
+        outcome.HighestTier.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task HighestTier_ReportsUncovered_WhenSomethingStayedOpen()
+    {
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(OverridableBlockingCheck());
+        _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(false);
+
+        var outcome = await Cover();
+
+        outcome.Uncovered.ShouldNotBeEmpty();
+        // Tier 4 == Uncovered: a blocked option must never look like a completed cover.
+        outcome.HighestTier.ShouldBe(4);
+    }
+
+    [Test]
+    public async Task MultiDayAbsence_RecordsEveryDayOfThePeriod()
+    {
+        var until = Date.AddDays(2);
+
+        var outcome = await _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, until), CancellationToken.None);
+
+        outcome.ShouldNotBeNull();
+        await _mediator.Received().Send(
+            Arg.Is<BulkAddBreaksCommand>(c => c.Request.Breaks.Count == 3),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InvertedPeriod_IsRejected()
+    {
+        await Should.ThrowAsync<ArgumentException>(() => _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, Date.AddDays(-1)), CancellationToken.None));
+    }
 }
+
