@@ -99,6 +99,37 @@ public class ReadScheduleStateSkillTests
     }
 
     [Test]
+    public async Task WorkChangeEntry_CarriesIdParentWorkIdChangeTimeAndDescription()
+    {
+        var cell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.WorkChange, new DateTime(2026, 3, 4));
+        cell.SourceId = Guid.NewGuid();
+        cell.ChangeTime = 1.5m;
+        cell.Description = "Correction Tuesday";
+        var skill = new ReadScheduleStateSkill(ServiceReturning(new List<ScheduleCell> { cell }));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        var entry = DataAsJson(result).GetProperty("Entries")[0];
+        entry.GetProperty("Id").GetGuid().ShouldBe(cell.Id);
+        entry.GetProperty("ParentWorkId").GetGuid().ShouldBe(cell.SourceId);
+        entry.GetProperty("ChangeTime").GetDecimal().ShouldBe(1.5m);
+        entry.GetProperty("Description").GetString().ShouldBe("Correction Tuesday");
+    }
+
+    [Test]
+    public async Task NonWorkChangeEntry_CarriesIdButNoParentWorkId()
+    {
+        var cell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2));
+        var skill = new ReadScheduleStateSkill(ServiceReturning(new List<ScheduleCell> { cell }));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        var entry = DataAsJson(result).GetProperty("Entries")[0];
+        entry.GetProperty("Id").GetGuid().ShouldBe(cell.Id);
+        entry.TryGetProperty("ParentWorkId", out _).ShouldBeFalse();
+    }
+
+    [Test]
     public async Task Projection_MapsEntryTypeLockLevelAndFlags()
     {
         var cells = new List<ScheduleCell>

@@ -57,6 +57,25 @@ public class RecentEntityExtractorTests
     }
 
     [Test]
+    public void AddWorkChange_extracts_workchange_created_with_type_as_name()
+    {
+        var result = SkillResult.SuccessResult(new
+        {
+            Id = Id,
+            WorkId = Guid.NewGuid(),
+            Type = "CorrectionEnd",
+            StartTime = "08:00",
+            EndTime = "10:00"
+        });
+
+        RecentEntityExtractor.TryExtract("add_workchange", result, out var d).ShouldBeTrue();
+        d!.EntityType.ShouldBe("workchange");
+        d.EntityId.ShouldBe(Id);
+        d.DisplayName.ShouldBe("CorrectionEnd");
+        d.Action.ShouldBe("created");
+    }
+
+    [Test]
     public void CreateGroup_extracts_group_created()
     {
         var result = SkillResult.SuccessResult(new { GroupId = Id, Name = "Bern" });
