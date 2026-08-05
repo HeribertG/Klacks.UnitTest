@@ -81,6 +81,10 @@ public class CoverAbsenceCommandHandlerTests
         _conflictChecker.CheckAsync(
                 Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
+        _conflictChecker.CheckAsync(
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(PreCommitCheckResult.Empty);
 
         _mediator = Substitute.For<IMediator>();
         _mediator.Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>())
@@ -231,7 +235,7 @@ public class CoverAbsenceCommandHandlerTests
     [Test]
     public async Task BlockedByComplianceRule_NoOverride_ReportedAsUncovered_NotMaterialised()
     {
-        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(OverridableBlockingCheck());
         _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(false);
 
@@ -246,7 +250,7 @@ public class CoverAbsenceCommandHandlerTests
     [Test]
     public async Task BlockedByComplianceRule_WithAuthorizedOverride_MaterialisesAndCoversSlot()
     {
-        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(OverridableBlockingCheck());
         _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
 
@@ -263,7 +267,7 @@ public class CoverAbsenceCommandHandlerTests
     [Test]
     public async Task WarnModeConflicts_AreMaterialised_AndSurfacedInOutcome()
     {
-        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new PreCommitCheckResult(
             [
                 new ScheduleValidationNotificationDto
@@ -298,7 +302,7 @@ public class CoverAbsenceCommandHandlerTests
                 Comment = "schedule.error-list.collision",
             }
         ]);
-        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(structuralCheck);
         _overrideAuthorizer.IsAuthorizedAsync(Arg.Any<bool>()).Returns(true);
 
