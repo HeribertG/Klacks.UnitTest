@@ -74,7 +74,7 @@ public class TokenPopulationBuilderTests
     }
 
     [Test]
-    public void BuildPopulation_DefaultRatios_Uses50AuctionPlus30Coverage10Greedy10Random()
+    public void BuildPopulation_DefaultRatios_RunsTheDeterministicStrategiesOnceAndPerturbsTheRest()
     {
         var context = MakeSampleContext();
         var auctionInvocations = 0;
@@ -88,10 +88,13 @@ public class TokenPopulationBuilderTests
         var builder = new TokenPopulationBuilder(
             auction, coverageFirst, greedy, random, new WarmStartTokenStrategy());
 
-        builder.BuildPopulation(context, populationSize: 10, rng: new Random(0));
+        var population = builder.BuildPopulation(context, populationSize: 10, rng: new Random(0));
 
-        auctionInvocations.ShouldBe(5);
-        coverageInvocations.ShouldBe(3);
+        // Auction and coverage-first are deterministic: they run once and the remaining 4 resp. 2
+        // individuals are perturbed clones of that base. The population size is unchanged.
+        population.Count().ShouldBe(10);
+        auctionInvocations.ShouldBe(1);
+        coverageInvocations.ShouldBe(1);
         greedyInvocations.ShouldBe(1);
         randomInvocations.ShouldBe(1);
     }

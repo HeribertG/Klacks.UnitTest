@@ -130,4 +130,58 @@ public class GreedyTokenStrategyTests
 
         scenario.Tokens.Where(t => !t.IsLocked).Count().ShouldBe(3);
     }
+    [Test]
+    public void BuildScenario_ForcedCoverage_NeverDoubleBooksTheOnlyAgent()
+    {
+        // Two shifts overlap on the same day and only one agent exists. Forced coverage may leave the
+        // second slot empty, but it must never put the same person on both: a plan with a gap is a plan,
+        // a plan with one human in two places is not.
+        var agent = MakeAgent("A", fullTime: 8);
+        var date = new DateOnly(2026, 4, 20);
+
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date,
+            PeriodUntil = date,
+            Agents = [agent],
+            Shifts =
+            [
+                MakeShift(date, Guid.NewGuid().ToString()),
+                new CoreShift(Guid.NewGuid().ToString(), "FD", date.ToString("yyyy-MM-dd"), "12:00", "20:00", 8, 1, 0),
+            ],
+            SchedulingMaxConsecutiveDays = 6,
+        };
+
+        var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
+
+        var assigned = scenario.Tokens.Where(t => t.AgentId == "A").OrderBy(t => t.StartAt).ToList();
+        for (var i = 1; i < assigned.Count; i++)
+        {
+            assigned[i].StartAt.ShouldBeGreaterThanOrEqualTo(assigned[i - 1].EndAt);
+        }
+    }
+
+    [Test]
+    public void BuildScenario_ForcedCoverage_NeverCollidesWithAnExistingWork()
+    {
+        var agent = MakeAgent("A", fullTime: 8);
+        var date = new DateOnly(2026, 4, 20);
+
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date,
+            PeriodUntil = date,
+            Agents = [agent],
+            Shifts = [MakeShift(date, Guid.NewGuid().ToString())],
+            ExistingWorkBlockers =
+            [
+                new CoreExistingWorkBlocker("A", date, date.ToDateTime(new TimeOnly(7, 0)), date.ToDateTime(new TimeOnly(15, 0))),
+            ],
+            SchedulingMaxConsecutiveDays = 6,
+        };
+
+        var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
+
+        scenario.Tokens.ShouldNotContain(t => t.AgentId == "A" && !t.IsLocked);
+    }
 }

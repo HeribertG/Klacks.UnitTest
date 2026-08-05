@@ -56,11 +56,7 @@ public class WarmStartRatioTests
         CountingStrategy Auction,
         CountingStrategy Coverage,
         CountingStrategy Greedy,
-        CountingStrategy Random)
-    {
-        public int Total => WarmStart.Invocations + Auction.Invocations
-            + Coverage.Invocations + Greedy.Invocations + Random.Invocations;
-    }
+        CountingStrategy Random);
 
     private static (TokenPopulationBuilder Builder, Counters Counters) MakeBuilder()
     {
@@ -78,14 +74,16 @@ public class WarmStartRatioTests
     {
         var (builder, counters) = MakeBuilder();
 
-        builder.BuildPopulation(ContextWithSeed(), populationSize: 50, rng: new Random(0));
+        var population = builder.BuildPopulation(ContextWithSeed(), populationSize: 50, rng: new Random(0));
 
         counters.WarmStart.Invocations.ShouldBe(10);
-        counters.Auction.Invocations.ShouldBe(15);
-        counters.Coverage.Invocations.ShouldBe(15);
+        // Auction and coverage-first are deterministic: one base run each, the other 14 resp. 14
+        // individuals are perturbed clones, so invocations no longer equal individuals.
+        counters.Auction.Invocations.ShouldBe(1);
+        counters.Coverage.Invocations.ShouldBe(1);
         counters.Greedy.Invocations.ShouldBe(5);
         counters.Random.Invocations.ShouldBe(5);
-        counters.Total.ShouldBe(50);
+        population.Count().ShouldBe(50);
     }
 
     [Test]
@@ -93,11 +91,11 @@ public class WarmStartRatioTests
     {
         var (builder, counters) = MakeBuilder();
 
-        builder.BuildPopulation(ContextWithoutSeed(), populationSize: 50, rng: new Random(0));
+        var population = builder.BuildPopulation(ContextWithoutSeed(), populationSize: 50, rng: new Random(0));
 
         counters.WarmStart.Invocations.ShouldBe(0);
-        counters.Auction.Invocations.ShouldBe(25);
-        counters.Total.ShouldBe(50);
+        counters.Auction.Invocations.ShouldBe(1);
+        population.Count().ShouldBe(50);
     }
 
     [Test]
@@ -105,7 +103,7 @@ public class WarmStartRatioTests
     {
         var (builder, counters) = MakeBuilder();
 
-        builder.BuildPopulation(
+        var population = builder.BuildPopulation(
             ContextWithSeed(),
             populationSize: 50,
             rng: new Random(0),
@@ -114,7 +112,7 @@ public class WarmStartRatioTests
 
         counters.WarmStart.Invocations.ShouldBe(20);
         counters.Auction.Invocations.ShouldBe(0);
-        counters.Total.ShouldBe(50);
+        population.Count().ShouldBe(50);
     }
 
     [Test]
@@ -122,7 +120,7 @@ public class WarmStartRatioTests
     {
         var (builder, counters) = MakeBuilder();
 
-        builder.BuildPopulation(
+        var population = builder.BuildPopulation(
             ContextWithSeed(),
             populationSize: 50,
             rng: new Random(0),
@@ -131,6 +129,6 @@ public class WarmStartRatioTests
         // Clamp MaxWarmStartRatio = 0.4 -> at most 20 of 50 individuals are warm-started.
         counters.WarmStart.Invocations.ShouldBe(20);
         counters.WarmStart.Invocations.ShouldBeLessThan(50);
-        counters.Total.ShouldBe(50);
+        population.Count().ShouldBe(50);
     }
 }

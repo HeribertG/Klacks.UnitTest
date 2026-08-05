@@ -11,6 +11,8 @@ namespace Klacks.UnitTest.ScheduleOptimizer.Harmonizer.Conductor;
 public class DomainAwareReplaceValidatorTests
 {
     private static readonly DateOnly Day0 = new(2026, 1, 5);
+    private static readonly DateOnly IsoWeek53Monday = new(2026, 12, 28);
+    private static readonly DateOnly IsoWeek52Monday = new(2026, 12, 21);
 
     [Test]
     public void IsValid_LockedCell_Rejected()
@@ -352,6 +354,66 @@ public class DomainAwareReplaceValidatorTests
         var validator = new DomainAwareReplaceValidator(null, boundary);
 
         validator.IsValid(bitmap, new ReplaceMove(0, 1, 2)).ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsValid_MaxWeeklyHours_IsoWeekAcrossYearBoundary_Rejected()
+    {
+        // ISO week 53 of 2026 runs Mon 2026-12-28 to Sun 2027-01-03. agent-1 already works 36h on
+        // Mon..Thu; the incoming 8h on Sat 2027-01-02 belongs to the SAME ISO week → 44h > 40 → reject.
+        // The calendar-year key split that week into (2026,53) and (2027,53) and let the move through.
+        var bitmap = BuildBitmapFrom(IsoWeek53Monday, rows: 2, days: 6, agentBuilder: (id, idx) => new BitmapAgent(
+            id, id, 100m, new HashSet<CellSymbol>(), MaxWeeklyHours: idx == 1 ? 40m : 0m));
+
+        for (var day = 0; day < 4; day++)
+        {
+            bitmap.SetCell(1, day, NineHourCell(IsoWeek53Monday.AddDays(day)));
+        }
+
+        bitmap.SetCell(0, 5, EightHourCell(IsoWeek53Monday.AddDays(5)));
+
+        var validator = new DomainAwareReplaceValidator(null);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 5)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsValid_MaxWeeklyHours_DifferentIsoWeeks_Accepted()
+    {
+        // Counter-probe: agent-1's 36h sit in ISO week 52 of 2026, the incoming 8h on Mon 2027-01-04 is
+        // ISO week 1 of 2027. Different weeks → 8h against a 40h cap → accept.
+        var bitmap = BuildBitmapFrom(IsoWeek52Monday, rows: 2, days: 15, agentBuilder: (id, idx) => new BitmapAgent(
+            id, id, 100m, new HashSet<CellSymbol>(), MaxWeeklyHours: idx == 1 ? 40m : 0m));
+
+        for (var day = 0; day < 4; day++)
+        {
+            bitmap.SetCell(1, day, NineHourCell(IsoWeek52Monday.AddDays(day)));
+        }
+
+        bitmap.SetCell(0, 14, EightHourCell(IsoWeek52Monday.AddDays(14)));
+
+        var validator = new DomainAwareReplaceValidator(null);
+
+        validator.IsValid(bitmap, new ReplaceMove(0, 1, 14)).ShouldBeTrue();
+    }
+
+    private static Cell NineHourCell(DateOnly day) => new(
+        CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+        day.ToDateTime(new TimeOnly(7, 0)), day.ToDateTime(new TimeOnly(16, 0)), 9m);
+
+    private static Cell EightHourCell(DateOnly day) => new(
+        CellSymbol.Early, Guid.NewGuid(), [Guid.NewGuid()], false,
+        day.ToDateTime(new TimeOnly(7, 0)), day.ToDateTime(new TimeOnly(15, 0)), 8m);
+
+    private static HarmonyBitmap BuildBitmapFrom(DateOnly start, int rows, int days, Func<string, int, BitmapAgent> agentBuilder)
+    {
+        var agents = new List<BitmapAgent>(rows);
+        for (var r = 0; r < rows; r++)
+        {
+            agents.Add(agentBuilder($"agent-{r}", r));
+        }
+        var input = new BitmapInput(agents, start, start.AddDays(days - 1), []);
+        return BitmapBuilder.Build(input);
     }
 
     private static HarmonyBitmap BuildBitmap(int rows, int days, Func<string, int, BitmapAgent>? agentBuilder = null)

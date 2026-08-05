@@ -9,7 +9,7 @@ namespace Klacks.UnitTest.ScheduleOptimizer.Common.Fuzzy;
 [TestFixture]
 public class MamdaniInferenceEngineTests
 {
-    private static MamdaniInferenceEngine BuildSimpleEngine()
+    private static MamdaniInferenceEngine BuildSimpleEngine(double noFireOutput = 0.0)
     {
         var inputs = new Dictionary<string, LinguisticVariable>
         {
@@ -29,7 +29,7 @@ public class MamdaniInferenceEngineTests
             new("RuleLow", [new RuleClause("X", "Low")], "AND", "Y", "Cold"),
             new("RuleHigh", [new RuleClause("X", "High")], "AND", "Y", "Hot"),
         };
-        return new MamdaniInferenceEngine(inputs, output, rules);
+        return new MamdaniInferenceEngine(inputs, output, rules, noFireOutput: noFireOutput);
     }
 
     [Test]
@@ -84,5 +84,25 @@ public class MamdaniInferenceEngineTests
 
         result.FiredRules.ShouldNotBeEmpty();
         result.CrispOutput.ShouldBeGreaterThan(0.0);
+    }
+
+    [Test]
+    public void Infer_NoRuleFires_ReturnsConfiguredNoFireOutput()
+    {
+        var engine = BuildSimpleEngine(noFireOutput: 0.5);
+        var result = engine.Infer(new Dictionary<string, double> { ["X"] = 5.0 });
+
+        result.FiredRules.ShouldBeEmpty();
+        result.CrispOutput.ShouldBe(0.5, 1e-9);
+    }
+
+    [Test]
+    public void Infer_NoRuleFires_DefaultsToZero()
+    {
+        var engine = BuildSimpleEngine();
+        var result = engine.Infer(new Dictionary<string, double> { ["X"] = 5.0 });
+
+        result.FiredRules.ShouldBeEmpty();
+        result.CrispOutput.ShouldBe(0.0, 1e-9);
     }
 }
