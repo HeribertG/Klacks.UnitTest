@@ -37,12 +37,13 @@ public class HolisticHarmonizerLoopControlTests
 
         var provider = Substitute.For<IPlanProposalProvider>();
         provider
-            .PingAsync(ModelId, Arg.Any<CancellationToken>())
+            .CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>())
             .Returns(new PlanProposalPingResult(IsHealthy: false, LatencyMs: 42, Error: "model offline"));
 
         var engine = new HolisticHarmonizerEngine(
             contextBuilder,
             provider,
+            new HolisticHarmonizerModelCapabilityCache(),
             NullLogger<HolisticHarmonizerEngine>.Instance);
 
         var result = await engine.RunAsync(BuildRequest(), CancellationToken.None);
@@ -56,7 +57,7 @@ public class HolisticHarmonizerLoopControlTests
     }
 
     [Test]
-    public async Task ProviderHealthy_EmptyBatches_BreaksLoopWithoutMutating()
+    public async Task ProviderHealthy_ExplicitlyEmptyBatches_BreaksLoopAsSatisfied()
     {
         var contextBuilder = Substitute.For<IHarmonizerContextBuilder>();
         contextBuilder
@@ -68,12 +69,20 @@ public class HolisticHarmonizerLoopControlTests
             .PingAsync(ModelId, Arg.Any<CancellationToken>())
             .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 10, Error: null));
         provider
+            .CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 25, Error: null));
+        provider
             .ProposeAsync(Arg.Any<PlanProposalRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new PlanProposalResponse(Batches: [], RawResponse: "{\"batches\":[]}", ParsingError: null));
+            .Returns(new PlanProposalResponse(
+                Batches: [],
+                RawResponse: "{\"batches\":[]}",
+                ParsingError: null,
+                LlmSignaledSatisfied: true));
 
         var engine = new HolisticHarmonizerEngine(
             contextBuilder,
             provider,
+            new HolisticHarmonizerModelCapabilityCache(),
             NullLogger<HolisticHarmonizerEngine>.Instance);
 
         var result = await engine.RunAsync(BuildRequest(), CancellationToken.None);
@@ -81,7 +90,47 @@ public class HolisticHarmonizerLoopControlTests
         result.Iterations.ShouldBeEmpty();
         result.FitnessAfter.ShouldBe(result.FitnessBefore);
         result.LlmParsingError.ShouldBeNull();
+        result.AbortedOnUnusableResponses.ShouldBeFalse();
         await provider.Received(1).ProposeAsync(Arg.Any<PlanProposalRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ProviderHealthy_NoBatchesWithoutSatisfiedSignal_AbortsAsUnusable()
+    {
+        // A model that keeps returning nothing while never signalling convergence used to look like a
+        // finished run after a single iteration. It must now be retried and then reported as failed.
+        var contextBuilder = Substitute.For<IHarmonizerContextBuilder>();
+        contextBuilder
+            .BuildContextAsync(Arg.Any<HarmonizerContextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(BuildContext());
+
+        var provider = Substitute.For<IPlanProposalProvider>();
+        provider
+            .PingAsync(ModelId, Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 10, Error: null));
+        provider
+            .CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 25, Error: null));
+        provider
+            .ProposeAsync(Arg.Any<PlanProposalRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalResponse(
+                Batches: [],
+                RawResponse: "{\"batches\":[{\"steps\":[]}]}",
+                ParsingError: null));
+
+        var engine = new HolisticHarmonizerEngine(
+            contextBuilder,
+            provider,
+            new HolisticHarmonizerModelCapabilityCache(),
+            NullLogger<HolisticHarmonizerEngine>.Instance);
+
+        var result = await engine.RunAsync(BuildRequest(), CancellationToken.None);
+
+        result.AbortedOnUnusableResponses.ShouldBeTrue();
+        result.LlmParsingError.ShouldNotBeNull();
+        result.Iterations.ShouldBeEmpty();
+        result.FitnessAfter.ShouldBe(result.FitnessBefore);
+        await provider.Received(3).ProposeAsync(Arg.Any<PlanProposalRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -97,6 +146,9 @@ public class HolisticHarmonizerLoopControlTests
             .PingAsync(ModelId, Arg.Any<CancellationToken>())
             .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 10, Error: null));
         provider
+            .CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 25, Error: null));
+        provider
             .ProposeAsync(Arg.Any<PlanProposalRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PlanProposalResponse(
                 Batches: [],
@@ -106,6 +158,7 @@ public class HolisticHarmonizerLoopControlTests
         var engine = new HolisticHarmonizerEngine(
             contextBuilder,
             provider,
+            new HolisticHarmonizerModelCapabilityCache(),
             NullLogger<HolisticHarmonizerEngine>.Instance);
 
         var result = await engine.RunAsync(BuildRequest(), CancellationToken.None);
@@ -113,6 +166,8 @@ public class HolisticHarmonizerLoopControlTests
         result.LlmParsingError.ShouldBe("balanced-brace scan found no JSON object");
         result.FitnessAfter.ShouldBe(result.FitnessBefore);
         result.Iterations.ShouldBeEmpty();
+        result.AbortedOnUnusableResponses.ShouldBeTrue();
+        await provider.Received(3).ProposeAsync(Arg.Any<PlanProposalRequest>(), Arg.Any<CancellationToken>());
     }
 
     private static HolisticHarmonizerEngineRequest BuildRequest()
