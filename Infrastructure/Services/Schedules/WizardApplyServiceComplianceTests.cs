@@ -310,6 +310,37 @@ public class WizardApplyServiceComplianceTests
         outcome.CreatedWorkIds.ShouldBe(_createdIds);
     }
 
+    [Test]
+    public async Task ApplyAsync_EverythingBlocked_KeepsTheCachedResultForAnOverrideRetry()
+    {
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1)] }, null);
+        SetPartitionResult(accepted: [], blocked: [new BlockedRow(0, BlockReasonKey)]);
+
+        var result = await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
+
+        result.CreatedWorkIds.ShouldBeEmpty();
+        // Without the re-store a supervisor would have to re-run the whole GA just to apply with override.
+        _cache.TryGet(jobId, out var scenario, out _, out _, out _, out _).ShouldBeTrue();
+        scenario.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task ApplyAsync_BulkAddThrows_PutsTheResultBackAndPropagates()
+    {
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1)] }, null);
+        SetPartitionPassThrough();
+        _mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
+            .Returns<BulkWorksResponse>(_ => throw new InvalidOperationException("db down"));
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None));
+
+        // A transient failure must not consume the run - retrying should still be possible.
+        _cache.TryGet(jobId, out _, out _, out _, out _, out _).ShouldBeTrue();
+    }
+
     private static DataBaseContext BuildInMemoryContext()
         => new(
             new DbContextOptionsBuilder<DataBaseContext>()

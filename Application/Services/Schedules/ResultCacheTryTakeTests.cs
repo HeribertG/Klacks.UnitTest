@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Models;
@@ -74,6 +75,32 @@ public sealed class ResultCacheTryTakeTests
         cache.TryGet(jobId, out _, out _, out _, out _, out _, out _).ShouldBeTrue();
         cache.TryGet(jobId, out _, out _, out _, out _, out _, out _).ShouldBeTrue();
         cache.TryTake(jobId, out _, out _, out _, out _, out _, out _).ShouldBeTrue();
+    }
+
+    [Test]
+    public void HarmonizerResultCache_SnapshotMarker_SurvivesTheRoundtrip()
+    {
+        var cache = new HarmonizerResultCache();
+        var jobId = Guid.NewGuid();
+        var marker = new ScheduleSnapshotMarker(
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), [Guid.NewGuid()], null, 7, 2, "HASH");
+        cache.Store(jobId, BuildBitmap(), BuildBitmap(), sourceAnalyseToken: null, snapshotMarker: marker);
+
+        cache.TryTake(jobId, out _, out _, out _, out _, out _, out var taken).ShouldBeTrue();
+
+        taken.ShouldBe(marker);
+    }
+
+    [Test]
+    public void HarmonizerResultCache_WithoutMarker_ReturnsNull()
+    {
+        var cache = new HarmonizerResultCache();
+        var jobId = Guid.NewGuid();
+        cache.Store(jobId, BuildBitmap(), BuildBitmap(), sourceAnalyseToken: null);
+
+        cache.TryTake(jobId, out _, out _, out _, out _, out _, out var taken).ShouldBeTrue();
+
+        taken.ShouldBeNull();
     }
 
     private static HarmonyBitmap BuildBitmap()
