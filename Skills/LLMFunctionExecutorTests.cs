@@ -78,6 +78,44 @@ public class LLMFunctionExecutorTests
     }
 
     [Test]
+    public async Task NavigateTo_WithPageKnowledge_StampsDataKindAndBothDataJsonFragments()
+    {
+        SetupBridgeFor(SkillNames.NavigateTo, NavigationResult("/workplace/shift"));
+        SetupBridgeFor("explain_page_shifts", KnowledgeResult("SHIFT PAGE KNOWLEDGE"));
+        var call = new LLMFunctionCall { FunctionName = SkillNames.NavigateTo, Parameters = new() { ["page"] = "shift" } };
+
+        var result = await _executor.ProcessFunctionCallsAsync(Ctx(), new List<LLMFunctionCall> { call });
+
+        call.ResultKind.ShouldBe(Klacks.Api.Domain.Enums.LLMFunctionResultKind.Data);
+        call.DataJson.Count.ShouldBe(2);
+        call.DataJson[0].ShouldContain("/workplace/shift");
+        call.DataJson[1].ShouldContain("SHIFT PAGE KNOWLEDGE");
+        var fragments = result.Split("\nData: ");
+        fragments.Length.ShouldBe(3);
+        fragments[1].ShouldStartWith(call.DataJson[0]);
+    }
+
+    [Test]
+    public async Task MessageOnlyAndConfirmationResults_StampTheirResultKinds()
+    {
+        SetupBridgeFor("skill_message_only", new SkillBridgeResult { Success = true, Message = "done" });
+        SetupBridgeFor("skill_confirm", new SkillBridgeResult
+        {
+            Success = false,
+            Message = "really?",
+            ResultType = nameof(Klacks.Api.Domain.Enums.SkillResultType.Confirmation)
+        });
+        var messageCall = new LLMFunctionCall { FunctionName = "skill_message_only" };
+        var confirmCall = new LLMFunctionCall { FunctionName = "skill_confirm" };
+
+        await _executor.ProcessFunctionCallsAsync(Ctx(), new List<LLMFunctionCall> { messageCall, confirmCall });
+
+        messageCall.ResultKind.ShouldBe(Klacks.Api.Domain.Enums.LLMFunctionResultKind.MessageOnly);
+        messageCall.DataJson.ShouldBeEmpty();
+        confirmCall.ResultKind.ShouldBe(Klacks.Api.Domain.Enums.LLMFunctionResultKind.Confirmation);
+    }
+
+    [Test]
     public async Task NavigateTo_ExplainableRoute_AppendsPageKnowledgeDeterministically()
     {
         SetupBridgeFor(SkillNames.NavigateTo, NavigationResult("/workplace/shift"));

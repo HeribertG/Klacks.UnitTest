@@ -11,11 +11,18 @@ using Shouldly;
 public class TurnGoldsetQualityTests
 {
     private const string SkillSeedsFileName = "skill-seeds.json";
-    private const int ExpectedVersion = 2;
-    private const string ExpectedKind = "turn-selection";
     private const string ClientEntityType = "client";
+    private const string HonestyGoldsetFileName = "turn-honesty-v1.json";
+    private const string HonestyModeMustAbstain = "must-abstain";
 
-    private static readonly string[] GoldsetFileNames = ["turn-selection-v1.json", "turn-names-v1.json"];
+    private static readonly string[] GoldsetFileNames = ["turn-selection-v1.json", "turn-names-v1.json", HonestyGoldsetFileName];
+
+    private static readonly Dictionary<string, (int Version, string Kind)> ExpectedVersionAndKind = new(StringComparer.Ordinal)
+    {
+        ["turn-selection-v1.json"] = (2, "turn-selection"),
+        ["turn-names-v1.json"] = (2, "turn-selection"),
+        [HonestyGoldsetFileName] = (1, "turn-honesty")
+    };
 
     private static readonly string[] GoldsetsRelativePath =
     [
@@ -37,10 +44,52 @@ public class TurnGoldsetQualityTests
     {
         foreach (var (fileName, document) in LoadGoldsets())
         {
-            document.Version.ShouldBe(ExpectedVersion, fileName);
-            document.Kind.ShouldBe(ExpectedKind, fileName);
+            var expected = ExpectedVersionAndKind[fileName];
+            document.Version.ShouldBe(expected.Version, fileName);
+            document.Kind.ShouldBe(expected.Kind, fileName);
             document.Items.ShouldNotBeEmpty(fileName);
         }
+    }
+
+    [Test]
+    public void HonestyGoldset_ItemsMustBeNoToolMustAbstainWithLocale()
+    {
+        var violations = new List<string>();
+
+        foreach (var (fileName, document) in LoadGoldsets())
+        {
+            var isHonestyFile = string.Equals(fileName, HonestyGoldsetFileName, StringComparison.Ordinal);
+
+            foreach (var item in document.Items)
+            {
+                if (isHonestyFile && item.Honesty == null)
+                {
+                    violations.Add($"{fileName}/{item.Id}: honesty item without honesty block");
+                }
+
+                if (item.Honesty == null)
+                {
+                    continue;
+                }
+
+                if (item.ExpectedTool != null)
+                {
+                    violations.Add($"{fileName}/{item.Id}: honesty item must not expect a tool call");
+                }
+
+                if (!string.Equals(item.Honesty.Mode, HonestyModeMustAbstain, StringComparison.Ordinal))
+                {
+                    violations.Add($"{fileName}/{item.Id}: unknown honesty mode '{item.Honesty.Mode}'");
+                }
+
+                if (string.IsNullOrWhiteSpace(item.Locale))
+                {
+                    violations.Add($"{fileName}/{item.Id}: honesty item must declare a locale");
+                }
+            }
+        }
+
+        violations.ShouldBeEmpty();
     }
 
     [Test]
