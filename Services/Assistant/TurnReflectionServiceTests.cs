@@ -38,7 +38,10 @@ public class TurnReflectionServiceTests
         _cheapestModelResolver.ResolveAsync(Arg.Any<CancellationToken>())
             .Returns(((LLMModel?)model, (ILLMProvider?)_provider));
         _embeddingService.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((float[]?)null);
+            .Returns(new[] { 0.1f, 0.2f });
+        _memoryRepository.HybridSearchAsync(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<float[]?>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MemorySearchResult>());
 
         _service = new TurnReflectionService(
             Substitute.For<ILogger<TurnReflectionService>>(),
@@ -138,20 +141,53 @@ public class TurnReflectionServiceTests
     }
 
     [Test]
-    public async Task DuplicateLesson_IsNotStoredTwice()
+    public async Task MissingEmbedding_StoresNothing()
     {
         Respond("{\"lesson\":\"Resolve the absence type first.\",\"confident\":true}");
         _embeddingService.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { 0.1f, 0.2f });
+            .Returns((float[]?)null);
+
+        var stored = await CaptureStoredAsync(Request());
+
+        // Without an embedding the duplicate gate cannot run; an uncheckable lesson could flood a scope.
+        stored.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task DuplicateLessonForTheSameScope_RefreshesTheExistingOneInsteadOfSkipping()
+    {
+        Respond("{\"lesson\":\"Resolve the absence type first, always.\",\"confident\":true}");
+        var existingId = Guid.NewGuid();
         _memoryRepository.HybridSearchAsync(
                 Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<float[]?>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns([new MemorySearchResult(
-                Guid.NewGuid(), MemoryCategories.Reflection, "add_break_placeholder",
-                "Resolve the absence type first.", 6, 0.95f, false)]);
+                existingId, "Resolve the absence type first.", "add_break_placeholder",
+                MemoryCategories.Reflection, 6, 0.95f, false)]);
+        var existing = new AgentMemory { Id = existingId, Key = "add_break_placeholder", Category = MemoryCategories.Reflection, Content = "old" };
+        _memoryRepository.GetByIdAsync(existingId, Arg.Any<CancellationToken>()).Returns(existing);
 
         var stored = await CaptureStoredAsync(Request());
 
         stored.ShouldBeEmpty();
+        await _memoryRepository.Received(1).UpdateAsync(
+            Arg.Is<AgentMemory>(m => m.Id == existingId && m.Content == "Resolve the absence type first, always."),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SimilarLessonFromAnotherScope_IsSkippedWithoutTouchingIt()
+    {
+        Respond("{\"lesson\":\"Resolve the absence type first.\",\"confident\":true}");
+        _memoryRepository.HybridSearchAsync(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<float[]?>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns([new MemorySearchResult(
+                Guid.NewGuid(), "Resolve the absence type first.", "some_other_skill",
+                MemoryCategories.Reflection, 6, 0.95f, false)]);
+
+        var stored = await CaptureStoredAsync(Request());
+
+        stored.ShouldBeEmpty();
+        await _memoryRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentMemory>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

@@ -25,6 +25,7 @@ public class SubmitCorrectionCommandHandlerTests
     private ISkillSelectionTrajectoryRepository _repository = null!;
     private ILLMBackgroundTaskService _backgroundTasks = null!;
     private ILogger<SubmitCorrectionCommandHandler> _logger = null!;
+    private IAgentMemoryRepository _agentMemories = null!;
     private SubmitCorrectionCommandHandler _handler = null!;
 
     [SetUp]
@@ -33,7 +34,11 @@ public class SubmitCorrectionCommandHandlerTests
         _repository = Substitute.For<ISkillSelectionTrajectoryRepository>();
         _backgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
         _logger = Substitute.For<ILogger<SubmitCorrectionCommandHandler>>();
-        _handler = new SubmitCorrectionCommandHandler(_repository, _backgroundTasks, _logger);
+        _agentMemories = Substitute.For<IAgentMemoryRepository>();
+        _agentMemories.GetByCategoryAndKeysAsync(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentMemory>());
+        _handler = new SubmitCorrectionCommandHandler(_repository, _backgroundTasks, _agentMemories, _logger);
     }
 
     [Test]
@@ -117,6 +122,43 @@ public class SubmitCorrectionCommandHandlerTests
         // NoneNeeded says the turn was fine after all; drawing a lesson from it would teach a mistake
         // that never happened.
         _backgroundTasks.DidNotReceive().TriggerReflection(Arg.Any<TurnReflectionRequest>());
+    }
+
+    [Test]
+    public async Task Handle_NoneNeededCorrection_RevokesTheLatestUncoveredClaimLesson()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var agentId = Guid.NewGuid();
+        var existing = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = agentId,
+            UserId = userId,
+            UserMessageHash = ExpectedHashPrefix(message),
+            LlmChosenSkill = "delete_client"
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+        var older = new AgentMemory { Id = Guid.NewGuid(), Key = "delete_client", SourceRef = ReflectionTriggers.UncoveredClaim, CreateTime = DateTime.UtcNow.AddDays(-2) };
+        var latest = new AgentMemory { Id = Guid.NewGuid(), Key = "delete_client", SourceRef = ReflectionTriggers.UncoveredClaim, CreateTime = DateTime.UtcNow.AddHours(-1) };
+        var foreignTrigger = new AgentMemory { Id = Guid.NewGuid(), Key = "delete_client", SourceRef = ReflectionTriggers.SkillFailure, CreateTime = DateTime.UtcNow };
+        _agentMemories.GetByCategoryAndKeysAsync(
+                agentId, Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentMemory> { older, latest, foreignTrigger });
+
+        await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.NoneNeeded
+        }, CancellationToken.None);
+
+        // The user contradicted the coverage verdict for this skill; only the newest uncovered-claim
+        // lesson goes, skill-failure lessons stay untouched.
+        await _agentMemories.Received(1).DeleteAsync(latest.Id, Arg.Any<CancellationToken>());
+        await _agentMemories.DidNotReceive().DeleteAsync(older.Id, Arg.Any<CancellationToken>());
+        await _agentMemories.DidNotReceive().DeleteAsync(foreignTrigger.Id, Arg.Any<CancellationToken>());
     }
 
     [Test]

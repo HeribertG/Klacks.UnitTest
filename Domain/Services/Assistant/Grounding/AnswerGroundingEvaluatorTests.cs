@@ -41,9 +41,14 @@ public class AnswerGroundingEvaluatorTests
             .Returns(new List<AgentMemory>());
     }
 
+    private ILLMBackgroundTaskService _backgroundTasks = null!;
+
     private AnswerGroundingEvaluator Evaluator(string mode = "Shadow")
-        => new(new AnswerGroundingOptions(mode), _repository, _memoryRepository,
-            NullLogger<AnswerGroundingEvaluator>.Instance);
+    {
+        _backgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
+        return new AnswerGroundingEvaluator(new AnswerGroundingOptions(mode), _repository, _memoryRepository,
+            _backgroundTasks, NullLogger<AnswerGroundingEvaluator>.Instance);
+    }
 
     private static LLMContext Ctx(string message = "Wie sieht der Plan aus?") => new()
     {
@@ -167,6 +172,59 @@ public class AnswerGroundingEvaluatorTests
 
         _finding.ShouldBeNull("4711.5 is memory-grounded and a single uncovered number stays silent");
         _counter!.ClaimsUncovered.ShouldBe(1, "8999 from agent_self must stay uncovered");
+    }
+
+    [Test]
+    public async Task ShadowMode_NeverTriggersAReflectionLesson()
+    {
+        _repository.CountFindingsAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(5);
+        var evaluator = Evaluator("Shadow");
+
+        await evaluator.EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Die Schicht 3f2a0c1d-9b4e-4f6a-8c2d-1234567890ab wurde angepasst.", [DataCall("""{"Count":1}""")]);
+
+        _backgroundTasks.DidNotReceive().TriggerReflection(Arg.Any<TurnReflectionRequest>());
+    }
+
+    [Test]
+    public async Task ActiveMode_FirstOccurrence_StaysBelowTheRepeatGate()
+    {
+        _repository.CountFindingsAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(1);
+        var evaluator = Evaluator("Active");
+
+        await evaluator.EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Die Schicht 3f2a0c1d-9b4e-4f6a-8c2d-1234567890ab wurde angepasst.", [DataCall("""{"Count":1}""")]);
+
+        _backgroundTasks.DidNotReceive().TriggerReflection(Arg.Any<TurnReflectionRequest>());
+    }
+
+    [Test]
+    public async Task ActiveMode_RepeatedScope_TriggersAStructuralLessonWithoutClaimValues()
+    {
+        _repository.CountFindingsAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(2);
+        var evaluator = Evaluator("Active");
+
+        await evaluator.EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Das Team hat 4711.5 Stunden geleistet und 8999 Franken Spesen erfasst.", [DataCall("""{"Hours":12.5}""")]);
+
+        _backgroundTasks.Received(1).TriggerReflection(Arg.Is<TurnReflectionRequest>(r =>
+            r.Trigger == "uncovered-claim" &&
+            r.ScopeKey == "read_schedule_state" &&
+            !r.WhatWentWrong.Contains("4711") &&
+            !r.WhatWentWrong.Contains("8999")));
+    }
+
+    [Test]
+    public async Task FindingsCarryScopeKeyAndPrimaryClaimKind()
+    {
+        await Evaluator().EvaluateAsync(Guid.NewGuid(), Ctx(),
+            "Die Schicht 3f2a0c1d-9b4e-4f6a-8c2d-1234567890ab wurde angepasst.", [DataCall("""{"Count":1}""")]);
+
+        _finding!.ScopeKey.ShouldBe("read_schedule_state");
+        _finding.PrimaryClaimKind.ShouldBe("Uuid");
     }
 
     [Test]
