@@ -7,6 +7,7 @@ using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
@@ -36,6 +37,7 @@ public class HarmonizerApplyServiceCaptureTests
     private IWizardRunCaptureRepository _captureRepository = null!;
     private IScenarioComplianceService _scenarioComplianceService = null!;
     private IScheduleTimelineService _timelineService = null!;
+    private IScheduleSnapshotMarkerService _snapshotMarkerService = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
     private readonly Guid _shiftId = Guid.NewGuid();
@@ -66,12 +68,19 @@ public class HarmonizerApplyServiceCaptureTests
         _scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+
+        // The real unit of work runs the delegate inside a transaction; the substitute must do the same
+        // or the apply would silently produce nothing.
+        _unitOfWork
+            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario)>>>())
+            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, Guid Token, AnalyseScenario Scenario)>>>()());
         _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
         _scenarioComplianceService = Substitute.For<IScenarioComplianceService>();
         _scenarioComplianceService
             .EvaluateAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new ScenarioComplianceReport([], []));
         _timelineService = Substitute.For<IScheduleTimelineService>();
+        _snapshotMarkerService = Substitute.For<IScheduleSnapshotMarkerService>();
 
         _mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
             .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
@@ -89,12 +98,12 @@ public class HarmonizerApplyServiceCaptureTests
 
     private HarmonizerApplyService BuildHarmonizerSut() => new(
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
-        _scenarioComplianceService, _timelineService,
+        _scenarioComplianceService, _timelineService, _snapshotMarkerService,
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HolisticHarmonizerApplyService BuildHolisticSut() => new(
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
-        _scenarioComplianceService, _timelineService,
+        _scenarioComplianceService, _timelineService, _snapshotMarkerService,
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HarmonyBitmap BestBitmap()
@@ -208,4 +217,75 @@ public class HarmonizerApplyServiceCaptureTests
         await _scenarioComplianceService.DidNotReceive().EvaluateAsync(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
+
+    private static ScheduleSnapshotMarker Marker(int works, int breaks, string hash)
+        => new(D, D, [Guid.NewGuid()], null, works, breaks, hash);
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_ScheduleChangedSinceTheRun_ThrowsStaleAndKeepsTheResult()
+    {
+        var jobId = Guid.NewGuid();
+        var marker = Marker(works: 4, breaks: 1, hash: "AAAA");
+        _cache.Store(jobId, BestBitmap(), BestBitmap(), sourceAnalyseToken: null, snapshotMarker: marker);
+        _snapshotMarkerService
+            .ComputeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<IReadOnlyList<Guid>>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(Marker(works: 5, breaks: 1, hash: "BBBB"));
+
+        var ex = await Should.ThrowAsync<StaleWizardResultException>(
+            () => BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None));
+
+        ex.ExpectedWorkCount.ShouldBe(4);
+        ex.ActualWorkCount.ShouldBe(5);
+        // The cached result survives so the operator can re-run or repeat the apply deliberately.
+        _cache.TryGet(jobId, out _, out _, out _, out _, out _, out _).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_OnlyPlacementMoved_IsStillReportedAsStale()
+    {
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, BestBitmap(), BestBitmap(), sourceAnalyseToken: null,
+            snapshotMarker: Marker(works: 4, breaks: 1, hash: "AAAA"));
+        _snapshotMarkerService
+            .ComputeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<IReadOnlyList<Guid>>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(Marker(works: 4, breaks: 1, hash: "MOVED"));
+
+        var ex = await Should.ThrowAsync<StaleWizardResultException>(
+            () => BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None));
+
+        ex.PlacementChanged.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_UnchangedSchedule_AppliesNormally()
+    {
+        var jobId = Guid.NewGuid();
+        var marker = Marker(works: 4, breaks: 1, hash: "AAAA");
+        _cache.Store(jobId, BestBitmap(), BestBitmap(), sourceAnalyseToken: null, snapshotMarker: marker);
+        _snapshotMarkerService
+            .ComputeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<IReadOnlyList<Guid>>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(marker);
+
+        await Should.NotThrowAsync(
+            () => BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None));
+
+        // The entry was consumed, so the apply really went through instead of being put back.
+        _cache.TryGet(jobId, out _, out _, out _, out _, out _, out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_WithoutMarker_SkipsTheStalenessCheck()
+    {
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, BestBitmap(), BestBitmap(), sourceAnalyseToken: null);
+
+        await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None);
+
+        await _snapshotMarkerService.DidNotReceiveWithAnyArgs()
+            .ComputeAsync(default, default, default!, default, default);
+    }
 }
+

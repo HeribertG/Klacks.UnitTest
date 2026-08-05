@@ -45,6 +45,7 @@ public class Wizard4RunnerTests
             _repository,
             _captureRepository,
             _unitOfWork,
+            Substitute.For<IScheduleSnapshotMarkerService>(),
             Substitute.For<ILogger<Wizard4Runner>>());
     }
 

@@ -3,6 +3,7 @@
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.DTOs.Schedules.Wizard;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
@@ -12,6 +13,8 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
+using Klacks.Api.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
@@ -68,7 +71,18 @@ public class WizardApplyServiceComplianceTests
             _softeningRepository,
             _captureRepository,
             _partitionService,
+            BuildInMemoryContext(),
+            Substitute.For<IScheduleTimelineService>(),
             NullLogger<WizardApplyService>.Instance);
+
+        // The real unit of work runs the delegate inside a transaction; the substitute must do the same
+        // or the apply would silently produce nothing.
+        _unitOfWork
+            .ExecuteInTransactionAsync(Arg.Any<Func<Task<IReadOnlyList<Guid>>>>())
+            .Returns(ci => ci.Arg<Func<Task<IReadOnlyList<Guid>>>>()());
+        _unitOfWork
+            .ExecuteInTransactionAsync(Arg.Any<Func<Task<(IReadOnlyList<Guid> Ids, CompliancePartitionResult Partition, IReadOnlyList<SkippedPlacementDto> Skipped, AnalyseScenario Scenario)>>>())
+            .Returns(ci => ci.Arg<Func<Task<(IReadOnlyList<Guid> Ids, CompliancePartitionResult Partition, IReadOnlyList<SkippedPlacementDto> Skipped, AnalyseScenario Scenario)>>>()());
     }
 
     private static CoreToken MakeToken(Guid agentId, DateOnly date)
@@ -295,4 +309,11 @@ public class WizardApplyServiceComplianceTests
         skipped.ReasonKey.ShouldBe(BlockReasonKey);
         outcome.CreatedWorkIds.ShouldBe(_createdIds);
     }
+
+    private static DataBaseContext BuildInMemoryContext()
+        => new(
+            new DbContextOptionsBuilder<DataBaseContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options,
+            null!);
 }

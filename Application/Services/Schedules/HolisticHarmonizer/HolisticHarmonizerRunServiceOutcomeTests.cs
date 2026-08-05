@@ -48,6 +48,7 @@ public sealed class HolisticHarmonizerRunServiceOutcomeTests
             engine,
             resultCache,
             settingsReader,
+            Substitute.For<IScheduleSnapshotMarkerService>(),
             NullLogger<HolisticHarmonizerRunService>.Instance);
     }
 
