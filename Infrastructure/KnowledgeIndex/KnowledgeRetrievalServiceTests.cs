@@ -105,6 +105,31 @@ public class KnowledgeRetrievalServiceTests
         second.Candidates[0].Score.ShouldBe(first.Candidates[0].Score);
     }
 
+    // The kind predicate must reach the KNN query itself: the index holds ~450 skills against ~24
+    // recipes, so a kind-blind top-N is almost always all skills and a recipe caller filtering
+    // afterwards is usually left with nothing. The mock only answers the kind-filtered call, so a
+    // service that stopped forwarding the predicate would come back empty here.
+    [Test]
+    public async Task RetrieveAsync_WithKindFilter_ForwardsThePredicateToTheKnnQuery()
+    {
+        var recipe = new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "r", Text = "recipe text" };
+        _repo.FindNearestAsync(
+                Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
+                Arg.Any<CancellationToken>(), KnowledgeEntryKind.Recipe)
+            .Returns([recipe]);
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.9 });
+
+        var result = await _service.RetrieveAsync(
+            "plan a recipe", [], false, 3, currentRoute: null, CancellationToken.None, KnowledgeEntryKind.Recipe);
+
+        result.Candidates.Count.ShouldBe(1);
+        result.Candidates[0].Entry.SourceId.ShouldBe("r");
+        await _repo.Received(1).FindNearestAsync(
+            Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
+            Arg.Any<CancellationToken>(), KnowledgeEntryKind.Recipe);
+    }
+
     // The reuse must key on the actual input. A different query is a different question, however
     // similar it looks.
     [Test]
