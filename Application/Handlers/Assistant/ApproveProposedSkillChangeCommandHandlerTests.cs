@@ -11,7 +11,6 @@ using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
-using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -22,9 +21,7 @@ public class ApproveProposedSkillChangeCommandHandlerTests
 {
     private IProposedSkillChangeRepository _proposalRepo = null!;
     private IAgentSkillRepository _skillRepo = null!;
-    private ISkillCacheService _cache = null!;
-    private SkillRegistryInitializer _initializer = null!;
-    private IKnowledgeIndexSynchronizer _knowledgeSync = null!;
+    private ISkillCatalogRefresher _refresher = null!;
     private ILogger<ApproveProposedSkillChangeCommandHandler> _logger = null!;
     private ApproveProposedSkillChangeCommandHandler _handler = null!;
 
@@ -33,16 +30,11 @@ public class ApproveProposedSkillChangeCommandHandlerTests
     {
         _proposalRepo = Substitute.For<IProposedSkillChangeRepository>();
         _skillRepo = Substitute.For<IAgentSkillRepository>();
-        _cache = Substitute.For<ISkillCacheService>();
-        _initializer = Substitute.For<SkillRegistryInitializer>(
-            Substitute.For<IAgentSkillRepository>(),
-            Substitute.For<ISkillRegistry>(),
-            Substitute.For<ILogger<SkillRegistryInitializer>>());
-        _knowledgeSync = Substitute.For<IKnowledgeIndexSynchronizer>();
+        _refresher = Substitute.For<ISkillCatalogRefresher>();
         _logger = Substitute.For<ILogger<ApproveProposedSkillChangeCommandHandler>>();
 
         _handler = new ApproveProposedSkillChangeCommandHandler(
-            _proposalRepo, _skillRepo, _cache, _initializer, _knowledgeSync, _logger);
+            _proposalRepo, _skillRepo, _refresher, _logger);
     }
 
     [Test]
@@ -78,9 +70,7 @@ public class ApproveProposedSkillChangeCommandHandlerTests
         proposal.ReviewedBy.ShouldBe("admin@klacks");
 
         await _skillRepo.Received(1).UpdateAsync(skill, Arg.Any<CancellationToken>());
-        _cache.Received(1).InvalidateCache();
-        await _initializer.Received(1).InitializeAsync(Arg.Any<CancellationToken>());
-        await _knowledgeSync.Received(1).SyncAsync(Arg.Any<CancellationToken>());
+        await _refresher.Received(1).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -111,7 +101,7 @@ public class ApproveProposedSkillChangeCommandHandlerTests
         proposal.Status.ShouldBe(ProposedChangeStatuses.Rejected);
         skill.Description.ShouldBe("Description was changed elsewhere");
         await _skillRepo.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
-        _cache.DidNotReceive().InvalidateCache();
+        await _refresher.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

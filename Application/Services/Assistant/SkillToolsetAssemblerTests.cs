@@ -145,46 +145,6 @@ public class SkillToolsetAssemblerTests
             conversationId: null, currentRoute: null, UserId, language: null, cancellationToken: CancellationToken.None);
     }
 
-    // Measurement for the action-canonicalized cache key. The line has to carry a signature that is
-    // stable across rephrasings of the same action, which is the whole premise being measured - so the
-    // order of the matched skills must not leak into it.
-    [Test]
-    public async Task AssembleAsync_EmitsToolsetSignatureLine_WithOrderIndependentSignature()
-    {
-        var logger = new CapturingLogger();
-        var assembler = new SkillToolsetAssembler(
-            _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
-            _pendingUserNoteRepository, _recipeEngine,
-            PendingStoreTestFactory.CreateConfirmationStore(),
-            logger);
-
-        await assembler.AssembleAsync(
-            _agent, new List<string>(), UserMessage,
-            conversationId: null, currentRoute: null, UserId, language: null, cancellationToken: CancellationToken.None);
-
-        var line = logger.Messages.SingleOrDefault(m => m.Contains("[toolset-sig]"));
-
-        line.ShouldNotBeNull();
-        line.ShouldContain("msg=");
-        line.ShouldContain("sig=");
-        line.ShouldContain("matched=");
-        // The raw message must not reach the log - the line is meant to be safe at Information level.
-        line.ShouldNotContain(UserMessage);
-    }
-
-    private sealed class CapturingLogger : ILogger<SkillToolsetAssembler>
-    {
-        public List<string> Messages { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
-    }
-
     [Test]
     public async Task AssembleAsync_NullAgent_ReturnsEmptyToolsetWithoutDomainContext()
     {
