@@ -117,6 +117,17 @@ public class ToolResultGroundingPoolBuilderTests
     }
 
     [Test]
+    public void YearlessDayMonthText_IsCoveredByMatchingPoolDates()
+    {
+        var pool = Build([DataCall("""{"From":"2026-11-24","Until":"2026-12-05"}""")]);
+
+        pool.Covers(new AnswerClaim(AnswerClaimKind.Number, "24.11", ["24.11"])).ShouldBeTrue("24.11 matches 2026-11-24");
+        pool.Covers(new AnswerClaim(AnswerClaimKind.Number, "05.12", ["5.12"])).ShouldBeTrue("leading zero preserved via RawText");
+        pool.Covers(new AnswerClaim(AnswerClaimKind.Number, "06.12", ["6.12"])).ShouldBeFalse("no pool date ends in -12-06");
+        pool.Covers(new AnswerClaim(AnswerClaimKind.Number, "13.45", ["13.45"])).ShouldBeFalse("45 is not a month");
+    }
+
+    [Test]
     public void NameStrings_LandLowercasedInTheCorpus()
     {
         var pool = Build([DataCall("""{"Results":[{"FirstName":"Anna","LastName":"Meier"}]}""")]);

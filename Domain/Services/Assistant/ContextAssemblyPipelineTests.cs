@@ -47,6 +47,9 @@ public class ContextAssemblyPipelineTests
         _memory.RetrieveRelevantMemoriesAsync(
                 Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>())
             .Returns(new MemoryRetrievalResult(MemoryText, Array.Empty<Guid>()));
+        _memory.RetrieveToolsetLessonsAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentMemory>());
         _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
             .Returns(new SentimentResult(SentimentMood.Neutral, 0f));
         _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -59,6 +62,73 @@ public class ContextAssemblyPipelineTests
             _pendingNotes,
             _recentEntities,
             NullLogger<ContextAssemblyPipeline>.Instance);
+    }
+
+    private AgentMemory Lesson(string skillKey, string content) => new()
+    {
+        Id = Guid.NewGuid(),
+        Category = "reflection",
+        Key = skillKey,
+        Content = content
+    };
+
+    [Test]
+    public async Task ToolsetLessons_AreRenderedAsLessonsBlock_AndTheirIdsAreInjected()
+    {
+        var lesson = Lesson("update_client", "resolve the client id before updating");
+        _memory.RetrieveToolsetLessonsAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentMemory> { lesson });
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "bitte passe den Kunden an", availableSkillNames: new[] { "update_client" });
+
+        Assert.That(result.VolatilePrompt, Does.Contain("[LESSONS]"));
+        Assert.That(result.VolatilePrompt, Does.Contain("- [update_client] resolve the client id before updating"));
+        Assert.That(result.InjectedMemoryIds, Does.Contain(lesson.Id));
+    }
+
+    [Test]
+    public async Task ShortConfirmationTurn_StillReceivesToolsetLessons()
+    {
+        var lesson = Lesson("apply_grouping", "confirm the grouping wording first");
+        _memory.RetrieveToolsetLessonsAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentMemory> { lesson });
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "ja", availableSkillNames: new[] { "apply_grouping" });
+
+        Assert.That(result.VolatilePrompt, Does.Contain("[LESSONS]"));
+        Assert.That(result.InjectedMemoryIds, Does.Contain(lesson.Id));
+        await _memory.DidNotReceive().RetrieveRelevantMemoriesAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task LessonsAlreadyInjectedByMemoryRetrieval_AreNotRenderedTwice()
+    {
+        var lesson = Lesson("update_client", "duplicate lesson");
+        _memory.RetrieveToolsetLessonsAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentMemory> { lesson });
+        _memory.RetrieveRelevantMemoriesAsync(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<ContextBudgetProfile?>(), Arg.Any<CancellationToken>())
+            .Returns(new MemoryRetrievalResult(MemoryText, new[] { lesson.Id }));
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(
+            Guid.NewGuid(), "bitte passe den Kunden an", availableSkillNames: new[] { "update_client" });
+
+        Assert.That(result.VolatilePrompt, Does.Not.Contain("[LESSONS]"));
+    }
+
+    [Test]
+    public async Task WithoutAToolset_NoLessonRetrievalHappens()
+    {
+        await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
+
+        await _memory.DidNotReceive().RetrieveToolsetLessonsAsync(
+            Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
