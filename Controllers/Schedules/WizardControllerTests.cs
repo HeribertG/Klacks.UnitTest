@@ -1,5 +1,8 @@
 ﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.Api.Infrastructure.Mediator;
+using Klacks.Api.Domain.Enums;
+using Klacks.Api.Application.Exceptions;
 using Shouldly;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Schedules;
@@ -20,6 +23,7 @@ public class WizardControllerTests
     private IWizardApplyService _applyService = null!;
     private IWizardBenchmarkService _benchmarkService = null!;
     private JobTerminalStateCache<WizardJobResultDto> _stateCache = null!;
+    private IMediator _mediator = null!;
     private WizardController _sut = null!;
 
     [SetUp]
@@ -29,7 +33,8 @@ public class WizardControllerTests
         _applyService = Substitute.For<IWizardApplyService>();
         _benchmarkService = Substitute.For<IWizardBenchmarkService>();
         _stateCache = new JobTerminalStateCache<WizardJobResultDto>();
-        _sut = new WizardController(_runner, _applyService, _benchmarkService, _stateCache);
+        _mediator = Substitute.For<IMediator>();
+        _sut = new WizardController(_runner, _applyService, _benchmarkService, _stateCache, _mediator);
     }
 
     [Test]
@@ -103,11 +108,19 @@ public class WizardControllerTests
     }
 
     [Test]
-    public async Task Start_ReturnsBadRequest_WhenAgentLimitExceeded()
+    public async Task Start_OversizedRequest_LetsTheGuardExceptionThrough()
     {
+        // The size gate moved into AutofillStartGuard, which every runner consults; the controller must
+        // not swallow its verdict but hand it to the middleware, which turns it into the 400 body.
+        // AutofillStartGuardTests covers the limit arithmetic itself.
         var agents = Enumerable.Range(0, WizardLimits.MaxAgents + 1).Select(_ => Guid.NewGuid()).ToArray();
+        _runner
+            .StartAsync(Arg.Any<WizardContextRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<Guid>>(_ => throw new AutofillLimitExceededException(
+                WizardLimits.TooLargeErrorCode, AutofillFamily.Wizard1, agents.Length, 0, 11,
+                WizardLimits.MaxAgents, WizardLimits.MaxShifts, AutofillLimits.MaxPeriodDays));
 
-        var result = await _sut.Start(
+        var act = async () => await _sut.Start(
             new StartWizardRequest(
                 new DateOnly(2026, 4, 20),
                 new DateOnly(2026, 4, 30),
@@ -115,28 +128,27 @@ public class WizardControllerTests
                 null,
                 null));
 
-        var badRequest = result.Result.ShouldBeOfType<BadRequestObjectResult>();
-        var error = badRequest.Value.ShouldBeOfType<WizardLimitErrorResponse>();
-        error.Code.ShouldBe(WizardLimits.TooLargeErrorCode);
-        error.Agents.ShouldBe(WizardLimits.MaxAgents + 1);
-        await _runner.DidNotReceive().StartAsync(Arg.Any<WizardContextRequest>(), Arg.Any<CancellationToken>());
+        (await act.ShouldThrowAsync<AutofillLimitExceededException>()).Code
+            .ShouldBe(WizardLimits.TooLargeErrorCode);
     }
 
     [Test]
-    public async Task Start_ReturnsBadRequest_WhenShiftLimitExceeded()
+    public async Task Start_RunConflict_LetsTheGuardExceptionThrough()
     {
-        var shifts = Enumerable.Range(0, WizardLimits.MaxShifts + 1).Select(_ => Guid.NewGuid()).ToArray();
+        var runningJob = Guid.NewGuid();
+        _runner
+            .StartAsync(Arg.Any<WizardContextRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<Guid>>(_ => throw new AutofillRunConflictException(runningJob, AutofillFamily.Wizard1));
 
-        var result = await _sut.Start(
+        var act = async () => await _sut.Start(
             new StartWizardRequest(
                 new DateOnly(2026, 4, 20),
                 new DateOnly(2026, 4, 30),
                 new[] { Guid.NewGuid() },
-                shifts,
+                null,
                 null));
 
-        result.Result.ShouldBeOfType<BadRequestObjectResult>();
-        await _runner.DidNotReceive().StartAsync(Arg.Any<WizardContextRequest>(), Arg.Any<CancellationToken>());
+        (await act.ShouldThrowAsync<AutofillRunConflictException>()).RunningJobId.ShouldBe(runningJob);
     }
 
     [Test]

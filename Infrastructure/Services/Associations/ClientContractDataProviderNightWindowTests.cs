@@ -92,19 +92,41 @@ public class ClientContractDataProviderNightWindowTests
     [Test]
     public async Task GetEffectiveContractDataAsync_EditedNightWindowSettings_YieldDifferentEffectiveWindow()
     {
+        // The provider is scoped and resolves the global settings once per scope, because the
+        // recalculation pipeline asks for contract data once per Work. A settings change is therefore
+        // picked up by the NEXT scope - which is what production does: the settings handler only queues
+        // a recalculation, and ThoroughRecalculationBackgroundService opens a fresh scope per request.
         var clientId = Guid.NewGuid();
         await SeedSettingsAsync("22:00", "04:00");
         var before = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
 
         await UpdateSettingAsync(SettingKeys.SurchargeNightStart, "21:00");
         await UpdateSettingAsync(SettingKeys.SurchargeNightEnd, "05:00");
-        var after = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+        var after = await NextScopeProvider().GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
 
         before.NightStart.ShouldBe("22:00");
         before.NightEnd.ShouldBe("04:00");
         after.NightStart.ShouldBe("21:00");
         after.NightEnd.ShouldBe("05:00");
     }
+
+    [Test]
+    public async Task GetEffectiveContractDataAsync_SettingsEditedWithinTheSameScope_KeepsTheResolvedSnapshot()
+    {
+        var clientId = Guid.NewGuid();
+        await SeedSettingsAsync("22:00", "04:00");
+        await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        await UpdateSettingAsync(SettingKeys.SurchargeNightStart, "21:00");
+        var again = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        // Not a stale read to be fixed: no code path writes settings and resolves contract data in the
+        // same scope, and re-reading them per Work is the single largest cost of a recalculation run.
+        again.NightStart.ShouldBe("22:00");
+    }
+
+    /// <summary>A provider as the DI container would hand it out for the next request.</summary>
+    private ClientContractDataProvider NextScopeProvider() => new(_context);
 
     private async Task SeedSettingsAsync(string nightStart, string nightEnd)
     {

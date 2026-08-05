@@ -145,9 +145,7 @@ public class WizardContextBuilderTests
         var agentId = Guid.NewGuid();
         var scenarioToken = Guid.NewGuid();
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new Dictionary<Guid, EffectiveContractData>
+        StubContractData(new Dictionary<Guid, EffectiveContractData>
             {
                 [agentId] = new EffectiveContractData
                 {
@@ -284,9 +282,7 @@ public class WizardContextBuilderTests
                 MaxConsecutiveDays = 6,
             });
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(contracts);
+        StubContractData(contracts);
 
         _shiftBuilder
             .BuildAsync(Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
@@ -304,8 +300,10 @@ public class WizardContextBuilderTests
         cts.Cancel();
 
         _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns<Dictionary<Guid, EffectiveContractData>>(_ => throw new OperationCanceledException(cts.Token));
+            .GetEffectiveContractDataForClientsRangeAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns<Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>>(
+                _ => throw new OperationCanceledException(cts.Token));
 
         var request = new WizardContextRequest(
             PeriodFrom: new DateOnly(2026, 4, 20),
@@ -316,5 +314,31 @@ public class WizardContextBuilderTests
 
         var act = async () => await _sut.BuildContextAsync(request, cts.Token);
         act.ShouldThrowAsync<OperationCanceledException>();
+    }
+    /// <summary>
+    /// Stubs both provider entry points with the same data: the agent snapshot builder resolves the
+    /// whole period through the range API, the context builder still asks per day for its defaults.
+    /// </summary>
+    private void StubContractData(Dictionary<Guid, EffectiveContractData> contracts)
+    {
+        _contractProvider
+            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(contracts);
+
+        _contractProvider
+            .GetEffectiveContractDataForClientsRangeAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(ci =>
+            {
+                var from = ci.ArgAt<DateOnly>(1);
+                var until = ci.ArgAt<DateOnly>(2);
+                var result = new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>();
+                for (var date = from; date <= until; date = date.AddDays(1))
+                {
+                    result[date] = contracts;
+                }
+
+                return result;
+            });
     }
 }

@@ -48,9 +48,7 @@ public class WizardAgentSnapshotBuilderTests
             PerformsShiftWork = true,
         };
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
 
         var result = await _sut.BuildAsync(
             new[] { agentId }, from, until,
@@ -86,9 +84,7 @@ public class WizardAgentSnapshotBuilderTests
             PerformsShiftWork = false,
         };
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
 
         var result = await _sut.BuildAsync(
             new[] { agentId }, date, date,
@@ -119,9 +115,7 @@ public class WizardAgentSnapshotBuilderTests
             WorkOnMonday = true,
         };
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new Dictionary<Guid, EffectiveContractData>
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData>
             {
                 [thirdId] = contractData,
                 [firstId] = contractData,
@@ -166,12 +160,10 @@ public class WizardAgentSnapshotBuilderTests
             WorkOnSunday = true,
         };
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(ci => new Dictionary<Guid, EffectiveContractData>
-            {
-                [agentId] = ci.Arg<DateOnly>() >= contractStart ? contractData : fallbackData,
-            });
+        StubContractData(date => new Dictionary<Guid, EffectiveContractData>
+        {
+            [agentId] = date >= contractStart ? contractData : fallbackData,
+        });
 
         var result = await _sut.BuildAsync(
             new[] { agentId }, from, until,
@@ -195,12 +187,10 @@ public class WizardAgentSnapshotBuilderTests
         var agentId = Guid.NewGuid();
         var date = new DateOnly(2026, 6, 1);
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new Dictionary<Guid, EffectiveContractData>
-            {
-                [agentId] = new EffectiveContractData { HasActiveContract = false },
-            });
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData>
+        {
+            [agentId] = new EffectiveContractData { HasActiveContract = false },
+        });
 
         var result = await _sut.BuildAsync(
             new[] { agentId }, date, date.AddDays(2),
@@ -225,9 +215,7 @@ public class WizardAgentSnapshotBuilderTests
             WorkOnSunday = false,
         };
 
-        _contractProvider
-            .GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
 
         var result = await _sut.BuildAsync(
             new[] { agentId }, monday, sunday,
@@ -236,5 +224,48 @@ public class WizardAgentSnapshotBuilderTests
 
         result.ContractDays.Single(d => d.Date == monday).WorksOnDay.ShouldBeTrue();
         result.ContractDays.Single(d => d.Date == sunday).WorksOnDay.ShouldBeFalse();
+    }
+    [Test]
+    public async Task BuildAsync_ResolvesTheContractDataOnceForTheWholePeriod()
+    {
+        var agentId = Guid.NewGuid();
+        var from = new DateOnly(2026, 3, 1);
+        var until = from.AddDays(30);
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData>
+        {
+            [agentId] = new EffectiveContractData { HasActiveContract = true, ContractId = Guid.NewGuid(), WorkOnMonday = true },
+        });
+
+        await _sut.BuildAsync(
+            new[] { agentId }, from, until, new Dictionary<Guid, double>(), CancellationToken.None);
+
+        await _contractProvider.Received(1).GetEffectiveContractDataForClientsRangeAsync(
+            Arg.Any<List<Guid>>(), from, until, Arg.Any<int?>());
+        await _contractProvider.DidNotReceiveWithAnyArgs()
+            .GetEffectiveContractDataForClientsAsync(default!, default, default);
+    }
+
+    /// <summary>
+    /// Stubs the range API the builder now uses, expanding a per-day factory over the requested range.
+    /// The builder resolves the contract data for the whole period in ONE call; the day-by-day loop it
+    /// used to run repeated the same contract, revision and settings queries for every day.
+    /// </summary>
+    private void StubContractData(Func<DateOnly, Dictionary<Guid, EffectiveContractData>> perDay)
+    {
+        _contractProvider
+            .GetEffectiveContractDataForClientsRangeAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(ci =>
+            {
+                var from = ci.ArgAt<DateOnly>(1);
+                var until = ci.ArgAt<DateOnly>(2);
+                var result = new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>();
+                for (var date = from; date <= until; date = date.AddDays(1))
+                {
+                    result[date] = perDay(date);
+                }
+
+                return result;
+            });
     }
 }
