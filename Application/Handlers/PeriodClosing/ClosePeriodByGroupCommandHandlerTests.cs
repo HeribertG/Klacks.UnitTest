@@ -4,6 +4,11 @@
 /// Unit tests for ClosePeriodByGroupCommandHandler: permission check, group-aware sealing, and audit log writing.
 /// </summary>
 
+using Klacks.Api.Application.Exceptions;
+using Klacks.Api.Domain.Enums;
+using Klacks.Api.Application.DTOs.PeriodClosing;
+using Klacks.Api.Application.Interfaces.PeriodClosing;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Shouldly;
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.Handlers.PeriodClosing;
@@ -29,6 +34,8 @@ public class ClosePeriodByGroupCommandHandlerTests
     private IPeriodAuditLogRepository _auditLogRepository = null!;
     private ISealedDayRepository _sealedDayRepository = null!;
     private IDomainEventDispatcher _eventDispatcher = null!;
+    private IPeriodValidationLoader _validationLoader = null!;
+    private IComplianceEscalationService _escalationService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<ClosePeriodByGroupCommandHandler> _logger = null!;
     private ClosePeriodByGroupCommandHandler _handler = null!;
@@ -45,6 +52,11 @@ public class ClosePeriodByGroupCommandHandlerTests
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<SealedDay>());
         _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
+        _validationLoader = Substitute.For<IPeriodValidationLoader>();
+        _validationLoader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<PeriodIssueDto>());
+        _escalationService = Substitute.For<IComplianceEscalationService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ClosePeriodByGroupCommandHandler>>();
 
@@ -59,6 +71,8 @@ public class ClosePeriodByGroupCommandHandlerTests
             _auditLogRepository,
             _sealedDayRepository,
             _eventDispatcher,
+            _validationLoader,
+            _escalationService,
             _unitOfWork,
             _logger);
     }
@@ -255,4 +269,65 @@ public class ClosePeriodByGroupCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+
+    private static PeriodIssueDto Issue(ScheduleValidationType severity) => new()
+    {
+        Date = new DateOnly(2026, 1, 15),
+        ClientId = Guid.NewGuid(),
+        ClientName = "Probe",
+        Severity = severity,
+        Code = "ScheduleValidation",
+        MessageKey = "schedule.error-list.rest-violation",
+        MessageParams = new Dictionary<string, string>(),
+    };
+
+    private void GivenIssues(params PeriodIssueDto[] issues)
+    {
+        _lockLevelService.CanSeal(Arg.Any<WorkLockLevel>(), Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(true);
+        _validationLoader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(issues.ToList());
+    }
+
+    [Test]
+    public async Task Handle_UnacknowledgedErrors_RefusesToSealAndReportsTheCount()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error), Issue(ScheduleValidationType.Error));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close");
+
+        var ex = await Should.ThrowAsync<ConflictException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        ex.Message.ShouldContain("2 unresolved error");
+        await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AcknowledgedErrors_SealsAnyway()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close", AcknowledgeViolations: true);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_OnlyWarnings_SealsWithoutAcknowledgement()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Warning), Issue(ScheduleValidationType.Info));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close");
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
 }

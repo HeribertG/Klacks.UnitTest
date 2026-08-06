@@ -4,6 +4,9 @@
 /// Unit tests for ClosePeriodCommandHandler: role-based permission flags passed to the lock-level service.
 /// </summary>
 
+using Klacks.Api.Application.DTOs.PeriodClosing;
+using Klacks.Api.Application.Interfaces.PeriodClosing;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Domain.Events;
@@ -21,6 +24,8 @@ public class ClosePeriodCommandHandlerTests
     private IWorkLockLevelService _lockLevelService = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IDomainEventDispatcher _eventDispatcher = null!;
+    private IPeriodValidationLoader _validationLoader = null!;
+    private IComplianceEscalationService _escalationService = null!;
     private ClosePeriodCommandHandler _handler = null!;
 
     [SetUp]
@@ -31,6 +36,11 @@ public class ClosePeriodCommandHandlerTests
         _lockLevelService = Substitute.For<IWorkLockLevelService>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
+        _validationLoader = Substitute.For<IPeriodValidationLoader>();
+        _validationLoader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<PeriodIssueDto>());
+        _escalationService = Substitute.For<IComplianceEscalationService>();
 
         _handler = new ClosePeriodCommandHandler(
             _workRepository,
@@ -38,6 +48,8 @@ public class ClosePeriodCommandHandlerTests
             _lockLevelService,
             _httpContextAccessor,
             _eventDispatcher,
+            _validationLoader,
+            _escalationService,
             Substitute.For<ILogger<ClosePeriodCommandHandler>>());
     }
 
