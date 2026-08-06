@@ -21,6 +21,10 @@ using Klacks.Api.Infrastructure.Email;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
+using Microsoft.Extensions.Options;
+
+using Klacks.Api.Application.Configuration;
+
 namespace Klacks.UnitTest.Infrastructure.Email;
 
 [TestFixture]
@@ -36,6 +40,7 @@ public class EmailActionOrchestratorTests
     private IScheduleCommandKeywordProvider _keywordProvider = null!;
     private IClientContractDataProvider _contractDataProvider = null!;
     private IEmailCapacityAdvisor _capacityAdvisor = null!;
+    private IInternalTokenIssuer _tokenIssuer = null!;
     private EmailActionOrchestrator _orchestrator = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -76,6 +81,9 @@ public class EmailActionOrchestratorTests
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "done"));
 
+        _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Issued(new BearerToken("email-jwt"), new[] { Roles.Admin }));
         _capacityAdvisor = Substitute.For<IEmailCapacityAdvisor>();
         _capacityAdvisor.JudgeAsync(
                 Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
@@ -86,6 +94,8 @@ public class EmailActionOrchestratorTests
             _groupMembershipService, _absenceRepository, _workRepository,
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
             _capacityAdvisor,
+            _tokenIssuer,
+            Options.Create(new EmailAutomationOptions()),
             Substitute.For<ILogger<EmailActionOrchestrator>>());
     }
 
@@ -891,5 +901,40 @@ public class EmailActionOrchestratorTests
         outcome.Description.ShouldContain("maximum");
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
         await _sealedDayRepository.DidNotReceiveWithAnyArgs().FindFirstLockedDateForClientAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task Execution_UsesTheConfiguredServiceAccount_NotTheResolvedAdmin()
+    {
+        var serviceAccountId = Guid.NewGuid();
+        var orchestrator = new EmailActionOrchestrator(
+            _autonomyPreferences, _audienceResolver, _skillExecutor,
+            _groupMembershipService, _absenceRepository, _workRepository,
+            _sealedDayRepository, _keywordProvider, _contractDataProvider,
+            _capacityAdvisor,
+            _tokenIssuer,
+            Options.Create(new EmailAutomationOptions { ServiceAccountId = serviceAccountId.ToString() }),
+            Substitute.For<ILogger<EmailActionOrchestrator>>());
+
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _absenceRepository.List().Returns([AbsenceType("Ferien", "Vacation")]);
+
+        await orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+
+        await _tokenIssuer.Received().IssueForOwnerAsync(
+            serviceAccountId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Execution_WithoutAToken_DoesNotRunTheSkill()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _absenceRepository.List().Returns([AbsenceType("Ferien", "Vacation")]);
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Refused("the owner account holds no role"));
+
+        await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
     }
 }

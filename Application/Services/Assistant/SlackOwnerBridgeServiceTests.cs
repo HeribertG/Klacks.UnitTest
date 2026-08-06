@@ -37,6 +37,7 @@ public class SlackOwnerBridgeServiceTests
     private IUnitOfWork _unitOfWork = null!;
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private IMediator _mediator = null!;
+    private IInternalTokenIssuer _tokenIssuer = null!;
     private SlackOwnerBridgeService _sut = null!;
 
     [SetUp]
@@ -48,6 +49,9 @@ public class SlackOwnerBridgeServiceTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _mediator = Substitute.For<IMediator>();
+        _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Issued(new BearerToken("slack-jwt"), new[] { Roles.Authorised }));
 
         _planningAudienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<string>)new HashSet<string> { AdminId });
@@ -59,6 +63,7 @@ public class SlackOwnerBridgeServiceTests
             _unitOfWork,
             _planningAudienceResolver,
             _mediator,
+            _tokenIssuer,
             NullLogger<SlackOwnerBridgeService>.Instance);
     }
 
