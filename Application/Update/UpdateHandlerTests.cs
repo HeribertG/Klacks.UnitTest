@@ -216,7 +216,7 @@ public class UpdateHandlerTests
 
     [TestCase(UpdateOperationStatus.Pending)]
     [TestCase(UpdateOperationStatus.Running)]
-    public async Task Delete_active_operation_is_rejected(UpdateOperationStatus status)
+    public async Task Delete_active_operation_succeeds(UpdateOperationStatus status)
     {
         var entry = Entry(status);
         _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
@@ -224,8 +224,8 @@ public class UpdateHandlerTests
         var handler = new DeleteUpdateHistoryCommandHandler(_repository);
         var result = await handler.Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
 
-        result.ShouldBeFalse();
-        await _repository.DidNotReceive().DeleteAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+        result.ShouldBeTrue();
+        await _repository.Received(1).DeleteAsync(entry, Arg.Any<CancellationToken>());
     }
 
     [Test]
