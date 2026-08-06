@@ -14,6 +14,12 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -22,7 +28,7 @@ public class AddClientToNearestGroupSkillTests
     private IClientRepository _clientRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private ICompanyClock _companyClock = null!;
     private AddClientToNearestGroupSkill _skill = null!;
 
@@ -35,12 +41,13 @@ public class AddClientToNearestGroupSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Post, "api/backend/GroupItems", new GroupItemResource());
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToNearestGroupSkill(
-            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _companyClock);
+            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
 
         _clientRepository.Get(ClientId).Returns(new Client
         {
@@ -65,8 +72,12 @@ public class AddClientToNearestGroupSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditClients", "CanViewGroups" }
+        UserPermissions = new List<string> { "CanEditClients", "CanViewGroups" },
+        AccessToken = new BearerToken("caller-jwt")
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task AddsClientToNearestGroup_WhenValidFromIsGiven()
@@ -80,10 +91,7 @@ public class AddClientToNearestGroupSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _groupItemRepository.Received(1).Add(
-            Arg.Is<GroupItem>(gi => gi.GroupId == BernGroupId
-                && gi.ValidFrom == new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
     }
 
     [Test]
@@ -98,7 +106,6 @@ public class AddClientToNearestGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("date"));
-        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 }

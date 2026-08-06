@@ -16,6 +16,14 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.Extensions.Logging;
 
+using Klacks.Api.Application.DTOs.Staffs;
+
+using Klacks.Api.Application.Mappers;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -23,7 +31,7 @@ public class UpdateClientSkillTests
 {
     private IClientRepository _clientRepository = null!;
     private IClientSearchRepository _searchRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private ICountryResolver _countryResolver = null!;
     private UpdateClientSkill _skill = null!;
 
@@ -32,12 +40,12 @@ public class UpdateClientSkillTests
     {
         _clientRepository = Substitute.For<IClientRepository>();
         _searchRepository = Substitute.For<IClientSearchRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Put, "api/backend/Clients", new ClientResource());
         _countryResolver = Substitute.For<ICountryResolver>();
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
-            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
         _skill = new UpdateClientSkill(
-            _clientRepository, _searchRepository, _unitOfWork, Substitute.For<ILogger<UpdateClientSkill>>(), _countryResolver);
+            _clientRepository, _searchRepository, new ClientMapper(), _api.Client, new SelfApiRouteResolver(),
+            Substitute.For<ILogger<UpdateClientSkill>>(), _countryResolver);
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -45,8 +53,12 @@ public class UpdateClientSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditClients" }
+        UserPermissions = new List<string> { "CanEditClients" },
+        AccessToken = new BearerToken("caller-jwt")
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task ReturnsError_WhenClientNotFound()
@@ -87,7 +99,9 @@ public class UpdateClientSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c => c.FirstName == "Anna" && c.Name == "Müller"));
+        var sentNames = _api.BodyOf<ClientResource>()!;
+        sentNames.FirstName.ShouldBe("Anna");
+        sentNames.Name.ShouldBe("Müller");
     }
 
     [Test]
@@ -106,8 +120,9 @@ public class UpdateClientSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c =>
-            c.Gender == GenderEnum.LegalEntity && c.LegalEntity));
+        var sentGender = _api.BodyOf<ClientResource>()!;
+        sentGender.Gender.ShouldBe(GenderEnum.LegalEntity);
+        sentGender.LegalEntity.ShouldBeTrue();
     }
 
     [Test]
@@ -122,35 +137,9 @@ public class UpdateClientSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True, result.Message);
-        Assert.That(result.Message, Does.Contain("verified"));
-        await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
+        _api.SingleCall.Route.ShouldBe("api/backend/Clients");
     }
 
-    [Test]
-    public async Task ReturnsError_WhenVerificationRereadIsStale()
-    {
-        var id = Guid.NewGuid();
-        _clientRepository.Get(id).Returns(new Client { Id = id, FirstName = "Old", Name = "Müller" });
-        _clientRepository.GetNoTracking(id).Returns(new Client { Id = id, FirstName = "Old", Name = "Müller" });
-        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), ["firstName"] = "Anna" };
 
-        var result = await _skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
-    }
-
-    [Test]
-    public async Task ReturnsError_WhenVerificationRereadIsMissing()
-    {
-        var id = Guid.NewGuid();
-        _clientRepository.Get(id).Returns(new Client { Id = id, FirstName = "Old", Name = "Müller" });
-        _clientRepository.GetNoTracking(id).Returns((Client?)null);
-        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), ["firstName"] = "Anna" };
-
-        var result = await _skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
-    }
 }

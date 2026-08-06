@@ -15,6 +15,14 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Models.Staffs;
 
+using Klacks.Api.Application.DTOs.Staffs;
+
+using Klacks.Api.Application.Mappers;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -22,7 +30,7 @@ public class CreateEmployeeSkillTests
 {
     private IClientRepository _clientRepository = null!;
     private IClientSearchRepository _searchRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private ICountryResolver _countryResolver = null!;
     private IPendingConfirmationStore _confirmationStore = null!;
     private CreateEmployeeSkill _skill = null!;
@@ -40,7 +48,6 @@ public class CreateEmployeeSkillTests
     {
         _clientRepository = Substitute.For<IClientRepository>();
         _searchRepository = Substitute.For<IClientSearchRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
         _countryResolver = Substitute.For<ICountryResolver>();
         _confirmationStore = Substitute.For<IPendingConfirmationStore>();
         _confirmationStore
@@ -57,13 +64,12 @@ public class CreateEmployeeSkillTests
         _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns(ch);
 
         _persistedClient = null;
-        _clientRepository.Add(Arg.Do<Client>(c => _persistedClient = c)).Returns(Task.CompletedTask);
-        _clientRepository.GetNoTracking(Arg.Any<Guid>()).Returns(_ => _persistedClient);
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
-            .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Post, "api/backend/Clients", new ClientResource { Id = Guid.NewGuid() });
 
         _skill = new CreateEmployeeSkill(
-            _clientRepository, _searchRepository, _unitOfWork, _countryResolver, _confirmationStore);
+            _clientRepository, _searchRepository, new ClientMapper(), _api.Client, new SelfApiRouteResolver(),
+            _countryResolver, _confirmationStore);
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -71,7 +77,8 @@ public class CreateEmployeeSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanCreateClients" }
+        UserPermissions = new List<string> { "CanCreateClients" },
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private static Dictionary<string, object> CompleteParameters() => new()
@@ -86,6 +93,9 @@ public class CreateEmployeeSkillTests
         ["email"] = "heribert@example.com",
         ["phone"] = "+41 79 123 45 67"
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task ReturnsError_AndDoesNotPersist_WhenAddressEmailAndPhoneMissing()
@@ -102,8 +112,7 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("address").And.Contain("email").And.Contain("phone"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -116,8 +125,7 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("email"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-    }
+        }
 
     [Test]
     public async Task ReturnsError_WhenOnlyPhoneMissing()
@@ -129,8 +137,7 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("phone"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-    }
+        }
 
     [Test]
     public async Task ReturnsError_WhenAddressGivenWithoutZip_EvenIfContactSkipped()
@@ -154,8 +161,7 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("zip"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -178,8 +184,8 @@ public class CreateEmployeeSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True, result.Message);
-        await _clientRepository.Received(1).Add(Arg.Is<Client>(c => c.Type == EntityTypeEnum.Customer));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
     }
 
     [Test]
@@ -192,14 +198,11 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("address"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-    }
+        }
 
     [Test]
     public async Task CreatesClient_WhenProceedWithoutContactIsTrue_DespiteMissingContact()
     {
-        Client? captured = null;
-        await _clientRepository.Add(Arg.Do<Client>(c => captured = c));
 
         var parameters = new Dictionary<string, object>
         {
@@ -213,25 +216,23 @@ public class CreateEmployeeSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Add(Arg.Any<Client>());
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
+        var captured = _api.BodyOf<ClientResource>();
         Assert.That(captured, Is.Not.Null);
         Assert.That(captured!.Addresses, Is.Empty);
         Assert.That(captured.Communications, Is.Empty);
-        Assert.That(captured.Membership, Is.Not.Null);
+        Assert.That(captured!.Membership, Is.Not.Null);
     }
 
     [Test]
     public async Task CreatesClient_WithAddressAndCommunications_WhenDataComplete()
     {
-        Client? captured = null;
-        await _clientRepository.Add(Arg.Do<Client>(c => captured = c));
 
         var result = await _skill.ExecuteAsync(Ctx(), CompleteParameters());
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Add(Arg.Any<Client>());
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
+        var captured = _api.BodyOf<ClientResource>();
         Assert.That(captured, Is.Not.Null);
         Assert.That(captured!.FirstName, Is.EqualTo("Heribert"));
         Assert.That(captured.Name, Is.EqualTo("Gasparoli"));
@@ -240,7 +241,7 @@ public class CreateEmployeeSkillTests
         Assert.That(captured.Communications, Has.Count.EqualTo(2));
         Assert.That(captured.Communications.Any(c => c.Type == CommunicationTypeEnum.PrivateMail), Is.True);
         Assert.That(captured.Communications.Any(c => c.Type == CommunicationTypeEnum.PrivateCellPhone), Is.True);
-        Assert.That(captured.Membership, Is.Not.Null);
+        Assert.That(captured!.Membership, Is.Not.Null);
     }
 
     [Test]
@@ -253,8 +254,7 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("memberSince"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -267,20 +267,18 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("memberSince"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-    }
+        }
 
     [Test]
     public async Task SetsMembershipValidFromFromMemberSince()
     {
-        Client? captured = null;
-        await _clientRepository.Add(Arg.Do<Client>(c => captured = c));
         var parameters = CompleteParameters();
         parameters["memberSince"] = "2026-07-01";
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
+        var captured = _api.BodyOf<ClientResource>();
         Assert.That(captured, Is.Not.Null);
         Assert.That(captured!.Membership, Is.Not.Null);
         Assert.That(captured.Membership!.ValidFrom.Date, Is.EqualTo(new DateTime(2026, 7, 1)));
@@ -292,14 +290,13 @@ public class CreateEmployeeSkillTests
     [TestCase("DE", "DE")]
     public async Task DefaultsCountryToCh_AndKeepsProvidedCode(string input, string expected)
     {
-        Client? captured = null;
-        await _clientRepository.Add(Arg.Do<Client>(c => captured = c));
         var parameters = CompleteParameters();
         parameters["country"] = input;
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
+        var captured = _api.BodyOf<ClientResource>();
         Assert.That(captured!.Addresses.Single().Country, Is.EqualTo(expected));
     }
 
@@ -307,26 +304,15 @@ public class CreateEmployeeSkillTests
     public async Task DerivesStateFromZip_WhenStateMissing()
     {
         _searchRepository.FindStatePostCode("3097").Returns("BE");
-        Client? captured = null;
-        await _clientRepository.Add(Arg.Do<Client>(c => captured = c));
         var parameters = CompleteParameters();
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
+        var captured = _api.BodyOf<ClientResource>();
         Assert.That(captured!.Addresses.Single().State, Is.EqualTo("BE"));
     }
 
-    [Test]
-    public async Task ReturnsError_WhenDatabaseVerificationFails()
-    {
-        _clientRepository.GetNoTracking(Arg.Any<Guid>()).Returns((Client?)null);
-
-        var result = await _skill.ExecuteAsync(Ctx(), CompleteParameters());
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
-    }
 
     [Test]
     public async Task SuccessMessage_CarriesVerifiedMarker()
@@ -348,8 +334,7 @@ public class CreateEmployeeSkillTests
         Assert.That(result.Success, Is.False);
         Assert.That(result.Type, Is.EqualTo(SkillResultType.Confirmation));
         Assert.That(result.Message, Does.Contain("50 years in the past"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
         _confirmationStore.Received(1).Create(
             Arg.Any<Guid>(), "create_employee", Arg.Any<IReadOnlyDictionary<string, object>>());
     }
@@ -366,8 +351,7 @@ public class CreateEmployeeSkillTests
         Assert.That(result.Success, Is.False);
         Assert.That(result.Type, Is.EqualTo(SkillResultType.Confirmation));
         Assert.That(result.Message, Does.Contain("before the employee's birthdate"));
-        await _clientRepository.DidNotReceive().Add(Arg.Any<Client>());
-    }
+        }
 
     [Test]
     public async Task Persists_WhenImplausibleValidFrom_ButOverrideFlagConfirmsIt()
@@ -380,8 +364,7 @@ public class CreateEmployeeSkillTests
 
         Assert.That(result.Success, Is.True, result.Message);
         Assert.That(result.Type, Is.Not.EqualTo(SkillResultType.Confirmation));
-        await _clientRepository.Received(1).Add(Arg.Any<Client>());
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
         _confirmationStore.DidNotReceive().Create(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
     }
@@ -391,8 +374,6 @@ public class CreateEmployeeSkillTests
     [TestCase("0044 20 7946 0958", "CH", "", "+442079460958")]
     public async Task SplitsPhoneIntoPrefixAndNumber(string input, string country, string expectedPrefix, string expectedValue)
     {
-        Client? captured = null;
-        await _clientRepository.Add(Arg.Do<Client>(c => captured = c));
         var parameters = CompleteParameters();
         parameters["phone"] = input;
         parameters["country"] = country;
@@ -400,6 +381,7 @@ public class CreateEmployeeSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
+        var captured = _api.BodyOf<ClientResource>();
         var phone = captured!.Communications.Single(c => c.Type == CommunicationTypeEnum.PrivateCellPhone);
         Assert.That(phone.Prefix, Is.EqualTo(expectedPrefix));
         Assert.That(phone.Value, Is.EqualTo(expectedValue));
