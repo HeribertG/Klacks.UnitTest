@@ -14,6 +14,12 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -23,7 +29,7 @@ public class AddClientToGroupByNameSkillTests
     private IClientSearchRepository _searchRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IGroupScopeGuard _groupScopeGuard = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private ICompanyClock _companyClock = null!;
     private AddClientToGroupByNameSkill _skill = null!;
 
@@ -36,12 +42,14 @@ public class AddClientToGroupByNameSkillTests
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupScopeGuard = TestGroupScopeGuard.Unrestricted();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Post, "api/backend/GroupItems", new GroupItemResource { Id = Guid.NewGuid() });
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupByNameSkill(
-            _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _unitOfWork, _companyClock);
+            _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _companyClock,
+            _api.Client, new SelfApiRouteResolver());
 
         _searchRepository.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult
@@ -64,8 +72,12 @@ public class AddClientToGroupByNameSkillTests
         TenantId = Guid.NewGuid(),
         UserName = "tester",
         UserPermissions = new List<string> { "CanEditClients" },
+        AccessToken = new BearerToken("caller-jwt"),
         SelectedEntityIds = selection
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task ReturnsError_ListingRealGroups_WhenGroupNameIsHallucinated()
@@ -83,7 +95,7 @@ public class AddClientToGroupByNameSkillTests
         Assert.That(result.Message, Does.Contain("Administration"));
         Assert.That(result.Message, Does.Contain("Verkauf"));
         Assert.That(result.Message, Does.Contain("Logistik"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -100,8 +112,8 @@ public class AddClientToGroupByNameSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c => c.GroupItems.Any(gi => !gi.IsDeleted)));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Route.ShouldBe("api/backend/GroupItems");
+        _api.BodyOf<GroupItemResource>()!.GroupId.ShouldNotBe(Guid.Empty);
     }
 
     [Test]
@@ -118,8 +130,7 @@ public class AddClientToGroupByNameSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("date"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -150,7 +161,7 @@ public class AddClientToGroupByNameSkillTests
         Assert.That(result.Message, Does.Contain("1450"));
         Assert.That(result.Message, Does.Contain("edit page"));
         Assert.That(result.Message, Does.Contain(ClientResolver.IdNumberParameterName));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -181,8 +192,7 @@ public class AddClientToGroupByNameSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c => c.Id == pickedId));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.BodyOf<GroupItemResource>()!.ClientId.ShouldBe(pickedId);
     }
 
     [Test]
@@ -207,8 +217,7 @@ public class AddClientToGroupByNameSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c =>
-            c.GroupItems.Any(gi => gi.GroupId == zurichGroupId)));
+        _api.BodyOf<GroupItemResource>()!.GroupId.ShouldBe(zurichGroupId);
     }
 
     [Test]
@@ -227,8 +236,7 @@ public class AddClientToGroupByNameSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("add_selected_clients_to_group"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -243,7 +251,8 @@ public class AddClientToGroupByNameSkillTests
         });
         _groupScopeGuard = TestGroupScopeGuard.Restricted(new[] { salesRootId }, "Verkauf");
         _skill = new AddClientToGroupByNameSkill(
-            _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _unitOfWork, _companyClock);
+            _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _companyClock,
+            _api.Client, new SelfApiRouteResolver());
 
         var parameters = new Dictionary<string, object>
         {
@@ -258,8 +267,7 @@ public class AddClientToGroupByNameSkillTests
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("Group 'Logistik' not found"));
         Assert.That(result.Message, Does.Contain("Available groups: Verkauf."));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -273,7 +281,8 @@ public class AddClientToGroupByNameSkillTests
         });
         _groupScopeGuard = TestGroupScopeGuard.Restricted(new[] { salesRootId }, "Verkauf");
         _skill = new AddClientToGroupByNameSkill(
-            _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _unitOfWork, _companyClock);
+            _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _companyClock,
+            _api.Client, new SelfApiRouteResolver());
 
         var parameters = new Dictionary<string, object>
         {
@@ -286,8 +295,6 @@ public class AddClientToGroupByNameSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c =>
-            c.GroupItems.Any(gi => gi.GroupId == salesRootId)));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.BodyOf<GroupItemResource>()!.GroupId.ShouldBe(salesRootId);
     }
 }
