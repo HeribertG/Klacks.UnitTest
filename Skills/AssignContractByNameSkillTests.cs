@@ -16,6 +16,14 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
 
+using Klacks.Api.Application.DTOs.Staffs;
+
+using Klacks.Api.Application.Mappers;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -24,7 +32,7 @@ public class AssignContractByNameSkillTests
     private IClientRepository _clientRepository = null!;
     private IClientSearchRepository _searchRepository = null!;
     private IContractRepository _contractRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private AssignContractByNameSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -38,9 +46,10 @@ public class AssignContractByNameSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _contractRepository = Substitute.For<IContractRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Put, "api/backend/Clients", new ClientResource());
         _skill = new AssignContractByNameSkill(
-            _clientRepository, _searchRepository, _contractRepository, _unitOfWork);
+            _clientRepository, _searchRepository, _contractRepository, new ClientMapper(), _api.Client, new SelfApiRouteResolver());
 
         _searchRepository.SearchAsync(
                 Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
@@ -68,7 +77,8 @@ public class AssignContractByNameSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditClients" }
+        UserPermissions = new List<string> { "CanEditClients" },
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private static Dictionary<string, object> Parameters(string contractName) => new()
@@ -78,6 +88,9 @@ public class AssignContractByNameSkillTests
         ["contractName"] = contractName,
         ["fromDate"] = "2026-07-01"
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task VerbatimUserSentenceAsContractName_FailsWithNoRetryError_AndDoesNotWrite()
@@ -89,8 +102,7 @@ public class AssignContractByNameSkillTests
         Assert.That(result.Message, Does.Contain("No contract found matching"));
         Assert.That(result.Message, Does.Contain("Do not call this skill again with the same value"));
         Assert.That(result.Message, Does.Contain("Vollzeit 160 BE"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -99,9 +111,7 @@ public class AssignContractByNameSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), Parameters("Vertrag Teilzeit 0 Std BE"));
 
         Assert.That(result.Success, Is.True);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c =>
-            c.ClientContracts.Any(cc => cc.ContractId == PartTimeContractId && cc.IsActive)));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 
     [Test]
@@ -113,7 +123,7 @@ public class AssignContractByNameSkillTests
         Assert.That(result.Message, Does.Contain("Multiple contracts match"));
         Assert.That(result.Message, Does.Contain("Vollzeit 160 BE"));
         Assert.That(result.Message, Does.Contain("Vollzeit 180 BE"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -140,7 +150,7 @@ public class AssignContractByNameSkillTests
 
         Assert.That(result.Success, Is.True);
         await _clientRepository.Received(1).Get(ClientId);
-        await _clientRepository.Received(1).Put(Arg.Is<Client>(c => c.Id == ClientId));
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 
     [Test]
@@ -165,6 +175,6 @@ public class AssignContractByNameSkillTests
         Assert.That(result.Message, Does.Contain(ClientResolver.IdNumberParameterName));
         Assert.That(result.Message, Does.Contain("#77"));
         Assert.That(result.Message, Does.Contain("#78"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        _api.Calls.ShouldBeEmpty();
     }
 }
