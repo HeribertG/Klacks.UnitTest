@@ -12,7 +12,11 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.PlanningProfile;
+using Klacks.Api.Application.DTOs.Scheduling;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Interfaces.Scheduling;
+using Klacks.Api.Domain.Events;
+using Microsoft.Extensions.Logging.Abstractions;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
@@ -39,6 +43,8 @@ public class ApplyPlanningProfileCommandHandlerTests
     private ISchedulingRuleRepository _schedulingRules = null!;
     private ISettingsRepository _settings = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IDomainEventDispatcher _eventDispatcher = null!;
+    private IIndustryMigrationReader _migrationReader = null!;
     private ApplyPlanningProfileCommandHandler _sut = null!;
     private List<SchedulingRule> _added = null!;
 
@@ -57,7 +63,21 @@ public class ApplyPlanningProfileCommandHandlerTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<List<string>>>>())
             .Returns(ci => ci.ArgAt<Func<Task<List<string>>>>(0)());
 
-        _sut = new ApplyPlanningProfileCommandHandler(_store, _validator, _catalog, _schedulingRules, _settings, _unitOfWork);
+        _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
+        _migrationReader = Substitute.For<IIndustryMigrationReader>();
+        _migrationReader.GetContractsOnInactiveIndustriesAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<IndustryMigrationCandidate>());
+
+        _sut = new ApplyPlanningProfileCommandHandler(
+            _store,
+            _validator,
+            _catalog,
+            _schedulingRules,
+            _settings,
+            _unitOfWork,
+            _eventDispatcher,
+            _migrationReader,
+            NullLogger<ApplyPlanningProfileCommandHandler>.Instance);
     }
 
     private static ApplyPlanningProfileCommand Cmd() => new(UserId, Key);
