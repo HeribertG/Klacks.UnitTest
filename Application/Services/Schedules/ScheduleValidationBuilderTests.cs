@@ -142,4 +142,77 @@ public class ScheduleValidationBuilderTests
         _entries.Count.ShouldBe(1);
         _entries[0].Comment.ShouldBe("schedule.error-list.overtime");
     }
+
+    [Test]
+    public void AddConsecutiveDays_OverAWeekTimeline_ReportsTheRunOnItsStartDay()
+    {
+        AddWorkDays(7);
+        var (weekStart, weekEnd) = ScheduleValidationBuilder.IsoWeekOf(Monday.AddDays(3));
+
+        ScheduleValidationBuilder.AddConsecutiveDays(_entries, _timeline, "Test", weekStart, weekEnd, Policy());
+
+        _entries.Count.ShouldBe(1);
+        _entries[0].Date.ShouldBe(Monday);
+        _entries[0].CommentParams["actualDays"].ShouldBe("7");
+    }
+
+    [Test]
+    public void AddConsecutiveDays_OverASingleDayTimeline_CannotSeeARunAtAll()
+    {
+        var singleDay = new ClientTimeline(_clientId);
+        singleDay.AddBlock(new ScheduleBlock(
+            Guid.NewGuid(), ScheduleBlockType.Work, _clientId,
+            Monday.ToDateTime(new TimeOnly(8, 0)),
+            Monday.ToDateTime(new TimeOnly(16, 0))));
+        singleDay.SortBlocks();
+
+        ScheduleValidationBuilder.AddConsecutiveDays(_entries, singleDay, "Test", Monday, Monday, Policy());
+
+        _entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void IsoWeekOf_AnyDayOfTheWeek_ReturnsSameMondayToSundayRange()
+    {
+        foreach (var offset in Enumerable.Range(0, 7))
+        {
+            var (start, end) = ScheduleValidationBuilder.IsoWeekOf(Monday.AddDays(offset));
+
+            start.ShouldBe(Monday);
+            end.ShouldBe(Sunday);
+        }
+    }
+
+    [Test]
+    public void IsoWeekOf_Sunday_BelongsToTheWeekThatStarted_NotTheNextOne()
+    {
+        var (start, end) = ScheduleValidationBuilder.IsoWeekOf(Sunday);
+
+        start.ShouldBe(Monday);
+        end.ShouldBe(Sunday);
+    }
+
+    [Test]
+    public void AddWeeklyOvertime_CalledWithIsoWeekBounds_AnchorsEntryOnMonday()
+    {
+        AddWorkDays(7);
+        var (weekStart, weekEnd) = ScheduleValidationBuilder.IsoWeekOf(Monday.AddDays(3));
+
+        ScheduleValidationBuilder.AddWeeklyOvertime(_entries, _timeline, "Test", weekStart, weekEnd, Policy(maxWeeklyHours: 10));
+
+        _entries.Count.ShouldBe(1);
+        _entries[0].Date.ShouldBe(Monday);
+    }
+
+    [Test]
+    public void AddMinRestDays_CalledWithIsoWeekBounds_EvaluatesTheWeek()
+    {
+        AddWorkDays(7);
+        var (weekStart, weekEnd) = ScheduleValidationBuilder.IsoWeekOf(Monday.AddDays(3));
+
+        ScheduleValidationBuilder.AddMinRestDays(_entries, _timeline, "Test", weekStart, weekEnd, Policy());
+
+        _entries.Count.ShouldBe(1);
+        _entries[0].Date.ShouldBe(Monday);
+    }
 }
