@@ -16,6 +16,12 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Infrastructure.Mediator;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -23,7 +29,7 @@ public class BulkAddShiftsToGroupSkillTests
 {
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private IMediator _mediator = null!;
     private BulkAddShiftsToGroupSkill _skill = null!;
 
@@ -36,10 +42,11 @@ public class BulkAddShiftsToGroupSkillTests
     {
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Post, "api/backend/GroupItems/bulk", new BulkGroupItemResponse());
         _mediator = Substitute.For<IMediator>();
         _skill = new BulkAddShiftsToGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _mediator);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _mediator);
 
         _groupRepository.List().Returns(new List<Group> { new() { Id = BernGroupId, Name = "Bern" } });
 
@@ -56,8 +63,6 @@ public class BulkAddShiftsToGroupSkillTests
         _groupItemRepository.GetShiftIdsByGroupIds(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
 
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
-            .Returns(ci => ci.Arg<Func<Task<int>>>()());
         _groupItemRepository.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(2);
     }
@@ -67,7 +72,8 @@ public class BulkAddShiftsToGroupSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditShifts", "CanViewGroups" }
+        UserPermissions = new List<string> { "CanEditShifts", "CanViewGroups" },
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private static Dictionary<string, object> Params(bool apply) => new()
@@ -77,6 +83,9 @@ public class BulkAddShiftsToGroupSkillTests
         ["apply"] = apply
     };
 
+    [TearDown]
+    public void TearDown() => _api.Dispose();
+
     [Test]
     public async Task Preview_DoesNotPersist_AndListsMatches()
     {
@@ -84,26 +93,30 @@ public class BulkAddShiftsToGroupSkillTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Contain("Preview"));
-        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
-    public async Task Apply_AddsAllMatches_AndReportsVerified()
+    public async Task Apply_SendsEveryMatchInOneBulkRequest()
     {
+        _api.Respond(HttpMethod.Post, "api/backend/GroupItems/bulk", new BulkGroupItemResponse { AddedCount = 2 });
+
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
 
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("verified"));
-        await _groupItemRepository.Received(2).Add(
-            Arg.Is<GroupItem>(gi => gi.GroupId == BernGroupId && gi.ShiftId != null));
-        await _unitOfWork.Received(1).CompleteAsync();
+        Assert.That(result.Success, Is.True, result.Message);
+        // One request, not one per shift: that is what keeps the batch atomic on the server.
+        _api.Calls.Count.ShouldBe(1);
+        _api.SingleCall.Route.ShouldBe("api/backend/GroupItems/bulk");
+        _api.BodyOf<BulkGroupItemRequest>()!.Items.Count.ShouldBe(2);
     }
 
     [Test]
-    public async Task Apply_RollsBackByError_WhenVerificationCountDoesNotMatch()
+    public async Task Apply_RelaysTheRollback_WhenTheEndpointCannotConfirmTheBatch()
     {
-        _groupItemRepository.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(1);
+        // The rollback now happens server-side; the skill's job is to relay why, not to redo it.
+        _api.RespondWithProblem(
+            HttpMethod.Post, "api/backend/GroupItems/bulk", System.Net.HttpStatusCode.BadRequest,
+            "Expected 2 new group links but only 1 were confirmed; the batch was rolled back.");
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(apply: true));
 
