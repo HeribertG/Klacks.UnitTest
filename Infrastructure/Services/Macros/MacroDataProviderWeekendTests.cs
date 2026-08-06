@@ -8,6 +8,7 @@
 
 namespace Klacks.UnitTest.Infrastructure.Services.Macros;
 
+using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -48,7 +49,7 @@ public class MacroDataProviderWeekendTests
         _effectiveTimeService = Substitute.For<IWorkChangeEffectiveTimeService>();
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
 
-        _sut = new MacroDataProvider(_context, _holidayCache, _contractDataProvider, _effectiveTimeService, _weekConfiguration);
+        _sut = new MacroDataProvider(_context, new ClientHolidayCalendarResolver(_context, _holidayCache), _contractDataProvider, _effectiveTimeService, _weekConfiguration);
     }
 
     [TearDown]

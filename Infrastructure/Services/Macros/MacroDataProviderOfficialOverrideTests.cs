@@ -10,6 +10,7 @@
 
 namespace Klacks.UnitTest.Infrastructure.Services.Macros;
 
+using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Enums;
@@ -65,7 +66,7 @@ public class MacroDataProviderOfficialOverrideTests
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
         _weekConfiguration.GetWeekendDaysAsync().Returns(new HashSet<DayOfWeek> { DayOfWeek.Saturday, DayOfWeek.Sunday });
 
-        _sut = new MacroDataProvider(_context, _holidayCache, _contractDataProvider, _effectiveTimeService, _weekConfiguration);
+        _sut = new MacroDataProvider(_context, new ClientHolidayCalendarResolver(_context, _holidayCache), _contractDataProvider, _effectiveTimeService, _weekConfiguration);
     }
 
     [TearDown]

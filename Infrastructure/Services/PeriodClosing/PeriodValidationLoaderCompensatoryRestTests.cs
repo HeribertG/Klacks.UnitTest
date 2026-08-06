@@ -83,6 +83,11 @@ public class PeriodValidationLoaderCompensatoryRestTests
         restrictedTimeWindowEvaluator.EvaluateRangeAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
 
+        var holidayWorkEvaluator = Substitute.For<IHolidayWorkEvaluator>();
+        holidayWorkEvaluator.EvaluateAsync(Arg.Any<Guid>(), Arg.Any<string>(),
+                Arg.Any<IReadOnlyCollection<DateOnly>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
+
         _sut = new PeriodValidationLoader(
             _context,
             timelineService,
@@ -92,7 +97,8 @@ public class PeriodValidationLoaderCompensatoryRestTests
             counterRuleEvaluator,
             restrictedTimeWindowEvaluator,
             reconciler,
-            evaluator);
+            evaluator,
+            holidayWorkEvaluator);
     }
 
     [TearDown]
