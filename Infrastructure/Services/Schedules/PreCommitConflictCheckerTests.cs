@@ -36,6 +36,7 @@ public class PreCommitConflictCheckerTests
     private PreCommitConflictChecker _checker = null!;
     private IComplianceEnforcementResolver _enforcementResolver = null!;
     private ISettingsReader _settingsReader = null!;
+    private ICompensatoryRestEvaluator _compensatoryRestEvaluator = null!;
     private IPeriodCapEvaluator _periodCapEvaluator = null!;
     private IRestDayRotationEvaluator _restDayRotationEvaluator = null!;
     private ICounterRuleEvaluator _counterRuleEvaluator = null!;
@@ -91,7 +92,10 @@ public class PreCommitConflictCheckerTests
             .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime, Guid? ShiftId)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
 
-        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, restrictedTimeWindowEvaluator);
+        _compensatoryRestEvaluator = NonReportingCompensatoryRestEvaluator();
+
+        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, restrictedTimeWindowEvaluator,
+            _compensatoryRestEvaluator);
     }
 
     [TearDown]
@@ -377,5 +381,67 @@ public class PreCommitConflictCheckerTests
         result.HasBlocking.ShouldBeTrue();
         result.HasOverridableBlocking.ShouldBeTrue();
         result.HasHardBlocking.ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// K12 reports persisted obligations, which these tests never seed - an evaluator reporting
+    /// nothing keeps them about the rule they were written for. CompensatoryRestEvaluatorTests and
+    /// the pre-commit K12 test cover the wiring itself.
+    /// </summary>
+
+    /// <summary>
+    /// K12 is state, not a property of the planned rows: an obligation that already exists must still
+    /// stop more work being added while it is outstanding. Before this the pre-commit gate had no
+    /// compensatory-rest evaluator at all, so a placement passed while a rest was owed.
+    /// </summary>
+    [Test]
+    public async Task CheckAsync_OpenCompensatoryRestObligation_IsReportedByTheGate()
+    {
+        var clientId = Guid.NewGuid();
+        _compensatoryRestEvaluator
+            .EvaluateAsync(clientId, Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>
+            {
+                new()
+                {
+                    Type = ScheduleValidationType.Warning,
+                    ClientId = clientId,
+                    ClientName = string.Empty,
+                    Date = new DateOnly(2091, 3, 10),
+                    Comment = ScheduleValidationKeys.CompensatoryRestOverdue,
+                    CommentParams = new Dictionary<string, string>(),
+                },
+            });
+
+        var result = await _checker.CheckAsync(
+            [new PlannedWorkRow(clientId, new DateOnly(2091, 3, 12), new TimeOnly(8, 0), new TimeOnly(16, 0))]);
+
+        result.NewConflicts.ShouldContain(c => c.Comment == ScheduleValidationKeys.CompensatoryRestOverdue);
+    }
+
+    /// <summary>
+    /// The obligation is anchored on the last day the plan touches, so a deadline inside the planned
+    /// range is judged as passed rather than still pending.
+    /// </summary>
+    [Test]
+    public async Task CheckAsync_SeveralPlannedDays_AsksTheEvaluatorForTheLastOne()
+    {
+        var clientId = Guid.NewGuid();
+
+        await _checker.CheckAsync([
+            new PlannedWorkRow(clientId, new DateOnly(2091, 3, 10), new TimeOnly(8, 0), new TimeOnly(16, 0)),
+            new PlannedWorkRow(clientId, new DateOnly(2091, 3, 14), new TimeOnly(8, 0), new TimeOnly(16, 0)),
+        ]);
+
+        await _compensatoryRestEvaluator.Received(1).EvaluateAsync(
+            clientId, Arg.Any<string>(), new DateOnly(2091, 3, 14), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    private static ICompensatoryRestEvaluator NonReportingCompensatoryRestEvaluator()
+    {
+        var evaluator = Substitute.For<ICompensatoryRestEvaluator>();
+        evaluator.EvaluateAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
+        return evaluator;
     }
 }
