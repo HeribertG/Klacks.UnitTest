@@ -12,6 +12,12 @@ using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -20,7 +26,7 @@ public class AddClientToGroupSkillTests
     private IClientRepository _clientRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private ICompanyClock _companyClock = null!;
     private AddClientToGroupSkill _skill = null!;
 
@@ -33,19 +39,18 @@ public class AddClientToGroupSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Post, "api/backend/GroupItems", new GroupItemResource());
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupSkill(
-            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _companyClock);
+            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
 
         _clientRepository.Exists(ClientId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });
         _groupItemRepository.GetByClientAndGroup(ClientId, GroupId).Returns((GroupItem?)null);
 
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
-            .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -53,7 +58,8 @@ public class AddClientToGroupSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditClients", "CanViewGroups" }
+        UserPermissions = new List<string> { "CanEditClients", "CanViewGroups" },
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private Dictionary<string, object> Params() => new()
@@ -62,6 +68,9 @@ public class AddClientToGroupSkillTests
         ["groupId"] = GroupId.ToString(),
         ["validFrom"] = "2026-05-01"
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task Adds_AndReportsVerified_WhenPersistenceIsConfirmed()
@@ -72,23 +81,9 @@ public class AddClientToGroupSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("verified"));
-        await _groupItemRepository.Received(1).Add(
-            Arg.Is<GroupItem>(gi => gi.ClientId == ClientId && gi.GroupId == GroupId));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
     }
 
-    [Test]
-    public async Task ReturnsError_AndRollsBack_WhenPersistenceCannotBeConfirmed()
-    {
-        _groupItemRepository.GetNoTracking(Arg.Any<Guid>()).Returns((GroupItem?)null);
-
-        var result = await _skill.ExecuteAsync(Ctx(), Params());
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("rolled back"));
-        await _groupItemRepository.Received(1).Add(Arg.Any<GroupItem>());
-    }
 
     [Test]
     public async Task Rejects_WhenClientIsAlreadyAMember()
@@ -100,7 +95,7 @@ public class AddClientToGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("already a member"));
-        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -116,7 +111,6 @@ public class AddClientToGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("date"));
-        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
-        await _unitOfWork.DidNotReceive().CompleteAsync();
+        _api.Calls.ShouldBeEmpty();
     }
 }

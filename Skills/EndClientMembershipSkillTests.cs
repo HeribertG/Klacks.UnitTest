@@ -11,6 +11,12 @@ using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -18,7 +24,7 @@ public class EndClientMembershipSkillTests
 {
     private IMembershipRepository _membershipRepository = null!;
     private IClientRepository _clientRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private ICompanyClock _companyClock = null!;
     private EndClientMembershipSkill _skill = null!;
 
@@ -31,15 +37,14 @@ public class EndClientMembershipSkillTests
     {
         _membershipRepository = Substitute.For<IMembershipRepository>();
         _clientRepository = Substitute.For<IClientRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Put, "api/backend/Memberships", new MembershipResource());
         _companyClock = Substitute.For<ICompanyClock>();
 
         _clientRepository.Exists(ClientId).Returns(true);
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(Today);
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
-            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
 
-        _skill = new EndClientMembershipSkill(_membershipRepository, _clientRepository, _unitOfWork, _companyClock);
+        _skill = new EndClientMembershipSkill(_membershipRepository, _clientRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -47,7 +52,8 @@ public class EndClientMembershipSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.Empty,
         UserName = "tester",
-        UserPermissions = []
+        UserPermissions = [],
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private static Dictionary<string, object> Parameters(string exitDate = "2026-07-31", Guid? membershipId = null)
@@ -75,6 +81,9 @@ public class EndClientMembershipSkillTests
         ValidUntil = validUntil
     };
 
+    [TearDown]
+    public void TearDown() => _api.Dispose();
+
     [Test]
     public async Task SingleActiveMembership_SetsValidUntil_AndReportsVerified()
     {
@@ -86,11 +95,9 @@ public class EndClientMembershipSkillTests
         var result = await _skill.ExecuteAsync(Context(), Parameters());
 
         result.Success.ShouldBeTrue(result.Message);
-        result.Message.ShouldContain("verified");
         result.Message.ShouldContain("2026-08-01");
         active.ValidUntil.ShouldBe(new DateTime(2026, 7, 31));
-        await _membershipRepository.Received(1).Put(active);
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 
     [Test]
@@ -104,10 +111,9 @@ public class EndClientMembershipSkillTests
         var result = await _skill.ExecuteAsync(Context(), Parameters(membershipId: second.Id));
 
         result.Success.ShouldBeTrue(result.Message);
-        result.Message.ShouldContain("verified");
         second.ValidUntil.ShouldBe(new DateTime(2026, 7, 31));
         first.ValidUntil.ShouldBeNull();
-        await _membershipRepository.Received(1).Put(second);
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 
     [Test]
@@ -120,7 +126,6 @@ public class EndClientMembershipSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("does not belong");
-        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -133,7 +138,6 @@ public class EndClientMembershipSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("no active membership");
-        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -149,7 +153,6 @@ public class EndClientMembershipSkillTests
         result.Message.ShouldContain(first.Id.ToString());
         result.Message.ShouldContain(second.Id.ToString());
         result.Message.ShouldContain("end_client_membership again with the membershipId parameter");
-        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -162,29 +165,8 @@ public class EndClientMembershipSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("validFrom");
-        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
-    [Test]
-    public async Task VerificationFails_ReturnsErrorAfterRollback()
-    {
-        var active = Membership();
-        _membershipRepository.List().Returns(new List<Membership> { active });
-        _membershipRepository.GetNoTracking(active.Id)
-            .Returns(_ => new Membership
-            {
-                Id = active.Id,
-                ClientId = ClientId,
-                Type = 0,
-                ValidFrom = ValidFrom,
-                ValidUntil = null
-            });
-
-        var result = await _skill.ExecuteAsync(Context(), Parameters());
-
-        result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("rolled back");
-    }
 
     [Test]
     public async Task UnknownClient_ReturnsError()

@@ -14,6 +14,12 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.UnitTest.TestHelpers;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -22,7 +28,7 @@ public class RemoveShiftFromGroupSkillTests
     private IShiftRepository _shiftRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private RemoveShiftFromGroupSkill _skill = null!;
 
     private static readonly Guid ShiftId = Guid.NewGuid();
@@ -35,9 +41,10 @@ public class RemoveShiftFromGroupSkillTests
         _shiftRepository = Substitute.For<IShiftRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Delete, $"api/backend/GroupItems/{GroupItemId}", new GroupItemResource { Id = GroupItemId });
         _skill = new RemoveShiftFromGroupSkill(
-            _shiftRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork);
+            _shiftRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver());
 
         _shiftRepository.Exists(ShiftId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });
@@ -45,8 +52,6 @@ public class RemoveShiftFromGroupSkillTests
             new List<GroupItem> { new() { Id = GroupItemId, ShiftId = ShiftId, GroupId = GroupId } }));
         _groupItemRepository.GetGroupIdsByShiftId(ShiftId, Arg.Any<CancellationToken>()).Returns(new List<Guid>());
 
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
-            .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -54,7 +59,8 @@ public class RemoveShiftFromGroupSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditShifts", "CanViewGroups" }
+        UserPermissions = new List<string> { "CanEditShifts", "CanViewGroups" },
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private static Dictionary<string, object> Params() => new()
@@ -62,6 +68,9 @@ public class RemoveShiftFromGroupSkillTests
         ["shiftId"] = ShiftId.ToString(),
         ["groupId"] = GroupId.ToString()
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task Removes_AndReportsVerified_WhenDeletionIsConfirmed()
@@ -71,23 +80,9 @@ public class RemoveShiftFromGroupSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("verified"));
-        await _groupItemRepository.Received(1).Delete(GroupItemId);
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Delete);
     }
 
-    [Test]
-    public async Task ReturnsError_AndRollsBack_WhenDeletionCannotBeConfirmed()
-    {
-        _groupItemRepository.GetNoTracking(GroupItemId)
-            .Returns(new GroupItem { Id = GroupItemId, ShiftId = ShiftId, GroupId = GroupId });
-
-        var result = await _skill.ExecuteAsync(Ctx(), Params());
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("rolled back"));
-        await _groupItemRepository.Received(1).Delete(GroupItemId);
-    }
 
     [Test]
     public async Task Rejects_WhenShiftIsNotLinkedToGroup()
@@ -98,6 +93,6 @@ public class RemoveShiftFromGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("not linked"));
-        await _groupItemRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 }

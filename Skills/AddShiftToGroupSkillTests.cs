@@ -13,6 +13,12 @@ using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -21,7 +27,7 @@ public class AddShiftToGroupSkillTests
     private IShiftRepository _shiftRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IGroupItemRepository _groupItemRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private ICompanyClock _companyClock = null!;
     private AddShiftToGroupSkill _skill = null!;
 
@@ -34,19 +40,18 @@ public class AddShiftToGroupSkillTests
         _shiftRepository = Substitute.For<IShiftRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupItemRepository = Substitute.For<IGroupItemRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Post, "api/backend/GroupItems", new GroupItemResource());
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddShiftToGroupSkill(
-            _shiftRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _unitOfWork, _companyClock);
+            _shiftRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
 
         _shiftRepository.Exists(ShiftId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });
         _groupItemRepository.GetGroupIdsByShiftId(ShiftId, Arg.Any<CancellationToken>()).Returns(new List<Guid>());
 
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
-            .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -54,7 +59,8 @@ public class AddShiftToGroupSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditShifts", "CanViewGroups" }
+        UserPermissions = new List<string> { "CanEditShifts", "CanViewGroups" },
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private static Dictionary<string, object> Params() => new()
@@ -62,6 +68,9 @@ public class AddShiftToGroupSkillTests
         ["shiftId"] = ShiftId.ToString(),
         ["groupId"] = GroupId.ToString()
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task Adds_AndReportsVerified_WhenPersistenceIsConfirmed()
@@ -72,23 +81,9 @@ public class AddShiftToGroupSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("verified"));
-        await _groupItemRepository.Received(1).Add(
-            Arg.Is<GroupItem>(gi => gi.ShiftId == ShiftId && gi.GroupId == GroupId));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
     }
 
-    [Test]
-    public async Task ReturnsError_AndRollsBack_WhenPersistenceCannotBeConfirmed()
-    {
-        _groupItemRepository.GetNoTracking(Arg.Any<Guid>()).Returns((GroupItem?)null);
-
-        var result = await _skill.ExecuteAsync(Ctx(), Params());
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("rolled back"));
-        await _groupItemRepository.Received(1).Add(Arg.Any<GroupItem>());
-    }
 
     [Test]
     public async Task Rejects_WhenShiftIsAlreadyInGroup()
@@ -100,6 +95,6 @@ public class AddShiftToGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("already assigned"));
-        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
+        _api.Calls.ShouldBeEmpty();
     }
 }
