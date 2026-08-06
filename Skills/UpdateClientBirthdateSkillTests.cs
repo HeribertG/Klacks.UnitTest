@@ -12,6 +12,14 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Staffs;
 
+using Klacks.Api.Application.DTOs.Staffs;
+
+using Klacks.Api.Application.Mappers;
+
+using Klacks.Api.Infrastructure.Services.Assistant;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -19,7 +27,7 @@ public class UpdateClientBirthdateSkillTests
 {
     private IClientRepository _clientRepository = null!;
     private IClientSearchRepository _searchRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private UpdateClientBirthdateSkill _skill = null!;
 
     [SetUp]
@@ -27,10 +35,9 @@ public class UpdateClientBirthdateSkillTests
     {
         _clientRepository = Substitute.For<IClientRepository>();
         _searchRepository = Substitute.For<IClientSearchRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
-            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
-        _skill = new UpdateClientBirthdateSkill(_clientRepository, _searchRepository, _unitOfWork);
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Put, "api/backend/Clients", new ClientResource());
+        _skill = new UpdateClientBirthdateSkill(_clientRepository, _searchRepository, new ClientMapper(), _api.Client, new SelfApiRouteResolver());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -38,7 +45,8 @@ public class UpdateClientBirthdateSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditClients" }
+        UserPermissions = new List<string> { "CanEditClients" },
+        AccessToken = new BearerToken("caller-jwt")
     };
 
     private void WireSearch(params ClientSearchItem[] items)
@@ -65,6 +73,9 @@ public class UpdateClientBirthdateSkillTests
         ["birthdate"] = birthdate
     };
 
+    [TearDown]
+    public void TearDown() => _api.Dispose();
+
     [Test]
     public async Task ReturnsError_WhenBirthdateInvalid()
     {
@@ -72,7 +83,7 @@ public class UpdateClientBirthdateSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("Invalid birthdate"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -84,7 +95,7 @@ public class UpdateClientBirthdateSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("No client found"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -98,7 +109,7 @@ public class UpdateClientBirthdateSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("Multiple clients match"));
-        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -109,34 +120,33 @@ public class UpdateClientBirthdateSkillTests
         var result = await _skill.ExecuteAsync(Ctx(), Parameters());
 
         Assert.That(result.Success, Is.True, result.Message);
-        Assert.That(result.Message, Does.Contain("verified"));
         Assert.That(client.Birthdate, Is.EqualTo(new DateTime(1990, 4, 12)));
-        await _clientRepository.Received(1).Put(client);
-        await _unitOfWork.Received(1).CompleteAsync();
-    }
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
+            }
 
     [Test]
-    public async Task ReturnsError_WhenVerificationRereadIsStale()
+    public async Task ReturnsError_WhenTheEndpointRejectsTheUpdate()
     {
-        var client = WireResolvedClient();
-        _clientRepository.GetNoTracking(client.Id)
-            .Returns(new Client { Id = client.Id, FirstName = "Anna", Name = "Müller", Birthdate = new DateTime(1980, 1, 1) });
+        WireResolvedClient();
+        _api.RespondWithValidationErrors(HttpMethod.Put, "api/backend/Clients", new Dictionary<string, string[]>
+        {
+            ["Birthdate"] = ["'Birthdate' is not valid."]
+        });
 
         var result = await _skill.ExecuteAsync(Ctx(), Parameters());
 
         Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
+        Assert.That(result.Message, Does.Contain("not valid"));
     }
 
     [Test]
-    public async Task ReturnsError_WhenVerificationRereadIsMissing()
+    public async Task ItGoesToTheClientEndpoint_BecauseItChangesTheClientItself()
     {
-        var client = WireResolvedClient();
-        _clientRepository.GetNoTracking(client.Id).Returns((Client?)null);
+        WireResolvedClient();
 
-        var result = await _skill.ExecuteAsync(Ctx(), Parameters());
+        await _skill.ExecuteAsync(Ctx(), Parameters());
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
+        _api.SingleCall.Route.ShouldBe("api/backend/Clients");
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 }
