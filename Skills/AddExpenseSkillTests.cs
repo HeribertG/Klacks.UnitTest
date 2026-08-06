@@ -11,6 +11,7 @@ using System.Net;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.UnitTest.Infrastructure.SelfApi;
 
 namespace Klacks.UnitTest.Skills;
@@ -28,7 +29,7 @@ public class AddExpenseSkillTests
     public void SetUp()
     {
         _api = new FakeSelfApi();
-        _skill = new AddExpenseSkill(_api.Client);
+        _skill = new AddExpenseSkill(_api.Client, new SelfApiRouteResolver());
     }
 
     [TearDown]
