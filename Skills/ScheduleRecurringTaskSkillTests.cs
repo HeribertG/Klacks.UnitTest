@@ -4,7 +4,7 @@
 /// Unit tests for ScheduleRecurringTaskSkill time-zone resolution: with no explicit timeZoneId the
 /// schedule uses the app owner's address country (globalCalendarCountry → IANA zone); an explicit
 /// timeZoneId overrides it; the user context and a hard default act as fallbacks. Also covers the pure
-/// CountryTimeZones map.
+/// CountryTimeZones map and the guard that refuses to freeze an empty permission set for a skill action.
 /// </summary>
 
 using Klacks.Api.Application.Constants;
@@ -40,14 +40,31 @@ public class ScheduleRecurringTaskSkillTests
         _settingsReader.GetSetting(SettingKeys.GlobalCalendarCountry)
             .Returns(code is null ? (SettingsModel?)null : new SettingsModel { Type = SettingKeys.GlobalCalendarCountry, Value = code });
 
-    private static SkillExecutionContext Ctx(string? userTimezone = null) => new()
+    private static SkillExecutionContext Ctx(string? userTimezone = null, IReadOnlyList<string>? permissions = null) => new()
     {
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string>(),
+        UserPermissions = permissions ?? new List<string>(),
         UserTimezone = userTimezone
     };
+
+    private static Dictionary<string, object> SkillParams() => new()
+    {
+        ["name"] = "weekly report",
+        ["cronExpression"] = "0 8 * * 1",
+        ["actionType"] = "skill",
+        ["skillName"] = "list_clients",
+        ["apply"] = true
+    };
+
+    private void KnownHarmlessSkill(string name)
+    {
+        _skillRegistry.GetSkillByName(name).Returns(new SkillDescriptor(
+            name, "test skill", SkillCategory.Query,
+            Array.Empty<SkillParameter>(), Array.Empty<string>(), Array.Empty<LLMCapability>(), null));
+        _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.ReadOnly);
+    }
 
     private static Dictionary<string, object> ReminderParams(string? timeZoneId = null)
     {
@@ -143,5 +160,44 @@ public class ScheduleRecurringTaskSkillTests
     public void CountryTimeZones_Resolve_UnknownOrEmpty_ReturnsNull(string? code)
     {
         CountryTimeZones.Resolve(code).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SkillAction_WithoutPermissions_IsRefusedAndNothingIsPersisted()
+    {
+        OwnerCountry("CH");
+        KnownHarmlessSkill("list_clients");
+
+        var result = await _skill.ExecuteAsync(Ctx(), SkillParams());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("permission check");
+        await _repository.DidNotReceive().AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SkillAction_WithPermissions_FreezesThem()
+    {
+        OwnerCountry("CH");
+        KnownHarmlessSkill("list_clients");
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(permissions: new[] { "Authorised", "CanViewClients" }), SkillParams());
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(
+            Arg.Is<ScheduledTask>(t => t.OwnerPermissionsCsv == "Authorised,CanViewClients"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Reminder_WithoutPermissions_IsStillAllowed()
+    {
+        OwnerCountry("CH");
+
+        var result = await _skill.ExecuteAsync(Ctx(), ReminderParams());
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
     }
 }

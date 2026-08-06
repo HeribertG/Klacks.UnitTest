@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for ScheduledTaskRunner: it fires due tasks, skips stale ones, runs skills under the
 /// owner's identity with the autonomy gate bypassed, delivers live or via a durable pending note, and
-/// records the outcome; a lost claim does nothing.
+/// records the outcome; a lost claim does nothing. Skill actions the unattended policy refuses disable
+/// the task instead of running, while reminders never consult the policy at all.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Scheduling;
@@ -20,6 +21,7 @@ public class ScheduledTaskRunnerTests
     private IAssistantNotificationService _notification = null!;
     private IPendingUserNoteRepository _pendingNotes = null!;
     private IAgentRepository _agentRepository = null!;
+    private IUnattendedSkillPolicy _unattendedPolicy = null!;
     private ScheduledTaskRunner _runner = null!;
 
     private static readonly Guid Owner = Guid.NewGuid();
@@ -32,11 +34,14 @@ public class ScheduledTaskRunnerTests
         _notification = Substitute.For<IAssistantNotificationService>();
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
         _agentRepository = Substitute.For<IAgentRepository>();
+        _unattendedPolicy = Substitute.For<IUnattendedSkillPolicy>();
 
         _repository.TryClaimAsync(Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<CancellationToken>())
             .Returns(true);
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>())
             .Returns(new Agent { Id = Guid.NewGuid() });
+        _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns(UnattendedSkillDecision.Allow());
 
         _runner = new ScheduledTaskRunner(
             _repository,
@@ -44,6 +49,7 @@ public class ScheduledTaskRunnerTests
             _notification,
             _pendingNotes,
             _agentRepository,
+            _unattendedPolicy,
             Substitute.For<ILogger<ScheduledTaskRunner>>());
     }
 
@@ -151,6 +157,65 @@ public class ScheduledTaskRunnerTests
         await _notification.DidNotReceive().SendProactiveMessageAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_RefusedByPolicy_DisablesTaskWithoutRunningTheSkill()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        task.ActionType = ScheduledTaskActionTypes.Skill;
+        task.SkillName = "delete_client";
+        task.MessageText = null;
+        task.OwnerPermissionsCsv = null;
+        Due(task);
+        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns(UnattendedSkillDecision.Deny("Owner permissions were never frozen."));
+
+        await _runner.RunDueAsync();
+
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<ScheduledTask>(t =>
+                t.LastStatus == ScheduledTaskRunStatus.Error &&
+                !t.IsEnabled &&
+                t.NextRunUtc == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_RefusedByPolicy_TellsTheOwnerWhy()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        task.ActionType = ScheduledTaskActionTypes.Skill;
+        task.SkillName = "delete_client";
+        task.MessageText = null;
+        Due(task);
+        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns(UnattendedSkillDecision.Deny("Skill 'delete_client' is now classified as sensitive."));
+
+        await _runner.RunDueAsync();
+
+        await _notification.Received(1).SendProactiveMessageAsync(
+            Owner.ToString(), Arg.Is<string>(m => m.Contains("classified as sensitive")));
+    }
+
+    [Test]
+    public async Task RunDueAsync_Reminder_WithoutFrozenPermissions_StillFires()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        task.OwnerPermissionsCsv = null;
+        Due(task);
+        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+
+        await _runner.RunDueAsync();
+
+        _unattendedPolicy.DidNotReceive().Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>());
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<ScheduledTask>(t => t.LastStatus == ScheduledTaskRunStatus.Ok && t.IsEnabled),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
