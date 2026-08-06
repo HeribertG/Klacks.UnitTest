@@ -64,7 +64,7 @@ public class UpdateHandlerTests
         var active = Entry(UpdateOperationStatus.Running);
         var last = Entry(UpdateOperationStatus.Succeeded);
         _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns(active);
-        _repository.GetRecentAsync(1, Arg.Any<CancellationToken>()).Returns(new List<UpdateHistory> { last });
+        _repository.GetLatestByTypesAsync(Arg.Any<IReadOnlyCollection<UpdateOperationType>>(), Arg.Any<CancellationToken>()).Returns(last);
 
         var handler = CreateStatusHandler();
         var result = await handler.Handle(new GetUpdateStatusQuery(), CancellationToken.None);
@@ -80,13 +80,44 @@ public class UpdateHandlerTests
     public async Task Status_returns_nulls_when_no_operations()
     {
         _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
-        _repository.GetRecentAsync(1, Arg.Any<CancellationToken>()).Returns(new List<UpdateHistory>());
+        _repository.GetLatestByTypesAsync(Arg.Any<IReadOnlyCollection<UpdateOperationType>>(), Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
 
         var handler = CreateStatusHandler();
         var result = await handler.Handle(new GetUpdateStatusQuery(), CancellationToken.None);
 
         result.ActiveOperation.ShouldBeNull();
         result.LastOperation.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Status_hides_third_party_active_operation()
+    {
+        var whisperActive = Entry(UpdateOperationStatus.Running, UpdateOperationType.WhisperInstall);
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns(whisperActive);
+        _repository.GetLatestByTypesAsync(Arg.Any<IReadOnlyCollection<UpdateOperationType>>(), Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+
+        var handler = CreateStatusHandler();
+        var result = await handler.Handle(new GetUpdateStatusQuery(), CancellationToken.None);
+
+        result.ActiveOperation.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Status_last_operation_only_considers_klacks_self_update_types()
+    {
+        var klacksUpdate = Entry(UpdateOperationStatus.Succeeded, UpdateOperationType.Update);
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        _repository.GetLatestByTypesAsync(
+            Arg.Is<IReadOnlyCollection<UpdateOperationType>>(types =>
+                types.Contains(UpdateOperationType.Update) && types.Contains(UpdateOperationType.Rollback)
+                && !types.Contains(UpdateOperationType.WhisperInstall) && !types.Contains(UpdateOperationType.WhisperUninstall)),
+            Arg.Any<CancellationToken>()).Returns(klacksUpdate);
+
+        var handler = CreateStatusHandler();
+        var result = await handler.Handle(new GetUpdateStatusQuery(), CancellationToken.None);
+
+        result.LastOperation.ShouldNotBeNull();
+        result.LastOperation!.OperationType.ShouldBe(nameof(UpdateOperationType.Update));
     }
 
     [Test]
