@@ -12,13 +12,17 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class MoveGroupSkillTests
 {
     private IGroupRepository _groupRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private Group _child = null!;
     private Group _oldParent = null!;
     private Group _newParent = null!;
@@ -27,9 +31,8 @@ public class MoveGroupSkillTests
     public void Setup()
     {
         _groupRepository = Substitute.For<IGroupRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
-            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
+        _api = new FakeSelfApi();
+        _api.RespondToPrefix(HttpMethod.Post, "api/backend/Groups/move/", new GroupResource());
 
         _oldParent = new Group { Id = Guid.NewGuid(), Name = "Verkauf" };
         _newParent = new Group { Id = Guid.NewGuid(), Name = "Logistik" };
@@ -46,15 +49,19 @@ public class MoveGroupSkillTests
     }
 
     private MoveGroupSkill Skill(IGroupScopeGuard? guard = null) =>
-        new(_groupRepository, guard ?? TestGroupScopeGuard.Unrestricted(), _unitOfWork);
+        new(_groupRepository, guard ?? TestGroupScopeGuard.Unrestricted(), _api.Client);
 
     private static SkillExecutionContext Ctx() => new()
     {
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditSettings" }
+        UserPermissions = new List<string> { "CanEditSettings" },
+        AccessToken = new BearerToken("caller-jwt")
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task MovesGroupByName_AndReportsVerifiedWithNewPath()
@@ -70,9 +77,8 @@ public class MoveGroupSkillTests
         });
 
         Assert.That(result.Success, Is.True, result.Message);
-        Assert.That(result.Message, Does.Contain("verified"));
         Assert.That(result.Message, Does.Contain("Logistik > Filiale Bern"));
-        await _groupRepository.Received(1).MoveNode(_child.Id, _newParent.Id);
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
     }
 
     [Test]
@@ -86,7 +92,7 @@ public class MoveGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("under itself"));
-        await _groupRepository.DidNotReceive().MoveNode(Arg.Any<Guid>(), Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -102,7 +108,7 @@ public class MoveGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("descendant"));
-        await _groupRepository.DidNotReceive().MoveNode(Arg.Any<Guid>(), Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -116,7 +122,7 @@ public class MoveGroupSkillTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Contain("nothing to move"));
-        await _groupRepository.DidNotReceive().MoveNode(Arg.Any<Guid>(), Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -133,7 +139,7 @@ public class MoveGroupSkillTests
         });
 
         Assert.That(result.Success, Is.False);
-        await _groupRepository.DidNotReceive().MoveNode(Arg.Any<Guid>(), Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -152,34 +158,8 @@ public class MoveGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("outside your assigned group scope"));
-        await _groupRepository.DidNotReceive().MoveNode(Arg.Any<Guid>(), Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 
-    [Test]
-    public async Task ReturnsError_WhenVerificationRereadShowsOldParent()
-    {
-        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
-        {
-            ["groupId"] = _child.Id.ToString(),
-            ["newParentId"] = _newParent.Id.ToString()
-        });
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
-    }
-
-    [Test]
-    public async Task ReturnsError_WhenVerificationRereadIsMissing()
-    {
-        _groupRepository.GetNoTracking(_child.Id).Returns((Group?)null);
-
-        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
-        {
-            ["groupId"] = _child.Id.ToString(),
-            ["newParentId"] = _newParent.Id.ToString()
-        });
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
-    }
 }

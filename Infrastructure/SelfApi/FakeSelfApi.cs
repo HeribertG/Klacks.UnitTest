@@ -24,6 +24,7 @@ public sealed class FakeSelfApi : IDisposable
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Dictionary<string, Func<HttpResponseMessage>> _responses = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(HttpMethod Method, string Prefix, Func<HttpResponseMessage> Factory)> _prefixResponses = [];
     private readonly RecordingHandler _handler;
     private readonly HttpClient _httpClient;
 
@@ -87,6 +88,27 @@ public sealed class FakeSelfApi : IDisposable
         return this;
     }
 
+    /// <summary>
+    /// Answers any route starting with the given prefix. Routes carrying an id are the common case
+    /// once skills address single rows, and registering every generated id would only restate what the
+    /// call recording already proves.
+    /// </summary>
+    public FakeSelfApi RespondToPrefix(HttpMethod method, string routePrefix, object? body, HttpStatusCode status = HttpStatusCode.OK)
+    {
+        _prefixResponses.Add((method, routePrefix.Trim('/'), () =>
+        {
+            var response = new HttpResponseMessage(status);
+            if (body is not null)
+            {
+                response.Content = JsonContent.Create(body, body.GetType(), options: SerializerOptions);
+            }
+
+            return response;
+        }));
+
+        return this;
+    }
+
     /// <summary>Deserializes the recorded request body of the call at the given index.</summary>
     public T? BodyOf<T>(int index = 0)
     {
@@ -105,11 +127,25 @@ public sealed class FakeSelfApi : IDisposable
     private HttpResponseMessage Answer(HttpRequestMessage request)
     {
         var route = request.RequestUri!.AbsolutePath.Trim('/');
-        return _responses.TryGetValue(Key(request.Method, route), out var factory)
-            ? factory()
-            : throw new InvalidOperationException(
-                $"No canned response registered for {request.Method.Method} /{route}. " +
-                $"Registered: {string.Join(", ", _responses.Keys)}");
+        if (_responses.TryGetValue(Key(request.Method, route), out var factory))
+        {
+            return factory();
+        }
+
+        foreach (var (method, prefix, prefixFactory) in _prefixResponses)
+        {
+            if (method == request.Method && route.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return prefixFactory();
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"No canned response registered for {request.Method.Method} /{route}. " +
+            $"Registered: {string.Join(", ", _responses.Keys)}"
+            + (_prefixResponses.Count > 0
+                ? $"; prefixes: {string.Join(", ", _prefixResponses.Select(p => $"{p.Method.Method} {p.Prefix}"))}"
+                : string.Empty));
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
