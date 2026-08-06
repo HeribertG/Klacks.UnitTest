@@ -171,6 +171,44 @@ public class UpdateHandlerTests
     }
 
     [Test]
+    public async Task Delete_finished_operation_succeeds()
+    {
+        var entry = Entry(UpdateOperationStatus.Failed);
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+
+        var handler = new DeleteUpdateHistoryCommandHandler(_repository);
+        var result = await handler.Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBeTrue();
+        await _repository.Received(1).DeleteAsync(entry, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(UpdateOperationStatus.Pending)]
+    [TestCase(UpdateOperationStatus.Running)]
+    public async Task Delete_active_operation_is_rejected(UpdateOperationStatus status)
+    {
+        var entry = Entry(status);
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+
+        var handler = new DeleteUpdateHistoryCommandHandler(_repository);
+        var result = await handler.Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBeFalse();
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Delete_missing_operation_returns_false()
+    {
+        _repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+
+        var handler = new DeleteUpdateHistoryCommandHandler(_repository);
+        var result = await handler.Handle(new DeleteUpdateHistoryCommand(Guid.NewGuid()), CancellationToken.None);
+
+        result.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task Trigger_enqueues_pending_update_when_available()
     {
         GivenManifest("9.9.9", "1.0.0");
