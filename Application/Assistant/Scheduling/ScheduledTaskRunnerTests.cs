@@ -22,6 +22,7 @@ public class ScheduledTaskRunnerTests
     private IPendingUserNoteRepository _pendingNotes = null!;
     private IAgentRepository _agentRepository = null!;
     private IUnattendedSkillPolicy _unattendedPolicy = null!;
+    private IInternalTokenIssuer _tokenIssuer = null!;
     private ScheduledTaskRunner _runner = null!;
 
     private static readonly Guid Owner = Guid.NewGuid();
@@ -35,6 +36,7 @@ public class ScheduledTaskRunnerTests
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
         _agentRepository = Substitute.For<IAgentRepository>();
         _unattendedPolicy = Substitute.For<IUnattendedSkillPolicy>();
+        _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
 
         _repository.TryClaimAsync(Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -42,6 +44,8 @@ public class ScheduledTaskRunnerTests
             .Returns(new Agent { Id = Guid.NewGuid() });
         _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(UnattendedSkillDecision.Allow());
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.Authorised }));
 
         _runner = new ScheduledTaskRunner(
             _repository,
@@ -50,6 +54,7 @@ public class ScheduledTaskRunnerTests
             _pendingNotes,
             _agentRepository,
             _unattendedPolicy,
+            _tokenIssuer,
             Substitute.For<ILogger<ScheduledTaskRunner>>());
     }
 
@@ -138,10 +143,77 @@ public class ScheduledTaskRunnerTests
             Arg.Is<SkillExecutionContext>(c =>
                 c.BypassAutonomyGate &&
                 c.UserId == Owner &&
+                c.AccessToken!.Value == "owner-jwt" &&
                 c.UserPermissions.Contains("CanViewClients")),
             Arg.Any<CancellationToken>());
         await _notification.Received(1).SendProactiveMessageAsync(
             Owner.ToString(), Arg.Is<string>(m => m.Contains("Report ready")));
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_RightsComeFromCurrentRoles_NotTheFrozenCsv()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        task.ActionType = ScheduledTaskActionTypes.Skill;
+        task.SkillName = "get_user_context";
+        task.MessageText = null;
+        // The frozen CSV still claims admin rights; the owner has since been downgraded to User.
+        task.OwnerPermissionsCsv = "Admin,CanDeleteClients";
+        Due(task);
+        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.User }));
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null, "done"));
+
+        await _runner.RunDueAsync();
+
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c =>
+                !c.UserPermissions.Contains(Roles.Admin) &&
+                !c.UserPermissions.Contains(Permissions.CanDeleteClients) &&
+                c.UserPermissions.Contains(Permissions.CanViewClients)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_NoTokenForOwner_ReportsTheReasonAndKeepsTheTaskEnabled()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        task.ActionType = ScheduledTaskActionTypes.Skill;
+        task.SkillName = "get_user_context";
+        task.MessageText = null;
+        Due(task);
+        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Refused("the owner account is locked out"));
+
+        await _runner.RunDueAsync();
+
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<ScheduledTask>(t =>
+                t.LastStatus == ScheduledTaskRunStatus.Error &&
+                t.IsEnabled &&
+                t.NextRunUtc != null),
+            Arg.Any<CancellationToken>());
+        await _notification.Received(1).SendProactiveMessageAsync(
+            Owner.ToString(), Arg.Is<string>(m => m.Contains("locked out")));
+    }
+
+    [Test]
+    public async Task RunDueAsync_Reminder_NeedsNoToken()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        Due(task);
+        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+
+        await _runner.RunDueAsync();
+
+        await _tokenIssuer.DidNotReceive().IssueForOwnerAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

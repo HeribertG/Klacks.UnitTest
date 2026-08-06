@@ -17,6 +17,7 @@ public class McpSkillCallHandlerTests
     private IMediator _mediator = null!;
     private ISkillRegistry _skillRegistry = null!;
     private IMcpSkillExposurePolicy _exposurePolicy = null!;
+    private IInternalTokenIssuer _tokenIssuer = null!;
     private McpSkillCallHandler _sut = null!;
 
     [SetUp]
@@ -26,10 +27,14 @@ public class McpSkillCallHandlerTests
         _skillRegistry = Substitute.For<ISkillRegistry>();
         _exposurePolicy = Substitute.For<IMcpSkillExposurePolicy>();
         _exposurePolicy.IsExposed(Arg.Any<SkillDescriptor>()).Returns(true);
+        _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Issued(new BearerToken("mcp-jwt"), new[] { Roles.Authorised }));
         _sut = new McpSkillCallHandler(
             _mediator,
             _skillRegistry,
             _exposurePolicy,
+            _tokenIssuer,
             Substitute.For<ILogger<McpSkillCallHandler>>());
     }
 
@@ -186,5 +191,41 @@ public class McpSkillCallHandlerTests
 
         Assert.That(result.IsError, Is.True);
         Assert.That(FirstText(result), Does.Not.Contain("connection string secret"));
+    }
+
+    [Test]
+    public async Task ToolCall_MintsAnAuthorisedCappedTokenForTheCaller()
+    {
+        var userId = Guid.NewGuid();
+        _skillRegistry.GetSkillByName("search_employees").Returns(McpTestData.Descriptor("search_employees"));
+        _mediator.Send(Arg.Any<ExecuteSkillCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillExecuteResponse { Success = true, ResultType = SkillResultType.Data });
+
+        await _sut.HandleAsync(
+            new CallToolRequestParams { Name = "search_employees" },
+            McpTestData.Principal(userId, Guid.NewGuid(), "alice", Roles.Admin),
+            CancellationToken.None);
+
+        await _tokenIssuer.Received(1).IssueForOwnerAsync(userId, Roles.Authorised, Arg.Any<CancellationToken>());
+        await _mediator.Received(1).Send(
+            Arg.Is<ExecuteSkillCommand>(c => c.AccessToken != null && c.AccessToken.Value == "mcp-jwt"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ToolCall_WithoutAMintableToken_IsRefusedBeforeExecuting()
+    {
+        _skillRegistry.GetSkillByName("search_employees").Returns(McpTestData.Descriptor("search_employees"));
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Refused("the owner account is locked out"));
+
+        var result = await _sut.HandleAsync(
+            new CallToolRequestParams { Name = "search_employees" },
+            McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.That(result.IsError, Is.True);
+        Assert.That(FirstText(result), Does.Contain("locked out"));
+        await _mediator.DidNotReceive().Send(Arg.Any<ExecuteSkillCommand>(), Arg.Any<CancellationToken>());
     }
 }

@@ -48,6 +48,7 @@ public class PlanStepExecutorTests
     private ILLMBackgroundTaskService _backgroundTaskService = null!;
     private IAgentTriggerService _triggerService = null!;
     private IGoalCandidateRepository _goalCandidateRepository = null!;
+    private IInternalTokenIssuer _tokenIssuer = null!;
     private PlanStepExecutor _sut = null!;
 
     private const int TaskBoundaryMinMessages = 10;
@@ -71,6 +72,9 @@ public class PlanStepExecutorTests
         _goalCandidateRepository = Substitute.For<IGoalCandidateRepository>();
         _goalCandidateRepository.GetByPlanIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns((GoalCandidate?)null);
+        _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.Authorised }));
         _sut = new PlanStepExecutor(
             _planRepository,
             _skillExecutor,
@@ -81,6 +85,7 @@ public class PlanStepExecutorTests
             _backgroundTaskService,
             _triggerService,
             _goalCandidateRepository,
+            _tokenIssuer,
             NullLogger<PlanStepExecutor>.Instance);
     }
 
@@ -278,9 +283,10 @@ public class PlanStepExecutorTests
     }
 
     [Test]
-    public async Task ApproveAndContinueAsync_SelfReflectionWithApprovedCandidate_ResumesUnderFrozenIdentity()
+    public async Task ApproveAndContinueAsync_SelfReflectionWithApprovedCandidate_ResumesUnderTheOwnersCurrentIdentity()
     {
         var candidateId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid();
         var plan = CreatePlan(
             new[]
             {
@@ -295,7 +301,9 @@ public class PlanStepExecutorTests
         {
             Id = candidateId,
             PlanId = plan.Id,
+            UserId = ownerId.ToString(),
             Status = GoalCandidateStatus.Approved,
+            // Still present, but no longer the source of rights — it only marks an approved candidate.
             OwnerPermissionsCsv = "clients.read,clients.write"
         };
         _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
@@ -312,10 +320,45 @@ public class PlanStepExecutorTests
             Arg.Any<SkillInvocation>(),
             Arg.Is<SkillExecutionContext>(c =>
                 c.UserName == GoalSelfReflectionAuditConstants.AuditUserName &&
-                c.UserPermissions.SequenceEqual(new[] { "clients.read", "clients.write" }) &&
+                c.AccessToken!.Value == "owner-jwt" &&
+                c.UserPermissions.Contains(Permissions.CanEditClients) &&
+                !c.UserPermissions.Contains("clients.read") &&
                 c.SessionId == expectedSessionId),
             Arg.Any<CancellationToken>());
-        await _goalCandidateRepository.Received(1).GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>());
+        await _tokenIssuer.Received(1).IssueForOwnerAsync(ownerId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApproveAndContinueAsync_SelfReflectionWithoutAToken_FallsBackToTheResumingCaller()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "skill_followup", new(), null, true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        plan.Status = PlanStatus.PausedForApproval;
+        plan.CurrentStepIndex = 0;
+
+        var candidate = new GoalCandidate
+        {
+            Id = Guid.NewGuid(),
+            PlanId = plan.Id,
+            UserId = Guid.NewGuid().ToString(),
+            Status = GoalCandidateStatus.Approved,
+            OwnerPermissionsCsv = "clients.read"
+        };
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Refused("the owner account is locked out"));
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var suppliedContext = CreateSkillContext();
+        await _sut.ApproveAndContinueAsync(plan.Id, suppliedContext);
+
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c => c.UserName == suppliedContext.UserName),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -1096,7 +1139,7 @@ public class PlanStepExecutorTests
         var sut = new PlanStepExecutor(
             _planRepository, _skillExecutor, _skillRegistry, _riskClassifier,
             _autonomyRepository, _notificationService, _backgroundTaskService, _triggerService,
-            _goalCandidateRepository, recordingLogger);
+            _goalCandidateRepository, _tokenIssuer, recordingLogger);
 
         var plan = CreatePlan(new[]
         {

@@ -33,6 +33,7 @@ public class GoalPlanExecutionServiceTests
     private IPlanningAudienceResolver _audienceResolver = null!;
     private IAgentAutonomyPreferenceRepository _autonomyRepository = null!;
     private IPlanChatService _planChatService = null!;
+    private IInternalTokenIssuer _tokenIssuer = null!;
     private BackgroundServiceOptions _options = null!;
     private GoalPlanExecutionService _sut = null!;
 
@@ -47,10 +48,13 @@ public class GoalPlanExecutionServiceTests
         _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((AgentAutonomyPreferenceRow?)null);
         _planChatService = Substitute.For<IPlanChatService>();
+        _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.Authorised }));
         _options = new BackgroundServiceOptions { GoalReflectionExecution = true };
         _sut = new GoalPlanExecutionService(
             _goalCandidateRepository, _audienceResolver, _autonomyRepository, _planChatService,
-            Options.Create(_options), NullLogger<GoalPlanExecutionService>.Instance);
+            _tokenIssuer, Options.Create(_options), NullLogger<GoalPlanExecutionService>.Instance);
     }
 
     private static GoalCandidate MakeCandidate(
