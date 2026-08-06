@@ -49,8 +49,7 @@ public class HolidayWorkEvaluatorTests
         _calendarResolver.GetCalculatorAsync(Arg.Any<Guid?>(), Arg.Any<int>()).Returns(calculator);
 
         _contractData = Substitute.For<IClientContractDataProvider>();
-        _contractData.GetEffectiveContractDataAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
-            .Returns(new EffectiveContractData { SchedulingRuleId = ContractRuleId });
+        GivenContractRulePerDate(ContractRuleId);
 
         _enforcement = Substitute.For<IComplianceEnforcementResolver>();
         _enforcement.GetModeAsync(Arg.Any<string>()).Returns(RuleEnforcementMode.Warn);
@@ -71,6 +70,29 @@ public class HolidayWorkEvaluatorTests
         calculator.GetHolidayInfo(Holiday).Returns(new HolidayDate { CurrentName = "Christmas" });
         return calculator;
     }
+
+
+    /// <summary>
+    /// Every evaluated day resolves to the same contract. Tests that care about a contract change
+    /// inside the range override this with their own per-date map.
+    /// </summary>
+    private void GivenContractRulePerDate(Guid? ruleId) =>
+        _contractData.GetEffectiveContractDataForClientsRangeAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(ci =>
+            {
+                var from = ci.ArgAt<DateOnly>(1);
+                var until = ci.ArgAt<DateOnly>(2);
+                var map = new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>();
+                for (var d = from; d <= until; d = d.AddDays(1))
+                {
+                    map[d] = new Dictionary<Guid, EffectiveContractData>
+                    {
+                        [_clientId] = new() { SchedulingRuleId = ruleId },
+                    };
+                }
+                return map;
+            });
 
     private void GivenExemptions(params HolidayWorkExemptionRule[] rules) =>
         _exemptions.GetAllActiveAsync().Returns(rules.ToList());
@@ -153,5 +175,50 @@ public class HolidayWorkEvaluatorTests
         var entries = await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);
 
         entries.ShouldBeEmpty("without a calendar there is nothing to judge against");
+    }
+
+    /// <summary>
+    /// The range check hands over every work date of the whole period at once. If the contract is
+    /// resolved only for the first of them, a contract change inside the range is judged by the wrong
+    /// scheduling rule - an exemption that no longer applies would keep suppressing findings.
+    /// </summary>
+    [Test]
+    public async Task Evaluate_ContractChangesInsideTheRange_JudgesEachDayByItsOwnContract()
+    {
+        var exemptRuleId = Guid.NewGuid();
+        var secondHoliday = new DateOnly(2026, 12, 26);
+        var calculator = Substitute.For<IHolidaysListCalculator>();
+        calculator.IsHoliday(Holiday).Returns(HolidayStatus.OfficialHoliday);
+        calculator.IsHoliday(secondHoliday).Returns(HolidayStatus.OfficialHoliday);
+        _calendarResolver.GetCalculatorAsync(Arg.Any<Guid?>(), Arg.Any<int>()).Returns(calculator);
+
+        // Exempt on the first day, no longer exempt on the second.
+        _contractData.GetEffectiveContractDataForClientsRangeAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>
+            {
+                [Holiday] = new() { [_clientId] = new() { SchedulingRuleId = exemptRuleId } },
+                [secondHoliday] = new() { [_clientId] = new() { SchedulingRuleId = ContractRuleId } },
+            });
+        GivenExemptions(new HolidayWorkExemptionRule { SchedulingRuleId = exemptRuleId });
+
+        var entries = await _sut.EvaluateAsync(_clientId, "Probe", [Holiday, secondHoliday]);
+
+        var entry = entries.ShouldHaveSingleItem("only the day whose contract lost the exemption may be reported");
+        entry.Date.ShouldBe(secondHoliday);
+    }
+
+    /// <summary>
+    /// The range check calls this evaluator once per client of the period, on every hub join. Reading
+    /// the exemption table per client would turn a handful of rows into one query per client.
+    /// </summary>
+    [Test]
+    public async Task Evaluate_CalledForSeveralClients_ReadsTheExemptionsOnlyOnce()
+    {
+        await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);
+        await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);
+        await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);
+
+        await _exemptions.Received(1).GetAllActiveAsync();
     }
 }
