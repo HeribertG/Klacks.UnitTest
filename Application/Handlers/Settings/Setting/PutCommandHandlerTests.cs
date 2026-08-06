@@ -137,4 +137,48 @@ public class PutCommandHandlerTests
         result!.Value.ShouldBe("healthcare");
         await _settingsRepository.Received(1).PutSetting(Arg.Any<SettingsEntity>());
     }
+
+    [Test]
+    public async Task Handle_ActiveIndustriesChanged_DispatchesActiveIndustriesChangedEventWithBothValues()
+    {
+        _settingsRepository.GetSettingNoTracking(SettingKeys.ActiveIndustries)
+            .Returns(BuildSetting(SettingKeys.ActiveIndustries, "homecare"));
+        var command = new PutCommand(BuildSetting(SettingKeys.ActiveIndustries, "healthcare"));
+
+        await _sut.Handle(command, CancellationToken.None);
+
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<ActiveIndustriesChangedEvent>(e => e.PreviousValue == "homecare" && e.CurrentValue == "healthcare"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ActiveIndustriesUnchanged_DispatchesNothing()
+    {
+        _settingsRepository.GetSettingNoTracking(SettingKeys.ActiveIndustries)
+            .Returns(BuildSetting(SettingKeys.ActiveIndustries, "healthcare"));
+        var command = new PutCommand(BuildSetting(SettingKeys.ActiveIndustries, "healthcare"));
+
+        await _sut.Handle(command, CancellationToken.None);
+
+        await _eventDispatcher.DidNotReceive().DispatchAsync(
+            Arg.Any<ActiveIndustriesChangedEvent>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ActiveIndustriesDispatchFails_StillReturnsThePersistedSetting()
+    {
+        _settingsRepository.GetSettingNoTracking(SettingKeys.ActiveIndustries)
+            .Returns(BuildSetting(SettingKeys.ActiveIndustries, "homecare"));
+        _eventDispatcher
+            .DispatchAsync(Arg.Any<ActiveIndustriesChangedEvent>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("dispatch down")));
+        var command = new PutCommand(BuildSetting(SettingKeys.ActiveIndustries, "healthcare"));
+
+        var result = await _sut.Handle(command, CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
 }
