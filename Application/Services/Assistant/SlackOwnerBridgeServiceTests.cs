@@ -166,7 +166,12 @@ public class SlackOwnerBridgeServiceTests
                 c.Message == message.Content &&
                 c.UserId == AdminId &&
                 c.ConversationId == "slack-owner:" + AdminId &&
-                c.UserRights.SequenceEqual(Permissions.GetPermissionsForRole(Roles.Authorised))),
+                // Capped at Authorised: the supervisor rights are present, Admin is not — neither as a
+                // granular right nor as the role string the executor's admin bypass matches on.
+                c.UserRights.Contains(Permissions.CanEditShifts) &&
+                !c.UserRights.Contains(Permissions.CanDeleteShifts) &&
+                !c.UserRights.Contains(Roles.Admin) &&
+                c.AccessToken != null),
             Arg.Any<CancellationToken>());
         await _messagingService.Received(1).SendMessageAsync(
             MessagingConstants.ProviderSlack,

@@ -91,6 +91,34 @@ public class SkillRequestLoggingMiddlewareTests
     }
 
     [Test]
+    public async Task Request_FromABackgroundToken_IsMarkedAsSuch()
+    {
+        var logger = new CapturingLogger();
+        var context = Context("cover_absence");
+        context.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(TokenClaimTypes.TokenUse, TokenClaimTypes.InternalTokenUse)],
+                "test"));
+        var middleware = new SkillRequestLoggingMiddleware(_ => Task.CompletedTask, logger);
+
+        await middleware.InvokeAsync(context);
+
+        logger.Messages[0].ShouldContain("background");
+    }
+
+    [Test]
+    public async Task Request_FromAPerson_IsNotMarkedAsBackground()
+    {
+        var logger = new CapturingLogger();
+        var middleware = new SkillRequestLoggingMiddleware(_ => Task.CompletedTask, logger);
+
+        await middleware.InvokeAsync(Context("add_expense"));
+
+        logger.Messages[0].ShouldContain("user");
+        logger.Messages[0].ShouldNotContain("background");
+    }
+
+    [Test]
     public async Task Request_AlwaysReachesTheRestOfThePipeline()
     {
         var called = 0;
