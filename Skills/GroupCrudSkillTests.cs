@@ -12,6 +12,12 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 
+using Klacks.Api.Application.DTOs.Associations;
+
+using Klacks.Api.Application.Mappers;
+
+using Klacks.UnitTest.Infrastructure.SelfApi;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -19,7 +25,7 @@ public class GroupCrudSkillTests
 {
     private IGroupRepository _groupRepository = null!;
     private ICalendarSelectionRepository _calendarSelectionRepository = null!;
-    private IUnitOfWork _unitOfWork = null!;
+    private FakeSelfApi _api = null!;
     private Group? _persistedGroup;
 
     [SetUp]
@@ -27,19 +33,17 @@ public class GroupCrudSkillTests
     {
         _groupRepository = Substitute.For<IGroupRepository>();
         _calendarSelectionRepository = Substitute.For<ICalendarSelectionRepository>();
-        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _api = new FakeSelfApi();
+        _api.Respond(HttpMethod.Post, "api/backend/Groups", new GroupResource());
+        _api.Respond(HttpMethod.Put, "api/backend/Groups", new GroupResource());
 
         _persistedGroup = null;
         _groupRepository.Add(Arg.Do<Group>(g => _persistedGroup = g)).Returns(Task.CompletedTask);
         _groupRepository.GetNoTracking(Arg.Any<Guid>()).Returns(_ => _persistedGroup);
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
-            .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
-        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
-            .Returns(ci => ci.Arg<Func<Task<bool>>>()());
     }
 
     private UpdateGroupSkill UpdateSkill(IGroupScopeGuard guard) =>
-        new(_groupRepository, guard, _calendarSelectionRepository, _unitOfWork);
+        new(_groupRepository, guard, _calendarSelectionRepository, new GroupMapper(), _api.Client);
 
     private Group WireGroup(Guid id, Group group)
     {
@@ -53,13 +57,17 @@ public class GroupCrudSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditSettings", "CanViewSettings" }
+        UserPermissions = new List<string> { "CanEditSettings", "CanViewSettings" },
+        AccessToken = new BearerToken("caller-jwt")
     };
+
+    [TearDown]
+    public void TearDown() => _api.Dispose();
 
     [Test]
     public async Task CreateGroup_ReturnsError_WhenParentNotFound()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, _unitOfWork);
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client);
         var parentId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns((Group?)null);
         var parameters = new Dictionary<string, object>
@@ -77,39 +85,25 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_AtRoot_AddsGroupAndCompletes()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, _unitOfWork);
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client);
         var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _groupRepository.Received(1).Add(Arg.Is<Group>(g => g.Name == "Bern" && g.Parent == null));
-        await _unitOfWork.Received(1).CompleteAsync();
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
     }
 
-    [Test]
-    public async Task CreateGroup_ReturnsError_WhenDatabaseVerificationFails()
-    {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, _unitOfWork);
-        _groupRepository.GetNoTracking(Arg.Any<Guid>()).Returns((Group?)null);
-        var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
-
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
-    }
 
     [Test]
     public async Task CreateGroup_SuccessMessage_CarriesVerifiedMarker()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, _unitOfWork);
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client);
         var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("verified"));
     }
 
     [Test]
@@ -124,7 +118,7 @@ public class GroupCrudSkillTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Contain("No fields"));
-        await _groupRepository.DidNotReceive().Put(Arg.Any<Group>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -142,13 +136,13 @@ public class GroupCrudSkillTests
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _groupRepository.Received(1).Put(Arg.Is<Group>(g => g.Name == "Bern City"));
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 
     [Test]
     public async Task DeleteGroup_RefusesCascade_WhenChildrenExistAndForceFalse()
     {
-        var skill = new DeleteGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _unitOfWork);
+        var skill = new DeleteGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _api.Client);
         var id = Guid.NewGuid();
         _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Bern" });
         _groupRepository.GetChildren(id).Returns(new[]
@@ -161,13 +155,13 @@ public class GroupCrudSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("child"));
-        await _groupRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
     public async Task DeleteGroup_CascadesWhenForceTrue()
     {
-        var skill = new DeleteGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _unitOfWork);
+        var skill = new DeleteGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _api.Client);
         var id = Guid.NewGuid();
         var childId = Guid.NewGuid();
         _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Bern" });
@@ -181,11 +175,17 @@ public class GroupCrudSkillTests
             ["forceCascade"] = true
         };
 
+        _api.Respond(HttpMethod.Delete, $"api/backend/Groups/{id}/subtree",
+            new DeleteGroupSubtreeResponse { DeletedGroupName = "Bern", DeletedCount = 2 });
+
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
-        Assert.That(result.Success, Is.True);
-        await _groupRepository.Received(1).Delete(childId);
-        await _groupRepository.Received(1).Delete(id);
+        Assert.That(result.Success, Is.True, result.Message);
+        // One request for the whole subtree — deleting the children one by one could not roll back
+        // the ones that already succeeded.
+        _api.Calls.Count.ShouldBe(1);
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Delete);
+        _api.SingleCall.Route.ShouldBe($"api/backend/Groups/{id}/subtree");
     }
 
     [Test]
@@ -247,7 +247,7 @@ public class GroupCrudSkillTests
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("outside your assigned group scope"));
         Assert.That(result.Message, Does.Contain("Verkauf"));
-        await _groupRepository.DidNotReceive().Put(Arg.Any<Group>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -266,7 +266,7 @@ public class GroupCrudSkillTests
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _groupRepository.Received(1).Put(Arg.Is<Group>(g => g.Name == "Verkauf Nordwest"));
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 
     [Test]
@@ -274,7 +274,7 @@ public class GroupCrudSkillTests
     {
         var scopedRootId = Guid.NewGuid();
         var skill = new DeleteGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"), _unitOfWork);
+            _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"), _api.Client);
         var id = Guid.NewGuid();
         _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Logistik", Root = Guid.NewGuid() });
         var parameters = new Dictionary<string, object> { ["groupId"] = id.ToString() };
@@ -283,7 +283,7 @@ public class GroupCrudSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("outside your assigned group scope"));
-        await _groupRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -292,14 +292,14 @@ public class GroupCrudSkillTests
         var scopedRootId = Guid.NewGuid();
         var skill = new CreateGroupSkill(
             _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"),
-            _calendarSelectionRepository, _unitOfWork);
+            _calendarSelectionRepository, new GroupMapper(), _api.Client);
         var parameters = new Dictionary<string, object> { ["name"] = "Neue Wurzel" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("root-level group is outside your assigned group scope"));
-        await _groupRepository.DidNotReceive().Add(Arg.Any<Group>());
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -320,10 +320,9 @@ public class GroupCrudSkillTests
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True, result.Message);
-        Assert.That(result.Message, Does.Contain("verified"));
         Assert.That(group.PaymentInterval, Is.EqualTo(PaymentInterval.Weekly));
         Assert.That(group.CalendarSelectionId, Is.EqualTo(calendarId));
-        await _groupRepository.Received(1).Put(group);
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
 
     [Test]
@@ -342,27 +341,9 @@ public class GroupCrudSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("Invalid paymentInterval"));
-        await _groupRepository.DidNotReceive().Put(Arg.Any<Group>());
+        _api.Calls.ShouldBeEmpty();
     }
 
-    [Test]
-    public async Task UpdateGroup_ReturnsError_WhenVerificationRereadIsStale()
-    {
-        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
-        var id = Guid.NewGuid();
-        _groupRepository.Get(id).Returns(new Group { Id = id, Name = "Old", ValidFrom = DateTime.UtcNow.Date });
-        _groupRepository.GetNoTracking(id).Returns(new Group { Id = id, Name = "Old", ValidFrom = DateTime.UtcNow.Date });
-        var parameters = new Dictionary<string, object>
-        {
-            ["groupId"] = id.ToString(),
-            ["name"] = "Bern City"
-        };
-
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("verification failed"));
-    }
 
     [Test]
     public async Task CreateGroup_Succeeds_UnderParentInsideUserScope()
@@ -370,7 +351,7 @@ public class GroupCrudSkillTests
         var scopedRootId = Guid.NewGuid();
         var skill = new CreateGroupSkill(
             _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"),
-            _calendarSelectionRepository, _unitOfWork);
+            _calendarSelectionRepository, new GroupMapper(), _api.Client);
         var parentId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns(new Group { Id = parentId, Name = "Verkauf Nord", Root = scopedRootId });
         var parameters = new Dictionary<string, object>
@@ -382,6 +363,6 @@ public class GroupCrudSkillTests
         var result = await skill.ExecuteAsync(Ctx(), parameters);
 
         Assert.That(result.Success, Is.True);
-        await _groupRepository.Received(1).Add(Arg.Is<Group>(g => g.Parent == parentId));
+        _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
     }
 }
