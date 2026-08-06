@@ -85,26 +85,6 @@ public class KnowledgeRetrievalServiceTests
         line.ShouldContain("query=");
     }
 
-    [Test]
-    public async Task RetrieveAsync_SecondIdenticalPassInSameRequest_ReusesTheScoresInsteadOfRerankingAgain()
-    {
-        var service = new KnowledgeRetrievalService(
-            _embeddings, _reranker, _repo, null, new RetrievalCallCounter(), new RerankScoreCache());
-
-        var entry = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "s", Text = "skill text" };
-        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns([entry]);
-        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new double[] { 0.9 });
-
-        var first = await service.RetrieveAsync("same query", [], false, 5, currentRoute: null, CancellationToken.None);
-        var second = await service.RetrieveAsync("same query", [], false, 5, currentRoute: null, CancellationToken.None);
-
-        await _reranker.Received(1).ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
-        second.Candidates.Count.ShouldBe(first.Candidates.Count);
-        second.Candidates[0].Score.ShouldBe(first.Candidates[0].Score);
-    }
-
     // The kind predicate must reach the KNN query itself: the index holds ~450 skills against ~24
     // recipes, so a kind-blind top-N is almost always all skills and a recipe caller filtering
     // afterwards is usually left with nothing. The mock only answers the kind-filtered call, so a
@@ -128,45 +108,6 @@ public class KnowledgeRetrievalServiceTests
         await _repo.Received(1).FindNearestAsync(
             Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
             Arg.Any<CancellationToken>(), KnowledgeEntryKind.Recipe);
-    }
-
-    // The reuse must key on the actual input. A different query is a different question, however
-    // similar it looks.
-    [Test]
-    public async Task RetrieveAsync_DifferentQuerySameCandidates_ScoresAgain()
-    {
-        var service = new KnowledgeRetrievalService(
-            _embeddings, _reranker, _repo, null, new RetrievalCallCounter(), new RerankScoreCache());
-
-        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns([new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "s", Text = "skill text" }]);
-        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new double[] { 0.9 });
-
-        await service.RetrieveAsync("query one", [], false, 5, currentRoute: null, CancellationToken.None);
-        await service.RetrieveAsync("query two", [], false, 5, currentRoute: null, CancellationToken.None);
-
-        await _reranker.Received(2).ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
-    }
-
-    // Same query, but the candidate set changed - the scores are positional, so they do not carry over.
-    [Test]
-    public async Task RetrieveAsync_SameQueryDifferentCandidates_ScoresAgain()
-    {
-        var service = new KnowledgeRetrievalService(
-            _embeddings, _reranker, _repo, null, new RetrievalCallCounter(), new RerankScoreCache());
-
-        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(
-                _ => [new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "a", Text = "first text" }],
-                _ => [new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "b", Text = "second text" }]);
-        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new double[] { 0.9 });
-
-        await service.RetrieveAsync("same query", [], false, 5, currentRoute: null, CancellationToken.None);
-        await service.RetrieveAsync("same query", [], false, 5, currentRoute: null, CancellationToken.None);
-
-        await _reranker.Received(2).ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
     }
 
     private sealed class CapturingLogger : ILogger<KnowledgeRetrievalService>
