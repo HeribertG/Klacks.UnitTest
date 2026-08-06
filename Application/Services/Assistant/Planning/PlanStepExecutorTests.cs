@@ -325,7 +325,9 @@ public class PlanStepExecutorTests
                 !c.UserPermissions.Contains("clients.read") &&
                 c.SessionId == expectedSessionId),
             Arg.Any<CancellationToken>());
-        await _tokenIssuer.Received(1).IssueForOwnerAsync(ownerId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // Once to establish the identity, then again before each step — the token lives minutes and a
+        // step can take longer than that.
+        await _tokenIssuer.Received().IssueForOwnerAsync(ownerId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -1235,5 +1237,67 @@ public class PlanStepExecutorTests
             public static readonly NullScope Instance = new();
             public void Dispose() { }
         }
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_BackgroundPlan_RenewsItsTokenBeforeEveryStep()
+    {
+        var ownerId = Guid.NewGuid();
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "skill_one", new(), null, true),
+            new PlanStep(2, "skill_two", new(), null, true),
+            new PlanStep(3, "skill_three", new(), null, true)
+        });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var backgroundContext = CreateSkillContext() with { TokenRenewalOwnerId = ownerId };
+        await _sut.ExecutePlanAsync(plan.Id, backgroundContext);
+
+        await _tokenIssuer.Received(3).IssueForOwnerAsync(ownerId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_InteractivePlan_NeverSwapsTheCallersToken()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_one", new(), null, true) });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var callerContext = CreateSkillContext() with { AccessToken = new BearerToken("caller-jwt") };
+        await _sut.ExecutePlanAsync(plan.Id, callerContext);
+
+        await _tokenIssuer.DidNotReceive().IssueForOwnerAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c => c.AccessToken!.Value == "caller-jwt"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_RenewalFails_KeepsRunningWithThePreviousToken()
+    {
+        var plan = CreatePlan(new[] { new PlanStep(1, "skill_one", new(), null, true) });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Refused("the owner account is locked out"));
+
+        var backgroundContext = CreateSkillContext() with
+        {
+            TokenRenewalOwnerId = Guid.NewGuid(),
+            AccessToken = new BearerToken("previous-jwt")
+        };
+        await _sut.ExecutePlanAsync(plan.Id, backgroundContext);
+
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c => c.AccessToken!.Value == "previous-jwt"),
+            Arg.Any<CancellationToken>());
     }
 }
