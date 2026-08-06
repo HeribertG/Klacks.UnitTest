@@ -1,5 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.Api.Application.DTOs.Notifications;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
@@ -18,6 +20,9 @@ namespace Klacks.UnitTest.Application.Services.Schedules;
 [TestFixture]
 public class Wizard4RunnerTests
 {
+    private static readonly DateOnly From = new(2026, 11, 1);
+    private static readonly DateOnly Until = new(2026, 11, 30);
+
     private static readonly DateOnly D = new(2026, 4, 20);
 
     private IHarmonizerApplyService _applyService = null!;
@@ -25,6 +30,8 @@ public class Wizard4RunnerTests
     private IWizardRunCaptureRepository _captureRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private HarmonizerResultCache _resultCache = null!;
+    private IWizard4CandidateLifecycleService _lifecycleService = null!;
+    private IWorkNotificationService _notificationService = null!;
     private Wizard4Runner _runner = null!;
 
     [SetUp]
@@ -36,6 +43,8 @@ public class Wizard4RunnerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _resultCache = new HarmonizerResultCache();
 
+        _lifecycleService = Substitute.For<IWizard4CandidateLifecycleService>();
+        _notificationService = Substitute.For<IWorkNotificationService>();
         _runner = new Wizard4Runner(
             Substitute.For<IHarmonizerContextBuilder>(),
             Substitute.For<IWizardContextBuilder>(),
@@ -46,6 +55,9 @@ public class Wizard4RunnerTests
             _captureRepository,
             _unitOfWork,
             Substitute.For<IScheduleSnapshotMarkerService>(),
+            Substitute.For<IWizard4SnapshotGuard>(),
+            _lifecycleService,
+            _notificationService,
             Substitute.For<ILogger<Wizard4Runner>>());
     }
 
@@ -68,6 +80,80 @@ public class Wizard4RunnerTests
     }
 
     [Test]
+    public async Task Materialize_ExistingCandidateForTheSameSelection_IsSuperseded()
+    {
+        // Nobody asked for either candidate. A stack of near-identical suggestions for the same period
+        // is worse than one, so the older has to go when the newer lands.
+        var scenarioId = Guid.NewGuid();
+        var previous = new AnalyseScenario { Id = Guid.NewGuid(), Token = Guid.NewGuid() };
+        var groupId = Guid.NewGuid();
+        _repository
+            .GetActiveCandidateAsync(Arg.Any<string>(), groupId, From, Until, Arg.Any<CancellationToken>())
+            .Returns(previous);
+        StubApply(scenarioId);
+
+        await _runner.MaterializeCandidateIfImprovedAsync(
+            Result(baselineScalar: 0.50, bestFitness: 0.90),
+            Bitmap(CellSymbol.Early), groupId, CancellationToken.None, snapshotMarker: null, From, Until);
+
+        await _lifecycleService.Received(1).SupersedeAsync(previous, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Materialize_NoPreviousCandidate_SupersedesNothing()
+    {
+        _repository
+            .GetActiveCandidateAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns((AnalyseScenario?)null);
+        StubApply(Guid.NewGuid());
+
+        await _runner.MaterializeCandidateIfImprovedAsync(
+            Result(baselineScalar: 0.50, bestFitness: 0.90),
+            Bitmap(CellSymbol.Early), Guid.NewGuid(), CancellationToken.None, snapshotMarker: null, From, Until);
+
+        await _lifecycleService.DidNotReceiveWithAnyArgs().SupersedeAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Materialize_PushesTheCreatedCandidateWithTheRealPeriod()
+    {
+        var groupId = Guid.NewGuid();
+        var scenarioId = Guid.NewGuid();
+        StubApply(scenarioId);
+
+        await _runner.MaterializeCandidateIfImprovedAsync(
+            Result(baselineScalar: 0.50, bestFitness: 0.90),
+            Bitmap(CellSymbol.Early), groupId, CancellationToken.None, snapshotMarker: null, From, Until);
+
+        await _notificationService.Received(1).NotifyWizard4CandidatesChanged(
+            Arg.Is<Wizard4CandidateNotificationDto>(n =>
+                n.ScenarioId == scenarioId
+                && n.GroupId == groupId
+                && n.FromDate == From
+                && n.UntilDate == Until
+                && n.ChangeKind == Wizard4LifecycleConstants.ChangeKindCreated));
+    }
+
+    [Test]
+    public async Task Materialize_NoImprovement_NeitherSupersedesNorPushes()
+    {
+        await _runner.MaterializeCandidateIfImprovedAsync(
+            Result(baselineScalar: 0.90, bestFitness: 0.90),
+            Bitmap(CellSymbol.Early), Guid.NewGuid(), CancellationToken.None, snapshotMarker: null, From, Until);
+
+        await _lifecycleService.DidNotReceiveWithAnyArgs().SupersedeAsync(default!, default);
+        await _notificationService.DidNotReceiveWithAnyArgs().NotifyWizard4CandidatesChanged(default!);
+    }
+
+    private void StubApply(Guid scenarioId)
+    {
+        var resource = new AnalyseScenarioResource { Id = scenarioId, Name = "Optimizer" };
+        _applyService
+            .ApplyAsScenarioAsync(Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns((resource, (IReadOnlyList<Guid>)Array.Empty<Guid>(), (ScenarioComplianceReport?)null));
+        _repository.Get(scenarioId).Returns(new AnalyseScenario { Id = scenarioId, Token = Guid.NewGuid() });
+    }
+    [Test]
     public async Task Materialize_CreatesAndCapturesCandidate_WhenImprovementExceedsThreshold()
     {
         var scenarioId = Guid.NewGuid();
@@ -81,7 +167,8 @@ public class Wizard4RunnerTests
         var result = Result(baselineScalar: 0.50, bestFitness: 0.90);
         var seed = Bitmap(CellSymbol.Early);
 
-        var created = await _runner.MaterializeCandidateIfImprovedAsync(result, seed, Guid.NewGuid(), CancellationToken.None);
+        var created = await _runner.MaterializeCandidateIfImprovedAsync(
+            result, seed, Guid.NewGuid(), CancellationToken.None, snapshotMarker: null, From, Until);
 
         created.ShouldNotBeNull();
         created!.Id.ShouldBe(scenarioId);
@@ -121,7 +208,8 @@ public class Wizard4RunnerTests
             Arg.Any<CancellationToken>());
 
         var result = Result(baselineScalar: 0.50, bestFitness: 0.90);
-        await _runner.MaterializeCandidateIfImprovedAsync(result, Bitmap(CellSymbol.Early), groupId, CancellationToken.None);
+        await _runner.MaterializeCandidateIfImprovedAsync(
+            result, Bitmap(CellSymbol.Early), groupId, CancellationToken.None, snapshotMarker: null, From, Until);
 
         captured.ShouldNotBeNull();
         captured!.Engine.ShouldBe(WizardEngine.Wizard4);
@@ -149,7 +237,8 @@ public class Wizard4RunnerTests
 
         var result = Result(baselineScalar: 0.50, bestFitness: 0.90);
 
-        var created = await _runner.MaterializeCandidateIfImprovedAsync(result, Bitmap(CellSymbol.Early), Guid.NewGuid(), CancellationToken.None);
+        var created = await _runner.MaterializeCandidateIfImprovedAsync(
+            result, Bitmap(CellSymbol.Early), Guid.NewGuid(), CancellationToken.None, snapshotMarker: null, From, Until);
 
         created.ShouldNotBeNull();
         created!.Id.ShouldBe(scenarioId);
@@ -161,7 +250,8 @@ public class Wizard4RunnerTests
         var result = Result(baselineScalar: 0.50, bestFitness: 0.50);
         var seed = Bitmap(CellSymbol.Early);
 
-        var created = await _runner.MaterializeCandidateIfImprovedAsync(result, seed, Guid.NewGuid(), CancellationToken.None);
+        var created = await _runner.MaterializeCandidateIfImprovedAsync(
+            result, seed, Guid.NewGuid(), CancellationToken.None, snapshotMarker: null, From, Until);
 
         created.ShouldBeNull();
         await _applyService.DidNotReceive().ApplyAsScenarioAsync(

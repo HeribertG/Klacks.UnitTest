@@ -176,9 +176,13 @@ public class RandomTokenStrategyTests
     [Test]
     public void ShiftTypeInference_FromStartTime_ClassifiesCorrectly()
     {
+        // Bands: Early 06:00-14:59, Late 15:00-22:59, Night 23:00-05:59. The full rule including the
+        // span logic lives in ShiftTypeInferenceTests; this only keeps the strategy's own view honest.
         ShiftTypeInference.FromStartTime(new TimeOnly(6, 0)).ShouldBe(0);
-        ShiftTypeInference.FromStartTime(new TimeOnly(14, 0)).ShouldBe(1);
-        ShiftTypeInference.FromStartTime(new TimeOnly(22, 0)).ShouldBe(2);
+        ShiftTypeInference.FromStartTime(new TimeOnly(14, 0)).ShouldBe(0);
+        ShiftTypeInference.FromStartTime(new TimeOnly(15, 0)).ShouldBe(1);
+        ShiftTypeInference.FromStartTime(new TimeOnly(22, 0)).ShouldBe(1);
+        ShiftTypeInference.FromStartTime(new TimeOnly(23, 0)).ShouldBe(2);
         ShiftTypeInference.FromStartTime(new TimeOnly(2, 0)).ShouldBe(2);
     }
 }

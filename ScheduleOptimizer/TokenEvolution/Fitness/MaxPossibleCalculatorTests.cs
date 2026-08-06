@@ -76,7 +76,12 @@ public class MaxPossibleCalculatorTests
             PeriodFrom = date,
             PeriodUntil = date,
             Agents = [agent],
-            Shifts = [MakeShift(date, start: "06:00"), MakeShift(date, start: "14:00"), MakeShift(date, start: "22:00")],
+            Shifts =
+            [
+                MakeShift(date, start: "06:00", end: "14:00"),
+                MakeShift(date, start: "15:00", end: "23:00"),
+                MakeShift(date, start: "23:00", end: "07:00"),
+            ],
         };
 
         var result = new MaxPossibleCalculator().ComputeForAll(context);

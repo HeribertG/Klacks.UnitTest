@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.ScheduleOptimizer.Models;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Models.Schedules;
@@ -28,8 +29,9 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
     private static readonly IReadOnlyDictionary<string, Klacks.ScheduleOptimizer.Models.ScheduleCommandKeyword> DefaultKeywordMap =
         ScheduleCommandKeywordMapper.BuildMap(DefaultKeywords);
 
-    private static HashSet<(Guid AgentId, DateOnly Date)> KeywordDays(params (Guid, DateOnly)[] days)
-        => new(days);
+    private static Dictionary<(Guid AgentId, DateOnly Date), ScheduleCommandKeyword> KeywordDays(
+        params (Guid, DateOnly)[] days)
+        => days.ToDictionary(d => (d.Item1, d.Item2), _ => ScheduleCommandKeyword.NoNight);
 
     [Test]
     public void AvailabilityVeto_OnKeywordDay_IsSuppressed()
@@ -102,8 +104,38 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
 
         var days = RecoverySnapshotBuilder.ExtractKeywordDays(commands, DefaultKeywordMap);
 
-        days.ShouldContain((AgentA, KeywordDay));
-        days.ShouldContain((AgentA, OpenDay));
-        days.ShouldNotContain((AgentB, KeywordDay));
+        days.ShouldContainKey((AgentA, KeywordDay));
+        days.ShouldContainKey((AgentA, OpenDay));
+        days.ShouldNotContainKey((AgentB, KeywordDay));
+    }
+
+    [Test]
+    public void ExtractKeywordDays_KeepsTheKeywordItself_NotJustTheDay()
+    {
+        // The day alone only suppressed the availability veto. The category gates need to know WHICH
+        // keyword governs the day, otherwise an ONLY-LATE restriction stays invisible to recovery.
+        var commands = new List<ScheduleCommand>
+        {
+            new() { ClientId = AgentA, CurrentDate = KeywordDay, CommandKeyword = "LATE" },
+        };
+
+        var days = RecoverySnapshotBuilder.ExtractKeywordDays(commands, DefaultKeywordMap);
+
+        days[(AgentA, KeywordDay)].ShouldBe(ScheduleCommandKeyword.OnlyLate);
+    }
+
+    [Test]
+    public void ExtractKeywordDays_SeveralCommandsOnOneDay_FreeWins()
+    {
+        // Otherwise the answer would depend on the order the rows came back in.
+        var commands = new List<ScheduleCommand>
+        {
+            new() { ClientId = AgentA, CurrentDate = KeywordDay, CommandKeyword = "LATE" },
+            new() { ClientId = AgentA, CurrentDate = KeywordDay, CommandKeyword = "FREE" },
+        };
+
+        var days = RecoverySnapshotBuilder.ExtractKeywordDays(commands, DefaultKeywordMap);
+
+        days[(AgentA, KeywordDay)].ShouldBe(ScheduleCommandKeyword.Free);
     }
 }
