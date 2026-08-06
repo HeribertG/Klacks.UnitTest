@@ -176,6 +176,19 @@ public class SkillToolsetAssemblerTests
         result.HasDomainSkillContext.ShouldBeTrue();
     }
 
+    // The candidate pool is 25 wide and shared: a recipe reaching it can only ever displace a skill,
+    // because the toolset is built by matching candidates against skill names. The recipe pass has
+    // filtered by kind since 2026-08-05; this is the other half of that change.
+    [Test]
+    public async Task AssembleAsync_AsksTheRetrievalForSkillsOnly()
+    {
+        await AssembleAsync();
+
+        await _retrieval.Received(1).RetrieveAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), KnowledgeEntryKind.Skill);
+    }
+
     [Test]
     public async Task AssembleAsync_RetrievalThrows_FallsBackToAlwaysOn_GateStaysTrue()
     {
