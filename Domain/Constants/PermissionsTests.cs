@@ -102,4 +102,21 @@ public class PermissionsTests
         Permissions.ExpandRoles(Array.Empty<string>()).ShouldBeEmpty();
     }
 
+    [TestCase(Roles.Admin)]
+    [TestCase(Roles.Authorised)]
+    [TestCase(Roles.User)]
+    public void GetPermissionsForRole_EveryRole_MayUseTheAssistant(string role)
+    {
+        Permissions.GetPermissionsForRole(role).ShouldContain(Permissions.CanUseAssistant);
+    }
+
+    [Test]
+    public void GetPermissionsForRole_UnknownRole_FallsBackToTheReadOnlyFloorWithTheAssistant()
+    {
+        var rights = Permissions.GetPermissionsForRole("SomeFutureRole");
+
+        rights.ShouldContain(Permissions.CanUseAssistant);
+        rights.ShouldContain(Permissions.CanViewClients);
+        rights.ShouldNotContain(Permissions.CanEditClients);
+    }
 }
