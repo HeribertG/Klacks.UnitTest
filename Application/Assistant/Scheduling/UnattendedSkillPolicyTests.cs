@@ -47,7 +47,7 @@ public class UnattendedSkillPolicyTests
         var decision = _policy.Decide("update_client", Array.Empty<string>());
 
         decision.Allowed.ShouldBeFalse();
-        decision.Reason.ShouldContain("never frozen");
+        decision.Reason!.ShouldContain("never frozen");
     }
 
     [Test]
@@ -66,7 +66,7 @@ public class UnattendedSkillPolicyTests
         var decision = _policy.Decide("vanished_skill", OwnerPermissions);
 
         decision.Allowed.ShouldBeFalse();
-        decision.Reason.ShouldContain("no longer exists");
+        decision.Reason!.ShouldContain("no longer exists");
     }
 
     [Test]
@@ -77,7 +77,7 @@ public class UnattendedSkillPolicyTests
         var decision = _policy.Decide("delete_client", OwnerPermissions);
 
         decision.Allowed.ShouldBeFalse();
-        decision.Reason.ShouldContain("sensitive");
+        decision.Reason!.ShouldContain("sensitive");
     }
 
     [Test]

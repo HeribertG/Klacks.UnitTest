@@ -4,7 +4,8 @@
 /// Verifies Permissions.HasAllRequiredPermissions: the comma-separated RequiredPermission string
 /// stored on AgentSkill must require ALL listed permissions, not an exact-string match against a
 /// single user right (regression for the skill-visibility bug where multi-permission skills were
-/// unreachable for any non-admin user).
+/// unreachable for any non-admin user). Also verifies Permissions.ExpandRoles, the single expansion
+/// every assistant entry point now shares.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -66,4 +67,39 @@ public class PermissionsTests
 
         Permissions.HasAllRequiredPermissions(userRights, "CanEditClients,CanViewGroups").ShouldBeTrue();
     }
+
+    [Test]
+    public void ExpandRoles_KeepsTheRoleString_SoTheAdminBypassStillFires()
+    {
+        var rights = Permissions.ExpandRoles(new[] { Roles.Admin });
+
+        rights.ShouldContain(Roles.Admin);
+        Permissions.HasAllRequiredPermissions(rights, "CanEditClients,CanViewGroups").ShouldBeTrue();
+    }
+
+    [Test]
+    public void ExpandRoles_AddsTheGranularPermissionsOfTheRole()
+    {
+        var rights = Permissions.ExpandRoles(new[] { Roles.Authorised });
+
+        rights.ShouldContain(Permissions.CanEditClients);
+        rights.ShouldContain(Permissions.CanPlan);
+        rights.ShouldNotContain(Permissions.CanDeleteClients);
+    }
+
+    [Test]
+    public void ExpandRoles_MultipleRoles_DoesNotDuplicate()
+    {
+        var rights = Permissions.ExpandRoles(new[] { Roles.Admin, Roles.Authorised });
+
+        rights.Count(r => r == Permissions.CanEditClients).ShouldBe(1);
+        rights.Count(r => r == Permissions.CanViewClients).ShouldBe(1);
+    }
+
+    [Test]
+    public void ExpandRoles_NoRoles_YieldsNothing()
+    {
+        Permissions.ExpandRoles(Array.Empty<string>()).ShouldBeEmpty();
+    }
+
 }
