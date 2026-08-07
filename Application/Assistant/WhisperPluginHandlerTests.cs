@@ -244,6 +244,34 @@ public class WhisperPluginHandlerTests
     }
 
     [Test]
+    public async Task Status_carries_the_claim_timestamp_of_the_active_operation()
+    {
+        _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
+            .Returns((CustomSttProvider?)null);
+        var claimedAt = DateTime.UtcNow.AddMinutes(-3);
+        var active = Operation(UpdateOperationType.WhisperInstall, UpdateOperationStatus.Running);
+        active.StartedAt = claimedAt;
+        _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns(active);
+
+        var result = await CreateStatusHandler().Handle(new GetWhisperPluginStatusQuery(), CancellationToken.None);
+
+        result.ActiveOperation!.StartedAt.ShouldBe(claimedAt);
+    }
+
+    [Test]
+    public async Task Status_leaves_the_claim_timestamp_empty_while_the_operation_is_queued()
+    {
+        _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
+            .Returns((CustomSttProvider?)null);
+        var queued = Operation(UpdateOperationType.WhisperInstall, UpdateOperationStatus.Pending);
+        _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns(queued);
+
+        var result = await CreateStatusHandler().Handle(new GetWhisperPluginStatusQuery(), CancellationToken.None);
+
+        result.ActiveOperation!.StartedAt.ShouldBeNull();
+    }
+
+    [Test]
     public async Task Status_flags_foreign_active_operation()
     {
         _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
