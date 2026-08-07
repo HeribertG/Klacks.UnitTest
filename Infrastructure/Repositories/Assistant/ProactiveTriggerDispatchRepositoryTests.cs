@@ -6,7 +6,8 @@
 /// the change tracker stays clean and subsequent records in the same scope still succeed.
 /// Also covers the inbox surface: listing own rows newest first with unread filter and take,
 /// counting unread rows, loading recent reactions per kind for dismiss-streak learning, and
-/// marking single rows (ownership enforced) as read.
+/// marking single rows (ownership enforced) as read and marking exactly the rows of one fetched
+/// page as read, which must leave every unread row beyond that page untouched.
 /// Uses a shared in-memory DataBaseContext, mirroring the neighbouring repository tests.
 /// MarkAllReadAsync uses ExecuteUpdateAsync, which the EF in-memory provider does not support,
 /// so it is intentionally not covered here (same as the other ExecuteUpdateAsync repositories).
@@ -322,6 +323,73 @@ public class ProactiveTriggerDispatchRepositoryTests
         var result = await new ProactiveTriggerDispatchRepository(context).MarkReadAsync(Guid.NewGuid(), "user-a");
 
         result.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task MarkManyReadAsync_LeavesRowsBeyondTheFetchedPageUnread()
+    {
+        const int unreadRows = 63;
+        const int pageSize = 50;
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            for (var i = 0; i < unreadRows; i++)
+            {
+                await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", $"dedup-{i}"));
+            }
+        }
+
+        using var context = CreateContext();
+        var inboxRepository = new ProactiveTriggerDispatchRepository(context);
+        var page = await inboxRepository.ListForUserAsync("user-a", unreadOnly: true, take: pageSize);
+        page.Count.ShouldBe(pageSize);
+
+        await inboxRepository.MarkManyReadAsync(page.Select(row => row.Id).ToList(), "user-a");
+
+        using var verify = CreateContext();
+        var verifyRepository = new ProactiveTriggerDispatchRepository(verify);
+        (await verifyRepository.CountUnreadAsync("user-a")).ShouldBe(unreadRows - pageSize);
+        var shownIds = page.Select(row => row.Id).ToHashSet();
+        (await verify.AgentTriggerDispatches
+            .Where(d => !shownIds.Contains(d.Id))
+            .AllAsync(d => d.ReadAtUtc == null)).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task MarkManyReadAsync_IgnoresRowsOfAnotherUser()
+    {
+        var ownId = Guid.NewGuid();
+        var foreignId = Guid.NewGuid();
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            await repository.RecordAsync(Row(ownId, "user-a", "dedup-own"));
+            await repository.RecordAsync(Row(foreignId, "user-b", "dedup-foreign"));
+        }
+
+        using var context = CreateContext();
+        await new ProactiveTriggerDispatchRepository(context)
+            .MarkManyReadAsync([ownId, foreignId], "user-a");
+
+        using var verify = CreateContext();
+        (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == ownId)).ReadAtUtc.ShouldNotBeNull();
+        (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == foreignId)).ReadAtUtc.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task MarkManyReadAsync_EmptyIdList_TouchesNothing()
+    {
+        var id = Guid.NewGuid();
+        using (var seedContext = CreateContext())
+        {
+            await new ProactiveTriggerDispatchRepository(seedContext).RecordAsync(Row(id, "user-a", "dedup-1"));
+        }
+
+        using var context = CreateContext();
+        await new ProactiveTriggerDispatchRepository(context).MarkManyReadAsync([], "user-a");
+
+        using var verify = CreateContext();
+        (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == id)).ReadAtUtc.ShouldBeNull();
     }
 
     [Test]
