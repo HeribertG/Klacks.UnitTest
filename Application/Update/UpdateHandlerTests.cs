@@ -11,6 +11,7 @@ using Klacks.Api.Application.Services.Update;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Interfaces.Update;
 using Klacks.Api.Domain.Models.Update;
+using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -45,6 +46,11 @@ public class UpdateHandlerTests
     private DeleteUpdateHistoryCommandHandler CreateDeleteHandler()
     {
         return new DeleteUpdateHistoryCommandHandler(_repository);
+    }
+
+    private CancelUpdateCommandHandler CreateCancelHandler()
+    {
+        return new CancelUpdateCommandHandler(_repository);
     }
 
     private void GivenManifest(string latest, string minUpgradableFrom)
@@ -177,10 +183,9 @@ public class UpdateHandlerTests
         var entry = Entry(UpdateOperationStatus.Pending);
         _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
 
-        var handler = new CancelUpdateCommandHandler(_repository);
-        var result = await handler.Handle(new CancelUpdateCommand(entry.Id), CancellationToken.None);
+        var result = await CreateCancelHandler().Handle(new CancelUpdateCommand(entry.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.ShouldBe(UpdateOperationCancellationOutcome.Cancelled);
         entry.Status.ShouldBe(UpdateOperationStatus.Cancelled);
         entry.CompletedAt.ShouldNotBeNull();
         await _repository.Received(1).UpdateAsync(entry, Arg.Any<CancellationToken>());
@@ -192,22 +197,46 @@ public class UpdateHandlerTests
         var entry = Entry(UpdateOperationStatus.Running);
         _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
 
-        var handler = new CancelUpdateCommandHandler(_repository);
-        var result = await handler.Handle(new CancelUpdateCommand(entry.Id), CancellationToken.None);
+        var result = await CreateCancelHandler().Handle(new CancelUpdateCommand(entry.Id), CancellationToken.None);
 
-        result.ShouldBeFalse();
+        result.ShouldBe(UpdateOperationCancellationOutcome.NoLongerPending);
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task Cancel_missing_operation_returns_false()
+    public async Task Cancel_missing_operation_returns_not_found()
     {
         _repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
 
-        var handler = new CancelUpdateCommandHandler(_repository);
-        var result = await handler.Handle(new CancelUpdateCommand(Guid.NewGuid()), CancellationToken.None);
+        var result = await CreateCancelHandler().Handle(new CancelUpdateCommand(Guid.NewGuid()), CancellationToken.None);
 
-        result.ShouldBeFalse();
+        result.ShouldBe(UpdateOperationCancellationOutcome.NotFound);
+    }
+
+    [Test]
+    public async Task Cancel_is_rejected_when_the_updater_claimed_the_row_in_between()
+    {
+        var entry = Entry(UpdateOperationStatus.Pending);
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+        _repository.UpdateAsync(entry, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new DbUpdateConcurrencyException()));
+
+        var result = await CreateCancelHandler().Handle(new CancelUpdateCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBe(UpdateOperationCancellationOutcome.NoLongerPending);
+    }
+
+    [Test]
+    public async Task Delete_is_rejected_when_the_updater_claimed_the_row_in_between()
+    {
+        var entry = Entry(UpdateOperationStatus.Pending);
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+        _repository.DeleteAsync(entry, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new DbUpdateConcurrencyException()));
+
+        var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBe(UpdateHistoryDeletionOutcome.BlockedByLiveOperation);
     }
 
     [TestCase(UpdateOperationStatus.Failed)]
