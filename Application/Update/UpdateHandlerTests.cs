@@ -3,6 +3,8 @@
 namespace Klacks.UnitTest.Application.Update;
 
 using Klacks.Api.Application.Commands.Update;
+using Klacks.Api.Application.Constants;
+using Klacks.Api.Application.DTOs.Update;
 using Klacks.Api.Application.Handlers.Update;
 using Klacks.Api.Application.Queries.Update;
 using Klacks.Api.Application.Services.Update;
@@ -16,6 +18,8 @@ using Shouldly;
 [TestFixture]
 public class UpdateHandlerTests
 {
+    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+
     private IUpdateHistoryRepository _repository = null!;
     private IUpdateManifestReader _manifestReader = null!;
     private ISettingsReader _settingsReader = null!;
@@ -36,6 +40,11 @@ public class UpdateHandlerTests
     private TriggerUpdateCommandHandler CreateTriggerHandler()
     {
         return new TriggerUpdateCommandHandler(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader);
+    }
+
+    private DeleteUpdateHistoryCommandHandler CreateDeleteHandler()
+    {
+        return new DeleteUpdateHistoryCommandHandler(_repository);
     }
 
     private void GivenManifest(string latest, string minUpgradableFrom)
@@ -201,42 +210,82 @@ public class UpdateHandlerTests
         result.ShouldBeFalse();
     }
 
-    [Test]
-    public async Task Delete_finished_operation_succeeds()
-    {
-        var entry = Entry(UpdateOperationStatus.Failed);
-        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
-
-        var handler = new DeleteUpdateHistoryCommandHandler(_repository);
-        var result = await handler.Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
-
-        result.ShouldBeTrue();
-        await _repository.Received(1).DeleteAsync(entry, Arg.Any<CancellationToken>());
-    }
-
+    [TestCase(UpdateOperationStatus.Failed)]
+    [TestCase(UpdateOperationStatus.Succeeded)]
     [TestCase(UpdateOperationStatus.Pending)]
-    [TestCase(UpdateOperationStatus.Running)]
-    public async Task Delete_active_operation_succeeds(UpdateOperationStatus status)
+    public async Task Delete_operation_the_updater_cannot_be_executing_succeeds(UpdateOperationStatus status)
     {
         var entry = Entry(status);
         _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
 
-        var handler = new DeleteUpdateHistoryCommandHandler(_repository);
-        var result = await handler.Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+        var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.ShouldBe(UpdateHistoryDeletionOutcome.Deleted);
         await _repository.Received(1).DeleteAsync(entry, Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task Delete_missing_operation_returns_false()
+    public async Task Delete_running_operation_with_live_lease_is_blocked()
+    {
+        var entry = Entry(UpdateOperationStatus.Running);
+        entry.LastHeartbeatAt = DateTime.UtcNow;
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+
+        var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBe(UpdateHistoryDeletionOutcome.BlockedByLiveOperation);
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(UpdateOperationType.WhisperInstall)]
+    [TestCase(UpdateOperationType.WhisperUninstall)]
+    public async Task Delete_running_whisper_operation_with_live_lease_is_blocked(UpdateOperationType type)
+    {
+        var entry = Entry(UpdateOperationStatus.Running, type);
+        entry.LastHeartbeatAt = DateTime.UtcNow;
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+
+        var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBe(UpdateHistoryDeletionOutcome.BlockedByLiveOperation);
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Delete_running_operation_with_expired_lease_succeeds()
+    {
+        var entry = Entry(UpdateOperationStatus.Running);
+        entry.LastHeartbeatAt = DateTime.UtcNow - UpdateOperationLease.StuckTimeout - OneMinute;
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+
+        var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBe(UpdateHistoryDeletionOutcome.Deleted);
+        await _repository.Received(1).DeleteAsync(entry, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Delete_running_operation_without_heartbeat_succeeds()
+    {
+        var entry = Entry(UpdateOperationStatus.Running);
+        entry.LastHeartbeatAt = null;
+        _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
+
+        var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
+
+        result.ShouldBe(UpdateHistoryDeletionOutcome.Deleted);
+        await _repository.Received(1).DeleteAsync(entry, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Delete_missing_operation_returns_not_found()
     {
         _repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
 
-        var handler = new DeleteUpdateHistoryCommandHandler(_repository);
-        var result = await handler.Handle(new DeleteUpdateHistoryCommand(Guid.NewGuid()), CancellationToken.None);
+        var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(Guid.NewGuid()), CancellationToken.None);
 
-        result.ShouldBeFalse();
+        result.ShouldBe(UpdateHistoryDeletionOutcome.NotFound);
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
