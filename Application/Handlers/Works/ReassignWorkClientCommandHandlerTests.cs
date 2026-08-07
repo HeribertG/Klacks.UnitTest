@@ -8,9 +8,13 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
+using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Works;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.UnitTest.TestHelpers;
@@ -32,6 +36,7 @@ public class ReassignWorkClientCommandHandlerTests
     private IDayLockService _dayLockService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IOvertimeCascadeService _overtimeCascadeService = null!;
+    private IPreCommitConflictChecker _conflictChecker = null!;
     private ReassignWorkClientCommandHandler _handler = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
@@ -55,6 +60,13 @@ public class ReassignWorkClientCommandHandlerTests
         _dayLockService = Substitute.For<IDayLockService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _overtimeCascadeService = Substitute.For<IOvertimeCascadeService>();
+        _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
+        _conflictChecker.CheckAsync(
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(),
+                Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(PreCommitCheckResult.Empty);
 
         var existingWork = new Work { Id = _workId, ClientId = _sourceClientId, CurrentDate = _date, ShiftId = _shiftId };
         var trackedWork = new Work { Id = _workId, ClientId = _sourceClientId, CurrentDate = _date, ShiftId = _shiftId };
@@ -89,6 +101,7 @@ public class ReassignWorkClientCommandHandlerTests
             _dayLockService,
             _unitOfWork,
             _overtimeCascadeService,
+            _conflictChecker,
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
     }
 
@@ -141,4 +154,115 @@ public class ReassignWorkClientCommandHandlerTests
 
         await Should.ThrowAsync<KeyNotFoundException>(act);
     }
+
+    [Test]
+    public async Task Handle_ChecksTheTargetClient_AndVacatesTheSourceRow()
+    {
+        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows =>
+                rows.Count == 1 && rows[0].ClientId == _targetClientId && rows[0].Date == _date),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(rows =>
+                rows.Count == 1 && rows[0].ClientId == _sourceClientId && rows[0].WorkId == _workId),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ThrowsConflict_WhenTargetClientWouldStructurallyCollide()
+    {
+        GivenConflictCheckReturns(StructuralError());
+
+        Func<Task> act = async () => await _handler.Handle(
+            new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        (await Should.ThrowAsync<ConflictException>(act)).Message.ShouldContain("blocked");
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_Reassigns_WhenOnlyABlockModeEscalationIsReported()
+    {
+        GivenConflictCheckReturns(EscalatedError());
+
+        var result = await _handler.Handle(
+            new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.Work!.ClientId.ShouldBe(_targetClientId);
+    }
+
+    [Test]
+    public async Task Handle_SkipsTheCollisionCheck_ForScenarioWork()
+    {
+        var scenarioToken = Guid.NewGuid();
+        _workRepository.GetNoTracking(_workId).Returns(new Work
+        {
+            Id = _workId,
+            ClientId = _sourceClientId,
+            CurrentDate = _date,
+            ShiftId = _shiftId,
+            AnalyseToken = scenarioToken,
+        });
+
+        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(),
+            Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_SkipsTheCollisionCheck_ForAContainerChild()
+    {
+        _workRepository.GetNoTracking(_workId).Returns(new Work
+        {
+            Id = _workId,
+            ClientId = _sourceClientId,
+            CurrentDate = _date,
+            ShiftId = _shiftId,
+            ParentWorkId = Guid.NewGuid(),
+        });
+
+        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(),
+            Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    private void GivenConflictCheckReturns(params ScheduleValidationNotificationDto[] conflicts)
+    {
+        _conflictChecker.CheckAsync(
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(),
+                Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult(conflicts));
+    }
+
+    private ScheduleValidationNotificationDto StructuralError() => new()
+    {
+        Type = ScheduleValidationType.Error,
+        ClientId = _targetClientId,
+        Date = _date,
+        Comment = "schedule.error-list.collision",
+    };
+
+    private ScheduleValidationNotificationDto EscalatedError() => new()
+    {
+        Type = ScheduleValidationType.Error,
+        ClientId = _targetClientId,
+        Date = _date,
+        Comment = "schedule.error-list.rest-violation",
+        CommentParams = new Dictionary<string, string>
+        {
+            [ComplianceRuleNames.EnforcementRuleParamKey] = ComplianceRuleNames.MinRestHours,
+        },
+    };
 }

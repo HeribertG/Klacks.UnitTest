@@ -250,4 +250,78 @@ public class ApplyPlanningProfileCommandHandlerTests
         await _settings.Received(1).UpsertSettingAsync(SettingKeys.ActiveIndustries, IndustrySlugs.Custom);
         _store.Get(UserId, Key).ShouldBeNull();
     }
+
+    [Test]
+    public async Task Handle_ContractsLeftOnTheOldIndustry_AreReportedAndTheSwitchIsAnnounced()
+    {
+        var draft = new PlanningProfileDraft();
+        draft.Parameters[PlanningProfileParameterNames.BaseIndustry] = IndustrySlugs.Homecare;
+        _store.Set(UserId, Key, draft);
+
+        _schedulingRules.GetByIndustryAsync(IndustrySlugs.Homecare).Returns(new List<SchedulingRule>
+        {
+            new() { Id = Guid.NewGuid(), Name = "Homecare day", Industry = IndustrySlugs.Homecare }
+        });
+        _settings.GetSettingNoTracking(SettingKeys.ActiveIndustries).Returns(new Klacks.Api.Domain.Models.Settings.Settings
+        {
+            Id = Guid.NewGuid(),
+            Type = SettingKeys.ActiveIndustries,
+            Value = IndustrySlugs.Homecare
+        });
+        _migrationReader.GetContractsOnInactiveIndustriesAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new IndustryMigrationCandidate(
+                Guid.NewGuid(), "Contract A", Guid.NewGuid(), "Homecare day", IndustrySlugs.Homecare, 3),
+            new IndustryMigrationCandidate(
+                Guid.NewGuid(), "Contract B", Guid.NewGuid(), "Homecare night", IndustrySlugs.Homecare, 1)
+        });
+
+        var result = await _sut.Handle(Cmd(), CancellationToken.None);
+
+        result!.ContractsAwaitingMigration.ShouldBe(2);
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<IDomainEvent>(e =>
+                e is ActiveIndustriesChangedEvent &&
+                ((ActiveIndustriesChangedEvent)e).PreviousValue == IndustrySlugs.Homecare &&
+                ((ActiveIndustriesChangedEvent)e).CurrentValue == IndustrySlugs.Custom),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_NoActiveIndustriesSettingYet_AnnouncesTheSwitchWithoutPreviousValue()
+    {
+        var draft = new PlanningProfileDraft();
+        draft.Parameters[PlanningProfileParameterNames.BaseIndustry] = PlanningProfileBaseChoices.Scratch;
+        draft.Parameters[PlanningProfileParameterNames.DefaultWorkingHours] = "8";
+        _store.Set(UserId, Key, draft);
+
+        var result = await _sut.Handle(Cmd(), CancellationToken.None);
+
+        result!.ContractsAwaitingMigration.ShouldBe(0);
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<IDomainEvent>(e =>
+                e is ActiveIndustriesChangedEvent &&
+                ((ActiveIndustriesChangedEvent)e).PreviousValue == null &&
+                ((ActiveIndustriesChangedEvent)e).CurrentValue == IndustrySlugs.Custom),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_MigrationReaderFails_ProfileStaysApplied_NothingIsAnnounced()
+    {
+        var draft = new PlanningProfileDraft();
+        draft.Parameters[PlanningProfileParameterNames.BaseIndustry] = PlanningProfileBaseChoices.Scratch;
+        draft.Parameters[PlanningProfileParameterNames.DefaultWorkingHours] = "8";
+        _store.Set(UserId, Key, draft);
+
+        _migrationReader.GetContractsOnInactiveIndustriesAsync(Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<IndustryMigrationCandidate>>>(_ => throw new InvalidOperationException("db down"));
+
+        var result = await _sut.Handle(Cmd(), CancellationToken.None);
+
+        result!.CreatedRuleCount.ShouldBe(1);
+        result.ContractsAwaitingMigration.ShouldBe(0);
+        await _settings.Received(1).UpsertSettingAsync(SettingKeys.ActiveIndustries, IndustrySlugs.Custom);
+        await _eventDispatcher.DidNotReceive().DispatchAsync(Arg.Any<IDomainEvent>(), Arg.Any<CancellationToken>());
+    }
 }

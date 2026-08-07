@@ -136,10 +136,12 @@ public class ClosePeriodCommandHandlerTests
 
         var command = new ClosePeriodCommand(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31));
 
-        var ex = await Should.ThrowAsync<ConflictException>(
+        var ex = await Should.ThrowAsync<PeriodValidationConflictException>(
             () => _handler.Handle(command, CancellationToken.None));
 
         ex.Message.ShouldContain("2 unresolved error");
+        ex.CurrentErrorCount.ShouldBe(2);
+        ex.ShouldBeAssignableTo<ConflictException>();
         await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -168,7 +170,7 @@ public class ClosePeriodCommandHandlerTests
 
         var command = new ClosePeriodCommand(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31));
 
-        await Should.ThrowAsync<ConflictException>(
+        await Should.ThrowAsync<PeriodValidationConflictException>(
             () => _handler.Handle(command, CancellationToken.None));
 
         refusalReachedTheTransaction.ShouldBeTrue();
@@ -199,6 +201,121 @@ public class ClosePeriodCommandHandlerTests
 
         await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AcknowledgedWithoutCount_SealsWithoutRevalidating()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error));
+
+        var command = new ClosePeriodCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), AcknowledgeViolations: true);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _validationLoader.DidNotReceiveWithAnyArgs().LoadAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+            Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+        await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_CountWithoutTheAcknowledgeFlag_DoesNotAcknowledgeAnything()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error));
+
+        var command = new ClosePeriodCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), AcknowledgedErrorCount: 5);
+
+        var ex = await Should.ThrowAsync<PeriodValidationConflictException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        ex.CurrentErrorCount.ShouldBe(1);
+        await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AcknowledgedCountStillMatches_Seals()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error), Issue(ScheduleValidationType.Error));
+
+        var command = new ClosePeriodCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+            AcknowledgeViolations: true, AcknowledgedErrorCount: 2);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_FewerErrorsThanAcknowledged_Seals()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error));
+
+        var command = new ClosePeriodCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+            AcknowledgeViolations: true, AcknowledgedErrorCount: 2);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_MoreErrorsThanAcknowledged_RefusesAgainWithTheCurrentCount()
+    {
+        GivenIssues(
+            Issue(ScheduleValidationType.Error),
+            Issue(ScheduleValidationType.Error),
+            Issue(ScheduleValidationType.Error));
+
+        var command = new ClosePeriodCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+            AcknowledgeViolations: true, AcknowledgedErrorCount: 2);
+
+        var ex = await Should.ThrowAsync<PeriodValidationConflictException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        ex.CurrentErrorCount.ShouldBe(3);
+        ex.Message.ShouldContain("3 unresolved error");
+        await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_MoreErrorsThanAcknowledged_RefusesFromInsideTheTransaction()
+    {
+        // The re-check loads the period's findings, and that load reconciles the materialised K12 state
+        // before reading it - exactly like the unacknowledged path, so the refusal has to roll back too.
+        var refusalReachedTheTransaction = false;
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
+            .Returns(async ci =>
+            {
+                try
+                {
+                    return await ci.ArgAt<Func<Task<int>>>(0)();
+                }
+                catch
+                {
+                    refusalReachedTheTransaction = true;
+                    throw;
+                }
+            });
+        GivenIssues(Issue(ScheduleValidationType.Error), Issue(ScheduleValidationType.Error));
+
+        var command = new ClosePeriodCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+            AcknowledgeViolations: true, AcknowledgedErrorCount: 1);
+
+        await Should.ThrowAsync<PeriodValidationConflictException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        refusalReachedTheTransaction.ShouldBeTrue();
     }
 
     private static PeriodIssueDto Issue(ScheduleValidationType severity) => new()
