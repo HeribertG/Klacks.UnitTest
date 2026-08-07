@@ -13,6 +13,7 @@ using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed;
 using Klacks.Api.Infrastructure.Services.Plugins;
 using Microsoft.AspNetCore.Hosting;
@@ -28,10 +29,15 @@ using Settings = Klacks.Api.Domain.Models.Settings.Settings;
 public class FeaturePluginServiceSkillLifecycleTests
 {
     private const string PluginName = "messaging";
+    private const string NavigateToSkillName = "navigate_to";
+    private const string PluginRoute = "/messaging";
 
     private ISettingsRepository _settingsRepository = null!;
     private SkillSeedLoader _seedLoader = null!;
     private ISkillCatalogRefresher _refresher = null!;
+    private IUnitOfWork _unitOfWork = null!;
+    private IAgentSkillRepository _skillRepository = null!;
+    private IAgentRepository _agentRepository = null!;
     private FeaturePluginService _service = null!;
     private string _pluginRoot = null!;
     private List<Settings> _settings = null!;
@@ -73,13 +79,17 @@ public class FeaturePluginServiceSkillLifecycleTests
             Substitute.For<ILogger<SkillSeedLoader>>());
         _refresher = Substitute.For<ISkillCatalogRefresher>();
 
+        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _skillRepository = Substitute.For<IAgentSkillRepository>();
+        _agentRepository = Substitute.For<IAgentRepository>();
+
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(ISettingsRepository)).Returns(_settingsRepository);
-        provider.GetService(typeof(IUnitOfWork)).Returns(Substitute.For<IUnitOfWork>());
+        provider.GetService(typeof(IUnitOfWork)).Returns(_unitOfWork);
         provider.GetService(typeof(SkillSeedLoader)).Returns(_seedLoader);
         provider.GetService(typeof(ISkillCatalogRefresher)).Returns(_refresher);
-        provider.GetService(typeof(IAgentSkillRepository)).Returns(Substitute.For<IAgentSkillRepository>());
-        provider.GetService(typeof(IAgentRepository)).Returns(Substitute.For<IAgentRepository>());
+        provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
+        provider.GetService(typeof(IAgentRepository)).Returns(_agentRepository);
 
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(provider);
@@ -177,5 +187,54 @@ public class FeaturePluginServiceSkillLifecycleTests
 
         installed.ShouldBeTrue();
         _service.IsEnabled(PluginName).ShouldBeTrue();
+    }
+
+    // The refresh rebuilds the knowledge index from the database, so it must not run before the
+    // settings write is committed.
+    [Test]
+    public async Task InstallAsync_CompletesTheUnitOfWorkBeforeRefreshingTheCatalogue()
+    {
+        var installed = await _service.InstallAsync(PluginName);
+
+        installed.ShouldBeTrue();
+        Received.InOrder(() =>
+        {
+            _unitOfWork.CompleteAsync();
+            _refresher.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        });
+    }
+
+    // SetUp's manifest has no navigation entry, so RegisterPluginNavigationAsync would return early
+    // on every other test in this fixture. This test gives the plugin a route and rediscovers it so
+    // the navigation branch actually runs, then pins that the navigate_to update happens before the
+    // refresh that follows it in the same install flow.
+    [Test]
+    public async Task InstallAsync_RegistersNavigationBeforeRefreshingTheCatalogue()
+    {
+        File.WriteAllText(
+            Path.Combine(_pluginRoot, PluginName, "manifest.json"),
+            JsonSerializer.Serialize(new
+            {
+                name = PluginName,
+                displayName = "Messaging",
+                minKlacksVersion = "1.0.0",
+                navigation = new { route = PluginRoute }
+            }));
+        await _service.RefreshPluginsAsync();
+
+        var defaultAgent = new Agent { Id = Guid.NewGuid() };
+        _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(defaultAgent);
+        var navigateToSkill = new AgentSkill { Id = Guid.NewGuid(), AgentId = defaultAgent.Id, Name = NavigateToSkillName };
+        _skillRepository.GetByNameAsync(defaultAgent.Id, NavigateToSkillName, Arg.Any<CancellationToken>())
+            .Returns(navigateToSkill);
+
+        var installed = await _service.InstallAsync(PluginName);
+
+        installed.ShouldBeTrue();
+        Received.InOrder(() =>
+        {
+            _skillRepository.UpdateAsync(navigateToSkill, Arg.Any<CancellationToken>());
+            _refresher.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        });
     }
 }
