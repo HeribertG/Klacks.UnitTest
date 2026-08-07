@@ -1402,7 +1402,7 @@ public class RegionSetupServiceTests
     {
         var json = """
             { "version": 1, "industryProfiles": { "healthcare": {
-                "schedulingRulePresets": [ { "name": "DE Klinik Standard", "maxDailyHours": 10, "maxWeeklyHours": 48, "nightStart": "23:00", "nightEnd": "06:00" } ],
+                "schedulingRulePresets": [ { "name": "DE Klinik Standard", "maxDailyHours": 10, "maxWeeklyHours": 48, "minPauseHours": 11.5, "maxConsecutiveDays": 6, "nightStart": "23:00", "nightEnd": "06:00" } ],
                 "qualificationCatalog": [ { "name": { "de": "Examinierte Pflegefachkraft", "en": "Registered nurse" }, "isTimeLimited": true } ]
             } } }
             """;
@@ -1414,6 +1414,10 @@ public class RegionSetupServiceTests
         rule.Name.ShouldBe("DE Klinik Standard");
         rule.MaxDailyHours.ShouldBe(10m);
         rule.MaxWeeklyHours.ShouldBe(48m);
+        // The two fields CopyPresetValues carries that no other test reads back: without these asserts a
+        // dropped assignment in that mapping would go unnoticed on the whole JSON -> SchedulingRule chain.
+        rule.MinPauseHours.ShouldBe(11.5m);
+        rule.MaxConsecutiveDays.ShouldBe(6);
         rule.NightStart.ShouldBe("23:00");
         rule.NightEnd.ShouldBe("06:00");
         rule.ImportSourceKey.ShouldBe("region-setup:industryProfiles:healthcare:rule:de-klinik-standard");

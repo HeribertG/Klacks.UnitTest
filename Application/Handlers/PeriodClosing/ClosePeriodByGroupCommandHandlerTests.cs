@@ -297,10 +297,12 @@ public class ClosePeriodByGroupCommandHandlerTests
         var command = new ClosePeriodByGroupCommand(
             new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close");
 
-        var ex = await Should.ThrowAsync<ConflictException>(
+        var ex = await Should.ThrowAsync<PeriodValidationConflictException>(
             () => _handler.Handle(command, CancellationToken.None));
 
         ex.Message.ShouldContain("2 unresolved error");
+        ex.CurrentErrorCount.ShouldBe(2);
+        ex.ShouldBeAssignableTo<ConflictException>();
         await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -316,6 +318,85 @@ public class ClosePeriodByGroupCommandHandlerTests
 
         await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AcknowledgedWithoutCount_SealsWithoutRevalidating()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close", AcknowledgeViolations: true);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _validationLoader.DidNotReceiveWithAnyArgs().LoadAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+            Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_CountWithoutTheAcknowledgeFlag_DoesNotAcknowledgeAnything()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close",
+            AcknowledgedErrorCount: 5);
+
+        var ex = await Should.ThrowAsync<PeriodValidationConflictException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        ex.CurrentErrorCount.ShouldBe(1);
+        await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AcknowledgedCountStillMatches_Seals()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error), Issue(ScheduleValidationType.Error));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close",
+            AcknowledgeViolations: true, AcknowledgedErrorCount: 2);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_FewerErrorsThanAcknowledged_Seals()
+    {
+        GivenIssues(Issue(ScheduleValidationType.Error));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close",
+            AcknowledgeViolations: true, AcknowledgedErrorCount: 2);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        await _workRepository.ReceivedWithAnyArgs(1).SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_MoreErrorsThanAcknowledged_RefusesAgainWithTheCurrentCount()
+    {
+        GivenIssues(
+            Issue(ScheduleValidationType.Error),
+            Issue(ScheduleValidationType.Error),
+            Issue(ScheduleValidationType.Error));
+        var command = new ClosePeriodByGroupCommand(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), null, "Monthly close",
+            AcknowledgeViolations: true, AcknowledgedErrorCount: 2);
+
+        var ex = await Should.ThrowAsync<PeriodValidationConflictException>(
+            () => _handler.Handle(command, CancellationToken.None));
+
+        ex.CurrentErrorCount.ShouldBe(3);
+        await _workRepository.DidNotReceiveWithAnyArgs().SealByPeriod(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<WorkLockLevel>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _auditLogRepository.DidNotReceiveWithAnyArgs().AddAsync(
+            Arg.Any<PeriodAuditLog>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
