@@ -2,7 +2,7 @@
 
 namespace Klacks.UnitTest.Autofill.Analysis.Model;
 
-/// <summary>Rule 6: guaranteed hours served top-down in list order.</summary>
+/// <summary>Rule 5 (11-rule order, SPEC decision 9): guaranteed hours served top-down in list order.</summary>
 /// <param name="PerEmployee">One entry per employee, in list order</param>
 /// <param name="FulfillmentByRank">Fulfilment shares in list order; expected to never rise</param>
 /// <param name="MonotonicityViolations">Ranks where the fulfilment rises against the list order</param>

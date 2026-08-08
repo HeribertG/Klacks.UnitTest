@@ -83,11 +83,12 @@ public static class Scenario2Diagnostics
             $"{i.Employee} first kind expected {i.ExpectedShiftType} but was "
             + $"{(i.ActualFirstShiftType?.ToString() ?? "no in-period shift")}, remaining days expected "
             + $"{i.ExpectedRemainingDays.ToString(CultureInfo.InvariantCulture)} but were "
-            + $"{i.ActualRemainingDays.ToString(CultureInfo.InvariantCulture)}"));
+            + $"{i.ActualRemainingDays.ToString(CultureInfo.InvariantCulture)}, package across the boundary "
+            + $"{i.ActualPackageDays.ToString(CultureInfo.InvariantCulture)} d"));
 
     /// <summary>
-    /// Packages of one employee, ordered by start date. Only in-period days are covered: a package
-    /// carried over the month boundary is truncated at the first day of the period.
+    /// Packages of one employee, ordered by start date. Packages span the month boundary, so the
+    /// first one may start in February; packages closed before the period are not listed.
     /// </summary>
     /// <param name="metrics">Measurement of the run</param>
     /// <param name="employee">Employee identifier</param>

@@ -33,7 +33,7 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// </summary>
 [TestFixture]
 [Category("Autofill")]
-public sealed class Scenario2Tests
+public class Scenario2Tests : AutofillBaselineTestBase
 {
     private const string ScenarioName = "scenario2";
 
@@ -45,11 +45,11 @@ public sealed class Scenario2Tests
 
     private const double HoursComparisonEpsilon = 1e-9;
 
-    private const string BoundaryTruncationNote =
-        "Note on measurement: the analyzer builds packages from in-period days only, so a package carried over the "
-        + "month boundary is truncated at 2026-03-01 — MA-1 is measured as at most 3 days instead of 5, MA-3 as at "
-        + "most 4, and MA-2's single remaining day appears as a package of length 1. That shortens buckets and feeds "
-        + "the short-package share; it can never create a package longer than 5.";
+    private const string BoundaryPackageNote =
+        "Note on measurement: packages span the month boundary, so a run that started in February and reaches into "
+        + "March is one package with one length — which means a package may exceed five days precisely because the "
+        + "February part is counted. Packages already closed before 2026-03-01 are not listed, and the free days "
+        + "before the first listed package stay the leading free edge rather than becoming a free block.";
 
     private AutofillScenarioDefinition? _definition;
 
@@ -77,6 +77,15 @@ public sealed class Scenario2Tests
 
     private AutofillMetrics Metrics => Run.Metrics;
 
+    /// <summary>The no-regression floor reads the same cached measurement as the rule assertions.</summary>
+    protected override AutofillMetrics BaselineMetrics => Metrics;
+
+    /// <summary>Band edges of the current engine, pinned so nothing may get worse.</summary>
+    protected override AutofillBaseline Baseline => Scenario2BaselineValues.Baseline;
+
+    /// <summary>Scenario 2 is the only scenario with a previous month, so it also pins the carry-in.</summary>
+    protected override int? PinnedCarryInOkCount => Scenario2BaselineValues.CarryInOkCount;
+
     [OneTimeSetUp]
     public void BuildAndRunScenarioTwo()
     {
@@ -98,6 +107,7 @@ public sealed class Scenario2Tests
 
         _run = DeterministicRunner.Run(_definition, ScenarioName, ArtifactTestName);
         WriteDiagnosis(_definition, _run);
+        MeasureAndReportSeedBand(_definition, _run.Metrics, ScenarioName, ArtifactTestName);
     }
 
     [Test]
@@ -228,7 +238,7 @@ public sealed class Scenario2Tests
             $"A5: package lengths must peak at {modeBucket} days, keep short packages below "
             + $"{(shortShareLimit * 100).ToString("0.#", CultureInfo.InvariantCulture)} % and never exceed "
             + $"{AutofillSpecConstants.MaxAllowedPackageLength.ToString(CultureInfo.InvariantCulture)} days. "
-            + $"Histogram: {histogramText}. {BoundaryTruncationNote} {Describe(problems)}");
+            + $"Histogram: {histogramText}. {BoundaryPackageNote} {Describe(problems)}");
     }
 
     [Test]
@@ -360,12 +370,13 @@ public sealed class Scenario2Tests
         foreach (var carryIn in Definition.OpenCarryIns)
         {
             var packages = Scenario2Diagnostics.PackagesOf(Metrics, carryIn.AgentId);
-            var continued = packages.FirstOrDefault(p => p.StartDate == Definition.PeriodFrom);
+            var continued = packages.FirstOrDefault(
+                p => p.StartDate <= Definition.PeriodFrom && p.EndDate >= Definition.PeriodFrom);
             if (continued is null)
             {
                 problems.Add(
-                    $"{carryIn.AgentId} has no in-period package starting on {Definition.PeriodFrom:yyyy-MM-dd}, so "
-                    + $"the carried-in package was not continued at all; its packages are "
+                    $"{carryIn.AgentId} holds no shift on {Definition.PeriodFrom:yyyy-MM-dd}, so the carried-in "
+                    + $"package was not continued at all; its packages are "
                     + $"{Scenario2Diagnostics.DescribePackages(packages)}");
                 continue;
             }
@@ -387,9 +398,9 @@ public sealed class Scenario2Tests
 
         problems.ShouldBeEmpty(
             $"A12: at least {AutofillSpecConstants.MinFreeDaysAfterCarryIn.ToString(CultureInfo.InvariantCulture)} "
-            + "consecutive free days must follow the completion of a carried-in package. Measured against the "
-            + "in-period package that starts on the first day of the period; the February part of that package is "
-            + $"outside the analyzer's package view. {Describe(problems)}");
+            + "consecutive free days must follow the completion of a carried-in package. Measured on the whole "
+            + "package that covers the first day of the period, February part included, so the length quoted below "
+            + $"is the real length of the continued package. {Describe(problems)}");
     }
 
     [Test]
@@ -456,6 +467,28 @@ public sealed class Scenario2Tests
             + "byte-identical before and after the run — agent, day, span, hours, shift reference and work id — plus "
             + "no assignment being planned outside the period. The previous month is input only and never appears in "
             + $"the result scenario, so it cannot be compared inside the output. {Describe(problems)}");
+    }
+
+    /// <summary>
+    /// The carry-in counterpart of the shared no-regression floor: scenario 2 is the only scenario
+    /// that has a previous month, so this pin lives here instead of in the base class. It watches the
+    /// continuations the engine gets right today — A10, A11 and A13 already state what it gets wrong.
+    /// Like the seven shared pins it is a band edge: the lowest count the engine reached over the
+    /// seeds of <see cref="AutofillSeedBand.Seeds"/>.
+    /// </summary>
+    [Test]
+    public void Baseline_CarryInContinuationsDidNotFall()
+    {
+        var respected = Metrics.CarryIn.Where(c => c.Ok).ToList();
+
+        respected.Count.ShouldBeGreaterThanOrEqualTo(
+            Scenario2BaselineValues.CarryInOkCount,
+            "Baseline: at least the band floor of "
+            + $"{Scenario2BaselineValues.CarryInOkCount.ToString(CultureInfo.InvariantCulture)} of the "
+            + $"{Metrics.CarryIn.Count.ToString(CultureInfo.InvariantCulture)} carried-in packages must still be "
+            + "continued with the right shift kind and the right number of remaining days, but only "
+            + $"{respected.Count.ToString(CultureInfo.InvariantCulture)} are: "
+            + $"{Scenario2Diagnostics.DescribeCarryIn(Metrics.CarryIn)}");
     }
 
     private static string Describe(IReadOnlyList<string> problems)

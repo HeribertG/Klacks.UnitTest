@@ -13,12 +13,35 @@ namespace Klacks.UnitTest.Autofill.Analysis;
 /// serves the clean start, the calibration variant, the carry-in scenario and the auction seed plan.
 /// <para>
 /// Definitions it applies, all taken from the specification. A PACKAGE is a maximal run of
-/// consecutive calendar days on which the employee holds at least one shift. A FREE BLOCK is a
-/// maximal run of shift-free days BETWEEN two packages; days at the two ends of the period are
-/// reported separately because nothing bounds them on the outside. A TRANSITION is the shift-kind
-/// change from one package to the next of the same employee, forward meaning early to late to night
-/// to early. The DATE OF A NIGHT SHIFT is the day it starts on, so a night on day d followed by an
-/// early on day d+1 is the night-to-early violation.
+/// consecutive calendar days on which the employee holds at least one shift, built over the carry-in
+/// month and the period together: a run from 27 February to 3 March is ONE package of length 5 whose
+/// kind and mixed-kind flag come from all five days. A FREE BLOCK is a maximal run of shift-free days
+/// BETWEEN two packages; days at the two ends of the period are reported separately because nothing
+/// bounds them on the outside. A TRANSITION is the shift-kind change from one package to the next of
+/// the same employee, forward meaning early to late to night to early. The DATE OF A NIGHT SHIFT is
+/// the day it starts on, so a night on day d followed by an early on day d+1 is the night-to-early
+/// violation.
+/// </para>
+/// <para>
+/// Which measure sees which days — the rule that keeps the assertion meanings apart. COVERAGE, HOURS
+/// and FAIRNESS count in-period shifts only, because they answer what the engine planned for THIS
+/// period; letting the fixed previous month leak in would silently move the coverage total and the
+/// top-down hour references the assertions compare against. PACKAGES, ROTATION and the CARRY-IN
+/// package length work on the whole cross-boundary package, because a package is a work rhythm that
+/// does not stop at a month boundary. LEGALITY has always used both months, since rest time is
+/// measured across the seam.
+/// </para>
+/// <para>
+/// Two border cases, decided explicitly. (1) A package that ended before the period starts — the
+/// previous month closed it on 28 February — is NOT listed: it belongs to the previous month's plan,
+/// which this run did not produce. Only packages holding at least one in-period day enter the item
+/// list, the length histogram, mixedTypeCount and idealShare. (2) A free block consequently needs a
+/// listed package on BOTH sides. Free days between a closed previous-month package and the first
+/// listed package stay the leading free edge, exactly as in a scenario without carry-in. The price of
+/// that rule is stated openly: a clean 5-work/2-free rhythm that spans the seam — five February days
+/// followed by two free March days — cannot raise idealShare, because its work package is not listed.
+/// The rule is chosen anyway because every package metric then derives from one single package list,
+/// and a scenario without carry-in stays measurably unchanged.
 /// </para>
 /// </summary>
 public static class AutofillPlanAnalyzer
@@ -37,8 +60,12 @@ public static class AutofillPlanAnalyzer
         + "so planned hours equal shift hours exactly.";
 
     private const string PackageScopeNote =
-        "packages cover in-period days only. Days of a carried-in package that lie in the previous month are "
-        + "reported by the carry-in metrics, not by the package histogram.";
+        "packages, rotation and carryIn[].actualPackageDays are measured on the whole package across the month "
+        + "boundary: a run that starts in the carry-in month and reaches into the period is one package with one "
+        + "length and one kind, so it may legitimately exceed the five-day ideal. A package that was already closed "
+        + "before the period is not listed, and a free block needs a listed package on both sides — the free days "
+        + "before the first listed package remain the leading freeEdge. coverage, hours and fairness keep counting "
+        + "in-period shifts only.";
 
     /// <summary>
     /// Measures a plan.
@@ -73,9 +100,9 @@ public static class AutofillPlanAnalyzer
         }
 
         var byEmployee = BuildEmployeePlans(scenario, definition);
-        var packagesByEmployee = byEmployee.ToDictionary(
-            p => p.Key,
-            p => BuildPackages(p.Key, p.Value, definition),
+        var packagesByEmployee = definition.EmployeesInListOrder.ToDictionary(
+            employee => employee,
+            employee => BuildPackages(employee, WithCarryIn(employee, byEmployee, definition), definition),
             StringComparer.Ordinal);
 
         return new AutofillMetrics(
@@ -90,7 +117,7 @@ public static class AutofillPlanAnalyzer
             Rotation: BuildRotation(packagesByEmployee, definition),
             Hours: BuildHours(byEmployee, definition),
             Fairness: BuildFairness(byEmployee, definition),
-            CarryIn: BuildCarryIn(byEmployee, definition),
+            CarryIn: BuildCarryIn(byEmployee, packagesByEmployee, definition),
             Determinism: new DeterminismMetrics(RunsIdentical: false, FirstDifference: "not compared"),
             Fitness: new EngineFitness(
                 scenario.FitnessStage0,
@@ -156,6 +183,25 @@ public static class AutofillPlanAnalyzer
             Late: materialised.Max(c => c.Late) - materialised.Min(c => c.Late),
             Night: materialised.Max(c => c.Night) - materialised.Min(c => c.Night));
     }
+
+    /// <summary>
+    /// Share of packages that are at most <paramref name="maxLength"/> days long. Returns 0 for a plan
+    /// without packages, so an empty plan never looks like a perfect one.
+    /// </summary>
+    /// <param name="packages">Packages measured on the plan</param>
+    /// <param name="maxLength">Longest length that still counts as short</param>
+    public static double ShortPackageShare(PackageMetrics packages, int maxLength)
+        => packages.Items.Count == 0
+            ? 0
+            : (double)packages.Items.Count(p => p.LengthDays <= maxLength) / packages.Items.Count;
+
+    /// <summary>
+    /// Number of packages longer than <paramref name="maxLength"/> days.
+    /// </summary>
+    /// <param name="packages">Packages measured on the plan</param>
+    /// <param name="maxLength">Longest length the specification still allows</param>
+    public static int PackagesLongerThan(PackageMetrics packages, int maxLength)
+        => packages.Items.Count(p => p.LengthDays > maxLength);
 
     /// <summary>
     /// Gini coefficient of a set of counts: 0 means every employee holds the same number, 1 means one
@@ -375,6 +421,14 @@ public static class AutofillPlanAnalyzer
         return shifts;
     }
 
+    /// <summary>
+    /// Groups one employee's days into packages. The input carries the carry-in month as well, so a
+    /// run reaching over the boundary becomes a single package; packages that end before the period
+    /// starts are dropped again, because they belong to the previous month's plan.
+    /// </summary>
+    /// <param name="employee">Employee identifier</param>
+    /// <param name="shifts">All shifts of that employee, carry-in days included, sorted by day</param>
+    /// <param name="definition">Scenario that produced the plan; supplies the period bounds</param>
     private static IReadOnlyList<WorkPackage> BuildPackages(
         string employee, IReadOnlyList<PlannedShift> shifts, AutofillScenarioDefinition definition)
     {
@@ -395,6 +449,13 @@ public static class AutofillPlanAnalyzer
             }
 
             var days = byDay.GetRange(start, index - start + 1);
+            index++;
+
+            if (days[^1].Date < definition.PeriodFrom)
+            {
+                continue;
+            }
+
             var kinds = days.SelectMany(d => d.Kinds).Distinct().ToList();
             packages.Add(new WorkPackage(
                 Employee: employee,
@@ -403,7 +464,6 @@ public static class AutofillPlanAnalyzer
                 LengthDays: days.Count,
                 ShiftType: days[0].Kinds[0],
                 MixedTypes: kinds.Count > 1));
-            index++;
         }
 
         return packages;
@@ -450,7 +510,7 @@ public static class AutofillPlanAnalyzer
 
             edges.Add(new EmployeeFreeEdge(
                 employee,
-                packages[0].StartDate.DayNumber - definition.PeriodFrom.DayNumber,
+                Math.Max(0, packages[0].StartDate.DayNumber - definition.PeriodFrom.DayNumber),
                 definition.PeriodUntil.DayNumber - packages[^1].EndDate.DayNumber));
         }
 
@@ -567,8 +627,19 @@ public static class AutofillPlanAnalyzer
                 Night: Gini(counts.Select(c => c.Night).ToList())));
     }
 
+    /// <summary>
+    /// Measures each carried-in package against what the specification expects of it. The first kind
+    /// and the remaining days stay in-period quantities — they ask what the engine did with THIS
+    /// period — while <c>ActualPackageDays</c> reports the whole cross-boundary package that covers
+    /// the seam, so the continuation can be read without re-deriving it from the package list.
+    /// </summary>
+    /// <param name="byEmployee">In-period shifts per employee</param>
+    /// <param name="packagesByEmployee">Cross-boundary packages per employee</param>
+    /// <param name="definition">Scenario that produced the plan</param>
     private static IReadOnlyList<CarryInRespect> BuildCarryIn(
-        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee, AutofillScenarioDefinition definition)
+        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee,
+        IReadOnlyDictionary<string, IReadOnlyList<WorkPackage>> packagesByEmployee,
+        AutofillScenarioDefinition definition)
     {
         var results = new List<CarryInRespect>();
         foreach (var carryIn in definition.CarryIns)
@@ -584,13 +655,18 @@ public static class AutofillPlanAnalyzer
                 probe = probe.AddDays(1);
             }
 
+            var packages = packagesByEmployee.TryGetValue(carryIn.AgentId, out var owned) ? owned : [];
+            var seamPackage = packages.FirstOrDefault(
+                p => p.StartDate <= definition.PeriodFrom && p.EndDate >= definition.PeriodFrom);
+
             results.Add(new CarryInRespect(
                 Employee: carryIn.AgentId,
                 ExpectedShiftType: carryIn.ExpectedFirstShiftKind,
                 ActualFirstShiftType: first,
                 ExpectedRemainingDays: carryIn.ExpectedRemainingDays,
                 ActualRemainingDays: actualRemaining,
-                Ok: first == carryIn.ExpectedFirstShiftKind && actualRemaining == carryIn.ExpectedRemainingDays));
+                Ok: first == carryIn.ExpectedFirstShiftKind && actualRemaining == carryIn.ExpectedRemainingDays,
+                ActualPackageDays: seamPackage?.LengthDays ?? 0));
         }
 
         return results;

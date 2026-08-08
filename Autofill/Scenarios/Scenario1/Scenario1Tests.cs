@@ -35,4 +35,7 @@ public sealed class Scenario1Tests : Scenario1AssertionsBase
 
     /// <summary>Rank 5 is exempt from A6 and A8 because the top-down rule leaves it near 40 h.</summary>
     protected override int HighestAssertedRank => AutofillSpecConstants.TopRankUpperBound;
+
+    /// <summary>Band edges of the current engine, pinned so nothing may get worse.</summary>
+    protected override AutofillBaseline Baseline => Scenario1BaselineValues.Baseline;
 }

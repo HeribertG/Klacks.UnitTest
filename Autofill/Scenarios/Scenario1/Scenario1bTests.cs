@@ -35,4 +35,7 @@ public sealed class Scenario1bTests : Scenario1AssertionsBase
 
     /// <summary>All five ranks are covered by A6 and A8 in the calibration variant.</summary>
     protected override int HighestAssertedRank => AutofillSpecConstants.EmployeeCount;
+
+    /// <summary>Band edges of the current engine, pinned so nothing may get worse.</summary>
+    protected override AutofillBaseline Baseline => Scenario1bBaselineValues.Baseline;
 }

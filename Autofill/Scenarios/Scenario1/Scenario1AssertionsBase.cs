@@ -33,7 +33,7 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 /// finished plan, so every such transition is listed in the failure message and judged by hand.
 /// </para>
 /// </summary>
-public abstract class Scenario1AssertionsBase
+public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
 {
     private const double HoursComparisonEpsilon = 1e-9;
 
@@ -74,6 +74,9 @@ public abstract class Scenario1AssertionsBase
 
     protected AutofillMetrics Metrics => _run.Metrics;
 
+    /// <summary>The no-regression floor reads the same cached measurement as the rule assertions.</summary>
+    protected override AutofillMetrics BaselineMetrics => Metrics;
+
     [OneTimeSetUp]
     public void BuildAndRunScenarioOnce()
     {
@@ -94,6 +97,7 @@ public abstract class Scenario1AssertionsBase
 
         _run = DeterministicRunner.Run(_definition, ScenarioName, ArtifactTestName);
         WriteDiagnosis();
+        MeasureAndReportSeedBand(_definition, _run.Metrics, ScenarioName, ArtifactTestName);
     }
 
     [Test]
