@@ -1,0 +1,20 @@
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+using Klacks.UnitTest.Autofill.Fixtures;
+
+namespace Klacks.UnitTest.Autofill.Analysis.Model;
+
+/// <summary>Whether one carried-in package was continued the way the specification requires.</summary>
+/// <param name="Employee">Employee identifier</param>
+/// <param name="ExpectedShiftType">Shift kind the first in-period shift must have</param>
+/// <param name="ActualFirstShiftType">Kind of the first in-period shift; null when the employee got none</param>
+/// <param name="ExpectedRemainingDays">In-period days the open package still has to run</param>
+/// <param name="ActualRemainingDays">In-period days it actually ran, counted from the first day of the period</param>
+/// <param name="Ok">True when kind and remaining days both match</param>
+public sealed record CarryInRespect(
+    string Employee,
+    AutofillShiftKind ExpectedShiftType,
+    AutofillShiftKind? ActualFirstShiftType,
+    int ExpectedRemainingDays,
+    int ActualRemainingDays,
+    bool Ok);
