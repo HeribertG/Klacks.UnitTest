@@ -73,6 +73,17 @@ public class ClientContractDataProviderWorkOnDaysTests
     }
 
     [Test]
+    public async Task GetEffectiveContractDataAsync_RuleWorkOnSaturdayFalse_OverridesTrueContract()
+    {
+        var clientId = await SeedActiveContractAsync(
+            contractPerformsShiftWork: false, rulePerformsShiftWork: null, ruleWorkOnSaturday: false, contractWorkOnSaturday: true);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        result.WorkOnSaturday.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task GetEffectiveContractDataAsync_NoSchedulingRule_UsesContractWorkOnSaturday()
     {
         var clientId = await SeedActiveContractAsync(
