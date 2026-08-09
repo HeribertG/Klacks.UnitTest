@@ -274,4 +274,85 @@ public class WizardHardConstraintBuilderTests
 
         result.LockedWorks[0].EndAt.ShouldBe(date.ToDateTime(new TimeOnly(16, 0)));
     }
+
+    [Test]
+    public async Task BuildAsync_ReplanFrom_LiftsUnlockedWorksBeforeTheCutIntoLockedWorks()
+    {
+        var agent = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+        var cut = new DateOnly(2026, 4, 22);
+
+        AddUnlockedWork(agent, new DateOnly(2026, 4, 20));
+        AddUnlockedWork(agent, new DateOnly(2026, 4, 21));
+        AddUnlockedWork(agent, new DateOnly(2026, 4, 23));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, from, until, analyseToken: null, CancellationToken.None, replanFrom: cut);
+
+        result.LockedWorks.Select(w => w.Date).ShouldBe(
+            [new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 21)],
+            ignoreOrder: true);
+        result.ExistingWorkBlockers.Select(w => w.Date).ShouldBe([new DateOnly(2026, 4, 23)]);
+    }
+
+    [Test]
+    public async Task BuildAsync_ReplanFrom_KeepsGenuinelyLockedWorksOnBothSidesOfTheCut()
+    {
+        var agent = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+        var cut = new DateOnly(2026, 4, 22);
+
+        AddLockedWork(agent, new DateOnly(2026, 4, 21));
+        AddLockedWork(agent, new DateOnly(2026, 4, 23));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, from, until, analyseToken: null, CancellationToken.None, replanFrom: cut);
+
+        result.LockedWorks.Select(w => w.Date).ShouldBe(
+            [new DateOnly(2026, 4, 21), new DateOnly(2026, 4, 23)],
+            ignoreOrder: true);
+        result.ExistingWorkBlockers.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task BuildAsync_WithoutReplanFrom_KeepsTheLockLevelSplitUnchanged()
+    {
+        var agent = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+
+        AddUnlockedWork(agent, new DateOnly(2026, 4, 20));
+        AddLockedWork(agent, new DateOnly(2026, 4, 23));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, from, until, analyseToken: null, CancellationToken.None);
+
+        result.LockedWorks.Select(w => w.Date).ShouldBe([new DateOnly(2026, 4, 23)]);
+        result.ExistingWorkBlockers.Select(w => w.Date).ShouldBe([new DateOnly(2026, 4, 20)]);
+    }
+
+    private void AddUnlockedWork(Guid agent, DateOnly date)
+        => AddWork(agent, date, WorkLockLevel.None);
+
+    private void AddLockedWork(Guid agent, DateOnly date)
+        => AddWork(agent, date, WorkLockLevel.Confirmed);
+
+    private void AddWork(Guid agent, DateOnly date, WorkLockLevel lockLevel)
+        => _context.Work.Add(new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            CurrentDate = date,
+            ShiftId = Guid.NewGuid(),
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(16, 0),
+            WorkTime = 8m,
+            LockLevel = lockLevel,
+            AnalyseToken = null,
+        });
 }

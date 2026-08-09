@@ -120,7 +120,7 @@ public class WizardContextBuilderTests
         SetupContractsWithGuaranteedHours(new Dictionary<Guid, decimal> { [agentId] = 30 });
 
         _hardBuilder
-            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<DateOnly?>())
             .Returns(hardConstraints);
 
         _availabilityService
@@ -165,7 +165,7 @@ public class WizardContextBuilderTests
             .Returns(new List<CoreShift>());
 
         _hardBuilder
-            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<DateOnly?>())
             .Returns(new HardConstraintResult([], [], [], [], []));
 
         var request = new WizardContextRequest(
@@ -289,7 +289,7 @@ public class WizardContextBuilderTests
             .Returns(new List<CoreShift>());
 
         _hardBuilder
-            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<DateOnly?>())
             .Returns(new HardConstraintResult([], [], [], [], []));
     }
 
@@ -341,4 +341,60 @@ public class WizardContextBuilderTests
                 return result;
             });
     }
+
+    [Test]
+    public async Task BuildContextAsync_ReplanFromInsideThePeriod_ReachesTheHardConstraintBuilder()
+    {
+        var agentId = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+        var cut = new DateOnly(2026, 4, 22);
+        ArrangeAvailabilityHierarchyCase(agentId, Guid.NewGuid(), from, new HardConstraintResult([], [], [], [], []));
+
+        await _sut.BuildContextAsync(ReplanRequest(agentId, from, until, cut), CancellationToken.None);
+
+        await _hardBuilder.Received(1).BuildAsync(
+            Arg.Any<IReadOnlyList<Guid>>(), from, until, Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>(), cut);
+    }
+
+    [Test]
+    public async Task BuildContextAsync_ReplanFromAtPeriodStart_IsNormalisedToNull()
+    {
+        var agentId = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+        ArrangeAvailabilityHierarchyCase(agentId, Guid.NewGuid(), from, new HardConstraintResult([], [], [], [], []));
+
+        await _sut.BuildContextAsync(ReplanRequest(agentId, from, until, from), CancellationToken.None);
+
+        await _hardBuilder.Received(1).BuildAsync(
+            Arg.Any<IReadOnlyList<Guid>>(), from, until, Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>(), null);
+    }
+
+    [Test]
+    public async Task BuildContextAsync_ReplanFromAfterPeriodUntil_IsNormalisedToNull()
+    {
+        var agentId = Guid.NewGuid();
+        var from = new DateOnly(2026, 4, 20);
+        var until = new DateOnly(2026, 4, 24);
+        ArrangeAvailabilityHierarchyCase(agentId, Guid.NewGuid(), from, new HardConstraintResult([], [], [], [], []));
+
+        await _sut.BuildContextAsync(ReplanRequest(agentId, from, until, until.AddDays(1)), CancellationToken.None);
+
+        await _hardBuilder.Received(1).BuildAsync(
+            Arg.Any<IReadOnlyList<Guid>>(), from, until, Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>(), null);
+    }
+
+    private static WizardContextRequest ReplanRequest(
+        Guid agentId, DateOnly from, DateOnly until, DateOnly replanFrom)
+        => new(
+            PeriodFrom: from,
+            PeriodUntil: until,
+            AgentIds: new[] { agentId },
+            ShiftIds: null,
+            AnalyseToken: null,
+            ReplanFrom: replanFrom);
 }
