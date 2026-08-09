@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using System.Globalization;
+using Klacks.ScheduleOptimizer.Models;
 using Klacks.UnitTest.Autofill.Fixtures;
 
 namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
@@ -35,8 +36,29 @@ public static class Scenario2CarryInFixture
     /// Assembles scenario 2: period 2026-03-01..03-31, three shifts a day, five employees at 180
     /// guaranteed hours in list order, and the five previous-month packages of the specification table.
     /// </summary>
-    public static AutofillScenarioDefinition Build()
-        => new AutofillScenarioBuilder()
+    public static AutofillScenarioDefinition Build() => Build(null);
+
+    /// <summary>
+    /// Assembles the identical fixture with an optional eligibility restriction on top — the seam
+    /// scenario 3 uses: its runs are BY CONSTRUCTION scenario 2 plus a ban list, so any result
+    /// difference between the two scenarios is attributable to the restriction and never to a
+    /// second, subtly different fixture.
+    /// </summary>
+    /// <param name="eligibility">Ban list, shift-kind map and keyword facts; null for plain scenario 2</param>
+    public static AutofillScenarioDefinition Build(AutofillEligibilityInput? eligibility)
+        => Build(eligibility, null);
+
+    /// <summary>
+    /// Assembles the fixture with an optional eligibility restriction and optional in-period locked
+    /// works — the frozen-prefix replanning input: the head of an existing plan enters as immutable
+    /// locked works while the tail is planned fresh.
+    /// </summary>
+    /// <param name="eligibility">Ban list, shift-kind map and keyword facts; null for plain scenario 2</param>
+    /// <param name="lockedWorks">Frozen assignments the run must keep; null for none</param>
+    public static AutofillScenarioDefinition Build(
+        AutofillEligibilityInput? eligibility, IReadOnlyList<CoreLockedWork>? lockedWorks)
+    {
+        var builder = new AutofillScenarioBuilder()
             .WithPeriod(AutofillSpecConstants.PeriodFrom, AutofillSpecConstants.PeriodUntil)
             .WithEmployees(AutofillSpecConstants.EmployeeCount, AutofillSpecConstants.GuaranteedHours)
             .WithCarryIn(
@@ -79,15 +101,26 @@ public static class Scenario2CarryInFixture
                     Scenario2SpecValues.Ma5PackageEnd,
                     AutofillSpecConstants.MaxWorkDays,
                     Scenario2SpecValues.Ma5ExpectedFirstKind,
-                    Scenario2SpecValues.ClosedPackageRemainingDays))
+                    Scenario2SpecValues.ClosedPackageRemainingDays));
 
-            // WithCarryInHoursAsCurrentHours() is deliberately NOT called. The February hours must not
-            // count as CoreAgent.CurrentHours against the March guaranteed hours: a non-zero opening
-            // balance makes the fitness plan fewer in-period hours, which would move the hour and
-            // fairness assertions (A6, A8) away from their scenario 1 counterparts and destroy the
-            // comparison the analysis of phase D rests on. In production that balance is filled by a
-            // separate mechanism, not by the boundary works.
-            .Build();
+        // WithCarryInHoursAsCurrentHours() is deliberately NOT called. The February hours must not
+        // count as CoreAgent.CurrentHours against the March guaranteed hours: a non-zero opening
+        // balance makes the fitness plan fewer in-period hours, which would move the hour and
+        // fairness assertions (A6, A8) away from their scenario 1 counterparts and destroy the
+        // comparison the analysis of phase D rests on. In production that balance is filled by a
+        // separate mechanism, not by the boundary works.
+        if (eligibility is not null)
+        {
+            builder.WithEligibility(eligibility);
+        }
+
+        if (lockedWorks is not null)
+        {
+            builder.WithLockedWorks(lockedWorks);
+        }
+
+        return builder.Build();
+    }
 
     /// <summary>
     /// Returns one message per fixture problem; an empty result means the fixture matches the

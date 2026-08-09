@@ -18,6 +18,8 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// <param name="Rotation">Rule 5</param>
 /// <param name="Hours">Rule 6</param>
 /// <param name="Fairness">Rule 7</param>
+/// <param name="Eligibility">Input-side pools from the fixture ban list; empty lists without one</param>
+/// <param name="Keyword">Independent ban-list scan of the finished plan; empty without a ban list</param>
 /// <param name="CarryIn">Continuation of the previous month; empty for a clean start</param>
 /// <param name="Determinism">Filled by the deterministic runner after the second run</param>
 /// <param name="Fitness">The engine's own stage scores</param>
@@ -34,6 +36,8 @@ public sealed record AutofillMetrics(
     RotationMetrics Rotation,
     HoursMetrics Hours,
     FairnessMetrics Fairness,
+    EligibilityMetrics Eligibility,
+    KeywordMetrics Keyword,
     IReadOnlyList<CarryInRespect> CarryIn,
     DeterminismMetrics Determinism,
     EngineFitness Fitness,

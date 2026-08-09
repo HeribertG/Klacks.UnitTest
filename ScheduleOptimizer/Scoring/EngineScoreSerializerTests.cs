@@ -24,7 +24,7 @@ public class EngineScoreSerializerTests
             Stage3: 0.78,
             Stage4: 0.66,
             Stage3Components: new Stage3Components(BlockOrder: 0.82, Blacklist: 1.0, Location: 0.61, MaxGap: 0.74),
-            Stage4Components: new Stage4Components(Fairness: 0.71, MinimumHours: 0.88, BlockSymmetry: 0.42));
+            Stage4Components: new Stage4Components(Fairness: 0.71, MinimumHours: 0.88, BlockSymmetry: 0.42, ShiftKindFairness: 0.9));
     }
 
     private static CoreWizardContext MakeContext(bool warmStart)

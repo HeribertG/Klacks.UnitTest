@@ -118,15 +118,17 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
     [Test]
     public void A2_NoEmployeeHoldsTwoShiftsOnTheSameDay()
     {
-        var doubleBookings = Metrics.Coverage.DoubleBookings
+        var conflicts = Metrics.Coverage.DoubleBookings
             .Select(d =>
                 $"{d.Employee} (rank {Definition.ListRankOf(d.Employee)}) on "
-                + $"{d.Date.ToString(DateFormat, CultureInfo.InvariantCulture)}: {string.Join(" + ", d.Shifts)}")
+                + $"{d.Date.ToString(DateFormat, CultureInfo.InvariantCulture)}: {string.Join(" + ", d.Shifts)} "
+                + $"({d.Reason})")
             .ToList();
 
-        doubleBookings.ShouldBeEmpty(
-            $"A2: no employee may hold more than one shift on one calendar day, but {doubleBookings.Count} "
-            + $"day(s) are double booked: {Join(doubleBookings)}");
+        conflicts.ShouldBeEmpty(
+            "A2: one employee may hold several shifts on one calendar day as long as they are different shifts "
+            + "that do not overlap; only the same shift assigned twice and two shifts overlapping in time are "
+            + $"conflicts. {conflicts.Count} conflict(s) found: {Join(conflicts)}");
     }
 
     [Test]

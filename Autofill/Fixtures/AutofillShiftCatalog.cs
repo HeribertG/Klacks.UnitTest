@@ -29,8 +29,12 @@ public static class AutofillShiftCatalog
     /// <summary>Matrix symbol of an unused day.</summary>
     public const char FreeSymbol = '.';
 
-    /// <summary>Matrix symbol of a day carrying more than one shift for the same employee.</summary>
-    public const char DoubleBookedSymbol = 'X';
+    /// <summary>
+    /// Matrix symbol of a day carrying more than one shift for the same employee. It marks the day,
+    /// it does not judge it: two different shifts that do not overlap are allowed since the owner
+    /// correction of 2026-08-08. Conflicts are listed in the metrics JSON, not in the matrix.
+    /// </summary>
+    public const char MultipleShiftsSymbol = 'X';
 
     private const char EarlySymbol = 'F';
     private const char LateSymbol = 'S';

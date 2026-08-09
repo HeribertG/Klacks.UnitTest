@@ -19,6 +19,19 @@ public static class PlanMatrixRenderer
     private const char MonthBoundaryMarker = '|';
     private const string RowLabelSeparator = " | ";
     private const int MinimumLabelWidth = 6;
+    private const string ExplanationIndent = "      ";
+
+    /// <summary>
+    /// Why the multiple-shifts marker is no longer a defect marker. Kept as separate lines so the
+    /// legend of the artifact stays readable next to the matrix.
+    /// </summary>
+    private static readonly string[] MultipleShiftsExplanation =
+    [
+        "Since the owner correction of 2026-08-08 two different shifts on one day are allowed, and rule 11",
+        "asks for them when the day would otherwise leave the employee short of hours. Only the same shift",
+        "assigned twice and two shifts overlapping in time are conflicts; those are listed in the metrics",
+        "JSON under coverage.doubleBookings, together with which two shifts they are.",
+    ];
 
     /// <summary>
     /// Renders the matrix.
@@ -82,7 +95,7 @@ public static class PlanMatrixRenderer
         }
 
         return onDay.Count > 1
-            ? AutofillShiftCatalog.DoubleBookedSymbol
+            ? AutofillShiftCatalog.MultipleShiftsSymbol
             : AutofillShiftCatalog.SymbolOf(onDay[0].Kind);
     }
 
@@ -134,8 +147,12 @@ public static class PlanMatrixRenderer
             .AppendLine(" = free day");
         builder
             .Append("  ")
-            .Append(AutofillShiftCatalog.DoubleBookedSymbol)
-            .AppendLine(" = more than one shift on that day; the detail is in the metrics JSON");
+            .Append(AutofillShiftCatalog.MultipleShiftsSymbol)
+            .AppendLine(" = more than one shift on that day - information, not a defect.");
+        foreach (var line in MultipleShiftsExplanation)
+        {
+            builder.Append(ExplanationIndent).AppendLine(line);
+        }
         builder
             .Append("  ")
             .Append(MonthBoundaryMarker)

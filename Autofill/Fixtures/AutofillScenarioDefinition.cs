@@ -32,6 +32,15 @@ public sealed record AutofillScenarioDefinition(
     /// <summary>True when the carry-in hours were handed to the engine as CurrentHours.</summary>
     public bool CarryInHoursCountedAsCurrentHours { get; init; }
 
+    /// <summary>
+    /// The eligibility knowledge of the scenario, when it has any: the same ban list the engine
+    /// context carries, plus the fixture's kind map and keyword facts the analyzer needs to report
+    /// pools and violations. Null for a scenario without keyword restrictions — the analyzer then
+    /// leaves every eligibility-derived metric empty, so scenarios 1, 1b and 2 measure exactly as
+    /// before.
+    /// </summary>
+    public AutofillEligibilityInput? Eligibility { get; init; }
+
     /// <summary>First day of the planning period.</summary>
     public DateOnly PeriodFrom => Context.PeriodFrom;
 

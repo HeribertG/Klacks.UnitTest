@@ -9,10 +9,21 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// <param name="IdealShare">Share of packages of length 5 followed by exactly 2 free days</param>
 /// <param name="MixedTypeCount">Packages that change shift kind inside the package</param>
 /// <param name="FreeEdges">Free days at the period boundaries, reported but not counted as free blocks</param>
+/// <param name="ForcedShortenings">
+/// Sub-five-day packages of a ban-restricted kind that the eligible pool provably could not avoid,
+/// each carrying its capacity proof. Empty without an eligibility input
+/// </param>
+/// <param name="UnexplainedShortenings">
+/// Sub-five-day packages of a ban-restricted kind beyond the provable budget — shortenings the pool
+/// arithmetic does not force. 0 without an eligibility input; kinds the ban list never mentions are
+/// outside this measure, their shortness is what the length histogram already reports
+/// </param>
 public sealed record PackageMetrics(
     IReadOnlyList<WorkPackage> Items,
     IReadOnlyDictionary<string, int> LengthHistogram,
     IReadOnlyDictionary<int, int> FreeBlockHistogram,
     double IdealShare,
     int MixedTypeCount,
-    IReadOnlyList<EmployeeFreeEdge> FreeEdges);
+    IReadOnlyList<EmployeeFreeEdge> FreeEdges,
+    IReadOnlyList<ForcedShortening> ForcedShortenings,
+    int UnexplainedShortenings);

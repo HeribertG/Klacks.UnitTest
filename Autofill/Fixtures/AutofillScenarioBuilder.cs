@@ -29,9 +29,11 @@ public sealed class AutofillScenarioBuilder
     private DateOnly _periodFrom = AutofillSpecConstants.PeriodFrom;
     private DateOnly _periodUntil = AutofillSpecConstants.PeriodUntil;
     private int _randomSeed = AutofillSpecConstants.RandomSeed;
+    private IReadOnlyList<CoreLockedWork>? _lockedWorks;
     private int _populationSize = AutofillSpecConstants.PopulationSize;
     private int _maxGenerations = AutofillSpecConstants.MaxGenerations;
     private bool _carryInHoursCountAsCurrentHours;
+    private AutofillEligibilityInput? _eligibility;
 
     /// <param name="from">First day of the planning period</param>
     /// <param name="until">Last day of the planning period, inclusive</param>
@@ -103,6 +105,31 @@ public sealed class AutofillScenarioBuilder
         return this;
     }
 
+    /// <summary>
+    /// Adds the scenario's eligibility restriction. One input feeds both sides of the run: the ban
+    /// list becomes <c>CoreWizardContext.IneligibleAssignments</c> — the engine's only eligibility
+    /// field — and the whole input lands on the definition for the analyzer, so the metrics can never
+    /// measure against a different ban list than the one the engine planned with.
+    /// </summary>
+    /// <param name="eligibility">Ban list, shift-kind map and keyword facts of the scenario</param>
+    public AutofillScenarioBuilder WithEligibility(AutofillEligibilityInput eligibility)
+    {
+        _eligibility = eligibility;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds in-period locked works the engine must keep immutable — the frozen-prefix replanning
+    /// input: pass the result of <c>FrozenPrefix.BuildLockedWorks</c> to freeze an existing plan
+    /// up to a replan date.
+    /// </summary>
+    /// <param name="lockedWorks">Locked works that become immutable genome tokens</param>
+    public AutofillScenarioBuilder WithLockedWorks(IReadOnlyList<CoreLockedWork> lockedWorks)
+    {
+        _lockedWorks = lockedWorks;
+        return this;
+    }
+
     /// <param name="seed">Seed of the single random source of the run</param>
     public AutofillScenarioBuilder WithRandomSeed(int seed)
     {
@@ -159,12 +186,25 @@ public sealed class AutofillScenarioBuilder
             Agents = _employees.Select(e => BuildAgent(e, carryInHours)).ToList(),
             Shifts = AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil),
             BoundaryLockedWorks = boundaryWorks,
+            LockedWorks = _lockedWorks ?? [],
             SchedulingMaxConsecutiveDays = AutofillSpecConstants.MaxConsecutiveDays,
             SchedulingMinPauseHours = AutofillSpecConstants.MinRestHours,
             SchedulingMaxOptimalGap = AutofillSpecConstants.MaxOptimalGap,
             SchedulingMaxDailyHours = AutofillSpecConstants.MaxDailyHours,
             SchedulingMaxWeeklyHours = AutofillSpecConstants.MaxWeeklyHours,
+            IneligibleAssignments = _eligibility?.IneligibleAssignments
+                ?? new HashSet<(string, Guid, DateOnly)>(),
         };
+
+        if (_eligibility is not null)
+        {
+            var eligibilityProblems = _eligibility.ValidationProblems(
+                context, _employees.Select(e => e.Id).ToList());
+            if (eligibilityProblems.Count > 0)
+            {
+                throw new InvalidOperationException(string.Join(Environment.NewLine, eligibilityProblems));
+            }
+        }
 
         var config = new TokenEvolutionConfig
         {
@@ -185,6 +225,7 @@ public sealed class AutofillScenarioBuilder
         {
             CarryInHoursByAgent = carryInHours,
             CarryInHoursCountedAsCurrentHours = _carryInHoursCountAsCurrentHours,
+            Eligibility = _eligibility,
         };
     }
 

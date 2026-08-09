@@ -10,11 +10,15 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 /// <para>
 /// Each constant is a band edge, not a single measurement — the worst of what the engine produced
 /// under the seeds of <see cref="AutofillSeedBand.Seeds"/>. The reference state is the engine at
-/// commit 3efe150 plus the uncommitted operator rework in
+/// commit 3efe150 plus the then uncommitted operator rework in
 /// <c>Klacks.ScheduleOptimizer/TokenEvolution/Operators/</c> (BlockCrossover, TokenSwapMutation),
-/// measured 2026-08-08. The band artifact
-/// <c>artifacts/scenario1b/Scenario1bCalibration.band.json</c> is written on every run and reports the
-/// values to copy under "Worst".
+/// measured 2026-08-08; that rework is now committed as 4530293. On it the band of this variant runs
+/// wider than two of the pins allowed for, so <see cref="AutofillBaseline.MaxShortPackageShare"/> and
+/// <see cref="AutofillBaseline.MaxMixedTypeCount"/> were re-measured and re-pinned on 2026-08-08
+/// after P5. The other six still carry the earlier measurement, which the current band fits inside.
+/// The band
+/// artifact <c>artifacts/scenario1b/Scenario1bCalibration.band.json</c> is written on every run and
+/// reports the values to copy under "Worst".
 /// </para>
 /// </summary>
 public static class Scenario1bBaselineValues
@@ -26,16 +30,18 @@ public static class Scenario1bBaselineValues
     private const double ForwardRate = 0.32;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 17/17/17, so the ceiling is 17. Seed 42 mixes shift kinds in 17 of 30 packages.
+    /// Band over seeds 42/43/44, re-pinned 2026-08-08 after P5, engine 4530293: 16/17/18, so the
+    /// ceiling is 18 and seed 44 sets it. The asserted run on seed 42 mixes shift kinds in 16 of 30
+    /// packages. The old ceiling of 17 no longer bounded the band the engine covers.
     /// </summary>
-    private const int MixedTypeCount = 17;
+    private const int MixedTypeCount = 18;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 0.3667 on all three seeds. Seed 42 has 11 of 30 packages of at most two days.
+    /// Band over seeds 42/43/44, re-pinned 2026-08-08 after P5, engine 4530293: 0.3667/0.3667/0.4, so
+    /// the ceiling is 0.4 and seed 44 sets it. The asserted run on seed 42 has 11 of 30 packages of at
+    /// most two days. The old ceiling of 0.3667 no longer bounded the band the engine covers.
     /// </summary>
-    private const double ShortPackageShare = 0.36666666666666664;
+    private const double ShortPackageShare = 0.4;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:

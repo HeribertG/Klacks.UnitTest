@@ -12,12 +12,21 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// <param name="ToType">Kind of the later package</param>
 /// <param name="Forward">True for early to late, late to night, night to early</param>
 /// <param name="Forced">
-/// True only when the forward successor was provably unavailable. The analyzer cannot reconstruct
-/// that from the finished plan and always reports false; see the notes on the metrics object.
+/// True only when the forward successor was provably unavailable. The one proof a finished plan
+/// allows is the fixture ban list: when it closes the forward successor kind for the whole next
+/// package, the deviation was forced and <paramref name="Reason"/> says keywordIneligible. Every
+/// other cause cannot be reconstructed from the plan and stays false; see the notes on the metrics
+/// object.
+/// </param>
+/// <param name="Reason">
+/// One of the words in <see cref="RotationTransitionReason"/>: none for a forward transition,
+/// keywordIneligible for a ban-list-forced deviation, unexplained for everything else the analyzer
+/// cannot prove.
 /// </param>
 public sealed record RotationTransition(
     string Employee,
     AutofillShiftKind FromType,
     AutofillShiftKind ToType,
     bool Forward,
-    bool Forced);
+    bool Forced,
+    string Reason);

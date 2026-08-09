@@ -23,9 +23,10 @@ public static class Scenario2Diagnostics
     public static string DescribeUnfilled(IEnumerable<UnfilledShift> items)
         => Join(items.Select(i => $"{i.Date:yyyy-MM-dd} {i.ShiftType}"));
 
-    /// <param name="items">Employees holding more than one shift on the same day</param>
+    /// <param name="items">Assignment pairs that conflict: the same shift twice, or overlapping times</param>
     public static string DescribeDoubleBookings(IEnumerable<DoubleBooking> items)
-        => Join(items.Select(i => $"{i.Employee} on {i.Date:yyyy-MM-dd}: {string.Join("+", i.Shifts)}"));
+        => Join(items.Select(i =>
+            $"{i.Employee} on {i.Date:yyyy-MM-dd}: {string.Join(" + ", i.Shifts)} ({i.Reason})"));
 
     /// <param name="items">Shift pairs below the contractual rest time</param>
     public static string DescribeRestViolations(IEnumerable<RestTimeViolation> items)

@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using System.Globalization;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 using Klacks.UnitTest.Autofill.Analysis.Model;
@@ -32,6 +33,18 @@ namespace Klacks.UnitTest.Autofill.Analysis;
 /// measured across the seam.
 /// </para>
 /// <para>
+/// A DOUBLE BOOKING, since the owner corrected rule 1 on 2026-08-08, is no longer "more than one
+/// shift on one day". Two different shifts on the same day that do not overlap are allowed, and rule
+/// 11 asks for them when the day would otherwise leave the employee short of hours; the measure
+/// therefore reports only the same shift assigned to one employee twice and two shifts of one
+/// employee whose times overlap. Overlap is tested strictly, one shift starting BEFORE the other
+/// ends, so the night 23:00-07:00 followed by the early 07:00 of the next day touches without
+/// overlapping — that seam is a rest-time case and legality already measures it. The correction is
+/// not a pure narrowing: it drops the same-day pairs and adds pairs that overlap across midnight.
+/// With the suite's three spans of eight hours each, a cross-midnight overlap cannot occur, so on
+/// scenarios 1, 1b and 2 the corrected measure reports exactly what the old one did — nothing.
+/// </para>
+/// <para>
 /// Two border cases, decided explicitly. (1) A package that ended before the period starts — the
 /// previous month closed it on 28 February — is NOT listed: it belongs to the previous month's plan,
 /// which this run did not produce. Only packages holding at least one in-period day enter the item
@@ -43,17 +56,35 @@ namespace Klacks.UnitTest.Autofill.Analysis;
 /// The rule is chosen anyway because every package metric then derives from one single package list,
 /// and a scenario without carry-in stays measurably unchanged.
 /// </para>
+/// <para>
+/// ELIGIBILITY-DERIVED measures — pools, keyword violations, forced rotation reasons, forced
+/// shortenings and the night cohort — exist only when the scenario carries a non-empty fixture ban
+/// list; the measurement decisions behind them live in <see cref="EligibilityAnalyzer"/>. A scenario
+/// without one keeps every one of those fields empty and measures what it measured before the
+/// extension, because an empty ban list is the engine's own definition of "no eligibility
+/// knowledge". The assignment-level diff of two runs is the one measure that takes two plans; it is
+/// exposed separately as <see cref="DiffAssignments"/>.
+/// </para>
 /// </summary>
 public static class AutofillPlanAnalyzer
 {
     private const int ShiftKindCount = 3;
     private const string LengthHistogramOverflowBucket = "7+";
     private const int LengthHistogramLastNamedBucket = 6;
+    private const string AssignmentTimeFormat = "yyyy-MM-dd HH:mm";
+    private const string MultipleAssigneesSeparator = "+";
 
     private const string ForcedNote =
-        "rotation.transitions[].forced is always false: a finished plan does not record whether the forward "
-        + "successor shift was still available when the package started, so the flag cannot be derived. "
-        + "Backward or skipping transitions must be judged by hand.";
+        "rotation.transitions[].forced is true only where the fixture ban list proves the forward successor "
+        + "kind was closed to the employee on every in-period day of the following package (reason "
+        + "keywordIneligible). No other cause is derivable from a finished plan, so every remaining deviation "
+        + "carries reason unexplained with forced=false and must be judged by hand; in a scenario without a "
+        + "ban list that is every deviation.";
+
+    private const string EligibilityScanNote =
+        "keyword.violations comes from an independent scan of every planned and carried-in shift against the "
+        + "fixture ban list, never from the engine's ConstraintViolation list: the engine skips locked "
+        + "carry-in assignments there, which would exempt exactly the stock the scan must cover.";
 
     private const string PlannedHoursNote =
         "hours.plannedHours counts token hours without surcharges; every surcharge rate of the fixture is zero, "
@@ -82,7 +113,13 @@ public static class AutofillPlanAnalyzer
         string testName,
         string runLabel)
     {
+        EligibilityAnalyzer.EnsureUsable(definition);
+
         var notes = new List<string> { ForcedNote, PlannedHoursNote, PackageScopeNote };
+        if (EligibilityAnalyzer.IsActive(definition))
+        {
+            notes.Add(EligibilityScanNote);
+        }
 
         var outsidePeriod = TokensOutsidePeriod(scenario, definition);
         if (outsidePeriod.Count > 0)
@@ -117,6 +154,8 @@ public static class AutofillPlanAnalyzer
             Rotation: BuildRotation(packagesByEmployee, definition),
             Hours: BuildHours(byEmployee, definition),
             Fairness: BuildFairness(byEmployee, definition),
+            Eligibility: EligibilityAnalyzer.BuildEligibility(definition),
+            Keyword: EligibilityAnalyzer.BuildKeyword(scenario, definition),
             CarryIn: BuildCarryIn(byEmployee, packagesByEmployee, definition),
             Determinism: new DeterminismMetrics(RunsIdentical: false, FirstDifference: "not compared"),
             Fitness: new EngineFitness(
@@ -233,6 +272,83 @@ public static class AutofillPlanAnalyzer
         return absoluteDifferences / (2.0 * values.Count * total);
     }
 
+    /// <summary>
+    /// Compares two plans over the same demanded slots at assignment level — the control-group
+    /// comparison of the suite, where the baseline is the unrestricted run and the treatment the run
+    /// under a restriction, and every changed slot must later be attributable to that restriction.
+    /// A slot counts as changed when the two plans staff it with different employees, including one
+    /// side leaving it unfilled (null). Only in-period assignments are compared: the carry-in month
+    /// is fixed input to both runs, not output of either. A slot oversupplied with several employees
+    /// is compared as their names joined in ordinal order, so even a pathological plan diffs
+    /// deterministically. The slot's kind is taken from the production time-span inference, exactly
+    /// as coverage does, because the baseline scenario has no eligibility input to supply a kind map.
+    /// </summary>
+    /// <param name="baselinePlan">Plan of the control run</param>
+    /// <param name="baselineDefinition">Scenario that produced the control run</param>
+    /// <param name="treatmentPlan">Plan of the treated run</param>
+    /// <param name="treatmentDefinition">Scenario that produced the treated run; must cover the same period</param>
+    public static PlanAssignmentDiff DiffAssignments(
+        CoreScenario baselinePlan,
+        AutofillScenarioDefinition baselineDefinition,
+        CoreScenario treatmentPlan,
+        AutofillScenarioDefinition treatmentDefinition)
+    {
+        if (baselineDefinition.PeriodFrom != treatmentDefinition.PeriodFrom
+            || baselineDefinition.PeriodUntil != treatmentDefinition.PeriodUntil)
+        {
+            throw new InvalidOperationException(
+                $"The two scenarios cover different periods ({baselineDefinition.PeriodFrom:yyyy-MM-dd}.."
+                + $"{baselineDefinition.PeriodUntil:yyyy-MM-dd} vs {treatmentDefinition.PeriodFrom:yyyy-MM-dd}.."
+                + $"{treatmentDefinition.PeriodUntil:yyyy-MM-dd}); an assignment diff between them is meaningless.");
+        }
+
+        var slots = new Dictionary<(Guid ShiftId, DateOnly Date), AutofillShiftKind>();
+        CollectSlots(baselineDefinition, slots);
+        CollectSlots(treatmentDefinition, slots);
+
+        var baselineAssignees = AssigneesPerSlot(baselinePlan, baselineDefinition);
+        var treatmentAssignees = AssigneesPerSlot(treatmentPlan, treatmentDefinition);
+
+        var changed = new List<ChangedAssignment>();
+        foreach (var slot in slots
+                     .OrderBy(s => s.Key.Date)
+                     .ThenBy(s => s.Value)
+                     .ThenBy(s => s.Key.ShiftId))
+        {
+            baselineAssignees.TryGetValue(slot.Key, out var employeeBaseline);
+            treatmentAssignees.TryGetValue(slot.Key, out var employeeTreatment);
+            if (!string.Equals(employeeBaseline, employeeTreatment, StringComparison.Ordinal))
+            {
+                changed.Add(new ChangedAssignment(slot.Key.Date, slot.Value, employeeBaseline, employeeTreatment));
+            }
+        }
+
+        return new PlanAssignmentDiff(changed, changed.Count);
+    }
+
+    private static void CollectSlots(
+        AutofillScenarioDefinition definition,
+        Dictionary<(Guid ShiftId, DateOnly Date), AutofillShiftKind> slots)
+    {
+        foreach (var shift in definition.Context.Shifts)
+        {
+            var key = (Guid.Parse(shift.Id), DateOnly.ParseExact(shift.Date, AutofillSpecConstants.IsoDateFormat));
+            slots[key] = AutofillShiftCatalog.FromShiftTypeIndex(
+                ShiftTypeInference.FromSpanString(shift.StartTime, shift.EndTime));
+        }
+    }
+
+    private static Dictionary<(Guid ShiftId, DateOnly Date), string> AssigneesPerSlot(
+        CoreScenario plan, AutofillScenarioDefinition definition)
+        => plan.Tokens
+            .Where(t => t.Date >= definition.PeriodFrom && t.Date <= definition.PeriodUntil)
+            .GroupBy(t => (t.ShiftRefId, t.Date))
+            .ToDictionary(
+                g => g.Key,
+                g => string.Join(
+                    MultipleAssigneesSeparator,
+                    g.Select(t => t.AgentId).OrderBy(a => a, StringComparer.Ordinal)));
+
     private static Dictionary<string, List<PlannedShift>> BuildEmployeePlans(
         CoreScenario scenario, AutofillScenarioDefinition definition)
     {
@@ -321,33 +437,69 @@ public static class AutofillPlanAnalyzer
             }
         }
 
-        var doubleBookings = new List<DoubleBooking>();
-        foreach (var employee in definition.EmployeesInListOrder)
-        {
-            var perDay = scenario.Tokens
-                .Where(t => string.Equals(t.AgentId, employee, StringComparison.Ordinal))
-                .Where(t => t.Date >= definition.PeriodFrom && t.Date <= definition.PeriodUntil)
-                .GroupBy(t => t.Date)
-                .Where(g => g.Count() > 1)
-                .OrderBy(g => g.Key);
-
-            foreach (var day in perDay)
-            {
-                doubleBookings.Add(new DoubleBooking(
-                    employee,
-                    day.Key,
-                    day.OrderBy(t => t.StartAt)
-                        .Select(t => AutofillShiftCatalog.NameOf(AutofillShiftCatalog.FromShiftTypeIndex(t.ShiftTypeIndex)))
-                        .ToList()));
-            }
-        }
-
         return new CoverageMetrics(
             TotalRequiredShifts: totalRequired,
             FilledShifts: filled,
             UnfilledShifts: unfilled.OrderBy(u => u.Date).ThenBy(u => u.ShiftType).ToList(),
-            DoubleBookings: doubleBookings,
+            DoubleBookings: BuildDoubleBookings(scenario, definition),
             OversuppliedSlots: oversupplied);
+    }
+
+    /// <summary>
+    /// The conflicting pairs of assignments of one plan: the same shift handed to one employee twice
+    /// and two shifts of one employee whose times overlap. One entry per pair, dated on the earlier of
+    /// the two shifts, so a pair reaching over midnight is reported once and not once per day. Like
+    /// the rest of coverage this sees in-period shifts only; a carried-in night ends at 07:00 and can
+    /// therefore not overlap an in-period shift.
+    /// </summary>
+    /// <param name="scenario">Plan produced by the engine</param>
+    /// <param name="definition">Scenario that produced it; supplies list order and period bounds</param>
+    private static IReadOnlyList<DoubleBooking> BuildDoubleBookings(
+        CoreScenario scenario, AutofillScenarioDefinition definition)
+    {
+        var conflicts = new List<DoubleBooking>();
+        foreach (var employee in definition.EmployeesInListOrder)
+        {
+            var assignments = scenario.Tokens
+                .Where(t => string.Equals(t.AgentId, employee, StringComparison.Ordinal))
+                .Where(t => t.Date >= definition.PeriodFrom && t.Date <= definition.PeriodUntil)
+                .OrderBy(t => t.StartAt)
+                .ThenBy(t => t.EndAt)
+                .ThenBy(t => t.ShiftRefId)
+                .ToList();
+
+            for (var i = 0; i < assignments.Count; i++)
+            {
+                var earlier = assignments[i];
+                for (var j = i + 1; j < assignments.Count; j++)
+                {
+                    var later = assignments[j];
+                    if (later.StartAt >= earlier.EndAt)
+                    {
+                        break;
+                    }
+
+                    var sameShift = later.ShiftRefId == earlier.ShiftRefId && later.Date == earlier.Date;
+                    conflicts.Add(new DoubleBooking(
+                        employee,
+                        earlier.Date,
+                        [DescribeAssignment(earlier), DescribeAssignment(later)],
+                        sameShift ? DoubleBooking.SameShiftTwiceReason : DoubleBooking.OverlappingTimesReason));
+                }
+            }
+        }
+
+        return conflicts;
+    }
+
+    /// <summary>One assignment as kind and absolute span, the form the A2 messages read.</summary>
+    /// <param name="token">Assignment to describe</param>
+    private static string DescribeAssignment(CoreToken token)
+    {
+        var kind = AutofillShiftCatalog.FromShiftTypeIndex(token.ShiftTypeIndex);
+        var start = token.StartAt.ToString(AssignmentTimeFormat, CultureInfo.InvariantCulture);
+        var end = token.EndAt.ToString(AssignmentTimeFormat, CultureInfo.InvariantCulture);
+        return $"{kind} {start} to {end}";
     }
 
     private static LegalityMetrics BuildLegality(
@@ -514,13 +666,17 @@ public static class AutofillPlanAnalyzer
                 definition.PeriodUntil.DayNumber - packages[^1].EndDate.DayNumber));
         }
 
+        var (forcedShortenings, unexplainedShortenings) = EligibilityAnalyzer.BuildShortenings(all, definition);
+
         return new PackageMetrics(
             Items: all,
             LengthHistogram: BuildLengthHistogram(all),
             FreeBlockHistogram: freeBlocks,
             IdealShare: all.Count == 0 ? 0 : (double)idealCount / all.Count,
             MixedTypeCount: all.Count(p => p.MixedTypes),
-            FreeEdges: edges);
+            FreeEdges: edges,
+            ForcedShortenings: forcedShortenings,
+            UnexplainedShortenings: unexplainedShortenings);
     }
 
     private static IReadOnlyDictionary<string, int> BuildLengthHistogram(IReadOnlyList<WorkPackage> packages)
@@ -556,12 +712,16 @@ public static class AutofillPlanAnalyzer
             {
                 var from = packages[i].ShiftType;
                 var to = packages[i + 1].ShiftType;
+                var isForward = (((int)from + 1) % ShiftKindCount) == (int)to;
+                var reason = EligibilityAnalyzer.TransitionReasonOf(
+                    employee, from, isForward, packages[i + 1], definition);
                 transitions.Add(new RotationTransition(
                     employee,
                     from,
                     to,
-                    Forward: (((int)from + 1) % ShiftKindCount) == (int)to,
-                    Forced: false));
+                    Forward: isForward,
+                    Forced: string.Equals(reason, RotationTransitionReason.KeywordIneligible, StringComparison.Ordinal),
+                    Reason: reason));
             }
         }
 
@@ -569,7 +729,9 @@ public static class AutofillPlanAnalyzer
         return new RotationMetrics(
             Transitions: transitions,
             ForwardRate: transitions.Count == 0 ? 0 : (double)forward / transitions.Count,
-            BackwardOrSkipCount: transitions.Count - forward);
+            BackwardOrSkipCount: transitions.Count - forward,
+            UnexplainedDeviations: transitions.Count(
+                t => string.Equals(t.Reason, RotationTransitionReason.Unexplained, StringComparison.Ordinal)));
     }
 
     private static HoursMetrics BuildHours(
@@ -618,13 +780,17 @@ public static class AutofillPlanAnalyzer
                 Night: shifts.Count(s => s.Kind == AutofillShiftKind.Night)));
         }
 
+        var (nightShares, cohortSpread) = EligibilityAnalyzer.BuildNightShares(counts, definition);
+
         return new FairnessMetrics(
             ShiftTypeCountPerEmployee: counts,
             SpreadPerType: SpreadOf(counts),
             GiniPerType: new ShiftTypeRatioTriple(
                 Early: Gini(counts.Select(c => c.Early).ToList()),
                 Late: Gini(counts.Select(c => c.Late).ToList()),
-                Night: Gini(counts.Select(c => c.Night).ToList())));
+                Night: Gini(counts.Select(c => c.Night).ToList())),
+            NightSharePerEligibleDay: nightShares,
+            CohortSpreadNight: cohortSpread);
     }
 
     /// <summary>
