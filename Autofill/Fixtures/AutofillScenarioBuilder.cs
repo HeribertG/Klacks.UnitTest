@@ -317,7 +317,7 @@ public sealed class AutofillScenarioBuilder
                     StartAt: startAt,
                     EndAt: endAt,
                     ShiftRefId: AutofillShiftCatalog.ShiftIdOf(carryIn.OrderIndex, carryIn.Kind),
-                    LocationContext: null));
+                    LocationContext: AutofillShiftCatalog.LocationContextOf(carryIn.OrderIndex)));
             }
         }
 

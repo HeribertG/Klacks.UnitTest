@@ -90,6 +90,21 @@ public static class AutofillShiftCatalog
         ],
     ];
 
+    /// <summary>
+    /// Identity of an order, the value the engine reads as <c>LocationContext</c>. Production derives
+    /// it from the shift hierarchy (<c>RootId ?? OriginalId ?? Id</c>), so the fixture uses Guid
+    /// strings too instead of a prettier label. Index 0 is the single unnamed order of the scenarios
+    /// before scenario 4: those plans stay on ONE order, which is exactly why their continuity score
+    /// must remain the constant 1 the engine produced while the field was null everywhere.
+    /// </summary>
+    private static readonly Guid[] OrderIdentities =
+    [
+        new("00000000-0000-0000-0000-0000000a0b00"),
+        new("00000000-0000-0000-0000-0000000a0b01"),
+        new("00000000-0000-0000-0000-0000000a0b02"),
+        new("00000000-0000-0000-0000-0000000a0b03"),
+    ];
+
     private static readonly Dictionary<Guid, int> OrderByShiftId = BuildOrderByShiftId();
 
     /// <summary>All three kinds in the order early, late, night — the rotation order of rule 5.</summary>
@@ -131,6 +146,21 @@ public static class AutofillShiftCatalog
     /// <param name="shiftId">Shift reference id of a token, locked work or demanded slot</param>
     public static int OrderOf(Guid shiftId)
         => OrderByShiftId.TryGetValue(shiftId, out var order) ? order : UnknownOrderIndex;
+
+    /// <summary>
+    /// Order identity of a shift, the value the engine reads as <c>LocationContext</c>. Never null:
+    /// a plan with a single order carries one uniform value, which scores the same as no value at all.
+    /// </summary>
+    /// <param name="orderIndex">Order the shift belongs to, or <see cref="SingleOrderIndex"/></param>
+    public static string LocationContextOf(int orderIndex)
+    {
+        if (orderIndex != SingleOrderIndex)
+        {
+            EnsureKnownOrder(orderIndex);
+        }
+
+        return OrderIdentities[orderIndex].ToString();
+    }
 
     /// <param name="orderIndex">Order the shift belongs to, or <see cref="SingleOrderIndex"/></param>
     /// <param name="kind">Shift kind</param>
@@ -234,7 +264,10 @@ public static class AutofillShiftCatalog
                     EndTime: EndTimeOf(kind),
                     Hours: AutofillSpecConstants.ShiftHours,
                     RequiredAssignments: 1,
-                    Priority: 0));
+                    Priority: 0)
+                {
+                    LocationContext = LocationContextOf(SingleOrderIndex),
+                });
             }
         }
 
@@ -271,7 +304,10 @@ public static class AutofillShiftCatalog
                         EndTime: EndTimeOf(kind),
                         Hours: AutofillSpecConstants.ShiftHours,
                         RequiredAssignments: 1,
-                        Priority: 0));
+                        Priority: 0)
+                    {
+                        LocationContext = LocationContextOf(order),
+                    });
                 }
             }
         }

@@ -89,8 +89,17 @@ public static class Scenario4SpecConstants
     /// <summary>S4-15: forward rotation rate the calibration run must reach.</summary>
     public const double CalibrationMinForwardRotationRate = 0.85;
 
-    /// <summary>S4-6: reference median of the order changes per employee — reported, never asserted.</summary>
+    /// <summary>
+    /// S4-6: highest tolerated median of the order changes per employee. Owner decision B2 turned
+    /// order loyalty from a measurement into a rule, so the former reference value is now the ceiling.
+    /// </summary>
     public const int OrderSwitchMedianReference = 2;
+
+    /// <summary>
+    /// S4-5: packages that touch more than one order. Rule 10 allows none — inside one package the
+    /// employee stays on the order he started on.
+    /// </summary>
+    public const int MaxPackagesTouchingSeveralOrders = 0;
 
     /// <summary>S4-12: largest tolerated difference between the mean list ranks of two orders.</summary>
     public const double MaxOrderMeanRankSpread = 3;

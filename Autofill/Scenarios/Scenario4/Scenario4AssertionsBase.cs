@@ -15,11 +15,11 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario4;
 /// scenario-4 assertions S4-1 to S4-16 that only a multi-order plan can pose. Shared by every
 /// scenario-4 run so the phase-D table compares the same judgements across the runs.
 /// <para>
-/// Two of the scenario-4 assertions deliberately do not assert. S4-5 and S4-6 ask about order loyalty,
-/// and phase A' established that no mechanism in the engine keeps an employee on one order: the only
-/// candidate term reads a location field that every producing site sets to null. Asserting a rule that
-/// provably has no implementation would only restate the discovery; the runs therefore MEASURE the two
-/// and report the numbers, and the owner decides afterwards whether they become a rule.
+/// S4-5 and S4-6 ask about order loyalty. They MEASURED instead of judging as long as phase A' held —
+/// no mechanism kept an employee on one order, because the only candidate term read a location field
+/// every producing site set to null. Owner decision B2 made order loyalty a rule, and the location
+/// field is wired since; both are therefore normal assertions, and the numbers behind them are still
+/// written to the report.
 /// </para>
 /// <para>
 /// The references A6 and A8 read are the scenario-4 references, not the ones of scenarios 1 to 3. The
@@ -511,40 +511,45 @@ public abstract class Scenario4AssertionsBase
     }
 
     [Test]
-    public void S4_5_OrderLoyaltyInsideThePackageIsMeasured()
+    public void S4_5_OrderLoyaltyHoldsInsideThePackage()
     {
         var switches = Metrics.Orders.SwitchesWithinPackage;
         var pure = Metrics.Packages.Items.Count - switches.Count;
 
         TestContext.Out.WriteLine(
-            $"S4-5 measured, not asserted: {switches.Count.ToString(CultureInfo.InvariantCulture)} of "
+            $"S4-5: {switches.Count.ToString(CultureInfo.InvariantCulture)} of "
             + $"{Metrics.Packages.Items.Count.ToString(CultureInfo.InvariantCulture)} packages touch more than one "
             + $"order, {pure.ToString(CultureInfo.InvariantCulture)} stay on one. "
             + Scenario4Diagnostics.DescribeOrderSwitchesInPackage(switches));
 
-        Assert.Ignore(
-            "S4-5 is a measurement, not a verdict: phase A' proved that no engine mechanism keeps an employee on one "
-            + "order. The stage-3 continuity term reads a location field every producing site sets to null, and the "
-            + "top-down handover moves assignments by rank, hours and shift kind alone. The number above is the input "
-            + "for the owner decision whether order loyalty is to become a rule.");
+        switches.Count.ShouldBeLessThanOrEqualTo(
+            Scenario4SpecConstants.MaxPackagesTouchingSeveralOrders,
+            "S4-5: rule 10 as the owner decided it (B2) — inside one package the employee stays on the order the "
+            + "package started on. Order loyalty is a SOFT rule: it yields to legality, coverage, the guaranteed "
+            + "hours, the top-down order and to an explicit shift preference. It does not yield to convenience, so a "
+            + "package that hops orders without one of those reasons is a defect. Packages touching several orders: "
+            + Scenario4Diagnostics.DescribeOrderSwitchesInPackage(switches));
     }
 
     [Test]
-    public void S4_6_OrderLoyaltyAcrossPackagesIsMeasured()
+    public void S4_6_OrderLoyaltyHoldsAcrossPackages()
     {
         var perEmployee = Metrics.Orders.SwitchesPerEmployee;
         var median = Scenario4Diagnostics.MedianOf(perEmployee.Select(s => s.SwitchCount).ToList());
 
         TestContext.Out.WriteLine(
-            $"S4-6 measured, not asserted: median order changes per employee "
-            + $"{median.ToString("0.#", CultureInfo.InvariantCulture)}, reference "
+            $"S4-6: median order changes per employee "
+            + $"{median.ToString("0.#", CultureInfo.InvariantCulture)}, ceiling "
             + $"{Scenario4SpecConstants.OrderSwitchMedianReference.ToString(CultureInfo.InvariantCulture)}. "
             + Scenario4Diagnostics.DescribeOrderSwitchesPerEmployee(perEmployee));
 
-        Assert.Ignore(
-            "S4-6 is a measurement for the same reason as S4-5. The reference median of "
-            + $"{Scenario4SpecConstants.OrderSwitchMedianReference.ToString(CultureInfo.InvariantCulture)} is written "
-            + "into the report next to the measured one so the gap has a number.");
+        median.ShouldBeLessThanOrEqualTo(
+            Scenario4SpecConstants.OrderSwitchMedianReference,
+            "S4-6: the monthly view of the same rule. An employee may change the order between packages — after the "
+            + "rest days a new package may well start elsewhere — but the typical employee must not be shuffled "
+            + "through the orders shift by shift. The median is the measure, not the maximum, because single "
+            + "employees legitimately absorb the remainder of the roster. Per employee: "
+            + Scenario4Diagnostics.DescribeOrderSwitchesPerEmployee(perEmployee));
     }
 
     [Test]
