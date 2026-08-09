@@ -41,4 +41,17 @@ public sealed record AutofillMetrics(
     IReadOnlyList<CarryInRespect> CarryIn,
     DeterminismMetrics Determinism,
     EngineFitness Fitness,
-    IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Notes)
+{
+    /// <summary>Rule 10: order loyalty inside and across packages. Empty without an order dimension.</summary>
+    public OrderMetrics Orders { get; init; } = OrderMetrics.Empty;
+
+    /// <summary>
+    /// Continuation of the previous month judged on order, shift kind and remaining length together.
+    /// Empty for a clean start and for a scenario without an order dimension.
+    /// </summary>
+    public IReadOnlyList<CarryInOrderRespect> CarryInThreeDimensional { get; init; } = [];
+
+    /// <summary>Filled by the runner, which is the only part of the suite that owns a clock.</summary>
+    public RuntimeMetrics Runtime { get; init; } = RuntimeMetrics.NotMeasured;
+}

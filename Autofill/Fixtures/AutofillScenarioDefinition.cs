@@ -41,6 +41,20 @@ public sealed record AutofillScenarioDefinition(
     /// </summary>
     public AutofillEligibilityInput? Eligibility { get; init; }
 
+    /// <summary>
+    /// Number of parallel orders the scenario plans. 1 for every scenario that never called
+    /// <c>WithOrders</c>; see <see cref="OrdersAreLabelled"/> for the difference between "one order"
+    /// and "no order dimension".
+    /// </summary>
+    public int OrderCount { get; init; } = 1;
+
+    /// <summary>
+    /// True when the scenario addressed its shifts through the order-aware catalog, so every metric
+    /// may report an order index. False for the order-less scenarios, whose shift ids carry
+    /// <see cref="AutofillShiftCatalog.SingleOrderIndex"/> and whose order metrics stay empty.
+    /// </summary>
+    public bool OrdersAreLabelled { get; init; }
+
     /// <summary>First day of the planning period.</summary>
     public DateOnly PeriodFrom => Context.PeriodFrom;
 

@@ -9,4 +9,8 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 public sealed record HoursMetrics(
     IReadOnlyList<EmployeeHours> PerEmployee,
     IReadOnlyList<double> FulfillmentByRank,
-    IReadOnlyList<MonotonicityViolation> MonotonicityViolations);
+    IReadOnlyList<MonotonicityViolation> MonotonicityViolations)
+{
+    /// <summary>Employees the plan left without a single in-period shift, in list order.</summary>
+    public IReadOnlyList<string> ZeroHourEmployees { get; init; } = [];
+}

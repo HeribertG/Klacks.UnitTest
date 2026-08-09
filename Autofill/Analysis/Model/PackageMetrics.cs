@@ -26,4 +26,11 @@ public sealed record PackageMetrics(
     int MixedTypeCount,
     IReadOnlyList<EmployeeFreeEdge> FreeEdges,
     IReadOnlyList<ForcedShortening> ForcedShortenings,
-    int UnexplainedShortenings);
+    int UnexplainedShortenings)
+{
+    /// <summary>
+    /// Leading free days of an employee that the plan offered no way to fill — see
+    /// <see cref="ForcedFreeDayRun"/> for why the measure stops at the first package.
+    /// </summary>
+    public IReadOnlyList<ForcedFreeDayRun> ForcedExtraFreeDays { get; init; } = [];
+}

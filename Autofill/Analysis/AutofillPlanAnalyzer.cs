@@ -142,15 +142,20 @@ public static class AutofillPlanAnalyzer
             employee => BuildPackages(employee, WithCarryIn(employee, byEmployee, definition), definition),
             StringComparer.Ordinal);
 
+        var coverage = BuildCoverage(scenario, definition, byEmployee);
+
         return new AutofillMetrics(
             Scenario: scenarioName,
             TestName: testName,
             RunLabel: runLabel,
             PeriodFrom: definition.PeriodFrom,
             PeriodUntil: definition.PeriodUntil,
-            Coverage: BuildCoverage(scenario, definition),
+            Coverage: coverage,
             Legality: BuildLegality(byEmployee, definition),
-            Packages: BuildPackageMetrics(packagesByEmployee, definition),
+            Packages: BuildPackageMetrics(packagesByEmployee, definition) with
+            {
+                ForcedExtraFreeDays = BuildForcedExtraFreeDays(byEmployee, coverage, definition),
+            },
             Rotation: BuildRotation(packagesByEmployee, definition),
             Hours: BuildHours(byEmployee, definition),
             Fairness: BuildFairness(byEmployee, definition),
@@ -165,7 +170,11 @@ public static class AutofillPlanAnalyzer
                 scenario.FitnessStage3,
                 scenario.FitnessStage4,
                 scenario.Fitness),
-            Notes: notes);
+            Notes: notes)
+        {
+            Orders = BuildOrders(byEmployee, definition),
+            CarryInThreeDimensional = BuildCarryInThreeDimensional(byEmployee, definition),
+        };
     }
 
     /// <summary>
@@ -378,7 +387,9 @@ public static class AutofillPlanAnalyzer
                 token.StartAt,
                 token.EndAt,
                 (double)token.TotalHours,
-                IsCarryIn: false));
+                IsCarryIn: false,
+                ShiftRefId: token.ShiftRefId,
+                Order: AutofillShiftCatalog.OrderOf(token.ShiftRefId)));
         }
 
         foreach (var shifts in byEmployee.Values)
@@ -395,7 +406,10 @@ public static class AutofillPlanAnalyzer
         return byDate != 0 ? byDate : left.StartAt.CompareTo(right.StartAt);
     }
 
-    private static CoverageMetrics BuildCoverage(CoreScenario scenario, AutofillScenarioDefinition definition)
+    private static CoverageMetrics BuildCoverage(
+        CoreScenario scenario,
+        AutofillScenarioDefinition definition,
+        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee)
     {
         var context = definition.Context;
         var assignmentsPerSlot = new Dictionary<(string ShiftId, DateOnly Date), int>();
@@ -415,14 +429,24 @@ public static class AutofillPlanAnalyzer
         var filled = 0;
         var oversupplied = 0;
         var unfilled = new List<UnfilledShift>();
+        var requiredPerOrder = new SortedDictionary<int, int>();
+        var filledPerOrder = new SortedDictionary<int, int>();
 
         foreach (var shift in context.Shifts)
         {
             var date = DateOnly.ParseExact(shift.Date, AutofillSpecConstants.IsoDateFormat);
+            var order = AutofillShiftCatalog.OrderOf(Guid.Parse(shift.Id));
             totalRequired += shift.RequiredAssignments;
             assignmentsPerSlot.TryGetValue((shift.Id, date), out var assigned);
 
-            filled += Math.Min(assigned, shift.RequiredAssignments);
+            var filledHere = Math.Min(assigned, shift.RequiredAssignments);
+            filled += filledHere;
+
+            requiredPerOrder.TryGetValue(order, out var requiredSoFar);
+            requiredPerOrder[order] = requiredSoFar + shift.RequiredAssignments;
+            filledPerOrder.TryGetValue(order, out var filledSoFar);
+            filledPerOrder[order] = filledSoFar + filledHere;
+
             if (assigned > shift.RequiredAssignments)
             {
                 oversupplied++;
@@ -433,16 +457,105 @@ public static class AutofillPlanAnalyzer
                 unfilled.Add(new UnfilledShift(
                     date,
                     AutofillShiftCatalog.FromShiftTypeIndex(
-                        ShiftTypeInference.FromSpanString(shift.StartTime, shift.EndTime))));
+                        ShiftTypeInference.FromSpanString(shift.StartTime, shift.EndTime)),
+                    order));
             }
         }
+
+        var sortedUnfilled = unfilled.OrderBy(u => u.Date).ThenBy(u => u.Order).ThenBy(u => u.ShiftType).ToList();
 
         return new CoverageMetrics(
             TotalRequiredShifts: totalRequired,
             FilledShifts: filled,
-            UnfilledShifts: unfilled.OrderBy(u => u.Date).ThenBy(u => u.ShiftType).ToList(),
+            UnfilledShifts: sortedUnfilled,
             DoubleBookings: BuildDoubleBookings(scenario, definition),
-            OversuppliedSlots: oversupplied);
+            OversuppliedSlots: oversupplied)
+        {
+            PerOrder = definition.OrdersAreLabelled
+                ? requiredPerOrder
+                    .Select(entry => new OrderCoverage(
+                        entry.Key,
+                        entry.Value,
+                        filledPerOrder.TryGetValue(entry.Key, out var value) ? value : 0,
+                        sortedUnfilled.Where(u => u.Order == entry.Key).ToList()))
+                    .ToList()
+                : [],
+            AssignmentsPerDay = BuildAssignmentsPerDay(scenario, definition),
+            CrossOrderDoubleBookings = BuildCrossOrderDoubleBookings(byEmployee, definition),
+        };
+    }
+
+    /// <summary>
+    /// Assignments per calendar day over all orders, one entry for every day of the period including
+    /// the empty ones. A night shift counts on the day it starts on, the same definition the whole
+    /// suite uses, so a period of 31 days always yields 31 entries.
+    /// </summary>
+    /// <param name="scenario">Plan produced by the engine</param>
+    /// <param name="definition">Scenario that produced it</param>
+    private static IReadOnlyList<DayAssignmentCount> BuildAssignmentsPerDay(
+        CoreScenario scenario, AutofillScenarioDefinition definition)
+    {
+        var counts = new SortedDictionary<DateOnly, int>();
+        for (var date = definition.PeriodFrom; date <= definition.PeriodUntil; date = date.AddDays(1))
+        {
+            counts[date] = 0;
+        }
+
+        foreach (var token in scenario.Tokens)
+        {
+            if (token.Date < definition.PeriodFrom || token.Date > definition.PeriodUntil)
+            {
+                continue;
+            }
+
+            counts.TryGetValue(token.Date, out var current);
+            counts[token.Date] = current + 1;
+        }
+
+        return counts.Select(entry => new DayAssignmentCount(entry.Key, entry.Value)).ToList();
+    }
+
+    /// <summary>
+    /// Days on which one employee holds in-period shifts of more than one order. Independent of
+    /// <see cref="BuildDoubleBookings"/>: two shifts of different orders that do not overlap are not a
+    /// conflict under the corrected rule 1, but crossing an order boundary inside one day is exactly
+    /// what scenario 4 wants counted.
+    /// </summary>
+    /// <param name="byEmployee">In-period shifts per employee</param>
+    /// <param name="definition">Scenario that produced the plan</param>
+    private static IReadOnlyList<CrossOrderDoubleBooking> BuildCrossOrderDoubleBookings(
+        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee, AutofillScenarioDefinition definition)
+    {
+        if (!definition.OrdersAreLabelled)
+        {
+            return [];
+        }
+
+        var found = new List<CrossOrderDoubleBooking>();
+        foreach (var employee in definition.EmployeesInListOrder)
+        {
+            if (!byEmployee.TryGetValue(employee, out var shifts))
+            {
+                continue;
+            }
+
+            foreach (var day in shifts.GroupBy(s => s.Date).OrderBy(g => g.Key))
+            {
+                var onDay = day.OrderBy(s => s.StartAt).ToList();
+                if (onDay.Select(s => s.Order).Distinct().Count() <= 1)
+                {
+                    continue;
+                }
+
+                found.Add(new CrossOrderDoubleBooking(
+                    employee,
+                    day.Key,
+                    onDay.Select(s => s.Order).Distinct().OrderBy(o => o).ToList(),
+                    onDay.Select(s => s.Kind).ToList()));
+            }
+        }
+
+        return found;
     }
 
     /// <summary>
@@ -506,6 +619,7 @@ public static class AutofillPlanAnalyzer
         IReadOnlyDictionary<string, List<PlannedShift>> byEmployee, AutofillScenarioDefinition definition)
     {
         var restViolations = new List<RestTimeViolation>();
+        var crossOrderRestViolations = new List<CrossOrderRestViolation>();
         var nightToEarly = new List<NightToEarlyViolation>();
         var minRestHours = AutofillSpecConstants.MinRestHours;
 
@@ -527,6 +641,19 @@ public static class AutofillPlanAnalyzer
                         previous.Kind,
                         current.Kind,
                         Math.Round(gapHours, 4)));
+
+                    if (definition.OrdersAreLabelled && previous.Order != current.Order)
+                    {
+                        crossOrderRestViolations.Add(new CrossOrderRestViolation(
+                            employee,
+                            previous.Date,
+                            current.Date,
+                            previous.Order,
+                            current.Order,
+                            previous.Kind,
+                            current.Kind,
+                            Math.Round(gapHours, 4)));
+                    }
                 }
             }
 
@@ -545,7 +672,10 @@ public static class AutofillPlanAnalyzer
             }
         }
 
-        return new LegalityMetrics(restViolations, nightToEarly);
+        return new LegalityMetrics(restViolations, nightToEarly)
+        {
+            RestViolationsCrossOrder = crossOrderRestViolations,
+        };
     }
 
     private static List<PlannedShift> WithCarryIn(
@@ -560,7 +690,15 @@ public static class AutofillPlanAnalyzer
             {
                 var (startAt, endAt) = AutofillShiftCatalog.SpanOf(carryIn.Kind, date);
                 shifts.Add(new PlannedShift(
-                    employee, date, carryIn.Kind, startAt, endAt, AutofillSpecConstants.ShiftHours, IsCarryIn: true));
+                    employee,
+                    date,
+                    carryIn.Kind,
+                    startAt,
+                    endAt,
+                    AutofillSpecConstants.ShiftHours,
+                    IsCarryIn: true,
+                    ShiftRefId: AutofillShiftCatalog.ShiftIdOf(carryIn.OrderIndex, carryIn.Kind),
+                    Order: carryIn.OrderIndex));
             }
         }
 
@@ -761,7 +899,10 @@ public static class AutofillPlanAnalyzer
             }
         }
 
-        return new HoursMetrics(perEmployee, byRank, violations);
+        return new HoursMetrics(perEmployee, byRank, violations)
+        {
+            ZeroHourEmployees = perEmployee.Where(e => e.PlannedHours <= 0).Select(e => e.Employee).ToList(),
+        };
     }
 
     private static FairnessMetrics BuildFairness(
@@ -836,5 +977,261 @@ public static class AutofillPlanAnalyzer
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// The same continuation check with the order added as a third dimension. The remaining days are
+    /// counted on the (order, kind) pair the package ran on, so continuing the right kind on the WRONG
+    /// order counts as zero remaining days and not as a continuation. An entry whose expected order is
+    /// null does not judge the order at all — the specification's rotation table for closed packages
+    /// names a shift kind and no order.
+    /// </summary>
+    /// <param name="byEmployee">In-period shifts per employee</param>
+    /// <param name="definition">Scenario that produced the plan</param>
+    private static IReadOnlyList<CarryInOrderRespect> BuildCarryInThreeDimensional(
+        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee, AutofillScenarioDefinition definition)
+    {
+        if (!definition.OrdersAreLabelled)
+        {
+            return [];
+        }
+
+        var results = new List<CarryInOrderRespect>();
+        foreach (var carryIn in definition.CarryIns)
+        {
+            var shifts = byEmployee.TryGetValue(carryIn.AgentId, out var found) ? found : [];
+            var firstKind = shifts.Count == 0 ? null : (AutofillShiftKind?)shifts[0].Kind;
+            var firstOrder = shifts.Count == 0 ? null : (int?)shifts[0].Order;
+
+            var actualRemaining = 0;
+            var probe = definition.PeriodFrom;
+            while (shifts.Any(s => s.Date == probe && s.Kind == carryIn.Kind && s.Order == carryIn.OrderIndex))
+            {
+                actualRemaining++;
+                probe = probe.AddDays(1);
+            }
+
+            var orderOk = carryIn.ExpectedFirstOrderIndex is null || firstOrder == carryIn.ExpectedFirstOrderIndex;
+            results.Add(new CarryInOrderRespect(
+                Employee: carryIn.AgentId,
+                ExpectedOrder: carryIn.ExpectedFirstOrderIndex,
+                ActualOrder: firstOrder,
+                ExpectedShiftType: carryIn.ExpectedFirstShiftKind,
+                ActualShiftType: firstKind,
+                ExpectedRemainingDays: carryIn.ExpectedRemainingDays,
+                ActualRemainingDays: actualRemaining,
+                Ok: orderOk
+                    && firstKind == carryIn.ExpectedFirstShiftKind
+                    && actualRemaining == carryIn.ExpectedRemainingDays));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Rule 10 as numbers. Package purity is measured on the whole cross-boundary package, the same
+    /// scope every other package measure uses, while the per-employee switch sequence and the order
+    /// distribution count in-period shifts only, because they ask what THIS run planned.
+    /// </summary>
+    /// <param name="byEmployee">In-period shifts per employee</param>
+    /// <param name="definition">Scenario that produced the plan</param>
+    private static OrderMetrics BuildOrders(
+        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee, AutofillScenarioDefinition definition)
+    {
+        if (!definition.OrdersAreLabelled)
+        {
+            return OrderMetrics.Empty;
+        }
+
+        var switchesInPackage = new List<OrderSwitchInPackage>();
+        var switchesPerEmployee = new List<OrderSwitchesPerEmployee>();
+        var employeesPerOrder = new SortedDictionary<int, List<string>>();
+        var rankWeightPerOrder = new SortedDictionary<int, (double WeightedRank, int Shifts)>();
+
+        for (var rankIndex = 0; rankIndex < definition.EmployeesInListOrder.Count; rankIndex++)
+        {
+            var employee = definition.EmployeesInListOrder[rankIndex];
+            var listRank = rankIndex + 1;
+
+            foreach (var (packageStart, orders) in OrderRunsOf(
+                         WithCarryIn(employee, byEmployee, definition), definition))
+            {
+                if (orders.Distinct().Count() > 1)
+                {
+                    switchesInPackage.Add(new OrderSwitchInPackage(employee, packageStart, orders));
+                }
+            }
+
+            var inPeriod = byEmployee.TryGetValue(employee, out var found) ? found : [];
+            var sequence = inPeriod.Select(s => s.Order).ToList();
+            var switchCount = 0;
+            for (var i = 1; i < sequence.Count; i++)
+            {
+                if (sequence[i] != sequence[i - 1])
+                {
+                    switchCount++;
+                }
+            }
+
+            switchesPerEmployee.Add(new OrderSwitchesPerEmployee(employee, switchCount, sequence));
+
+            foreach (var group in inPeriod.GroupBy(s => s.Order))
+            {
+                if (!employeesPerOrder.TryGetValue(group.Key, out var list))
+                {
+                    list = [];
+                    employeesPerOrder[group.Key] = list;
+                }
+
+                list.Add(employee);
+
+                rankWeightPerOrder.TryGetValue(group.Key, out var current);
+                rankWeightPerOrder[group.Key] = (
+                    current.WeightedRank + (listRank * (double)group.Count()),
+                    current.Shifts + group.Count());
+            }
+        }
+
+        var distribution = employeesPerOrder
+            .Select(entry =>
+            {
+                var weight = rankWeightPerOrder[entry.Key];
+                return new OrderEmployeeDistribution(
+                    entry.Key,
+                    entry.Value,
+                    weight.Shifts == 0 ? 0 : weight.WeightedRank / weight.Shifts);
+            })
+            .ToList();
+
+        return new OrderMetrics(switchesInPackage, switchesPerEmployee, distribution);
+    }
+
+    /// <summary>
+    /// The orders one employee touches inside each of his packages, in day sequence. Uses the same
+    /// package definition as <see cref="BuildPackages"/>, packages closed before the period included
+    /// in the grouping and dropped afterwards, so a package here is the same package there.
+    /// </summary>
+    /// <param name="shifts">All shifts of one employee, carry-in days included, sorted by day</param>
+    /// <param name="definition">Scenario that produced the plan; supplies the period bounds</param>
+    private static IEnumerable<(DateOnly PackageStart, IReadOnlyList<int> Orders)> OrderRunsOf(
+        IReadOnlyList<PlannedShift> shifts, AutofillScenarioDefinition definition)
+    {
+        var byDay = shifts
+            .GroupBy(s => s.Date)
+            .OrderBy(g => g.Key)
+            .Select(g => (Date: g.Key, Orders: g.OrderBy(s => s.StartAt).Select(s => s.Order).ToList()))
+            .ToList();
+
+        var index = 0;
+        while (index < byDay.Count)
+        {
+            var start = index;
+            while (index + 1 < byDay.Count && byDay[index + 1].Date == byDay[index].Date.AddDays(1))
+            {
+                index++;
+            }
+
+            var days = byDay.GetRange(start, index - start + 1);
+            index++;
+
+            if (days[^1].Date < definition.PeriodFrom)
+            {
+                continue;
+            }
+
+            yield return (days[0].Date, days.SelectMany(d => d.Orders).ToList());
+        }
+    }
+
+    /// <summary>
+    /// The leading free days of every employee that the finished plan offered no way to fill. A day is
+    /// unfillable for an employee when no slot of that day stayed open that the employee could have
+    /// taken without breaking the rest time against his own neighbouring shifts. The plan records no
+    /// such flag, so this is derived from the open slots — which is why the measure stops at the first
+    /// package: beyond it, free days are the 5/2 rhythm and the derivation would report the whole plan.
+    /// </summary>
+    /// <param name="byEmployee">In-period shifts per employee</param>
+    /// <param name="coverage">Coverage of the same plan; supplies the slots that stayed open</param>
+    /// <param name="definition">Scenario that produced the plan</param>
+    private static IReadOnlyList<ForcedFreeDayRun> BuildForcedExtraFreeDays(
+        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee,
+        CoverageMetrics coverage,
+        AutofillScenarioDefinition definition)
+    {
+        var runs = new List<ForcedFreeDayRun>();
+        var openByDay = coverage.UnfilledShifts
+            .GroupBy(u => u.Date)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var employee in definition.EmployeesInListOrder)
+        {
+            var all = WithCarryIn(employee, byEmployee, definition);
+            var inPeriod = byEmployee.TryGetValue(employee, out var found) ? found : [];
+            var firstWorkedDay = inPeriod.Count == 0 ? definition.PeriodUntil.AddDays(1) : inPeriod[0].Date;
+            if (firstWorkedDay <= definition.PeriodFrom)
+            {
+                continue;
+            }
+
+            var lastFreeDay = firstWorkedDay.AddDays(-1);
+            for (var day = definition.PeriodFrom; day <= lastFreeDay; day = day.AddDays(1))
+            {
+                if (openByDay.TryGetValue(day, out var openSlots)
+                    && openSlots.Any(slot => CouldHaveTaken(all, slot)))
+                {
+                    lastFreeDay = day.AddDays(-1);
+                    break;
+                }
+            }
+
+            if (lastFreeDay < definition.PeriodFrom)
+            {
+                continue;
+            }
+
+            var openSlotInRun = false;
+            for (var day = definition.PeriodFrom; day <= lastFreeDay; day = day.AddDays(1))
+            {
+                openSlotInRun |= openByDay.ContainsKey(day);
+            }
+
+            runs.Add(new ForcedFreeDayRun(
+                employee,
+                definition.PeriodFrom,
+                lastFreeDay,
+                openSlotInRun ? ForcedFreeDayRun.NoLegalOpenSlotCause : ForcedFreeDayRun.NoOpenSlotCause));
+        }
+
+        return runs;
+    }
+
+    /// <summary>
+    /// Whether one employee could have taken one open slot without breaking the contractual rest time
+    /// against any shift he actually holds. Deliberately the weakest honest test: it proves a day was
+    /// fillable, never that it was not, so a run reported as forced is forced under a check that errs
+    /// towards NOT reporting.
+    /// </summary>
+    /// <param name="shifts">Every shift of the employee, carry-in days included</param>
+    /// <param name="slot">Open slot to try</param>
+    private static bool CouldHaveTaken(IReadOnlyList<PlannedShift> shifts, UnfilledShift slot)
+    {
+        var (startAt, endAt) = AutofillShiftCatalog.SpanOf(slot.ShiftType, slot.Date);
+        foreach (var shift in shifts)
+        {
+            if (startAt < shift.EndAt && shift.StartAt < endAt)
+            {
+                return false;
+            }
+
+            var gapHours = startAt >= shift.EndAt
+                ? (startAt - shift.EndAt).TotalHours
+                : (shift.StartAt - endAt).TotalHours;
+            if (gapHours < AutofillSpecConstants.MinRestHours)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

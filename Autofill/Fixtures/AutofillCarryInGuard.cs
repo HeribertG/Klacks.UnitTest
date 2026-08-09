@@ -1,5 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using System.Globalization;
+
 namespace Klacks.UnitTest.Autofill.Fixtures;
 
 /// <summary>
@@ -13,8 +15,9 @@ public static class AutofillCarryInGuard
     /// Returns one message per problem found; an empty result means the fixture is consistent.
     /// Checked: every package lies before the period, is not longer than its target, its remaining
     /// days match its served days, packages that are already closed expect no continuation, the
-    /// employees still inside a package on the first day of the period carry distinct shift kinds,
-    /// and there are never more of them than the day has shifts.
+    /// employees still inside a package on the first day of the period occupy distinct slots — a slot
+    /// being an (order, shift kind) pair, so three parallel orders offer three early slots — and there
+    /// are never more of them than the day has shifts.
     /// </summary>
     /// <param name="definition">Scenario to check</param>
     public static IReadOnlyList<string> Validate(AutofillScenarioDefinition definition)
@@ -66,21 +69,24 @@ public static class AutofillCarryInGuard
         }
 
         var openCarryIns = definition.OpenCarryIns;
-        var duplicateKinds = openCarryIns
-            .GroupBy(c => c.Kind)
+        var duplicateSlots = openCarryIns
+            .GroupBy(c => (c.OrderIndex, c.Kind))
             .Where(g => g.Count() > 1)
             .Select(g => g.Key);
-        foreach (var kind in duplicateKinds)
+        foreach (var (orderIndex, kind) in duplicateSlots)
         {
             problems.Add(
-                $"More than one employee is still inside a {kind} package on {periodFrom:yyyy-MM-dd}; they would compete for the same single slot.");
+                $"More than one employee is still inside a {kind} package of order "
+                + $"{orderIndex.ToString(CultureInfo.InvariantCulture)} on {periodFrom:yyyy-MM-dd}; they would compete "
+                + "for the same single slot.");
         }
 
-        if (openCarryIns.Count > AutofillSpecConstants.ShiftsPerDay)
+        var slotsPerDay = AutofillSpecConstants.ShiftsPerDay * definition.OrderCount;
+        if (openCarryIns.Count > slotsPerDay)
         {
             problems.Add(
                 $"{openCarryIns.Count} employees are still inside a package on {periodFrom:yyyy-MM-dd}, but the day only has "
-                + $"{AutofillSpecConstants.ShiftsPerDay} shifts.");
+                + $"{slotsPerDay.ToString(CultureInfo.InvariantCulture)} shifts.");
         }
 
         return problems;

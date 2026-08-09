@@ -23,6 +23,22 @@ public sealed record AutofillCarryIn(
     AutofillShiftKind ExpectedFirstShiftKind,
     int ExpectedRemainingDays)
 {
+    /// <summary>
+    /// Order the package belongs to. <see cref="AutofillShiftCatalog.SingleOrderIndex"/> — the default
+    /// — addresses the order-less shift triple, which is what every scenario before scenario 4 means
+    /// by "the early shift". A scenario with several parallel orders sets the order index here, and
+    /// the builder then turns the package into boundary works on that order's shift ids.
+    /// </summary>
+    public int OrderIndex { get; init; } = AutofillShiftCatalog.SingleOrderIndex;
+
+    /// <summary>
+    /// Order the first in-period shift must belong to, or null when the specification fixes no order
+    /// for this employee — which is the honest state for a package that is already closed: its
+    /// rotation table names the next shift KIND, never the next order. A null is not an expectation
+    /// of "any order is fine"; it means the order dimension is simply not judged for this entry.
+    /// </summary>
+    public int? ExpectedFirstOrderIndex { get; init; }
+
     /// <summary>Days of the package that already lie in the previous month.</summary>
     public int ServedDays => PackageEndInclusive.DayNumber - PackageStart.DayNumber + 1;
 

@@ -7,4 +7,12 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// <param name="NightToEarlyViolations">Night shift directly followed by an early shift</param>
 public sealed record LegalityMetrics(
     IReadOnlyList<RestTimeViolation> RestViolations,
-    IReadOnlyList<NightToEarlyViolation> NightToEarlyViolations);
+    IReadOnlyList<NightToEarlyViolation> NightToEarlyViolations)
+{
+    /// <summary>
+    /// The subset of <see cref="RestViolations"/> whose two shifts belong to different orders — the
+    /// proof that the rest check keeps seeing the whole employee once the day spreads over parallel
+    /// orders. Empty without an order dimension.
+    /// </summary>
+    public IReadOnlyList<CrossOrderRestViolation> RestViolationsCrossOrder { get; init; } = [];
+}

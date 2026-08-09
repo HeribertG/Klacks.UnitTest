@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using System.Diagnostics;
 using Klacks.ScheduleOptimizer.TokenEvolution;
 using Klacks.UnitTest.Autofill.Analysis;
 using Klacks.UnitTest.Autofill.Analysis.Model;
@@ -29,6 +30,9 @@ public static class DeterministicRunner
     private const string SecondRunLabel = "run2";
     private const string SeedRunLabel = "auction-seed";
 
+    /// <summary>Reference wall clock of a run nobody timed; the ratio then stays 0.</summary>
+    private const long ReferenceRunNotMeasured = 0;
+
     /// <summary>
     /// Executes both runs plus the auction seed diagnosis and writes all artifacts.
     /// </summary>
@@ -37,10 +41,32 @@ public static class DeterministicRunner
     /// <param name="testName">Test name; becomes the artifact file name</param>
     public static DeterministicRunResult Run(
         AutofillScenarioDefinition definition, string scenarioName, string testName)
+        => Run(definition, scenarioName, testName, ReferenceRunNotMeasured);
+
+    /// <summary>
+    /// Executes both runs plus the auction seed diagnosis, times the first run and writes all
+    /// artifacts. The wall clock is measured on the FIRST run only: it is the one number a runtime
+    /// budget is stated against, and adding the repeat and the seed run would triple it.
+    /// </summary>
+    /// <param name="definition">Scenario to run</param>
+    /// <param name="scenarioName">Scenario name; becomes the artifact folder</param>
+    /// <param name="testName">Test name; becomes the artifact file name</param>
+    /// <param name="referenceRunMs">
+    /// Wall clock of the small reference scenario, measured on the same machine in the same session;
+    /// pass 0 when no reference is available and the ratio stays 0
+    /// </param>
+    public static DeterministicRunResult Run(
+        AutofillScenarioDefinition definition, string scenarioName, string testName, long referenceRunMs)
     {
         var boundaryBefore = PlanFingerprint.ForBoundaryWorks(definition.Context.BoundaryLockedWorks);
 
+        var stopwatch = Stopwatch.StartNew();
         var firstPlan = TokenEvolutionLoop.Create().Run(definition.Context, definition.Config);
+        stopwatch.Stop();
+        var runtime = new RuntimeMetrics(
+            stopwatch.ElapsedMilliseconds,
+            referenceRunMs <= 0 ? 0 : stopwatch.ElapsedMilliseconds / (double)referenceRunMs);
+
         var secondPlan = TokenEvolutionLoop.Create().Run(definition.Context, definition.Config);
         var seedPlan = AutofillSeedPlanFactory.BuildAuctionSeedPlan(definition);
 
@@ -55,7 +81,9 @@ public static class DeterministicRunner
 
         var determinism = new DeterminismMetrics(runsIdentical, difference);
 
-        var firstMetrics = Measure(firstPlan, definition, scenarioName, testName, FirstRunLabel, determinism);
+        var firstMetrics = Measure(firstPlan, definition, scenarioName, testName, FirstRunLabel, determinism)
+            with
+            { Runtime = runtime };
         var secondMetrics = Measure(secondPlan, definition, scenarioName, testName, SecondRunLabel, determinism);
         var seedMetrics = Measure(seedPlan, definition, scenarioName, testName, SeedRunLabel, determinism);
 

@@ -23,6 +23,8 @@ public sealed class AutofillScenarioBuilder
 {
     private const string BoundaryWorkIdPrefix = "carry-in-";
 
+    private const int SingleOrderCount = 1;
+
     private readonly List<AutofillEmployeeSpec> _employees = [];
     private readonly List<AutofillCarryIn> _carryIns = [];
 
@@ -34,6 +36,8 @@ public sealed class AutofillScenarioBuilder
     private int _maxGenerations = AutofillSpecConstants.MaxGenerations;
     private bool _carryInHoursCountAsCurrentHours;
     private AutofillEligibilityInput? _eligibility;
+    private int? _orderCount;
+    private bool _reverseShiftInsertionOrder;
 
     /// <param name="from">First day of the planning period</param>
     /// <param name="until">Last day of the planning period, inclusive</param>
@@ -130,6 +134,24 @@ public sealed class AutofillScenarioBuilder
         return this;
     }
 
+    /// <summary>
+    /// Plans several identically cut orders in parallel instead of a single one: every day then holds
+    /// three shifts per order, each an independent slot with its own pinned id. Not calling this at
+    /// all keeps the order-less shift triple of scenarios 1, 1b, 2 and 3, which is a different set of
+    /// ids — the order dimension is opt-in, never a relabelling of the existing one.
+    /// </summary>
+    /// <param name="count">Number of parallel orders, 1 to <see cref="AutofillShiftCatalog.MaxOrderCount"/></param>
+    /// <param name="reverseInsertionOrder">
+    /// True to append the orders back to front. The engine sorts its slots totally, so this changes
+    /// nothing about the run; it exists so a symmetry test can prove that instead of assuming it
+    /// </param>
+    public AutofillScenarioBuilder WithOrders(int count, bool reverseInsertionOrder = false)
+    {
+        _orderCount = count;
+        _reverseShiftInsertionOrder = reverseInsertionOrder;
+        return this;
+    }
+
     /// <param name="seed">Seed of the single random source of the run</param>
     public AutofillScenarioBuilder WithRandomSeed(int seed)
     {
@@ -163,6 +185,15 @@ public sealed class AutofillScenarioBuilder
             throw new InvalidOperationException(string.Join(Environment.NewLine, inferenceProblems));
         }
 
+        if (_orderCount.HasValue)
+        {
+            var orderingProblems = AutofillShiftCatalog.ValidateOrderIdOrdering();
+            if (orderingProblems.Count > 0)
+            {
+                throw new InvalidOperationException(string.Join(Environment.NewLine, orderingProblems));
+            }
+        }
+
         if (_employees.Count == 0)
         {
             throw new InvalidOperationException("A scenario needs at least one employee; call WithEmployees or AddEmployee.");
@@ -184,7 +215,7 @@ public sealed class AutofillScenarioBuilder
             PeriodFrom = _periodFrom,
             PeriodUntil = _periodUntil,
             Agents = _employees.Select(e => BuildAgent(e, carryInHours)).ToList(),
-            Shifts = AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil),
+            Shifts = BuildShifts(),
             BoundaryLockedWorks = boundaryWorks,
             LockedWorks = _lockedWorks ?? [],
             SchedulingMaxConsecutiveDays = AutofillSpecConstants.MaxConsecutiveDays,
@@ -226,7 +257,27 @@ public sealed class AutofillScenarioBuilder
             CarryInHoursByAgent = carryInHours,
             CarryInHoursCountedAsCurrentHours = _carryInHoursCountAsCurrentHours,
             Eligibility = _eligibility,
+            OrderCount = _orderCount ?? SingleOrderCount,
+            OrdersAreLabelled = _orderCount.HasValue,
         };
+    }
+
+    private IReadOnlyList<CoreShift> BuildShifts()
+    {
+        if (!_orderCount.HasValue)
+        {
+            return AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil);
+        }
+
+        var shifts = AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil, _orderCount.Value);
+        if (!_reverseShiftInsertionOrder)
+        {
+            return shifts;
+        }
+
+        var reversed = shifts.ToList();
+        reversed.Reverse();
+        return reversed;
     }
 
     private Dictionary<string, double> BuildCarryInHours()
@@ -265,7 +316,7 @@ public sealed class AutofillScenarioBuilder
                     TotalHours: (decimal)AutofillSpecConstants.ShiftHours,
                     StartAt: startAt,
                     EndAt: endAt,
-                    ShiftRefId: AutofillShiftCatalog.ShiftIdOf(carryIn.Kind),
+                    ShiftRefId: AutofillShiftCatalog.ShiftIdOf(carryIn.OrderIndex, carryIn.Kind),
                     LocationContext: null));
             }
         }

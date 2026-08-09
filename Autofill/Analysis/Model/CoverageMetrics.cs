@@ -16,4 +16,14 @@ public sealed record CoverageMetrics(
     int FilledShifts,
     IReadOnlyList<UnfilledShift> UnfilledShifts,
     IReadOnlyList<DoubleBooking> DoubleBookings,
-    int OversuppliedSlots);
+    int OversuppliedSlots)
+{
+    /// <summary>The same coverage per order, so no order can hide behind the total. Empty without an order dimension.</summary>
+    public IReadOnlyList<OrderCoverage> PerOrder { get; init; } = [];
+
+    /// <summary>Assignments per calendar day of the period, one entry per day, always in date order.</summary>
+    public IReadOnlyList<DayAssignmentCount> AssignmentsPerDay { get; init; } = [];
+
+    /// <summary>Days on which one employee holds shifts of more than one order. Empty without an order dimension.</summary>
+    public IReadOnlyList<CrossOrderDoubleBooking> CrossOrderDoubleBookings { get; init; } = [];
+}
