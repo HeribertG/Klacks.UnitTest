@@ -23,9 +23,11 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario4;
 /// first period day, the same table for continuation days inside the period, and the counterfactual
 /// scores the rule base would produce without the two rejecting rules.
 /// <para>
-/// The measuring assertions pin TODAY's behaviour. They are meant to flip once the carry-in
-/// continuation is constructed rather than auctioned; a red result here after that change is the
-/// expected signal, not a regression.
+/// Stage E1 answered the measurement: the continuation is constructed before the free assignment and
+/// its slots never reach the auction at all. The assertions therefore pin that consequence — no bid on
+/// a constructed day — instead of the bid comparison, which is emergent and moves with every change to
+/// the accumulated run hours. The bid comparison stays in the report because the bias it shows is
+/// still real for packages that START inside the period, which is the subject of a later stage.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -138,13 +140,13 @@ public class Scenario4BidDiagnosticsTests
     }
 
     /// <summary>
-    /// The core E1.0 gate. Prints, for every one of the nine slots of the first period day, the full
-    /// fifteen-agent bid table, and states for each open carry-in package whether its agent was
-    /// vetoed by stage 0, what it bid on its own package slot, and what it bid on the slots of the
-    /// other shift kinds.
+    /// Prints, for every one of the nine slots of the first period day, the full bid table, and states
+    /// for each open carry-in package whether its slot went to auction at all and who ended up holding
+    /// it. After stage E1 the nine package slots are constructed, so they carry no bid and no auction
+    /// result — that is what this fixture pins.
     /// </summary>
     [Test]
-    public void TheFirstDayBidTableShowsWhyTheCarryInPackagesAreNotContinued()
+    public void TheFirstDayPackageSlotsAreConstructedAndNeverAuctioned()
     {
         var day = AutofillSpecConstants.PeriodFrom;
         ReportContextHeader();
@@ -155,14 +157,12 @@ public class Scenario4BidDiagnosticsTests
         }
 
         var open = OpenPackages();
-        var vetoed = new List<string>();
-        var outbid = new List<string>();
-        var won = new List<string>();
+        var auctioned = new List<string>();
+        var heldByOther = new List<string>();
 
         TestContext.Out.WriteLine(string.Empty);
         TestContext.Out.WriteLine("--- open carry-in packages on the first period day ---");
-        TestContext.Out.WriteLine(
-            "agent | package slot | stage 0 | own-slot score | best other-kind score (slot) | winner of own slot");
+        TestContext.Out.WriteLine("agent | package slot | went to auction | bids recorded | holder in the seed plan");
 
         foreach (var carryIn in open)
         {
@@ -170,60 +170,54 @@ public class Scenario4BidDiagnosticsTests
                 .ShiftIdOf(carryIn.OrderIndex, carryIn.ExpectedFirstShiftKind).ToString();
             var packageSlot = SlotsOf(day).Single(candidate => candidate.Id == packageSlotId);
             var ownKey = KeyOf(packageSlot);
-            var ownBid = BidOf(_baseline, ownKey, carryIn.AgentId);
-            var winner = _baseline.WinnerBySlot.GetValueOrDefault(ownKey, None);
-
-            var otherKind = SlotsOf(day)
-                .Where(candidate => KindIndexOf(candidate) != KindIndexOf(packageSlot))
-                .Select(candidate => (Slot: candidate, Bid: BidOf(_baseline, KeyOf(candidate), carryIn.AgentId)))
-                .Where(candidate => candidate.Bid is not null)
-                .OrderByDescending(candidate => candidate.Bid!.Score)
-                .FirstOrDefault();
+            var bidCount = _baseline.Records.Count(record => record.SlotKey == ownKey);
+            var wentToAuction = _baseline.Outcome.Results.Any(result => result.SlotId == ownKey);
+            var holder = HolderOf(_baseline, day, packageSlot.Id);
 
             TestContext.Out.WriteLine(
                 carryIn.AgentId
                 + RuleSeparator + packageSlot.Name
-                + RuleSeparator + (ownBid is null ? "VETOED" : "passed")
-                + RuleSeparator + (ownBid is null ? None : Format(ownBid.Score))
-                + RuleSeparator + (otherKind.Bid is null
-                    ? None
-                    : Format(otherKind.Bid.Score) + " (" + otherKind.Slot.Name + ")")
-                + RuleSeparator + winner);
+                + RuleSeparator + (wentToAuction ? Yes : No)
+                + RuleSeparator + bidCount.ToString(CultureInfo.InvariantCulture)
+                + RuleSeparator + holder);
 
-            if (ownBid is null)
+            if (wentToAuction || bidCount > 0)
             {
-                vetoed.Add(carryIn.AgentId);
+                auctioned.Add(carryIn.AgentId);
             }
-            else if (winner == carryIn.AgentId)
+
+            if (holder != carryIn.AgentId)
             {
-                won.Add(carryIn.AgentId);
-            }
-            else
-            {
-                outbid.Add(carryIn.AgentId);
+                heldByOther.Add(carryIn.AgentId + " -> " + holder);
             }
         }
 
         TestContext.Out.WriteLine(string.Empty);
-        TestContext.Out.WriteLine("verdict B-0.1: stage-0 vetoed = " + Describe(vetoed)
-            + "; bid and lost = " + Describe(outbid)
-            + "; bid and won = " + Describe(won));
+        TestContext.Out.WriteLine(
+            "verdict E1: package slots offered for sale = " + Describe(auctioned)
+            + "; package slots held by a foreign employee = " + Describe(heldByOther));
 
         ReportKindPreferenceOfTheFirstDay(open, day);
 
-        vetoed.ShouldBeEmpty();
-        won.ShouldBeEmpty();
-        outbid.Count.ShouldBe(open.Count);
+        auctioned.ShouldBeEmpty(
+            "a package slot the pre-pass already constructed must not be offered for sale a second time — that is "
+            + "the occupancy skip of the auction loop, and without it the slot would end up double-staffed");
+        heldByOther.ShouldBeEmpty(
+            "every open package must be held on its own order and kind by its own employee on the first period day; "
+            + "B-0.1 showed the auction gives it away, so the construction now decides it");
     }
 
     /// <summary>
     /// The follow-up finding: after a win the state reports zero days since the agent's own shift
     /// kind, so on the next day the continuation slot reads Cool while every kind the agent never
     /// worked reads Hot. Measured on identical state — the compared bids differ in nothing but the
-    /// slot's shift kind, because they are all taken before the agent won anything that day.
+    /// slot's shift kind, because they are all taken before the agent won anything that day. The bias
+    /// is still present and still shapes packages that start inside the period; what the assertion
+    /// pins is that the packages carried in from the previous month no longer depend on it, because
+    /// not one of their owed days is auctioned any more.
     /// </summary>
     [Test]
-    public void TheContinuationBidLosesAgainstTheKindSwitchOnIdenticalState()
+    public void NoOwedCarryInDayIsAuctionedWhileTheKindBiasIsStillReported()
     {
         var comparisons = ContinuationComparisons().ToList();
         var continuationLower = comparisons.Count(c => c.Continuation.Bid.Score < c.Switch.Bid.Score);
@@ -282,9 +276,57 @@ public class Scenario4BidDiagnosticsTests
                 + RuleSeparator + string.Join(ListSeparator, comparison.Continuation.Bid.FiredRules));
         }
 
-        comparisons.ShouldNotBeEmpty();
-        continuationHigher.ShouldBe(0);
-        continuationWon.ShouldBe(0);
+        var owed = OwedContinuationSlots().ToList();
+        var auctionedOwedDays = owed
+            .Where(entry => _baseline.Records.Any(record => record.SlotKey == entry.SlotKey))
+            .Select(entry => entry.AgentId + " " + entry.SlotKey)
+            .ToList();
+
+        TestContext.Out.WriteLine(string.Empty);
+        TestContext.Out.WriteLine(
+            "owed carry-in days: " + owed.Count.ToString(CultureInfo.InvariantCulture)
+            + ", of which auctioned: " + auctionedOwedDays.Count.ToString(CultureInfo.InvariantCulture));
+
+        comparisons.ShouldNotBeEmpty(
+            "the report needs comparable situations; an empty set would mean the recorder saw no consecutive day at "
+            + "all and the kind bias could not be judged either way");
+        owed.ShouldNotBeEmpty(
+            "the fixture must owe carry-in days, otherwise this fixture proves nothing about the construction");
+        auctionedOwedDays.ShouldBeEmpty(
+            "not one day still owed by a carried-in package may be offered for sale: the pre-pass constructs them "
+            + "all and the occupancy skip keeps the auction away from them. This replaces the two pins of stage "
+            + "E1.0 — the bid comparison above is emergent and moves with the accumulated run hours, while the "
+            + "absence of a bid on a constructed day is the direct consequence of the fix: "
+            + string.Join(ListSeparator, auctionedOwedDays));
+    }
+
+    /// <summary>Every (employee, slot) an open package still owes, in day-major order.</summary>
+    private IEnumerable<(string AgentId, string SlotKey)> OwedContinuationSlots()
+    {
+        foreach (var carryIn in OpenPackages())
+        {
+            var shiftId = AutofillShiftCatalog.ShiftIdOf(carryIn.OrderIndex, carryIn.ExpectedFirstShiftKind);
+            for (var offset = 0; offset < carryIn.MissingDays; offset++)
+            {
+                var day = AutofillSpecConstants.PeriodFrom.AddDays(offset);
+                yield return (
+                    carryIn.AgentId,
+                    day.ToString(AutofillSpecConstants.IsoDateFormat, CultureInfo.InvariantCulture)
+                        + RecordedBid.SlotKeySeparator + shiftId);
+            }
+        }
+    }
+
+    /// <summary>Employee holding the slot in the probe's seed plan, or a marker when nobody does.</summary>
+    private static string HolderOf(AuctionProbeResult probe, DateOnly day, string shiftId)
+    {
+        var holders = probe.Outcome.Scenario.Tokens
+            .Where(token => token.Date == day && token.ShiftRefId.ToString() == shiftId)
+            .Select(token => token.AgentId)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        return holders.Count == 0 ? None : string.Join(ListSeparator, holders);
     }
 
     /// <summary>
@@ -311,14 +353,14 @@ public class Scenario4BidDiagnosticsTests
         var open = OpenPackages();
 
         TestContext.Out.WriteLine(
-            "variant | continued packages on the first day | same-kind day transitions | assigned slots");
+            "variant | continued packages on the first day | same-kind day transitions | tokens in the seed plan");
         foreach (var variant in variants)
         {
-            var continued = open.Count(carryIn => variant.WinnerBySlot.GetValueOrDefault(
-                day.ToString(AutofillSpecConstants.IsoDateFormat, CultureInfo.InvariantCulture)
-                    + RecordedBid.SlotKeySeparator
-                    + AutofillShiftCatalog.ShiftIdOf(carryIn.OrderIndex, carryIn.ExpectedFirstShiftKind),
-                None) == carryIn.AgentId);
+            var continued = open.Count(carryIn => HolderOf(
+                variant,
+                day,
+                AutofillShiftCatalog.ShiftIdOf(carryIn.OrderIndex, carryIn.ExpectedFirstShiftKind).ToString())
+                    == carryIn.AgentId);
 
             var continuity = MeasureKindContinuity(variant.Outcome.Scenario);
 
@@ -326,7 +368,7 @@ public class Scenario4BidDiagnosticsTests
                 variant.Label
                 + RuleSeparator + continued.ToString(CultureInfo.InvariantCulture)
                 + RuleSeparator + Share(continuity.SameKind, continuity.Consecutive)
-                + RuleSeparator + variant.WinnerBySlot.Count.ToString(CultureInfo.InvariantCulture));
+                + RuleSeparator + variant.Outcome.Scenario.Tokens.Count.ToString(CultureInfo.InvariantCulture));
         }
 
         TestContext.Out.WriteLine(string.Empty);
@@ -451,8 +493,20 @@ public class Scenario4BidDiagnosticsTests
     private void ReportSlot(AuctionProbeResult probe, CoreShift slot)
     {
         var key = KeyOf(slot);
-        var result = probe.Outcome.Results.Single(candidate => candidate.SlotId == key);
+        var result = probe.Outcome.Results.SingleOrDefault(candidate => candidate.SlotId == key);
         var records = probe.Records.Where(record => record.SlotKey == key).ToList();
+        if (result is null)
+        {
+            TestContext.Out.WriteLine(string.Empty);
+            TestContext.Out.WriteLine(
+                "=== " + slot.Date + " " + slot.Name + " " + slot.StartTime + "-" + slot.EndTime
+                + " -> not auctioned, already staffed by the carry-in construction; holder "
+                + HolderOf(probe, DateOnly.ParseExact(
+                    slot.Date, AutofillSpecConstants.IsoDateFormat, CultureInfo.InvariantCulture), slot.Id)
+                + " ===");
+            return;
+        }
+
         var bidders = records.Select(record => record.Agent.Id).ToHashSet(StringComparer.Ordinal);
         var vetoed = _definition.Context.Agents
             .Select(agent => agent.Id)

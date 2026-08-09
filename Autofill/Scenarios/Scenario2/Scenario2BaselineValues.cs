@@ -9,77 +9,95 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// must not be used to re-pin these.
 /// <para>
 /// Each constant is a band edge, not a single measurement — the worst of what the engine produced
-/// under the seeds of <see cref="AutofillSeedBand.Seeds"/>. The reference state is the engine at
-/// commit 3efe150 plus the uncommitted operator rework in
-/// <c>Klacks.ScheduleOptimizer/TokenEvolution/Operators/</c> (BlockCrossover, TokenSwapMutation),
-/// measured 2026-08-08. The band artifact <c>artifacts/scenario2/Scenario2.band.json</c> is written on
-/// every run and reports the values to copy under "Worst".
+/// under the seeds of <see cref="AutofillSeedBand.Seeds"/>. The band artifact
+/// <c>artifacts/scenario2/Scenario2.band.json</c> is written on every run and reports the values to
+/// copy under "Worst".
+/// </para>
+/// <para>
+/// Re-measured 2026-08-09 on engine state E1 of the scenario-4 fix plan — the carried-in package is
+/// now CONSTRUCTED before the free assignment (<c>CarryInContinuationSeeder</c>), an occupied slot is
+/// no longer auctioned a second time, and the stage-1 block-length check counts the previous month
+/// like every other block rule does. Scenario 2 is the small carry-in reference, so it is the
+/// scenario this rework moves most; the previous band was measured 2026-08-08 on engine 3efe150 plus
+/// the P2 operator rework. Six of the nine edges improved and were tightened, two got worse and were
+/// lowered with the reason stated on the constant, one is unchanged. Scenario 1 and 1b did not move
+/// at all — without an open package the construction and its fitness term are a strict no-op — and
+/// their pins are therefore untouched.
 /// </para>
 /// </summary>
 public static class Scenario2BaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 0.3846/0.3846/0.44, so the floor is 0.3846. Seed 42 runs 10 of 26 package transitions forward.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 0.375/0.36/0.36, so the
+    /// floor is 0.36. LOWERED from 0.3846 (band 0.3846/0.3846/0.44 of 2026-08-08). The drop is the
+    /// price of A10/A11: the first package of MA-1, MA-2 and MA-3 is now the carried-in one, whose
+    /// shift kind February fixed, so that transition is decided by the construction and not by the
+    /// rotation rule any more. The transition count itself falls with it (26 to 24 on seed 42).
+    /// Raising the forward rate again is the subject of stage E4, not of E1.
     /// </summary>
-    private const double ForwardRate = 0.38461538461538464;
+    private const double ForwardRate = 0.36;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 19/19/18, so the ceiling is 19. Seed 42 mixes shift kinds in 19 of 31 packages.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 15/15/15, so the ceiling
+    /// is 15. Tightened from 19 (band 19/19/18 of 2026-08-08): a constructed package is pure by
+    /// construction, so four packages fewer mix kinds.
     /// </summary>
-    private const int MixedTypeCount = 19;
+    private const int MixedTypeCount = 15;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 0.3226/0.3548/0.3333, so the ceiling is 0.3548. Seed 42 has 10 of 31 packages of at most two
-    /// days, which is below the ceiling — the band is what carries the difference.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 0.2759/0.3/0.3, so the
+    /// ceiling is 0.3. Tightened from 0.3548 (band 0.3226/0.3548/0.3333 of 2026-08-08).
     /// </summary>
-    private const double ShortPackageShare = 0.3548387096774194;
+    private const double ShortPackageShare = 0.3;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 0/0/0. Even with a package spanning the month boundary no package exceeds five days any more,
-    /// so the pin stays at zero and is meant to be sharp rather than tolerant.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 0/0/0 — unchanged, and
+    /// the pin stays sharp at zero. It took the stage-1 fix to keep it there: with the package
+    /// constructed to its full five days the auction sat exactly on the cap, and stage 1 was the only
+    /// block-length check in the engine that counted the in-period days alone, so it waved a sixth
+    /// day through. With the previous month counted the value is zero on every seed again.
     /// </summary>
     private const int PackagesOverIdealLength = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 0.1613/0.1935/0.2, so the floor is 0.1613. Seed 42 has 5 of 31 packages of five days followed
-    /// by exactly two free days.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 0.2414/0.2/0.2, so the
+    /// floor is 0.2. Tightened from 0.1613 (band 0.1613/0.1935/0.2 of 2026-08-08).
     /// </summary>
-    private const double IdealShare = 0.16129032258064516;
+    private const double IdealShare = 0.2;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 9/9/9. Seed 42 spreads early 9, late 6, night 4 over all five employees.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 5/5/5, so the ceiling is
+    /// 5. Tightened from 9 (band 9/9/9 of 2026-08-08) — the largest single improvement of the stage.
     /// </summary>
-    private const int ShiftKindSpread = 9;
+    private const int ShiftKindSpread = 5;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 2/1/0, so the ceiling is 2. This is the widest band in the suite: on seed 44 the fulfilment
-    /// never rises against the list order, on seed 42 it does twice, and nothing but the seed differs.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 0/1/1, so the ceiling is
+    /// 1. Tightened from 2 (band 2/1/0 of 2026-08-08).
     /// </summary>
-    private const int MonotonicityViolations = 2;
+    private const int MonotonicityViolations = 1;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 1/1/1. Exactly one of the five carried-in packages is continued as the specification requires —
-    /// MA-5, whose closed late package rotated to night. The other four are the substance of A10, A11
-    /// and A13; this floor only stops the one that works from disappearing unnoticed.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 4/4/4, so the floor is 4.
+    /// RAISED from 1 (band 1/1/1 of 2026-08-08). Four of the five carried-in packages are now
+    /// continued as the specification asks — the three open ones plus MA-5, whose closed late package
+    /// rotated to night. The fifth is MA-4, which belongs to A13 and to the boundary rotation, not to
+    /// this stage. Raising the floor is what stops a later stage from undoing the construction
+    /// unnoticed.
     /// </summary>
-    public const int CarryInOkCount = 1;
+    public const int CarryInOkCount = 4;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-08 on engine 3efe150 + uncommitted P2 operators:
-    /// 640/648/656 h, so the floor is 640 h. Seed 42 gives ranks 1 to 4 168/176/144/152 h and rank 5
-    /// 104 h. Rule 5 ranks the top-down service of the guaranteed hours above rule 6, package
-    /// integrity, so hours moving from these four down the list is a regression even when nothing else
-    /// gets worse.
+    /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 632/616/616 h, so the
+    /// floor is 616 h. LOWERED from 640 h (band 640/648/656 of 2026-08-08) — one shift of eight hours
+    /// on seed 42, three on seeds 43 and 44. Cause: MA-2 closes its carried-in package on 1 March and
+    /// the two contractual rest days then keep it off 2 and 3 March, days it used to work; the hours
+    /// land on rank 5. The same run is more monotone than before (violations 2 to 0 on seed 42), so
+    /// the top-down ORDER improved while the top-down SUM fell. This is the one edge of stage E1 that
+    /// trades a rule of the specification against a pin, and the owner decision B1 ranks the carry-in
+    /// continuation as a must-fix; the number is reported so the trade stays visible.
     /// </summary>
-    private const double TopRanksPlannedHours = 640;
+    private const double TopRanksPlannedHours = 616;
 
     /// <summary>The floor scenario 2 must not fall below.</summary>
     public static AutofillBaseline Baseline { get; } = new(
