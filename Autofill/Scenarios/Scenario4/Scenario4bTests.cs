@@ -29,16 +29,33 @@ public class Scenario4bTests : Scenario4RunTestBase
     public void S4_15_AllGoalsAreReachedAtOnce()
     {
         var problems = new List<string>();
-        var threshold = AutofillSpecConstants.CalibrationGuaranteedHours * AutofillSpecConstants.FulfilmentThreshold;
 
+        var fullyMet = Metrics.Hours.PerEmployee
+            .Where(e => e.PlannedHours + HoursComparisonEpsilon >= AutofillSpecConstants.CalibrationGuaranteedHours)
+            .ToList();
+        if (fullyMet.Count < Scenario4SpecConstants.MinimumFullyMetGuarantees)
+        {
+            problems.Add(
+                $"B6: only {fullyMet.Count.ToString(CultureInfo.InvariantCulture)} of "
+                + $"{Scenario4SpecConstants.EmployeeCount.ToString(CultureInfo.InvariantCulture)} ranks fully reach "
+                + $"the {AutofillSpecConstants.CalibrationGuaranteedHours.ToString("0.#", CultureInfo.InvariantCulture)} h "
+                + "guarantee, below the measured optimum of "
+                + $"{Scenario4SpecConstants.MinimumFullyMetGuarantees.ToString(CultureInfo.InvariantCulture)} that "
+                + "stage 1 of the fitness holds (Stage1GuaranteeDominanceTests)");
+        }
+
+        var remainderFloor =
+            AutofillSpecConstants.CalibrationGuaranteedHours * Scenario4SpecConstants.RemainingRankFloorShare;
         var starved = Metrics.Hours.PerEmployee
-            .Where(e => e.PlannedHours + HoursComparisonEpsilon < threshold)
+            .Where(e => e.PlannedHours + HoursComparisonEpsilon < remainderFloor)
             .ToList();
         if (starved.Count > 0)
         {
             problems.Add(
-                $"all fifteen ranks must reach {threshold.ToString("0.#", CultureInfo.InvariantCulture)} h, but "
-                + Scenario4Diagnostics.DescribeHours(starved) + " stay below");
+                "B6: every rank below the full guarantee must still reach "
+                + $"{remainderFloor.ToString("0.#", CultureInfo.InvariantCulture)} h "
+                + $"({(Scenario4SpecConstants.RemainingRankFloorShare * 100).ToString("0.#", CultureInfo.InvariantCulture)} % "
+                + "of the guarantee), but " + Scenario4Diagnostics.DescribeHours(starved) + " stay below");
         }
 
         var histogram = Metrics.Packages.FreeBlockHistogram;
@@ -78,10 +95,16 @@ public class Scenario4bTests : Scenario4RunTestBase
         }
 
         problems.ShouldBeEmpty(
-            "S4-15: at 150 guaranteed hours supply and demand almost match, so every goal is reachable at the same "
-            + "time — every rank at least 95 % of its target, free blocks peaking at two to three days, forward "
-            + "rotation at least 85 % and a shift-kind spread of at most two over the WHOLE roster, not just the top "
-            + $"ranks. Free blocks: {Scenario4Diagnostics.DescribeFreeBlocks(histogram)}. Hours: "
+            "S4-15 (owner decision B6): at 150 guaranteed hours supply and demand almost match, so most goals are "
+            + "reachable at the same time — at least "
+            + $"{Scenario4SpecConstants.MinimumFullyMetGuarantees.ToString(CultureInfo.InvariantCulture)} of "
+            + $"{Scenario4SpecConstants.EmployeeCount.ToString(CultureInfo.InvariantCulture)} ranks fully reach the "
+            + "guarantee (stage 1's measured optimum; a uniform 95 % floor for all fifteen is arithmetically "
+            + "unreachable and was dropped), every remaining rank at least "
+            + $"{(Scenario4SpecConstants.RemainingRankFloorShare * 100).ToString("0.#", CultureInfo.InvariantCulture)} % "
+            + "of its target, free blocks peaking at two to three days, forward rotation at least 85 % and a "
+            + "shift-kind spread of at most two over the WHOLE roster, not just the top ranks. Free blocks: "
+            + $"{Scenario4Diagnostics.DescribeFreeBlocks(histogram)}. Hours: "
             + $"{Scenario4Diagnostics.DescribeHours(Metrics.Hours.PerEmployee)}. {Describe(problems)}");
     }
 

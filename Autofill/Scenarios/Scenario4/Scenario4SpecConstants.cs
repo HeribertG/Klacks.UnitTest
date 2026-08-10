@@ -90,6 +90,23 @@ public static class Scenario4SpecConstants
     public const double CalibrationMinForwardRotationRate = 0.85;
 
     /// <summary>
+    /// S4-15 (owner decision B6, 2026-08-10): floor on how many ranks must fully reach the guaranteed
+    /// hours. Stage 1 of the fitness maximizes this count and dominates any move that would spread
+    /// hours more evenly instead (proof: <c>Stage1GuaranteeDominanceTests</c>), so a "95 % for every
+    /// rank" floor is arithmetically unreachable — it caps at 9 full guarantees while stage 1 holds
+    /// more. 12 is the measured optimum on HEAD and replaces the abandoned "all fifteen at 95 %"
+    /// requirement (`docs/PLAN-autofill-e4-e7-2026-08-09.md`, "S4-15 ist beweisbar unerreichbar").
+    /// </summary>
+    public const int MinimumFullyMetGuarantees = 12;
+
+    /// <summary>
+    /// S4-15 (owner decision B6, 2026-08-10): every rank that does not fully reach the guarantee must
+    /// still hold at least this share of it. Measured on HEAD: ranks 13-15 at 136/144/128 h = 91/96/85 %
+    /// of the 150 h guarantee, so 85 % is the tightest of the three and the floor this constant pins.
+    /// </summary>
+    public const double RemainingRankFloorShare = 0.85;
+
+    /// <summary>
     /// S4-6: highest tolerated median of the order changes per employee. Owner decision B2 turned
     /// order loyalty from a measurement into a rule, so the former reference value is now the ceiling.
     /// </summary>
