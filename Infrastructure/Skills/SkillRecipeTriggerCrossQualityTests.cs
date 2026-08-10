@@ -72,6 +72,17 @@ public class SkillRecipeTriggerCrossQualityTests
         ("explain_page_shifts", "create-shift-order"),
         ("explain_page_employees", "onboard-employee"),
         ("explain_page_period_closing", "close-payroll-period"),
+        // setup-planning-profile IS the guided flow for these four. They share the vocabulary on
+        // purpose: the recipe asks the base question and opens the draft with start_planning_profile_setup
+        // (its own step skill), and these four then carry the rest of the same dialogue. Guarding the
+        // recipe against their phrases would defeat its reason for existing — routing this exact intent
+        // deterministically, because retrieval alone sent it to create_scheduling_rule (live 2026-08-10).
+        // Once the draft is open the toolset assembler guarantees them anyway, so a hijack cannot strand
+        // the user mid-flow.
+        ("set_planning_profile_parameters", "setup-planning-profile"),
+        ("preview_planning_profile", "setup-planning-profile"),
+        ("apply_planning_profile", "setup-planning-profile"),
+        ("cancel_planning_profile_setup", "setup-planning-profile"),
     ];
 
     private sealed record RecipeUnderTest(string Name, RecipeTrigger Trigger, HashSet<string> StepSkills);

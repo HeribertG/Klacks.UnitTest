@@ -151,6 +151,58 @@ public class LLMResponseBuilderTests
     }
 
     [Test]
+    public void BuildSuccessResponse_WithNumberRepliesBlock_ReturnsNumberModeWithBounds()
+    {
+        var content = "How many days in a row? [REPLIES:number \"Consecutive days\" min=1 max=31 step=1]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.SuggestedReplies.ShouldNotBeNull();
+        response.SuggestedReplies!.SelectionMode.ShouldBe("number");
+        response.SuggestedReplies.Prompt.ShouldBe("Consecutive days");
+        response.SuggestedReplies.Options.ShouldBeEmpty();
+        response.SuggestedReplies.Min.ShouldBe(1m);
+        response.SuggestedReplies.Max.ShouldBe(31m);
+        response.SuggestedReplies.Step.ShouldBe(1m);
+        response.Message.ShouldBe("How many days in a row?");
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithNumberRepliesBlock_AcceptsFractionalStepAndCommaSeparator()
+    {
+        var content = "How many hours per day? [REPLIES:number \"Hours per day\" min=0 max=24 step=0,5]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.SuggestedReplies!.Step.ShouldBe(0.5m);
+        response.SuggestedReplies.Max.ShouldBe(24m);
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithNumberRepliesBlock_WithoutBounds_LeavesThemUnset()
+    {
+        var content = "How many? [REPLIES:number \"Count\"]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.SuggestedReplies!.SelectionMode.ShouldBe("number");
+        response.SuggestedReplies.Min.ShouldBeNull();
+        response.SuggestedReplies.Max.ShouldBeNull();
+        response.SuggestedReplies.Step.ShouldBeNull();
+    }
+
+    [Test]
+    public void BuildSuccessResponse_WithNumberRepliesBlock_SwappedBounds_AreNormalised()
+    {
+        var content = "How many? [REPLIES:number \"Count\" min=31 max=1]";
+
+        var response = _builder.BuildSuccessResponse(CreateProviderResponse(), "conv-1", content);
+
+        response.SuggestedReplies!.Min.ShouldBe(1m);
+        response.SuggestedReplies.Max.ShouldBe(31m);
+    }
+
+    [Test]
     public void BuildSuccessResponse_WithSingleRepliesBlock_StillWorksAfterDateSupport()
     {
         var content = "Choose a gender. [REPLIES:single \"Male\" | \"Female\" | \"Other\"]";

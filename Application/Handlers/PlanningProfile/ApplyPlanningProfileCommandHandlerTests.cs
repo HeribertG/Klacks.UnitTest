@@ -22,6 +22,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Scheduling;
@@ -41,6 +42,10 @@ public class ApplyPlanningProfileCommandHandlerTests
     private PlanningProfileParameterCatalog _catalog = null!;
     private PlanningProfileDraftValidator _validator = null!;
     private ISchedulingRuleRepository _schedulingRules = null!;
+    private IPeriodCapRuleRepository _periodCaps = null!;
+    private ICounterRuleRepository _counterRules = null!;
+    private IRestDayRotationRuleRepository _restDayRotations = null!;
+    private IHolidayWorkExemptionRuleRepository _holidayExemptions = null!;
     private ISettingsRepository _settings = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IDomainEventDispatcher _eventDispatcher = null!;
@@ -55,8 +60,17 @@ public class ApplyPlanningProfileCommandHandlerTests
         _catalog = new PlanningProfileParameterCatalog();
         _validator = new PlanningProfileDraftValidator(_catalog);
         _schedulingRules = Substitute.For<ISchedulingRuleRepository>();
+        _periodCaps = Substitute.For<IPeriodCapRuleRepository>();
+        _counterRules = Substitute.For<ICounterRuleRepository>();
+        _restDayRotations = Substitute.For<IRestDayRotationRuleRepository>();
+        _holidayExemptions = Substitute.For<IHolidayWorkExemptionRuleRepository>();
         _settings = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+
+        _periodCaps.GetAllActiveAsync().Returns(new List<PeriodCapRule>());
+        _counterRules.GetAllActiveAsync().Returns(new List<CounterRule>());
+        _restDayRotations.GetAllActiveAsync().Returns(new List<RestDayRotationRule>());
+        _holidayExemptions.GetAllActiveAsync().Returns(new List<HolidayWorkExemptionRule>());
 
         _added = new List<SchedulingRule>();
         _schedulingRules.When(r => r.Add(Arg.Any<SchedulingRule>())).Do(ci => _added.Add(ci.Arg<SchedulingRule>()));
@@ -73,6 +87,10 @@ public class ApplyPlanningProfileCommandHandlerTests
             _validator,
             _catalog,
             _schedulingRules,
+            _periodCaps,
+            _counterRules,
+            _restDayRotations,
+            _holidayExemptions,
             _settings,
             _unitOfWork,
             _eventDispatcher,
@@ -109,6 +127,76 @@ public class ApplyPlanningProfileCommandHandlerTests
 
         Assert.ThrowsAsync<InvalidRequestException>(() => _sut.Handle(Cmd(), CancellationToken.None));
         _added.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// Period caps, counter rules, rest-day rotations and holiday-work exemptions bind to their
+    /// scheduling rule by id. The copy gets a fresh id, so without re-pointing them the customer-owned
+    /// rule would carry no compliance rules at all while the originals stay on a template no contract
+    /// references any more.
+    /// </summary>
+    [Test]
+    public async Task Handle_Industry_CopiesBoundSubRules_OntoTheNewRuleId()
+    {
+        var draft = new PlanningProfileDraft();
+        draft.Parameters[PlanningProfileParameterNames.BaseIndustry] = IndustrySlugs.Homecare;
+        _store.Set(UserId, Key, draft);
+
+        var template = new SchedulingRule { Id = Guid.NewGuid(), Name = "Homecare day", Industry = IndustrySlugs.Homecare };
+        var foreignRuleId = Guid.NewGuid();
+        _schedulingRules.GetByIndustryAsync(IndustrySlugs.Homecare).Returns(new List<SchedulingRule> { template });
+
+        _periodCaps.GetAllActiveAsync().Returns(new List<PeriodCapRule>
+        {
+            new() { Id = Guid.NewGuid(), CapHours = 1900m, SchedulingRuleId = template.Id, ImportSourceKey = "region-setup:cap" },
+            new() { Id = Guid.NewGuid(), CapHours = 100m, SchedulingRuleId = foreignRuleId },
+            new() { Id = Guid.NewGuid(), CapHours = 50m, SchedulingRuleId = null }
+        });
+        _counterRules.GetAllActiveAsync().Returns(new List<CounterRule>
+        {
+            new() { Id = Guid.NewGuid(), Threshold = 3, SchedulingRuleId = template.Id }
+        });
+        _restDayRotations.GetAllActiveAsync().Returns(new List<RestDayRotationRule>
+        {
+            new() { Id = Guid.NewGuid(), MinFreeCount = 2, WindowWeeks = 4, SchedulingRuleId = template.Id }
+        });
+        _holidayExemptions.GetAllActiveAsync().Returns(new List<HolidayWorkExemptionRule>
+        {
+            new() { Id = Guid.NewGuid(), Description = "Emergency cover", SchedulingRuleId = template.Id }
+        });
+
+        await _sut.Handle(Cmd(), CancellationToken.None);
+
+        var copyId = _added.Single().Id;
+
+        _periodCaps.Received(1).Add(Arg.Is<PeriodCapRule>(r =>
+            r.SchedulingRuleId == copyId && r.CapHours == 1900m && r.ImportSourceKey == string.Empty));
+        _counterRules.Received(1).Add(Arg.Is<CounterRule>(r => r.SchedulingRuleId == copyId && r.Threshold == 3));
+        _restDayRotations.Received(1).Add(Arg.Is<RestDayRotationRule>(r => r.SchedulingRuleId == copyId && r.MinFreeCount == 2));
+        _holidayExemptions.Received(1).Add(Arg.Is<HolidayWorkExemptionRule>(r =>
+            r.SchedulingRuleId == copyId && r.Description == "Emergency cover"));
+    }
+
+    [Test]
+    public async Task Handle_Scratch_CopiesNoSubRules()
+    {
+        var draft = new PlanningProfileDraft();
+        draft.Parameters[PlanningProfileParameterNames.BaseIndustry] = PlanningProfileBaseChoices.Scratch;
+        draft.Parameters[PlanningProfileParameterNames.MaxWeeklyHours] = "42";
+        _store.Set(UserId, Key, draft);
+
+        _periodCaps.GetAllActiveAsync().Returns(new List<PeriodCapRule>
+        {
+            new() { Id = Guid.NewGuid(), CapHours = 1900m, SchedulingRuleId = Guid.NewGuid() }
+        });
+
+        await _sut.Handle(Cmd(), CancellationToken.None);
+
+        _added.Count.ShouldBe(1);
+        _periodCaps.DidNotReceive().Add(Arg.Any<PeriodCapRule>());
+        _counterRules.DidNotReceive().Add(Arg.Any<CounterRule>());
+        _restDayRotations.DidNotReceive().Add(Arg.Any<RestDayRotationRule>());
+        _holidayExemptions.DidNotReceive().Add(Arg.Any<HolidayWorkExemptionRule>());
     }
 
     [Test]

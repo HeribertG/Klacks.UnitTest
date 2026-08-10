@@ -43,6 +43,7 @@ public class SkillToolsetAssemblerTests
     private ISkillRetrievalExpander _expander = null!;
     private IPendingUserNoteRepository _pendingUserNoteRepository = null!;
     private RecipeEngineService _recipeEngine = null!;
+    private IPendingPlanningProfileDraftStore _planningProfileDraftStore = null!;
     private Agent _agent = null!;
 
     [SetUp]
@@ -78,6 +79,8 @@ public class SkillToolsetAssemblerTests
         _recipeEngine = new RecipeEngineService(
             scopeFactory, Substitute.For<IPendingRecipeStore>(), Substitute.For<ILogger<RecipeEngineService>>());
 
+        _planningProfileDraftStore = PendingStoreTestFactory.CreatePlanningProfileDraftStore();
+
         _agent = new Agent { Id = Guid.NewGuid() };
         _skillCache.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(_agent);
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
@@ -87,11 +90,53 @@ public class SkillToolsetAssemblerTests
                 CreateSkill(RetrievedSkillName),
                 CreateSkill(NeighbourSkillName),
                 CreateSkill(RestrictedSkillName, requiredPermission: RequiredRight),
-                CreateSkill(MultiPermissionSkillName, requiredPermission: MultiPermissionRequirement)
+                CreateSkill(MultiPermissionSkillName, requiredPermission: MultiPermissionRequirement),
+                CreateSkill("set_planning_profile_parameters"),
+                CreateSkill("preview_planning_profile"),
+                CreateSkill("apply_planning_profile"),
+                CreateSkill("cancel_planning_profile_setup")
             });
 
         SetupRetrievalResult(new RetrievalResult([]));
     }
+
+    /// <summary>
+    /// The turns that continue a planning-profile setup are bare answers — an industry name, a number.
+    /// They carry no trigger keyword, the recipe that started the flow has already completed, and
+    /// retrieval alone put mutating scheduling-rule skills ahead of the loop (measured 2026-08-10: the
+    /// live run called create_scheduling_rule and never start_planning_profile_setup). The open draft is
+    /// therefore the signal that keeps the loop reachable.
+    /// </summary>
+    [Test]
+    public async Task OpenPlanningProfileDraft_GuaranteesLoopSkills_OnAKeywordFreeFollowUpTurn()
+    {
+        var userId = Guid.NewGuid();
+        const string conversationId = "conv-planning-profile";
+        _planningProfileDraftStore.Set(userId, conversationId, new PlanningProfileDraft());
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Sicherheitsdienst", conversationId, currentRoute: null,
+            userId.ToString(), language: "de");
+
+        var names = FunctionNames(result);
+        names.ShouldContain("set_planning_profile_parameters");
+        names.ShouldContain("preview_planning_profile");
+        names.ShouldContain("apply_planning_profile");
+        names.ShouldContain("cancel_planning_profile_setup");
+    }
+
+    [Test]
+    public async Task WithoutPlanningProfileDraft_LoopSkillsAreNotGuaranteed()
+    {
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Sicherheitsdienst", "conv-without-draft", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        FunctionNames(result).ShouldNotContain("set_planning_profile_parameters");
+    }
+
+    private static List<string> FunctionNames(SkillToolsetResult result) =>
+        result.Functions.Select(f => f.Name).ToList();
 
     private SkillToolsetAssembler CreateAssembler()
     {
@@ -99,6 +144,7 @@ public class SkillToolsetAssemblerTests
             _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
+            _planningProfileDraftStore,
             Substitute.For<ILogger<SkillToolsetAssembler>>());
     }
 

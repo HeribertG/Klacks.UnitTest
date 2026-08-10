@@ -211,6 +211,7 @@ public class SkillToolsetAssemblerProposalConfirmationTests
         var assembler = new SkillToolsetAssembler(
             _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
             _pendingUserNoteRepository, _recipeEngine, _confirmationStore,
+            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             Substitute.For<ILogger<SkillToolsetAssembler>>());
 
         return assembler.AssembleAsync(

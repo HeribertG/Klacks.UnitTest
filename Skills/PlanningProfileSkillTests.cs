@@ -66,6 +66,58 @@ public class PlanningProfileSkillTests
         json.ShouldContain(PlanningProfileParameterNames.BaseIndustry);
     }
 
+    /// <summary>
+    /// The setup-planning-profile recipe asks the base question itself and injects the answer here, so
+    /// the hand-off must not depend on the model relaying it. Covers the plain string a direct tool call
+    /// sends and the JsonElement the provider layer produces.
+    /// </summary>
+    [TestCase("security")]
+    [TestCase("scratch")]
+    public async Task Start_WithBaseIndustry_RecordsItAndSkipsTheBaseQuestion(string baseIndustry)
+    {
+        var skill = new StartPlanningProfileSetupSkill(_store, _catalog, _validator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            [PlanningProfileParameterNames.BaseIndustry] = baseIndustry
+        });
+
+        result.Success.ShouldBeTrue();
+        StoredDraft()!.Parameters[PlanningProfileParameterNames.BaseIndustry].ShouldBe(baseIndustry);
+        result.Message.ShouldContain(baseIndustry);
+    }
+
+    [Test]
+    public async Task Start_WithBaseIndustryAsJsonElement_RecordsIt()
+    {
+        var skill = new StartPlanningProfileSetupSkill(_store, _catalog, _validator);
+        using var document = System.Text.Json.JsonDocument.Parse("\"logistics\"");
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            [PlanningProfileParameterNames.BaseIndustry] = document.RootElement
+        });
+
+        result.Success.ShouldBeTrue();
+        StoredDraft()!.Parameters[PlanningProfileParameterNames.BaseIndustry].ShouldBe("logistics");
+    }
+
+    [Test]
+    public async Task Start_WithInvalidBaseIndustry_StillCreatesTheDraft_AndReportsTheRejection()
+    {
+        var skill = new StartPlanningProfileSetupSkill(_store, _catalog, _validator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            [PlanningProfileParameterNames.BaseIndustry] = "gastronomy"
+        });
+
+        result.Success.ShouldBeTrue();
+        StoredDraft().ShouldNotBeNull();
+        StoredDraft()!.Parameters.ShouldNotContainKey(PlanningProfileParameterNames.BaseIndustry);
+        result.Message.ShouldContain("gastronomy");
+    }
+
     [Test]
     public async Task Set_StoresValidValue_RejectsInvalid()
     {

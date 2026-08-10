@@ -105,6 +105,7 @@ public class ProcessLLMMessageCommandHandlerTests
             _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
+            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             Substitute.For<ILogger<SkillToolsetAssembler>>());
     }
 
