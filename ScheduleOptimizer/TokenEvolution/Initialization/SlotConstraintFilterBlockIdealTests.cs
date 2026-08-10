@@ -8,11 +8,14 @@ using Shouldly;
 namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution.Initialization;
 
 /// <summary>
-/// Pins what the coverage escalation of the repair operator may and may not buy. Relaxing the rest
-/// days is the price of coverage; growing a package past the MaxWorkDays ideal is not, because the
-/// finished plan is measured on package length, no later operator shortens a package again and the
-/// only fitness term that sees block length sits in stage 4, far below the rank at which the
-/// lexicographic comparison could reject it.
+/// Pins what each rung of the coverage escalation buys. Relaxing the rest days is the ordinary price
+/// of coverage and leaves the MaxWorkDays ideal standing — the finished plan is measured on package
+/// length, no later operator shortens a package again and the only fitness term that sees block
+/// length sits in stage 4, far below the rank at which the lexicographic comparison could reject it.
+/// The widest rung drops the ideal as well, because a slot that can only be staffed on the sixth
+/// consecutive day is a coverage question, and coverage is the highest rule of the specification
+/// while the 5/2 ideal is not. What no rung buys is a hard rule: the MaxConsecutiveDays cap vetoes on
+/// all three of them.
 /// </summary>
 [TestFixture]
 public sealed class SlotConstraintFilterBlockIdealTests
@@ -91,7 +94,7 @@ public sealed class SlotConstraintFilterBlockIdealTests
         var sixthDay = new DateOnly(2026, 6, 6);
 
         SlotConstraintFilter.IsValidAssignment(
-            agent, sixthDay, 0, Guid.Empty, SlotHours, context, assigned, relaxRestDays: true)
+            agent, sixthDay, 0, Guid.Empty, SlotHours, context, assigned, relaxation: SlotRelaxation.RestDaysOnly)
             .ShouldBeFalse();
     }
 
@@ -121,8 +124,36 @@ public sealed class SlotConstraintFilterBlockIdealTests
             .ShouldBeFalse();
 
         SlotConstraintFilter.IsValidAssignment(
-            agent, afterOneFreeDay, 0, Guid.Empty, SlotHours, context, assigned, relaxRestDays: true)
+            agent, afterOneFreeDay, 0, Guid.Empty, SlotHours, context, assigned, relaxation: SlotRelaxation.RestDaysOnly)
             .ShouldBeTrue();
+    }
+
+    [Test]
+    public void WidestRung_AcceptsTheDayOnlyTheBlockIdealVetoed()
+    {
+        var agent = MakeAgent();
+        var context = MakeContext();
+        var assigned = Run(new DateOnly(2026, 6, 1), SoftCapDays);
+        var sixthDay = new DateOnly(2026, 6, 6);
+
+        SlotConstraintFilter.IsValidAssignment(
+            agent, sixthDay, 0, Guid.Empty, SlotHours, context, assigned,
+            relaxation: SlotRelaxation.All)
+            .ShouldBeTrue();
+    }
+
+    [Test]
+    public void WidestRung_StillRejectsTheDayTheHardConsecutiveCapVetoes()
+    {
+        var agent = MakeAgent();
+        var context = MakeContext();
+        var assigned = Run(new DateOnly(2026, 6, 1), HardCapDays);
+        var seventhDay = new DateOnly(2026, 6, 7);
+
+        SlotConstraintFilter.IsValidAssignment(
+            agent, seventhDay, 0, Guid.Empty, SlotHours, context, assigned,
+            relaxation: SlotRelaxation.All)
+            .ShouldBeFalse();
     }
 
     [Test]
