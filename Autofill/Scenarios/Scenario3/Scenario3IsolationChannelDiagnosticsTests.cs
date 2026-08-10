@@ -105,8 +105,8 @@ public class Scenario3IsolationChannelDiagnosticsTests
             new TopDownHandover().Apply(Clone(seed), _l5.Context));
         ReportPass(
             "SurplusHoursReturn",
-            new SurplusHoursReturn().Apply(Clone(seed), _l1.Context),
-            new SurplusHoursReturn().Apply(Clone(seed), _l5.Context));
+            new SurplusHoursReturn().Apply(Clone(seed), _l1.Context, evaluatorL1),
+            new SurplusHoursReturn().Apply(Clone(seed), _l5.Context, evaluatorL5));
         ReportPass(
             "ShiftKindBalancer",
             new ShiftKindBalancer().Apply(Clone(seed), _l1.Context, evaluatorL1),
