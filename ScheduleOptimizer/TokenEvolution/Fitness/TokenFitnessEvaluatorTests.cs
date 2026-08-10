@@ -267,8 +267,16 @@ public class TokenFitnessEvaluatorTests
         repeated.FitnessStage3.ShouldBe(rotated.FitnessStage3);
     }
 
+    /// <summary>
+    /// Successor of Evaluate_WithinBlockBackwardTransition_IsPenalized, which pinned the older
+    /// reading that only a backward step inside a package costs. The rule the block-ordering term
+    /// advocates is "the shift kind stays constant inside one package", so a change of kind costs in
+    /// BOTH directions and an ascending package is no better than a descending one; only the constant
+    /// package is flawless. The direction neutrality itself is pinned in
+    /// <see cref="BlockOrderingDeviationTests"/>.
+    /// </summary>
     [Test]
-    public void Evaluate_WithinBlockBackwardTransition_IsPenalized()
+    public void Evaluate_WithinBlockTypeChange_IsPenalizedInBothDirections()
     {
         var start = new DateOnly(2026, 4, 20);
         var context = new CoreWizardContext
@@ -278,6 +286,11 @@ public class TokenFitnessEvaluatorTests
             Agents = [MakeAgent("A", fullTime: 16)],
         };
 
+        var constant = new CoreScenario
+        {
+            Id = "constant",
+            Tokens = [MakeToken("A", start, 0), MakeToken("A", start.AddDays(1), 0)],
+        };
         var forward = new CoreScenario
         {
             Id = "forward",
@@ -290,9 +303,12 @@ public class TokenFitnessEvaluatorTests
         };
 
         var sut = TokenFitnessEvaluator.Create(context);
+        sut.Evaluate(constant, context);
         sut.Evaluate(forward, context);
         sut.Evaluate(backward, context);
 
-        backward.FitnessStage3.ShouldBeLessThan(forward.FitnessStage3);
+        forward.FitnessStage3.ShouldBeLessThan(constant.FitnessStage3);
+        backward.FitnessStage3.ShouldBeLessThan(constant.FitnessStage3);
+        backward.FitnessStage3.ShouldBe(forward.FitnessStage3, 1e-9);
     }
 }
