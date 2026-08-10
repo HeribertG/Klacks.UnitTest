@@ -17,6 +17,7 @@ public class ParetoFairnessGateTests
     private const double BlacklistScore = 1.0;
     private const double KindFairnessScore = 0.6;
     private const int NoOverlongPackages = 0;
+    private const int MixedPackages = 2;
     private const double Epsilon = 1e-9;
 
     private const string LegalityCase = "Legality";
@@ -26,6 +27,7 @@ public class ParetoFairnessGateTests
     private const string BlockOrderCase = "BlockOrder";
     private const string BlacklistCase = "Blacklist";
     private const string OverlongCase = "OverlongPackages";
+    private const string MixedCase = "MixedPackages";
 
     private static ParetoGateSnapshot Current() => new(
         Legality: CleanLegality,
@@ -35,7 +37,8 @@ public class ParetoFairnessGateTests
         BlockOrder: BlockOrderScore,
         Blacklist: BlacklistScore,
         ShiftKindFairness: KindFairnessScore,
-        OverlongPackages: NoOverlongPackages);
+        OverlongPackages: NoOverlongPackages,
+        MixedPackages: MixedPackages);
 
     private static ParetoGateSnapshot FairerThanCurrent() => Current() with
     {
@@ -61,6 +64,7 @@ public class ParetoFairnessGateTests
     [TestCase(BlockOrderCase)]
     [TestCase(BlacklistCase)]
     [TestCase(OverlongCase)]
+    [TestCase(MixedCase)]
     public void Accepts_AnyProtectedComponentGetsWorse_RefusesTheSwap(string damaged)
     {
         var fairer = FairerThanCurrent();
@@ -73,6 +77,7 @@ public class ParetoFairnessGateTests
             BlockOrderCase => fairer with { BlockOrder = BlockOrderScore - Epsilon },
             BlacklistCase => fairer with { Blacklist = BlacklistScore - Epsilon },
             OverlongCase => fairer with { OverlongPackages = NoOverlongPackages + 1 },
+            MixedCase => fairer with { MixedPackages = MixedPackages + 1 },
             _ => throw new ArgumentOutOfRangeException(nameof(damaged), damaged, null),
         };
 
@@ -94,7 +99,8 @@ public class ParetoFairnessGateTests
             BlockOrder: BlockOrderScore + Epsilon,
             Blacklist: BlacklistScore + Epsilon,
             ShiftKindFairness: KindFairnessScore + Epsilon,
-            OverlongPackages: NoOverlongPackages);
+            OverlongPackages: NoOverlongPackages,
+            MixedPackages: MixedPackages - 1);
 
         ParetoFairnessGate.Accepts(Current(), candidate).ShouldBeTrue();
     }

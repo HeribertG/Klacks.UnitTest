@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Klacks.ScheduleOptimizer.Models;
+using Klacks.ScheduleOptimizer.TokenEvolution.Diagnostics;
 using Klacks.ScheduleOptimizer.TokenEvolution.Fitness;
 using Klacks.ScheduleOptimizer.TokenEvolution.Operators;
 using NUnit.Framework;
@@ -246,6 +247,23 @@ public class ShiftKindBalancerTests
         var balanced = new ShiftKindBalancer().Apply(scenario, context, evaluator);
 
         balanced.ShouldBeSameAs(scenario);
+    }
+
+    /// <summary>
+    /// The rule-7 clause of the Pareto gate must not narrow what a FULL swap may do. A full swap replaces
+    /// a whole kind block by a block of the same days, so a pure package stays pure and a mixed one keeps
+    /// or loses its break — the mixed count can never rise and the clause can never bind. This measures
+    /// that on the one swap the gate accepts here, so the claim is empirical and not only an argument.
+    /// </summary>
+    [Test]
+    public void Apply_TheAcceptedFullSwap_LeavesTheMixedPackageCountUntouched()
+    {
+        var (context, scenario, evaluator) = BuildPlan(banEarlyAgentFromTheLastDay: true);
+
+        var balanced = new ShiftKindBalancer().Apply(scenario, context, evaluator);
+
+        balanced.ShouldNotBeSameAs(scenario);
+        MixedKindPackageTrace.Count(balanced).ShouldBe(MixedKindPackageTrace.Count(scenario));
     }
 
     [Test]
