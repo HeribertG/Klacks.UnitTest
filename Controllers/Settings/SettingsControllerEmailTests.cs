@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
+using Klacks.Api.Domain.Constants;
+using ApiSettings = Klacks.Api.Application.Constants.Settings;
 
 namespace Klacks.UnitTest.Controllers.Settings
 {
@@ -20,6 +22,7 @@ namespace Klacks.UnitTest.Controllers.Settings
         private IEmailTestService _mockEmailTestService = null!;
         private ILogger<GeneralSettingsController> _mockLogger = null!;
         private IMediator _mockMediator = null!;
+        private ISettingsSecretResolver _mockSecretResolver = null!;
 
         [SetUp]
         public void SetUp()
@@ -27,8 +30,11 @@ namespace Klacks.UnitTest.Controllers.Settings
             _mockEmailTestService = Substitute.For<IEmailTestService>();
             _mockLogger = Substitute.For<ILogger<GeneralSettingsController>>();
             _mockMediator = Substitute.For<IMediator>();
+            _mockSecretResolver = Substitute.For<ISettingsSecretResolver>();
+            _mockSecretResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(callInfo => Task.FromResult(callInfo.ArgAt<string?>(1) ?? string.Empty));
 
-            _controller = new GeneralSettingsController(_mockMediator, _mockLogger, _mockEmailTestService)
+            _controller = new GeneralSettingsController(_mockMediator, _mockLogger, _mockEmailTestService, _mockSecretResolver)
             {
                 ControllerContext = new ControllerContext
                 {
@@ -68,6 +74,39 @@ namespace Klacks.UnitTest.Controllers.Settings
             actionResult.ShouldBeOfType<OkObjectResult>();
             var okResult = actionResult as OkObjectResult;
             okResult!.Value.ShouldBeEquivalentTo(expectedResult);
+        }
+
+        [Test]
+        public async Task TestEmailConfiguration_WithMaskedPassword_ShouldSendTheStoredSecret()
+        {
+            // Arrange
+            const string storedSecret = "DNQK3BPDHELWC5C5YBQA";
+            _mockSecretResolver
+                .ResolveAsync(ApiSettings.APP_OUTGOING_SERVER_PASSWORD, SettingsMasking.MaskedValue)
+                .Returns(Task.FromResult(storedSecret));
+
+            EmailTestRequest? forwarded = null;
+            _mockEmailTestService
+                .TestConnectionAsync(Arg.Do<EmailTestRequest>(r => forwarded = r))
+                .Returns(Task.FromResult(new EmailTestResult { Success = true }));
+
+            var request = new EmailTestRequest
+            {
+                Server = "mail.gmx.net",
+                Port = "587",
+                Username = "test@gmx.ch",
+                Password = SettingsMasking.MaskedValue,
+                EnableSSL = true,
+                AuthenticationType = "LOGIN",
+                Timeout = 45000
+            };
+
+            // Act
+            await _controller.TestEmailConfiguration(request);
+
+            // Assert
+            forwarded.ShouldNotBeNull();
+            forwarded!.Password.ShouldBe(storedSecret);
         }
 
         [Test]

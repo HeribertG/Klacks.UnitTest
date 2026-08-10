@@ -24,8 +24,9 @@ namespace Klacks.UnitTest.Controllers.Settings
             _mockMediator = Substitute.For<IMediator>();
             var mockEmailTestService = Substitute.For<IEmailTestService>();
             var mockLogger = Substitute.For<ILogger<GeneralSettingsController>>();
+            var mockSecretResolver = Substitute.For<ISettingsSecretResolver>();
 
-            _controller = new GeneralSettingsController(_mockMediator, mockLogger, mockEmailTestService)
+            _controller = new GeneralSettingsController(_mockMediator, mockLogger, mockEmailTestService, mockSecretResolver)
             {
                 ControllerContext = new ControllerContext
                 {
