@@ -9,6 +9,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Staffs;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -30,11 +31,12 @@ public class TargetHoursDriftDetectorTests
             NullLogger<TargetHoursDriftDetector>.Instance);
     }
 
-    private static Client MakeClient(string firstName = "Anna") => new()
+    private static Client MakeClient(string firstName = "Anna", EntityTypeEnum type = EntityTypeEnum.Employee) => new()
     {
         Id = Guid.NewGuid(),
         FirstName = firstName,
-        Name = "Müller"
+        Name = "Müller",
+        Type = type
     };
 
     [Test]
@@ -85,6 +87,66 @@ public class TargetHoursDriftDetectorTests
         var drift = events.Single() as TargetHoursDriftTriggerEvent;
         Assert.That(drift!.DriftHours, Is.EqualTo(-30m));
         Assert.That(drift.Severity, Is.EqualTo(AgentTriggerSeverity.High));
+    }
+
+    [Test]
+    public async Task DetectAsync_CustomerWithDrift_Skips()
+    {
+        var customer = MakeClient("Clara", EntityTypeEnum.Customer);
+        _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { customer });
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [customer.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_MixedRoster_EmitsForStaffOnly()
+    {
+        var customer = MakeClient("Clara", EntityTypeEnum.Customer);
+        var employee = MakeClient("Anna");
+        var externEmp = MakeClient("Matteo", EntityTypeEnum.ExternEmp);
+        _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { customer, employee, externEmp });
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [customer.Id] = new() { Hours = 0, GuaranteedHours = 170 },
+                [employee.Id] = new() { Hours = 0, GuaranteedHours = 170 },
+                [externEmp.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(2));
+        var clientIds = events.Cast<TargetHoursDriftTriggerEvent>().Select(e => e.ClientId).ToList();
+        Assert.That(clientIds, Is.EquivalentTo(new[] { employee.Id, externEmp.Id }));
+    }
+
+    [Test]
+    public async Task DetectAsync_StaffWithoutContract_StillEmits()
+    {
+        var employee = MakeClient();
+        _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { employee });
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [employee.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
     }
 
     [Test]
