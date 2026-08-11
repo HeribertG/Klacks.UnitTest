@@ -249,6 +249,7 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A17_EveryRotationDeviationIsExplained()
     {
         var rotation = Metrics.Rotation;
@@ -334,6 +335,7 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A19_PackageShorteningsStayWithinTheProvableBudget()
     {
         var packages = Metrics.Packages;
@@ -392,6 +394,7 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A25_NightSharesStayWithin20PercentOfTheCohortMean()
     {
         var shares = Metrics.Fairness.NightSharePerEligibleDay;
@@ -710,6 +713,15 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
             TestContext.Out.WriteLine("artifact: " + path);
         }
     }
+
+    /// <summary>
+    /// Scenario-3 declaration of assertion A12; green here (the restricted pool serves the carry-in
+    /// correctly), so it deliberately carries NO SpecFirstRed category and stays inside the CI deploy
+    /// gate. The core lives in <see cref="Scenario2AssertionsBase"/>.
+    /// </summary>
+    [Test]
+    public void A12_TwoFreeDaysFollowTheCompletedCarryInPackage()
+        => AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage();
 
     private void EnsureFixtureIsValid()
     {

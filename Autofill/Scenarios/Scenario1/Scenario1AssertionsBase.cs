@@ -162,6 +162,7 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A4_ShiftKindStaysConstantInsideAPackage()
     {
         var mixed = DescribeMixedPackages();
@@ -173,6 +174,7 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A5_PackageLengthsFollowTheFiveTwoIdeal()
     {
         var packages = Metrics.Packages;
@@ -194,6 +196,7 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A6_GuaranteedHoursAreServedTopDown()
     {
         var hours = Metrics.Hours;
@@ -227,6 +230,7 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A7_RotationFollowsEarlyLateNight()
     {
         var rotation = Metrics.Rotation;
@@ -243,6 +247,7 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A8_ShiftKindsAreSpreadEvenlyOverTheEmployees()
     {
         var counts = Metrics.Fairness.ShiftTypeCountPerEmployee

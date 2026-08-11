@@ -109,6 +109,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A4_ShiftKindStaysConstantInsideAPackage()
     {
         var packages = Metrics.Packages;
@@ -122,6 +123,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A5_PackageLengthsFollowTheFiveTwoIdeal()
     {
         var packages = Metrics.Packages;
@@ -189,6 +191,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A6_GuaranteedHoursAreServedTopDown()
     {
         var hours = Metrics.Hours;
@@ -225,6 +228,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A7_RotationRunsForward()
     {
         var rotation = Metrics.Rotation;
@@ -245,6 +249,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A8_ShiftKindsAreSpreadEvenlyOverTheTopRanks()
     {
         var counts = Metrics.Fairness.ShiftTypeCountPerEmployee
@@ -310,8 +315,13 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
             + "failure there places the defect in the seeding, not in the evolution.");
     }
 
-    [Test]
-    public void A12_TwoFreeDaysFollowTheCompletedCarryInPackage()
+    /// <summary>
+    /// Core of assertion A12, shared by both heirs. Not a [Test] here on purpose: A12 is spec-first
+    /// red in scenario 2 but green in scenario 3, so each heir declares its own [Test] wrapper and
+    /// only the scenario-2 wrapper carries the SpecFirstRed category. Moving the [Test] back to this
+    /// base class would drag the green scenario-3 run out of the CI deploy gate as well.
+    /// </summary>
+    protected void AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage()
     {
         var problems = new List<string>();
 
@@ -352,6 +362,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A13_ClosedPackagesRotateAcrossTheMonthBoundary()
     {
         var closed = Definition.CarryIns

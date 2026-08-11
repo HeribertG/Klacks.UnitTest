@@ -135,6 +135,16 @@ public class Scenario2Tests : Scenario2AssertionsBase
         }
     }
 
+    /// <summary>
+    /// Scenario-2 declaration of assertion A12; the core lives in <see cref="Scenario2AssertionsBase"/>
+    /// and the [Test] lives on the heirs because the two scenarios verdict differently. Spec-first red
+    /// here, so it carries the SpecFirstRed category and stays out of the CI deploy gate.
+    /// </summary>
+    [Test]
+    [Category(AutofillTestCategories.SpecFirstRed)]
+    public void A12_TwoFreeDaysFollowTheCompletedCarryInPackage()
+        => AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage();
+
     private void EnsureFixtureIsValid()
     {
         if (_fixtureProblems.Count > 0)
