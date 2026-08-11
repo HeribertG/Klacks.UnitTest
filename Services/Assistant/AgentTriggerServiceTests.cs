@@ -697,12 +697,12 @@ public class OperationalTriggerEventDedupKeyTests
         Assert.That(drift.ActionParams["period"], Is.EqualTo("2026-06"));
 
         var periodClose = new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3);
-        Assert.That(periodClose.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(periodClose.ActionRoute, Is.EqualTo("/workplace/period-closing"));
         Assert.That(periodClose.ActionParams!["groupId"], Is.EqualTo(groupId.ToString()));
         Assert.That(periodClose.ActionParams["date"], Is.EqualTo("2026-06-30"));
 
         var periodOverdue = new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 10);
-        Assert.That(periodOverdue.ActionRoute, Is.EqualTo("/workplace/schedule"));
+        Assert.That(periodOverdue.ActionRoute, Is.EqualTo("/workplace/period-closing"));
         Assert.That(periodOverdue.ActionParams!["groupId"], Is.EqualTo(groupId.ToString()));
 
         var scenario = new ScenarioPendingTriggerEvent(scenarioId, 80, groupId, "GE");
