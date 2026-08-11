@@ -52,6 +52,13 @@ public class PeriodCloseDueDetectorTests
             NullLogger<PeriodCloseDueDetector>.Instance, tp);
     }
 
+    private void StubGroups(List<Group> groups)
+    {
+        _groupRepository.List().Returns(groups);
+        _groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(groups.Select(group => group.Id).ToList());
+    }
+
     private static Group MakeGroup(PaymentInterval interval, string name = "Bern") => new()
     {
         Id = Guid.NewGuid(),
@@ -63,7 +70,7 @@ public class PeriodCloseDueDetectorTests
     [Test]
     public async Task DetectAsync_NoGroups_ReturnsEmpty()
     {
-        _groupRepository.List().Returns(new List<Group>());
+        StubGroups(new List<Group>());
 
         var events = await _sut.DetectAsync();
 
@@ -73,7 +80,7 @@ public class PeriodCloseDueDetectorTests
     [Test]
     public async Task DetectAsync_IndividualInterval_AlwaysSkipped()
     {
-        _groupRepository.List().Returns(new List<Group> { MakeGroup(PaymentInterval.Individual) });
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Individual) });
 
         var events = await _sut.DetectAsync();
 
@@ -85,7 +92,7 @@ public class PeriodCloseDueDetectorTests
     public async Task DetectAsync_MonthlyGroup_NotInWindow_Skips()
     {
         // SetUp date is 2026-01-10, which is 21 days before month-end — outside the 3-day warn window
-        _groupRepository.List().Returns(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
 
         var events = await _sut.DetectAsync();
 
@@ -96,7 +103,7 @@ public class PeriodCloseDueDetectorTests
     public async Task DetectAsync_WeeklyGroup_DefaultMondayWeekStart_PeriodEndsOnSunday()
     {
         var group = MakeGroup(PaymentInterval.Weekly);
-        _groupRepository.List().Returns(new List<Group> { group });
+        StubGroups(new List<Group> { group });
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new List<SealedDay>());
         _sut = CreateSut(new DateOnly(2026, 1, 10));
@@ -113,7 +120,7 @@ public class PeriodCloseDueDetectorTests
     public async Task DetectAsync_WeeklyGroup_ConfiguredSundayWeekStart_PeriodEndsOnSaturday()
     {
         var group = MakeGroup(PaymentInterval.Weekly);
-        _groupRepository.List().Returns(new List<Group> { group });
+        StubGroups(new List<Group> { group });
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new List<SealedDay>());
         StubWeekStart(DayOfWeek.Sunday);
@@ -131,10 +138,24 @@ public class PeriodCloseDueDetectorTests
     public async Task DetectAsync_MonthlyGroup_AlreadySealedAtEnd_Skips()
     {
         var group = MakeGroup(PaymentInterval.Monthly);
-        _groupRepository.List().Returns(new List<Group> { group });
+        StubGroups(new List<Group> { group });
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), group.Id, Arg.Any<CancellationToken>())
             .Returns(new List<SealedDay> { new() { Id = Guid.NewGuid() } });
         _sut = CreateSut(new DateOnly(2026, 1, 28));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_GroupWithoutClientsOrShifts_Skips()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        _groupRepository.List().Returns(new List<Group> { group });
+        _groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+        _sut = CreateSut(new DateOnly(2026, 1, 30));
 
         var events = await _sut.DetectAsync();
 

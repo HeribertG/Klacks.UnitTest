@@ -56,6 +56,13 @@ public class PeriodOverdueDetectorTests
             NullLogger<PeriodOverdueDetector>.Instance, tp);
     }
 
+    private void StubGroups(List<Group> groups)
+    {
+        _groupRepository.List().Returns(groups);
+        _groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(groups.Select(group => group.Id).ToList());
+    }
+
     private static Group MakeGroup(PaymentInterval interval, DateTime? validFrom = null, string name = "Bern") => new()
     {
         Id = Guid.NewGuid(),
@@ -67,7 +74,7 @@ public class PeriodOverdueDetectorTests
     [Test]
     public async Task DetectAsync_NoGroups_ReturnsEmpty()
     {
-        _groupRepository.List().Returns(new List<Group>());
+        StubGroups(new List<Group>());
 
         var events = await _sut.DetectAsync();
 
@@ -77,7 +84,7 @@ public class PeriodOverdueDetectorTests
     [Test]
     public async Task DetectAsync_IndividualInterval_AlwaysSkipped()
     {
-        _groupRepository.List().Returns(new List<Group> { MakeGroup(PaymentInterval.Individual) });
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Individual) });
 
         var events = await _sut.DetectAsync();
 
@@ -88,7 +95,7 @@ public class PeriodOverdueDetectorTests
     [Test]
     public async Task DetectAsync_MonthlyGroup_BelowThreshold_Skips()
     {
-        _groupRepository.List().Returns(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
         _sut = CreateSut(new DateOnly(2026, 1, 5));
 
         var events = await _sut.DetectAsync();
@@ -100,7 +107,7 @@ public class PeriodOverdueDetectorTests
     public async Task DetectAsync_MonthlyGroup_TenDaysOverdue_EmitsMediumSeverity()
     {
         var group = MakeGroup(PaymentInterval.Monthly);
-        _groupRepository.List().Returns(new List<Group> { group });
+        StubGroups(new List<Group> { group });
         _sut = CreateSut(new DateOnly(2026, 1, 10));
 
         var events = await _sut.DetectAsync();
@@ -116,7 +123,7 @@ public class PeriodOverdueDetectorTests
     [Test]
     public async Task DetectAsync_MonthlyGroup_TwentyFiveDaysOverdue_EmitsHighSeverity()
     {
-        _groupRepository.List().Returns(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Monthly) });
         _sut = CreateSut(new DateOnly(2026, 1, 25));
 
         var events = await _sut.DetectAsync();
@@ -129,7 +136,7 @@ public class PeriodOverdueDetectorTests
     public async Task DetectAsync_MonthlyGroup_PeriodEndSealed_Skips()
     {
         var group = MakeGroup(PaymentInterval.Monthly);
-        _groupRepository.List().Returns(new List<Group> { group });
+        StubGroups(new List<Group> { group });
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), group.Id, Arg.Any<CancellationToken>())
             .Returns(new List<SealedDay> { new() { Id = Guid.NewGuid() } });
         _sut = CreateSut(new DateOnly(2026, 1, 10));
@@ -142,7 +149,7 @@ public class PeriodOverdueDetectorTests
     [Test]
     public async Task DetectAsync_WeeklyGroup_LastDayOfCurrentWeek_PreviousWeekEndIsSevenDaysOverdue()
     {
-        _groupRepository.List().Returns(new List<Group> { MakeGroup(PaymentInterval.Weekly) });
+        StubGroups(new List<Group> { MakeGroup(PaymentInterval.Weekly) });
         _sut = CreateSut(new DateOnly(2026, 1, 11));
 
         var events = await _sut.DetectAsync();
@@ -158,7 +165,7 @@ public class PeriodOverdueDetectorTests
     public async Task DetectAsync_BiweeklyGroup_NineDaysOverdue_EmitsEventAnchoredOnGroupValidFrom()
     {
         var group = MakeGroup(PaymentInterval.Biweekly, new DateTime(2025, 12, 1, 0, 0, 0, DateTimeKind.Utc));
-        _groupRepository.List().Returns(new List<Group> { group });
+        StubGroups(new List<Group> { group });
         _sut = CreateSut(new DateOnly(2026, 1, 20));
 
         var events = await _sut.DetectAsync();
@@ -173,11 +180,74 @@ public class PeriodOverdueDetectorTests
     public async Task DetectAsync_GroupCreatedAfterPeriodEnd_Skips()
     {
         var group = MakeGroup(PaymentInterval.Monthly, new DateTime(2026, 1, 5, 0, 0, 0, DateTimeKind.Utc));
-        _groupRepository.List().Returns(new List<Group> { group });
+        StubGroups(new List<Group> { group });
         _sut = CreateSut(new DateOnly(2026, 1, 10));
 
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_GroupWithoutClientsOrShifts_Skips()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        _groupRepository.List().Returns(new List<Group> { group });
+        _groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_EmptyParentOfStaffedChild_StillEmits()
+    {
+        var parent = MakeGroup(PaymentInterval.Monthly, name: "Deutschschweiz Mitte");
+        parent.Root = parent.Id;
+        parent.Lft = 1;
+        parent.Rgt = 4;
+        var child = MakeGroup(PaymentInterval.Monthly, name: "Bern");
+        child.Root = parent.Id;
+        child.Lft = 2;
+        child.Rgt = 3;
+        _groupRepository.List().Returns(new List<Group> { parent, child });
+        _groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { child.Id });
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+
+        var events = await _sut.DetectAsync();
+
+        var groupIds = events.Cast<PeriodOverdueTriggerEvent>().Select(e => e.GroupId).ToList();
+        Assert.That(groupIds, Is.EquivalentTo(new[] { parent.Id, child.Id }));
+    }
+
+    [Test]
+    public async Task DetectAsync_EmptyGroupInAnotherTree_DoesNotInheritStaffing()
+    {
+        var staffedRoot = MakeGroup(PaymentInterval.Monthly, name: "Deutschschweiz Mitte");
+        staffedRoot.Root = staffedRoot.Id;
+        staffedRoot.Lft = 1;
+        staffedRoot.Rgt = 4;
+        var staffedChild = MakeGroup(PaymentInterval.Monthly, name: "Bern");
+        staffedChild.Root = staffedRoot.Id;
+        staffedChild.Lft = 2;
+        staffedChild.Rgt = 3;
+        // Second tree: same Lft/Rgt window, but a different Root — must not count as ancestor.
+        var otherRoot = MakeGroup(PaymentInterval.Monthly, name: "Westschweiz");
+        otherRoot.Root = otherRoot.Id;
+        otherRoot.Lft = 1;
+        otherRoot.Rgt = 4;
+        _groupRepository.List().Returns(new List<Group> { staffedRoot, staffedChild, otherRoot });
+        _groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { staffedChild.Id });
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+
+        var events = await _sut.DetectAsync();
+
+        var groupIds = events.Cast<PeriodOverdueTriggerEvent>().Select(e => e.GroupId).ToList();
+        Assert.That(groupIds, Does.Not.Contain(otherRoot.Id));
     }
 }

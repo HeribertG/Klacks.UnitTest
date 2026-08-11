@@ -65,6 +65,15 @@ namespace Klacks.UnitTest.Mocks
             return true;
         }
 
+        public async Task<IReadOnlyList<Guid>> GetGroupIdsWithMembersAsync(CancellationToken cancellationToken = default)
+        {
+            return await context.GroupItem
+                .Where(gi => gi.ClientId != null || gi.ShiftId != null)
+                .Select(gi => gi.GroupId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+        }
+
         public async Task<IReadOnlyList<Guid>> GetUnattemptedGeocodingCandidateIdsAsync(CancellationToken cancellationToken = default)
         {
             return await context.Group
