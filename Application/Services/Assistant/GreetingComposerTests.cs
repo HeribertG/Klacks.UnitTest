@@ -79,6 +79,52 @@ public class GreetingComposerTests
     }
 
     [Test]
+    public async Task ComposeAsync_AnswerOnlyFromReasoningChannel_ReturnsNull()
+    {
+        GivenWeather();
+        _provider.ProcessAsync(Arg.Any<LLMProviderRequest>())
+            .Returns(new LLMProviderResponse
+            {
+                Success = true,
+                Content = "We need to write a short, warm greeting in German...",
+                ContentFromReasoning = true
+            });
+
+        var result = await _sut.ComposeAsync(new GreetingContext("u3", "de", "admin", "afternoon", 10.0, 20.0, "CH"));
+
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ComposeAsync_MultiLineChainOfThought_ReturnsNull()
+    {
+        GivenWeather();
+        var leak = string.Join("\n", Enumerable.Repeat("So: \"Guten Nachmittag, admin!\" But keep it short.", 12));
+        _provider.ProcessAsync(Arg.Any<LLMProviderRequest>())
+            .Returns(new LLMProviderResponse { Success = true, Content = leak });
+
+        var result = await _sut.ComposeAsync(new GreetingContext("u4", "de", "admin", "afternoon", 10.0, 20.0, "CH"));
+
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ComposeAsync_TwoLineGreeting_IsAccepted()
+    {
+        GivenWeather();
+        _provider.ProcessAsync(Arg.Any<LLMProviderRequest>())
+            .Returns(new LLMProviderResponse { Success = true, Content = "Guten Nachmittag, admin!\nSchön, dass du da bist." });
+
+        var result = await _sut.ComposeAsync(new GreetingContext("u5", "de", "admin", "afternoon", 10.0, 20.0, "CH"));
+
+        result.ShouldBe("Guten Nachmittag, admin!\nSchön, dass du da bist.");
+    }
+
+    private void GivenWeather()
+        => _weatherClient.GetCurrentWeatherAsync(10.0, 20.0, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new WeatherSnapshot { Condition = "Clear sky", TemperatureCelsius = 31 });
+
+    [Test]
     public async Task ComposeAsync_NoAmbientFacts_ReturnsNullWithoutLlmCall()
     {
         _weatherClient.GetCurrentWeatherAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
