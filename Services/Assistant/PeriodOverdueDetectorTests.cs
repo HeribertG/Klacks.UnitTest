@@ -174,6 +174,7 @@ public class PeriodOverdueDetectorTests
         var evt = (PeriodOverdueTriggerEvent)events[0];
         Assert.That(evt.PeriodEndDate, Is.EqualTo(new DateOnly(2026, 1, 11)));
         Assert.That(evt.DaysOverdue, Is.EqualTo(9));
+        Assert.That(evt.ActionRoute, Is.EqualTo(ProactiveActionRoutes.PeriodClosing));
     }
 
     [Test]

@@ -7,6 +7,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Associations;
@@ -114,6 +115,7 @@ public class PeriodCloseDueDetectorTests
         var evt = (PeriodCloseDueTriggerEvent)events[0];
         Assert.That(evt.PeriodEndDate, Is.EqualTo(new DateOnly(2026, 1, 11)));
         Assert.That(evt.DaysUntilDue, Is.EqualTo(1));
+        Assert.That(evt.ActionRoute, Is.EqualTo(ProactiveActionRoutes.PeriodClosing));
     }
 
     [Test]
