@@ -1,8 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for TargetHoursDriftDetector — verifies threshold gating and severity mapping
-/// from drift magnitude (≥12h medium, ≥24h high).
+/// Unit tests for TargetHoursDriftDetector — verifies threshold gating, severity mapping
+/// from drift magnitude (≥12h medium, ≥24h high), and that the scanned period is the last
+/// completed calendar month rather than the running one.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
@@ -22,14 +23,22 @@ public class TargetHoursDriftDetectorTests
     private IWorkRepository _workRepository = null!;
     private TargetHoursDriftDetector _sut = null!;
 
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
     [SetUp]
     public void Setup()
     {
         _clientRepository = Substitute.For<IClientRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
-        _sut = new TargetHoursDriftDetector(_clientRepository, _workRepository,
-            NullLogger<TargetHoursDriftDetector>.Instance);
+        _sut = CreateSut(new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero));
     }
+
+    private TargetHoursDriftDetector CreateSut(DateTimeOffset now) =>
+        new(_clientRepository, _workRepository,
+            NullLogger<TargetHoursDriftDetector>.Instance, new FixedTimeProvider(now));
 
     private static Client MakeClient(string firstName = "Anna", EntityTypeEnum type = EntityTypeEnum.Employee) => new()
     {
@@ -165,5 +174,56 @@ public class TargetHoursDriftDetectorTests
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_ScansLastCompletedMonth_NotTheRunningOne()
+    {
+        var client = MakeClient();
+        _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [client.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var events = await _sut.DetectAsync();
+
+        await _workRepository.Received(1).GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(),
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+        var drift = events.Single() as TargetHoursDriftTriggerEvent;
+        Assert.That(drift!.PeriodLabel, Is.EqualTo("2026-07"));
+    }
+
+    [Test]
+    public async Task DetectAsync_InJanuary_ScansDecemberOfPreviousYear()
+    {
+        var client = MakeClient();
+        _clientRepository.GetActiveClientsWithAddressesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [client.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+        var sut = CreateSut(new DateTimeOffset(2026, 1, 11, 12, 0, 0, TimeSpan.Zero));
+
+        var events = await sut.DetectAsync();
+
+        await _workRepository.Received(1).GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(),
+            new DateOnly(2025, 12, 1),
+            new DateOnly(2025, 12, 31),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+        var drift = events.Single() as TargetHoursDriftTriggerEvent;
+        Assert.That(drift!.PeriodLabel, Is.EqualTo("2025-12"));
     }
 }
