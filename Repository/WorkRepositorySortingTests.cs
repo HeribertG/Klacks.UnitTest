@@ -45,7 +45,16 @@ public class WorkRepositorySortingTests
         mockSearchFilterService.ApplySearchFilter(Arg.Any<IQueryable<Client>>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(args => (IQueryable<Client>)args[0]);
 
-        var baseQueryService = new ClientBaseQueryService(_context, mockGroupFilterService, mockSearchFilterService);
+        var mockFuzzySearchService = Substitute.For<IClientFuzzySearchService>();
+        mockFuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new List<Client>()));
+
+        var baseQueryService = new ClientBaseQueryService(
+            _context,
+            mockGroupFilterService,
+            mockSearchFilterService,
+            new Klacks.Api.Domain.Services.Clients.ClientSearchService(),
+            mockFuzzySearchService);
 
         var mockLogger = Substitute.For<ILogger<Klacks.Api.Domain.Models.Schedules.Work>>();
 

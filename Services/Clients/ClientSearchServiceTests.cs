@@ -180,6 +180,36 @@ public class ClientSearchServiceTests
         clients.First().FirstName.ShouldBe("Hans");
     }
 
+    [TestCase("Müller, Hans", "Comma display format 'Name, FirstName' must match")]
+    [TestCase("Hans, Müller", "Comma format with reversed order must match")]
+    [TestCase("müller,hans", "Comma without space must match")]
+    [TestCase("Müller.Hans", "Dot as separator must match")]
+    [TestCase("Müller/Hans", "Slash as separator must match")]
+    public void ApplySearchFilter_WithSeparatorCharacters_ShouldFindClient(string searchString, string description)
+    {
+        // Arrange
+        var query = _context.Client.AsQueryable();
+
+        // Act
+        var result = _searchService.ApplySearchFilter(query, searchString, false);
+        var clients = result.ToList();
+
+        // Assert
+        clients.Count.ShouldBe(1, description);
+        clients.First().Name.ShouldBe("Müller");
+        clients.First().FirstName.ShouldBe("Hans");
+    }
+
+    [Test]
+    public void ParseSearchString_WithMixedSeparators_ShouldSplitOnAllOfThem()
+    {
+        // Act
+        var result = _searchService.ParseSearchString("Müller, Hans-Peter.Meier/Anna;Klein");
+
+        // Assert
+        result.ShouldBeEquivalentTo(new[] { "müller", "hans", "peter", "meier", "anna", "klein" });
+    }
+
     [Test]
     public void ApplySearchFilter_WithPlusOperator_ShouldApplyExactSearch()
     {

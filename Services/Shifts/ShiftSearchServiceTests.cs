@@ -229,6 +229,22 @@ public class ShiftSearchServiceTests
     }
 
     [Test]
+    public void ApplySearchFilter_WithCommaSeparatedClientName_ShouldFindCorrectShifts()
+    {
+        // Arrange
+        var query = _context.Shift.Include(s => s.Client).AsQueryable();
+        var searchString = "Schmidt, Anna";
+
+        // Act
+        var result = _searchService.ApplySearchFilter(query, searchString, true);
+        var shifts = result.ToList();
+
+        // Assert
+        shifts.Count().ShouldBe(1);
+        shifts.First().Client!.FirstName.ShouldBe("Anna");
+    }
+
+    [Test]
     public void ApplySearchFilter_WithClientFirstName_ShouldFindCorrectShifts()
     {
         // Arrange

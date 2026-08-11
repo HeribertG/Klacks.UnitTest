@@ -86,7 +86,7 @@ public class ClientRepositoryRefactoredTests
             Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
 
         var baseQueryService = new Klacks.Api.Infrastructure.Services.Clients.ClientBaseQueryService(
-            _context, mockGroupFilterService, _mockSearchFilterService);
+            _context, mockGroupFilterService, _mockSearchFilterService, new Klacks.Api.Domain.Services.Clients.ClientSearchService(), new Klacks.UnitTest.TestHelpers.EmptyClientFuzzySearchService());
         _clientBreakPlaceholderRepository = new ClientBreakPlaceholderRepository(
             _context,
             baseQueryService);
