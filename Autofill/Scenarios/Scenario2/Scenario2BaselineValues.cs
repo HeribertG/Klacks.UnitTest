@@ -39,27 +39,29 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 public static class Scenario2BaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
-    /// 0.2963/0.5909/0.4545, so the floor is 0.2963 and seed 42 sets it. Lowered from 0.36
-    /// (decision 13 — partly a measurement artifact, see decision 12b: transitions across sufficient
-    /// free time still count as rotation-bound until the A7/A13 measurement rework lands). Spec
-    /// target of the former A7 is 0.80 and stays documented in SPEC.md.
+    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
+    /// stage: 0.3462/0.5909/0.4091, so the floor is 0.3462 and seed 42 sets it. TIGHTENED from
+    /// 0.2963 — whole-package exchange rotates better. Spec target of the former A7 is 0.80 and
+    /// stays documented in SPEC.md.
     /// </summary>
-    private const double ForwardRate = 0.2962962962962963;
+    private const double ForwardRate = 0.34615384615384615;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 13/6/7, so
-    /// the ceiling is 13. Tightened from 15. Spec target of the former A4 is 0 and stays documented
-    /// in SPEC.md.
+    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
+    /// stage: 14/6/7, so the ceiling is 14. Raised from 13 by one package — the price of the calendar
+    /// exchange (a transferred whole package may mix kinds), still below the pre-decision-13 ceiling
+    /// of 15; the short-package ceiling tightened from 0.4063 to 0.3871 and the forward-rate floor
+    /// rose from 0.2963 to 0.3462 in the same measurement. Spec target of the former A4 is 0 and
+    /// stays documented in SPEC.md.
     /// </summary>
-    private const int MixedTypeCount = 13;
+    private const int MixedTypeCount = 14;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
-    /// 0.4063/0.2222/0.2963, so the ceiling is 0.4063 and seed 42 sets it. Raised from 0.3
-    /// (decision 13, splintering price of the unescalatable rest).
+    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
+    /// stage: 0.3871/0.2222/0.2963, so the ceiling is 0.3871 and seed 42 sets it. TIGHTENED from
+    /// 0.4063 — the splintering win of the stage.
     /// </summary>
-    private const double ShortPackageShare = 0.40625;
+    private const double ShortPackageShare = 0.3870967741935484;
 
     /// <summary>
     /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 0/0/0 — unchanged, and

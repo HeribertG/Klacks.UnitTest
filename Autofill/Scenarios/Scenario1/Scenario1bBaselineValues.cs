@@ -34,20 +34,21 @@ public static class Scenario1bBaselineValues
     private const double ForwardRate = 0.4642857142857143;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 15/21/20, so
-    /// the ceiling is 21. Raised from 16 (decision 13, splintering price — seed 43 sets the edge; the
-    /// asserted run on seed 42 mixes 15). Spec target of the former A4 is 0 and stays documented in
-    /// SPEC.md.
+    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
+    /// stage: 19/23/20, so the ceiling is 23. Raised from 21 — the calendar exchange transfers whole
+    /// packages, which keeps them long but lets more of them mix kinds; the short-package ceiling
+    /// tightened from 0.4242 to 0.3824 in the same measurement, the accepted direction of the stage.
+    /// Spec target of the former A4 is 0 and stays documented in SPEC.md.
     /// </summary>
-    private const int MixedTypeCount = 21;
+    private const int MixedTypeCount = 23;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
-    /// 0.4242/0.3824/0.3636, so the ceiling is 0.4242. Raised from 0.3667 (decision 13, splintering
-    /// price). Spec target of the former A5 is a share of at most 0.20 and stays documented in
-    /// SPEC.md.
+    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
+    /// stage: 0.3824/0.3333/0.3636, so the ceiling is 0.3824. TIGHTENED from 0.4242 — the first
+    /// splintering win of the stage. Spec target of the former A5 is a share of at most 0.20 and
+    /// stays documented in SPEC.md.
     /// </summary>
-    private const double ShortPackageShare = 0.42424242424242425;
+    private const double ShortPackageShare = 0.38235294117647056;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0 — unchanged since
@@ -66,12 +67,12 @@ public static class Scenario1bBaselineValues
     private const double IdealShare = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 7/7/6, so the
-    /// ceiling is 7. Raised from 6 (decision 13). Spec target of the former A8 is a spread of at most
-    /// 2 over ranks 1 to 5; that rank-scoped reading has no pin here, because this guard covers every
-    /// rank.
+    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
+    /// stage: 5/6/6, so the ceiling is 6. Tightened back from 7 to the pre-decision-13 value. Spec
+    /// target of the former A8 is a spread of at most 2 over ranks 1 to 5; that rank-scoped reading
+    /// has no pin here, because this guard covers every rank.
     /// </summary>
-    private const int ShiftKindSpread = 7;
+    private const int ShiftKindSpread = 6;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0, so the ceiling is 0 and
