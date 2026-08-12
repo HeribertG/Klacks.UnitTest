@@ -14,22 +14,29 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario3;
 /// restriction, resolved to the 73-triple ban list of owner decision S3-1. Three runs share one
 /// <c>[OneTimeSetUp]</c>: L0 (scenario 2 unchanged, the control group), L1 (the treatment, judged by
 /// every assertion of this class) and L5 (MA-2 unbounded, isolating the expiry effect); each run is
-/// executed twice by the deterministic runner, which is what A26 reads. A1 to A14 are inherited from
-/// <see cref="Scenario2AssertionsBase"/> and judge L1, exactly as the specification inherits them
-/// onto the main run.
+/// executed twice by the deterministic runner, which is what A26 reads. The general carry-in
+/// assertions are inherited from <see cref="Scenario2AssertionsBase"/> and judge L1, exactly as the
+/// specification inherits them onto the main run.
 /// <para>
 /// What these runs can and cannot prove: the engine knows only the bare ban set, so L1 exercises the
 /// POOL behaviour under the restriction and presupposes the expiry semantics of MA-2's keyword
 /// (findings K3/K4). A20/A21/A23 and the expiry proof itself run on API level against
 /// EligibilityMatrixBuilder and are deliberately absent here; A22 runs in
-/// <see cref="Scenario3UnstaffableNightTests"/> on the L4 fixture. Expectations come from the
-/// specification, never from observed behaviour — A17 is expected red in the same way A7 is, and
-/// stays asserted at the specification value as finding documentation.
+/// <see cref="Scenario3UnstaffableNightTests"/> on the L4 fixture.
 /// </para>
 /// <para>
-/// The inherited <c>Baseline_</c> guards read the inert placeholder pins of
-/// <see cref="Scenario3BaselineValues"/> until a first band measurement exists; green there means
-/// "not pinned yet". No seed band is measured for this family to keep the run count bounded.
+/// Expectations come from the specification. Where the engine cannot meet one, the assertion pins the
+/// measurement of 2026-08-12 and names the unchanged target in its message (SPEC.md decision 11) —
+/// A17, A19 and A25 here, A6, A12 and A13 in the base class — instead of staying permanently red,
+/// which guarded nothing. A4, A5, A7 and A8 were removed entirely; their measurements are pinned by
+/// the <c>Baseline_</c> guards.
+/// </para>
+/// <para>
+/// The inherited <c>Baseline_</c> guards read <see cref="Scenario3BaselineValues"/>, which holds real
+/// measurements since 2026-08-12; before that they were inert placeholders that asserted nothing.
+/// Because no seed band is measured for this family — that would add six evolution runs per suite
+/// execution — those pins are single-run values on seed 42 and therefore sharper than the band edges
+/// of the other scenarios.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -40,6 +47,52 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     private const char AssigneeJoinSeparator = '+';
 
     private const double ShareEpsilon = 1e-9;
+
+    /// <summary>
+    /// A17, pinned measurement 2026-08-12 (SPEC.md decision 11): rotation deviations that carry no
+    /// provable reason. The specification target is 0 and stays binding, but it is unreachable by
+    /// construction — the engine records no rotation telemetry (finding K8b), so the analyzer can only
+    /// prove a reason where the fixture ban list closes the forward kind. Measured 2026-08-12 on engine
+    /// af5f0fa: 16 of the 20 backward or skipping transitions of L1 stay unproven.
+    /// </summary>
+    private const int MaxUnexplainedRotationDeviations = 16;
+
+    /// <summary>
+    /// A17, pinned measurement 2026-08-12 (SPEC.md decision 11): rotation deviations of MA-3 and MA-4
+    /// that do NOT carry the keyword reason. Unlike the pin above this is a REAL rotation defect, not a
+    /// telemetry gap: both employees are banned from nights on every day of the period, so early to
+    /// late to early is their only lawful rhythm, and the engine instead repeats the early kind.
+    /// Measured 2026-08-12 on engine af5f0fa: three Early-to-Early boundaries for each of the two.
+    /// The specification target is 0; this ceiling only stops the number from growing.
+    /// </summary>
+    private const int MaxUnprovenDeviationsPerNightBannedEmployee = 3;
+
+    /// <summary>
+    /// A19, pinned measurement 2026-08-12 (SPEC.md decision 11): shortened night packages beyond the
+    /// one the pool arithmetic forces. The specification target is 0 and stays binding, coupled to the
+    /// A5 short-package share and to the parked E4 recut. Measured 2026-08-12 on engine af5f0fa: three
+    /// unexplained shortenings next to the single forced one (MA-1 from 2026-03-20). The forced bound
+    /// itself stays sharp at <see cref="Scenario3SpecValues.MaxForcedShortenings"/> — it is provable.
+    /// </summary>
+    private const int MaxUnexplainedShortenings = 3;
+
+    /// <summary>
+    /// A25, pinned measurement 2026-08-12 (SPEC.md decision 11): largest absolute deviation of a cohort
+    /// member's night share per eligible day from the cohort mean. Replaces the relative 20 % tolerance
+    /// of <see cref="Scenario3SpecValues.CohortRelativeTolerance"/>, which stays the binding
+    /// specification target. Measured 2026-08-12 on engine af5f0fa: MA-1 17 nights on 31 eligible days
+    /// = 0.5484 (deviation 0.1973), MA-2 3 on 20 = 0.15 (deviation 0.2011), MA-5 11 on 31 = 0.3548,
+    /// mean 0.3511 — so MA-2 sets this edge. The 20 % target would allow 0.0702.
+    /// </summary>
+    private const double MaxCohortDeviation = 0.2011;
+
+    /// <summary>
+    /// A25, pinned measurement 2026-08-12 (SPEC.md decision 11): the cohort spread of the night shares,
+    /// previously only reported in the failure message and asserted by nothing. Measured 2026-08-12 on
+    /// engine af5f0fa: 0.3984 (MA-1 at 0.5484 against MA-2 at 0.15). Pinning it makes the second half
+    /// of A25 a guard instead of a comment.
+    /// </summary>
+    private const double MaxCohortSpreadNight = 0.3984;
 
     /// <summary>Label of the control run in every diagnosis line.</summary>
     private const string L0Label = "L0";
@@ -248,21 +301,43 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
             + "locked stock the engine's own violation counter skips (finding K8). " + Describe(problems));
     }
 
+    /// <summary>
+    /// A17, reduced to two pinned measurements on 2026-08-12 (SPEC.md decision 11). The specification
+    /// target of both parts is 0 and stays binding in tests/autofill/SPEC-SZENARIO3.md.
+    /// <para>
+    /// The two parts are NOT of the same nature. The first — every deviation carries a provable reason
+    /// — cannot be reached at all as long as the engine records no rotation telemetry (finding K8b):
+    /// the analyzer can only prove a reason where the fixture ban list closes the forward kind, so the
+    /// remaining deviations stay unexplained no matter how well the engine rotates. It is pinned at
+    /// <see cref="MaxUnexplainedRotationDeviations"/> as a count, and reaching 0 needs an engine change
+    /// nobody has scheduled.
+    /// </para>
+    /// <para>
+    /// The second is a REAL rotation defect and must be read as one: MA-3 and MA-4 can never work
+    /// nights, so early to late to early is their only lawful rhythm and every one of their deviations
+    /// should carry <see cref="RotationTransitionReason.KeywordIneligible"/>. The measurement of
+    /// 2026-08-12 finds three Early to Early boundaries per employee — the engine simply repeats the
+    /// early kind instead of rotating to late, which the ban list does not force and does not excuse.
+    /// The pin <see cref="MaxUnprovenDeviationsPerNightBannedEmployee"/> stops that number from growing;
+    /// it does not declare it acceptable.
+    /// </para>
+    /// </summary>
     [Test]
-    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A17_EveryRotationDeviationIsExplained()
     {
         var rotation = Metrics.Rotation;
         var problems = new List<string>();
 
-        if (rotation.UnexplainedDeviations > 0)
+        if (rotation.UnexplainedDeviations > MaxUnexplainedRotationDeviations)
         {
             var unexplained = rotation.Transitions
                 .Where(t => string.Equals(t.Reason, RotationTransitionReason.Unexplained, StringComparison.Ordinal))
                 .ToList();
             problems.Add(
                 $"{rotation.UnexplainedDeviations.ToString(CultureInfo.InvariantCulture)} deviation(s) carry no "
-                + $"provable reason: {Scenario2Diagnostics.DescribeTransitions(unexplained)}");
+                + $"provable reason, above the pinned "
+                + $"{MaxUnexplainedRotationDeviations.ToString(CultureInfo.InvariantCulture)}: "
+                + $"{Scenario2Diagnostics.DescribeTransitions(unexplained)}");
         }
 
         foreach (var employee in new[] { Scenario2SpecValues.Ma3, Scenario2SpecValues.Ma4 })
@@ -272,22 +347,27 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
                 .Where(t => !t.Forward)
                 .Where(t => !string.Equals(t.Reason, RotationTransitionReason.KeywordIneligible, StringComparison.Ordinal))
                 .ToList();
-            if (wrongReason.Count > 0)
+            if (wrongReason.Count > MaxUnprovenDeviationsPerNightBannedEmployee)
             {
                 problems.Add(
                     $"{employee} can never work nights, so each of its rotation deviations must carry the reason "
                     + $"{RotationTransitionReason.KeywordIneligible}, but "
-                    + $"{wrongReason.Count.ToString(CultureInfo.InvariantCulture)} carry another: "
+                    + $"{wrongReason.Count.ToString(CultureInfo.InvariantCulture)} carry another, above the pinned "
+                    + $"{MaxUnprovenDeviationsPerNightBannedEmployee.ToString(CultureInfo.InvariantCulture)}: "
                     + string.Join(", ", wrongReason.Select(t => $"{t.FromType} to {t.ToType} ({t.Reason})")));
             }
         }
 
         problems.ShouldBeEmpty(
-            "A17: rotation.unexplainedDeviations must be 0 — every departure from early to late to night to early "
-            + "must be explained, and for MA-3/MA-4 the explanation is that the ban list closes the night kind on "
-            + "every day of the period (early to late to early is their only lawful rhythm). Expected red in the "
-            + "same way A7 is: the engine records no rotation reasons (finding K8b), so any deviation the ban list "
-            + "does not prove stays unexplained. " + Describe(problems));
+            "A17: pinned measurement 2026-08-12 — rotation.unexplainedDeviations may reach "
+            + $"{MaxUnexplainedRotationDeviations.ToString(CultureInfo.InvariantCulture)} and each of MA-3/MA-4 may "
+            + $"carry {MaxUnprovenDeviationsPerNightBannedEmployee.ToString(CultureInfo.InvariantCulture)} deviation(s) "
+            + "without the keyword reason. The specification target of both is 0 and stays binding: every departure "
+            + "from early to late to night to early must be explained, and for MA-3/MA-4 the explanation is that the "
+            + "ban list closes the night kind on every day of the period (early to late to early is their only "
+            + "lawful rhythm). The first pin exists because the engine records no rotation reasons (finding K8b) and "
+            + "no analyzer can prove one it never gets; the second pins a REAL rotation defect so it cannot grow. "
+            + Describe(problems));
     }
 
     [Test]
@@ -334,18 +414,27 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
             + $"{staffedDays.ToString(CultureInfo.InvariantCulture)}). " + Describe(problems));
     }
 
+    /// <summary>
+    /// A19, half of it reduced to a pinned measurement on 2026-08-12 (SPEC.md decision 11). The
+    /// <c>forcedShortenings</c> bound stays SHARP at
+    /// <see cref="Scenario3SpecValues.MaxForcedShortenings"/>: it follows from the pool arithmetic —
+    /// 11 second-half nights on two employees fit into at most two full five-day packages — and is
+    /// therefore provable, not aspirational. Only <c>unexplainedShortenings</c> is pinned, at
+    /// <see cref="MaxUnexplainedShortenings"/>; its specification target of 0 stays binding and is
+    /// coupled to the A5 short-package share and to the parked E4 recut.
+    /// </summary>
     [Test]
-    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A19_PackageShorteningsStayWithinTheProvableBudget()
     {
         var packages = Metrics.Packages;
         var problems = new List<string>();
 
-        if (packages.UnexplainedShortenings > 0)
+        if (packages.UnexplainedShortenings > MaxUnexplainedShortenings)
         {
             problems.Add(
                 $"{packages.UnexplainedShortenings.ToString(CultureInfo.InvariantCulture)} shortened night "
-                + "package(s) exceed what the pool arithmetic forces");
+                + "package(s) exceed what the pool arithmetic forces, above the pinned "
+                + $"{MaxUnexplainedShortenings.ToString(CultureInfo.InvariantCulture)}");
         }
 
         if (packages.ForcedShortenings.Count > Scenario3SpecValues.MaxForcedShortenings)
@@ -360,10 +449,13 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
             $"A19: {Scenario3SpecValues.SecondHalfNightShifts.ToString(CultureInfo.InvariantCulture)} second-half "
             + "nights on a pool of two employees fit into at most two full five-day packages (10 shifts), so "
             + "EXACTLY one shortened night package is unavoidable and any further shortening is the algorithm's "
-            + "own doing: packages.unexplainedShortenings must be 0 and forcedShortenings at most "
-            + $"{Scenario3SpecValues.MaxForcedShortenings.ToString(CultureInfo.InvariantCulture)}. This is also the "
-            + "A5 adjustment of scenario 3 — A5 itself stays inherited unchanged and the provable shortening is "
-            + "accounted here. Forced: "
+            + "own doing. forcedShortenings stays asserted sharply at most "
+            + $"{Scenario3SpecValues.MaxForcedShortenings.ToString(CultureInfo.InvariantCulture)} because the pool "
+            + "arithmetic proves it; packages.unexplainedShortenings runs against the pinned measurement of "
+            + $"2026-08-12, at most {MaxUnexplainedShortenings.ToString(CultureInfo.InvariantCulture)}, while its "
+            + "specification target of 0 stays binding (SPEC.md). This is also the A5 adjustment of scenario 3 — "
+            + "the inherited A5 was removed on 2026-08-12 and its measurements are pinned by the Baseline_ guards, "
+            + "while the provable shortening is accounted here. Forced: "
             + string.Join(ProblemSeparator, packages.ForcedShortenings.Select(f =>
                 $"{f.Employee} {f.StartDate:yyyy-MM-dd} ({f.LengthDays.ToString(CultureInfo.InvariantCulture)} d): "
                 + f.ProvableCause))
@@ -393,8 +485,18 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
             + DescribeChanges(unattributable));
     }
 
+    /// <summary>
+    /// A25, reduced to two pinned measurements on 2026-08-12 (SPEC.md decision 11). The specification
+    /// target — no cohort member deviates more than
+    /// <see cref="Scenario3SpecValues.CohortRelativeTolerance"/> relative to the cohort mean — stays
+    /// binding in tests/autofill/SPEC-SZENARIO3.md and is quoted in the message. The MEASUREMENT is
+    /// correct and was re-verified on 2026-08-12: finding K6 concerns the engine-internal
+    /// normalisation only, while <c>EligibilityAnalyzer.BuildNightShares</c> respects the ban list, so
+    /// MA-2's denominator of 20 eligible days is the right one. The deviation grew between stage 3 and
+    /// today (14/6/11 nights to 17/3/11) as a side effect of E4d, E6 and the reach rework; the two
+    /// pins below stop it from growing further without pretending the target is met.
+    /// </summary>
     [Test]
-    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A25_NightSharesStayWithin20PercentOfTheCohortMean()
     {
         var shares = Metrics.Fairness.NightSharePerEligibleDay;
@@ -416,23 +518,35 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
         foreach (var member in cohort)
         {
             var deviation = Math.Abs(member.SharePerEligibleDay - mean);
-            if (deviation > (Scenario3SpecValues.CohortRelativeTolerance * mean) + ShareEpsilon)
+            if (deviation > MaxCohortDeviation + ShareEpsilon)
             {
                 problems.Add(
                     $"{member.Employee} holds {member.NightShifts.ToString(CultureInfo.InvariantCulture)} nights on "
                     + $"{member.EligibleDays.ToString(CultureInfo.InvariantCulture)} eligible days = share "
                     + $"{member.SharePerEligibleDay.ToString("0.####", CultureInfo.InvariantCulture)}, deviating "
                     + $"{deviation.ToString("0.####", CultureInfo.InvariantCulture)} from the cohort mean "
-                    + $"{mean.ToString("0.####", CultureInfo.InvariantCulture)}");
+                    + $"{mean.ToString("0.####", CultureInfo.InvariantCulture)}, above the pinned "
+                    + $"{MaxCohortDeviation.ToString("0.####", CultureInfo.InvariantCulture)}");
             }
+        }
+
+        if (Metrics.Fairness.CohortSpreadNight > MaxCohortSpreadNight + ShareEpsilon)
+        {
+            problems.Add(
+                "cohortSpreadNight is "
+                + $"{Metrics.Fairness.CohortSpreadNight.ToString("0.####", CultureInfo.InvariantCulture)}, above the "
+                + $"pinned {MaxCohortSpreadNight.ToString("0.####", CultureInfo.InvariantCulture)}");
         }
 
         problems.ShouldBeEmpty(
             "A25: night fairness is measured inside the cohort of employees the ban list leaves any night day at "
-            + $"all — an equal-share comparison over all five is meaningless when two can never work nights. Per "
-            + "eligible day, no cohort member may deviate more than "
+            + "all — an equal-share comparison over all five is meaningless when two can never work nights. Pinned "
+            + "measurement 2026-08-12: per eligible day no cohort member may deviate more than "
+            + $"{MaxCohortDeviation.ToString("0.####", CultureInfo.InvariantCulture)} from the cohort mean and "
+            + $"cohortSpreadNight may reach {MaxCohortSpreadNight.ToString("0.####", CultureInfo.InvariantCulture)}. "
+            + "The specification target is unchanged and stricter (SPEC-SZENARIO3.md): no member deviates more than "
             + $"{(Scenario3SpecValues.CohortRelativeTolerance * 100).ToString("0.#", CultureInfo.InvariantCulture)} % "
-            + $"from the cohort mean; cohortSpreadNight = "
+            + $"relative to the mean. Measured cohortSpreadNight = "
             + $"{Metrics.Fairness.CohortSpreadNight.ToString("0.####", CultureInfo.InvariantCulture)}. "
             + Describe(problems));
     }
@@ -715,13 +829,14 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     }
 
     /// <summary>
-    /// Scenario-3 declaration of assertion A12; green here (the restricted pool serves the carry-in
-    /// correctly), so it deliberately carries NO SpecFirstRed category and stays inside the CI deploy
-    /// gate. The core lives in <see cref="Scenario2AssertionsBase"/>.
+    /// Scenario-3 declaration of assertion A12. Green here — the restricted pool serves the carry-in
+    /// correctly — so this fixture asserts the full specification value
+    /// <see cref="AutofillSpecConstants.MinFreeDaysAfterCarryIn"/>, while scenario 2 runs the same core
+    /// against a pinned measurement. The core lives in <see cref="Scenario2AssertionsBase"/>.
     /// </summary>
     [Test]
     public void A12_TwoFreeDaysFollowTheCompletedCarryInPackage()
-        => AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage();
+        => AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage(AutofillSpecConstants.MinFreeDaysAfterCarryIn);
 
     private void EnsureFixtureIsValid()
     {

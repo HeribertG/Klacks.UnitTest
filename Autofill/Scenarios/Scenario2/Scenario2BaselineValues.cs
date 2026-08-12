@@ -24,6 +24,17 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// at all — without an open package the construction and its fitness term are a strict no-op — and
 /// their pins are therefore untouched.
 /// </para>
+/// <para>
+/// Re-verified 2026-08-12 on engine Klacks.ScheduleOptimizer af5f0fa (unchanged since 2026-08-10):
+/// the band over seeds 42/43/44 reproduces every edge below exactly, so no value moved and none was
+/// touched. Unlike scenario 1, 1b and 3 this scenario needed no sharpening in the SpecFirstRed
+/// cleanup of 2026-08-12 (SPEC.md decision 11); since that cleanup these pins carry the whole
+/// regression protection for the four measurements A4, A5, A7 and A8 used to state. Two things those
+/// assertions checked and no pin covers stay documented as targets in SPEC.md: the package-length
+/// MODE (five days must be the single most frequent length) and the rank-scoped shift-kind spread of
+/// ranks 1 to 4, since <see cref="AutofillBaselineTestBase.Baseline_ShiftKindSpreadDidNotGrow"/>
+/// measures all employees.
+/// </para>
 /// </summary>
 public static class Scenario2BaselineValues
 {

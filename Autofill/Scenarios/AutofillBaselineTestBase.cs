@@ -11,11 +11,20 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 
 /// <summary>
 /// The no-regression floor every scenario carries next to its specification assertions. The rule
-/// assertions A1 to A14 state what the autofill SHOULD do and most of them are red; while a test is
-/// red it warns about nothing, so a rewrite of the algorithm could halve the forward rotation rate
-/// without a single test noticing. These <c>Baseline_</c> tests close that gap: they pin the state the
-/// current engine actually reaches and turn red the moment it gets worse, while any improvement leaves
-/// them green.
+/// assertions state what the autofill SHOULD do; while such a test is red it warns about nothing, so a
+/// rewrite of the algorithm could halve the forward rotation rate without a single test noticing.
+/// These <c>Baseline_</c> tests close that gap: they pin the state the current engine actually reaches
+/// and turn red the moment it gets worse, while any improvement leaves them green.
+/// <para>
+/// Since the cleanup of 2026-08-12 (SPEC.md decision 11) they carry that job alone for four
+/// measurements: A4, A5, A7 and A8 were permanently red in every scenario and were removed, so
+/// <see cref="Baseline_MixedKindPackagesDidNotGrow"/>, <see cref="Baseline_ShortPackageShareDidNotGrow"/>,
+/// <see cref="Baseline_OverlongPackagesDidNotGrow"/>, <see cref="Baseline_IdealFiveTwoShareDidNotFall"/>,
+/// <see cref="Baseline_ForwardRotationRateDidNotFall"/> and <see cref="Baseline_ShiftKindSpreadDidNotGrow"/>
+/// are now the only guards on those numbers. Two readings of the removed assertions are covered by no
+/// pin and survive as targets in tests/autofill/SPEC.md only: the package-length MODE and the
+/// rank-scoped shift-kind spread, which the guard here measures over all employees instead.
+/// </para>
 /// <para>
 /// The pins are bands, not exact values. Each run is deterministic under its seed, but the seed itself
 /// is an arbitrary starting point of the genetic search: measuring the same unchanged engine under the

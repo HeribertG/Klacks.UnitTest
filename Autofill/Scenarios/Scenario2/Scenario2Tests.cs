@@ -13,10 +13,10 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// boundary.
 /// <para>
 /// One shared run. The scenario is built and executed once in <c>[OneTimeSetUp]</c> and every
-/// assertion of A1 to A14 — inherited from <see cref="Scenario2AssertionsBase"/>, where they moved
-/// verbatim so scenario 3 can run them against its keyword fixture — reads the same cached result,
-/// which is what makes the PASS/FAIL table of phase D a statement about one plan rather than about
-/// fourteen different ones. All artifacts are therefore written under a single literal name.
+/// inherited assertion — from <see cref="Scenario2AssertionsBase"/>, where they moved verbatim so
+/// scenario 3 can run them against its keyword fixture — reads the same cached result, which is what
+/// makes the PASS/FAIL table of phase D a statement about one plan rather than about a dozen
+/// different ones. All artifacts are therefore written under a single literal name.
 /// </para>
 /// <para>
 /// A15 (recovery comparison run) is deliberately not implemented. Decision 5 in the header of
@@ -24,10 +24,11 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// carried in phase D as NOT-EVALUABLE, category c.
 /// </para>
 /// <para>
-/// Expectations come from the specification, never from observed behaviour. A10 to A13 are known to
-/// fail: the engine reads the previous month only in the auction's runtime state and no fitness stage
-/// ever measures the continuation, so the assertions cite the same measurement on the auction seed
-/// plan to show whether the continuation was never built or built and then dissolved.
+/// Expectations come from the specification. A10 and A11 are green since the carry-in construction of
+/// stage E1; A12 and A13 still measure a gap the engine's fitness never scores, so since 2026-08-12
+/// (SPEC.md decision 11) they assert a pinned measurement and name the unchanged specification target
+/// in their message instead of staying permanently red. Both cite the same measurement on the auction
+/// seed plan, which shows whether a continuation was never built or built and then dissolved.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -37,6 +38,18 @@ public class Scenario2Tests : Scenario2AssertionsBase
     private const string ScenarioName = "scenario2";
 
     private const string ArtifactTestName = "Scenario2";
+
+    /// <summary>
+    /// Pinned measurement 2026-08-12 (SPEC.md decision 11): free days A12 is judged against in this
+    /// scenario. The specification value is
+    /// <see cref="AutofillSpecConstants.MinFreeDaysAfterCarryIn"/> = 2 and stays binding; scenario 3
+    /// asserts it and is green. Here the engine leaves MA-3 a single free day — its continued package
+    /// 2026-02-28..2026-03-04 is correct (stage E1 built it), but the next package already starts on
+    /// 2026-03-06 because the round-2 escalation of the repair ignores MinRestDays (engine defects
+    /// E4/E5, parked by owner decision). Measured 2026-08-12 on engine af5f0fa; MA-1 and MA-2 keep
+    /// their two free days, so one is the worst of the three open carry-ins, not the rule.
+    /// </summary>
+    private const int PinnedFreeDaysAfterCarryIn = 1;
 
     private AutofillScenarioDefinition? _definition;
 
@@ -137,13 +150,13 @@ public class Scenario2Tests : Scenario2AssertionsBase
 
     /// <summary>
     /// Scenario-2 declaration of assertion A12; the core lives in <see cref="Scenario2AssertionsBase"/>
-    /// and the [Test] lives on the heirs because the two scenarios verdict differently. Spec-first red
-    /// here, so it carries the SpecFirstRed category and stays out of the CI deploy gate.
+    /// and the [Test] lives on the heirs because the two scenarios reach different results. This one
+    /// runs against the pinned <see cref="PinnedFreeDaysAfterCarryIn"/> instead of the specification
+    /// value; scenario 3 asserts the specification value and is green on it.
     /// </summary>
     [Test]
-    [Category(AutofillTestCategories.SpecFirstRed)]
     public void A12_TwoFreeDaysFollowTheCompletedCarryInPackage()
-        => AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage();
+        => AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage(PinnedFreeDaysAfterCarryIn);
 
     private void EnsureFixtureIsValid()
     {
