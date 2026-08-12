@@ -25,10 +25,11 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// </para>
 /// <para>
 /// Expectations come from the specification. A10 and A11 are green since the carry-in construction of
-/// stage E1; A12 and A13 still measure a gap the engine's fitness never scores, so since 2026-08-12
-/// (SPEC.md decision 11) they assert a pinned measurement and name the unchanged specification target
-/// in their message instead of staying permanently red. Both cite the same measurement on the auction
-/// seed plan, which shows whether a continuation was never built or built and then dissolved.
+/// stage E1. A12 asserts the full specification value again since the owner ruling of 2026-08-12
+/// (SPEC.md decision 12d): the rest after the carry-in package is measured in hours, under which
+/// MA-3's 56-hour turnaround is conform, and the engine enforces the package rest on every escalation
+/// rung. A13 still measures a gap the engine's fitness never scores and asserts a pinned measurement
+/// (decision 11), naming the unchanged specification target in its message.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -38,18 +39,6 @@ public class Scenario2Tests : Scenario2AssertionsBase
     private const string ScenarioName = "scenario2";
 
     private const string ArtifactTestName = "Scenario2";
-
-    /// <summary>
-    /// Pinned measurement 2026-08-12 (SPEC.md decision 11): free days A12 is judged against in this
-    /// scenario. The specification value is
-    /// <see cref="AutofillSpecConstants.MinFreeDaysAfterCarryIn"/> = 2 and stays binding; scenario 3
-    /// asserts it and is green. Here the engine leaves MA-3 a single free day — its continued package
-    /// 2026-02-28..2026-03-04 is correct (stage E1 built it), but the next package already starts on
-    /// 2026-03-06 because the round-2 escalation of the repair ignores MinRestDays (engine defects
-    /// E4/E5, parked by owner decision). Measured 2026-08-12 on engine af5f0fa; MA-1 and MA-2 keep
-    /// their two free days, so one is the worst of the three open carry-ins, not the rule.
-    /// </summary>
-    private const int PinnedFreeDaysAfterCarryIn = 1;
 
     private AutofillScenarioDefinition? _definition;
 
@@ -150,13 +139,15 @@ public class Scenario2Tests : Scenario2AssertionsBase
 
     /// <summary>
     /// Scenario-2 declaration of assertion A12; the core lives in <see cref="Scenario2AssertionsBase"/>
-    /// and the [Test] lives on the heirs because the two scenarios reach different results. This one
-    /// runs against the pinned <see cref="PinnedFreeDaysAfterCarryIn"/> instead of the specification
-    /// value; scenario 3 asserts the specification value and is green on it.
+    /// and the [Test] lives on the heirs. Since the owner ruling of 2026-08-12 (SPEC.md decision 12d)
+    /// the rest is measured in hours and this fixture asserts the full specification value again: the
+    /// pinned one-free-day measurement of decision 11 is withdrawn, because MA-3's turnaround —
+    /// early package ends 03-04 15:00, night package starts 03-06 23:00 — is 56 h of rest and conform
+    /// under the hour reading, and the engine now enforces the package rest on every escalation rung.
     /// </summary>
     [Test]
-    public void A12_TwoFreeDaysFollowTheCompletedCarryInPackage()
-        => AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage(PinnedFreeDaysAfterCarryIn);
+    public void A12_RestHoursFollowTheCompletedCarryInPackage()
+        => AssertA12RestHoursFollowTheCompletedCarryInPackage(AutofillSpecConstants.MinRestHoursAfterCarryIn);
 
     private void EnsureFixtureIsValid()
     {

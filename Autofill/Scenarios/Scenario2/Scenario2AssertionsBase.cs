@@ -30,8 +30,9 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 /// packagesOverIdealLength and idealShare for A5, forwardRate for A7, shiftKindSpread for A8 — and
 /// their specification targets stay binding in tests/autofill/SPEC.md. Two readings are covered by no
 /// pin and only survive as targets there: the package-length MODE of A5 and the rank-scoped spread of
-/// A8, which the baseline guard measures over all employees instead. A6, A12 and A13 remained but now
-/// judge a pinned measurement rather than the specification value; each states both on itself.
+/// A8, which the baseline guard measures over all employees instead. A6 and A13 remained but now
+/// judge a pinned measurement rather than the specification value; each states both on itself. A12
+/// asserts the specification value again since the hour-based rest reading of decision 12d.
 /// </para>
 /// <para>
 /// A15 (recovery comparison run) is deliberately not implemented in any deriving fixture. Decision 5
@@ -44,6 +45,8 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     /// <summary>Separator between the individual problem lines of one assertion message.</summary>
     protected const string ProblemSeparator = " | ";
 
+    private const string NumberFormat = "0.###";
+
     private const double HoursComparisonEpsilon = 1e-9;
 
     /// <summary>
@@ -54,14 +57,20 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     /// that exceeds the LOWEST planned hours of all ranks above it by at most one such step is an
     /// artefact of that granularity, not an inversion of the order. The value is one shift of
     /// <see cref="AutofillSpecConstants.ShiftHours"/> hours, which is one daily working time of every
-    /// employee of this fixture. Measured 2026-08-12 on engine af5f0fa: scenario 2 reaches
-    /// 176/160/160/136/112 h and does not use the tolerance at all, scenario 3 reaches
-    /// 168/176/152/120/128 h and sits exactly on it at ranks 2 and 5. The STRICT pairwise reading
-    /// survives untouched in
-    /// <see cref="AutofillBaselineTestBase.Baseline_HourMonotonicityViolationsDidNotGrow"/>, where
-    /// scenario 3 is pinned at 2 violations.
+    /// employee of this fixture. On the decision-12 engine (2026-08-12 evening) scenario 2 reaches
+    /// 176/168/160/144/96 h and does not use the tolerance; scenario 3 levels to 160/152/144/136/152 h
+    /// and overrides <see cref="TopDownToleranceHours"/> with a pinned wider band. The STRICT pairwise
+    /// reading survives untouched in
+    /// <see cref="AutofillBaselineTestBase.Baseline_HourMonotonicityViolationsDidNotGrow"/>.
     /// </summary>
     private const double TopDownOrderToleranceHours = AutofillSpecConstants.ShiftHours;
+
+    /// <summary>
+    /// Tolerance the A6 order judgement runs against — one shift length by default, the band decision
+    /// B5 established. Scenario 3 overrides it with a pinned wider band (SPEC.md decision 13) because
+    /// the unescalatable rest levels its hours; the base value stays the specification reading.
+    /// </summary>
+    protected virtual double TopDownToleranceHours => TopDownOrderToleranceHours;
 
     /// <summary>
     /// Pinned measurement 2026-08-12 (SPEC.md decision 11): closed carry-in packages whose first
@@ -164,12 +173,12 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
 
         foreach (var employee in hours.PerEmployee.OrderBy(e => e.ListRank))
         {
-            if (employee.PlannedHours > lowestAbove + TopDownOrderToleranceHours + HoursComparisonEpsilon)
+            if (employee.PlannedHours > lowestAbove + TopDownToleranceHours + HoursComparisonEpsilon)
             {
                 problems.Add(
                     $"rank {employee.ListRank.ToString(CultureInfo.InvariantCulture)} {employee.Employee} holds "
                     + $"{employee.PlannedHours.ToString("0.#", CultureInfo.InvariantCulture)} h, more than the "
-                    + $"tolerated {TopDownOrderToleranceHours.ToString("0.#", CultureInfo.InvariantCulture)} h above "
+                    + $"tolerated {TopDownToleranceHours.ToString("0.#", CultureInfo.InvariantCulture)} h above "
                     + $"the {lowestAbove.ToString("0.#", CultureInfo.InvariantCulture)} h of the weakest rank above "
                     + "it");
             }
@@ -179,7 +188,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
 
         problems.ShouldBeEmpty(
             "A6: pinned measurement 2026-08-12 — going down the list a rank may exceed the lowest planned hours of "
-            + $"all ranks above it by at most {TopDownOrderToleranceHours.ToString("0.#", CultureInfo.InvariantCulture)} h, "
+            + $"all ranks above it by at most {TopDownToleranceHours.ToString("0.#", CultureInfo.InvariantCulture)} h, "
             + "the step a plan of whole shifts moves in. The specification target is unchanged and stricter "
             + "(SPEC.md rule 5): the fulfilment never rises at all, and ranks 1 to "
             + $"{AutofillSpecConstants.TopRankUpperBound.ToString(CultureInfo.InvariantCulture)} each reach "
@@ -240,18 +249,20 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     /// <summary>
-    /// Core of assertion A12, shared by both heirs. Not a [Test] here on purpose: the two scenarios
-    /// reach different results, so each heir declares its own [Test] wrapper and passes the number of
-    /// free days it is judged against. Scenario 3 passes the specification value
-    /// <see cref="AutofillSpecConstants.MinFreeDaysAfterCarryIn"/> and is green on it; scenario 2
-    /// passes 1, a pinned measurement of 2026-08-12, because its round-2 escalation ignores MinRestDays
-    /// and leaves MA-3 a single free day (engine defects E4/E5, parked). Pinning the parameter instead
-    /// of relaxing the core keeps the specification value asserted wherever the engine already meets it.
+    /// Core of assertion A12, shared by both heirs; each heir declares its own [Test] wrapper. Since
+    /// the owner ruling of 2026-08-12 (SPEC.md decision 12d) the rest after a completed carry-in
+    /// package is measured in HOURS from the end of its last shift to the start of the next package's
+    /// first shift, against <see cref="AutofillSpecConstants.MinRestHoursAfterCarryIn"/> — the
+    /// configured rest days times 24, not calendar days. A gap of one free calendar day can therefore
+    /// be conform (early ends 15:00, night starts 23:00 two days later = 56 h ≥ 48 h) while a 40-hour
+    /// early-to-early turnaround over the same free day stays a violation. An employee whose plan
+    /// holds no package after the continued one has no second block and nothing to measure.
     /// </summary>
-    /// <param name="requiredFreeDays">Free days that must follow the completed carry-in package</param>
-    protected void AssertA12TwoFreeDaysFollowTheCompletedCarryInPackage(int requiredFreeDays)
+    /// <param name="requiredRestHours">Rest hours that must follow the completed carry-in package</param>
+    protected void AssertA12RestHoursFollowTheCompletedCarryInPackage(double requiredRestHours)
     {
         var problems = new List<string>();
+        var shiftsByEmployee = AutofillPlanAnalyzer.BuildPlannedShifts(Run.Plan, Definition, includeCarryIn: true);
 
         foreach (var carryIn in Definition.OpenCarryIns)
         {
@@ -268,27 +279,35 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
             }
 
             var next = packages.FirstOrDefault(p => p.StartDate > continued.EndDate);
-            var freeDays = next is null
-                ? Definition.PeriodUntil.DayNumber - continued.EndDate.DayNumber
-                : next.StartDate.DayNumber - continued.EndDate.DayNumber - 1;
-            if (freeDays < requiredFreeDays)
+            if (next is null)
             {
-                var bound = next is null
-                    ? $"the period ends on {Definition.PeriodUntil:yyyy-MM-dd}"
-                    : $"the next package starts on {next.StartDate:yyyy-MM-dd}";
+                continue;
+            }
+
+            var shifts = shiftsByEmployee[carryIn.AgentId];
+            var lastEnd = shifts
+                .Where(s => s.Date >= continued.StartDate && s.Date <= continued.EndDate)
+                .Max(s => s.EndAt);
+            var nextStart = shifts
+                .Where(s => s.Date >= next.StartDate)
+                .Min(s => s.StartAt);
+            var restHours = (nextStart - lastEnd).TotalHours;
+            if (restHours < requiredRestHours)
+            {
                 problems.Add(
-                    $"{carryIn.AgentId}: continued package {Scenario2Diagnostics.PackageLine(continued)} is followed "
-                    + $"by only {freeDays.ToString(CultureInfo.InvariantCulture)} free day(s) because {bound}");
+                    $"{carryIn.AgentId}: continued package {Scenario2Diagnostics.PackageLine(continued)} ends "
+                    + $"{lastEnd:yyyy-MM-dd HH:mm} and the next package starts {nextStart:yyyy-MM-dd HH:mm} = "
+                    + $"{restHours.ToString(NumberFormat, CultureInfo.InvariantCulture)} h of rest");
             }
         }
 
         problems.ShouldBeEmpty(
-            $"A12: at least {requiredFreeDays.ToString(CultureInfo.InvariantCulture)} consecutive free days must "
-            + "follow the completion of a carried-in package. The specification value is "
-            + $"{AutofillSpecConstants.MinFreeDaysAfterCarryIn.ToString(CultureInfo.InvariantCulture)} and stays "
-            + "binding (SPEC.md); a fixture asserting fewer runs against a pinned measurement of 2026-08-12 and "
-            + "says so on its own [Test]. Measured on the whole package that covers the first day of the period, "
-            + $"February part included, so the length quoted below is the real length of the continued package. "
+            $"A12: at least {requiredRestHours.ToString(CultureInfo.InvariantCulture)} hours of rest must follow "
+            + "the completion of a carried-in package, measured from shift end to shift start (owner ruling "
+            + "2026-08-12, SPEC.md decision 12d: the configured rest days between two work blocks count as "
+            + $"{AutofillSpecConstants.HoursPerRestDay.ToString(CultureInfo.InvariantCulture)} hours each, not as "
+            + "calendar days). Measured on the whole package that covers the first day of the period, February "
+            + "part included. "
             + Describe(problems));
     }
 

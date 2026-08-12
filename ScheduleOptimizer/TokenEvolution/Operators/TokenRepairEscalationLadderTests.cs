@@ -17,7 +17,9 @@ namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution.Operators;
 /// for the strictest candidate set first and only widens where the slot would otherwise stay empty,
 /// so a slot the strict rung can staff is staffed exactly as before, while a slot that can only be
 /// taken on the sixth consecutive day is still taken — coverage is the highest rule of the
-/// specification, the 5/2 package ideal is far below it. What no rung buys is a hard rule.
+/// specification, the 5/2 package ideal is far below it. What no rung buys is a hard rule — and
+/// since the owner ruling of 2026-08-12 (SPEC.md decision 12d) also not the rest between two
+/// packages, which is measured in hours (24 per configured rest day) and vetoes on every rung.
 /// <para>
 /// The fixtures hold a single agent on purpose: with no second agent the one-move relocation escape
 /// can never find a receiver, so the rung under test is the only thing that can answer the slot. The
@@ -60,8 +62,14 @@ public sealed class TokenRepairEscalationLadderTests
 
     private static readonly DateOnly FirstDay = new(2026, 6, 1);
 
+    /// <summary>
+    /// Owner ruling 2026-08-12: the rest between two packages vetoes on every rung, judged in hours.
+    /// The slot two days after the package's end sits 40 hours after it (16:00 to 08:00) — under 48 —
+    /// so no rung may take it, the slot stays empty after the full escalation and no escalation line
+    /// is written because nothing was filled.
+    /// </summary>
     [Test]
-    public void TheRestDayRung_FillsTheSlotAndNeverReportsAnEscalation()
+    public void TheRestRule_VetoesOnEveryRungAndTheSlotStaysEmpty()
     {
         var thirdDay = FirstDay.AddDays(2);
         var shifts = new List<CoreShift> { Shift(FirstDay), Shift(thirdDay) };
@@ -73,14 +81,15 @@ public sealed class TokenRepairEscalationLadderTests
         };
 
         Accepts(context, scenario, thirdDay, shifts[1], SlotRelaxation.None).ShouldBeFalse();
-        Accepts(context, scenario, thirdDay, shifts[1], SlotRelaxation.RestDaysOnly).ShouldBeTrue();
+        Accepts(context, scenario, thirdDay, shifts[1], SlotRelaxation.RestDaysOnly).ShouldBeFalse();
+        Accepts(context, scenario, thirdDay, shifts[1], SlotRelaxation.All).ShouldBeFalse();
 
         var escalations = new List<string>();
         var result = new TokenRepair(new TokenConstraintChecker())
             .Apply(new TokenOperatorContext(scenario, null, context, new Random(0)), escalations.Add);
 
-        result.Tokens.Count.ShouldBe(2);
-        result.Tokens.ShouldContain(t => t.Date == thirdDay && t.AgentId == AgentId);
+        result.Tokens.Count.ShouldBe(1);
+        result.Tokens.ShouldAllBe(t => t.Date == FirstDay);
         escalations.ShouldBeEmpty();
         OverlongBlockTrace.Overlong(result, context).ShouldBeEmpty();
     }

@@ -15,38 +15,39 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 /// </para>
 /// <para>
 /// Each constant is a band edge, not a single measurement — the worst of what the engine produced
-/// under the seeds of <see cref="AutofillSeedBand.Seeds"/>. Re-measured and sharpened 2026-08-12 on
-/// engine Klacks.ScheduleOptimizer af5f0fa (unchanged since 2026-08-10) from the band artifact of the
-/// full suite run of that day; the previous edges dated from 2026-08-08 and were looser than anything
-/// the engine still produces. The band artifact
-/// <c>artifacts/scenario1b/Scenario1bCalibration.band.json</c> is written on every run and reports the
-/// values to copy under "Worst".
+/// under the seeds of <see cref="AutofillSeedBand.Seeds"/>. Re-pinned 2026-08-12 evening by owner
+/// decision 13 (SPEC.md) onto the band measured with the decision-12 changes (hour-based
+/// unescalatable package rest, fairness trade): this fully-satisfiable variant pays the splintering
+/// price hardest — its ideal-share floor fell to ZERO — while its rotation improved sharply. The
+/// band artifact <c>artifacts/scenario1b/Scenario1bCalibration.band.json</c> is written on every run
+/// and reports the values to copy under "Worst".
 /// </para>
 /// </summary>
 public static class Scenario1bBaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0.4/0.36/0.4, so the floor is
-    /// 0.36 and seed 43 sets it. The asserted run on seed 42 runs 10 of 25 package transitions forward.
-    /// Tightened from 0.32 (band of 2026-08-08). Spec target of the former A7 is 0.80 and stays
-    /// documented in SPEC.md.
+    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
+    /// 0.4643/0.5862/0.5714, so the floor is 0.4643. Tightened from 0.36 — the unescalatable rest
+    /// improved the rotation of this variant substantially. Spec target of the former A7 is 0.80 and
+    /// stays documented in SPEC.md.
     /// </summary>
-    private const double ForwardRate = 0.36;
+    private const double ForwardRate = 0.4642857142857143;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 16/16/16, so the ceiling is 16.
-    /// The asserted run mixes shift kinds in 16 of 30 packages. Tightened from 18 (band of 2026-08-08).
-    /// Spec target of the former A4 is 0 and stays documented in SPEC.md.
+    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 15/21/20, so
+    /// the ceiling is 21. Raised from 16 (decision 13, splintering price — seed 43 sets the edge; the
+    /// asserted run on seed 42 mixes 15). Spec target of the former A4 is 0 and stays documented in
+    /// SPEC.md.
     /// </summary>
-    private const int MixedTypeCount = 16;
+    private const int MixedTypeCount = 21;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0.3667 on all three seeds, so
-    /// the ceiling is 0.3667. The asserted run has 11 of 30 packages of at most two days. Tightened
-    /// from 0.4 (band of 2026-08-08). Spec target of the former A5 is a share of at most 0.20 and stays
-    /// documented in SPEC.md.
+    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
+    /// 0.4242/0.3824/0.3636, so the ceiling is 0.4242. Raised from 0.3667 (decision 13, splintering
+    /// price). Spec target of the former A5 is a share of at most 0.20 and stays documented in
+    /// SPEC.md.
     /// </summary>
-    private const double ShortPackageShare = 0.36666666666666664;
+    private const double ShortPackageShare = 0.42424242424242425;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0 — unchanged since
@@ -56,19 +57,21 @@ public static class Scenario1bBaselineValues
     private const int PackagesOverIdealLength = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0.1/0.1333/0.1, so the floor is
-    /// 0.1 and seeds 42 and 44 set it. The asserted run has 3 of 30 packages of five days followed by
-    /// exactly two free days. Tightened from 0.0667 (band of 2026-08-08).
+    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 0/0/0.0303, so
+    /// the floor is 0. Lowered from 0.1 (decision 13 — the harshest splintering price in the suite:
+    /// the asserted run holds a SINGLE five-day package in 33 and none of them is followed by exactly
+    /// two free days; winning this back is the core goal of the commissioned package-aware repair
+    /// stage).
     /// </summary>
-    private const double IdealShare = 0.1;
+    private const double IdealShare = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 6/6/6, so the ceiling is 6.
-    /// The asserted run spreads early 5, late 3, night 6 over all five employees. Tightened from 10
-    /// (band of 2026-08-08). Spec target of the former A8 is a spread of at most 2 over ranks 1 to 5;
-    /// that rank-scoped reading has no pin here, because this guard covers every rank.
+    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 7/7/6, so the
+    /// ceiling is 7. Raised from 6 (decision 13). Spec target of the former A8 is a spread of at most
+    /// 2 over ranks 1 to 5; that rank-scoped reading has no pin here, because this guard covers every
+    /// rank.
     /// </summary>
-    private const int ShiftKindSpread = 6;
+    private const int ShiftKindSpread = 7;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0, so the ceiling is 0 and

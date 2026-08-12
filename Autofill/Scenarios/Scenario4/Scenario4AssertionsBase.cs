@@ -387,10 +387,11 @@ public abstract class Scenario4AssertionsBase
     }
 
     [Test]
-    public void A12_TwoFreeDaysFollowTheCompletedCarryInPackage()
+    public void A12_RestHoursFollowTheCompletedCarryInPackage()
     {
         SkipWithoutPreviousMonth();
         var problems = new List<string>();
+        var shiftsByEmployee = AutofillPlanAnalyzer.BuildPlannedShifts(Run.Plan, Definition, includeCarryIn: true);
 
         foreach (var carryIn in Definition.OpenCarryIns)
         {
@@ -409,21 +410,34 @@ public abstract class Scenario4AssertionsBase
             }
 
             var next = packages.FirstOrDefault(p => p.StartDate > continued.EndDate);
-            var freeDays = next is null
-                ? Definition.PeriodUntil.DayNumber - continued.EndDate.DayNumber
-                : next.StartDate.DayNumber - continued.EndDate.DayNumber - 1;
-            if (freeDays < AutofillSpecConstants.MinFreeDaysAfterCarryIn)
+            if (next is null)
+            {
+                continue;
+            }
+
+            var shifts = shiftsByEmployee[carryIn.AgentId];
+            var lastEnd = shifts
+                .Where(s => s.Date >= continued.StartDate && s.Date <= continued.EndDate)
+                .Max(s => s.EndAt);
+            var nextStart = shifts
+                .Where(s => s.Date >= next.StartDate)
+                .Min(s => s.StartAt);
+            var restHours = (nextStart - lastEnd).TotalHours;
+            if (restHours < AutofillSpecConstants.MinRestHoursAfterCarryIn)
             {
                 problems.Add(
-                    $"{carryIn.AgentId}: the continued package ends on {continued.EndDate:yyyy-MM-dd} and is followed "
-                    + $"by only {freeDays.ToString(CultureInfo.InvariantCulture)} free day(s)");
+                    $"{carryIn.AgentId}: the continued package ends {lastEnd:yyyy-MM-dd HH:mm} and the next "
+                    + $"package starts {nextStart:yyyy-MM-dd HH:mm} = "
+                    + $"{restHours.ToString(CultureInfo.InvariantCulture)} h of rest");
             }
         }
 
         problems.ShouldBeEmpty(
-            $"A12: at least {AutofillSpecConstants.MinFreeDaysAfterCarryIn.ToString(CultureInfo.InvariantCulture)} "
-            + "consecutive free days must follow the completion of a carried-in package. Measured on the whole package "
-            + "that covers the first day of the period, February part included. " + Describe(problems));
+            $"A12: at least {AutofillSpecConstants.MinRestHoursAfterCarryIn.ToString(CultureInfo.InvariantCulture)} "
+            + "hours of rest must follow the completion of a carried-in package, measured from shift end to shift "
+            + "start (owner ruling 2026-08-12, SPEC.md decision 12d: the configured rest days between two work "
+            + "blocks count as hours, not calendar days). Measured on the whole package that covers the first day "
+            + "of the period, February part included. " + Describe(problems));
     }
 
     [Test]

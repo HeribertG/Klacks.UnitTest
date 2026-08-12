@@ -175,8 +175,15 @@ public static class AutofillSpecConstants
     /// <summary>A8: largest tolerated difference between the highest and lowest per-shift-kind count.</summary>
     public const int MaxShiftKindSpread = 2;
 
-    /// <summary>A12: free days required after a carried-in package has been completed.</summary>
-    public const int MinFreeDaysAfterCarryIn = 2;
+    /// <summary>One configured rest day between two work blocks equals 24 hours (owner ruling 2026-08-12).</summary>
+    public const int HoursPerRestDay = 24;
+
+    /// <summary>
+    /// A12: rest required after a carried-in package has been completed — the configured rest days
+    /// between two work blocks computed as HOURS from shift end to shift start (owner ruling
+    /// 2026-08-12, SPEC.md decision 12d: "2 days, computed as hours, so 48h", not two calendar days).
+    /// </summary>
+    public const double MinRestHoursAfterCarryIn = MinRestDays * HoursPerRestDay;
 
     /// <summary>Comparison epsilon for the monotonicity check on fulfilment percentages.</summary>
     public const double MonotonicityEpsilon = 1e-9;

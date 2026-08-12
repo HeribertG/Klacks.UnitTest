@@ -276,13 +276,15 @@ public class ShiftKindBalancerPartialSwapTests
     }
 
     /// <summary>
-    /// Same overlap, but MA-1 now owns a PURE late package. Exchanging the shared days would raise the
-    /// kind fairness and break that package into two kinds — rule 9 buying rule 7, which the priority
-    /// order forbids. The Pareto gate prices the break through its block-ordering component and the
-    /// partial swap has to be refused.
+    /// Same overlap, but MA-1 now owns a PURE late package. Exchanging the shared days raises the kind
+    /// fairness and breaks that package into two kinds — rule 9 buying a slice of rule 7. Until
+    /// 2026-08-12 the gate refused that outright; the owner ruling of that day ("fairness is fuzzy,
+    /// not sharp", SPEC.md decision 12c) allows it as a BOUNDED trade, so the swap is now accepted and
+    /// this test pins the bound instead: the block-order loss stays inside the trade rate times the
+    /// fairness gain, and at most one extra mixed package appears.
     /// </summary>
     [Test]
-    public void Apply_ThePartialSwapWouldBreakThePackageKind_LeavesThePlanAlone()
+    public void Apply_ThePartialSwapBreaksThePackageKindWithinTheTradeAllowance_TakesTheSwap()
     {
         var (context, scenario, evaluator) = BuildPlan(mixedAgentOpensEarly: false);
         var before = evaluator.EvaluateDetailed(scenario, context);
@@ -291,14 +293,22 @@ public class ShiftKindBalancerPartialSwapTests
 
         wouldBe.Stage4Components.ShiftKindFairness.ShouldBeGreaterThan(
             before.Stage4Components.ShiftKindFairness,
-            "the refusal only proves something when the exchange really would raise the fairness");
+            "the trade only proves something when the exchange really raises the fairness");
         wouldBe.Stage3Components.BlockOrder.ShouldBeLessThan(
             before.Stage3Components.BlockOrder,
             "and only when its price really is the package kind");
 
         var balanced = new ShiftKindBalancer().Apply(scenario, context, evaluator);
 
-        balanced.ShouldBeSameAs(scenario);
+        balanced.ShouldNotBeSameAs(scenario);
+        var after = evaluator.EvaluateDetailed(balanced, context);
+        var fairnessGain = after.Stage4Components.ShiftKindFairness - before.Stage4Components.ShiftKindFairness;
+        var blockOrderLoss = before.Stage3Components.BlockOrder - after.Stage3Components.BlockOrder;
+
+        fairnessGain.ShouldBeGreaterThanOrEqualTo(ParetoFairnessGate.MinFairnessGainForTrade);
+        blockOrderLoss.ShouldBeLessThanOrEqualTo(ParetoFairnessGate.FairnessTradeRate * fairnessGain);
+        (MixedKindPackageTrace.Count(balanced) - MixedKindPackageTrace.Count(scenario))
+            .ShouldBeLessThanOrEqualTo(ParetoFairnessGate.MaxMixedPackagesTradeIncrease);
     }
 
     /// <summary>

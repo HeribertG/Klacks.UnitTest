@@ -8,14 +8,13 @@ using Shouldly;
 namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution.Initialization;
 
 /// <summary>
-/// Pins what each rung of the coverage escalation buys. Relaxing the rest days is the ordinary price
-/// of coverage and leaves the MaxWorkDays ideal standing — the finished plan is measured on package
-/// length, no later operator shortens a package again and the only fitness term that sees block
-/// length sits in stage 4, far below the rank at which the lexicographic comparison could reject it.
-/// The widest rung drops the ideal as well, because a slot that can only be staffed on the sixth
+/// Pins what each rung of the coverage escalation buys. Since the owner ruling of 2026-08-12
+/// (SPEC.md decision 12d) the rest between two packages — MinRestDays counted as HOURS from shift
+/// end to shift start, 24 per configured day — vetoes on every rung, so the ladder only buys the
+/// MaxWorkDays block ideal on its widest rung: a slot that can only be staffed on the sixth
 /// consecutive day is a coverage question, and coverage is the highest rule of the specification
-/// while the 5/2 ideal is not. What no rung buys is a hard rule: the MaxConsecutiveDays cap vetoes on
-/// all three of them.
+/// while the 5/2 ideal is not. What no rung ever buys is a hard rule: the MaxConsecutiveDays cap
+/// vetoes on all three of them.
 /// </summary>
 [TestFixture]
 public sealed class SlotConstraintFilterBlockIdealTests
@@ -111,8 +110,34 @@ public sealed class SlotConstraintFilterBlockIdealTests
             .ShouldBeFalse();
     }
 
+    /// <summary>
+    /// Owner ruling 2026-08-12: the rest-day rung no longer frees the rest — the veto holds on every
+    /// rung. Without slot times the calendar fallback vetoes the single free day on all three rungs.
+    /// </summary>
     [Test]
-    public void RelaxedRestDays_AcceptTheDayTheRestDayRuleAloneVetoed()
+    public void EveryRung_RejectsTheDayTheRestRuleVetoed()
+    {
+        var agent = MakeAgent();
+        var context = MakeContext();
+        var assigned = Run(new DateOnly(2026, 6, 1), 2);
+        var afterOneFreeDay = new DateOnly(2026, 6, 4);
+
+        foreach (var rung in new[] { SlotRelaxation.None, SlotRelaxation.RestDaysOnly, SlotRelaxation.All })
+        {
+            SlotConstraintFilter.IsValidAssignment(
+                agent, afterOneFreeDay, 0, Guid.Empty, SlotHours, context, assigned, relaxation: rung)
+                .ShouldBeFalse(rung.ToString());
+        }
+    }
+
+    /// <summary>
+    /// The hour reading of the same ruling: two configured rest days are 48 hours from shift end to
+    /// shift start. The run ends 2026-06-02 16:00, so a slot starting 2026-06-04 16:00 sits exactly
+    /// on the 48-hour edge and is legal although only one calendar day lies between the blocks, while
+    /// a slot starting 08:00 the same day is 40 hours away and stays vetoed.
+    /// </summary>
+    [Test]
+    public void RestHours_JudgeTheGapByHoursNotCalendarDays()
     {
         var agent = MakeAgent();
         var context = MakeContext();
@@ -120,12 +145,16 @@ public sealed class SlotConstraintFilterBlockIdealTests
         var afterOneFreeDay = new DateOnly(2026, 6, 4);
 
         SlotConstraintFilter.IsValidAssignment(
-            agent, afterOneFreeDay, 0, Guid.Empty, SlotHours, context, assigned)
-            .ShouldBeFalse();
+            agent, afterOneFreeDay, 0, Guid.Empty, SlotHours, context, assigned,
+            slotStartUtc: afterOneFreeDay.ToDateTime(new TimeOnly(16, 0)),
+            slotEndUtc: afterOneFreeDay.ToDateTime(new TimeOnly(23, 0)))
+            .ShouldBeTrue();
 
         SlotConstraintFilter.IsValidAssignment(
-            agent, afterOneFreeDay, 0, Guid.Empty, SlotHours, context, assigned, relaxation: SlotRelaxation.RestDaysOnly)
-            .ShouldBeTrue();
+            agent, afterOneFreeDay, 0, Guid.Empty, SlotHours, context, assigned,
+            slotStartUtc: afterOneFreeDay.ToDateTime(new TimeOnly(8, 0)),
+            slotEndUtc: afterOneFreeDay.ToDateTime(new TimeOnly(16, 0)))
+            .ShouldBeFalse();
     }
 
     [Test]

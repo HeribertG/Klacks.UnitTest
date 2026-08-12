@@ -30,7 +30,10 @@ public sealed class WizardLoopMultiSeedTests
     private const double GiniMeanMaxDelta = 0.05;
     private const double EntropyMeanMinDelta = -0.10;
     private const int MaxBlockMaxAllowed = 7;
-    private const double RosterFidelityMeanMaxDelta = 0.05;
+    // Re-pinned 0.05 -> 0.10 on 2026-08-12 (SPEC.md decision 13): the unescalatable hour-based
+    // package rest moved the HeterogeneousMix inversion mean from 0.20 to 0.30; the accepted price of
+    // the rest guarantee, to be won back by the package-aware repair stage.
+    private const double RosterFidelityMeanMaxDelta = 0.10;
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
