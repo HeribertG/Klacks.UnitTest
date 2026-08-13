@@ -37,8 +37,8 @@ public class Stage1SoftConstraintCheckerTests
         };
     }
 
-    private static CoreShift MakeShift(DateOnly date) =>
-        new(Guid.NewGuid().ToString(), "FD", date.ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0);
+    private static CoreShift MakeShift(DateOnly date, string startTime = "08:00", string endTime = "16:00") =>
+        new(Guid.NewGuid().ToString(), "FD", date.ToString("yyyy-MM-dd"), startTime, endTime, 8, 1, 0);
 
     private static CoreToken MakeToken(string agentId, DateOnly date) => new(
         WorkIds: [],
@@ -159,6 +159,25 @@ public class Stage1SoftConstraintCheckerTests
         var verdict = sut.Check(agent, thursdaySlot, assigned, EmptyContext());
 
         verdict.ShouldBeNull();
+    }
+
+    [Test]
+    public void Check_ForwardTurnaroundOverOneFreeCalendarDay_VetoesDespiteEnoughHours()
+    {
+        // Day shift ends Mon 16:00, night slot Wed 23:00 = 55h >= 48h, legal under the hour reading
+        // of decision 12d — but the auction deliberately keeps the stricter calendar-day reading
+        // (one free day < MinRestDays 2). Aligning it to hours was measured on 2026-08-13 and
+        // splintered the reference plans; this pin guards the protective layer.
+        var sut = new Stage1SoftConstraintChecker();
+        var agent = MakeAgent(minRestDays: 2);
+        var monday = new DateOnly(2026, 4, 20);
+        var assigned = new[] { MakeToken("A", monday) };
+        var nightSlot = MakeShift(monday.AddDays(2), "23:00", "07:00");
+
+        var verdict = sut.Check(agent, nightSlot, assigned, EmptyContext());
+
+        verdict.ShouldNotBeNull();
+        verdict!.RuleName.ShouldBe("MinRestDays");
     }
 
     [Test]
