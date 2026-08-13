@@ -26,29 +26,30 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 public static class Scenario1bBaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
-    /// 0.4643/0.5862/0.5714, so the floor is 0.4643. Tightened from 0.36 — the unescalatable rest
-    /// improved the rotation of this variant substantially. Spec target of the former A7 is 0.80 and
-    /// stays documented in SPEC.md.
+    /// Band over seeds 42/43/44 under the decision-12b measurement rework of 2026-08-13: the
+    /// rotation-bound set is empty on every seed (all package pairs are free restarts across enough
+    /// rest), so the rate has no subject and the guard holds vacuously. The old floor 0.4643
+    /// measured free restarts. Spec target of the former A7 is 0.80 and stays documented in SPEC.md.
     /// </summary>
-    private const double ForwardRate = 0.4642857142857143;
+    private const double ForwardRate = 0;
+
+    /// <summary>
+    /// Band over seeds 42/43/44, re-measured after the package-compactness fitness term of
+    /// 2026-08-13: 23/24/23, so the ceiling is 24. Raised from 23 — consolidating short packages
+    /// lets one more of them mix kinds, the same accepted trade as with the calendar exchange; the
+    /// short-package ceiling tightened from 0.3824 to 0.3235 in the same measurement. Spec target
+    /// of the former A4 is 0 and stays documented in SPEC.md.
+    /// </summary>
+    private const int MixedTypeCount = 24;
 
     /// <summary>
     /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
-    /// stage: 19/23/20, so the ceiling is 23. Raised from 21 — the calendar exchange transfers whole
-    /// packages, which keeps them long but lets more of them mix kinds; the short-package ceiling
-    /// tightened from 0.4242 to 0.3824 in the same measurement, the accepted direction of the stage.
-    /// Spec target of the former A4 is 0 and stays documented in SPEC.md.
+    /// stage, then again after the package-compactness fitness term of 2026-08-13:
+    /// 0.3235/0.2941/0.2647, so the ceiling is 0.3235. TIGHTENED from 0.3824 — the term's first
+    /// measured win; seed 44 reaches 0.2647 and closes in on the auction-seed level of 0.3103.
+    /// Spec target of the former A5 is a share of at most 0.20 and stays documented in SPEC.md.
     /// </summary>
-    private const int MixedTypeCount = 23;
-
-    /// <summary>
-    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
-    /// stage: 0.3824/0.3333/0.3636, so the ceiling is 0.3824. TIGHTENED from 0.4242 — the first
-    /// splintering win of the stage. Spec target of the former A5 is a share of at most 0.20 and
-    /// stays documented in SPEC.md.
-    /// </summary>
-    private const double ShortPackageShare = 0.38235294117647056;
+    private const double ShortPackageShare = 0.3235294117647059;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0 — unchanged since
@@ -68,11 +69,12 @@ public static class Scenario1bBaselineValues
 
     /// <summary>
     /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
-    /// stage: 5/6/6, so the ceiling is 6. Tightened back from 7 to the pre-decision-13 value. Spec
-    /// target of the former A8 is a spread of at most 2 over ranks 1 to 5; that rank-scoped reading
-    /// has no pin here, because this guard covers every rank.
+    /// stage, then again after the package-compactness fitness term of 2026-08-13: 6/7/6, so the
+    /// ceiling is 7 (raised from 6 by seed 43, part of the term's accepted price next to the mixed
+    /// ceiling). Spec target of the former A8 is a spread of at most 2 over ranks 1 to 5; that
+    /// rank-scoped reading has no pin here, because this guard covers every rank.
     /// </summary>
-    private const int ShiftKindSpread = 6;
+    private const int ShiftKindSpread = 7;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0, so the ceiling is 0 and

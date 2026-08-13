@@ -726,7 +726,11 @@ public static class AutofillPlanAnalyzer
         var byDay = shifts
             .GroupBy(s => s.Date)
             .OrderBy(g => g.Key)
-            .Select(g => (Date: g.Key, Kinds: g.OrderBy(s => s.StartAt).Select(s => s.Kind).ToList()))
+            .Select(g => (
+                Date: g.Key,
+                Kinds: g.OrderBy(s => s.StartAt).Select(s => s.Kind).ToList(),
+                EarliestStart: g.Min(s => s.StartAt),
+                LatestEnd: g.Max(s => s.EndAt)))
             .ToList();
 
         var index = 0;
@@ -753,7 +757,9 @@ public static class AutofillPlanAnalyzer
                 EndDate: days[^1].Date,
                 LengthDays: days.Count,
                 ShiftType: days[0].Kinds[0],
-                MixedTypes: kinds.Count > 1));
+                MixedTypes: kinds.Count > 1,
+                FirstStartAt: days.Min(d => d.EarliestStart),
+                LastEndAt: days.Max(d => d.LatestEnd)));
         }
 
         return packages;
@@ -843,11 +849,22 @@ public static class AutofillPlanAnalyzer
         AutofillScenarioDefinition definition)
     {
         var transitions = new List<RotationTransition>();
+        var restSeparated = 0;
         foreach (var employee in definition.EmployeesInListOrder)
         {
             var packages = packagesByEmployee.TryGetValue(employee, out var found) ? found : [];
             for (var i = 0; i + 1 < packages.Count; i++)
             {
+                // Owner ruling 2026-08-12 (SPEC.md decision 12b): across at least the configured
+                // rest days times 24 hours the next package is a free block restart, not a
+                // rotation-bound transition.
+                var restHours = (packages[i + 1].FirstStartAt - packages[i].LastEndAt).TotalHours;
+                if (restHours >= AutofillSpecConstants.MinRestHoursBetweenPackages)
+                {
+                    restSeparated++;
+                    continue;
+                }
+
                 var from = packages[i].ShiftType;
                 var to = packages[i + 1].ShiftType;
                 var isForward = (((int)from + 1) % ShiftKindCount) == (int)to;
@@ -869,7 +886,8 @@ public static class AutofillPlanAnalyzer
             ForwardRate: transitions.Count == 0 ? 0 : (double)forward / transitions.Count,
             BackwardOrSkipCount: transitions.Count - forward,
             UnexplainedDeviations: transitions.Count(
-                t => string.Equals(t.Reason, RotationTransitionReason.Unexplained, StringComparison.Ordinal)));
+                t => string.Equals(t.Reason, RotationTransitionReason.Unexplained, StringComparison.Ordinal)),
+            RestSeparatedCount: restSeparated);
     }
 
     private static HoursMetrics BuildHours(

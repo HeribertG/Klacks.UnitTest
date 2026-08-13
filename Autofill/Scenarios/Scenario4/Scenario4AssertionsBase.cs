@@ -447,6 +447,7 @@ public abstract class Scenario4AssertionsBase
         var openEmployees = Definition.OpenCarryIns.Select(c => c.AgentId).ToHashSet(StringComparer.Ordinal);
         var closed = Definition.CarryIns.Where(c => !openEmployees.Contains(c.AgentId)).ToList();
         var problems = new List<string>();
+        var shiftsByEmployee = AutofillPlanAnalyzer.BuildPlannedShifts(Run.Plan, Definition, includeCarryIn: true);
 
         foreach (var carryIn in closed)
         {
@@ -463,18 +464,67 @@ public abstract class Scenario4AssertionsBase
                 continue;
             }
 
+            var restHours = BoundaryRestHoursOf(carryIn.AgentId, shiftsByEmployee);
+            if (restHours >= AutofillSpecConstants.MinRestHoursBetweenPackages)
+            {
+                continue;
+            }
+
             problems.Add(
                 $"{carryIn.AgentId} closed a {carryIn.Kind} package on {carryIn.PackageEndInclusive:yyyy-MM-dd}, so its "
                 + $"first package of the period must rotate to {carryIn.ExpectedFirstShiftKind}, but it is "
-                + (measured.ActualShiftType?.ToString() ?? "absent — the employee received no in-period shift"));
+                + (measured.ActualShiftType?.ToString() ?? "absent — the employee received no in-period shift")
+                + (restHours.HasValue
+                    ? $" after only {restHours.Value.ToString(CultureInfo.InvariantCulture)} h of rest"
+                    : string.Empty));
         }
 
         problems.ShouldBeEmpty(
             "A13/S4-8: a package that ended in the previous month must rotate forward, and the rotation belongs to the "
             + "EMPLOYEE, not to the order — the specification's table names the next shift kind and deliberately names "
-            + "no order, so the order the employee lands on is measured and not judged. Measured: "
+            + "no order, so the order the employee lands on is measured and not judged. Since the owner ruling "
+            + "2026-08-12 (SPEC.md decision 12b) a first period package starting at least "
+            + $"{AutofillSpecConstants.MinRestHoursBetweenPackages.ToString(CultureInfo.InvariantCulture)} hours after "
+            + "the closed package's last shift end is a free block restart and owes no rotation. Measured: "
             + $"{Scenario4Diagnostics.DescribeCarryInThreeDimensional(Metrics.CarryInThreeDimensional.Where(c => !openEmployees.Contains(c.Employee)))}. "
             + Describe(problems));
+    }
+
+    /// <summary>
+    /// Rest between the last previous-month shift end and the first period shift start of one
+    /// employee, in hours; null when either side holds no shift.
+    /// </summary>
+    private double? BoundaryRestHoursOf(
+        string employee, IReadOnlyDictionary<string, IReadOnlyList<PlannedShift>> shiftsByEmployee)
+    {
+        if (!shiftsByEmployee.TryGetValue(employee, out var shifts))
+        {
+            return null;
+        }
+
+        DateTime? lastPreviousEnd = null;
+        DateTime? firstPeriodStart = null;
+        foreach (var shift in shifts)
+        {
+            if (shift.Date < Definition.PeriodFrom)
+            {
+                if (!lastPreviousEnd.HasValue || shift.EndAt > lastPreviousEnd.Value)
+                {
+                    lastPreviousEnd = shift.EndAt;
+                }
+            }
+            else if (!firstPeriodStart.HasValue || shift.StartAt < firstPeriodStart.Value)
+            {
+                firstPeriodStart = shift.StartAt;
+            }
+        }
+
+        if (!lastPreviousEnd.HasValue || !firstPeriodStart.HasValue)
+        {
+            return null;
+        }
+
+        return (firstPeriodStart.Value - lastPreviousEnd.Value).TotalHours;
     }
 
     [Test]

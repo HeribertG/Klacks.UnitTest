@@ -185,6 +185,13 @@ public static class AutofillSpecConstants
     /// </summary>
     public const double MinRestHoursAfterCarryIn = MinRestDays * HoursPerRestDay;
 
+    /// <summary>
+    /// A7/A13 measurement (owner ruling 2026-08-12, SPEC.md decision 12b): a package transition whose
+    /// rest from shift end to shift start reaches the configured rest days times 24 hours is a block
+    /// RESTART and owes no rotation; rotation is only owed across a shorter gap.
+    /// </summary>
+    public const double MinRestHoursBetweenPackages = MinRestDays * HoursPerRestDay;
+
     /// <summary>Comparison epsilon for the monotonicity check on fulfilment percentages.</summary>
     public const double MonotonicityEpsilon = 1e-9;
 

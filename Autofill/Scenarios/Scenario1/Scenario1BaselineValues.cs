@@ -34,13 +34,13 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 public static class Scenario1BaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
-    /// 0.3462/0.3846/0.3462, so the floor is 0.3462. Lowered from 0.4348 (decision 13 — partly a
-    /// measurement artifact: more small packages mean more transitions across sufficient free time,
-    /// which decision 12b no longer counts as rotation-bound; the A7/A13 measurement rework is
-    /// pending). Spec target of the former A7 is 0.80 and stays documented in SPEC.md.
+    /// Band over seeds 42/43/44 under the decision-12b measurement rework of 2026-08-13: every
+    /// package pair of every seed lies across at least the configured rest and owes no rotation, so
+    /// the rotation-bound set is empty and the rate has no subject (the guard holds vacuously; the
+    /// artifact suspected on 2026-08-12 is confirmed — the old floor 0.3462 measured free restarts).
+    /// Spec target of the former A7 is 0.80 and stays documented in SPEC.md.
     /// </summary>
-    private const double ForwardRate = 0.34615384615384615;
+    private const double ForwardRate = 0;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 16/15/16, so

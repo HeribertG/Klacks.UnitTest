@@ -76,14 +76,13 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     /// Pinned measurement 2026-08-12 (SPEC.md decision 11): closed carry-in packages whose first
     /// package of the period does NOT rotate as A13 demands. The specification target is 0 — a package
     /// that ended in the previous month must not restart at the same kind — and stays binding in
-    /// tests/autofill/SPEC.md. Measured 2026-08-12 on engine af5f0fa: exactly one miss in scenario 2
-    /// and in scenario 3, both times MA-5, which closed a Late package on 2026-02-28 and starts Late
-    /// again instead of Night; MA-4 rotates correctly. The cause is the engine's fitness, which never
-    /// scores a boundary rotation — the largest open engine gap of the carry-in family. Only the COUNT
-    /// is pinned, deliberately not the employee: which of the two the search misses is noise of the
-    /// search path, one miss out of two is the finding.
+    /// tests/autofill/SPEC.md. The one miss measured on 2026-08-12 (MA-5, Late again instead of
+    /// Night) dissolved under the decision-12b measurement rework of 2026-08-13: MA-5 restarts 64
+    /// hours after its closed package and owes no rotation, so the pin returned to the
+    /// specification target as decision 6 demands. The suspected "largest open engine gap of the
+    /// carry-in family" was a measurement artifact.
     /// </summary>
-    private const int MaxBoundaryRotationMisses = 1;
+    private const int MaxBoundaryRotationMisses = 0;
 
     /// <summary>The scenario of the run the assertions read; guards its own fixture validity.</summary>
     protected abstract AutofillScenarioDefinition Definition { get; }
@@ -317,7 +316,9 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     /// <see cref="MaxBoundaryRotationMisses"/>. The specification target of 0 stays binding in
     /// tests/autofill/SPEC.md and is quoted in the failure message; the boundary rotation was never
     /// implemented in the engine's fitness, which is why the assertion was permanently red and guarded
-    /// nothing.
+    /// nothing. Since the owner ruling 2026-08-12 (SPEC.md decision 12b) a first period package that
+    /// starts at least the configured rest days times 24 hours after the closed package's last shift
+    /// end is a free block restart and owes no rotation — only tighter restarts are judged.
     /// </summary>
     [Test]
     public void A13_ClosedPackagesRotateAcrossTheMonthBoundary()
@@ -326,6 +327,7 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
             .Where(c => !c.IsOpenAt(Definition.PeriodFrom))
             .ToList();
         var problems = new List<string>();
+        var shiftsByEmployee = AutofillPlanAnalyzer.BuildPlannedShifts(Run.Plan, Definition, includeCarryIn: true);
 
         foreach (var carryIn in closed)
         {
@@ -342,11 +344,20 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
                 continue;
             }
 
+            var restHours = BoundaryRestHoursOf(carryIn.AgentId, shiftsByEmployee);
+            if (restHours >= AutofillSpecConstants.MinRestHoursBetweenPackages)
+            {
+                continue;
+            }
+
             var firstPackage = Scenario2Diagnostics.FirstPackageOf(Metrics, carryIn.AgentId);
             problems.Add(
                 $"{carryIn.AgentId} closed a {carryIn.Kind} package on {carryIn.PackageEndInclusive:yyyy-MM-dd}, so "
                 + $"its first package of the period must rotate to {carryIn.ExpectedFirstShiftKind}, but it is "
                 + $"{(measured.ActualFirstShiftType?.ToString() ?? "absent — the employee received no in-period shift")} "
+                + (restHours.HasValue
+                    ? $"after only {restHours.Value.ToString(NumberFormat, CultureInfo.InvariantCulture)} h of rest "
+                    : string.Empty)
                 + $"({Scenario2Diagnostics.PackageLine(firstPackage)})");
         }
 
@@ -358,11 +369,51 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
             + "in the previous month must not restart at the same kind; MA-4 rotates early to late and is expected "
             + $"to start again on {Scenario2SpecValues.Ma4ExpectedNewPackageStart:yyyy-MM-dd}, MA-5 rotates late to "
             + $"night and is expected to start again on {Scenario2SpecValues.Ma5ExpectedNewPackageStart:yyyy-MM-dd} "
-            + "— the assertion itself only judges the shift kind. The engine's fitness never scores a boundary "
-            + "rotation, so this is a target, not a guard, and only the count is pinned. Same measurement on the "
-            + "auction seed plan: "
+            + "— the assertion itself only judges the shift kind, and since decision 12b only when the first "
+            + "period package starts within "
+            + $"{AutofillSpecConstants.MinRestHoursBetweenPackages.ToString(CultureInfo.InvariantCulture)} hours "
+            + "of the closed package's last shift end; a later start is a free block restart. The engine's "
+            + "fitness never scores a boundary rotation, so this is a target, not a guard, and only the count is "
+            + "pinned. Same measurement on the auction seed plan: "
             + $"{Scenario2Diagnostics.DescribeSeedCarryIn(Run.SeedMetrics, closed.Select(c => c.AgentId))}. "
             + Describe(problems));
+    }
+
+    /// <summary>
+    /// Rest between the last previous-month shift end and the first period shift start of one
+    /// employee, in hours; null when either side holds no shift.
+    /// </summary>
+    private double? BoundaryRestHoursOf(
+        string employee, IReadOnlyDictionary<string, IReadOnlyList<PlannedShift>> shiftsByEmployee)
+    {
+        if (!shiftsByEmployee.TryGetValue(employee, out var shifts))
+        {
+            return null;
+        }
+
+        DateTime? lastPreviousEnd = null;
+        DateTime? firstPeriodStart = null;
+        foreach (var shift in shifts)
+        {
+            if (shift.Date < Definition.PeriodFrom)
+            {
+                if (!lastPreviousEnd.HasValue || shift.EndAt > lastPreviousEnd.Value)
+                {
+                    lastPreviousEnd = shift.EndAt;
+                }
+            }
+            else if (!firstPeriodStart.HasValue || shift.StartAt < firstPeriodStart.Value)
+            {
+                firstPeriodStart = shift.StartAt;
+            }
+        }
+
+        if (!lastPreviousEnd.HasValue || !firstPeriodStart.HasValue)
+        {
+            return null;
+        }
+
+        return (firstPeriodStart.Value - lastPreviousEnd.Value).TotalHours;
     }
 
     [Test]

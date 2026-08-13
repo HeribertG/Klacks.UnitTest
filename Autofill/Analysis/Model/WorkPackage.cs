@@ -16,10 +16,14 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// <param name="LengthDays">Number of calendar days the package spans, carry-in days included</param>
 /// <param name="ShiftType">Kind of the first day; with MixedTypes the package is not homogeneous</param>
 /// <param name="MixedTypes">True when the package contains more than one shift kind (rule 4)</param>
+/// <param name="FirstStartAt">Earliest shift start of the package; carries the clock for rest measurements</param>
+/// <param name="LastEndAt">Latest shift end of the package; a closing night shift ends on the following day</param>
 public sealed record WorkPackage(
     string Employee,
     DateOnly StartDate,
     DateOnly EndDate,
     int LengthDays,
     AutofillShiftKind ShiftType,
-    bool MixedTypes);
+    bool MixedTypes,
+    DateTime FirstStartAt,
+    DateTime LastEndAt);

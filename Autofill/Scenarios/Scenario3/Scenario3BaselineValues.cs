@@ -29,12 +29,12 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario3;
 public static class Scenario3BaselineValues
 {
     /// <summary>
-    /// Measured on L1, seed 42, 2026-08-12 evening on the decision-12 engine: 14 of 27 package
-    /// transitions run forward. TIGHTENED from 0.2593 — the unescalatable rest DOUBLED the forward
-    /// rate of the scenario that used to hold the lowest one of the suite. Spec target of the former
-    /// A7 is 0.80 (SPEC.md).
+    /// Measured on L1, seed 42, under the decision-12b measurement rework of 2026-08-13: all 27
+    /// package pairs are free restarts across enough rest, the rotation-bound set is empty and the
+    /// rate has no subject (the guard holds vacuously). The old floor 0.5185 measured free restarts.
+    /// Spec target of the former A7 is 0.80 (SPEC.md).
     /// </summary>
-    private const double ForwardRate = 0.5185185185185185;
+    private const double ForwardRate = 0;
 
     /// <summary>
     /// Measured on L1, seed 42, 2026-08-12 evening on the decision-12 engine: 8 of 32 packages mix

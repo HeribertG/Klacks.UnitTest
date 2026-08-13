@@ -67,12 +67,22 @@ public abstract class AutofillBaselineTestBase
     {
         var rotation = BaselineMetrics.Rotation;
 
+        // Owner ruling 2026-08-12 (SPEC.md decision 12b): a pair separated by enough rest owes no
+        // rotation, and since the rest hardening keeps at least that distance between packages,
+        // most or all pairs land in RestSeparatedCount. With no rotation-bound transition left the
+        // rate has no subject and the floor holds vacuously.
+        if (rotation.Transitions.Count == 0)
+        {
+            return;
+        }
+
         rotation.ForwardRate.ShouldBeGreaterThanOrEqualTo(
             Baseline.MinForwardRate - ComparisonEpsilon,
             $"Baseline: the forward rotation rate must not fall below the band floor {Share(Baseline.MinForwardRate)}, "
             + $"but it is {Share(rotation.ForwardRate)} "
             + $"({Count(rotation.Transitions.Count - rotation.BackwardOrSkipCount)} of "
-            + $"{Count(rotation.Transitions.Count)} package transitions run early to late to night to early). "
+            + $"{Count(rotation.Transitions.Count)} rotation-bound package transitions run early to late to night "
+            + $"to early; {Count(rotation.RestSeparatedCount)} pair(s) are free restarts across enough rest). "
             + "This is not the specification target of A7 — the floor is the lowest rate the current engine reached "
             + "over the band seeds, so a red here means the change rotates worse than any seed did before it.");
     }

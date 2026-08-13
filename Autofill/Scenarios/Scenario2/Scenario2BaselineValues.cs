@@ -39,12 +39,14 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 public static class Scenario2BaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
-    /// stage: 0.3462/0.5909/0.4091, so the floor is 0.3462 and seed 42 sets it. TIGHTENED from
-    /// 0.2963 — whole-package exchange rotates better. Spec target of the former A7 is 0.80 and
-    /// stays documented in SPEC.md.
+    /// Band over seeds 42/43/44 under the decision-12b measurement rework of 2026-08-13: only two
+    /// rotation-bound transitions survive on seed 42 (MA-3 night to late across 32 h, MA-4 night to
+    /// night across 40 h — both under the configured rest, an engine rest gap the GA operators can
+    /// assemble because stage 0 never counts the package rest), and neither runs forward, so the
+    /// floor is 0. The old floor 0.3462 measured mostly free restarts. Spec target of the former A7
+    /// is 0.80 and stays documented in SPEC.md.
     /// </summary>
-    private const double ForwardRate = 0.34615384615384615;
+    private const double ForwardRate = 0;
 
     /// <summary>
     /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13

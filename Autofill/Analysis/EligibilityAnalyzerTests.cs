@@ -130,13 +130,12 @@ public sealed class EligibilityAnalyzerTests
     public void TransitionReason_IsKeywordIneligibleOnlyWhenTheForwardStepIsFullyBanned()
     {
         var definition = BuildRestrictedDefinition();
-        var nextPackage = new WorkPackage(
+        var nextPackage = MakePackage(
             Employee3,
             RestrictionStart.AddDays(-11),
             RestrictionStart.AddDays(-7),
             AutofillSpecConstants.MaxWorkDays,
-            AutofillShiftKind.Early,
-            MixedTypes: false);
+            AutofillShiftKind.Early);
 
         EligibilityAnalyzer.TransitionReasonOf(
                 Employee3, AutofillShiftKind.Late, forward: false, nextPackage, definition)
@@ -155,16 +154,28 @@ public sealed class EligibilityAnalyzerTests
             .ShouldBe(RotationTransitionReason.None, "A forward transition needs no reason.");
     }
 
+    private static WorkPackage MakePackage(
+        string employee, DateOnly start, DateOnly end, int lengthDays, AutofillShiftKind kind)
+        => new(
+            employee,
+            start,
+            end,
+            lengthDays,
+            kind,
+            MixedTypes: false,
+            FirstStartAt: start.ToDateTime(TimeOnly.MinValue),
+            LastEndAt: end.ToDateTime(TimeOnly.MinValue));
+
     [Test]
     public void Shortenings_TailWindowForcesExactlyOneNightShortening()
     {
         var definition = BuildRestrictedDefinition();
         var packages = new List<WorkPackage>
         {
-            new(Employee5, RestrictionStart, RestrictionStart.AddDays(4), 5, AutofillShiftKind.Night, false),
-            new(Employee5, AutofillSpecConstants.PeriodUntil.AddDays(-1), AutofillSpecConstants.PeriodUntil, 2, AutofillShiftKind.Night, false),
-            new(Employee1, new DateOnly(2026, 3, 5), new DateOnly(2026, 3, 6), 2, AutofillShiftKind.Night, false),
-            new(Employee4, new DateOnly(2026, 3, 10), new DateOnly(2026, 3, 11), 2, AutofillShiftKind.Early, false),
+            MakePackage(Employee5, RestrictionStart, RestrictionStart.AddDays(4), 5, AutofillShiftKind.Night),
+            MakePackage(Employee5, AutofillSpecConstants.PeriodUntil.AddDays(-1), AutofillSpecConstants.PeriodUntil, 2, AutofillShiftKind.Night),
+            MakePackage(Employee1, new DateOnly(2026, 3, 5), new DateOnly(2026, 3, 6), 2, AutofillShiftKind.Night),
+            MakePackage(Employee4, new DateOnly(2026, 3, 10), new DateOnly(2026, 3, 11), 2, AutofillShiftKind.Early),
         };
 
         var (forced, unexplained) = EligibilityAnalyzer.BuildShortenings(packages, definition);

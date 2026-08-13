@@ -49,23 +49,22 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     private const double ShareEpsilon = 1e-9;
 
     /// <summary>
-    /// A17, pinned measurement 2026-08-12 (SPEC.md decision 11): rotation deviations that carry no
-    /// provable reason. The specification target is 0 and stays binding, but it is unreachable by
-    /// construction — the engine records no rotation telemetry (finding K8b), so the analyzer can only
-    /// prove a reason where the fixture ban list closes the forward kind. Measured 2026-08-12 on engine
-    /// af5f0fa: 16 of the 20 backward or skipping transitions of L1 stay unproven.
+    /// A17, pinned measurement: rotation deviations that carry no provable reason. The 16 unproven
+    /// deviations of 2026-08-12 dissolved under the decision-12b measurement rework of 2026-08-13 —
+    /// every L1 package pair is a free restart across enough rest, the rotation-bound set is empty
+    /// and the pin returned to the specification target as decision 6 demands. The telemetry gap of
+    /// finding K8b only matters again once rotation-bound transitions reappear.
     /// </summary>
-    private const int MaxUnexplainedRotationDeviations = 16;
+    private const int MaxUnexplainedRotationDeviations = 0;
 
     /// <summary>
     /// A17, pinned measurement 2026-08-12 (SPEC.md decision 11): rotation deviations of MA-3 and MA-4
-    /// that do NOT carry the keyword reason. Unlike the pin above this is a REAL rotation defect, not a
-    /// telemetry gap: both employees are banned from nights on every day of the period, so early to
-    /// late to early is their only lawful rhythm, and the engine instead repeats the early kind.
-    /// Measured 2026-08-12 on engine af5f0fa: three Early-to-Early boundaries for each of the two.
-    /// The specification target is 0; this ceiling only stops the number from growing.
+    /// that do NOT carry the keyword reason. The three Early-to-Early boundaries per employee of
+    /// 2026-08-12 were free restarts across enough rest and dissolved under the decision-12b
+    /// measurement rework of 2026-08-13 — repeating the early kind after enough rest is lawful, so
+    /// the pin returned to the specification target as decision 6 demands.
     /// </summary>
-    private const int MaxUnprovenDeviationsPerNightBannedEmployee = 3;
+    private const int MaxUnprovenDeviationsPerNightBannedEmployee = 0;
 
     /// <summary>
     /// A6, pinned measurement 2026-08-12 evening (SPEC.md decision 13): under the unescalatable
