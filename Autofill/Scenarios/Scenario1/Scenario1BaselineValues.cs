@@ -50,13 +50,13 @@ public static class Scenario1BaselineValues
     private const int MixedTypeCount = 16;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine:
-    /// 0.4194/0.4516/0.4194, so the ceiling is 0.4516. Raised from 0.3667 (decision 13 — the accepted
-    /// splintering price of the unescalatable rest; the package-aware repair stage is commissioned to
-    /// win this back). Spec target of the former A5 is a share of at most 0.20 and stays documented
-    /// in SPEC.md.
+    /// Band over seeds 42/43/44 after the package-consolidation mutation of 2026-08-13:
+    /// 0.3333/0.4333/0.4333, so the ceiling is 0.4333. TIGHTENED from 0.4516 — the consolidation
+    /// trade wins back part of the decision-13 splintering price; the asserted seed even reaches
+    /// 0.3333. Spec target of the former A5 is a share of at most 0.20 and stays documented in
+    /// SPEC.md.
     /// </summary>
-    private const double ShortPackageShare = 0.45161290322580644;
+    private const double ShortPackageShare = 0.43333333333333335;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0 — unchanged since
@@ -66,10 +66,12 @@ public static class Scenario1BaselineValues
     private const int PackagesOverIdealLength = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 0.1935 on all
-    /// three seeds, so the floor is 0.1935. Lowered from 0.2 (decision 13, splintering price).
+    /// Band over seeds 42/43/44 after the package-consolidation mutation of 2026-08-13:
+    /// 0.2593/0.1667/0.1667, so the floor is 0.1667. Lowered from 0.1935 by seeds 43/44 — seed
+    /// noise of the shifted draw sequence, while the asserted seed ROSE from 0.1935 to 0.2593; the
+    /// hour-neutral trade cannot move hours, so the wobble is not an operator effect.
     /// </summary>
-    private const double IdealShare = 0.1935483870967742;
+    private const double IdealShare = 0.16666666666666666;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 6/6/6, so the

@@ -43,13 +43,12 @@ public static class Scenario1bBaselineValues
     private const int MixedTypeCount = 24;
 
     /// <summary>
-    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
-    /// stage, then again after the package-compactness fitness term of 2026-08-13:
-    /// 0.3235/0.2941/0.2647, so the ceiling is 0.3235. TIGHTENED from 0.3824 — the term's first
-    /// measured win; seed 44 reaches 0.2647 and closes in on the auction-seed level of 0.3103.
-    /// Spec target of the former A5 is a share of at most 0.20 and stays documented in SPEC.md.
+    /// Band over seeds 42/43/44 after the package-consolidation mutation of 2026-08-13:
+    /// 0.2727/0.2941/0.2424, so the ceiling is 0.2941. TIGHTENED again from 0.3235 — the asserted
+    /// seed (0.2727) now lies UNDER the auction-seed level of 0.3103. Spec target of the former A5
+    /// is a share of at most 0.20 and stays documented in SPEC.md.
     /// </summary>
-    private const double ShortPackageShare = 0.3235294117647059;
+    private const double ShortPackageShare = 0.29411764705882354;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0 — unchanged since
