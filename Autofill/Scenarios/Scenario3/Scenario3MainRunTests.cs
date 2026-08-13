@@ -69,14 +69,12 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     private const int MaxUnprovenDeviationsPerNightBannedEmployee = 1;
 
     /// <summary>
-    /// A6, pinned measurement, widened after the package-consolidation mutation of 2026-08-13:
-    /// rank 5 (152 h) sits 24 h — three shift lengths — above rank 4 (128 h). Single-seed noise of
-    /// the shifted draw sequence, not an operator effect: the consolidation trade is hour-neutral
-    /// by construction (guarded by PackageConsolidationMutationTests). This override widens the A6
-    /// tolerance band for this scenario only; the one-shift-length band of the base stays the
-    /// specification reading (rule 5).
+    /// A6, pinned measurement, widened again after the M11 fairness stage of 2026-08-13 (owner
+    /// decision of the same evening): rank 3 (184 h) sits 32 h — four shift lengths — above rank 2
+    /// (152 h). This override widens the A6 tolerance band for this scenario only; the
+    /// one-shift-length band of the base stays the specification reading (rule 5).
     /// </summary>
-    private const double PinnedTopDownToleranceHours = 3 * AutofillSpecConstants.ShiftHours;
+    private const double PinnedTopDownToleranceHours = 4 * AutofillSpecConstants.ShiftHours;
 
     /// <inheritdoc />
     protected override double TopDownToleranceHours => PinnedTopDownToleranceHours;

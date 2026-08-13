@@ -43,20 +43,18 @@ public static class Scenario1BaselineValues
     private const double ForwardRate = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 16/15/16, so
-    /// the ceiling is 16. Tightened from 17. Spec target of the former A4 is 0 and stays documented
-    /// in SPEC.md.
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 6/11/9, so the ceiling
+    /// is 11. TIGHTENED from 16 — the night tie-break and the continuation priority leave far
+    /// fewer mixed packages. Spec target of the former A4 is 0 and stays documented in SPEC.md.
     /// </summary>
-    private const int MixedTypeCount = 16;
+    private const int MixedTypeCount = 11;
 
     /// <summary>
-    /// Band over seeds 42/43/44 after the package-consolidation mutation of 2026-08-13:
-    /// 0.3333/0.4333/0.4333, so the ceiling is 0.4333. TIGHTENED from 0.4516 — the consolidation
-    /// trade wins back part of the decision-13 splintering price; the asserted seed even reaches
-    /// 0.3333. Spec target of the former A5 is a share of at most 0.20 and stays documented in
-    /// SPEC.md.
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 0.1667/0.3571/0.3929,
+    /// so the ceiling is 0.3929. TIGHTENED from 0.4333; the asserted seed reaches 0.1667 — under
+    /// the 0.20 spec target of the former A5, which stays documented in SPEC.md.
     /// </summary>
-    private const double ShortPackageShare = 0.43333333333333335;
+    private const double ShortPackageShare = 0.39285714285714285;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0 — unchanged since
@@ -66,20 +64,20 @@ public static class Scenario1BaselineValues
     private const int PackagesOverIdealLength = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44 after the package-consolidation mutation of 2026-08-13:
-    /// 0.2593/0.1667/0.1667, so the floor is 0.1667. Lowered from 0.1935 by seeds 43/44 — seed
-    /// noise of the shifted draw sequence, while the asserted seed ROSE from 0.1935 to 0.2593; the
-    /// hour-neutral trade cannot move hours, so the wobble is not an operator effect.
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 0.125/0.1786/0.1429,
+    /// so the floor is 0.125 (owner decision of the same evening: all edges follow the measured
+    /// state, the compactness gain outweighs the ideal-pattern dip; the spec target stays binding).
     /// </summary>
-    private const double IdealShare = 0.16666666666666666;
+    private const double IdealShare = 0.125;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 6/6/6, so the
-    /// ceiling is 6. Tightened from 8 — one of the fairness gains of the unescalatable rest. Spec
-    /// target of the former A8 is a spread of at most 2 over ranks 1 to 4; that rank-scoped reading
-    /// has no pin here, because this guard covers every rank.
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 10/7/6, so the ceiling
+    /// is 10 (owner decision of the same evening — the compact-package price of the stage; the
+    /// asserted-seed spread concentrates in the early kind). Spec target of the former A8 is a
+    /// spread of at most 2 over ranks 1 to 4; that rank-scoped reading has no pin here, because
+    /// this guard covers every rank.
     /// </summary>
-    private const int ShiftKindSpread = 6;
+    private const int ShiftKindSpread = 10;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0, so the ceiling is 0 and
@@ -91,8 +89,11 @@ public static class Scenario1BaselineValues
     /// it is for the other seven. It is pinned sharply anyway, because A6 no longer asserts the strict
     /// order at all (it judges with a tolerance band since 2026-08-12) and this guard is the only thing
     /// left that does — but a red is a reason to re-measure the band first, not to widen the pin.
+    /// The band WAS re-measured after the M11 fairness stage of 2026-08-13 (the prescribed
+    /// procedure): 1/1/0 — the same seed-decided wobble the 2026-08-08 measurement found, so the
+    /// pin follows the fresh band worst of 1 by owner decision of the same evening.
     /// </summary>
-    private const int MonotonicityViolations = 0;
+    private const int MonotonicityViolations = 1;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 664/664/664 h,

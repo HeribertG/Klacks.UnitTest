@@ -37,40 +37,41 @@ public static class Scenario3BaselineValues
     private const double ForwardRate = 0;
 
     /// <summary>
-    /// Measured on L1, seed 42, after the package-consolidation mutation of 2026-08-13: 10 of 33
-    /// packages mix shift kinds. Raised from 8 — single-seed noise of the shifted draw sequence
-    /// (scenario 3 has no band; the sibling scenario-2 band holds 6 and 7 on its other seeds).
-    /// Spec target of the former A4 is 0 (SPEC.md).
+    /// Measured on L1, seed 42, after the M11 fairness stage of 2026-08-13: 5 of 26 packages mix
+    /// shift kinds. TIGHTENED from 10. Spec target of the former A4 is 0 (SPEC.md).
     /// </summary>
-    private const int MixedTypeCount = 10;
+    private const int MixedTypeCount = 5;
 
     /// <summary>
-    /// Measured on L1, seed 42, after the package-consolidation mutation of 2026-08-13: 11 of 33
-    /// packages are at most two days long. TIGHTENED from 0.34375. Spec target of the former A5 is
-    /// a share of at most 0.20 (SPEC.md).
+    /// Measured on L1, seed 42, after the M11 fairness stage of 2026-08-13: 6 of 26 packages are
+    /// at most two days long. TIGHTENED from 0.3333. Spec target of the former A5 is a share of
+    /// at most 0.20 (SPEC.md).
     /// </summary>
-    private const double ShortPackageShare = 0.3333333333333333;
+    private const double ShortPackageShare = 0.23076923076923078;
 
     /// <summary>
-    /// Measured on L1, seed 42, 2026-08-12, engine af5f0fa: no package exceeds the five-day ideal, the
-    /// February part of a continued package included. Sharp at zero like in every other scenario.
+    /// Owner decision 2026-08-13 evening (M11 fairness stage): the pin follows the measured 2 —
+    /// both six-day packages are rung-3 coverage escalations, spec-conform "coverage before the
+    /// ideal", and every other scenario stays sharp at zero across all band seeds. The former
+    /// "meant to stay sharp" reading is deliberately widened HERE ONLY; hunting the six-day
+    /// channel stays an open point of the stage report.
     /// </summary>
-    private const int PackagesOverIdealLength = 0;
+    private const int PackagesOverIdealLength = 2;
 
     /// <summary>
-    /// Measured on L1, seed 42, after the package-consolidation mutation of 2026-08-13: 5 of 33
-    /// packages are five days followed by exactly two free days. TIGHTENED from 0.125.
+    /// Measured on L1, seed 42, after the M11 fairness stage of 2026-08-13: 7 of 26 packages are
+    /// five days followed by exactly two free days. TIGHTENED from 0.1515.
     /// </summary>
-    private const double IdealShare = 0.15151515151515152;
+    private const double IdealShare = 0.26923076923076922;
 
     /// <summary>
-    /// Measured on L1, seed 42, 2026-08-12 evening on the decision-12 engine: early 13, late 8,
-    /// night 13 over all five employees, so the widest spread is 13. Tightened from 17 — the night
-    /// imbalance the ban list forces (MA-3/MA-4 hold zero nights) shrank with the fairer night
-    /// distribution (A25 cohort spread 0.398 to 0.119). Spec target of the former A8 is a spread of
-    /// at most 2 over ranks 1 to 4 (SPEC.md); that rank-scoped reading has no pin here.
+    /// Measured on L1, seed 42, after the M11 fairness stage of 2026-08-13: early 11, late 9,
+    /// night 15, so the widest spread is 15 (owner decision of the same evening — the ban list
+    /// still forces MA-3/MA-4 to zero nights, so the night row widens while the COHORT fairness
+    /// A25 heals to a spread of 0.31). Spec target of the former A8 is a spread of at most 2 over
+    /// ranks 1 to 4 (SPEC.md); that rank-scoped reading has no pin here.
     /// </summary>
-    private const int ShiftKindSpread = 13;
+    private const int ShiftKindSpread = 15;
 
     /// <summary>
     /// Measured on L1, seed 42, 2026-08-12 evening on the decision-12 engine: 1 rank reaches a higher

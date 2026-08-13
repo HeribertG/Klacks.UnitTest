@@ -129,4 +129,33 @@ public class TokenEvolutionLoopTests
         System.Threading.Thread.Sleep(200);
         reports.ShouldNotBeEmpty();
     }
+
+    [Test]
+    public void Run_PlaySequenceDominant_StaysFeasibleAndDeterministic()
+    {
+        // M7 play-sequence transaction: several single-operator draws on one child, only the end
+        // state is compared. A dominant sequence weight must neither break feasibility nor the
+        // seeded replay — the transaction draws all its randomness from the run's one rng.
+        var context = BuildContext(agentCount: 3, dayCount: 7);
+        TokenEvolutionConfig Config() => new()
+        {
+            PopulationSize = 8,
+            MaxGenerations = 25,
+            EarlyStopNoImprovementGenerations = 10,
+            RandomSeed = 42,
+            MutationRate = 1.0,
+            MutationWeightPlaySequence = 5.0,
+        };
+
+        var first = TokenEvolutionLoop.Create().Run(context, Config());
+        var second = TokenEvolutionLoop.Create().Run(context, Config());
+
+        first.FitnessStage0.ShouldBe(0);
+        static List<(string, DateOnly, Guid)> KeyOf(CoreScenario s) => s.Tokens
+            .Select(t => (t.AgentId, t.Date, t.ShiftRefId))
+            .OrderBy(x => x.AgentId).ThenBy(x => x.Date).ThenBy(x => x.ShiftRefId)
+            .ToList();
+        KeyOf(second).ShouldBe(KeyOf(first),
+            "a seeded run with dominant play-sequence transactions must replay identically");
+    }
 }

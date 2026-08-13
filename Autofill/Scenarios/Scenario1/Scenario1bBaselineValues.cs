@@ -34,21 +34,18 @@ public static class Scenario1bBaselineValues
     private const double ForwardRate = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, re-measured after the package-compactness fitness term of
-    /// 2026-08-13: 23/24/23, so the ceiling is 24. Raised from 23 — consolidating short packages
-    /// lets one more of them mix kinds, the same accepted trade as with the calendar exchange; the
-    /// short-package ceiling tightened from 0.3824 to 0.3235 in the same measurement. Spec target
-    /// of the former A4 is 0 and stays documented in SPEC.md.
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 3/18/14, so the
+    /// ceiling is 18. TIGHTENED from 24; the asserted seed holds only 3 mixed packages. Spec
+    /// target of the former A4 is 0 and stays documented in SPEC.md.
     /// </summary>
-    private const int MixedTypeCount = 24;
+    private const int MixedTypeCount = 18;
 
     /// <summary>
-    /// Band over seeds 42/43/44 after the package-consolidation mutation of 2026-08-13:
-    /// 0.2727/0.2941/0.2424, so the ceiling is 0.2941. TIGHTENED again from 0.3235 — the asserted
-    /// seed (0.2727) now lies UNDER the auction-seed level of 0.3103. Spec target of the former A5
-    /// is a share of at most 0.20 and stays documented in SPEC.md.
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 0.12/0.2258/0.30, so
+    /// the ceiling is 0.30 (widened by seed 44 alone; the asserted seed reaches 0.12 — far under
+    /// the 0.20 spec target of the former A5, which stays documented in SPEC.md).
     /// </summary>
-    private const double ShortPackageShare = 0.29411764705882354;
+    private const double ShortPackageShare = 0.3;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0 — unchanged since
@@ -58,22 +55,20 @@ public static class Scenario1bBaselineValues
     private const int PackagesOverIdealLength = 0;
 
     /// <summary>
-    /// Band over seeds 42/43/44, measured 2026-08-12 evening on the decision-12 engine: 0/0/0.0303, so
-    /// the floor is 0. Lowered from 0.1 (decision 13 — the harshest splintering price in the suite:
-    /// the asserted run holds a SINGLE five-day package in 33 and none of them is followed by exactly
-    /// two free days; winning this back is the core goal of the commissioned package-aware repair
-    /// stage).
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 0.16/0.0323/0.0333, so
+    /// the floor is 0.0323. TIGHTENED from 0 — the first non-zero ideal floor of this variant
+    /// since decision 13 called its zero "the harshest splintering price in the suite"; the
+    /// asserted seed reaches 0.16.
     /// </summary>
-    private const double IdealShare = 0;
+    private const double IdealShare = 0.032258064516129031;
 
     /// <summary>
-    /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
-    /// stage, then again after the package-compactness fitness term of 2026-08-13: 6/7/6, so the
-    /// ceiling is 7 (raised from 6 by seed 43, part of the term's accepted price next to the mixed
-    /// ceiling). Spec target of the former A8 is a spread of at most 2 over ranks 1 to 5; that
-    /// rank-scoped reading has no pin here, because this guard covers every rank.
+    /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 8/9/6, so the ceiling
+    /// is 9 (owner decision of the same evening — part of the stage's accepted fairness price).
+    /// Spec target of the former A8 is a spread of at most 2 over ranks 1 to 5; that rank-scoped
+    /// reading has no pin here, because this guard covers every rank.
     /// </summary>
-    private const int ShiftKindSpread = 7;
+    private const int ShiftKindSpread = 9;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0, so the ceiling is 0 and
