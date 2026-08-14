@@ -1,7 +1,9 @@
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Presentation.Controllers.UserBackend.Email;
 using Klacks.Api.Presentation.Controllers.UserBackend.Settings;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Shouldly;
 using System.Reflection;
 
@@ -34,5 +36,21 @@ public class EmailTestAuthorizationTests
 
         controllerAttribute.ShouldNotBeNull();
         controllerAttribute!.Roles.ShouldBe(Roles.Admin);
+    }
+
+    [TestCase(typeof(ReceivedEmailController), "TestImapConnection")]
+    [TestCase(typeof(GeneralSettingsController), "TestEmailConfiguration")]
+    public void ConnectionTest_ShouldBeRateLimited(Type controllerType, string methodName)
+    {
+        var methodInfo = controllerType.GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+
+        methodInfo.ShouldNotBeNull();
+
+        var rateLimiting = methodInfo!.GetCustomAttribute<EnableRateLimitingAttribute>(inherit: false);
+
+        rateLimiting.ShouldNotBeNull(
+            $"{methodName} reaches an arbitrary host and reports distinguishable failure reasons, " +
+            "so it must not be usable as an unthrottled port scanner");
+        rateLimiting!.PolicyName.ShouldBe(RateLimitingPolicies.ConnectionTest);
     }
 }
