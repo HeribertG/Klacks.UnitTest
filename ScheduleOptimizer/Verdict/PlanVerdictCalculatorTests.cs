@@ -12,7 +12,8 @@ namespace Klacks.UnitTest.ScheduleOptimizer.Verdict;
 /// built, the softening happens only here at the very end. The guards prove the three zones —
 /// a scratch lowers but never caps when the period quota holds, a missed quota presses the lid
 /// gradually, a legal-minimum breach caps always — plus period scaling, tie handling and the
-/// explainability contract of the terms.
+/// explainability contract of the terms. Since 2026-08-14 also: the daily-rest floor on
+/// turnarounds inside a package and the anchor interpolation of unlisted package rests.
 /// </summary>
 [TestFixture]
 public class PlanVerdictCalculatorTests
@@ -185,6 +186,73 @@ public class PlanVerdictCalculatorTests
         {
             term.Contribution.ShouldBe(term.Weight * term.RawScore, 1e-12);
         }
+    }
+
+    [Test]
+    public void Compute_TurnaroundInsideAPackageBelowDailyRest_CapsHard()
+    {
+        // Day 0 Late ends 23:00, day 1 Early starts 07:00 — an 8-hour turnaround INSIDE the
+        // package. Engine-built plans cannot contain this; externally built plans can, and the
+        // verdict exists to judge exactly those.
+        var scenario = MakeScenario([1, 2, 3, 4], [7, 8, 9, 10, 11]);
+        scenario.Tokens.Add(MakeToken(0, LateStart, LateEnd, shiftTypeIndex: 1));
+
+        var verdict = PlanVerdictCalculator.Compute(scenario, MakeContext());
+
+        verdict.Zone.ShouldBe(VerdictZone.LegalMinimumBreach);
+        var breach = verdict.Findings.Single(f => f.Kind == VerdictFindingKind.DailyRestBreach);
+        breach.GapHours.ShouldBe(8, 1e-9);
+        breach.RequiredHours.ShouldBe(11, 1e-9);
+        verdict.MinQuotaFulfillment.ShouldBe(1);
+        verdict.Score.ShouldBeLessThanOrEqualTo(new PlanVerdictConfig().LegalBreachCap);
+    }
+
+    [Test]
+    public void Compute_TurnaroundExactlyAtDailyRest_IsNoBreach()
+    {
+        // Ends 20:00, next day starts 07:00 — exactly the 11 hours the agent's daily rest demands.
+        var scenario = MakeScenario([1, 2, 3, 4]);
+        scenario.Tokens.Add(MakeToken(0, new TimeOnly(9, 0), new TimeOnly(20, 0), shiftTypeIndex: 1));
+
+        var verdict = PlanVerdictCalculator.Compute(scenario, MakeContext());
+
+        verdict.Findings.ShouldNotContain(f => f.Kind == VerdictFindingKind.DailyRestBreach);
+    }
+
+    [Test]
+    public void QuotaFor_UnlistedWindows_InterpolateAndClampOnTheAnchors()
+    {
+        var cfg = new PlanVerdictConfig();
+
+        cfg.QuotaFor(24)!.WindowsPerReferencePeriod.ShouldBe(4);
+        cfg.QuotaFor(48)!.WindowsPerReferencePeriod.ShouldBe(4);
+        cfg.QuotaFor(60)!.WindowsPerReferencePeriod.ShouldBe(3.5, 1e-9);
+        cfg.QuotaFor(72)!.WindowsPerReferencePeriod.ShouldBe(3);
+        cfg.QuotaFor(96)!.WindowsPerReferencePeriod.ShouldBe(3);
+        cfg.QuotaFor(24)!.WindowHours.ShouldBe(24);
+        cfg.QuotaFor(0).ShouldBeNull();
+    }
+
+    [Test]
+    public void Compute_AgentWithUnlistedPackageRest_StillGetsAQuota()
+    {
+        // MinRestDays 1 → a 24-hour window that has no catalogue entry; before the anchor
+        // interpolation this agent silently fell out of the quota judgement entirely.
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = PeriodStart,
+            PeriodUntil = PeriodStart.AddDays(PeriodDays - 1),
+            Agents = [MakeAgent(AgentId) with { MinRestDays = 1 }],
+            Shifts = [],
+        };
+        var scenario = MakeScenario([0, 1, 2, 3, 4], [6, 7, 8, 9, 10], [13, 14, 15, 16, 17]);
+
+        var verdict = PlanVerdictCalculator.Compute(scenario, context);
+
+        verdict.Quotas.Count.ShouldBe(1);
+        verdict.Quotas[0].WindowHours.ShouldBe(24);
+        verdict.Quotas[0].RequiredWindows.ShouldBe(4, 1e-9);
+        verdict.Quotas[0].Fulfillment.ShouldBe(1);
     }
 
     [Test]
