@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using ApiSettings = Klacks.Api.Application.Constants.Settings;
 
@@ -32,6 +33,8 @@ namespace Klacks.UnitTest.Controllers.Settings
             _mockMediator = Substitute.For<IMediator>();
             _mockSecretResolver = Substitute.For<ISettingsSecretResolver>();
             _mockSecretResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<string?>())
+                .Returns(callInfo => Task.FromResult(callInfo.ArgAt<string?>(1) ?? string.Empty));
+            _mockSecretResolver.ResolveBoundAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<SecretBinding[]>())
                 .Returns(callInfo => Task.FromResult(callInfo.ArgAt<string?>(1) ?? string.Empty));
 
             _controller = new GeneralSettingsController(_mockMediator, _mockLogger, _mockEmailTestService, _mockSecretResolver)
@@ -81,8 +84,12 @@ namespace Klacks.UnitTest.Controllers.Settings
         {
             // Arrange
             const string storedSecret = "DNQK3BPDHELWC5C5YBQA";
+            SecretBinding[]? bindings = null;
             _mockSecretResolver
-                .ResolveAsync(ApiSettings.APP_OUTGOING_SERVER_PASSWORD, SettingsMasking.MaskedValue)
+                .ResolveBoundAsync(
+                    ApiSettings.APP_OUTGOING_SERVER_PASSWORD,
+                    SettingsMasking.MaskedValue,
+                    Arg.Do<SecretBinding[]>(b => bindings = b))
                 .Returns(Task.FromResult(storedSecret));
 
             EmailTestRequest? forwarded = null;
@@ -107,6 +114,13 @@ namespace Klacks.UnitTest.Controllers.Settings
             // Assert
             forwarded.ShouldNotBeNull();
             forwarded!.Password.ShouldBe(storedSecret);
+
+            bindings.ShouldNotBeNull(
+                "the stored secret must only be released for the stored server and user");
+            bindings!.ShouldContain(b =>
+                b.SettingType == ApiSettings.APP_OUTGOING_SERVER && b.ProvidedValue == request.Server);
+            bindings.ShouldContain(b =>
+                b.SettingType == ApiSettings.APP_OUTGOING_SERVER_USERNAME && b.ProvidedValue == request.Username);
         }
 
         [Test]

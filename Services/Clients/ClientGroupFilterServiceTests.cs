@@ -1,4 +1,5 @@
 ﻿using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces.Accounts;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Staffs;
@@ -17,14 +18,18 @@ public class ClientGroupFilterServiceTests
     private ClientGroupFilterService _service;
     private IGetAllClientIdsFromGroupAndSubgroups _mockGroupClient;
     private IGroupVisibilityService _mockGroupVisibility;
+    private IUserService _mockUser;
 
     [SetUp]
     public void SetUp()
     {
         _mockGroupClient = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
         _mockGroupVisibility = Substitute.For<IGroupVisibilityService>();
+        _mockGroupVisibility.GetVisibilityScopeAsync().Returns(Task.FromResult(GroupVisibilityScope.Unrestricted()));
+        _mockUser = Substitute.For<IUserService>();
+        _mockUser.GetIdString().Returns("some-user-id");
         var logger = Substitute.For<ILogger<ClientGroupFilterService>>();
-        _service = new ClientGroupFilterService(_mockGroupClient, _mockGroupVisibility, logger);
+        _service = new ClientGroupFilterService(_mockGroupClient, _mockGroupVisibility, _mockUser, logger);
     }
 
     [Test]
@@ -171,7 +176,8 @@ public class ClientGroupFilterServiceTests
             new Client { Id = Guid.NewGuid(), Name = "Client 2", GroupItems = new List<GroupItem>() }
         }.AsQueryable();
 
-        _mockGroupVisibility.IsAdmin().Returns(Task.FromResult(true));
+        _mockGroupVisibility.GetVisibilityScopeAsync()
+            .Returns(Task.FromResult(GroupVisibilityScope.Unrestricted()));
 
         // Act
         var result = await _service.FilterClientsByGroupId(null, clients);
@@ -215,10 +221,8 @@ public class ClientGroupFilterServiceTests
             }
         }.AsQueryable();
 
-        _mockGroupVisibility.IsAdmin().Returns(Task.FromResult(false));
-        _mockGroupVisibility.ReadVisibleRootIdList().Returns(Task.FromResult(new List<Guid> { rootGroupId }));
-        _mockGroupClient.GetAllGroupIdsIncludingSubgroupsFromList(Arg.Any<List<Guid>>())
-            .Returns(Task.FromResult(new HashSet<Guid> { rootGroupId }));
+        _mockGroupVisibility.GetVisibilityScopeAsync()
+            .Returns(Task.FromResult(GroupVisibilityScope.Restricted([rootGroupId], [rootGroupId])));
 
         // Act
         var result = await _service.FilterClientsByGroupId(null, clients);
@@ -230,5 +234,126 @@ public class ClientGroupFilterServiceTests
         resultList.ShouldContain(c => c.Name == "Client in Visible Root");
         resultList.ShouldContain(c => c.Name == "Client without Group");
         resultList.ShouldNotContain(c => c.Name == "Client in Other Group");
+    }
+
+    [Test]
+    public async Task FilterClientsByGroupId_WithAGroupTheCallerMayNotSee_ReturnsNothing()
+    {
+        // Arrange: a restricted caller asks for a group outside their visible scope
+        var foreignGroupId = Guid.NewGuid();
+        var visibleGroupId = Guid.NewGuid();
+        var clients = new List<Client>
+        {
+            new Client
+            {
+                Id = Guid.NewGuid(),
+                Name = "Client in Foreign Group",
+                GroupItems = new List<GroupItem>
+                {
+                    new GroupItem { Id = Guid.NewGuid(), GroupId = foreignGroupId }
+                }
+            }
+        }.AsQueryable();
+
+        _mockGroupVisibility.GetVisibilityScopeAsync()
+            .Returns(Task.FromResult(GroupVisibilityScope.Restricted([visibleGroupId], [visibleGroupId])));
+        _mockGroupClient.GetAllGroupIdsIncludingSubgroups(foreignGroupId)
+            .Returns(Task.FromResult(new HashSet<Guid> { foreignGroupId }));
+
+        // Act
+        var result = await _service.FilterClientsByGroupId(foreignGroupId, clients);
+
+        // Assert
+        result.ToList().ShouldBeEmpty(
+            "a client-supplied group id must be intersected with the caller's visible groups");
+    }
+
+    [Test]
+    public async Task FilterClientsByGroupId_WithAnUnresolvableGroup_ReturnsNothingInsteadOfEverything()
+    {
+        // Arrange: a garbage group id resolves to no groups at all
+        var unknownGroupId = Guid.NewGuid();
+        var clients = new List<Client>
+        {
+            new Client { Id = Guid.NewGuid(), Name = "Client 1", GroupItems = new List<GroupItem>() },
+            new Client { Id = Guid.NewGuid(), Name = "Client 2", GroupItems = new List<GroupItem>() }
+        }.AsQueryable();
+
+        _mockGroupClient.GetAllGroupIdsIncludingSubgroups(unknownGroupId)
+            .Returns(Task.FromResult(new HashSet<Guid>()));
+
+        // Act
+        var result = await _service.FilterClientsByGroupId(unknownGroupId, clients);
+
+        // Assert
+        result.ToList().ShouldBeEmpty(
+            "an unresolvable group used to skip the filter entirely and returned every client");
+    }
+
+    [Test]
+    public async Task FilterClientsByGroupId_WithoutGroupFilter_AndNoVisibleGroups_ReturnsOnlyGrouplessClients()
+    {
+        // Arrange: a restricted caller with an empty visibility configuration
+        var someGroupId = Guid.NewGuid();
+        var clients = new List<Client>
+        {
+            new Client
+            {
+                Id = Guid.NewGuid(),
+                Name = "Client in Some Group",
+                GroupItems = new List<GroupItem>
+                {
+                    new GroupItem { Id = Guid.NewGuid(), GroupId = someGroupId }
+                }
+            },
+            new Client { Id = Guid.NewGuid(), Name = "Client without Group", GroupItems = new List<GroupItem>() }
+        }.AsQueryable();
+
+        _mockGroupVisibility.GetVisibilityScopeAsync()
+            .Returns(Task.FromResult(GroupVisibilityScope.Restricted([], [])));
+
+        // Act
+        var result = await _service.FilterClientsByGroupId(null, clients);
+        var resultList = result.ToList();
+
+        // Assert
+        resultList.Count.ShouldBe(1);
+        resultList.ShouldContain(c => c.Name == "Client without Group");
+        resultList.ShouldNotContain(c => c.Name == "Client in Some Group",
+            "an empty visibility configuration used to leave the query unfiltered");
+    }
+
+    [Test]
+    public async Task FilterClientsByGroupId_WithoutAUser_ReturnsAllClients()
+    {
+        // Arrange: background services (PeriodHoursBackgroundService,
+        // ThoroughRecalculationBackgroundService) run in their own scope without an HTTP user.
+        // There is nobody whose visibility could apply, so the nightly recalculation must still
+        // see every client - otherwise it silently skips everyone who is in a group.
+        var someGroupId = Guid.NewGuid();
+        var clients = new List<Client>
+        {
+            new Client
+            {
+                Id = Guid.NewGuid(),
+                Name = "Client in Some Group",
+                GroupItems = new List<GroupItem>
+                {
+                    new GroupItem { Id = Guid.NewGuid(), GroupId = someGroupId }
+                }
+            },
+            new Client { Id = Guid.NewGuid(), Name = "Client without Group", GroupItems = new List<GroupItem>() }
+        }.AsQueryable();
+
+        _mockUser.GetIdString().Returns((string?)null);
+        _mockGroupVisibility.GetVisibilityScopeAsync()
+            .Returns(Task.FromResult(GroupVisibilityScope.Restricted([], [])));
+
+        // Act
+        var result = await _service.FilterClientsByGroupId(null, clients);
+
+        // Assert
+        result.ToList().Count.ShouldBe(2,
+            "a background job has no user, so it must not be treated as a restricted one");
     }
 }

@@ -97,6 +97,7 @@ public static class SkillFeatureCoverageMap
         ["PeriodClosingController"] = Covered("close_period", "reopen_period", "approve_day", "revoke_day_approval", "generate_period_summary"),
 
         ["ReportExportController"] = Excluded("technical endpoint: turns rows the frontend already resolved into a spreadsheet, so the assistant has nothing to pass it"),
+        ["RoutingController"] = Excluded("technical endpoint: server-side proxy that keeps the OpenRouteService API key off the browser and returns raw map geometry, nothing the assistant could act on"),
         ["ReportTemplatesController"] = Covered("list_report_templates"),
         ["ScheduleReportController"] = Covered("email_schedule_to_client"),
 
