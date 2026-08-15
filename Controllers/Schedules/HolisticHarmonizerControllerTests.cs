@@ -6,6 +6,7 @@ using Klacks.Api.Application.Interfaces.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using NUnit.Framework;
@@ -28,7 +29,7 @@ public sealed class HolisticHarmonizerControllerTests
     public void SetUp()
     {
         _runner = Substitute.For<IHolisticHarmonizerJobRunner>();
-        _stateCache = new JobTerminalStateCache<HolisticHarmonizerRunResponse>();
+        _stateCache = JobTerminalStateCacheTestFactory.Create<HolisticHarmonizerRunResponse>();
         _sut = new HolisticHarmonizerController(
             _runner,
             Substitute.For<IHolisticHarmonizerApplyService>(),
@@ -50,41 +51,53 @@ public sealed class HolisticHarmonizerControllerTests
         LlmRawResponsePreview: null);
 
     [Test]
-    public void Status_ReturnsRunning_WhenJobIsRunning()
+    public async Task Status_ReturnsRunning_WhenJobIsRunning()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(true);
 
-        var ok = _sut.Status(jobId).Result.ShouldBeOfType<OkObjectResult>();
+        var response = await _sut.Status(jobId, CancellationToken.None);
+        var ok = response.Result.ShouldBeOfType<OkObjectResult>();
 
         ok.Value.ShouldBeOfType<HolisticHarmonizerJobStatusResponse>()
             .Status.ShouldBe(WizardJobStatusValues.Running);
     }
 
     [Test]
-    public void Status_ReturnsCompletedWithResult_WhenTerminalStateCached()
+    public async Task Status_ReturnsCompletedWithResult_WhenTerminalStateCached()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(false);
         var response = MakeResponse(jobId);
-        _stateCache.StoreCompleted(jobId, response);
+        await _stateCache.StoreCompletedAsync(jobId, response);
 
-        var ok = _sut.Status(jobId).Result.ShouldBeOfType<OkObjectResult>();
+        var actionResult = await _sut.Status(jobId, CancellationToken.None);
+        var ok = actionResult.Result.ShouldBeOfType<OkObjectResult>();
 
         var body = ok.Value.ShouldBeOfType<HolisticHarmonizerJobStatusResponse>();
         body.Status.ShouldBe(WizardJobStatusValues.Completed);
-        body.Result.ShouldBe(response);
+        // Compared field by field, not as a whole object: since the terminal state travels through the
+        // database, the store deliberately hands back a structurally equal COPY rather than the stored
+        // instance. Instance equality was never the promise - it was a side effect of the in-process
+        // dictionary, and that same side effect is why a status poll landing on a second API instance
+        // used to come up empty. The promise is the same content, and the wire output is unchanged.
+        body.Result.ShouldNotBeNull();
+        body.Result.JobId.ShouldBe(response.JobId);
+        body.Result.LlmModelId.ShouldBe(response.LlmModelId);
+        body.Result.FitnessBefore.ShouldBe(response.FitnessBefore);
+        body.Result.FitnessAfter.ShouldBe(response.FitnessAfter);
         body.Reason.ShouldBeNull();
     }
 
     [Test]
-    public void Status_ReturnsFailedWithReason_WhenFailureCached()
+    public async Task Status_ReturnsFailedWithReason_WhenFailureCached()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(false);
-        _stateCache.StoreFailed(jobId, "Model produced no usable response.");
+        await _stateCache.StoreFailedAsync(jobId, "Model produced no usable response.");
 
-        var ok = _sut.Status(jobId).Result.ShouldBeOfType<OkObjectResult>();
+        var actionResult = await _sut.Status(jobId, CancellationToken.None);
+        var ok = actionResult.Result.ShouldBeOfType<OkObjectResult>();
 
         var body = ok.Value.ShouldBeOfType<HolisticHarmonizerJobStatusResponse>();
         body.Status.ShouldBe(WizardJobStatusValues.Failed);
@@ -93,25 +106,27 @@ public sealed class HolisticHarmonizerControllerTests
     }
 
     [Test]
-    public void Status_ReturnsCancelled_WhenCancelCached()
+    public async Task Status_ReturnsCancelled_WhenCancelCached()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(false);
-        _stateCache.StoreCancelled(jobId);
+        await _stateCache.StoreCancelledAsync(jobId);
 
-        var ok = _sut.Status(jobId).Result.ShouldBeOfType<OkObjectResult>();
+        var actionResult = await _sut.Status(jobId, CancellationToken.None);
+        var ok = actionResult.Result.ShouldBeOfType<OkObjectResult>();
 
         ok.Value.ShouldBeOfType<HolisticHarmonizerJobStatusResponse>()
             .Status.ShouldBe(WizardJobStatusValues.Cancelled);
     }
 
     [Test]
-    public void Status_ReturnsUnknown_WhenJobNotTracked()
+    public async Task Status_ReturnsUnknown_WhenJobNotTracked()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(false);
 
-        var ok = _sut.Status(jobId).Result.ShouldBeOfType<OkObjectResult>();
+        var actionResult = await _sut.Status(jobId, CancellationToken.None);
+        var ok = actionResult.Result.ShouldBeOfType<OkObjectResult>();
 
         ok.Value.ShouldBeOfType<HolisticHarmonizerJobStatusResponse>()
             .Status.ShouldBe(WizardJobStatusValues.Unknown);

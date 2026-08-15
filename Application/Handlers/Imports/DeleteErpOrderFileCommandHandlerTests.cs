@@ -36,6 +36,15 @@ public class DeleteErpOrderFileCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_ProcessingSegmentKey_DeletesFile()
+    {
+        await _handler.Handle(new DeleteErpOrderFileCommand("erp/orders/processing/abc-order.xml"), CancellationToken.None);
+
+        await _objectStorageService.Received(1)
+            .DeleteAsync("erp/orders/processing/abc-order.xml", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Handle_PendingKeyOutsideErrorSegment_Throws()
     {
         await Should.ThrowAsync<InvalidRequestException>(
@@ -60,6 +69,16 @@ public class DeleteErpOrderFileCommandHandlerTests
     {
         await Should.ThrowAsync<InvalidRequestException>(
             () => _handler.Handle(new DeleteErpOrderFileCommand("erp/orders/error/"), CancellationToken.None));
+
+        await _objectStorageService.DidNotReceive()
+            .DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ProcessingSegmentKeyWithoutFileName_Throws()
+    {
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(new DeleteErpOrderFileCommand("erp/orders/processing/"), CancellationToken.None));
 
         await _objectStorageService.DidNotReceive()
             .DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());

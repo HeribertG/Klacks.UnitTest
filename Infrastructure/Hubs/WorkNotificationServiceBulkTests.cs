@@ -49,7 +49,7 @@ public sealed class WorkNotificationServiceBulkTests
     [Test]
     public async Task NotifyWorksBulkCreated_SendsExactlyOneEventForTheWholeBatch()
     {
-        _tracker.GetConnectionsForDateRange(RangeStart, RangeEnd, null, SourceConnection)
+        _tracker.GetConnectionsForDateRangeAsync(RangeStart, RangeEnd, null, SourceConnection)
             .Returns(["connection-a", "connection-b"]);
 
         var notification = Batch(workCount: 25);
@@ -62,19 +62,19 @@ public sealed class WorkNotificationServiceBulkTests
     [Test]
     public async Task NotifyWorksBulkCreated_ResolvesTheConnectionsOnce()
     {
-        _tracker.GetConnectionsForDateRange(RangeStart, RangeEnd, null, SourceConnection)
+        _tracker.GetConnectionsForDateRangeAsync(RangeStart, RangeEnd, null, SourceConnection)
             .Returns(["connection-a"]);
 
         await _sut.NotifyWorksBulkCreated(Batch(workCount: 25));
 
-        _tracker.Received(1).GetConnectionsForDateRange(
+        await _tracker.Received(1).GetConnectionsForDateRangeAsync(
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<string>());
     }
 
     [Test]
     public async Task NotifyWorksBulkCreated_NoMatchingConnection_SendsNothing()
     {
-        _tracker.GetConnectionsForDateRange(RangeStart, RangeEnd, null, SourceConnection)
+        _tracker.GetConnectionsForDateRangeAsync(RangeStart, RangeEnd, null, SourceConnection)
             .Returns([]);
 
         await _sut.NotifyWorksBulkCreated(Batch(workCount: 5));
@@ -87,7 +87,7 @@ public sealed class WorkNotificationServiceBulkTests
     {
         await _sut.NotifyWorksBulkCreated(Batch(workCount: 0));
 
-        _tracker.DidNotReceiveWithAnyArgs().GetConnectionsForDateRange(default, default, default, default!);
+        await _tracker.DidNotReceiveWithAnyArgs().GetConnectionsForDateRangeAsync(default, default, default, default!);
     }
 
     private static WorksBulkCreatedNotificationDto Batch(int workCount)

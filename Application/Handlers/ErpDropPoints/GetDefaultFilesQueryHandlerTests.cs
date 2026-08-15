@@ -127,6 +127,28 @@ public class GetDefaultFilesQueryHandlerTests
     }
 
     [Test]
+    public async Task Handle_InterruptedImport_IsListedAsErrorWithReasonInsteadOfPending()
+    {
+        _objectStorageService.ListWithMetadataAsync(Prefix, Arg.Any<CancellationToken>()).Returns(new List<StorageObjectMetadata>
+        {
+            new($"{Prefix}error/{UploadId}-order-c.xml", 30, BaseTimeUtc.AddHours(1)),
+            new($"{Prefix}processing/{UploadId}-order-1.xml", 40, BaseTimeUtc)
+        });
+
+        var result = await _handler.Handle(new GetDefaultFilesQuery(), CancellationToken.None);
+
+        result.Pending.ShouldBeEmpty();
+        result.Error.Count.ShouldBe(2);
+
+        var interruptedEntry = result.Error.Single(f => f.Key == $"{Prefix}processing/{UploadId}-order-1.xml");
+        interruptedEntry.FileName.ShouldBe("order-1.xml");
+        interruptedEntry.ErrorReason.ShouldNotBeNullOrWhiteSpace();
+
+        var quarantinedEntry = result.Error.Single(f => f.Key == $"{Prefix}error/{UploadId}-order-c.xml");
+        quarantinedEntry.ErrorReason.ShouldBeNull();
+    }
+
+    [Test]
     public async Task Handle_NoErrorObjects_DoesNotQueryExceptions()
     {
         _objectStorageService.ListWithMetadataAsync(Prefix, Arg.Any<CancellationToken>()).Returns(new List<StorageObjectMetadata>

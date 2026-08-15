@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using Klacks.Api.Application.Constants;
-using Klacks.Api.Application.Services.Schedules;
+using Klacks.UnitTest.TestHelpers;
 using NUnit.Framework;
 using Shouldly;
 
@@ -9,63 +9,86 @@ namespace Klacks.UnitTest.Application.Services.Schedules;
 
 /// <summary>
 /// The terminal state is what a client reads after it missed the SignalR events, so a late failure
-/// path must never overwrite a run that already reported success.
+/// path must never overwrite a run that already reported success. That rule rests on the unique index
+/// on job_id plus the DbUpdateException catch in StoreAsync, and the EF InMemory provider ignores
+/// unique indexes - so the "first wins" tests below run over
+/// <see cref="UniqueJobIdEnforcingDataBaseContext"/>, which rejects the duplicate the way PostgreSQL
+/// does and derives that decision from the model's own index metadata. Against a plain InMemory context
+/// both stores would succeed, two rows would survive, and FirstOrDefaultAsync - which has no ORDER BY -
+/// would return the right one by luck. That the real database enforces the index is proven separately by
+/// Klacks.IntegrationTest/Infrastructure/JobTerminalStateCachePersistenceTests.cs.
 /// </summary>
 [TestFixture]
 public sealed class JobTerminalStateCacheTests
 {
-    private sealed record FakeResult(string Value);
+    internal sealed record FakeResult(string Value);
 
     [Test]
-    public void FirstTerminalStateWins_CompletedIsNotOverwrittenByFailure()
+    public async Task FirstTerminalStateWins_CompletedIsNotOverwrittenByFailure()
     {
-        var cache = new JobTerminalStateCache<FakeResult>();
+        var harness = JobTerminalStateCacheTestFactory.CreateWithUniqueJobIdIndex<FakeResult>();
         var jobId = Guid.NewGuid();
         var result = new FakeResult("done");
 
-        cache.StoreCompleted(jobId, result);
-        cache.StoreFailed(jobId, "broadcast blew up afterwards");
+        await harness.Cache.StoreCompletedAsync(jobId, result);
+        await harness.Cache.StoreFailedAsync(jobId, "broadcast blew up afterwards");
 
-        cache.TryGet(jobId, out var status, out var cached, out var reason).ShouldBeTrue();
-        status.ShouldBe(WizardJobStatusValues.Completed);
-        cached.ShouldBe(result);
-        reason.ShouldBeNull();
+        // Exactly one row: the unique index rejected the second insert. Asserting on the status alone
+        // would rebuild the very trap this test exists to close.
+        (await harness.CountRowsAsync(jobId)).ShouldBe(1);
+
+        // The duplicate must be handled as the expected, benign outcome by the DbUpdateException catch,
+        // not by the outer safety net that swallows and logs everything else.
+        harness.Errors.ShouldBeEmpty();
+
+        var state = await harness.Cache.TryGetAsync(jobId);
+        state.Found.ShouldBeTrue();
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        state.Result.ShouldBe(result);
+        state.Reason.ShouldBeNull();
     }
 
     [Test]
-    public void FirstTerminalStateWins_CancelledIsNotOverwritten()
+    public async Task FirstTerminalStateWins_CancelledIsNotOverwritten()
     {
-        var cache = new JobTerminalStateCache<FakeResult>();
+        var harness = JobTerminalStateCacheTestFactory.CreateWithUniqueJobIdIndex<FakeResult>();
         var jobId = Guid.NewGuid();
 
-        cache.StoreCancelled(jobId);
-        cache.StoreFailed(jobId, "late failure");
+        await harness.Cache.StoreCancelledAsync(jobId);
+        await harness.Cache.StoreFailedAsync(jobId, "late failure");
 
-        cache.TryGet(jobId, out var status, out _, out _).ShouldBeTrue();
-        status.ShouldBe(WizardJobStatusValues.Cancelled);
+        (await harness.CountRowsAsync(jobId)).ShouldBe(1);
+        harness.Errors.ShouldBeEmpty();
+
+        var state = await harness.Cache.TryGetAsync(jobId);
+        state.Found.ShouldBeTrue();
+        state.Status.ShouldBe(WizardJobStatusValues.Cancelled);
+        state.Reason.ShouldBeNull();
     }
 
     [Test]
-    public void UnknownJob_ReportsUnknown()
+    public async Task UnknownJob_ReportsUnknown()
     {
-        var cache = new JobTerminalStateCache<FakeResult>();
+        var cache = JobTerminalStateCacheTestFactory.Create<FakeResult>();
 
-        cache.TryGet(Guid.NewGuid(), out var status, out var cached, out var reason).ShouldBeFalse();
-        status.ShouldBe(WizardJobStatusValues.Unknown);
-        cached.ShouldBeNull();
-        reason.ShouldBeNull();
+        var state = await cache.TryGetAsync(Guid.NewGuid());
+        state.Found.ShouldBeFalse();
+        state.Status.ShouldBe(WizardJobStatusValues.Unknown);
+        state.Result.ShouldBeNull();
+        state.Reason.ShouldBeNull();
     }
 
     [Test]
-    public void StoreFailed_KeepsTheReason()
+    public async Task StoreFailed_KeepsTheReason()
     {
-        var cache = new JobTerminalStateCache<FakeResult>();
+        var cache = JobTerminalStateCacheTestFactory.Create<FakeResult>();
         var jobId = Guid.NewGuid();
 
-        cache.StoreFailed(jobId, "engine exploded");
+        await cache.StoreFailedAsync(jobId, "engine exploded");
 
-        cache.TryGet(jobId, out var status, out _, out var reason).ShouldBeTrue();
-        status.ShouldBe(WizardJobStatusValues.Failed);
-        reason.ShouldBe("engine exploded");
+        var state = await cache.TryGetAsync(jobId);
+        state.Found.ShouldBeTrue();
+        state.Status.ShouldBe(WizardJobStatusValues.Failed);
+        state.Reason.ShouldBe("engine exploded");
     }
 }

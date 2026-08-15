@@ -68,7 +68,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task ConnectedRecipients_GetProactiveMessage()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
 
         await _notifier.NotifyAsync(Email(), Analysis());
 
@@ -82,8 +82,8 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task OfflineRecipient_GetsPendingNote_WithEmailAnalysisTopic()
     {
-        _notificationService.IsUserConnected(Planner).Returns(false);
-        _notificationService.IsUserConnected(Admin).Returns(true);
+        _notificationService.IsUserConnectedAsync(Planner).Returns(false);
+        _notificationService.IsUserConnectedAsync(Admin).Returns(true);
 
         await _notifier.NotifyAsync(Email(), Analysis());
 
@@ -101,7 +101,7 @@ public class EmailAnalysisNotifierTests
     {
         _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new HashSet<string> { Planner });
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
 
         await _notifier.NotifyAsync(Email(), Analysis());
 
@@ -112,7 +112,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task NoDefaultAgent_OfflineUserSkipped_NoException()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(false);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(false);
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns((Agent?)null);
 
         await _notifier.NotifyAsync(Email(), Analysis());
@@ -123,7 +123,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task FailureForOneUser_DoesNotAbortOthers()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
         _notificationService.SendProactiveMessageAsync(Planner, Arg.Any<string>(), null, null)
             .Returns<Task>(_ => throw new InvalidOperationException("hub down"));
 
@@ -135,7 +135,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task PeriodRange_AppearsInMessage()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
         var analysis = Analysis();
         analysis.UntilDate = new DateOnly(2026, 7, 12);
 
@@ -148,7 +148,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task AvailabilityAnnouncement_LabelAppearsInMessage()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
         var analysis = Analysis();
         analysis.Intent = EmailIntent.AvailabilityAnnouncement;
 
@@ -161,7 +161,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task HourWindowAndWeekdays_AppearInMessage()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
         var analysis = Analysis();
         analysis.Intent = EmailIntent.AvailabilityAnnouncement;
         analysis.StartHour = 8;
@@ -179,7 +179,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task ShiftPreference_LabelAppearsInMessage()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
         var analysis = Analysis();
         analysis.Intent = EmailIntent.ShiftPreference;
 
@@ -192,7 +192,7 @@ public class EmailAnalysisNotifierTests
     [Test]
     public async Task ScheduleCommands_AppearInMessage()
     {
-        _notificationService.IsUserConnected(Arg.Any<string>()).Returns(true);
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
         var analysis = Analysis();
         analysis.Intent = EmailIntent.ShiftPreference;
         analysis.ScheduleCommands = "EARLY,-NIGHT";

@@ -10,6 +10,7 @@ using Klacks.Api.Application.DTOs.Schedules.Wizard;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using NUnit.Framework;
@@ -32,7 +33,7 @@ public class WizardControllerTests
         _runner = Substitute.For<IWizardJobRunner>();
         _applyService = Substitute.For<IWizardApplyService>();
         _benchmarkService = Substitute.For<IWizardBenchmarkService>();
-        _stateCache = new JobTerminalStateCache<WizardJobResultDto>();
+        _stateCache = JobTerminalStateCacheTestFactory.Create<WizardJobResultDto>();
         _mediator = Substitute.For<IMediator>();
         _sut = new WizardController(_runner, _applyService, _benchmarkService, _stateCache, _mediator);
     }
@@ -152,19 +153,19 @@ public class WizardControllerTests
     }
 
     [Test]
-    public void Status_ReturnsRunning_WhenJobIsRunning()
+    public async Task Status_ReturnsRunning_WhenJobIsRunning()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(true);
 
-        var result = _sut.Status(jobId);
+        var result = await _sut.Status(jobId, CancellationToken.None);
 
         var ok = result.Result.ShouldBeOfType<OkObjectResult>();
         ok.Value.ShouldBeOfType<WizardJobStatusResponse>().Status.ShouldBe(WizardJobStatusValues.Running);
     }
 
     [Test]
-    public void Status_ReturnsCompletedWithResult_WhenTerminalStateCached()
+    public async Task Status_ReturnsCompletedWithResult_WhenTerminalStateCached()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(false);
@@ -179,9 +180,9 @@ public class WizardControllerTests
             Escalations: [],
             QualificationGaps: [],
             TimedOut: false);
-        _stateCache.StoreCompleted(jobId, resultDto);
+        await _stateCache.StoreCompletedAsync(jobId, resultDto);
 
-        var result = _sut.Status(jobId);
+        var result = await _sut.Status(jobId, CancellationToken.None);
 
         var ok = result.Result.ShouldBeOfType<OkObjectResult>();
         var response = ok.Value.ShouldBeOfType<WizardJobStatusResponse>();
@@ -191,13 +192,13 @@ public class WizardControllerTests
     }
 
     [Test]
-    public void Status_ReturnsFailedWithReason_WhenFailureCached()
+    public async Task Status_ReturnsFailedWithReason_WhenFailureCached()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(false);
-        _stateCache.StoreFailed(jobId, "boom");
+        await _stateCache.StoreFailedAsync(jobId, "boom");
 
-        var result = _sut.Status(jobId);
+        var result = await _sut.Status(jobId, CancellationToken.None);
 
         var ok = result.Result.ShouldBeOfType<OkObjectResult>();
         var response = ok.Value.ShouldBeOfType<WizardJobStatusResponse>();
@@ -206,12 +207,12 @@ public class WizardControllerTests
     }
 
     [Test]
-    public void Status_ReturnsUnknown_WhenJobNotTracked()
+    public async Task Status_ReturnsUnknown_WhenJobNotTracked()
     {
         var jobId = Guid.NewGuid();
         _runner.IsRunning(jobId).Returns(false);
 
-        var result = _sut.Status(jobId);
+        var result = await _sut.Status(jobId, CancellationToken.None);
 
         var ok = result.Result.ShouldBeOfType<OkObjectResult>();
         ok.Value.ShouldBeOfType<WizardJobStatusResponse>().Status.ShouldBe(WizardJobStatusValues.Unknown);

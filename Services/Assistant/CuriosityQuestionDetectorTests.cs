@@ -54,7 +54,7 @@ public class CuriosityQuestionDetectorTests
     [Test]
     public async Task Disabled_EmitsNothing_EvenWithConnectedUser()
     {
-        _notification.GetConnectedUserIds().Returns(new[] { Guid.NewGuid().ToString() });
+        _notification.GetConnectedUserIdsAsync().Returns(new[] { Guid.NewGuid().ToString() });
 
         var events = await Detector(enabled: false).DetectAsync();
 
@@ -65,7 +65,7 @@ public class CuriosityQuestionDetectorTests
     public async Task Enabled_ConnectedUserWithNoMemories_EmitsOneTargetedQuestion()
     {
         var userId = Guid.NewGuid();
-        _notification.GetConnectedUserIds().Returns(new[] { userId.ToString() });
+        _notification.GetConnectedUserIdsAsync().Returns(new[] { userId.ToString() });
 
         var events = await Detector(enabled: true).DetectAsync();
 
@@ -81,7 +81,7 @@ public class CuriosityQuestionDetectorTests
     public async Task Enabled_TopicAlreadyRevealed_SkipsThatTopic()
     {
         var userId = Guid.NewGuid();
-        _notification.GetConnectedUserIds().Returns(new[] { userId.ToString() });
+        _notification.GetConnectedUserIdsAsync().Returns(new[] { userId.ToString() });
         _memory.GetByUserAsync(_agent.Id, userId, Arg.Any<CancellationToken>())
             .Returns(new List<AgentMemory>
             {
@@ -99,7 +99,7 @@ public class CuriosityQuestionDetectorTests
     public async Task Enabled_BudgetSpent_SkipsUser()
     {
         var userId = Guid.NewGuid();
-        _notification.GetConnectedUserIds().Returns(new[] { userId.ToString() });
+        _notification.GetConnectedUserIdsAsync().Returns(new[] { userId.ToString() });
         _rateLimiter.GetRemainingBudget(userId.ToString(), AgentTriggerKinds.CuriosityQuestion).Returns(0);
 
         var events = await Detector(enabled: true).DetectAsync();
@@ -110,7 +110,7 @@ public class CuriosityQuestionDetectorTests
     [Test]
     public async Task Enabled_NonGuidUserId_IsSkipped()
     {
-        _notification.GetConnectedUserIds().Returns(new[] { "not-a-guid" });
+        _notification.GetConnectedUserIdsAsync().Returns(new[] { "not-a-guid" });
 
         var events = await Detector(enabled: true).DetectAsync();
 

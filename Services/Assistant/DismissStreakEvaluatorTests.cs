@@ -120,7 +120,7 @@ public class DismissStreakEvaluatorTests
         var planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-        notificationService.GetConnectedUserIds().Returns(new[] { UserId });
+        notificationService.GetConnectedUserIdsAsync().Returns(new[] { UserId });
         _dispatchRepository
             .WasDispatchedAsync(UserId, AgentTriggerKinds.MuteSuggestion, "mute-suggestion:" + AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>())
             .Returns(true);

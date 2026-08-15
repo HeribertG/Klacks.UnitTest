@@ -86,7 +86,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_CompanionBroadcast_NoConnectedUsers_PersistsAndSendsNothing()
     {
-        _notificationService.GetConnectedUserIds().Returns(Array.Empty<string>());
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
 
         await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Broadcast."));
 
@@ -98,7 +98,7 @@ public class AgentTriggerServiceTests
     public async Task OnEventAsync_HighSeverity_ConnectedPlanners_LivePushesAndRecordsFire()
     {
         var users = new[] { "user-a", "user-b" };
-        _notificationService.GetConnectedUserIds().Returns(users);
+        _notificationService.GetConnectedUserIdsAsync().Returns(users);
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
@@ -115,7 +115,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_MediumSeverity_ConnectedPlanner_RecordsAndSignalsInboxWithoutChatPush()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("user-a");
         _dispatchRepository.CountUnreadAsync("user-a", Arg.Any<CancellationToken>()).Returns(3);
@@ -131,7 +131,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_PlannersOnly_OfflinePlanners_RecordsInboxRowsWithoutAnyPush()
     {
-        _notificationService.GetConnectedUserIds().Returns(Array.Empty<string>());
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
@@ -147,7 +147,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_RateLimited_BlocksThatUserBeforePersist()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a", "user-b" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a", "user-b" });
         _rateLimiter.ShouldFire("user-a", Arg.Any<string>()).Returns(true);
         _rateLimiter.ShouldFire("user-b", Arg.Any<string>()).Returns(false);
 
@@ -161,7 +161,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_MutedByPreference_BlocksThatUserBeforePersist()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a", "user-b" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a", "user-b" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _preferenceService.IsAllowedAsync("user-a", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _preferenceService.IsAllowedAsync("user-b", Arg.Any<string>(), Arg.Any<string>()).Returns(false);
@@ -176,7 +176,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_AlreadyDispatched_DedupBlocksBeforePersist()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("user-a");
         _dispatchRepository
@@ -193,7 +193,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_UserActiveInConversation_PersistsAndSignalsInboxInsteadOfChatPush()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("user-a");
         _activityTracker.IsRecentlyActive("user-a", Arg.Any<TimeSpan>()).Returns(true);
@@ -208,7 +208,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_PlainHighSeverityEvent_PrefixesWithTag()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.High, "Plain summary."));
@@ -223,7 +223,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_I18nEvent_SendsBareKeyWithoutTag_AndForwardsParams()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
@@ -241,7 +241,7 @@ public class AgentTriggerServiceTests
     {
         const string planner = "planner-1";
         const string employee = "employee-1";
-        _notificationService.GetConnectedUserIds().Returns(new[] { planner, employee });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { planner, employee });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners(planner);
 
@@ -258,7 +258,7 @@ public class AgentTriggerServiceTests
     public async Task OnEventAsync_PlannersOnly_OnlyEmployeesConnected_RecordsForOfflinePlannerWithoutPush()
     {
         const string offlinePlanner = "some-other-planner";
-        _notificationService.GetConnectedUserIds().Returns(new[] { "employee-1", "employee-2" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "employee-1", "employee-2" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners(offlinePlanner);
 
@@ -271,7 +271,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_CompanionBroadcast_LivePushesToConnectedUsersEvenAtLowSeverity()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "employee-1" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "employee-1" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("some-other-planner");
 
@@ -285,7 +285,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_Dispatch_RecordsContentKeySeverityAndCouplesMessageIdToRowId()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("user-a");
         string? sentMessageId = null;
@@ -316,7 +316,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_OverlongParamValue_CapsValueAndKeepsJsonWithinColumnLimit()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         ProactiveTriggerDispatchRow? recordedRow = null;
         _dispatchRepository
@@ -338,7 +338,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_ParamsExceedColumnLimitEvenAfterCapping_StoresNullInsteadOfInvalidJson()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         ProactiveTriggerDispatchRow? recordedRow = null;
         _dispatchRepository
@@ -358,7 +358,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_SendFails_RowStaysPersistedAndBudgetCounted_MessageReachableViaInbox()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _notificationService
             .SendProactiveMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>())
@@ -373,7 +373,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_PersistFails_DoesNotCountBudgetOrPush()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _dispatchRepository
             .RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
@@ -390,7 +390,7 @@ public class AgentTriggerServiceTests
     {
         var target = Guid.NewGuid();
         var other = Guid.NewGuid();
-        _notificationService.GetConnectedUserIds().Returns(new[] { target.ToString(), other.ToString() });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { target.ToString(), other.ToString() });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("sport", target));
@@ -404,7 +404,7 @@ public class AgentTriggerServiceTests
     public async Task OnEventAsync_TargetedCompanionEvent_OfflineTarget_RecordsInboxRowWithoutPush()
     {
         var target = Guid.NewGuid();
-        _notificationService.GetConnectedUserIds().Returns(Array.Empty<string>());
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await _sut.OnEventAsync(new CuriosityQuestionTriggerEvent("sport", target));
@@ -419,7 +419,7 @@ public class AgentTriggerServiceTests
     {
         var target = Guid.NewGuid();
         var other = Guid.NewGuid();
-        _notificationService.GetConnectedUserIds().Returns(new[] { target.ToString(), other.ToString() });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { target.ToString(), other.ToString() });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         await _sut.OnEventAsync(new SkillSequenceSuggestionTriggerEvent("Add a note", "Send an email", target));
@@ -436,7 +436,7 @@ public class AgentTriggerServiceTests
     {
         const string offlineAdmin = "admin-1";
         const string connectedEmployee = "employee-1";
-        _notificationService.GetConnectedUserIds().Returns(new[] { connectedEmployee });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { connectedEmployee });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetAdmins(offlineAdmin);
 
@@ -453,7 +453,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_EventWithAction_PersistsActionAndForwardsItInLivePush()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("user-a");
         ProactiveTriggerDispatchRow? recordedRow = null;
@@ -492,7 +492,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_EventWithoutAction_PersistsNullActionFields()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         ProactiveTriggerDispatchRow? recordedRow = null;
         _dispatchRepository
@@ -509,7 +509,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_OverlongActionParamValue_CapsValueAndKeepsJsonWithinColumnLimit()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         ProactiveTriggerDispatchRow? recordedRow = null;
         _dispatchRepository
@@ -533,7 +533,7 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_ActionParamsExceedColumnLimitEvenAfterCapping_StoresNullActionParamsButKeepsRoute()
     {
-        _notificationService.GetConnectedUserIds().Returns(new[] { "user-a" });
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         ProactiveTriggerDispatchRow? recordedRow = null;
         _dispatchRepository

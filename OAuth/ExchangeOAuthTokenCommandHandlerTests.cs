@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 using System.Buffers.Text;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,8 @@ using Klacks.Api.Application.Handlers.OAuth;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 
 namespace Klacks.UnitTest.OAuth;
 
@@ -24,6 +27,11 @@ public class ExchangeOAuthTokenCommandHandlerTests
     private const string CodeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     private const string WrongCodeVerifier = "wrong-verifier-wrong-verifier-wrong-verifier";
     private const int ExpectedExpiresInSeconds = 30 * 24 * 60 * 60;
+
+    private static readonly DateTimeOffset FixedUtcNow = DateTimeOffset.Parse(
+        "2026-07-17T10:00:00Z",
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.AdjustToUniversal);
 
     private IOAuthClientRepository _clientRepository = null!;
     private OAuthAuthorizationCodeStore _codeStore = null!;
@@ -46,7 +54,15 @@ public class ExchangeOAuthTokenCommandHandlerTests
         _tokenRepository.AddAsync(Arg.Do<PersonalAccessToken>(token => _capturedToken = token), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        _codeStore = new OAuthAuthorizationCodeStore();
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var timeProvider = Substitute.For<TimeProvider>();
+        timeProvider.GetUtcNow().Returns(FixedUtcNow);
+
+        _codeStore = new OAuthAuthorizationCodeStore(
+            new DataBaseContext(options, Substitute.For<IHttpContextAccessor>()),
+            timeProvider);
         _handler = new ExchangeOAuthTokenCommandHandler(_clientRepository, _codeStore, _tokenRepository);
     }
 
@@ -62,7 +78,7 @@ public class ExchangeOAuthTokenCommandHandlerTests
     [Test]
     public async Task Handle_MissingCodeVerifier_ReturnsInvalidRequest()
     {
-        StoreCode();
+        await StoreCode();
 
         var result = await _handler.Handle(Command(codeVerifier: null), CancellationToken.None);
 
@@ -89,7 +105,7 @@ public class ExchangeOAuthTokenCommandHandlerTests
     [Test]
     public async Task Handle_CodeIssuedToOtherClient_ReturnsInvalidGrant()
     {
-        StoreCode();
+        await StoreCode();
 
         var result = await _handler.Handle(Command(clientId: OtherClientId), CancellationToken.None);
 
@@ -99,7 +115,7 @@ public class ExchangeOAuthTokenCommandHandlerTests
     [Test]
     public async Task Handle_RedirectUriMismatch_ReturnsInvalidGrant()
     {
-        StoreCode();
+        await StoreCode();
 
         var result = await _handler.Handle(Command(redirectUri: "https://claude.ai/other"), CancellationToken.None);
 
@@ -109,7 +125,7 @@ public class ExchangeOAuthTokenCommandHandlerTests
     [Test]
     public async Task Handle_WrongCodeVerifier_ReturnsInvalidGrant()
     {
-        StoreCode();
+        await StoreCode();
 
         var result = await _handler.Handle(Command(codeVerifier: WrongCodeVerifier), CancellationToken.None);
 
@@ -120,7 +136,7 @@ public class ExchangeOAuthTokenCommandHandlerTests
     [Test]
     public async Task Handle_CodeReuse_SecondExchangeReturnsInvalidGrant()
     {
-        StoreCode();
+        await StoreCode();
 
         var first = await _handler.Handle(Command(), CancellationToken.None);
         var second = await _handler.Handle(Command(), CancellationToken.None);
@@ -133,7 +149,7 @@ public class ExchangeOAuthTokenCommandHandlerTests
     [Test]
     public async Task Handle_HappyPath_IssuesPersonalAccessTokenAsOAuthAccessToken()
     {
-        StoreCode();
+        await StoreCode();
         var before = DateTime.UtcNow;
 
         var result = await _handler.Handle(Command(), CancellationToken.None);
@@ -174,9 +190,9 @@ public class ExchangeOAuthTokenCommandHandlerTests
         return new ExchangeOAuthTokenCommand(grantType, code, redirectUri, clientId, codeVerifier);
     }
 
-    private void StoreCode()
+    private async Task StoreCode()
     {
-        _codeStore.Store(AuthorizationCode, new OAuthAuthorizationCodeData(
+        await _codeStore.StoreAsync(AuthorizationCode, new OAuthAuthorizationCodeData(
             UserId: UserId,
             ClientId: KnownClientId,
             ClientName: ClientName,

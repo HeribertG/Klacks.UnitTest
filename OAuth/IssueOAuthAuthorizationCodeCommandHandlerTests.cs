@@ -1,11 +1,14 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using System.Globalization;
 using System.Text.Json;
 using Klacks.Api.Application.Commands.OAuth;
 using Klacks.Api.Application.Handlers.OAuth;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 
 namespace Klacks.UnitTest.OAuth;
 
@@ -21,6 +24,11 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
     private const string WrongPassword = "wrong";
     private const string UserId = "user-1";
     private const string CodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+
+    private static readonly DateTimeOffset FixedUtcNow = DateTimeOffset.Parse(
+        "2026-07-17T10:00:00Z",
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.AdjustToUniversal);
 
     private IOAuthClientRepository _clientRepository = null!;
     private IAuthenticationService _authenticationService = null!;
@@ -44,7 +52,15 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
         _authenticationService.ValidateCredentialsAsync(Email, WrongPassword)
             .Returns((false, (AppUser?)null));
 
-        _codeStore = new OAuthAuthorizationCodeStore();
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var timeProvider = Substitute.For<TimeProvider>();
+        timeProvider.GetUtcNow().Returns(FixedUtcNow);
+
+        _codeStore = new OAuthAuthorizationCodeStore(
+            new DataBaseContext(options, Substitute.For<IHttpContextAccessor>()),
+            timeProvider);
         _handler = new IssueOAuthAuthorizationCodeCommandHandler(_clientRepository, _authenticationService, _codeStore);
     }
 
@@ -91,7 +107,7 @@ public class IssueOAuthAuthorizationCodeCommandHandlerTests
         result.Error.ShouldBeNull();
         result.Code.ShouldNotBeNullOrWhiteSpace();
 
-        var stored = _codeStore.Consume(result.Code!);
+        var stored = await _codeStore.ConsumeAsync(result.Code!);
         stored.ShouldNotBeNull();
         stored!.UserId.ShouldBe(UserId);
         stored.ClientId.ShouldBe(KnownClientId);

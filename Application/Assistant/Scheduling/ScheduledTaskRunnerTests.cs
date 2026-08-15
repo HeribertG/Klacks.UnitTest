@@ -80,7 +80,7 @@ public class ScheduledTaskRunnerTests
     {
         var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
 
         await _runner.RunDueAsync();
 
@@ -96,7 +96,7 @@ public class ScheduledTaskRunnerTests
     {
         var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(false);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(false);
 
         await _runner.RunDueAsync();
 
@@ -112,7 +112,7 @@ public class ScheduledTaskRunnerTests
     {
         var task = Reminder(DateTime.UtcNow.AddHours(-1));
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
 
         await _runner.RunDueAsync();
 
@@ -132,7 +132,7 @@ public class ScheduledTaskRunnerTests
         task.MessageText = null;
         task.OwnerPermissionsCsv = "CanViewClients,CanEditClients";
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "Report ready"));
 
@@ -160,7 +160,7 @@ public class ScheduledTaskRunnerTests
         // The frozen CSV still claims admin rights; the owner has since been downgraded to User.
         task.OwnerPermissionsCsv = "Admin,CanDeleteClients";
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.User }));
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
@@ -185,7 +185,7 @@ public class ScheduledTaskRunnerTests
         task.SkillName = "get_user_context";
         task.MessageText = null;
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(InternalTokenResult.Refused("the owner account is locked out"));
 
@@ -208,7 +208,7 @@ public class ScheduledTaskRunnerTests
     {
         var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
 
         await _runner.RunDueAsync();
 
@@ -240,7 +240,7 @@ public class ScheduledTaskRunnerTests
         task.MessageText = null;
         task.OwnerPermissionsCsv = null;
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
         _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(UnattendedSkillDecision.Deny("Owner permissions were never frozen."));
 
@@ -264,7 +264,7 @@ public class ScheduledTaskRunnerTests
         task.SkillName = "delete_client";
         task.MessageText = null;
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
         _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(UnattendedSkillDecision.Deny("Skill 'delete_client' is now classified as sensitive."));
 
@@ -280,7 +280,7 @@ public class ScheduledTaskRunnerTests
         var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
         task.OwnerPermissionsCsv = null;
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
 
         await _runner.RunDueAsync();
 
@@ -296,7 +296,7 @@ public class ScheduledTaskRunnerTests
         var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
         task.MaxRuns = 1;
         Due(task);
-        _notification.IsUserConnected(Owner.ToString()).Returns(true);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
 
         await _runner.RunDueAsync();
 

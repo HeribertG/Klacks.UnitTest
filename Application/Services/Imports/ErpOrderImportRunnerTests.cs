@@ -61,10 +61,13 @@ public class ErpOrderImportRunnerTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Client>>>())
             .Returns(ci => ci.Arg<Func<Task<Client>>>()());
 
+        _objectStorageService.TryClaimAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        _settingsRepository.TryAdvanceSettingAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
         _dropPointRepository.List().Returns([DropPoint]);
 
         // Due immediately: NextRunUtc already in the past.
-        _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc)
+        _settingsRepository.GetSettingNoTracking(ErpImportSettingsTypes.NextRunUtc)
             .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddMinutes(-5).ToString("O") });
 
         var resolver = new ErpCustomerResolver(_clientRepository);
@@ -85,7 +88,7 @@ public class ErpOrderImportRunnerTests
     [Test]
     public async Task RunAsync_NotYetDue_SkipsEntirely()
     {
-        _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc)
+        _settingsRepository.GetSettingNoTracking(ErpImportSettingsTypes.NextRunUtc)
             .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddHours(1).ToString("O") });
 
         await _runner.RunAsync();
@@ -96,12 +99,23 @@ public class ErpOrderImportRunnerTests
     [Test]
     public async Task RunAsync_FirstEverRun_ComputesScheduleWithoutFiring()
     {
-        _settingsRepository.GetSetting(ErpImportSettingsTypes.NextRunUtc).Returns((Settings?)null);
+        _settingsRepository.GetSettingNoTracking(ErpImportSettingsTypes.NextRunUtc).Returns((Settings?)null);
 
         await _runner.RunAsync();
 
         await _objectStorageService.DidNotReceive().ListAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _settingsRepository.Received(1).AddSetting(Arg.Is<Settings>(s => s.Type == ErpImportSettingsTypes.NextRunUtc));
+    }
+
+    [Test]
+    public async Task RunAsync_OccurrenceClaimedByAnotherInstance_SkipsEntirely()
+    {
+        _settingsRepository.TryAdvanceSettingAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(false);
+
+        await _runner.RunAsync();
+
+        await _settingsRepository.Received(1).TryAdvanceSettingAsync(ErpImportSettingsTypes.NextRunUtc, Arg.Any<string>(), Arg.Any<string>());
+        await _objectStorageService.DidNotReceive().ListAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -180,14 +194,16 @@ public class ErpOrderImportRunnerTests
 
         await _runner.RunAsync();
 
-        await _objectStorageService.Received(1).MoveAsync("customer-1/order-1.xml", "customer-1/processed/order-1.xml", Arg.Any<CancellationToken>());
+        await _objectStorageService.Received(1).TryClaimAsync("customer-1/order-1.xml", "customer-1/processing/order-1.xml", Arg.Any<CancellationToken>());
+        await _objectStorageService.Received(1).DownloadAsync("customer-1/processing/order-1.xml", Arg.Any<CancellationToken>());
+        await _objectStorageService.Received(1).MoveAsync("customer-1/processing/order-1.xml", "customer-1/processed/order-1.xml", Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task RunAsync_RootValidationFailure_MovesFileToErrorSegmentWithoutProcessingOrders()
     {
         _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns(["customer-1/broken.xml"]);
-        _objectStorageService.DownloadAsync("customer-1/broken.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("not xml")));
+        _objectStorageService.DownloadAsync("customer-1/processing/broken.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("not xml")));
         _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult
         {
             Errors = [new OrderImportValidationError { Field = "root", Message = "malformed" }]
@@ -195,7 +211,7 @@ public class ErpOrderImportRunnerTests
 
         await _runner.RunAsync();
 
-        await _objectStorageService.Received(1).MoveAsync("customer-1/broken.xml", "customer-1/error/broken.xml", Arg.Any<CancellationToken>());
+        await _objectStorageService.Received(1).MoveAsync("customer-1/processing/broken.xml", "customer-1/error/broken.xml", Arg.Any<CancellationToken>());
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
         await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e => e.SourceSystemId == "erp-1" && e.FileKey == "customer-1/broken.xml"));
         await _triggerService.Received(1).OnEventAsync(Arg.Is<IAgentTriggerEvent>(e => e.Kind == AgentTriggerKinds.OrderImportFailed && e.AdminOnly), Arg.Any<CancellationToken>());
@@ -205,7 +221,7 @@ public class ErpOrderImportRunnerTests
     public async Task RunAsync_OrderLevelRejection_RecordsExceptionAndQuarantinesFileWhileValidOrdersImport()
     {
         _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns(["customer-1/mixed.xml"]);
-        _objectStorageService.DownloadAsync("customer-1/mixed.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
+        _objectStorageService.DownloadAsync("customer-1/processing/mixed.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
         _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult
         {
             Orders = [Order()],
@@ -221,14 +237,14 @@ public class ErpOrderImportRunnerTests
             e.ExternalOrderReference == "ORD-2" &&
             e.FileKey == "customer-1/mixed.xml" &&
             e.Reason.Contains("no weekday")));
-        await _objectStorageService.Received(1).MoveAsync("customer-1/mixed.xml", "customer-1/error/mixed.xml", Arg.Any<CancellationToken>());
+        await _objectStorageService.Received(1).MoveAsync("customer-1/processing/mixed.xml", "customer-1/error/mixed.xml", Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task RunAsync_AllOrdersRejected_RecordsOneExceptionPerOrder()
     {
         _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns(["customer-1/all-bad.xml"]);
-        _objectStorageService.DownloadAsync("customer-1/all-bad.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
+        _objectStorageService.DownloadAsync("customer-1/processing/all-bad.xml", Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
         _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult
         {
             Errors =
@@ -243,7 +259,7 @@ public class ErpOrderImportRunnerTests
         await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e => e.ExternalOrderReference == "ORD-1"));
         await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e => e.ExternalOrderReference == "ORD-2"));
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
-        await _objectStorageService.Received(1).MoveAsync("customer-1/all-bad.xml", "customer-1/error/all-bad.xml", Arg.Any<CancellationToken>());
+        await _objectStorageService.Received(1).MoveAsync("customer-1/processing/all-bad.xml", "customer-1/error/all-bad.xml", Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -258,7 +274,7 @@ public class ErpOrderImportRunnerTests
         await _exceptionRepository.Received(1).Add(Arg.Is<ErpImportException>(e =>
             e.ExternalOrderReference == "ORD-1" &&
             e.Reason.Contains("db down")));
-        await _objectStorageService.Received(1).MoveAsync("customer-1/order-1.xml", "customer-1/error/order-1.xml", Arg.Any<CancellationToken>());
+        await _objectStorageService.Received(1).MoveAsync("customer-1/processing/order-1.xml", "customer-1/error/order-1.xml", Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -275,6 +291,35 @@ public class ErpOrderImportRunnerTests
     }
 
     [Test]
+    public async Task RunAsync_FilesAlreadyInProcessingSegment_AreSkipped()
+    {
+        _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns([
+            "customer-1/processing/order-claimed.xml"
+        ]);
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.DidNotReceive().TryClaimAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _objectStorageService.DidNotReceive().DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_ClaimLostToConcurrentRun_LeavesFileUntouched()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns((Shift?)null);
+        _objectStorageService.TryClaimAsync("customer-1/order-1.xml", "customer-1/processing/order-1.xml", Arg.Any<CancellationToken>()).Returns(false);
+
+        await _runner.RunAsync();
+
+        await _objectStorageService.DidNotReceive().DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        _parser.DidNotReceive().Parse(Arg.Any<Stream>());
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+        await _objectStorageService.DidNotReceive().MoveAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task RunAsync_DisabledDropPoint_IsSkipped()
     {
         var disabled = new ErpDropPoint { Id = Guid.NewGuid(), Name = "Disabled", SourceSystemId = "erp-2", BucketPrefix = "customer-2", IsEnabled = false };
@@ -288,8 +333,10 @@ public class ErpOrderImportRunnerTests
     private void SetupFile(string key, ImportedOrderPayload order)
     {
         _objectStorageService.ListAsync("customer-1/", Arg.Any<CancellationToken>()).Returns([key]);
-        _objectStorageService.DownloadAsync(key, Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
+        _objectStorageService.DownloadAsync(ClaimedKey(key), Arg.Any<CancellationToken>()).Returns(new MemoryStream(Encoding.UTF8.GetBytes("<xml/>")));
         _parser.Parse(Arg.Any<Stream>()).Returns(new OrderImportParseResult { Orders = [order] });
         _clientRepository.FindReusableCustomerAsync(Arg.Any<Client>(), Arg.Any<CancellationToken>()).Returns((Client?)null);
     }
+
+    private static string ClaimedKey(string key) => "customer-1/processing/" + key["customer-1/".Length..];
 }
