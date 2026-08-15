@@ -38,8 +38,8 @@ public class AutonomyGateServiceTests
         turnScope,
         NullLogger<AutonomyGateService>.Instance);
 
-    private static SkillDescriptor Descriptor(string name = "test_skill")
-        => new(name, "test", SkillCategory.Crud, [], [], [], null);
+    private static SkillDescriptor Descriptor(string name = "test_skill", SkillCategory category = SkillCategory.Crud)
+        => new(name, "test", category, [], [], [], null);
 
     private static SkillExecutionContext Context(Guid? userId = null, bool bypass = false) => new()
     {
@@ -119,8 +119,7 @@ public class AutonomyGateServiceTests
     [TestCase(SkillRiskClass.Reversible, true)]
     [TestCase(SkillRiskClass.ScenarioGated, true)]
     [TestCase(SkillRiskClass.Irreversible, true)]
-    [TestCase(SkillRiskClass.Sensitive, true)]
-    public async Task Check_AutonomousLevel_AllowsEveryRiskClass(SkillRiskClass riskClass, bool allowed)
+    public async Task Check_AutonomousLevel_AllowsEveryRiskClassExceptSensitive(SkillRiskClass riskClass, bool allowed)
     {
         var context = Context();
         SetLevel(context.UserId, AutonomyLevel.Autonomous);
@@ -131,26 +130,31 @@ public class AutonomyGateServiceTests
         Assert.That(result == null, Is.EqualTo(allowed));
     }
 
-    // Sensitive deliberately no longer overrides the configured level (owner decision). The old special
-    // case confirmed even at FullyAutonomous, i.e. it ignored the very setting it claimed to respect,
-    // and the confirmation could not be answered reliably because the token does not survive the turn.
-    [TestCase(AutonomyLevel.FullyAutonomous)]
-    [TestCase(AutonomyLevel.Autonomous)]
-    public async Task Check_SensitiveSkill_AllowedFromAutonomousUpwards(AutonomyLevel level)
+    // Regression guard for the matrix at the top level: raising the level to FullyAutonomous must not
+    // change anything for the non-sensitive classes, so a future edit cannot loosen them unnoticed.
+    [TestCase(SkillRiskClass.ReadOnly, true)]
+    [TestCase(SkillRiskClass.Reversible, true)]
+    [TestCase(SkillRiskClass.ScenarioGated, true)]
+    [TestCase(SkillRiskClass.Irreversible, true)]
+    public async Task Check_FullyAutonomousLevel_AllowsEveryRiskClassExceptSensitive(SkillRiskClass riskClass, bool allowed)
     {
         var context = Context();
-        SetLevel(context.UserId, level);
-        SetRisk(SkillRiskClass.Sensitive);
+        SetLevel(context.UserId, AutonomyLevel.FullyAutonomous);
+        SetRisk(riskClass);
 
         var result = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
 
-        Assert.That(result, Is.Null);
+        Assert.That(result == null, Is.EqualTo(allowed));
     }
 
-    // Counterpart: lowering the level is what brings the confirmation back, and it must still do so.
-    [TestCase(AutonomyLevel.Assisted)]
+    // The Ui promises in the autonomy dialog that sensitive actions (user management, permissions,
+    // autonomy changes) ALWAYS need a confirmation. This is that promise: every level, including
+    // FullyAutonomous, and including the Autonomous default the dialog shows.
     [TestCase(AutonomyLevel.Propose)]
-    public async Task Check_SensitiveSkill_StillHeldBelowAutonomous(AutonomyLevel level)
+    [TestCase(AutonomyLevel.Assisted)]
+    [TestCase(AutonomyLevel.Autonomous)]
+    [TestCase(AutonomyLevel.FullyAutonomous)]
+    public async Task Check_SensitiveSkill_HeldAtEveryAutonomyLevel(AutonomyLevel level)
     {
         var context = Context();
         SetLevel(context.UserId, level);
@@ -160,6 +164,7 @@ public class AutonomyGateServiceTests
 
         Assert.That(result, Is.Not.Null);
         Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
+        Assert.That(result.Metadata, Does.ContainKey("confirmationToken"));
     }
 
     [Test]
@@ -200,8 +205,6 @@ public class AutonomyGateServiceTests
     public async Task Check_SensitiveToken_SameTurnRedemption_HeldAgain_NextTurnAllowed()
     {
         var context = Context();
-        // Below Autonomous on purpose: since the Sensitive special case was dropped, that is the only
-        // situation where a sensitive skill is gated at all — and the same-turn ban applies exactly then.
         SetLevel(context.UserId, AutonomyLevel.Propose);
         SetRisk(SkillRiskClass.Sensitive);
         var descriptor = Descriptor("close_period");
@@ -350,13 +353,12 @@ public class AutonomyGateServiceTests
     }
 
     // End-to-end regression guard (real SkillRiskClassifier, no mock): proves the full Classifier -> Gate
-    // chain for the calendar-selection skills specifically. Since the Sensitive special case was dropped
-    // (owner decision), the confirmation is tied to the configured level rather than to the class, so the
-    // guard now pins both directions — a future classifier change that moved these skills out of the
-    // sensitive list would break the lowered-level case below.
+    // chain for the calendar-selection skills specifically. These feed payroll/surcharge calculation, so
+    // they must be held at the Autonomous default too, not only at a lowered level. A future classifier
+    // change that moved them out of the sensitive list would break both cases below.
     [TestCase("update_calendar_selection")]
     [TestCase("delete_calendar_selection")]
-    public async Task Check_CalendarSelectionSensitiveSkills_RealClassifier_HeldOnlyBelowAutonomous(string skillName)
+    public async Task Check_CalendarSelectionSensitiveSkills_RealClassifier_HeldAtDefaultAndLoweredLevel(string skillName)
     {
         var gate = CreateGateWithRealRiskClassifier();
         var context = Context();
@@ -367,9 +369,66 @@ public class AutonomyGateServiceTests
         SetLevel(context.UserId, AutonomyLevel.Assisted);
         var lowered = await gate.CheckAsync(Descriptor(skillName), context, new Dictionary<string, object>());
 
-        Assert.That(atDefault, Is.Null);
+        Assert.That(atDefault, Is.Not.Null);
+        Assert.That(atDefault!.Type, Is.EqualTo(SkillResultType.Confirmation));
         Assert.That(lowered, Is.Not.Null);
         Assert.That(lowered!.Type, Is.EqualTo(SkillResultType.Confirmation));
+    }
+
+    // The three examples the Ui names in the autonomy dialog footer, through the REAL classifier, at the
+    // Autonomous default the dialog shows as selected. This is the exact promise the dialog makes.
+    [TestCase("delete_system_user")]
+    [TestCase("assign_user_permissions")]
+    [TestCase("set_autonomy_level")]
+    public async Task Check_UiNamedSensitiveExamples_RealClassifier_HeldAtDefaultLevel(string skillName)
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Autonomous);
+
+        var result = await gate.CheckAsync(Descriptor(skillName), context, new Dictionary<string, object>());
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
+    }
+
+    // The owner split MCP-hiding from the Sensitive class: list_personal_access_tokens reads the
+    // caller's OWN token metadata only (the plaintext is never persisted), so it no longer sits in
+    // SensitiveSkills and must run through the chat gate un-gated at EVERY level, the lowest included.
+    // Its invisibility to external agents is now carried by McpSkillExposurePolicy.ExcludedSkills -
+    // see McpSkillExposurePolicyTests.
+    [TestCase(AutonomyLevel.Propose)]
+    [TestCase(AutonomyLevel.Assisted)]
+    [TestCase(AutonomyLevel.Autonomous)]
+    [TestCase(AutonomyLevel.FullyAutonomous)]
+    public async Task Check_ListPersonalAccessTokens_RealClassifier_NeverConfirmed(AutonomyLevel level)
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+        var context = Context();
+        SetLevel(context.UserId, level);
+
+        var result = await gate.CheckAsync(
+            Descriptor("list_personal_access_tokens", SkillCategory.Query),
+            context,
+            new Dictionary<string, object>());
+
+        Assert.That(result, Is.Null);
+    }
+
+    // The counterpart: the two PAT MUTATIONS stay Sensitive and therefore stay confirmed at every
+    // level, including FullyAutonomous. Splitting the read out must not have loosened them.
+    [TestCase("create_personal_access_token")]
+    [TestCase("revoke_personal_access_token")]
+    public async Task Check_PatMutationSkills_RealClassifier_HeldAtEveryLevel(string skillName)
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.FullyAutonomous);
+
+        var result = await gate.CheckAsync(Descriptor(skillName), context, new Dictionary<string, object>());
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
     }
 
     [Test]

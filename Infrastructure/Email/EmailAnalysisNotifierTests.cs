@@ -2,8 +2,10 @@
 
 /// <summary>
 /// Unit tests for EmailAnalysisNotifier — verifies planner/admin audience union, live delivery
-/// to connected users, durable PendingUserNote stashing for offline users and that a missing
-/// default agent or a per-user failure never aborts the batch.
+/// to connected users, durable PendingUserNote stashing before every send, acknowledgement of
+/// exactly that note after a successful live send (no double relay), retention of the note when
+/// the send fails despite a positive presence report, and that a missing default agent or a
+/// per-user failure never aborts the batch.
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
@@ -23,9 +25,11 @@ public class EmailAnalysisNotifierTests
     private IPendingUserNoteRepository _pendingNotes = null!;
     private IAgentRepository _agentRepository = null!;
     private EmailAnalysisNotifier _notifier = null!;
+    private List<PendingUserNote> _stashedNotes = null!;
 
     private static readonly Guid PlannerGuid = Guid.NewGuid();
     private static readonly Guid AdminGuid = Guid.NewGuid();
+    private static readonly Guid AgentGuid = Guid.NewGuid();
     private static readonly string Planner = PlannerGuid.ToString();
     private static readonly string Admin = AdminGuid.ToString();
 
@@ -37,12 +41,16 @@ public class EmailAnalysisNotifierTests
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
         _agentRepository = Substitute.For<IAgentRepository>();
 
+        _stashedNotes = new List<PendingUserNote>();
+        _pendingNotes.When(r => r.AddAsync(Arg.Any<PendingUserNote>(), Arg.Any<CancellationToken>()))
+            .Do(ci => _stashedNotes.Add(ci.ArgAt<PendingUserNote>(0)));
+
         _audienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new HashSet<string> { Planner });
         _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new HashSet<string> { Admin });
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>())
-            .Returns(new Agent { Id = Guid.NewGuid(), Name = "Klacksy" });
+            .Returns(new Agent { Id = AgentGuid, Name = "Klacksy" });
 
         _notifier = new EmailAnalysisNotifier(
             _audienceResolver, _notificationService, _pendingNotes, _agentRepository,
@@ -76,7 +84,39 @@ public class EmailAnalysisNotifierTests
             Planner, Arg.Is<string>(m => m.Contains("Krankmeldung")), null, null);
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Admin, Arg.Any<string>(), null, null);
-        await _pendingNotes.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _pendingNotes.Received(2).AddAsync(Arg.Any<PendingUserNote>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RecipientReportedConnected_ButLiveSendFails_KeepsTheNotePending()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+        _notificationService.SendProactiveMessageAsync(Planner, Arg.Any<string>(), null, null)
+            .Returns<Task>(_ => throw new InvalidOperationException("stale presence, no live connection"));
+
+        await _notifier.NotifyAsync(Email(), Analysis());
+
+        var plannerNotes = _stashedNotes.Where(n => n.UserId == PlannerGuid).ToList();
+        plannerNotes.Count.ShouldBe(1);
+        plannerNotes[0].Content.ShouldContain("Mitarbeiter meldet sich");
+        await _pendingNotes.DidNotReceive().MarkDeliveredAsync(
+            Arg.Any<Guid>(), PlannerGuid, Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ConnectedRecipient_HasExactlyThatStashedNoteAcknowledged()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyAsync(Email(), Analysis());
+
+        var plannerNote = _stashedNotes.Single(n => n.UserId == PlannerGuid);
+        plannerNote.Id.ShouldNotBe(Guid.Empty);
+        await _pendingNotes.Received(1).MarkDeliveredAsync(
+            AgentGuid,
+            PlannerGuid,
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(plannerNote.Id)),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -94,6 +134,8 @@ public class EmailAnalysisNotifierTests
                 n.Content.Contains("Mitarbeiter meldet sich")),
             Arg.Any<CancellationToken>());
         await _notificationService.Received(1).SendProactiveMessageAsync(Admin, Arg.Any<string>(), null, null);
+        await _pendingNotes.DidNotReceive().MarkDeliveredAsync(
+            Arg.Any<Guid>(), PlannerGuid, Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

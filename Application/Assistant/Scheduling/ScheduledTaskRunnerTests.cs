@@ -2,8 +2,8 @@
 
 /// <summary>
 /// Unit tests for ScheduledTaskRunner: it fires due tasks, skips stale ones, runs skills under the
-/// owner's identity with the autonomy gate bypassed, delivers live or via a durable pending note, and
-/// records the outcome; a lost claim does nothing. Skill actions the unattended policy refuses disable
+/// owner's identity with the autonomy gate bypassed, always stashes a durable pending note and only
+/// acknowledges it after a successful live send, and records the outcome; a lost claim does nothing. Skill actions the unattended policy refuses disable
 /// the task instead of running, while reminders never consult the policy at all.
 /// </summary>
 
@@ -24,8 +24,10 @@ public class ScheduledTaskRunnerTests
     private IUnattendedSkillPolicy _unattendedPolicy = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
     private ScheduledTaskRunner _runner = null!;
+    private List<PendingUserNote> _stashedNotes = null!;
 
     private static readonly Guid Owner = Guid.NewGuid();
+    private static readonly Guid AgentGuid = Guid.NewGuid();
 
     [SetUp]
     public void SetUp()
@@ -38,10 +40,14 @@ public class ScheduledTaskRunnerTests
         _unattendedPolicy = Substitute.For<IUnattendedSkillPolicy>();
         _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
 
+        _stashedNotes = new List<PendingUserNote>();
+        _pendingNotes.When(r => r.AddAsync(Arg.Any<PendingUserNote>(), Arg.Any<CancellationToken>()))
+            .Do(ci => _stashedNotes.Add(ci.ArgAt<PendingUserNote>(0)));
+
         _repository.TryClaimAsync(Arg.Any<Guid>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<CancellationToken>())
             .Returns(true);
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>())
-            .Returns(new Agent { Id = Guid.NewGuid() });
+            .Returns(new Agent { Id = AgentGuid });
         _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
             .Returns(UnattendedSkillDecision.Allow());
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
@@ -104,6 +110,44 @@ public class ScheduledTaskRunnerTests
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>());
         await _pendingNotes.Received(1).AddAsync(
             Arg.Is<PendingUserNote>(n => n.UserId == Owner && n.Content.Contains("Check next week's coverage")),
+            Arg.Any<CancellationToken>());
+        await _pendingNotes.DidNotReceive().MarkDeliveredAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_OwnerReportedConnected_ButLiveSendFails_KeepsTheNotePending()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _notification.SendProactiveMessageAsync(Owner.ToString(), Arg.Any<string>())
+            .Returns<Task>(_ => throw new InvalidOperationException("stale presence, no live connection"));
+
+        await _runner.RunDueAsync();
+
+        _stashedNotes.Count.ShouldBe(1);
+        _stashedNotes[0].UserId.ShouldBe(Owner);
+        _stashedNotes[0].Content.ShouldContain("Check next week's coverage");
+        await _pendingNotes.DidNotReceive().MarkDeliveredAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_ConnectedOwner_HasExactlyThatStashedNoteAcknowledged()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+
+        await _runner.RunDueAsync();
+
+        var note = _stashedNotes.Single(n => n.UserId == Owner);
+        note.Id.ShouldNotBe(Guid.Empty);
+        await _pendingNotes.Received(1).MarkDeliveredAsync(
+            AgentGuid,
+            Owner,
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(note.Id)),
             Arg.Any<CancellationToken>());
     }
 

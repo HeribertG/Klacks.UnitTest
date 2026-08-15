@@ -3,9 +3,9 @@
 /// <summary>
 /// Full truth-table tests for PlanStepApprovalPolicy — the plan-path HITL approval decision derived
 /// from a step's skill risk class and the user's autonomy level. Locks the exact behaviour, including
-/// the two deliberate deviations from AutonomyGateService.IsAllowed: Sensitive always requires approval
-/// here (no autonomy level skips it), and Irreversible requires FullyAutonomous (one level stricter than
-/// the chat gate's Autonomous).
+/// the deliberate deviation from AutonomyGateService.IsAllowed: Irreversible requires FullyAutonomous
+/// here, one level stricter than the chat gate's Autonomous. Sensitive always requires approval on both
+/// paths, so it is no longer a deviation.
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
