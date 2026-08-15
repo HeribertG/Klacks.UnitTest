@@ -51,6 +51,16 @@ public static class AutofillSpecConstants
     /// <summary>The night shift ends on the following calendar day; the shift's date stays the start day.</summary>
     public const string NightEndTime = "07:00";
 
+    /// <summary>
+    /// Start of the day shift scenario 5 adds. The span 08:00-16:00 classifies as LATE in the
+    /// production inference — a fourth shift class does not exist — so the day shift is a slot kind of
+    /// its own with an id of its own, and a late shift to every rule. Owner decision 2026-08-14.
+    /// </summary>
+    public const string DayStartTime = "08:00";
+
+    /// <summary>End of the day shift; the span stays inside one calendar day.</summary>
+    public const string DayEndTime = "16:00";
+
     public const double ShiftHours = 8;
 
     public const int ShiftsPerDay = 3;
@@ -206,4 +216,6 @@ public static class AutofillSpecConstants
     public const string LateShiftName = "Spaet";
 
     public const string NightShiftName = "Nacht";
+
+    public const string DayShiftName = "Tagesdienst";
 }

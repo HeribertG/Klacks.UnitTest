@@ -21,4 +21,12 @@ public sealed record RotationMetrics(
     double ForwardRate,
     int BackwardOrSkipCount,
     int UnexplainedDeviations,
-    int RestSeparatedCount);
+    int RestSeparatedCount)
+{
+    /// <summary>
+    /// What the shift class did across a long absence, per absent employee and window. A MEASUREMENT:
+    /// no documented rotation reset exists in the engine and no owner decision names one, so the
+    /// entries are reported and never asserted into a direction. Empty without absences.
+    /// </summary>
+    public IReadOnlyList<ContinuityAcrossAbsence> ContinuityAcrossAbsence { get; init; } = [];
+}

@@ -36,8 +36,12 @@ public sealed class AutofillScenarioBuilder
     private int _maxGenerations = AutofillSpecConstants.MaxGenerations;
     private bool _carryInHoursCountAsCurrentHours;
     private AutofillEligibilityInput? _eligibility;
+    private AutofillShiftPreferenceInput? _shiftPreferences;
+    private AutofillScheduleCommandInput? _scheduleCommands;
+    private AutofillBreakBlockerInput? _breakBlockers;
     private int? _orderCount;
     private bool _reverseShiftInsertionOrder;
+    private bool _includeDayShift;
 
     /// <param name="from">First day of the planning period</param>
     /// <param name="until">Last day of the planning period, inclusive</param>
@@ -123,6 +127,79 @@ public sealed class AutofillScenarioBuilder
     }
 
     /// <summary>
+    /// Adds the scenario's master-data shift preferences. One input feeds both sides of the run: the
+    /// entries become <c>CoreWizardContext.ShiftPreferences</c> — the engine's only preference field —
+    /// and the whole input lands on the definition, so the analyzer measures preference satisfaction
+    /// and blacklist respect against exactly the list the engine planned with.
+    /// <para>
+    /// The two halves of that field are not equally strong, and a fixture must not pretend otherwise.
+    /// A Blacklist entry is a hard stage-0 veto in the auction; a Preferred entry is a soft term that
+    /// only tilts the bidding. An assertion that expects a preference to be honoured like a rule is
+    /// therefore wrong about the engine, not about the plan.
+    /// </para>
+    /// </summary>
+    /// <param name="preferences">Preferred and blacklisted shifts per employee</param>
+    public AutofillScenarioBuilder WithShiftPreferences(AutofillShiftPreferenceInput preferences)
+    {
+        _shiftPreferences = preferences;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds the scenario's per-day planning commands. One input feeds both sides of the run: the
+    /// windows expand into <c>CoreWizardContext.ScheduleCommands</c> — one engine row per day — and the
+    /// whole input lands on the definition, so the analyzer can report each window together with what
+    /// the plan put inside it.
+    /// <para>
+    /// These are the engine's own window keywords and a different mechanism from the qualification
+    /// keywords <see cref="WithEligibility"/> carries; a scenario may use either, both or neither.
+    /// </para>
+    /// </summary>
+    /// <param name="commands">Command windows of the scenario</param>
+    public AutofillScenarioBuilder WithScheduleCommands(AutofillScheduleCommandInput commands)
+    {
+        _scheduleCommands = commands;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds the scenario's booked absences. One input feeds both sides of the run: the rows become
+    /// <c>CoreWizardContext.BreakBlockers</c> — the engine's only absence field — and the whole input
+    /// lands on the definition, so the analyzer measures absence respect against exactly the days the
+    /// engine planned with.
+    /// <para>
+    /// An absence is the strongest input this builder can express and the only one that both BLOCKS
+    /// and PAYS. It blocks the whole calendar day for every shift, over seeding, auction, evolution and
+    /// the theoretical maximum alike, and it credits its hours to the hour target without ever counting
+    /// towards the weekly cap. Neither <see cref="WithLockedWorks"/> — which pins work rather than
+    /// forbidding it — nor <see cref="WithEligibility"/> — which bans one shift on one day and leaves
+    /// the rest of the day open — can stand in for it.
+    /// </para>
+    /// </summary>
+    /// <param name="blockers">One row per absent employee and calendar day</param>
+    public AutofillScenarioBuilder WithBreakBlockers(AutofillBreakBlockerInput blockers)
+    {
+        _breakBlockers = blockers;
+        return this;
+    }
+
+    /// <summary>
+    /// Cuts a fourth shift 08:00-16:00 per order, with a shift id of its own — the day shift of
+    /// scenario 5. Requires <see cref="WithOrders"/>, because the day shift exists per order only.
+    /// <para>
+    /// It is a fourth SLOT, never a fourth CLASS: its span classifies as late, so every rule about
+    /// shift kinds sees a late shift and only the shift id tells the two apart. That is the owner
+    /// decision of 2026-08-14 and the reason this is a separate call instead of a fourth entry in the
+    /// shift kind list.
+    /// </para>
+    /// </summary>
+    public AutofillScenarioBuilder WithDayShiftPerOrder()
+    {
+        _includeDayShift = true;
+        return this;
+    }
+
+    /// <summary>
     /// Adds in-period locked works the engine must keep immutable — the frozen-prefix replanning
     /// input: pass the result of <c>FrozenPrefix.BuildLockedWorks</c> to freeze an existing plan
     /// up to a replan date.
@@ -194,6 +271,13 @@ public sealed class AutofillScenarioBuilder
             }
         }
 
+        if (_includeDayShift && !_orderCount.HasValue)
+        {
+            throw new InvalidOperationException(
+                "The day shift exists per order only; call WithOrders before WithDayShiftPerOrder. The order-less "
+                + "shift triple of the scenarios before scenario 4 has no day shift id.");
+        }
+
         if (_employees.Count == 0)
         {
             throw new InvalidOperationException("A scenario needs at least one employee; call WithEmployees or AddEmployee.");
@@ -225,16 +309,36 @@ public sealed class AutofillScenarioBuilder
             SchedulingMaxWeeklyHours = AutofillSpecConstants.MaxWeeklyHours,
             IneligibleAssignments = _eligibility?.IneligibleAssignments
                 ?? new HashSet<(string, Guid, DateOnly)>(),
+            ShiftPreferences = _shiftPreferences?.ToCorePreferences() ?? [],
+            ScheduleCommands = _scheduleCommands?.ToCoreCommands() ?? [],
+            BreakBlockers = _breakBlockers?.ToCoreBlockers() ?? [],
         };
 
+        var employeeIds = _employees.Select(e => e.Id).ToList();
+        var inputProblems = new List<string>();
         if (_eligibility is not null)
         {
-            var eligibilityProblems = _eligibility.ValidationProblems(
-                context, _employees.Select(e => e.Id).ToList());
-            if (eligibilityProblems.Count > 0)
-            {
-                throw new InvalidOperationException(string.Join(Environment.NewLine, eligibilityProblems));
-            }
+            inputProblems.AddRange(_eligibility.ValidationProblems(context, employeeIds));
+        }
+
+        if (_shiftPreferences is not null)
+        {
+            inputProblems.AddRange(_shiftPreferences.ValidationProblems(context, employeeIds));
+        }
+
+        if (_scheduleCommands is not null)
+        {
+            inputProblems.AddRange(_scheduleCommands.ValidationProblems(context, employeeIds));
+        }
+
+        if (_breakBlockers is not null)
+        {
+            inputProblems.AddRange(_breakBlockers.ValidationProblems(context, employeeIds));
+        }
+
+        if (inputProblems.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join(Environment.NewLine, inputProblems));
         }
 
         var config = new TokenEvolutionConfig
@@ -257,8 +361,12 @@ public sealed class AutofillScenarioBuilder
             CarryInHoursByAgent = carryInHours,
             CarryInHoursCountedAsCurrentHours = _carryInHoursCountAsCurrentHours,
             Eligibility = _eligibility,
+            ShiftPreferences = _shiftPreferences,
+            ScheduleCommands = _scheduleCommands,
+            BreakBlockers = _breakBlockers,
             OrderCount = _orderCount ?? SingleOrderCount,
             OrdersAreLabelled = _orderCount.HasValue,
+            HasDayShifts = _includeDayShift,
         };
     }
 
@@ -269,7 +377,8 @@ public sealed class AutofillScenarioBuilder
             return AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil);
         }
 
-        var shifts = AutofillShiftCatalog.BuildDailyShifts(_periodFrom, _periodUntil, _orderCount.Value);
+        var shifts = AutofillShiftCatalog.BuildDailyShifts(
+            _periodFrom, _periodUntil, _orderCount.Value, _includeDayShift);
         if (!_reverseShiftInsertionOrder)
         {
             return shifts;

@@ -86,9 +86,41 @@ public static class AutofillPlanAnalyzer
         + "fixture ban list, never from the engine's ConstraintViolation list: the engine skips locked "
         + "carry-in assignments there, which would exempt exactly the stock the scan must cover.";
 
+    private const string ScheduleCommandScanNote =
+        "keyword.scheduleCommandViolations and keyword.windows come from an independent scan of every planned and "
+        + "carried-in shift against the fixture's command windows, never from the engine's own violation list: the "
+        + "engine scores a keyword violation but nothing in it rejects a plan for having one, so its list reports "
+        + "what the fitness disliked rather than what the plan contains. The metric is named "
+        + "scheduleCommandViolations and not violations because keyword.violations is the scenario-3 qualification "
+        + "ban-list scan, a different mechanism with a different shape.";
+
+    private const string PreferenceScanNote =
+        "preferences.blacklistViolations must be scanned from the plan and cannot be read off the engine: a "
+        + "blacklisted assignment is not a ViolationKind at all, so the engine never reports one. The blacklist is a "
+        + "hard stage-0 veto in the auction only; preferences.satisfactionByEmployee describes a SOFT term and is "
+        + "reported, never asserted per assignment.";
+
+    private const string DayShiftNote =
+        "The day shift 08:00-16:00 is a slot of its own but not a shift class of its own: the engine infers LATE "
+        + "from its span, so rotation, purity and fairness count every day shift as a late shift and dayShift.* is "
+        + "the only place it is visible. Every day-shift entry is resolved through the shift reference id.";
+
     private const string PlannedHoursNote =
         "hours.plannedHours counts token hours without surcharges; every surcharge rate of the fixture is zero, "
         + "so planned hours equal shift hours exactly.";
+
+    private const string AbsenceScanNote =
+        "absences.* comes from an independent scan of every planned and carried-in shift against the fixture's "
+        + "absence rows, never from the engine's own violation list. The engine evaluates an absence against the "
+        + "START date of an assignment only (Stage0HardConstraintChecker.cs:100-104 and :164), so it cannot report "
+        + "the case the owner rule of 2026-08-14 forbids: a shift that begins outside a window and reaches into it. "
+        + "absences.boundaryCases[] names the end that lies inside for every touching assignment.";
+
+    private const string AbsenceFreeDayNote =
+        "An absence day is not a free day. packages.freeBlockHistogram, packages.idealShare and packages.freeEdges "
+        + "count only days that are neither worked nor absent; absences.daysCountedAsFree audits that and must stay "
+        + "false. The rule lives in AbsenceAnalyzer.FreeDaysBetween and FreeEdgeDays and is inert for a scenario "
+        + "without absence rows.";
 
     private const string PackageScopeNote =
         "packages, rotation and carryIn[].actualPackageDays are measured on the whole package across the month "
@@ -143,6 +175,36 @@ public static class AutofillPlanAnalyzer
             StringComparer.Ordinal);
 
         var coverage = BuildCoverage(scenario, definition, byEmployee);
+        var legality = BuildLegality(byEmployee, definition);
+
+        var withCarryIn = definition.EmployeesInListOrder.ToDictionary(
+            employee => employee,
+            employee => WithCarryIn(employee, byEmployee, definition),
+            StringComparer.Ordinal);
+
+        var commandViolations = PreferenceCommandAnalyzer.BuildScheduleCommandViolations(withCarryIn, definition);
+        if (definition.ScheduleCommands is { IsEmpty: false })
+        {
+            notes.Add(ScheduleCommandScanNote);
+        }
+
+        if (definition.ShiftPreferences is { IsEmpty: false })
+        {
+            notes.Add(PreferenceScanNote);
+        }
+
+        if (definition.HasDayShifts)
+        {
+            notes.Add(DayShiftNote);
+        }
+
+        var hours = BuildHours(byEmployee, definition);
+        if (AbsenceAnalyzer.IsActive(definition))
+        {
+            notes.Add(AbsenceScanNote);
+            notes.Add(AbsenceFreeDayNote);
+            hours = hours with { CreditTarget = AbsenceAnalyzer.BuildCreditTarget(hours.PerEmployee, definition) };
+        }
 
         return new AutofillMetrics(
             Scenario: scenarioName,
@@ -151,16 +213,24 @@ public static class AutofillPlanAnalyzer
             PeriodFrom: definition.PeriodFrom,
             PeriodUntil: definition.PeriodUntil,
             Coverage: coverage,
-            Legality: BuildLegality(byEmployee, definition),
+            Legality: legality,
             Packages: BuildPackageMetrics(packagesByEmployee, definition) with
             {
                 ForcedExtraFreeDays = BuildForcedExtraFreeDays(byEmployee, coverage, definition),
+                AbsenceCuts = AbsenceAnalyzer.BuildAbsenceCuts(packagesByEmployee, definition),
             },
-            Rotation: BuildRotation(packagesByEmployee, definition),
-            Hours: BuildHours(byEmployee, definition),
+            Rotation: BuildRotation(packagesByEmployee, definition) with
+            {
+                ContinuityAcrossAbsence = AbsenceAnalyzer.BuildContinuity(packagesByEmployee, definition),
+            },
+            Hours: hours,
             Fairness: BuildFairness(byEmployee, definition),
             Eligibility: EligibilityAnalyzer.BuildEligibility(definition),
-            Keyword: EligibilityAnalyzer.BuildKeyword(scenario, definition),
+            Keyword: EligibilityAnalyzer.BuildKeyword(scenario, definition) with
+            {
+                ScheduleCommandViolations = commandViolations,
+                Windows = PreferenceCommandAnalyzer.BuildScheduleCommandWindows(withCarryIn, definition),
+            },
             CarryIn: BuildCarryIn(byEmployee, packagesByEmployee, definition),
             Determinism: new DeterminismMetrics(RunsIdentical: false, FirstDifference: "not compared"),
             Fitness: new EngineFitness(
@@ -174,8 +244,34 @@ public static class AutofillPlanAnalyzer
         {
             Orders = BuildOrders(byEmployee, definition),
             CarryInThreeDimensional = BuildCarryInThreeDimensional(byEmployee, definition),
+            DayShift = PreferenceCommandAnalyzer.BuildDayShift(withCarryIn, definition),
+            Preferences = PreferenceCommandAnalyzer.BuildPreferences(
+                withCarryIn, definition, legality, coverage, commandViolations),
+            Absences = AbsenceAnalyzer.BuildAbsences(withCarryIn, packagesByEmployee, definition),
+            Availability = AbsenceAnalyzer.BuildAvailability(definition),
+            Assignments = BuildAssignmentRows(byEmployee, definition),
         };
     }
+
+    /// <summary>
+    /// Flattens the in-period assignments into the artifact's slot list, ordered so two runs serialise
+    /// identically. Carry-in days are left out: they are fixed input the run did not produce, and a
+    /// diff of two runs must not report them as agreement.
+    /// </summary>
+    /// <param name="byEmployee">In-period shifts per employee</param>
+    /// <param name="definition">Scenario that produced the plan</param>
+    private static IReadOnlyList<PlanAssignmentRow> BuildAssignmentRows(
+        IReadOnlyDictionary<string, List<PlannedShift>> byEmployee,
+        AutofillScenarioDefinition definition)
+        => definition.EmployeesInListOrder
+            .SelectMany(employee => byEmployee.TryGetValue(employee, out var shifts) ? shifts : [])
+            .Select(shift => new PlanAssignmentRow(
+                shift.Employee, shift.Date, shift.SlotKind, shift.Order, shift.ShiftRefId))
+            .OrderBy(row => row.Date)
+            .ThenBy(row => row.Order)
+            .ThenBy(row => row.ShiftRefId)
+            .ThenBy(row => row.Employee, StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// Flattens a plan into per-employee shift lists, sorted by day and start time. Shared with the
@@ -328,7 +424,10 @@ public static class AutofillPlanAnalyzer
             treatmentAssignees.TryGetValue(slot.Key, out var employeeTreatment);
             if (!string.Equals(employeeBaseline, employeeTreatment, StringComparison.Ordinal))
             {
-                changed.Add(new ChangedAssignment(slot.Key.Date, slot.Value, employeeBaseline, employeeTreatment));
+                changed.Add(new ChangedAssignment(slot.Key.Date, slot.Value, employeeBaseline, employeeTreatment)
+                {
+                    ShiftRefId = slot.Key.ShiftId,
+                });
             }
         }
 
@@ -692,7 +791,7 @@ public static class AutofillPlanAnalyzer
                 shifts.Add(new PlannedShift(
                     employee,
                     date,
-                    carryIn.Kind,
+                    AutofillShiftCatalog.ShiftClassOf(carryIn.Kind),
                     startAt,
                     endAt,
                     AutofillSpecConstants.ShiftHours,
@@ -772,8 +871,9 @@ public static class AutofillPlanAnalyzer
         var all = new List<WorkPackage>();
         var freeBlocks = new SortedDictionary<int, int>();
         var edges = new List<EmployeeFreeEdge>();
+        var extensions = new List<PackageExtension>();
+        var shortened = new List<ShortenedFreeBlock>();
         var idealCount = 0;
-        var periodLength = definition.PeriodUntil.DayNumber - definition.PeriodFrom.DayNumber + 1;
 
         foreach (var employee in definition.EmployeesInListOrder)
         {
@@ -782,13 +882,29 @@ public static class AutofillPlanAnalyzer
 
             if (packages.Count == 0)
             {
-                edges.Add(new EmployeeFreeEdge(employee, periodLength, 0));
+                edges.Add(new EmployeeFreeEdge(
+                    employee,
+                    AbsenceAnalyzer.FreeEdgeDays(
+                        definition.PeriodFrom, definition.PeriodUntil, employee, definition),
+                    0));
                 continue;
             }
 
+            extensions.AddRange(packages
+                .Where(p => p.LengthDays > AutofillSpecConstants.MaxWorkDays)
+                .Select(p => new PackageExtension(
+                    employee,
+                    p.StartDate,
+                    p.EndDate,
+                    p.LengthDays,
+                    p.LengthDays - AutofillSpecConstants.MaxWorkDays,
+                    AbsenceAnalyzer.TouchesAnyAbsenceWindow(p.StartDate, p.EndDate, definition))));
+
             for (var i = 0; i + 1 < packages.Count; i++)
             {
-                var gap = packages[i + 1].StartDate.DayNumber - packages[i].EndDate.DayNumber - 1;
+                var gap = AbsenceAnalyzer
+                    .FreeDaysBetween(packages[i].EndDate, packages[i + 1].StartDate, employee, definition)
+                    .Count;
                 if (gap <= 0)
                 {
                     continue;
@@ -796,6 +912,19 @@ public static class AutofillPlanAnalyzer
 
                 freeBlocks.TryGetValue(gap, out var current);
                 freeBlocks[gap] = current + 1;
+
+                if (gap < AutofillSpecConstants.MinRestDays)
+                {
+                    var from = packages[i].EndDate.AddDays(1);
+                    var until = packages[i + 1].StartDate.AddDays(-1);
+                    shortened.Add(new ShortenedFreeBlock(
+                        employee,
+                        from,
+                        until,
+                        gap,
+                        AutofillSpecConstants.MinRestDays - gap,
+                        AbsenceAnalyzer.TouchesAnyAbsenceWindow(from, until, definition)));
+                }
 
                 if (packages[i].LengthDays == AutofillSpecConstants.MaxWorkDays
                     && gap == AutofillSpecConstants.MinRestDays)
@@ -806,8 +935,14 @@ public static class AutofillPlanAnalyzer
 
             edges.Add(new EmployeeFreeEdge(
                 employee,
-                Math.Max(0, packages[0].StartDate.DayNumber - definition.PeriodFrom.DayNumber),
-                definition.PeriodUntil.DayNumber - packages[^1].EndDate.DayNumber));
+                packages[0].StartDate <= definition.PeriodFrom
+                    ? 0
+                    : AbsenceAnalyzer.FreeEdgeDays(
+                        definition.PeriodFrom, packages[0].StartDate.AddDays(-1), employee, definition),
+                packages[^1].EndDate >= definition.PeriodUntil
+                    ? 0
+                    : AbsenceAnalyzer.FreeEdgeDays(
+                        packages[^1].EndDate.AddDays(1), definition.PeriodUntil, employee, definition)));
         }
 
         var (forcedShortenings, unexplainedShortenings) = EligibilityAnalyzer.BuildShortenings(all, definition);
@@ -820,7 +955,11 @@ public static class AutofillPlanAnalyzer
             MixedTypeCount: all.Count(p => p.MixedTypes),
             FreeEdges: edges,
             ForcedShortenings: forcedShortenings,
-            UnexplainedShortenings: unexplainedShortenings);
+            UnexplainedShortenings: unexplainedShortenings)
+        {
+            ForcedExtensions = extensions,
+            ShortenedFreeBlocks = shortened,
+        };
     }
 
     private static IReadOnlyDictionary<string, int> BuildLengthHistogram(IReadOnlyList<WorkPackage> packages)
@@ -971,10 +1110,11 @@ public static class AutofillPlanAnalyzer
         {
             var shifts = byEmployee.TryGetValue(carryIn.AgentId, out var found) ? found : [];
             var first = shifts.Count == 0 ? null : (AutofillShiftKind?)shifts[0].Kind;
+            var firstSlot = shifts.Count == 0 ? null : (AutofillShiftKind?)shifts[0].SlotKind;
 
             var actualRemaining = 0;
             var probe = definition.PeriodFrom;
-            while (shifts.Any(s => s.Date == probe && s.Kind == carryIn.Kind))
+            while (shifts.Any(s => s.Date == probe && s.SlotKind == carryIn.Kind))
             {
                 actualRemaining++;
                 probe = probe.AddDays(1);
@@ -990,11 +1130,48 @@ public static class AutofillPlanAnalyzer
                 ActualFirstShiftType: first,
                 ExpectedRemainingDays: carryIn.ExpectedRemainingDays,
                 ActualRemainingDays: actualRemaining,
-                Ok: first == carryIn.ExpectedFirstShiftKind && actualRemaining == carryIn.ExpectedRemainingDays,
-                ActualPackageDays: seamPackage?.LengthDays ?? 0));
+                Ok: MatchesExpectedFirstShift(shifts, carryIn, definition)
+                    && actualRemaining == carryIn.ExpectedRemainingDays,
+                ActualPackageDays: seamPackage?.LengthDays ?? 0)
+            {
+                ActualFirstSlotKind = firstSlot,
+            });
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Whether the employee's first in-period shift is the one the previous month owes him, judged at
+    /// the granularity the expectation itself carries.
+    /// <para>
+    /// A STILL RUNNING package expects its own SLOT back: the employee is mid-package and continuing
+    /// means the same shift, so the comparison runs on the slot kind. That distinction only becomes
+    /// visible once one order holds two slots of the same class — a day shift and a late shift are both
+    /// late to the engine, and continuing a day-shift package on the late shift of the same order would
+    /// otherwise read as a faithful continuation.
+    /// </para>
+    /// <para>
+    /// A CLOSED package expects a rotation CLASS, because that is all the specification's rotation
+    /// table names: the next package rotates early to late to night, and it says nothing about which
+    /// slot of that class the employee lands on. A day shift therefore satisfies an expectation of
+    /// "late", exactly as the scenario-5 decision to treat the day shift as a late shift requires.
+    /// </para>
+    /// </summary>
+    /// <param name="shifts">The employee's in-period shifts, sorted by day and start time</param>
+    /// <param name="carryIn">Previous-month package and its expectation</param>
+    /// <param name="definition">Scenario that produced the plan; supplies the period start</param>
+    private static bool MatchesExpectedFirstShift(
+        IReadOnlyList<PlannedShift> shifts, AutofillCarryIn carryIn, AutofillScenarioDefinition definition)
+    {
+        if (shifts.Count == 0)
+        {
+            return false;
+        }
+
+        return carryIn.IsOpenAt(definition.PeriodFrom)
+            ? shifts[0].SlotKind == carryIn.ExpectedFirstShiftKind
+            : shifts[0].Kind == AutofillShiftCatalog.ShiftClassOf(carryIn.ExpectedFirstShiftKind);
     }
 
     /// <summary>
@@ -1019,11 +1196,12 @@ public static class AutofillPlanAnalyzer
         {
             var shifts = byEmployee.TryGetValue(carryIn.AgentId, out var found) ? found : [];
             var firstKind = shifts.Count == 0 ? null : (AutofillShiftKind?)shifts[0].Kind;
+            var firstSlot = shifts.Count == 0 ? null : (AutofillShiftKind?)shifts[0].SlotKind;
             var firstOrder = shifts.Count == 0 ? null : (int?)shifts[0].Order;
 
             var actualRemaining = 0;
             var probe = definition.PeriodFrom;
-            while (shifts.Any(s => s.Date == probe && s.Kind == carryIn.Kind && s.Order == carryIn.OrderIndex))
+            while (shifts.Any(s => s.Date == probe && s.SlotKind == carryIn.Kind && s.Order == carryIn.OrderIndex))
             {
                 actualRemaining++;
                 probe = probe.AddDays(1);
@@ -1039,8 +1217,11 @@ public static class AutofillPlanAnalyzer
                 ExpectedRemainingDays: carryIn.ExpectedRemainingDays,
                 ActualRemainingDays: actualRemaining,
                 Ok: orderOk
-                    && firstKind == carryIn.ExpectedFirstShiftKind
-                    && actualRemaining == carryIn.ExpectedRemainingDays));
+                    && MatchesExpectedFirstShift(shifts, carryIn, definition)
+                    && actualRemaining == carryIn.ExpectedRemainingDays)
+            {
+                ActualFirstSlotKind = firstSlot,
+            });
         }
 
         return results;

@@ -25,4 +25,11 @@ public sealed record CarryInOrderRespect(
     AutofillShiftKind? ActualShiftType,
     int ExpectedRemainingDays,
     int ActualRemainingDays,
-    bool Ok);
+    bool Ok)
+{
+    /// <summary>
+    /// Slot kind of the first in-period shift; differs from <see cref="ActualShiftType"/> only where a
+    /// day shift stands behind a late class. Reported for readability, never part of the verdict.
+    /// </summary>
+    public AutofillShiftKind? ActualFirstSlotKind { get; init; }
+}

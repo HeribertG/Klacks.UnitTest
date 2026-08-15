@@ -7,14 +7,25 @@ using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 namespace Klacks.UnitTest.Autofill.Fixtures;
 
 /// <summary>
-/// The three daily shifts of the autofill suite: their stable ids, their times and the translation
-/// between a shift kind and the engine's shift-type index.
+/// The daily shifts of the autofill suite: their stable ids, their times and the translation between
+/// a shift kind and the engine's shift-type index.
 /// <para>
 /// The shift kind early/late/night is nowhere persisted; the engine derives it from the time span in
 /// <see cref="ShiftTypeInference"/>, whose banding rule was last changed on 2026-08-06. Every fixture
 /// therefore has to prove, not assume, that 07:00-15:00 / 15:00-23:00 / 23:00-07:00 still land on
 /// early / late / night — that is what <see cref="ValidateShiftTypeInference"/> is for. The builder
 /// calls it on every Build(), and a scenario test can call it directly as an explicit guard.
+/// </para>
+/// <para>
+/// SLOT KIND versus SHIFT CLASS. Since scenario 5 the two are not the same thing. A slot kind is what
+/// a fixture demands — early, late, night or the day shift 08:00-16:00 — and it addresses one pinned
+/// id through <see cref="SlotIndexOf"/>. A shift class is what the engine infers from the time span,
+/// and there are only three of them: the day shift's span classifies as LATE, so
+/// <see cref="ShiftTypeIndexOf"/> maps day and late onto the same index and is deliberately not
+/// injective. Everything about rotation, purity and fairness reasons in classes and uses
+/// <see cref="Kinds"/>; everything that builds or identifies a slot reasons in slot kinds and uses
+/// <see cref="SlotKinds"/> or <see cref="SlotKindOf"/>. Confusing the two is the one way to make a
+/// day shift silently disappear into the late statistics or a late shift silently count as a day one.
 /// </para>
 /// </summary>
 public static class AutofillShiftCatalog
@@ -50,12 +61,33 @@ public static class AutofillShiftCatalog
     /// Matrix symbol of a day carrying more than one shift for the same employee. It marks the day,
     /// it does not judge it: two different shifts that do not overlap are allowed since the owner
     /// correction of 2026-08-08. Conflicts are listed in the metrics JSON, not in the matrix.
+    /// <para>
+    /// It was 'X' until scenario 6, which the specification of 2026-08-14 requires to draw an absence
+    /// day as 'X'. Two different states may not share one glyph in a matrix a human reads, and the
+    /// specification names the absence marker, so the multiple-shifts marker moved.
+    /// </para>
     /// </summary>
-    public const char MultipleShiftsSymbol = 'X';
+    public const char MultipleShiftsSymbol = '*';
+
+    /// <summary>
+    /// Matrix symbol of a booked absence day — scenario 6. It is deliberately NOT the free-day dot: an
+    /// absence day is blocked and paid, a free day is neither, and the whole point of the scenario is
+    /// that the two are not the same thing.
+    /// </summary>
+    public const char AbsenceSymbol = 'X';
+
+    /// <summary>
+    /// Matrix symbol of a day a FREE schedule command closes. Also not the free-day dot: the day is
+    /// blocked by an input rather than left empty by the plan, and unlike an absence it pays nothing.
+    /// </summary>
+    public const char FreeCommandSymbol = 'f';
 
     private const char EarlySymbol = 'F';
     private const char LateSymbol = 'S';
     private const char NightSymbol = 'N';
+
+    /// <summary>Matrix symbol of a day shift; scenario 5 asks for it explicitly.</summary>
+    private const char DaySymbol = 'T';
 
     private const string OrderNamePrefix = "B";
 
@@ -65,11 +97,21 @@ public static class AutofillShiftCatalog
         [AutofillShiftKind.Early, AutofillShiftKind.Late, AutofillShiftKind.Night];
 
     /// <summary>
-    /// The nine pinned ids of the multi-order scenarios, addressed as [order index][kind index]. The
+    /// Every slot kind a fixture can demand, the day shift included. Kept apart from
+    /// <see cref="AllKinds"/> on purpose: that list is the three ROTATION CLASSES of rule 5, and the
+    /// day shift is not a fourth class — it is a fourth slot whose class is late.
+    /// </summary>
+    private static readonly AutofillShiftKind[] AllSlotKinds =
+        [AutofillShiftKind.Early, AutofillShiftKind.Late, AutofillShiftKind.Night, AutofillShiftKind.Day];
+
+    /// <summary>
+    /// The twelve pinned ids of the multi-order scenarios, addressed as [order index][slot index]. The
     /// literals are chosen so that their ordinal string order — the only discriminator the auction has
-    /// when three orders are cut identically, <c>SlotAuctioneer</c> sorting date, start time and then
-    /// id ordinally — runs order 1 before order 2 before order 3 inside every shift kind.
-    /// <see cref="ValidateOrderIdOrdering"/> proves that instead of assuming it.
+    /// when the orders are cut identically, <c>SlotAuctioneer</c> sorting date, start time and then
+    /// id ordinally — runs order 1 before order 2 before order 3 inside every slot kind.
+    /// <see cref="ValidateOrderIdOrdering"/> proves that instead of assuming it. The fourth entry of
+    /// every row is the day shift of scenario 5; a scenario that never asks for it never builds a slot
+    /// with that id, so the three-shift scenarios address exactly the ids they addressed before.
     /// </summary>
     private static readonly Guid[][] MultiOrderShiftIds =
     [
@@ -77,16 +119,19 @@ public static class AutofillShiftCatalog
             new("00000000-0000-0000-0000-0000000a0f11"),
             new("00000000-0000-0000-0000-0000000a0f12"),
             new("00000000-0000-0000-0000-0000000a0f13"),
+            new("00000000-0000-0000-0000-0000000a0f14"),
         ],
         [
             new("00000000-0000-0000-0000-0000000a0f21"),
             new("00000000-0000-0000-0000-0000000a0f22"),
             new("00000000-0000-0000-0000-0000000a0f23"),
+            new("00000000-0000-0000-0000-0000000a0f24"),
         ],
         [
             new("00000000-0000-0000-0000-0000000a0f31"),
             new("00000000-0000-0000-0000-0000000a0f32"),
             new("00000000-0000-0000-0000-0000000a0f33"),
+            new("00000000-0000-0000-0000-0000000a0f34"),
         ],
     ];
 
@@ -107,8 +152,24 @@ public static class AutofillShiftCatalog
 
     private static readonly Dictionary<Guid, int> OrderByShiftId = BuildOrderByShiftId();
 
+    private static readonly Dictionary<Guid, AutofillShiftKind> SlotKindByShiftId = BuildSlotKindByShiftId();
+
     /// <summary>All three kinds in the order early, late, night — the rotation order of rule 5.</summary>
     public static IReadOnlyList<AutofillShiftKind> Kinds => AllKinds;
+
+    /// <summary>
+    /// Every slot kind including the day shift, in slot order. Use this to BUILD slots; use
+    /// <see cref="Kinds"/> to reason about rotation, fairness and purity, which know three classes.
+    /// </summary>
+    public static IReadOnlyList<AutofillShiftKind> SlotKinds => AllSlotKinds;
+
+    /// <summary>
+    /// Slot kinds of a scenario: the three classic ones, plus the day shift when the scenario demands
+    /// it. The list order is the order the shifts are appended in.
+    /// </summary>
+    /// <param name="includeDayShift">True when the scenario cuts a day shift per order</param>
+    public static IReadOnlyList<AutofillShiftKind> SlotKindsOf(bool includeDayShift)
+        => includeDayShift ? AllSlotKinds : AllKinds;
 
     /// <param name="kind">Shift kind</param>
     public static Guid ShiftIdOf(AutofillShiftKind kind) => kind switch
@@ -116,6 +177,11 @@ public static class AutofillShiftCatalog
         AutofillShiftKind.Early => EarlyShiftId,
         AutofillShiftKind.Late => LateShiftId,
         AutofillShiftKind.Night => NightShiftId,
+        AutofillShiftKind.Day => throw new ArgumentOutOfRangeException(
+            nameof(kind),
+            kind,
+            "The day shift exists per order only. The order-less shift triple of the scenarios before scenario 4 has "
+            + "no day shift, so ask for it through the order-aware overload."),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
     };
 
@@ -134,8 +200,24 @@ public static class AutofillShiftCatalog
         }
 
         EnsureKnownOrder(orderIndex);
-        return MultiOrderShiftIds[orderIndex - FirstOrderIndex][ShiftTypeIndexOf(kind)];
+        return MultiOrderShiftIds[orderIndex - FirstOrderIndex][SlotIndexOf(kind)];
     }
+
+    /// <summary>
+    /// Slot kind an id belongs to, or null for an id the catalog does not know. This is the ONLY way
+    /// to tell a day shift from a late one: both carry the engine's late shift type index, and the
+    /// shift reference id is what separates them.
+    /// </summary>
+    /// <param name="shiftId">Shift reference id of a token, locked work or demanded slot</param>
+    public static AutofillShiftKind? SlotKindOf(Guid shiftId)
+        => SlotKindByShiftId.TryGetValue(shiftId, out var kind) ? kind : null;
+
+    /// <summary>
+    /// True when the id addresses a day shift of any order. The day shift has no order-less variant,
+    /// so an unknown id and an order-less id both answer false.
+    /// </summary>
+    /// <param name="shiftId">Shift reference id of a token, locked work or demanded slot</param>
+    public static bool IsDayShift(Guid shiftId) => SlotKindOf(shiftId) == AutofillShiftKind.Day;
 
     /// <summary>
     /// Order an id belongs to: <see cref="SingleOrderIndex"/> for the order-less triple, the order
@@ -185,6 +267,7 @@ public static class AutofillShiftCatalog
         AutofillShiftKind.Early => AutofillSpecConstants.EarlyShiftName,
         AutofillShiftKind.Late => AutofillSpecConstants.LateShiftName,
         AutofillShiftKind.Night => AutofillSpecConstants.NightShiftName,
+        AutofillShiftKind.Day => AutofillSpecConstants.DayShiftName,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
     };
 
@@ -194,6 +277,7 @@ public static class AutofillShiftCatalog
         AutofillShiftKind.Early => AutofillSpecConstants.EarlyStartTime,
         AutofillShiftKind.Late => AutofillSpecConstants.LateStartTime,
         AutofillShiftKind.Night => AutofillSpecConstants.NightStartTime,
+        AutofillShiftKind.Day => AutofillSpecConstants.DayStartTime,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
     };
 
@@ -203,6 +287,7 @@ public static class AutofillShiftCatalog
         AutofillShiftKind.Early => AutofillSpecConstants.EarlyEndTime,
         AutofillShiftKind.Late => AutofillSpecConstants.LateEndTime,
         AutofillShiftKind.Night => AutofillSpecConstants.NightEndTime,
+        AutofillShiftKind.Day => AutofillSpecConstants.DayEndTime,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
     };
 
@@ -213,8 +298,17 @@ public static class AutofillShiftCatalog
         AutofillShiftKind.Early => EarlySymbol,
         AutofillShiftKind.Late => LateSymbol,
         AutofillShiftKind.Night => NightSymbol,
+        AutofillShiftKind.Day => DaySymbol,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
     };
+
+    /// <summary>
+    /// The rotation CLASS of a slot kind: itself for the three classic shifts, late for the day shift.
+    /// This is the projection every rule about rotation, purity and fairness applies before it judges.
+    /// </summary>
+    /// <param name="kind">Slot kind</param>
+    public static AutofillShiftKind ShiftClassOf(AutofillShiftKind kind)
+        => FromShiftTypeIndex(ShiftTypeIndexOf(kind));
 
     /// <summary>Turns an engine shift-type index back into a kind.</summary>
     /// <param name="shiftTypeIndex">0 = early, 1 = late, 2 = night</param>
@@ -227,9 +321,34 @@ public static class AutofillShiftCatalog
             nameof(shiftTypeIndex), shiftTypeIndex, "Shift type index outside the early/late/night range."),
     };
 
-    /// <summary>The engine index a kind is expected to map to.</summary>
+    /// <summary>
+    /// The engine SHIFT CLASS a kind is expected to map to. The day shift maps to the late index —
+    /// <c>ShiftTypeInference</c> classifies 08:00-16:00 as late and a fourth class does not exist — so
+    /// this function is deliberately not injective and must never be used to address the pinned id
+    /// table. <see cref="SlotIndexOf"/> is the lookup for that.
+    /// </summary>
     /// <param name="kind">Shift kind</param>
-    public static int ShiftTypeIndexOf(AutofillShiftKind kind) => (int)kind;
+    public static int ShiftTypeIndexOf(AutofillShiftKind kind) => kind switch
+    {
+        AutofillShiftKind.Early => ShiftTypeInference.EarlyIndex,
+        AutofillShiftKind.Late => ShiftTypeInference.LateIndex,
+        AutofillShiftKind.Night => ShiftTypeInference.NightIndex,
+        AutofillShiftKind.Day => ShiftTypeInference.LateIndex,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
+    };
+
+    /// <summary>
+    /// Position of a slot kind in the pinned id table and in the slot order of a day. Unlike
+    /// <see cref="ShiftTypeIndexOf"/> this IS injective: it is what keeps the day shift's id apart
+    /// from the late shift's id although the engine gives both the same class.
+    /// </summary>
+    /// <param name="kind">Shift kind</param>
+    public static int SlotIndexOf(AutofillShiftKind kind) => kind switch
+    {
+        AutofillShiftKind.Early or AutofillShiftKind.Late or AutofillShiftKind.Night or AutofillShiftKind.Day
+            => (int)kind,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown shift kind."),
+    };
 
     /// <summary>
     /// Absolute start and end of one shift instance. A night shift starts on <paramref name="date"/>
@@ -284,17 +403,23 @@ public static class AutofillShiftCatalog
     /// <param name="from">First day, inclusive</param>
     /// <param name="until">Last day, inclusive</param>
     /// <param name="orderCount">Number of parallel orders, 1 to <see cref="MaxOrderCount"/></param>
-    public static IReadOnlyList<CoreShift> BuildDailyShifts(DateOnly from, DateOnly until, int orderCount)
+    /// <param name="includeDayShift">
+    /// True to cut a fourth shift 08:00-16:00 per order, with an id of its own. False keeps the
+    /// three-shift cut of scenario 4, so that scenario builds exactly the slots it built before
+    /// </param>
+    public static IReadOnlyList<CoreShift> BuildDailyShifts(
+        DateOnly from, DateOnly until, int orderCount, bool includeDayShift = false)
     {
         EnsureKnownOrder(orderCount);
 
+        var kinds = SlotKindsOf(includeDayShift);
         var shifts = new List<CoreShift>();
         for (var date = from; date <= until; date = date.AddDays(1))
         {
             var iso = date.ToString(AutofillSpecConstants.IsoDateFormat);
             for (var order = FirstOrderIndex; order < FirstOrderIndex + orderCount; order++)
             {
-                foreach (var kind in AllKinds)
+                foreach (var kind in kinds)
                 {
                     shifts.Add(new CoreShift(
                         Id: ShiftIdOf(order, kind).ToString(),
@@ -324,7 +449,7 @@ public static class AutofillShiftCatalog
     public static IReadOnlyList<string> ValidateOrderIdOrdering()
     {
         var problems = new List<string>();
-        foreach (var kind in AllKinds)
+        foreach (var kind in AllSlotKinds)
         {
             for (var order = FirstOrderIndex; order < MaxOrderCount; order++)
             {
@@ -350,14 +475,16 @@ public static class AutofillShiftCatalog
     /// the processing order in the artifacts instead of leaving it implicit.
     /// </summary>
     /// <param name="orderCount">Number of parallel orders</param>
-    public static string DescribeAuctionOrderOfOneDay(int orderCount)
+    /// <param name="includeDayShift">True when the scenario cuts a day shift per order</param>
+    public static string DescribeAuctionOrderOfOneDay(int orderCount, bool includeDayShift = false)
     {
         EnsureKnownOrder(orderCount);
 
+        var kinds = SlotKindsOf(includeDayShift);
         var slots = new List<(string Id, string StartTime, string Label)>();
         for (var order = FirstOrderIndex; order < FirstOrderIndex + orderCount; order++)
         {
-            foreach (var kind in AllKinds)
+            foreach (var kind in kinds)
             {
                 slots.Add((
                     ShiftIdOf(order, kind).ToString(),
@@ -395,7 +522,65 @@ public static class AutofillShiftCatalog
             }
         }
 
+        problems.AddRange(ValidateDayShiftInference());
+        problems.AddRange(ValidateMatrixSymbols());
         return problems;
+    }
+
+    /// <summary>
+    /// Proves that every state the plan matrix can draw has a glyph of its own. The matrix is read by
+    /// eye and by nothing else, so two states sharing a character do not fail anything — they silently
+    /// turn one picture into another. Scenario 6 added two markers to a set that already used 'X', and
+    /// this check is what makes that collision a red test instead of a misread report.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateMatrixSymbols()
+    {
+        var symbols = new List<(string Name, char Symbol)>
+        {
+            (nameof(FreeSymbol), FreeSymbol),
+            (nameof(MultipleShiftsSymbol), MultipleShiftsSymbol),
+            (nameof(AbsenceSymbol), AbsenceSymbol),
+            (nameof(FreeCommandSymbol), FreeCommandSymbol),
+        };
+        symbols.AddRange(AllSlotKinds.Select(kind => (kind.ToString(), SymbolOf(kind))));
+
+        return symbols
+            .GroupBy(entry => entry.Symbol)
+            .Where(group => group.Count() > 1)
+            .Select(group =>
+                $"The matrix symbol '{group.Key}' is used by "
+                + string.Join(" and ", group.Select(entry => entry.Name))
+                + ". Every state the matrix draws needs a glyph of its own, otherwise the picture stops "
+                + "distinguishing them.")
+            .ToList();
+    }
+
+    /// <summary>
+    /// Proves the single fact the whole scenario-5 modelling rests on: the day shift's span
+    /// 08:00-16:00 is classified LATE by the production inference. Scenario 5 keeps the day shift as a
+    /// slot of its own precisely BECAUSE the engine has no fourth class for it, and every rotation,
+    /// purity and fairness expectation of that scenario is written for the three-class view that
+    /// follows. Were the inference to grow a day class, the day shift would stop being a late shift
+    /// and those expectations would silently measure something else — so this is checked separately
+    /// from the loop above, with its own message, rather than folded into a generic kind sweep.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateDayShiftInference()
+    {
+        const AutofillShiftKind Kind = AutofillShiftKind.Day;
+        var actual = ShiftTypeInference.FromSpanString(StartTimeOf(Kind), EndTimeOf(Kind));
+        if (actual == ShiftTypeInference.LateIndex)
+        {
+            return [];
+        }
+
+        return
+        [
+            $"The day shift ({StartTimeOf(Kind)}-{EndTimeOf(Kind)}) is classified as shift type index "
+            + $"{actual.ToString(CultureInfo.InvariantCulture)}, but scenario 5 models it as a slot of its own whose "
+            + $"engine CLASS is late (index {ShiftTypeInference.LateIndex.ToString(CultureInfo.InvariantCulture)}). "
+            + "ShiftTypeInference changed: the day shift is no longer a late shift, so every rotation, purity and "
+            + "fairness expectation written for the three-class view now measures something else.",
+        ];
     }
 
     private static void EnsureKnownOrder(int orderIndex)
@@ -424,6 +609,26 @@ public static class AutofillShiftCatalog
             foreach (var id in MultiOrderShiftIds[order - FirstOrderIndex])
             {
                 byId[id] = order;
+            }
+        }
+
+        return byId;
+    }
+
+    private static Dictionary<Guid, AutofillShiftKind> BuildSlotKindByShiftId()
+    {
+        var byId = new Dictionary<Guid, AutofillShiftKind>
+        {
+            [EarlyShiftId] = AutofillShiftKind.Early,
+            [LateShiftId] = AutofillShiftKind.Late,
+            [NightShiftId] = AutofillShiftKind.Night,
+        };
+
+        for (var order = FirstOrderIndex; order <= MaxOrderCount; order++)
+        {
+            foreach (var kind in AllSlotKinds)
+            {
+                byId[MultiOrderShiftIds[order - FirstOrderIndex][SlotIndexOf(kind)]] = kind;
             }
         }
 

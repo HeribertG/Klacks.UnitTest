@@ -23,4 +23,13 @@ public sealed record CarryInRespect(
     int ExpectedRemainingDays,
     int ActualRemainingDays,
     bool Ok,
-    int ActualPackageDays);
+    int ActualPackageDays)
+{
+    /// <summary>
+    /// Slot kind of the first in-period shift, which differs from
+    /// <see cref="ActualFirstShiftType"/> only where a day shift stands behind a late class. Reported
+    /// so a carry-in verdict about a day-shift package stays readable; the verdict itself is
+    /// <see cref="Ok"/>.
+    /// </summary>
+    public AutofillShiftKind? ActualFirstSlotKind { get; init; }
+}

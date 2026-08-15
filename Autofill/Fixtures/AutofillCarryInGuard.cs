@@ -81,7 +81,7 @@ public static class AutofillCarryInGuard
                 + "for the same single slot.");
         }
 
-        var slotsPerDay = AutofillSpecConstants.ShiftsPerDay * definition.OrderCount;
+        var slotsPerDay = definition.SlotsPerDay;
         if (openCarryIns.Count > slotsPerDay)
         {
             problems.Add(

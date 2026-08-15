@@ -33,4 +33,24 @@ public sealed record PackageMetrics(
     /// <see cref="ForcedFreeDayRun"/> for why the measure stops at the first package.
     /// </summary>
     public IReadOnlyList<ForcedFreeDayRun> ForcedExtraFreeDays { get; init; } = [];
+
+    /// <summary>
+    /// Packages an absence cut short. Empty for a scenario without absences. Every entry is forced by
+    /// construction — the next day could not be worked — which is why it is declared rather than
+    /// counted as an ordinary short package.
+    /// </summary>
+    public IReadOnlyList<AbsenceCut> AbsenceCuts { get; init; } = [];
+
+    /// <summary>
+    /// Packages that ran past the contractual maximum length — the first of the two shapes an
+    /// arithmetic surplus takes in a finished plan.
+    /// </summary>
+    public IReadOnlyList<PackageExtension> ForcedExtensions { get; init; } = [];
+
+    /// <summary>
+    /// Gaps that granted fewer free days than the contract asks for — the second shape. Together with
+    /// <see cref="ForcedExtensions"/> this is where the capacity a scenario lacks becomes visible in
+    /// the PLAN rather than only in the fixture arithmetic.
+    /// </summary>
+    public IReadOnlyList<ShortenedFreeBlock> ShortenedFreeBlocks { get; init; } = [];
 }

@@ -54,4 +54,40 @@ public sealed record AutofillMetrics(
 
     /// <summary>Filled by the runner, which is the only part of the suite that owns a clock.</summary>
     public RuntimeMetrics Runtime { get; init; } = RuntimeMetrics.NotMeasured;
+
+    /// <summary>
+    /// The day-shift view: which assignments staff a day shift and how the day shifts spread over the
+    /// roster. Empty for a scenario that cuts none.
+    /// </summary>
+    public DayShiftMetrics DayShift { get; init; } = DayShiftMetrics.Empty;
+
+    /// <summary>
+    /// What the plan made of the master-data shift preferences. Empty for a scenario without any.
+    /// </summary>
+    public PreferenceMetrics Preferences { get; init; } = PreferenceMetrics.Empty;
+
+    /// <summary>
+    /// What the plan made of the booked absences. Empty for a scenario without any, so every scenario
+    /// before scenario 6 measures exactly what it measured before.
+    /// </summary>
+    public AbsenceMetrics Absences { get; init; } = AbsenceMetrics.Empty;
+
+    /// <summary>
+    /// The capacity arithmetic of the fixture — computable before the run and therefore never a
+    /// verdict about the algorithm.
+    /// </summary>
+    public AvailabilityMetrics Availability { get; init; } = AvailabilityMetrics.Empty;
+
+    /// <summary>
+    /// Comparison against a run that finished earlier and whose measurement was stored. Filled by the
+    /// scenario test, not by the analyzer, because the analyzer sees one plan at a time.
+    /// </summary>
+    public BaselineDiff DiffVsBaseline { get; init; } = BaselineDiff.None;
+
+    /// <summary>
+    /// Every in-period assignment, so a later run can diff against this artifact slot by slot without
+    /// re-running the engine that produced it. Added 2026-08-14; artifacts written before that day do
+    /// not carry it, and a reader must report that instead of diffing against an empty list.
+    /// </summary>
+    public IReadOnlyList<PlanAssignmentRow> Assignments { get; init; } = [];
 }

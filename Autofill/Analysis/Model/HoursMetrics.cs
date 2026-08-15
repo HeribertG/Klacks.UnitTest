@@ -13,4 +13,12 @@ public sealed record HoursMetrics(
 {
     /// <summary>Employees the plan left without a single in-period shift, in list order.</summary>
     public IReadOnlyList<string> ZeroHourEmployees { get; init; } = [];
+
+    /// <summary>
+    /// The hour target seen the way the engine sees it once absences are booked: the unchanged target
+    /// against the coverage sum that includes the absence credit. Empty for a scenario without
+    /// absences — there the credit is zero and this list would only restate
+    /// <see cref="PerEmployee"/>.
+    /// </summary>
+    public IReadOnlyList<CreditTargetEntry> CreditTarget { get; init; } = [];
 }

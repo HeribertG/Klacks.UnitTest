@@ -247,9 +247,22 @@ public sealed class EligibilityAnalyzerTests
 
         diff.ChangedCount.ShouldBe(2, "One reassigned night and one slot the treatment left unfilled.");
         diff.ChangedAssignments[0].ShouldBe(
-            new ChangedAssignment(firstDay, AutofillShiftKind.Late, Employee3, null));
+            new ChangedAssignment(firstDay, AutofillShiftKind.Late, Employee3, null)
+            {
+                ShiftRefId = AutofillShiftCatalog.ShiftIdOf(AutofillShiftKind.Late),
+            });
         diff.ChangedAssignments[1].ShouldBe(
-            new ChangedAssignment(firstDay, AutofillShiftKind.Night, Employee1, Employee5));
+            new ChangedAssignment(firstDay, AutofillShiftKind.Night, Employee1, Employee5)
+            {
+                ShiftRefId = AutofillShiftCatalog.ShiftIdOf(AutofillShiftKind.Night),
+            });
+
+        diff.ChangedAssignments.ShouldAllBe(
+            c => c.Order == AutofillShiftCatalog.SingleOrderIndex,
+            "This scenario plans a single unnamed order, so every changed slot resolves back to the order-less "
+            + "shift triple. The shift reference is part of the comparison because date and shift class stopped "
+            + "identifying a slot once one order could hold two slots of the same class — a day shift and a late "
+            + "shift — which is what scenario 5 introduces.");
     }
 
     private static AutofillScenarioDefinition BuildUnrestrictedDefinition()

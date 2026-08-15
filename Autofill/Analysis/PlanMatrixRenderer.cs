@@ -45,6 +45,18 @@ public static class PlanMatrixRenderer
     ];
 
     /// <summary>
+    /// Why an absence day is not drawn as a free day, and what a missing marker means. Kept as
+    /// separate lines so the legend stays readable next to the matrix.
+    /// </summary>
+    private static readonly string[] AbsenceExplanation =
+    [
+        "An absence day is never a free day: it is blocked by an input rather than left empty by the plan,",
+        "it does not appear in packages.freeBlockHistogram, and it credits its hours to the hour target.",
+        "A day that carries BOTH an absence and a shift keeps the shift glyph, because the matrix shows what",
+        "the plan assigned; such a day is a rule violation and is listed under absences.violations.",
+    ];
+
+    /// <summary>
     /// Renders the matrix.
     /// </summary>
     /// <param name="scenario">Plan produced by the engine</param>
@@ -91,14 +103,14 @@ public static class PlanMatrixRenderer
                     builder.Append(MonthBoundaryMarker);
                 }
 
-                builder.Append(CellOf(shifts, day));
+                builder.Append(CellOf(definition, employee, shifts, day));
             }
 
             builder.AppendLine();
         }
 
         builder.AppendLine();
-        builder.Append(BuildLegend());
+        builder.Append(BuildLegend(definition));
         return builder.ToString();
     }
 
@@ -129,7 +141,7 @@ public static class PlanMatrixRenderer
             .Append(CultureInfo.InvariantCulture, $"Period {definition.PeriodFrom:yyyy-MM-dd} .. {definition.PeriodUntil:yyyy-MM-dd}")
             .AppendLine();
         builder
-            .Append(CultureInfo.InvariantCulture, $"{definition.OrderCount} parallel orders, {AutofillSpecConstants.ShiftsPerDay} shifts each")
+            .Append(CultureInfo.InvariantCulture, $"{definition.OrderCount} parallel orders, {definition.SlotsPerDayPerOrder} shifts each")
             .AppendLine();
         if (includeCarryIn)
         {
@@ -152,7 +164,7 @@ public static class PlanMatrixRenderer
         AppendMatrix(builder, definition, shiftsByEmployee, firstDay, lastDay, labelWidth, includeCarryIn, AllOrders);
 
         builder.AppendLine();
-        builder.Append(BuildLegend());
+        builder.Append(BuildLegend(definition));
         builder.AppendLine(MultiOrderLegend);
         return builder.ToString();
     }
@@ -186,14 +198,20 @@ public static class PlanMatrixRenderer
                     builder.Append(MonthBoundaryMarker);
                 }
 
-                builder.Append(WideCellOf(shifts, day, order, cellWidth));
+                builder.Append(WideCellOf(definition, employee, shifts, day, order, cellWidth));
             }
 
             builder.AppendLine();
         }
     }
 
-    private static string WideCellOf(IReadOnlyList<PlannedShift> shifts, DateOnly day, int order, int cellWidth)
+    private static string WideCellOf(
+        AutofillScenarioDefinition definition,
+        string employee,
+        IReadOnlyList<PlannedShift> shifts,
+        DateOnly day,
+        int order,
+        int cellWidth)
     {
         var onDay = shifts
             .Where(s => s.Date == day)
@@ -203,7 +221,7 @@ public static class PlanMatrixRenderer
 
         if (onDay.Count == 0)
         {
-            return new string(AutofillShiftCatalog.FreeSymbol, 1).PadRight(cellWidth);
+            return new string(EmptyCellOf(definition, employee, day), 1).PadRight(cellWidth);
         }
 
         if (onDay.Count > 1)
@@ -212,8 +230,38 @@ public static class PlanMatrixRenderer
         }
 
         return order == AllOrders
-            ? AutofillShiftCatalog.OrderSymbolOf(onDay[0].Order, onDay[0].Kind)
-            : new string(AutofillShiftCatalog.SymbolOf(onDay[0].Kind), 1).PadRight(cellWidth);
+            ? AutofillShiftCatalog.OrderSymbolOf(onDay[0].Order, onDay[0].SlotKind)
+            : new string(AutofillShiftCatalog.SymbolOf(onDay[0].SlotKind), 1).PadRight(cellWidth);
+    }
+
+    /// <summary>
+    /// The glyph of a day that carries no shift: an absence, a FREE command or an ordinary free day —
+    /// in that order, because an absence is the stronger input and a day may carry both.
+    /// <para>
+    /// A day that DOES carry a shift keeps its shift glyph even when the employee is absent, so the
+    /// matrix always shows what the plan assigned rather than what it should have assigned. Such a day
+    /// is a rule violation, and it is reported as one under <c>absences.violations</c>; hiding it
+    /// behind an 'X' would make the matrix disagree with the plan.
+    /// </para>
+    /// </summary>
+    /// <param name="definition">Scenario that produced the plan; carries absences and commands</param>
+    /// <param name="employee">Employee of the row</param>
+    /// <param name="day">Calendar day of the column</param>
+    private static char EmptyCellOf(AutofillScenarioDefinition definition, string employee, DateOnly day)
+    {
+        if (definition.Absences.Covers(employee, day))
+        {
+            return AutofillShiftCatalog.AbsenceSymbol;
+        }
+
+        if (definition.ScheduleCommands is { IsEmpty: false }
+            && definition.ScheduleCommands.CommandsOn(employee, day)
+                .Any(c => c.Keyword == ScheduleCommandKeyword.Free))
+        {
+            return AutofillShiftCatalog.FreeCommandSymbol;
+        }
+
+        return AutofillShiftCatalog.FreeSymbol;
     }
 
     private static string BuildWideDayHeader(
@@ -242,17 +290,21 @@ public static class PlanMatrixRenderer
         return builder.ToString();
     }
 
-    private static char CellOf(IReadOnlyList<PlannedShift> shifts, DateOnly day)
+    private static char CellOf(
+        AutofillScenarioDefinition definition,
+        string employee,
+        IReadOnlyList<PlannedShift> shifts,
+        DateOnly day)
     {
         var onDay = shifts.Where(s => s.Date == day).ToList();
         if (onDay.Count == 0)
         {
-            return AutofillShiftCatalog.FreeSymbol;
+            return EmptyCellOf(definition, employee, day);
         }
 
         return onDay.Count > 1
             ? AutofillShiftCatalog.MultipleShiftsSymbol
-            : AutofillShiftCatalog.SymbolOf(onDay[0].Kind);
+            : AutofillShiftCatalog.SymbolOf(onDay[0].SlotKind);
     }
 
     private static string BuildDayHeader(
@@ -279,11 +331,12 @@ public static class PlanMatrixRenderer
         return builder.ToString();
     }
 
-    private static string BuildLegend()
+    /// <param name="definition">Scenario that produced the plan; decides whether a day shift exists</param>
+    private static string BuildLegend(AutofillScenarioDefinition definition)
     {
         var builder = new StringBuilder();
         builder.AppendLine("Legend:");
-        foreach (var kind in AutofillShiftCatalog.Kinds)
+        foreach (var kind in AutofillShiftCatalog.SlotKindsOf(definition.HasDayShifts))
         {
             builder
                 .Append("  ")
@@ -301,6 +354,29 @@ public static class PlanMatrixRenderer
             .Append("  ")
             .Append(AutofillShiftCatalog.FreeSymbol)
             .AppendLine(" = free day");
+        if (definition.HasAbsences)
+        {
+            builder
+                .Append("  ")
+                .Append(AutofillShiftCatalog.AbsenceSymbol)
+                .AppendLine(" = booked absence - blocked for every shift AND paid onto the hour target.");
+            foreach (var line in AbsenceExplanation)
+            {
+                builder.Append(ExplanationIndent).AppendLine(line);
+            }
+        }
+
+        if (definition.ScheduleCommands is { IsEmpty: false })
+        {
+            builder
+                .Append("  ")
+                .Append(AutofillShiftCatalog.FreeCommandSymbol)
+                .AppendLine(
+                    " = day closed by a FREE command - blocked like an absence, but it pays nothing. Note the case:");
+            builder.Append(ExplanationIndent).AppendLine(
+                "lower-case f is the FREE command, upper-case F is an early shift.");
+        }
+
         builder
             .Append("  ")
             .Append(AutofillShiftCatalog.MultipleShiftsSymbol)
@@ -314,6 +390,14 @@ public static class PlanMatrixRenderer
             .Append(MonthBoundaryMarker)
             .AppendLine(" = start of the planning period; everything left of it is fixed carry-in input");
         builder.AppendLine("  A night shift is shown on the day it starts; it ends at 07:00 of the next day.");
+        if (definition.HasDayShifts)
+        {
+            builder.AppendLine(
+                "  The day shift is a slot of its own, but the engine classifies its span as LATE: every rule about");
+            builder.AppendLine(
+                "  shift kinds counts a T cell as a late shift, and only the shift id tells T and S apart.");
+        }
+
         return builder.ToString();
     }
 }
