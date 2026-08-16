@@ -129,4 +129,59 @@ public class AccountManagementServiceTests
         result.Success.ShouldBeFalse();
         result.Messages.ShouldContain("User not found");
     }
+
+    [Test]
+    public async Task UpdateAccountAsync_TrimsPhoneNumberWhitespace()
+    {
+        var userId = Guid.NewGuid();
+        var existingUser = new AppUser { Id = userId.ToString(), FirstName = "John", LastName = "Doe", Email = "john@example.com" };
+        AppUser? capturedUser = null;
+
+        _mockUserManagementService.FindUserByIdAsync(userId.ToString()).Returns(existingUser);
+        _mockUserManagementService.UpdateUserAsync(Arg.Do<AppUser>(u => capturedUser = u))
+            .Returns((true, (Microsoft.AspNetCore.Identity.IdentityResult?)null));
+
+        var updateAccount = new UpdateAccountResource
+        {
+            Id = userId,
+            FirstName = "John",
+            LastName = "Doe",
+            Email = "john@example.com",
+            UserName = "john.doe",
+            PhoneNumber = "  +41 79 111 22 33  "
+        };
+
+        var result = await _managementService.UpdateAccountAsync(updateAccount);
+
+        result.Success.ShouldBeTrue();
+        capturedUser.ShouldNotBeNull();
+        capturedUser!.PhoneNumber.ShouldBe("+41 79 111 22 33");
+    }
+
+    [Test]
+    public async Task UpdateAccountAsync_BlankPhoneNumber_IsStoredAsNull()
+    {
+        var userId = Guid.NewGuid();
+        var existingUser = new AppUser { Id = userId.ToString(), FirstName = "John", LastName = "Doe", Email = "john@example.com", PhoneNumber = "+41 79 000 00 00" };
+        AppUser? capturedUser = null;
+
+        _mockUserManagementService.FindUserByIdAsync(userId.ToString()).Returns(existingUser);
+        _mockUserManagementService.UpdateUserAsync(Arg.Do<AppUser>(u => capturedUser = u))
+            .Returns((true, (Microsoft.AspNetCore.Identity.IdentityResult?)null));
+
+        var updateAccount = new UpdateAccountResource
+        {
+            Id = userId,
+            FirstName = "John",
+            LastName = "Doe",
+            Email = "john@example.com",
+            UserName = "john.doe",
+            PhoneNumber = "   "
+        };
+
+        await _managementService.UpdateAccountAsync(updateAccount);
+
+        capturedUser.ShouldNotBeNull();
+        capturedUser!.PhoneNumber.ShouldBeNull();
+    }
 }
