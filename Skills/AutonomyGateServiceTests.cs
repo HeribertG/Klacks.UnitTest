@@ -375,6 +375,23 @@ public class AutonomyGateServiceTests
         Assert.That(lowered!.Type, Is.EqualTo(SkillResultType.Confirmation));
     }
 
+    // create_group is the target two advisory skills (evaluate_location_group_candidates,
+    // evaluate_grouping_by_qualification) funnel toward; without Sensitive, their "creating a group
+    // stays a separate, manual step" description would be a promise the classifier does not keep. A
+    // future classifier change that moved it out of the sensitive list would break this case.
+    [Test]
+    public async Task Check_CreateGroupSensitive_RealClassifier_HeldAtDefaultLevel()
+    {
+        var gate = CreateGateWithRealRiskClassifier();
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Autonomous);
+
+        var result = await gate.CheckAsync(Descriptor("create_group"), context, new Dictionary<string, object>());
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Type, Is.EqualTo(SkillResultType.Confirmation));
+    }
+
     // The three examples the Ui names in the autonomy dialog footer, through the REAL classifier, at the
     // Autonomous default the dialog shows as selected. This is the exact promise the dialog makes.
     [TestCase("delete_system_user")]
