@@ -27,10 +27,15 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
 
     public void MarkBreakDeleted(Guid breakId) => _deletedBreakIds.Add(breakId);
 
-    public Task AddAsync(EscalationChain chain, CancellationToken cancellationToken = default)
+    public Task<bool> AddAsync(EscalationChain chain, CancellationToken cancellationToken = default)
     {
+        if (_chains.Values.Any(c => c.WorkId == chain.WorkId && c.Status == EscalationChainStatus.Running))
+        {
+            return Task.FromResult(false);
+        }
+
         _chains[chain.Id] = chain;
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public Task<EscalationChain?> GetByIdWithStagesAsync(Guid chainId, CancellationToken cancellationToken = default) =>
