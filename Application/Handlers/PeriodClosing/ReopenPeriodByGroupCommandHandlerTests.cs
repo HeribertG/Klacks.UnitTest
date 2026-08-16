@@ -27,6 +27,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IPeriodAuditLogRepository _auditLogRepository = null!;
     private ISealedDayRepository _sealedDayRepository = null!;
+    private IUserService _userService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<ReopenPeriodByGroupCommandHandler> _logger = null!;
     private ReopenPeriodByGroupCommandHandler _handler = null!;
@@ -40,6 +41,8 @@ public class ReopenPeriodByGroupCommandHandlerTests
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _auditLogRepository = Substitute.For<IPeriodAuditLogRepository>();
         _sealedDayRepository = Substitute.For<ISealedDayRepository>();
+        _userService = Substitute.For<IUserService>();
+        _userService.GetDisplayName().Returns("Ada Lovelace");
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ReopenPeriodByGroupCommandHandler>>();
 
@@ -53,6 +56,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
             _httpContextAccessor,
             _auditLogRepository,
             _sealedDayRepository,
+            _userService,
             _unitOfWork,
             _logger);
     }

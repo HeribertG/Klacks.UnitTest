@@ -1,6 +1,8 @@
 using Shouldly;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Common;
+using Klacks.Api.Domain.Services.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -436,5 +438,99 @@ public class ScheduleMapperTests
         var result = _mapper.ToContractResource(contract);
 
         result.Percent.ShouldBe(60m);
+    }
+
+    // The seal triple is the identity the approval audit rests on. A client that can put it in the PUT
+    // body can name itself approver and unseal an entry, bypassing the CanSeal check every other path
+    // enforces, so the mapper must drop it and let the handler restore the persisted value.
+    [Test]
+    public void ToWorkEntity_ClientSuppliedSealState_IsNotMapped()
+    {
+        var resource = new WorkResource
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            ShiftId = Guid.NewGuid(),
+            LockLevel = WorkLockLevel.Approved,
+            SealedAt = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc),
+            SealedBy = "attacker",
+        };
+
+        var entity = _mapper.ToWorkEntity(resource);
+
+        entity.LockLevel.ShouldBe(WorkLockLevel.None);
+        entity.SealedAt.ShouldBeNull();
+        entity.SealedBy.ShouldBeNull();
+    }
+
+    [Test]
+    public void ToBreakEntity_ClientSuppliedSealState_IsNotMapped()
+    {
+        var resource = new BreakResource
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            LockLevel = WorkLockLevel.Closed,
+            SealedAt = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc),
+            SealedBy = "attacker",
+        };
+
+        var entity = _mapper.ToBreakEntity(resource);
+
+        entity.LockLevel.ShouldBe(WorkLockLevel.None);
+        entity.SealedAt.ShouldBeNull();
+        entity.SealedBy.ShouldBeNull();
+    }
+
+    [Test]
+    public void ToWorkResource_SealState_IsStillReadableByTheClient()
+    {
+        var sealedAt = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var work = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            ShiftId = Guid.NewGuid(),
+            LockLevel = WorkLockLevel.Approved,
+            SealedAt = sealedAt,
+            SealedBy = "supervisor",
+        };
+
+        var resource = _mapper.ToWorkResource(work);
+
+        resource.LockLevel.ShouldBe(WorkLockLevel.Approved);
+        resource.SealedAt.ShouldBe(sealedAt);
+        resource.SealedBy.ShouldBe("supervisor");
+    }
+
+    [Test]
+    public void CarryOver_RestoresThePersistedSealStateOntoTheMappedEntity()
+    {
+        var sealedAt = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var stored = new Work { LockLevel = WorkLockLevel.Approved, SealedAt = sealedAt, SealedBy = "supervisor" };
+        var mapped = _mapper.ToWorkEntity(new WorkResource
+        {
+            Id = Guid.NewGuid(),
+            LockLevel = WorkLockLevel.None,
+            SealedBy = null,
+        });
+
+        ScheduleEntrySealState.CarryOver(mapped, stored);
+
+        mapped.LockLevel.ShouldBe(WorkLockLevel.Approved);
+        mapped.SealedAt.ShouldBe(sealedAt);
+        mapped.SealedBy.ShouldBe("supervisor");
+    }
+
+    [Test]
+    public void CarryOver_WithoutAStoredRow_LeavesTheEntryUnsealed()
+    {
+        var mapped = _mapper.ToWorkEntity(new WorkResource { Id = Guid.NewGuid() });
+
+        ScheduleEntrySealState.CarryOver(mapped, null);
+
+        mapped.LockLevel.ShouldBe(WorkLockLevel.None);
+        mapped.SealedAt.ShouldBeNull();
+        mapped.SealedBy.ShouldBeNull();
     }
 }

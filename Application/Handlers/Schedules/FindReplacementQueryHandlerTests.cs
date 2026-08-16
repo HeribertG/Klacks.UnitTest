@@ -35,6 +35,8 @@ public class FindReplacementQueryHandlerTests
     private static readonly TimeOnly End = new(6, 0);
 
     private IClientRepository _clientRepo = null!;
+    private IGroupRepository _groupRepo = null!;
+    private IGetAllClientIdsFromGroupAndSubgroups _groupClientService = null!;
     private IPreCommitConflictChecker _checker = null!;
     private IClientShiftPreferenceRepository _prefRepo = null!;
     private IScheduleEntriesService _scheduleEntries = null!;
@@ -48,6 +50,10 @@ public class FindReplacementQueryHandlerTests
     public void Setup()
     {
         _clientRepo = Substitute.For<IClientRepository>();
+        _groupRepo = Substitute.For<IGroupRepository>();
+        _groupRepo.Get(GroupId).Returns(new Group { Id = GroupId });
+        _groupClientService = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
+        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(Arg.Any<Guid>()).Returns(new List<Guid>());
         _checker = Substitute.For<IPreCommitConflictChecker>();
         _checker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
@@ -67,7 +73,8 @@ public class FindReplacementQueryHandlerTests
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
 
         _handler = new FindReplacementQueryHandler(
-            _clientRepo, _checker, _prefRepo, _scheduleEntries, _availabilityRepo, _periodHours,
+            _clientRepo, _groupRepo, _groupClientService, _checker, _prefRepo, _scheduleEntries,
+            _availabilityRepo, _periodHours,
             _overrideAuthorizer, _httpContextAccessor, NullLogger<FindReplacementQueryHandler>.Instance);
     }
 
@@ -100,8 +107,12 @@ public class FindReplacementQueryHandlerTests
     };
 
     private void SetMembers(params Client[] members)
-        => _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+    {
+        _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(members.ToList());
+        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(GroupId)
+            .Returns(members.Select(m => m.Id).ToList());
+    }
 
     private void SetConflicts(params ScheduleValidationNotificationDto[] conflicts)
         => _checker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
@@ -118,10 +129,76 @@ public class FindReplacementQueryHandlerTests
     private Task<ReplacementSearchResult> Find(bool overrideBlock = false)
         => _handler.Handle(new FindReplacementQuery(ShiftId, Date, Start, End, GroupId, null, overrideBlock), CancellationToken.None);
 
+    private Task<ReplacementSearchResult> FindIn(Guid groupId)
+        => _handler.Handle(new FindReplacementQuery(ShiftId, Date, Start, End, groupId, null, false), CancellationToken.None);
+
     private static Client Member(Guid id, string name) => new() { Id = id, Name = name, FirstName = string.Empty };
 
     private static ScheduleValidationNotificationDto Conflict(Guid clientId, ScheduleValidationType type, string comment)
         => new() { Type = type, ClientId = clientId, Date = Date, Comment = comment };
+
+    // IClientRepository filters on the group ROOT (Group.Root ?? Group.Id). Stubbing on the root id is
+    // what makes this test meaningful: handing the sub-group id straight to the repository - the state
+    // before the fix - matches nothing and yields an empty candidate list without any error.
+    private void SetMembersUnderRoot(Guid rootId, params Client[] members)
+    {
+        _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client>());
+        _clientRepo.GetActiveClientsWithAddressesForGroupsAsync(
+                Arg.Is<List<Guid>>(ids => ids.Contains(rootId)), Arg.Any<CancellationToken>())
+            .Returns(members.ToList());
+    }
+
+    [Test]
+    public async Task SubGroupId_ResolvesRootBeforeQuerying_AndReturnsCandidates()
+    {
+        var rootId = Guid.NewGuid();
+        var subGroupId = Guid.NewGuid();
+        var anna = Member(Guid.NewGuid(), "Anna");
+
+        _groupRepo.Get(subGroupId).Returns(new Group { Id = subGroupId, Root = rootId });
+        SetMembersUnderRoot(rootId, anna);
+        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(subGroupId)
+            .Returns(new List<Guid> { anna.Id });
+
+        var result = await FindIn(subGroupId);
+
+        result.Eligible.Single().ClientId.ShouldBe(anna.Id);
+    }
+
+    [Test]
+    public async Task SubGroupId_DoesNotOfferSiblingGroupMembersOfTheSameRoot()
+    {
+        var rootId = Guid.NewGuid();
+        var subGroupId = Guid.NewGuid();
+        var anna = Member(Guid.NewGuid(), "Anna");
+        var sibling = Member(Guid.NewGuid(), "Sibling");
+
+        _groupRepo.Get(subGroupId).Returns(new Group { Id = subGroupId, Root = rootId });
+        SetMembersUnderRoot(rootId, anna, sibling);
+        _groupClientService.GetAllClientIdsFromGroupAndSubgroups(subGroupId)
+            .Returns(new List<Guid> { anna.Id });
+
+        var result = await FindIn(subGroupId);
+
+        result.Eligible.Single().ClientId.ShouldBe(anna.Id);
+        result.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task UnknownGroupId_ReturnsEmptyInsteadOfThrowing()
+    {
+        var unknownGroupId = Guid.NewGuid();
+        _groupRepo.Get(unknownGroupId).Returns((Group?)null);
+
+        var result = await FindIn(unknownGroupId);
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.ShouldBeEmpty();
+        await _clientRepo.DidNotReceive().GetActiveClientsWithAddressesForGroupsAsync(
+            Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>());
+    }
 
     [Test]
     public async Task ExcludesCollision_RanksCleanBeforeSoft()

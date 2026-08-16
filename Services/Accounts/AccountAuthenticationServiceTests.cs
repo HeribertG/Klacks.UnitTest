@@ -155,4 +155,91 @@ public class AccountAuthenticationServiceTests
         await _mockRefreshTokenService.DidNotReceive().CreateRefreshTokenAsync(Arg.Any<string>());
         await _mockRefreshTokenService.DidNotReceive().RemoveAllUserRefreshTokensAsync(Arg.Any<string>());
     }
+
+    [Test]
+    public async Task RefreshTokenAsync_WhenAccountIsBlocked_IsRefusedAndIssuesNoNewToken()
+    {
+        var refreshRequest = new RefreshRequestResource
+        {
+            Token = "valid-jwt-token",
+            RefreshToken = "valid-refresh-token"
+        };
+
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "deactivated@example.com",
+            UserName = "deactivated@example.com",
+            DeactivatedAt = DateTime.UtcNow.AddHours(-1)
+        };
+
+        _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
+        _mockUserManagementService.IsAccountBlockedAsync(testUser).Returns(true);
+        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
+
+        var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
+
+        // Without this gate a deactivated or locked-out account keeps renewing its session forever:
+        // refreshing never passes the credential check that would otherwise refuse it.
+        result.Success.ShouldBeFalse();
+        result.Token.ShouldBeNullOrEmpty();
+        await _mockRefreshTokenService.DidNotReceive().RotateRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
+        await _mockRefreshTokenService.DidNotReceive().CreateRefreshTokenAsync(Arg.Any<string>());
+        await _mockTokenService.DidNotReceive().CreateToken(Arg.Any<AppUser>(), Arg.Any<DateTime>());
+    }
+
+    [Test]
+    public async Task RefreshTokenAsync_WhenAccountIsBlockedViaTheRefreshTokenLookup_IsAlsoRefused()
+    {
+        var refreshRequest = new RefreshRequestResource
+        {
+            Token = "expired-jwt-token",
+            RefreshToken = "valid-refresh-token"
+        };
+
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "lockedout@example.com",
+            UserName = "lockedout@example.com"
+        };
+
+        // The access token no longer resolves, so the user is found through the refresh token itself.
+        _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns((AppUser?)null);
+        _mockRefreshTokenService.GetUserFromRefreshTokenAsync(refreshRequest.RefreshToken).Returns(testUser);
+        _mockUserManagementService.IsAccountBlockedAsync(testUser).Returns(true);
+        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
+
+        var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
+
+        result.Success.ShouldBeFalse();
+        await _mockRefreshTokenService.DidNotReceive().RotateRefreshTokenAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task RefreshTokenAsync_WhenAccountIsActive_StillRefreshes()
+    {
+        var refreshRequest = new RefreshRequestResource
+        {
+            Token = "valid-jwt-token",
+            RefreshToken = "valid-refresh-token"
+        };
+
+        var testUser = new AppUser
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "active@example.com",
+            UserName = "active@example.com"
+        };
+
+        _mockAuthService.GetUserFromAccessTokenAsync(refreshRequest.Token).Returns(testUser);
+        _mockUserManagementService.IsAccountBlockedAsync(testUser).Returns(false);
+        _mockRefreshTokenService.ValidateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns(true);
+        _mockRefreshTokenService.RotateRefreshTokenAsync(testUser.Id, refreshRequest.RefreshToken).Returns("new-refresh-token");
+
+        var result = await _authenticationService.RefreshTokenAsync(refreshRequest);
+
+        result.Success.ShouldBeTrue();
+        result.RefreshToken.ShouldBe("new-refresh-token");
+    }
 }

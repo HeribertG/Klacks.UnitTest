@@ -139,6 +139,33 @@ public class InternalTokenIssuerTests
     }
 
     [Test]
+    public async Task Issue_DeactivatedOwner_IsRefusedAndLendsNoPermissions()
+    {
+        _owner.DeactivatedAt = DateTime.UtcNow.AddHours(-1);
+
+        var result = await _issuer.IssueForOwnerAsync(OwnerId);
+
+        result.Success.ShouldBeFalse();
+        result.Reason.ShouldContain("deactivated");
+
+        // The point of the check: a deactivated account can no longer sign in, and must not be able
+        // to lend its permissions to background work through a freshly minted token either.
+        await _tokenService.DidNotReceive().CreateToken(
+            Arg.Any<AppUser>(), Arg.Any<DateTime>(), Arg.Any<IReadOnlyList<string>?>(),
+            Arg.Any<IReadOnlyDictionary<string, string>?>());
+    }
+
+    [Test]
+    public async Task Issue_ActiveOwner_IsNotAffectedByTheDeactivationCheck()
+    {
+        _owner.DeactivatedAt = null;
+
+        var result = await _issuer.IssueForOwnerAsync(OwnerId);
+
+        result.Success.ShouldBeTrue();
+    }
+
+    [Test]
     public async Task Issue_OwnerWithoutAnyRole_IsRefused()
     {
         _userManager.GetRolesAsync(_owner).Returns(new List<string>());

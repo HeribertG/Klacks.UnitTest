@@ -130,7 +130,9 @@ public class DismissStreakEvaluatorTests
             ReactionRow(ProactiveReaction.Dismissed, 3));
         var triggerService = new AgentTriggerService(
             rateLimiter, preferenceService, notificationService, _dispatchRepository,
-            activityTracker, planningAudienceResolver, NullLogger<AgentTriggerService>.Instance);
+            activityTracker, planningAudienceResolver, Substitute.For<IOfflineMessengerNotifier>(),
+            Substitute.For<IProactiveMessengerTextComposer>(),
+            NullLogger<AgentTriggerService>.Instance);
         var evaluator = new DismissStreakEvaluator(_dispatchRepository, triggerService);
 
         await evaluator.EvaluateAsync(UserId, AgentTriggerKinds.UnstaffedShift);

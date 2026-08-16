@@ -14,6 +14,9 @@ using System.Text.Json;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
+using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Services.Assistant;
@@ -27,7 +30,12 @@ public class AgentTriggerServiceTests
     private IProactiveTriggerDispatchRepository _dispatchRepository = null!;
     private IUserActivityTracker _activityTracker = null!;
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
+    private IOfflineMessengerNotifier _offlineMessengerNotifier = null!;
+    private IProactiveMessengerTextComposer _messengerTextComposer = null!;
+    private RecordingLogger<AgentTriggerService> _logger = null!;
     private AgentTriggerService _sut = null!;
+
+    private const string ComposedMessengerText = "Eine Schicht ist noch unbesetzt.";
 
     [SetUp]
     public void Setup()
@@ -38,11 +46,23 @@ public class AgentTriggerServiceTests
         _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
         _activityTracker = Substitute.For<IUserActivityTracker>();
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        _offlineMessengerNotifier = Substitute.For<IOfflineMessengerNotifier>();
+        _messengerTextComposer = Substitute.For<IProactiveMessengerTextComposer>();
+        _logger = new RecordingLogger<AgentTriggerService>();
         _preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _messengerTextComposer.ComposeAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
+            .Returns(ComposedMessengerText);
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.ChannelUnavailable);
         SetPlanners("user-a", "user-b");
         _sut = new AgentTriggerService(_rateLimiter, _preferenceService, _notificationService,
-            _dispatchRepository, _activityTracker, _planningAudienceResolver, NullLogger<AgentTriggerService>.Instance);
+            _dispatchRepository, _activityTracker, _planningAudienceResolver, _offlineMessengerNotifier,
+            _messengerTextComposer, _logger);
     }
+
+    private void SetOfflineMessengerResult(OfflineMessengerDeliveryResult result) =>
+        _offlineMessengerNotifier
+            .TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(result);
 
     private void SetPlanners(params string[] userIds) =>
         _planningAudienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>())
@@ -70,6 +90,13 @@ public class AgentTriggerServiceTests
         public string Summary => "Params summary.";
         public IReadOnlyDictionary<string, object?> Payload => new Dictionary<string, object?>();
         public IReadOnlyDictionary<string, string>? SummaryParams => Params;
+    }
+
+    private sealed record PlannerKindEvent(string Kind, string Severity) : IAgentTriggerEvent
+    {
+        public bool PlannersOnly => true;
+        public string Summary => ProactiveMessageMarkers.I18nPrefix + "assistant.proactive.test";
+        public IReadOnlyDictionary<string, object?> Payload => new Dictionary<string, object?>();
     }
 
     private sealed record ActionBroadcastEvent(string? Route, IReadOnlyDictionary<string, string>? Params) : IAgentTriggerEvent
@@ -142,6 +169,252 @@ public class AgentTriggerServiceTests
         _rateLimiter.Received(1).RecordFire("user-b", AgentTriggerKinds.UnstaffedShift);
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
         await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveInboxChangedAsync(default!, default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_LoudEvent_OfflinePlannersWithMessengerContact_ReachesThemOverMessenger()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _offlineMessengerNotifier.Received(1).TrySendAsync(
+            "user-a", Arg.Any<string>(), AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>());
+        await _offlineMessengerNotifier.Received(1).TrySendAsync(
+            "user-b", Arg.Any<string>(), AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_LoudEvent_OfflinePlannerWithoutMessengerContact_StillRecordsInboxRowsAndStaysQuiet()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.NoContact);
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+        Assert.That(_logger.Entries.Any(e => e.Level == LogLevel.Warning), Is.False,
+            "A missing messenger identity is a normal state, not a failure worth a warning.");
+    }
+
+    [Test]
+    public async Task OnEventAsync_LoudEvent_MessengerSendRefused_LogsWarningAndKeepsTheInboxRow()
+    {
+        const string providerError = "bot was blocked by the user";
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Failed("Telegram", providerError));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        var warnings = _logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
+        Assert.That(warnings, Is.Not.Empty, "A refused send must be recorded, otherwise the report claims an alert that never went out.");
+        Assert.That(warnings.Any(e => e.Message.Contains(providerError, StringComparison.Ordinal)), Is.True,
+            "The provider's reason belongs in the log entry.");
+        Assert.That(warnings.Any(e => e.Message.Contains("user-a", StringComparison.Ordinal)), Is.True,
+            "The log entry must name the recipient that was not reached.");
+    }
+
+    [Test]
+    public async Task OnEventAsync_LoudEvent_MessengerThrottled_IsLoggedAsWarningToo()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Throttled("Telegram", "429 too many requests"));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        Assert.That(_logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("rate-limited", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
+    public async Task OnEventAsync_QuietEvent_OfflinePlanner_RecordsInboxRowButNeverWakesAnybody()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 5));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_MessengerThrows_DoesNotCostTheRemainingRecipientsTheirInboxRows()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _offlineMessengerNotifier
+            .TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<OfflineMessengerDeliveryResult>(_ => throw new InvalidOperationException("provider exploded"));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_MessengerText_IsTheComposedSentenceNotTheRawI18nKey()
+    {
+        string? sentText = null;
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        _offlineMessengerNotifier
+            .TrySendAsync(Arg.Any<string>(), Arg.Do<string>(text => sentText = text), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(OfflineMessengerDeliveryResult.Sent("Telegram"));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        Assert.That(sentText, Is.EqualTo(ComposedMessengerText));
+        Assert.That(sentText!.StartsWith(ProactiveMessageMarkers.I18nPrefix, StringComparison.Ordinal), Is.False,
+            "A messenger has no i18n runtime, so the raw marker must never reach the recipient.");
+        Assert.That(sentText, Does.Not.Contain(ProactiveMessageI18nKeys.UnstaffedShift),
+            "The recipient must read a sentence, not the translation key.");
+    }
+
+    [Test]
+    public async Task OnEventAsync_MessengerTextComposerThrows_KeepsTheInboxRowAndSendsNothing()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        _messengerTextComposer.ComposeAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
+            .Returns<string>(_ => throw new InvalidOperationException("settings unreachable"));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
+    }
+
+    private sealed record CompanionTargetedEvent(string Kind, string Severity) : IAgentTriggerEvent
+    {
+        public string Summary => ProactiveMessageMarkers.I18nPrefix + "assistant.proactive.test";
+        public Guid? TargetUserId => CompanionRecipient;
+        public IReadOnlyDictionary<string, object?> Payload => new Dictionary<string, object?>();
+    }
+
+    private static readonly Guid CompanionRecipient = Guid.NewGuid();
+
+    [TestCase(AgentTriggerKinds.CuriosityQuestion, AgentTriggerSeverity.Low)]
+    [TestCase(AgentTriggerKinds.MuteSuggestion, AgentTriggerSeverity.Low)]
+    [TestCase(AgentTriggerKinds.SkillSequenceSuggestion, AgentTriggerSeverity.Low)]
+    [TestCase(AgentTriggerKinds.PlanPausedForApproval, AgentTriggerSeverity.Medium)]
+    public async Task OnEventAsync_CompanionEvent_OfflineRecipient_NeverGoesOutOverMessenger(string kind, string severity)
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
+
+        await _sut.OnEventAsync(new CompanionTargetedEvent(kind, severity));
+
+        await _dispatchRepository.Received(1).RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.TriggerKind == kind), Arg.Any<CancellationToken>());
+        await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
+    }
+
+    [TestCase(AgentTriggerKinds.ScenarioPending)]
+    [TestCase(AgentTriggerKinds.PeriodOverdue)]
+    [TestCase(AgentTriggerKinds.PeriodCloseDue)]
+    [TestCase(AgentTriggerKinds.ContractExpiringSoon)]
+    [TestCase(AgentTriggerKinds.TargetHoursDrift)]
+    [TestCase(AgentTriggerKinds.AvailabilityGap)]
+    [TestCase(AgentTriggerKinds.LockConflict)]
+    public async Task OnEventAsync_HighSeverityButNotWakeWorthy_OfflinePlanner_StaysInTheInbox(string kind)
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
+
+        await _sut.OnEventAsync(new PlannerKindEvent(kind, AgentTriggerSeverity.High));
+
+        await _dispatchRepository.Received(1).RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
+        await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
+    }
+
+    [TestCase(AgentTriggerKinds.UnstaffedShift)]
+    [TestCase(AgentTriggerKinds.WorkDroppedByErpImport)]
+    [TestCase(AgentTriggerKinds.OrderImportFailed)]
+    public async Task OnEventAsync_WakeWorthyKindAtHighSeverity_OfflinePlanner_IsReachedOverMessenger(string kind)
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
+
+        await _sut.OnEventAsync(new PlannerKindEvent(kind, AgentTriggerSeverity.High));
+
+        await _offlineMessengerNotifier.Received(1).TrySendAsync(
+            "user-a", ComposedMessengerText, kind, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(AgentTriggerSeverity.Medium)]
+    [TestCase(AgentTriggerSeverity.Low)]
+    public async Task OnEventAsync_WakeWorthyKindBelowHighSeverity_OfflinePlanner_StaysInTheInbox(string severity)
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
+
+        await _sut.OnEventAsync(new PlannerKindEvent(AgentTriggerKinds.UnstaffedShift, severity));
+
+        await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_WakeWorthyEvent_MutedRecipient_IsNotWokenOverMessengerEither()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
+        _preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(false);
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_WakeWorthyEvent_UnmutedRecipient_IsWokenOverMessenger()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("user-a");
+        SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _offlineMessengerNotifier.Received(1).TrySendAsync(
+            "user-a", ComposedMessengerText, AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_ConnectedRecipient_IsNeverAlsoContactedOverMessenger()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a", "user-b" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
     }
 
     [Test]

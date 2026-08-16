@@ -140,6 +140,62 @@ public class PatAuthenticationHandlerTests
     }
 
     [Test]
+    public async Task AuthenticateAsync_DeactivatedOwner_Fails()
+    {
+        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        var user = SetupUser();
+        user.DeactivatedAt = DateTime.UtcNow.AddHours(-1);
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext);
+
+        // Without this the deactivation is toothless for exactly the person it targets: they cannot
+        // sign in any more, but their personal access tokens keep working indefinitely.
+        result.Succeeded.ShouldBeFalse();
+        result.None.ShouldBeFalse();
+        result.Failure.ShouldNotBeNull();
+        result.Failure!.Message.ShouldBe(InvalidTokenMessage);
+    }
+
+    [Test]
+    public async Task AuthenticateAsync_DeactivatedOwner_DoesNotTouchLastUsed()
+    {
+        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        var user = SetupUser();
+        user.DeactivatedAt = DateTime.UtcNow;
+
+        await AuthenticateAsync(BearerPrefix + plaintext);
+
+        await _repository.DidNotReceive().UpdateLastUsedAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AuthenticateAsync_LockedOutOwner_Fails()
+    {
+        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        var user = SetupUser();
+        _userManager.IsLockedOutAsync(user).Returns(true);
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext);
+
+        result.Succeeded.ShouldBeFalse();
+        result.Failure.ShouldNotBeNull();
+        result.Failure!.Message.ShouldBe(InvalidTokenMessage);
+    }
+
+    [Test]
+    public async Task AuthenticateAsync_ActiveOwner_IsNotAffectedByTheStateCheck()
+    {
+        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        var user = SetupUser();
+        user.DeactivatedAt = null;
+        _userManager.IsLockedOutAsync(user).Returns(false);
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext);
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Test]
     public async Task AuthenticateAsync_NeverUsedToken_UpdatesLastUsed()
     {
         var (plaintext, token) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);

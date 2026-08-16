@@ -107,6 +107,54 @@ internal class AuthenticationServiceLockoutTests
     }
 
     [Test]
+    public async Task ValidateCredentials_WhenUserIsDeactivated_IsRejectedWithoutCheckingPassword()
+    {
+        var user = new AppUser { Id = "5", Email = Email, DeactivatedAt = DateTime.UtcNow.AddDays(-1) };
+        _userManager.FindByEmailAsync(Email).Returns(user);
+        _userManager.HasPasswordAsync(user).Returns(true);
+        _userManager.IsLockedOutAsync(user).Returns(false);
+        _userManager.CheckPasswordAsync(user, Password).Returns(true);
+
+        var (isValid, resultUser) = await _sut.ValidateCredentialsAsync(Email, Password);
+
+        isValid.ShouldBeFalse();
+        resultUser.ShouldBeNull();
+        await _userManager.DidNotReceive().CheckPasswordAsync(user, Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task ValidateCredentials_WhenUserIsDeactivated_DoesNotFallBackToLdapForThatAccount()
+    {
+        var user = new AppUser { Id = "6", Email = Email, DeactivatedAt = DateTime.UtcNow };
+        _userManager.FindByEmailAsync(Email).Returns(user);
+        _userManager.HasPasswordAsync(user).Returns(false);
+
+        var (isValid, _) = await _sut.ValidateCredentialsAsync(Email, Password);
+
+        isValid.ShouldBeFalse();
+
+        // The refusal happens before the LDAP fallback: a deactivated account must not be able to
+        // sign in through a directory provider either.
+        await _identityProviderRepository.DidNotReceive().GetAuthenticationProviders();
+    }
+
+    [Test]
+    public async Task ValidateCredentials_WhenUserIsActive_IsNotAffectedByTheDeactivationCheck()
+    {
+        var user = new AppUser { Id = "7", Email = Email, DeactivatedAt = null };
+        _userManager.FindByEmailAsync(Email).Returns(user);
+        _userManager.HasPasswordAsync(user).Returns(true);
+        _userManager.IsLockedOutAsync(user).Returns(false);
+        _userManager.CheckPasswordAsync(user, Password).Returns(true);
+        _userManager.ResetAccessFailedCountAsync(user).Returns(IdentityResult.Success);
+
+        var (isValid, resultUser) = await _sut.ValidateCredentialsAsync(Email, Password);
+
+        isValid.ShouldBeTrue();
+        resultUser.ShouldBe(user);
+    }
+
+    [Test]
     public async Task ValidateCredentials_WhenLocalUserHasNoPassword_SkipsLockoutAndFallsBackToLdap()
     {
         var user = new AppUser { Id = "4", Email = Email };

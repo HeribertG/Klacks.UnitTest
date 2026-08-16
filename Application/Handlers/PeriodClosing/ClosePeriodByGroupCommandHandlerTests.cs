@@ -36,6 +36,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     private IDomainEventDispatcher _eventDispatcher = null!;
     private IPeriodValidationLoader _validationLoader = null!;
     private IComplianceEscalationService _escalationService = null!;
+    private IUserService _userService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<ClosePeriodByGroupCommandHandler> _logger = null!;
     private ClosePeriodByGroupCommandHandler _handler = null!;
@@ -57,6 +58,8 @@ public class ClosePeriodByGroupCommandHandlerTests
                 Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(new List<PeriodIssueDto>());
         _escalationService = Substitute.For<IComplianceEscalationService>();
+        _userService = Substitute.For<IUserService>();
+        _userService.GetDisplayName().Returns("Ada Lovelace");
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ClosePeriodByGroupCommandHandler>>();
 
@@ -73,6 +76,7 @@ public class ClosePeriodByGroupCommandHandlerTests
             _eventDispatcher,
             _validationLoader,
             _escalationService,
+            _userService,
             _unitOfWork,
             _logger);
     }

@@ -7,9 +7,12 @@
 /// PlanPausedForApprovalTriggerEvent fired via IAgentTriggerService whenever a plan pauses for
 /// approval. ISkillExecutor + IAgentPlanRepository + ILLMBackgroundTaskService + IAgentTriggerService
 /// are mocked. Unless a test overrides it, every skill name resolves to a registered descriptor
-/// classified as SkillRiskClass.Reversible, so plain steps run through at the default autonomy level
-/// (Autonomous) without pausing; tests that exercise the pause decision mock
-/// ISkillRegistry/ISkillRiskClassifier explicitly for the skill under test. CreatePlan defaults
+/// classified by name: a read-only prefix (get_ / list_ / check_ / read_ / search_) yields
+/// SkillRiskClass.ReadOnly, every other name SkillRiskClass.Reversible - mirroring the real classifier
+/// closely enough that a verify skill passes the executor's read-only gate. Either way plain steps run
+/// through at the default autonomy level (Autonomous) without pausing; tests that exercise the pause
+/// decision or the verify gate mock ISkillRegistry/ISkillRiskClassifier explicitly for the skill under
+/// test. CreatePlan defaults
 /// AgentPlan.UserId to the non-Guid literal "user-1" (matching the pre-existing fixture data), so
 /// existing tests never trigger the new proactive event by accident; tests that assert on the trigger
 /// pass an explicit Guid-shaped UserId. CreatePlan defaults Origin to AgentPlanOrigin.UserGoal so all
@@ -53,6 +56,11 @@ public class PlanStepExecutorTests
 
     private const int TaskBoundaryMinMessages = 10;
 
+    private static readonly string[] ReadOnlyNamePrefixes = ["get_", "list_", "check_", "read_", "search_"];
+
+    private static bool IsReadOnlyName(string name)
+        => ReadOnlyNamePrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal));
+
     [SetUp]
     public void Setup()
     {
@@ -63,7 +71,13 @@ public class PlanStepExecutorTests
         _autonomyRepository = Substitute.For<IAgentAutonomyPreferenceRepository>();
         _skillRegistry.GetSkillByName(Arg.Any<string>())
             .Returns(callInfo => BuildDefaultDescriptor(callInfo.Arg<string>()));
-        _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.Reversible);
+        // Name-aware default so a verify skill classifies ReadOnly, the way the real classifier does via
+        // its read-only name prefixes. The executor rejects any non-read-only verify skill, so a flat
+        // Reversible default would make every verify-skill fixture fail for the wrong reason.
+        _riskClassifier.Classify(Arg.Any<SkillDescriptor>())
+            .Returns(callInfo => IsReadOnlyName(callInfo.Arg<SkillDescriptor>().Name)
+                ? SkillRiskClass.ReadOnly
+                : SkillRiskClass.Reversible);
         _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((AgentAutonomyPreferenceRow?)null);
         _notificationService = Substitute.For<IAssistantNotificationService>();
@@ -569,6 +583,94 @@ public class PlanStepExecutorTests
             Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
         await _skillExecutor.Received(1).ExecuteAsync(Arg.Is<SkillInvocation>(i => i.SkillName == "get_schedule_for_period"),
             Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_SensitiveVerifySkill_FailsPlanAndNeverRunsTheMutation()
+    {
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "place_work", new(), "delete_client", true)
+        });
+        var sensitiveDescriptor = BuildDefaultDescriptor("delete_client");
+        _skillRegistry.GetSkillByName("delete_client").Returns(sensitiveDescriptor);
+        _riskClassifier.Classify(sensitiveDescriptor).Returns(SkillRiskClass.Sensitive);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Failed));
+        Assert.That(result.LastErrorMessage, Does.Contain("delete_client"));
+        Assert.That(result.LastErrorMessage, Does.Contain("read-only"));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_IrreversibleVerifySkill_FailsPlan()
+    {
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "place_work", new(), "close_period", true)
+        });
+        var irreversibleDescriptor = BuildDefaultDescriptor("close_period");
+        _skillRegistry.GetSkillByName("close_period").Returns(irreversibleDescriptor);
+        _riskClassifier.Classify(irreversibleDescriptor).Returns(SkillRiskClass.Irreversible);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Failed));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_UnregisteredVerifySkill_FailsPlan()
+    {
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "place_work", new(), "hallucinated_skill", true)
+        });
+        _skillRegistry.GetSkillByName("hallucinated_skill").Returns((SkillDescriptor?)null);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Failed));
+        Assert.That(result.LastErrorMessage, Does.Contain("not a registered skill"));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    // The gate must hold on the self-reflection path too: that origin runs at FullyAutonomous with the
+    // chat autonomy gate bypassed, so it is exactly where an unchecked verify skill would do most damage.
+    [Test]
+    public async Task ExecutePlanAsync_SelfReflectionPlan_SensitiveVerifySkill_StillFails()
+    {
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "place_work", new(), "delete_group", true) },
+            origin: AgentPlanOrigin.SelfReflection);
+        var sensitiveDescriptor = BuildDefaultDescriptor("delete_group");
+        _skillRegistry.GetSkillByName("delete_group").Returns(sensitiveDescriptor);
+        _riskClassifier.Classify(sensitiveDescriptor).Returns(SkillRiskClass.Sensitive);
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>())
+            .Returns(new GoalCandidate { Id = Guid.NewGuid(), Status = GoalCandidateStatus.Approved });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        Assert.That(result.Status, Is.EqualTo(PlanStatus.Failed));
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
