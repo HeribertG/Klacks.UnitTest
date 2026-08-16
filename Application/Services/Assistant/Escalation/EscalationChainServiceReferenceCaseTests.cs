@@ -76,8 +76,11 @@ public class EscalationChainServiceReferenceCaseTests
     public async Task ReferenceCase_AExpires_BAcknowledges_CIsNeverNotified()
     {
         // 03:00:00 - report arrives, chain starts. Deadline = 06:00 - 2h = 04:00.
-        var chainId = await _sut.StartChainAsync(new StartEscalationChainRequest(
+        var startedChainId = await _sut.StartChainAsync(new StartEscalationChainRequest(
             WorkId, GroupId, ClientId, "Absent Employee", ShiftStartUtc, AbsenceBreakId: null));
+
+        Assert.That(startedChainId, Is.Not.Null, "60min deadline fits the 3-stage roster's 90min reachable window.");
+        var chainId = startedChainId!.Value;
 
         var stageA = _repository.GetStage(chainId, "planner-a");
         var stageB = _repository.GetStage(chainId, "planner-b");
@@ -130,8 +133,11 @@ public class EscalationChainServiceReferenceCaseTests
         // Meldung 03:50 für 06:00, Puffer 2h -> Deadline 04:00 -> T = 10min, T/3 < 5min -> parallel.
         _timeProvider.Now = ShiftStartUtc.AddHours(-2).AddMinutes(-10);
 
-        var chainId = await _sut.StartChainAsync(new StartEscalationChainRequest(
+        var startedChainId = await _sut.StartChainAsync(new StartEscalationChainRequest(
             WorkId, GroupId, ClientId, "Absent Employee", ShiftStartUtc, AbsenceBreakId: null));
+
+        Assert.That(startedChainId, Is.Not.Null, "10min deadline fits the 3-stage roster's 90min reachable window.");
+        var chainId = startedChainId!.Value;
 
         Assert.That(_repository.GetStage(chainId, "planner-a").Status, Is.EqualTo(EscalationStageStatus.Notified));
         Assert.That(_repository.GetStage(chainId, "planner-b").Status, Is.EqualTo(EscalationStageStatus.Notified));

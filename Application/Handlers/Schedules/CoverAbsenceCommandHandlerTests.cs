@@ -21,6 +21,7 @@ using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
@@ -56,6 +57,7 @@ public class CoverAbsenceCommandHandlerTests
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IEscalationChainService _escalationChainService = null!;
     private CoverAbsenceCommandHandler _handler = null!;
 
     [SetUp]
@@ -94,6 +96,10 @@ public class CoverAbsenceCommandHandlerTests
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
+        _escalationChainService = Substitute.For<IEscalationChainService>();
+        _escalationChainService.StartChainAsync(Arg.Any<StartEscalationChainRequest>(), Arg.Any<CancellationToken>())
+            .Returns((Guid?)Guid.NewGuid());
+
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
 
@@ -105,7 +111,7 @@ public class CoverAbsenceCommandHandlerTests
 
         _handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork,
+            partitionService, _mediator, _unitOfWork, _escalationChainService,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
 
