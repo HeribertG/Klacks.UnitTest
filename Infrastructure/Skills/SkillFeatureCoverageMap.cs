@@ -27,6 +27,7 @@ public static class SkillFeatureCoverageMap
         ["ChatController"] = Excluded("Klacksy chat pipeline itself: the host that executes skills, covering it with skills would be circular"),
         ["CustomSttProviderController"] = Excluded("voice STT provider plumbing; configuration visibility via get_speech_settings"),
         ["DocsController"] = Excluded("serves embedded assistant documentation, internal infrastructure"),
+        ["EscalationChainsController"] = Gap("escalation intervention list (list running chains, acknowledge/cancel); Owner decision B7 scopes cancel to admins and this chain's roster members, not chat-wide, so a skill would need the same scoping before this can be chat-addressable"),
         ["EscalationRosterController"] = Gap("escalation call-list admin reorder; a read-only get_escalation_roster-style skill would be a natural addition, but the reorder action itself is admin-UI only for now"),
         ["EvalController"] = Excluded("Klacksy evaluation harness, developer tooling"),
         ["GlobalRulesController"] = Covered("get_ai_guidelines", "update_ai_guidelines"),

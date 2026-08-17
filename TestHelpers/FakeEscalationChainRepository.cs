@@ -57,6 +57,10 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
         Task.FromResult<IReadOnlyList<EscalationChain>>(
             _chains.Values.Where(c => c.Status == EscalationChainStatus.Running && c.AbsenceBreakId != null).ToList());
 
+    public Task<IReadOnlyList<EscalationChain>> GetRunningChainsWithStagesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<EscalationChain>>(
+            _chains.Values.Where(c => c.Status == EscalationChainStatus.Running).OrderBy(c => c.DeadlineUtc).ToList());
+
     public Task<bool> IsBreakDeletedAsync(Guid breakId, CancellationToken cancellationToken = default) =>
         Task.FromResult(_deletedBreakIds.Contains(breakId));
 
