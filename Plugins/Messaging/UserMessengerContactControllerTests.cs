@@ -33,6 +33,8 @@ public class UserMessengerContactControllerTests
     private IUserMessengerContactRepository _repository = null!;
     private IUserMessengerPairingService _pairingService = null!;
     private IPluginUnitOfWork _unitOfWork = null!;
+    private IMessagingProviderRepository _providerRepository = null!;
+    private IUserInviteSendService _inviteSendService = null!;
     private UserMessengerContactController _sut = null!;
 
     [SetUp]
@@ -41,8 +43,10 @@ public class UserMessengerContactControllerTests
         _repository = Substitute.For<IUserMessengerContactRepository>();
         _pairingService = Substitute.For<IUserMessengerPairingService>();
         _unitOfWork = Substitute.For<IPluginUnitOfWork>();
+        _providerRepository = Substitute.For<IMessagingProviderRepository>();
+        _inviteSendService = Substitute.For<IUserInviteSendService>();
 
-        _sut = new UserMessengerContactController(_repository, _pairingService, _unitOfWork);
+        _sut = new UserMessengerContactController(_repository, _pairingService, _unitOfWork, _providerRepository, _inviteSendService);
         SignIn(UserId);
     }
 
@@ -74,6 +78,71 @@ public class UserMessengerContactControllerTests
 
         result.Result.ShouldBeOfType<UnauthorizedResult>();
         await _pairingService.DidNotReceive().IssueCodeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// The deliberate exception to the self-only rule: an admin can issue a code for a different
+    /// account. Pinned here as a positive test (it delegates correctly) rather than only relying on
+    /// the [Authorize(Roles=...)] attribute check below, so a refactor that silently drops the
+    /// forwarding of issuedByAdminId is caught even though the attribute itself stays intact.
+    /// </summary>
+    [Test]
+    public async Task SendAdminInvite_WithEnabledTelegramProvider_DelegatesToInviteSendService()
+    {
+        SignIn(UserId, MessagingConstants.RoleAdmin);
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>
+        {
+            new() { Id = Guid.NewGuid(), ProviderType = MessagingConstants.ProviderTelegram, IsEnabled = true, ConfigJson = "{\"token\":\"abc\"}" }
+        });
+        _inviteSendService
+            .SendAsync(OtherUserId, UserId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(UserInviteSendResult.Success);
+
+        var result = await _sut.SendAdminInvite(OtherUserId, CancellationToken.None);
+
+        await _inviteSendService.Received(1).SendAsync(OtherUserId, UserId, "{\"token\":\"abc\"}", Arg.Any<CancellationToken>());
+        var body = ((OkObjectResult)result.Result!).Value;
+        body.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task SendAdminInvite_WithoutAnEnabledTelegramProvider_IsBadRequest()
+    {
+        SignIn(UserId, MessagingConstants.RoleAdmin);
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>());
+
+        var result = await _sut.SendAdminInvite(OtherUserId, CancellationToken.None);
+
+        result.Result.ShouldBeOfType<BadRequestObjectResult>();
+        await _inviteSendService.DidNotReceive().SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SendAdminInvite_WithoutAUserClaim_IsUnauthorized()
+    {
+        SignInWithoutClaims();
+
+        var result = await _sut.SendAdminInvite(OtherUserId, CancellationToken.None);
+
+        result.Result.ShouldBeOfType<UnauthorizedResult>();
+    }
+
+    /// <summary>
+    /// Structural guarantee for the exception this route carves out of the self-only rule: the action
+    /// must stay Admin-gated even though direct method invocation in the tests above bypasses MVC's
+    /// authorization pipeline entirely.
+    /// </summary>
+    [Test]
+    public void SendAdminInvite_RequiresAdminRole()
+    {
+        var method = typeof(UserMessengerContactController).GetMethod(nameof(UserMessengerContactController.SendAdminInvite));
+        var authorizeAttribute = method!.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), inherit: false)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>()
+            .SingleOrDefault();
+
+        authorizeAttribute.ShouldNotBeNull();
+        authorizeAttribute.Roles.ShouldBe(MessagingConstants.RoleAdmin);
     }
 
     [Test]
