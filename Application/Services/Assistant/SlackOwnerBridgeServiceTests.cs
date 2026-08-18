@@ -78,7 +78,7 @@ public class SlackOwnerBridgeServiceTests
         processed.ShouldBe(0);
         await _mediator.DidNotReceive().Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>());
         await _messagingService.DidNotReceive().GetMessagesAsync(
-            Arg.Any<Guid?>(), Arg.Any<MessageDirection?>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid?>(), Arg.Any<MessageDirection?>(), Arg.Any<string?>(), Arg.Any<MessageScope?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -92,7 +92,7 @@ public class SlackOwnerBridgeServiceTests
         processed.ShouldBe(0);
         await _settingsRepository.Received(1).UpsertSettingAsync(SettingsConstants.SLACK_OWNER_BRIDGE_WATERMARK, Arg.Any<string>());
         await _messagingService.DidNotReceive().GetMessagesAsync(
-            Arg.Any<Guid?>(), Arg.Any<MessageDirection?>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid?>(), Arg.Any<MessageDirection?>(), Arg.Any<string?>(), Arg.Any<MessageScope?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -115,7 +115,7 @@ public class SlackOwnerBridgeServiceTests
         SetUpOwnerAlias();
         SetUpWatermark(DateTime.UtcNow.AddMinutes(-5));
         _messagingService.GetMessagesAsync(
-                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<MessageScope?>(), Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
             .Returns(new List<Message> { BuildMessage(DateTime.UtcNow, content: "Test") });
         _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
             .Returns(new LLMResponse { Message = "Antwort" });
@@ -133,7 +133,7 @@ public class SlackOwnerBridgeServiceTests
         _settingsRepository.GetSetting(SettingKeys.DefaultLanguage).Returns(
             new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.DefaultLanguage, Value = "de" });
         _messagingService.GetMessagesAsync(
-                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<MessageScope?>(), Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
             .Returns(new List<Message> { BuildMessage(DateTime.UtcNow, content: "Wie weit bist du") });
         _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
             .Returns(new LLMResponse { Message = "Antwort" });
@@ -153,7 +153,7 @@ public class SlackOwnerBridgeServiceTests
         SetUpWatermark(DateTime.UtcNow.AddMinutes(-5));
         var message = BuildMessage(DateTime.UtcNow, content: "Wie viele Ferien hat Anna noch?");
         _messagingService.GetMessagesAsync(
-                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<MessageScope?>(), Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
             .Returns(new List<Message> { message });
         _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
             .Returns(new LLMResponse { Message = "Anna hat noch 12 Tage." });
@@ -189,7 +189,7 @@ public class SlackOwnerBridgeServiceTests
         var first = BuildMessage(DateTime.UtcNow.AddSeconds(-2), content: "erste Nachricht");
         var second = BuildMessage(DateTime.UtcNow, content: "zweite Nachricht");
         _messagingService.GetMessagesAsync(
-                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<MessageScope?>(), Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
             .Returns(new List<Message> { first, second });
         _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
             .Returns(
@@ -219,7 +219,7 @@ public class SlackOwnerBridgeServiceTests
         _planningAudienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<string>)new HashSet<string>());
         _messagingService.GetMessagesAsync(
-                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<MessageScope?>(), Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
             .Returns(new List<Message> { BuildMessage(DateTime.UtcNow, "hallo") });
 
         var processed = await _sut.RunCycleAsync();
