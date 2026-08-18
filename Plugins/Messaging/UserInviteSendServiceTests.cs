@@ -164,7 +164,7 @@ public class UserInviteSendServiceTests
 
     private void GiveUser(string? email, string? firstName = "Jane") =>
         _userDirectory.GetUserAsync(UserId, Arg.Any<CancellationToken>())
-            .Returns(new AppUserDirectoryInfo(UserId, firstName, email));
+            .Returns(new AppUserDirectoryInfo(UserId, firstName, "Doe", email));
 
     private void GiveResolvedBot() =>
         _botMetadataProvider.GetBotUsernameAsync(BotConfig, Arg.Any<CancellationToken>()).Returns(BotUsername);
