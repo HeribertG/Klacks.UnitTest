@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for GetEscalationRosterQueryHandler — verifies the mapping from
-/// EscalationRosterEntryDetail to EscalationRosterEntryResource is field-for-field faithful.
+/// EscalationRosterMember to EscalationRosterMemberResource is field-for-field faithful, and that the
+/// query forwards to the group-agnostic GetRosterMembersAsync overload (no group id).
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Assistant;
@@ -25,36 +26,30 @@ public class GetEscalationRosterQueryHandlerTests
     }
 
     [Test]
-    public async Task Handle_MapsEntryDetailToResource()
+    public async Task Handle_MapsMemberToResource()
     {
-        var groupId = Guid.NewGuid();
-        var entryId = Guid.NewGuid();
-        var detail = new EscalationRosterEntryDetail(entryId, "user-a", "Alice Adler", 2, true, false);
+        var member = new EscalationRosterMember("user-a", "Alice Adler", false);
 
-        _rosterService.GetRosterEntriesAsync(groupId, Arg.Any<CancellationToken>())
-            .Returns(new List<EscalationRosterEntryDetail> { detail });
+        _rosterService.GetRosterMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationRosterMember> { member });
 
-        var result = await _sut.Handle(new GetEscalationRosterQuery(groupId), CancellationToken.None);
+        var result = await _sut.Handle(new GetEscalationRosterQuery(), CancellationToken.None);
 
         Assert.That(result, Has.Count.EqualTo(1));
         var resource = result[0];
-        Assert.That(resource.Id, Is.EqualTo(entryId));
         Assert.That(resource.UserId, Is.EqualTo("user-a"));
         Assert.That(resource.DisplayName, Is.EqualTo("Alice Adler"));
-        Assert.That(resource.EffectiveRank, Is.EqualTo(2));
-        Assert.That(resource.HasOverride, Is.True);
-        Assert.That(resource.IsOrphaned, Is.False);
+        Assert.That(resource.IsCurrentlyAbsent, Is.False);
     }
 
     [Test]
-    public async Task Handle_PassesGroupIdThrough()
+    public async Task Handle_ReturnsEmptyList_WhenNoMembersEligible()
     {
-        var groupId = Guid.NewGuid();
-        _rosterService.GetRosterEntriesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(new List<EscalationRosterEntryDetail>());
+        _rosterService.GetRosterMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationRosterMember>());
 
-        await _sut.Handle(new GetEscalationRosterQuery(groupId), CancellationToken.None);
+        var result = await _sut.Handle(new GetEscalationRosterQuery(), CancellationToken.None);
 
-        await _rosterService.Received(1).GetRosterEntriesAsync(groupId, Arg.Any<CancellationToken>());
+        Assert.That(result, Is.Empty);
     }
 }

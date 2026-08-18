@@ -38,8 +38,6 @@ public class UserManagementServiceDeactivationTests
 
         _sut = new UserManagementService(
             _userManager,
-            Substitute.For<IUserDataEraser>(),
-            new List<IUserDataErasureParticipant>(),
             Substitute.For<ILogger<UserManagementService>>());
     }
 

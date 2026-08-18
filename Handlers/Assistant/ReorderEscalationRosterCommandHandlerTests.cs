@@ -2,11 +2,12 @@
 
 /// <summary>
 /// Unit tests for ReorderEscalationRosterCommandHandler — verifies it forwards to
-/// IEscalationRosterService.SetOrderAsync and reports success.
+/// IEscalationRosterService.ReorderAsync and returns the result unchanged.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
+using Klacks.Api.Domain.DTOs;
 using Klacks.Api.Domain.Interfaces.Assistant;
 
 namespace Klacks.UnitTest.Handlers.Assistant;
@@ -25,14 +26,15 @@ public class ReorderEscalationRosterCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_ForwardsGroupIdAndOrderToService_AndReturnsSuccess()
+    public async Task Handle_ForwardsOrderedUserIdsToService_AndReturnsResult()
     {
-        var groupId = Guid.NewGuid();
         var orderedUserIds = new List<string> { "user-c", "user-a", "user-b" };
+        var expected = new HttpResultResource { Success = true, Messages = "Escalation roster order updated" };
+        _rosterService.ReorderAsync(orderedUserIds, Arg.Any<CancellationToken>()).Returns(expected);
 
-        var result = await _sut.Handle(new ReorderEscalationRosterCommand(groupId, orderedUserIds), CancellationToken.None);
+        var result = await _sut.Handle(new ReorderEscalationRosterCommand(orderedUserIds), CancellationToken.None);
 
-        await _rosterService.Received(1).SetOrderAsync(groupId, orderedUserIds, Arg.Any<CancellationToken>());
-        Assert.That(result.Success, Is.True);
+        await _rosterService.Received(1).ReorderAsync(orderedUserIds, Arg.Any<CancellationToken>());
+        result.ShouldBe(expected);
     }
 }

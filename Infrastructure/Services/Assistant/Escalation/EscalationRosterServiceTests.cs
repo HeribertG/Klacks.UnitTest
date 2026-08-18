@@ -1,17 +1,21 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for EscalationRosterService.GetRosterEntriesAsync and SetOrderAsync: active entries sort by
-/// EffectiveRank with orphaned entries trailing by OverrideRank, an unresolvable user id falls back to
-/// showing the raw id instead of crashing, SetOrderAsync persists OverrideRank in submission order and
-/// silently skips a user id with no roster row - and, most importantly, SetOrderAsync must never flip
-/// IsOrphaned or touch OverrideRank for an entry RederiveAsync has just marked orphaned, even if that
-/// entry's user id is present in the submitted order (E60 safety rule).
+/// Tests for EscalationRosterService. GetOrderedRosterAsync (chain construction) is group-scoped: it
+/// resolves GroupVisibility for one root, skips a member who is currently absent or has no phone
+/// number, and appends the global admin role as a final A2 fallback stage - both stages ordered by
+/// AppUser.EscalationRosterOrder. GetRosterMembersAsync/ReorderAsync (admin roster card) are
+/// deliberately NOT group-scoped: one flat list of every user with any GroupVisibility and a phone
+/// number, unfiltered by absence so the admin can manage an absent member's period. An admin only
+/// appears in that flat list if they meet the same visibility+phone criteria themselves - otherwise
+/// they remain the invisible A2 fallback used by GetOrderedRosterAsync.
 /// </summary>
 
-using Klacks.Api.Domain.Models.Assistant.Escalation;
+using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Infrastructure.Services.Assistant.Escalation;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -23,155 +27,260 @@ namespace Klacks.UnitTest.Infrastructure.Services.Assistant.Escalation;
 [TestFixture]
 public class EscalationRosterServiceTests
 {
+    private static readonly DateTime Today = new(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+
     private string _databaseName = null!;
     private DataBaseContext _dbContext = null!;
     private IGroupRepository _groupRepository = null!;
     private UserManager<AppUser> _userManager = null!;
+    private SettableTimeProvider _timeProvider = null!;
     private EscalationRosterService _service = null!;
 
     [Test]
-    public async Task GetRosterEntriesAsync_OrdersActiveEntriesByEffectiveRank_ThenOrphanedByOverrideRank()
+    public async Task GetOrderedRosterAsync_OrdersVisibleMembersByEscalationRosterOrder()
     {
         var groupId = Guid.NewGuid();
         _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
+        StubNoAdmins();
 
-        var userA = StubUser("user-a", "Anna", "Adler");
-        var userB = StubUser("user-b", "Bruno", "Berger");
-        var userC = StubUser("user-c", "Clara", "Costa");
-        var userD = StubUser("user-d", "Diego", "Diaz");
-
-        _dbContext.GroupVisibility.AddRange(
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userA.Id, GroupId = groupId },
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userB.Id, GroupId = groupId },
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userC.Id, GroupId = groupId });
-
-        _dbContext.EscalationRosterEntries.AddRange(
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userA.Id, OverrideRank = 3, DerivedRank = 1 },
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userB.Id, OverrideRank = 1, DerivedRank = 2 },
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userC.Id, OverrideRank = 2, DerivedRank = 3 },
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userD.Id, OverrideRank = 9 });
+        var userA = StubUser("user-a", escalationRosterOrder: 3);
+        var userB = StubUser("user-b", escalationRosterOrder: 1);
+        var userC = StubUser("user-c", escalationRosterOrder: 2);
+        AddVisibility(groupId, userA.Id, userB.Id, userC.Id);
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetRosterEntriesAsync(groupId);
+        var result = await _service.GetOrderedRosterAsync(groupId);
 
-        result.Count.ShouldBe(4);
-        result[0].UserId.ShouldBe(userB.Id);
-        result[0].DisplayName.ShouldBe("Bruno Berger");
-        result[0].IsOrphaned.ShouldBeFalse();
-        result[1].UserId.ShouldBe(userC.Id);
-        result[2].UserId.ShouldBe(userA.Id);
-        result[3].UserId.ShouldBe(userD.Id);
-        result[3].IsOrphaned.ShouldBeTrue();
-        result[3].EffectiveRank.ShouldBe(9);
+        result.Select(c => c.UserId).ShouldBe(new[] { userB.Id, userC.Id, userA.Id });
     }
 
     [Test]
-    public async Task GetRosterEntriesAsync_UnknownUser_FallsBackToUserId()
+    public async Task GetOrderedRosterAsync_SkipsMemberWithActiveAbsencePeriod()
     {
         var groupId = Guid.NewGuid();
         _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
+        StubNoAdmins();
 
-        const string unknownUserId = "user-unknown";
-        _userManager.FindByIdAsync(unknownUserId).Returns(Task.FromResult<AppUser?>(null));
-
-        _dbContext.GroupVisibility.Add(new GroupVisibility { Id = Guid.NewGuid(), AppUserId = unknownUserId, GroupId = groupId });
-        _dbContext.EscalationRosterEntries.Add(new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = unknownUserId, OverrideRank = 1 });
-        await _dbContext.SaveChangesAsync();
-
-        var result = await _service.GetRosterEntriesAsync(groupId);
-
-        result.Count.ShouldBe(1);
-        result[0].DisplayName.ShouldBe(unknownUserId);
-    }
-
-    [Test]
-    public async Task SetOrderAsync_SetsOverrideRankInSubmittedOrder()
-    {
-        var groupId = Guid.NewGuid();
-        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
-
-        const string userA = "user-a";
-        const string userB = "user-b";
-        const string userC = "user-c";
-
-        _dbContext.GroupVisibility.AddRange(
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userA, GroupId = groupId },
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userB, GroupId = groupId },
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userC, GroupId = groupId });
-        _dbContext.EscalationRosterEntries.AddRange(
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userA, OverrideRank = 1 },
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userB, OverrideRank = 2 },
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userC, OverrideRank = 3 });
-        await _dbContext.SaveChangesAsync();
-
-        await _service.SetOrderAsync(groupId, new[] { userC, userA, userB });
-
-        using var verifyContext = CreateContext();
-        var entries = await verifyContext.EscalationRosterEntries
-            .Where(e => e.GroupRootId == groupId)
-            .ToDictionaryAsync(e => e.UserId);
-
-        entries[userC].OverrideRank.ShouldBe(1);
-        entries[userA].OverrideRank.ShouldBe(2);
-        entries[userB].OverrideRank.ShouldBe(3);
-    }
-
-    [Test]
-    public async Task SetOrderAsync_UnknownUserIdInList_IsSilentlyIgnored()
-    {
-        var groupId = Guid.NewGuid();
-        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
-
-        const string userA = "user-a";
-        const string userB = "user-b";
-        const string ghostUserId = "user-ghost";
-
-        _dbContext.GroupVisibility.AddRange(
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userA, GroupId = groupId },
-            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userB, GroupId = groupId });
-        _dbContext.EscalationRosterEntries.AddRange(
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userA, OverrideRank = 5 },
-            new EscalationRosterEntry { Id = Guid.NewGuid(), GroupRootId = groupId, UserId = userB, OverrideRank = 6 });
-        await _dbContext.SaveChangesAsync();
-
-        await _service.SetOrderAsync(groupId, new[] { ghostUserId, userA, userB });
-
-        using var verifyContext = CreateContext();
-        var entries = await verifyContext.EscalationRosterEntries
-            .Where(e => e.GroupRootId == groupId)
-            .ToDictionaryAsync(e => e.UserId);
-
-        entries.Count.ShouldBe(2);
-        entries[userA].OverrideRank.ShouldBe(2);
-        entries[userB].OverrideRank.ShouldBe(3);
-    }
-
-    [Test]
-    public async Task SetOrderAsync_OrphanedEntryInList_IsNeverUnorphaned()
-    {
-        var groupId = Guid.NewGuid();
-        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
-
-        const string orphanedUserId = "user-x";
-        const int priorOverrideRank = 7;
-
-        _dbContext.EscalationRosterEntries.Add(new EscalationRosterEntry
+        var absentUser = StubUser("user-absent", escalationRosterOrder: 1);
+        var availableUser = StubUser("user-available", escalationRosterOrder: 2);
+        AddVisibility(groupId, absentUser.Id, availableUser.Id);
+        _dbContext.UserAbsencePeriod.Add(new UserAbsencePeriod
         {
             Id = Guid.NewGuid(),
-            GroupRootId = groupId,
-            UserId = orphanedUserId,
-            OverrideRank = priorOverrideRank
+            AppUserId = absentUser.Id,
+            StartDate = DateOnly.FromDateTime(Today).AddDays(-1),
+            EndDate = DateOnly.FromDateTime(Today).AddDays(1)
         });
         await _dbContext.SaveChangesAsync();
 
-        await _service.SetOrderAsync(groupId, new[] { orphanedUserId });
+        var result = await _service.GetOrderedRosterAsync(groupId);
 
-        using var verifyContext = CreateContext();
-        var entry = await verifyContext.EscalationRosterEntries
-            .SingleAsync(e => e.GroupRootId == groupId && e.UserId == orphanedUserId);
+        result.Select(c => c.UserId).ShouldBe(new[] { availableUser.Id });
+    }
 
-        entry.IsOrphaned.ShouldBeTrue();
-        entry.OverrideRank.ShouldBe(priorOverrideRank);
+    [Test]
+    public async Task GetOrderedRosterAsync_SkipsMemberWithNoPhoneNumber()
+    {
+        var groupId = Guid.NewGuid();
+        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
+        StubNoAdmins();
+
+        var noPhoneUser = StubUser("user-no-phone", escalationRosterOrder: 1, phoneNumber: null);
+        var reachableUser = StubUser("user-reachable", escalationRosterOrder: 2);
+        AddVisibility(groupId, noPhoneUser.Id, reachableUser.Id);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOrderedRosterAsync(groupId);
+
+        result.Select(c => c.UserId).ShouldBe(new[] { reachableUser.Id });
+    }
+
+    [Test]
+    public async Task GetOrderedRosterAsync_AppendsAdminNotOtherwiseVisible_AsFinalStage()
+    {
+        var groupId = Guid.NewGuid();
+        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
+
+        var member = StubUser("user-member", escalationRosterOrder: 1);
+        var admin = StubUser("user-admin", escalationRosterOrder: 0);
+        AddVisibility(groupId, member.Id);
+        _userManager.GetUsersInRoleAsync(Roles.Admin).Returns(new List<AppUser> { admin });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOrderedRosterAsync(groupId);
+
+        result.Select(c => c.UserId).ShouldBe(new[] { member.Id, admin.Id });
+    }
+
+    [Test]
+    public async Task GetOrderedRosterAsync_AdminWithDirectVisibility_AppearsOnceInVisiblePosition()
+    {
+        var groupId = Guid.NewGuid();
+        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
+
+        var admin = StubUser("user-admin", escalationRosterOrder: 1);
+        var member = StubUser("user-member", escalationRosterOrder: 2);
+        AddVisibility(groupId, admin.Id, member.Id);
+        _userManager.GetUsersInRoleAsync(Roles.Admin).Returns(new List<AppUser> { admin });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOrderedRosterAsync(groupId);
+
+        result.Select(c => c.UserId).ShouldBe(new[] { admin.Id, member.Id });
+    }
+
+    [Test]
+    public async Task GetOrderedRosterAsync_AbsentAdminFallback_IsAlsoSkipped()
+    {
+        var groupId = Guid.NewGuid();
+        _groupRepository.Get(groupId).Returns(new Group { Id = groupId });
+
+        var member = StubUser("user-member", escalationRosterOrder: 1);
+        var absentAdmin = StubUser("user-admin", escalationRosterOrder: 0);
+        AddVisibility(groupId, member.Id);
+        _userManager.GetUsersInRoleAsync(Roles.Admin).Returns(new List<AppUser> { absentAdmin });
+        _dbContext.UserAbsencePeriod.Add(new UserAbsencePeriod
+        {
+            Id = Guid.NewGuid(),
+            AppUserId = absentAdmin.Id,
+            StartDate = DateOnly.FromDateTime(Today).AddDays(-1),
+            EndDate = DateOnly.FromDateTime(Today).AddDays(1)
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOrderedRosterAsync(groupId);
+
+        result.Select(c => c.UserId).ShouldBe(new[] { member.Id });
+    }
+
+    [Test]
+    public async Task GetOrderedRosterAsync_ResolvesChildGroupToRoot()
+    {
+        var rootId = Guid.NewGuid();
+        var childId = Guid.NewGuid();
+        _groupRepository.Get(childId).Returns(new Group { Id = childId, Root = rootId });
+        StubNoAdmins();
+
+        var member = StubUser("user-member", escalationRosterOrder: 1);
+        AddVisibility(rootId, member.Id);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOrderedRosterAsync(childId);
+
+        result.Select(c => c.UserId).ShouldBe(new[] { member.Id });
+    }
+
+    [Test]
+    public async Task GetRosterMembersAsync_ReturnsMembersWithAnyVisibilityAndPhone_ExcludingPhoneless()
+    {
+        var groupId = Guid.NewGuid();
+
+        var absentUser = StubUser("user-absent", escalationRosterOrder: 1);
+        var noPhoneUser = StubUser("user-no-phone", escalationRosterOrder: 2, phoneNumber: null);
+        var readyUser = StubUser("user-ready", escalationRosterOrder: 3);
+        AddVisibility(groupId, absentUser.Id, noPhoneUser.Id, readyUser.Id);
+        _dbContext.UserAbsencePeriod.Add(new UserAbsencePeriod
+        {
+            Id = Guid.NewGuid(),
+            AppUserId = absentUser.Id,
+            StartDate = DateOnly.FromDateTime(Today).AddDays(-1),
+            EndDate = DateOnly.FromDateTime(Today).AddDays(1)
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRosterMembersAsync();
+
+        result.Select(m => m.UserId).ShouldBe(new[] { absentUser.Id, readyUser.Id }, ignoreOrder: true);
+        var absent = result.Single(m => m.UserId == absentUser.Id);
+        absent.IsCurrentlyAbsent.ShouldBeTrue();
+        var ready = result.Single(m => m.UserId == readyUser.Id);
+        ready.IsCurrentlyAbsent.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task GetRosterMembersAsync_UnionsVisibilityAcrossAllGroups_NoGroupFilter()
+    {
+        var groupA = Guid.NewGuid();
+        var groupB = Guid.NewGuid();
+
+        var memberOfA = StubUser("user-a", escalationRosterOrder: 1);
+        var memberOfB = StubUser("user-b", escalationRosterOrder: 2);
+        AddVisibility(groupA, memberOfA.Id);
+        AddVisibility(groupB, memberOfB.Id);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRosterMembersAsync();
+
+        result.Select(m => m.UserId).ShouldBe(new[] { memberOfA.Id, memberOfB.Id }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task GetRosterMembersAsync_ExcludesUserWithNoGroupVisibilityAtAll()
+    {
+        StubUser("user-unaffiliated", escalationRosterOrder: 1);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRosterMembersAsync();
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GetRosterMembersAsync_AdminWithoutVisibilityOrPhone_DoesNotAppear()
+    {
+        var groupId = Guid.NewGuid();
+        var member = StubUser("user-member", escalationRosterOrder: 1);
+        var admin = StubUser("user-admin", escalationRosterOrder: 2, phoneNumber: null);
+        AddVisibility(groupId, member.Id);
+        _userManager.GetUsersInRoleAsync(Roles.Admin).Returns(new List<AppUser> { admin });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRosterMembersAsync();
+
+        result.Select(m => m.UserId).ShouldBe(new[] { member.Id });
+    }
+
+    [Test]
+    public async Task GetRosterMembersAsync_OrdersByEscalationRosterOrder()
+    {
+        var groupId = Guid.NewGuid();
+
+        var userA = StubUser("user-a", escalationRosterOrder: 2);
+        var userB = StubUser("user-b", escalationRosterOrder: 1);
+        AddVisibility(groupId, userA.Id, userB.Id);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRosterMembersAsync();
+
+        result.Select(m => m.UserId).ShouldBe(new[] { userB.Id, userA.Id });
+    }
+
+    [Test]
+    public async Task ReorderAsync_SetsEscalationRosterOrderToSubmittedPosition()
+    {
+        var userA = StubUser("user-a", escalationRosterOrder: 5);
+        var userB = StubUser("user-b", escalationRosterOrder: 6);
+        var userC = StubUser("user-c", escalationRosterOrder: 7);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.ReorderAsync(new[] { "user-c", "user-a", "user-b" });
+
+        result.Success.ShouldBeTrue();
+        (await _dbContext.AppUser.SingleAsync(u => u.Id == userC.Id)).EscalationRosterOrder.ShouldBe(1);
+        (await _dbContext.AppUser.SingleAsync(u => u.Id == userA.Id)).EscalationRosterOrder.ShouldBe(2);
+        (await _dbContext.AppUser.SingleAsync(u => u.Id == userB.Id)).EscalationRosterOrder.ShouldBe(3);
+    }
+
+    [Test]
+    public async Task ReorderAsync_UnknownUserIdInList_IsSilentlyIgnored()
+    {
+        var userA = StubUser("user-a", escalationRosterOrder: 1);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.ReorderAsync(new[] { "user-ghost", "user-a" });
+
+        result.Success.ShouldBeTrue();
+        (await _dbContext.AppUser.SingleAsync(u => u.Id == userA.Id)).EscalationRosterOrder.ShouldBe(2);
     }
 
     [SetUp]
@@ -182,6 +291,7 @@ public class EscalationRosterServiceTests
         _dbContext.Database.EnsureCreated();
 
         _groupRepository = Substitute.For<IGroupRepository>();
+        _timeProvider = new SettableTimeProvider(Today);
 
         var userStore = Substitute.For<IUserStore<AppUser>>();
         var identityOptions = Substitute.For<IOptions<IdentityOptions>>();
@@ -199,7 +309,9 @@ public class EscalationRosterServiceTests
 
         var serviceLogger = Substitute.For<ILogger<EscalationRosterService>>();
 
-        _service = new EscalationRosterService(_dbContext, _groupRepository, _userManager, serviceLogger);
+        _service = new EscalationRosterService(_dbContext, _groupRepository, _userManager, _timeProvider, serviceLogger);
+
+        StubNoAdmins();
     }
 
     [TearDown]
@@ -219,10 +331,32 @@ public class EscalationRosterServiceTests
         return new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
     }
 
-    private AppUser StubUser(string id, string firstName, string lastName)
+    private void StubNoAdmins()
     {
-        var user = new AppUser { Id = id, FirstName = firstName, LastName = lastName, UserName = $"{id}@test.local" };
-        _userManager.FindByIdAsync(id).Returns(Task.FromResult<AppUser?>(user));
+        _userManager.GetUsersInRoleAsync(Roles.Admin).Returns(new List<AppUser>());
+    }
+
+    private void AddVisibility(Guid groupId, params string[] userIds)
+    {
+        foreach (var userId in userIds)
+        {
+            _dbContext.GroupVisibility.Add(new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userId, GroupId = groupId });
+        }
+    }
+
+    private AppUser StubUser(string id, int escalationRosterOrder, string? phoneNumber = "+41 79 000 00 00", string lastName = "Test")
+    {
+        var user = new AppUser
+        {
+            Id = id,
+            FirstName = id,
+            LastName = lastName,
+            UserName = $"{id}@test.local",
+            EscalationRosterOrder = escalationRosterOrder,
+            PhoneNumber = phoneNumber
+        };
+
+        _dbContext.AppUser.Add(user);
         return user;
     }
 }

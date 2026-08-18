@@ -4,6 +4,8 @@ using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Application.DTOs;
 using Klacks.Api.Application.DTOs.Registrations;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -15,6 +17,7 @@ public class AccountManagementServiceTests
     private AccountManagementService _managementService;
     private IUserManagementService _mockUserManagementService;
     private ILogger<AccountManagementService> _mockLogger;
+    private DataBaseContext _dbContext;
 
     [SetUp]
     public void SetUp()
@@ -22,7 +25,20 @@ public class AccountManagementServiceTests
         _mockUserManagementService = Substitute.For<IUserManagementService>();
         _mockLogger = Substitute.For<ILogger<AccountManagementService>>();
 
-        _managementService = new AccountManagementService(_mockUserManagementService, _mockLogger);
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        _dbContext = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
+        _dbContext.Database.EnsureCreated();
+
+        _managementService = new AccountManagementService(_mockUserManagementService, _dbContext, _mockLogger);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _dbContext.Database.EnsureDeleted();
+        _dbContext.Dispose();
     }
 
     [Test]
@@ -103,34 +119,6 @@ public class AccountManagementServiceTests
     }
 
     [Test]
-    public async Task DeleteAccountUserAsync_WithValidUser_ShouldReturnSuccess()
-    {
-        var userId = Guid.NewGuid();
-
-        _mockUserManagementService.DeleteUserAsync(userId).Returns((true, "User deleted successfully"));
-
-        var result = await _managementService.DeleteAccountUserAsync(userId);
-
-        result.ShouldNotBeNull();
-        result.Success.ShouldBeTrue();
-        result.Messages.ShouldContain("User deleted successfully");
-    }
-
-    [Test]
-    public async Task DeleteAccountUserAsync_WithFailure_ShouldReturnFailure()
-    {
-        var userId = Guid.NewGuid();
-
-        _mockUserManagementService.DeleteUserAsync(userId).Returns((false, "User not found"));
-
-        var result = await _managementService.DeleteAccountUserAsync(userId);
-
-        result.ShouldNotBeNull();
-        result.Success.ShouldBeFalse();
-        result.Messages.ShouldContain("User not found");
-    }
-
-    [Test]
     public async Task UpdateAccountAsync_TrimsPhoneNumberWhitespace()
     {
         var userId = Guid.NewGuid();
@@ -183,5 +171,37 @@ public class AccountManagementServiceTests
 
         capturedUser.ShouldNotBeNull();
         capturedUser!.PhoneNumber.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ReorderUsersAsync_SetsDisplayOrderToSubmittedPosition()
+    {
+        var userA = new AppUser { Id = "user-a", FirstName = "A", LastName = "A", DisplayOrder = 5 };
+        var userB = new AppUser { Id = "user-b", FirstName = "B", LastName = "B", DisplayOrder = 6 };
+        var userC = new AppUser { Id = "user-c", FirstName = "C", LastName = "C", DisplayOrder = 7 };
+        _dbContext.AppUser.AddRange(userA, userB, userC);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _managementService.ReorderUsersAsync(new[] { "user-c", "user-a", "user-b" });
+
+        result.Success.ShouldBeTrue();
+        var reordered = await _dbContext.AppUser.ToDictionaryAsync(u => u.Id);
+        reordered["user-c"].DisplayOrder.ShouldBe(1);
+        reordered["user-a"].DisplayOrder.ShouldBe(2);
+        reordered["user-b"].DisplayOrder.ShouldBe(3);
+    }
+
+    [Test]
+    public async Task ReorderUsersAsync_UnknownUserIdInList_IsSilentlyIgnored()
+    {
+        var userA = new AppUser { Id = "user-a", FirstName = "A", LastName = "A", DisplayOrder = 1 };
+        _dbContext.AppUser.Add(userA);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _managementService.ReorderUsersAsync(new[] { "user-ghost", "user-a" });
+
+        result.Success.ShouldBeTrue();
+        var reordered = await _dbContext.AppUser.SingleAsync(u => u.Id == "user-a");
+        reordered.DisplayOrder.ShouldBe(2);
     }
 }
