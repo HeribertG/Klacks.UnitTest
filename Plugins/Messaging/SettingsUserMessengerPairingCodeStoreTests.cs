@@ -21,6 +21,7 @@ public class SettingsUserMessengerPairingCodeStoreTests
 {
     private const string UserId = "3f9a2b10-77c5-4de1-9a02-5b1c8e4d6a33";
     private const string OtherUserId = "b1d4e7c2-3a56-4f80-8c19-2d7e5a0b4c66";
+    private const string AdminId = "a1e2c3d4-9b7f-4e60-8a12-6c3d9f0b1e77";
 
     private IPluginSettingsReader _reader = null!;
     private IPluginSettingsWriter _writer = null!;
@@ -157,6 +158,99 @@ public class SettingsUserMessengerPairingCodeStoreTests
 
         (await _sut.PeekAsync(issued.Code, MessengerType.Telegram)).Result
             .ShouldBe(OnboardingRedeemResult.Success);
+    }
+
+    [Test]
+    public async Task IssueAdminInviteAsync_ProducesACodeWithTheAdminInviteLifetimeRatherThanTheSelfServiceOne()
+    {
+        var issued = await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId);
+
+        (issued.ExpiresAt - issued.IssuedAt).ShouldBe(
+            TimeSpan.FromHours(UserMessengerPairingConstants.AdminInviteCodeLifetimeHours));
+        issued.ExpiresAt.ShouldBeGreaterThan(
+            DateTime.UtcNow.AddMinutes(UserMessengerPairingConstants.CodeLifetimeMinutes + 1));
+    }
+
+    [Test]
+    public async Task IssueAdminInviteAsync_RecordsWhichAdminIssuedTheCode()
+    {
+        var issued = await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId);
+
+        issued.IssuedByAdminId.ShouldBe(AdminId);
+    }
+
+    /// <summary>
+    /// IssuedByAdminId is a new positional-record parameter with a default value; only a round trip
+    /// through the JSON row proves it actually survives Serialize/Deserialize rather than silently
+    /// resetting to its default once it comes back out of the settings row.
+    /// </summary>
+    [Test]
+    public async Task IssueAdminInviteAsync_IssuedByAdminIdSurvivesTheJsonRoundTrip()
+    {
+        var invite = await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId);
+
+        var lookup = await _sut.PeekAsync(invite.Code, MessengerType.Telegram);
+
+        lookup.Code!.IssuedByAdminId.ShouldBe(AdminId);
+    }
+
+    [Test]
+    public async Task IssueAsync_SelfService_LeavesIssuedByAdminIdNull()
+    {
+        var issued = await _sut.IssueAsync(UserId, MessengerType.Telegram);
+
+        issued.IssuedByAdminId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task IssueAdminInviteAsync_SupersedesAnExistingUnusedSelfServiceCode()
+    {
+        var first = await _sut.IssueAsync(UserId, MessengerType.Telegram);
+
+        var invite = await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId);
+
+        (await _sut.PeekAsync(first.Code, MessengerType.Telegram)).Result
+            .ShouldBe(OnboardingRedeemResult.TokenNotFound);
+        (await _sut.PeekAsync(invite.Code, MessengerType.Telegram)).Result
+            .ShouldBe(OnboardingRedeemResult.Success);
+    }
+
+    [Test]
+    public async Task IssueAdminInviteAsync_SupersedesAnExistingUnusedAdminInviteCode()
+    {
+        var first = await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId);
+
+        var second = await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId);
+
+        (await _sut.PeekAsync(first.Code, MessengerType.Telegram)).Result
+            .ShouldBe(OnboardingRedeemResult.TokenNotFound);
+        (await _sut.PeekAsync(second.Code, MessengerType.Telegram)).Result
+            .ShouldBe(OnboardingRedeemResult.Success);
+    }
+
+    /// <summary>
+    /// The superseding mechanism is shared and symmetric: an admin-issued code left unused is dropped
+    /// just like a self-service one the moment the same user requests any new code for the same type.
+    /// </summary>
+    [Test]
+    public async Task IssueAsync_SupersedesAnExistingUnusedAdminInviteCode()
+    {
+        var invite = await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId);
+
+        var second = await _sut.IssueAsync(UserId, MessengerType.Telegram);
+
+        (await _sut.PeekAsync(invite.Code, MessengerType.Telegram)).Result
+            .ShouldBe(OnboardingRedeemResult.TokenNotFound);
+        (await _sut.PeekAsync(second.Code, MessengerType.Telegram)).Result
+            .ShouldBe(OnboardingRedeemResult.Success);
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    public async Task IssueAdminInviteAsync_BlankAdminId_ThrowsArgumentException(string adminId)
+    {
+        await Should.ThrowAsync<ArgumentException>(
+            async () => await _sut.IssueAdminInviteAsync(UserId, MessengerType.Telegram, adminId));
     }
 
     private void GiveRow(params UserMessengerPairingCode[] records)

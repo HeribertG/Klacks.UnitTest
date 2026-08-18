@@ -7,6 +7,7 @@
 /// user becomes the preferred one - that is the channel a night-time wake-up call is sent to.
 /// </summary>
 using Klacks.Plugin.Contracts;
+using Klacks.Plugin.Messaging.Application.Constants;
 using Klacks.Plugin.Messaging.Application.Services;
 using Klacks.Plugin.Messaging.Domain.Enums;
 using Klacks.Plugin.Messaging.Domain.Interfaces;
@@ -25,6 +26,7 @@ public class UserMessengerPairingServiceTests
     private const string OtherUserId = "b1d4e7c2-3a56-4f80-8c19-2d7e5a0b4c66";
     private const string ChatId = "884411223";
     private const string Code = "K7M4PQRS";
+    private const string AdminId = "a1e2c3d4-9b7f-4e60-8a12-6c3d9f0b1e77";
 
     private IUserMessengerPairingCodeStore _codeStore = null!;
     private IUserMessengerContactRepository _contactRepository = null!;
@@ -192,6 +194,34 @@ public class UserMessengerPairingServiceTests
 
         issued.UserId.ShouldBe(UserId);
         await _codeStore.Received(1).IssueAsync(UserId, MessengerType.Telegram, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// IssueAdminInviteAsync is a thin pass-through to the store: the pairing invariants themselves
+    /// (superseding, lifetime, who a code belongs to) live in the store and are covered there. What
+    /// this service must get right is forwarding the exact userId/adminId pair and handing back
+    /// whatever the store issued.
+    /// </summary>
+    [Test]
+    public async Task IssueAdminInviteAsync_DelegatesToTheCodeStoreWithTheGivenAdminAndReturnsItsResult()
+    {
+        var invite = new UserMessengerPairingCode(
+            Code,
+            UserId,
+            MessengerType.Telegram,
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddHours(UserMessengerPairingConstants.AdminInviteCodeLifetimeHours),
+            UsedAt: null,
+            IssuedByAdminId: AdminId);
+        _codeStore
+            .IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId, Arg.Any<CancellationToken>())
+            .Returns(invite);
+
+        var issued = await _sut.IssueAdminInviteAsync(UserId, AdminId);
+
+        issued.ShouldBe(invite);
+        await _codeStore.Received(1).IssueAdminInviteAsync(
+            UserId, MessengerType.Telegram, AdminId, Arg.Any<CancellationToken>());
     }
 
     private static UserMessengerPairingCode ValidCode() =>
