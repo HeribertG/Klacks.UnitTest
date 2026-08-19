@@ -13,6 +13,7 @@
 namespace Klacks.UnitTest.Infrastructure.Services.Associations;
 
 using Klacks.Api.Domain.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Models.Schedules;
@@ -42,7 +43,7 @@ public class ClientContractDataProviderRangeTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         _context = new DataBaseContext(_options, Substitute.For<IHttpContextAccessor>());
-        _sut = new ClientContractDataProvider(_context);
+        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance);
     }
 
     [TearDown]
@@ -167,7 +168,7 @@ public class ClientContractDataProviderRangeTests
         for (var date = rangeFrom; date <= rangeUntil; date = date.AddDays(1))
         {
             using var referenceContext = new DataBaseContext(_options, Substitute.For<IHttpContextAccessor>());
-            var reference = await new ClientContractDataProvider(referenceContext)
+            var reference = await new ClientContractDataProvider(referenceContext, NullLogger<ClientContractDataProvider>.Instance)
                 .GetEffectiveContractDataForClientsAsync(clientIds, date);
 
             range.ShouldContainKey(date);

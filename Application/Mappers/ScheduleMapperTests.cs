@@ -408,6 +408,68 @@ public class ScheduleMapperTests
     }
 
     [Test]
+    public void ToContractEntity_ResourceWithoutGuaranteedHours_MapsNull()
+    {
+        var resource = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = Guid.NewGuid(),
+            Name = "Inheriting contract",
+            GuaranteedHours = null,
+        };
+
+        var result = _mapper.ToContractEntity(resource);
+
+        result.GuaranteedHours.ShouldBeNull();
+    }
+
+    [Test]
+    public void ToContractResource_EntityWithoutGuaranteedHours_MapsNull()
+    {
+        var contract = new Contract
+        {
+            Id = Guid.NewGuid(),
+            Name = "Inheriting contract",
+            GuaranteedHours = null,
+        };
+
+        var result = _mapper.ToContractResource(contract);
+
+        result.GuaranteedHours.ShouldBeNull();
+    }
+
+    [Test]
+    public void UpdateContractEntity_ResourceWithoutGuaranteedHours_ClearsTargetValue()
+    {
+        var target = new Contract { Id = Guid.NewGuid(), Name = "Original", GuaranteedHours = 160m };
+        var source = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = target.Id,
+            Name = "Updated",
+            GuaranteedHours = null,
+        };
+
+        _mapper.UpdateContractEntity(target, source);
+
+        target.GuaranteedHours.ShouldBeNull();
+    }
+
+    [Test]
+    public void UpdateContractEntity_ResourceWithExplicitZeroGuaranteedHours_KeepsZero()
+    {
+        var target = new Contract { Id = Guid.NewGuid(), Name = "Original", GuaranteedHours = null };
+        var source = new Klacks.Api.Application.DTOs.Associations.ContractResource
+        {
+            Id = target.Id,
+            Name = "Updated",
+            GuaranteedHours = 0m,
+        };
+
+        _mapper.UpdateContractEntity(target, source);
+
+        target.GuaranteedHours.ShouldBe(0m);
+    }
+
+    [Test]
     public void UpdateContractEntity_ResourceWithoutPercent_ClearsTargetPercent()
     {
         var target = new Contract { Id = Guid.NewGuid(), Name = "Original", Percent = 60m };

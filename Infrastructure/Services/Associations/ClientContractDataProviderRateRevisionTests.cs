@@ -11,6 +11,7 @@
 namespace Klacks.UnitTest.Infrastructure.Services.Associations;
 
 using Klacks.Api.Domain.Constants;
+using Microsoft.Extensions.Logging.Abstractions;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Scheduling;
@@ -37,7 +38,7 @@ public class ClientContractDataProviderRateRevisionTests
             .Options;
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
-        _sut = new ClientContractDataProvider(_context);
+        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance);
     }
 
     [TearDown]

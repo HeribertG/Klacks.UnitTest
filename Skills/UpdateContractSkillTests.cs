@@ -118,6 +118,80 @@ public class UpdateContractSkillTests
     }
 
     [Test]
+    public async Task SetPercent_DispatchesPutCommand_WithPercent()
+    {
+        var contractId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Contract(contractId));
+        mediator.Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<ContractResource>)ci[0]).Resource);
+        var skill = new UpdateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["contractId"] = contractId.ToString(),
+            ["percent"] = 80m
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<ContractResource>>(c => c.Resource.Percent == 80m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClearGuaranteedHoursWithPercent_SetsContractToInheriting()
+    {
+        var contractId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(Contract(contractId));
+        mediator.Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<ContractResource>)ci[0]).Resource);
+        var skill = new UpdateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["contractId"] = contractId.ToString(),
+            ["clearGuaranteedHours"] = true,
+            ["percent"] = 80m
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<ContractResource>>(c =>
+                c.Resource.GuaranteedHours == null &&
+                c.Resource.Percent == 80m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClearPercent_RemovesPercent()
+    {
+        var contractId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        var existing = Contract(contractId);
+        existing.Percent = 60m;
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+        mediator.Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<ContractResource>)ci[0]).Resource);
+        var skill = new UpdateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["contractId"] = contractId.ToString(),
+            ["clearPercent"] = true
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<ContractResource>>(c => c.Resource.Percent == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task NoFieldsSupplied_ReturnsSuccess_WithoutPut()
     {
         var contractId = Guid.NewGuid();

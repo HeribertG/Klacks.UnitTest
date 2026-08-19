@@ -9,6 +9,7 @@
 namespace Klacks.UnitTest.Infrastructure.Services.Associations;
 
 using Klacks.Api.Domain.Constants;
+using Microsoft.Extensions.Logging.Abstractions;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Scheduling;
@@ -36,7 +37,7 @@ public class ClientContractDataProviderNightWindowTests
             .Options;
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
-        _sut = new ClientContractDataProvider(_context);
+        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance);
     }
 
     [TearDown]
@@ -126,7 +127,7 @@ public class ClientContractDataProviderNightWindowTests
     }
 
     /// <summary>A provider as the DI container would hand it out for the next request.</summary>
-    private ClientContractDataProvider NextScopeProvider() => new(_context);
+    private ClientContractDataProvider NextScopeProvider() => new(_context, NullLogger<ClientContractDataProvider>.Instance);
 
     private async Task SeedSettingsAsync(string nightStart, string nightEnd)
     {

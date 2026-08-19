@@ -60,6 +60,44 @@ public class CreateContractSkillTests
     }
 
     [Test]
+    public async Task PercentSupplied_IsPassedThrough()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Monatsstunden 80%",
+            ["guaranteedHours"] = 134.4m,
+            ["validFrom"] = "2026-07-01",
+            ["percent"] = 80m
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c => c.Resource.Percent == 80m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NegativePercent_ReturnsErrorWithoutMutation()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Broken",
+            ["guaranteedHours"] = 134.4m,
+            ["validFrom"] = "2026-07-01",
+            ["percent"] = -10m
+        });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ExplicitRangeAndInterval_ArePassedThrough()
     {
         var mediator = MediatorReturningCreated();

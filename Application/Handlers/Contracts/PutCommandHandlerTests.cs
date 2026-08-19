@@ -80,6 +80,34 @@ public class PutCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_NullGuaranteedHours_PassesValidationAndPersistsInheritance()
+    {
+        var contractId = Guid.NewGuid();
+        var existing = BuildContract(contractId, validFrom: new DateTime(2026, 4, 1), nightRate: 0.10m);
+        _repository.Get(contractId).Returns(existing);
+
+        var resource = BuildResource(contractId, validFrom: new DateTime(2026, 4, 1), nightRate: 0.10m);
+        resource.GuaranteedHours = null;
+
+        var result = await _handler.Handle(new PutCommand<ContractResource>(resource), CancellationToken.None);
+
+        await _unitOfWork.Received(1).CompleteAsync();
+        existing.GuaranteedHours.ShouldBeNull();
+        result!.GuaranteedHours.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_ExplicitGuaranteedHoursOutsideBounds_StillRejected()
+    {
+        var contractId = Guid.NewGuid();
+        var resource = BuildResource(contractId, validFrom: new DateTime(2026, 4, 1), nightRate: 0.10m);
+        resource.GuaranteedHours = 130m;
+
+        await Should.ThrowAsync<Klacks.Api.Domain.Exceptions.InvalidRequestException>(
+            () => _handler.Handle(new PutCommand<ContractResource>(resource), CancellationToken.None));
+    }
+
+    [Test]
     public async Task Handle_ContractNotFound_ThrowsAndDoesNotDispatch()
     {
         var contractId = Guid.NewGuid();
