@@ -94,4 +94,37 @@ public class ImportedOrderShiftMapperTests
 
         ImportedOrderShiftMapper.DiffersFromSealedOrder(sealedOrder, BuildPayload(), clientId).ShouldBeFalse();
     }
+
+    private static ImportedOrderPayload BuildFullDayPayload()
+    {
+        var payload = BuildPayload();
+        payload.DurationMinutes = null;
+        payload.IsTimeRange = false;
+        payload.StartTime = new TimeOnly(7, 0);
+        payload.EndTime = new TimeOnly(7, 0);
+        return payload;
+    }
+
+    [Test]
+    public void ResolveWorkTimeHours_StartEqualsEnd_IsAFullDay()
+    {
+        ImportedOrderShiftMapper.ResolveWorkTimeHours(BuildFullDayPayload()).ShouldBe(24m);
+    }
+
+    /// <summary>
+    /// The regression this whole exercise exists to prevent: a 24 hour order is sealed with 24
+    /// stored hours, the ERP re-delivers the identical payload, and the comparison must stay a
+    /// no-op. If it ever returns true again, every nightly full extract closes these orders,
+    /// deletes their future work rows and opens successor drafts.
+    /// </summary>
+    [Test]
+    public void DiffersFromSealedOrder_FullDayOrderReDeliveredUnchanged_ReturnsFalse()
+    {
+        var clientId = Guid.NewGuid();
+        var sealedOrder = ImportedOrderShiftMapper.BuildDraft(BuildFullDayPayload(), clientId);
+
+        sealedOrder.WorkTime.ShouldBe(24m);
+        ImportedOrderShiftMapper.DiffersFromSealedOrder(sealedOrder, BuildFullDayPayload(), clientId)
+            .ShouldBeFalse();
+    }
 }

@@ -72,6 +72,81 @@ public class BreakMacroServiceTests
         await _macroDataProvider.DidNotReceive().GetMacroDataForBreakAsync(Arg.Is<Break>(b => b.Id == sealedBreak.Id), Arg.Any<int?>());
     }
 
+    /// <summary>
+    /// An absence recorded as a plain duration carries no times, so both bounds are equal and the
+    /// hours live in WorkTime. The macro would derive a duration from those bounds and overwrite
+    /// what the user entered, so it must not run at all.
+    /// </summary>
+    [Test]
+    public async Task ProcessBreakMacro_DurationRecordedWithoutTimes_KeepsTheRecordedHours()
+    {
+        var absenceId = await SeedAbsenceWithMacroAsync();
+        var breakEntry = new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            AbsenceId = absenceId,
+            CurrentDate = new DateOnly(2026, 6, 12),
+            WorkTime = OriginalWorkTime,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue,
+        };
+
+        await _sut.ProcessBreakMacroAsync(breakEntry);
+
+        breakEntry.WorkTime.ShouldBe(OriginalWorkTime);
+        await _macroCompilationService.DidNotReceive()
+            .CompileAndExecuteAsync(Arg.Any<Guid>(), Arg.Any<MacroData>());
+    }
+
+    /// <summary>
+    /// Equal bounds with no hours are a genuinely empty entry, not a recorded duration, so the
+    /// macro still decides.
+    /// </summary>
+    [Test]
+    public async Task ProcessBreakMacro_EqualBoundsWithoutHours_StillRunsTheMacro()
+    {
+        var absenceId = await SeedAbsenceWithMacroAsync();
+        var breakEntry = new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            AbsenceId = absenceId,
+            CurrentDate = new DateOnly(2026, 6, 12),
+            WorkTime = 0m,
+            StartTime = TimeOnly.MinValue,
+            EndTime = TimeOnly.MinValue,
+        };
+
+        await _sut.ProcessBreakMacroAsync(breakEntry);
+
+        breakEntry.WorkTime.ShouldBe(RecalculatedWorkTime);
+    }
+
+    /// <summary>
+    /// A real time span keeps going through the macro, including on reprocessing, so changed times
+    /// are always recomputed.
+    /// </summary>
+    [Test]
+    public async Task ProcessBreakMacro_RealTimeSpan_IsRecalculatedByTheMacro()
+    {
+        var absenceId = await SeedAbsenceWithMacroAsync();
+        var breakEntry = new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            AbsenceId = absenceId,
+            CurrentDate = new DateOnly(2026, 6, 12),
+            WorkTime = OriginalWorkTime,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(12, 0),
+        };
+
+        await _sut.ProcessBreakMacroAsync(breakEntry);
+
+        breakEntry.WorkTime.ShouldBe(RecalculatedWorkTime);
+    }
+
     private async Task<Guid> SeedAbsenceWithMacroAsync()
     {
         var absence = new Absence

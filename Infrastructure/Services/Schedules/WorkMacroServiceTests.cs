@@ -131,6 +131,59 @@ public class WorkMacroServiceTests
             .CompileAndExecuteAsync(Arg.Any<Guid>(), Arg.Any<MacroData>());
     }
 
+    /// <summary>
+    /// The data loss this change repairs: a 24 hour duty is stored on the shift as 24 hours, but
+    /// every work created on it used to be credited 0 hours because the duration collapsed at
+    /// equal bounds. CalculateWorkTime runs on every work add and update.
+    /// </summary>
+    [Test]
+    public async Task ProcessWorkMacroAsync_StartEqualsEnd_CreditsAFullDay()
+    {
+        var work = await AddWorkAsync(
+            shiftMacroId: null,
+            startTime: new TimeOnly(7, 0),
+            endTime: new TimeOnly(7, 0));
+
+        await _sut.ProcessWorkMacroAsync(work);
+
+        work.WorkTime.ShouldBe(24m);
+    }
+
+    [Test]
+    public async Task ProcessWorkMacroAsync_CrossingMidnight_StillMeasuresTheSpan()
+    {
+        var work = await AddWorkAsync(
+            shiftMacroId: null,
+            startTime: new TimeOnly(22, 0),
+            endTime: new TimeOnly(6, 0));
+
+        await _sut.ProcessWorkMacroAsync(work);
+
+        work.WorkTime.ShouldBe(8m);
+    }
+
+    /// <summary>
+    /// A correction inside a single duty is not working time in the R1 sense: identical bounds
+    /// mean nothing was entered, not 24 hours of travel. Pinned because CalculateWorkTime right
+    /// next to it deliberately does the opposite.
+    /// </summary>
+    [Test]
+    public async Task ProcessWorkChangeMacroAsync_TravelWithinWithEqualBounds_ChangeTimeStaysZero()
+    {
+        var work = await AddWorkAsync(shiftMacroId: null);
+
+        var workChange = new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = work.Id,
+            Type = WorkChangeType.TravelWithin, ChangeTime = 0.25m,
+            StartTime = new TimeOnly(8, 0), EndTime = new TimeOnly(8, 0),
+        };
+
+        await _sut.ProcessWorkChangeMacroAsync(workChange);
+
+        workChange.ChangeTime.ShouldBe(0m);
+    }
+
     [Test]
     public async Task ProcessWorkChangeMacroAsync_TravelWithin_MacroIsCalled()
     {
@@ -398,14 +451,16 @@ public class WorkMacroServiceTests
     private async Task<Work> AddWorkAsync(
         Guid? shiftMacroId,
         decimal surcharges = 0m,
-        MacroFunctionEnum macroFunction = MacroFunctionEnum.Standard)
+        MacroFunctionEnum macroFunction = MacroFunctionEnum.Standard,
+        TimeOnly? startTime = null,
+        TimeOnly? endTime = null)
     {
         var shiftId = Guid.NewGuid();
         var work = new Work
         {
             Id = Guid.NewGuid(), ShiftId = shiftId, ClientId = Guid.NewGuid(),
             WorkTime = 8m, Surcharges = surcharges,
-            StartTime = new TimeOnly(7, 0), EndTime = new TimeOnly(15, 0),
+            StartTime = startTime ?? new TimeOnly(7, 0), EndTime = endTime ?? new TimeOnly(15, 0),
             CurrentDate = DateOnly.FromDateTime(DateTime.Today),
         };
         _context.Work.Add(work);

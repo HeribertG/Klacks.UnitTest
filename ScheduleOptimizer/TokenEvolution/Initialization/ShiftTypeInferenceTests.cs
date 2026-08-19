@@ -84,11 +84,19 @@ public sealed class ShiftTypeInferenceTests
         Classify("21:00", "05:00").ShouldBe(ShiftTypeInference.NightIndex);
     }
 
+    /// <summary>
+    /// Equal bounds are a full 24 hour duty, not a zero-length span. Such a duty covers the whole
+    /// night regardless of when it starts, so it is night work - owner ruling 2026-08-19. This
+    /// replaces the former fallback to the start instant, under which an 07:00-07:00 duty counted
+    /// as an early shift and lost its night premium in planning.
+    /// </summary>
     [Test]
-    public void FromSpan_ZeroLengthSpan_FallsBackToTheStartInstant()
+    public void FromSpan_EqualBounds_IsAFullDayAndThereforeNight()
     {
-        Classify("08:00", "08:00").ShouldBe(ShiftTypeInference.EarlyIndex);
+        Classify("08:00", "08:00").ShouldBe(ShiftTypeInference.NightIndex);
+        Classify("07:00", "07:00").ShouldBe(ShiftTypeInference.NightIndex);
         Classify("04:00", "04:00").ShouldBe(ShiftTypeInference.NightIndex);
+        Classify("00:00", "00:00").ShouldBe(ShiftTypeInference.NightIndex);
     }
 
     [TestCase("00:00", ShiftTypeInference.NightIndex)]
