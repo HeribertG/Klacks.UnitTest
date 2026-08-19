@@ -2,6 +2,7 @@
 
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Associations;
+using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
@@ -56,6 +57,76 @@ public class CreateContractSkillTests
                 c.Resource.FullTime == decimal.Zero &&
                 c.Resource.PaymentInterval == PaymentInterval.Monthly &&
                 c.Resource.ValidUntil == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ZeroGuaranteedHours_TakesFixedHoursPath_OnCallContract()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "On-Call",
+            ["guaranteedHours"] = 0m,
+            ["validFrom"] = "2026-07-01"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("guaranteed 0h");
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c =>
+                c.Resource.GuaranteedHours == 0m &&
+                c.Resource.MinimumHours == 0m &&
+                c.Resource.MaximumHours == 0m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NoGuaranteedHours_WithPercent_TakesInheritedWorkloadPath()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Inherited 80%",
+            ["validFrom"] = "2026-07-01",
+            ["percent"] = 80m
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("inherited from the company-wide value");
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c =>
+                c.Resource.GuaranteedHours == null &&
+                c.Resource.MinimumHours == decimal.Zero &&
+                c.Resource.MaximumHours == decimal.Zero &&
+                c.Resource.FullTime == decimal.Zero &&
+                c.Resource.Percent == 80m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NoGuaranteedHours_NoPercent_StillSucceeds_ServerDefaultsPercentLater()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Inherited default",
+            ["validFrom"] = "2026-07-01"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c =>
+                c.Resource.GuaranteedHours == null &&
+                c.Resource.MinimumHours == decimal.Zero &&
+                c.Resource.MaximumHours == decimal.Zero &&
+                c.Resource.Percent == null),
             Arg.Any<CancellationToken>());
     }
 
@@ -127,7 +198,6 @@ public class CreateContractSkillTests
     }
 
     [TestCase("name")]
-    [TestCase("guaranteedHours")]
     [TestCase("validFrom")]
     public async Task MissingRequiredParameter_ReturnsErrorWithoutMutation(string missing)
     {
@@ -217,5 +287,85 @@ public class CreateContractSkillTests
 
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// The direct path-2 create (guaranteedHours omitted) must NOT reproduce what the old
+    /// workaround produced (create with an invented guaranteedHours, then
+    /// update_contract{clearGuaranteedHours:true}). The workaround leaves MinimumHours/
+    /// MaximumHours stuck at whatever dummy guaranteedHours value was invented, because
+    /// clearGuaranteedHours only clears GuaranteedHours itself. The direct path leaves them at
+    /// the clean "unconfigured" (0) sentinel instead — this asymmetry is the reason
+    /// guaranteedHours was made optional on create_contract in the first place.
+    /// </summary>
+    [Test]
+    public async Task DirectInheritedPath_LeavesCleanZeros_UnlikeClearGuaranteedHoursWorkaround()
+    {
+        ContractResource? directCreated = null;
+        var directMediator = Substitute.For<IMediator>();
+        directMediator.Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var resource = call.Arg<PostCommand<ContractResource>>().Resource;
+                resource.Id = Guid.NewGuid();
+                directCreated = resource;
+                return resource;
+            });
+        var directSkill = new CreateContractSkill(directMediator);
+        var directResult = await directSkill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Direct Inherited",
+            ["validFrom"] = "2026-07-01",
+            ["percent"] = 80m
+        });
+        directResult.Success.ShouldBeTrue();
+
+        ContractResource? workaroundCreated = null;
+        var workaroundCreateMediator = Substitute.For<IMediator>();
+        workaroundCreateMediator.Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var resource = call.Arg<PostCommand<ContractResource>>().Resource;
+                resource.Id = Guid.NewGuid();
+                workaroundCreated = resource;
+                return resource;
+            });
+        var workaroundCreateSkill = new CreateContractSkill(workaroundCreateMediator);
+        var workaroundCreateResult = await workaroundCreateSkill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Workaround Inherited",
+            ["validFrom"] = "2026-07-01",
+            ["guaranteedHours"] = 100m,
+            ["percent"] = 80m
+        });
+        workaroundCreateResult.Success.ShouldBeTrue();
+
+        ContractResource? workaroundFinal = null;
+        var updateMediator = Substitute.For<IMediator>();
+        updateMediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(workaroundCreated!);
+        updateMediator.Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var resource = call.Arg<PutCommand<ContractResource>>().Resource;
+                workaroundFinal = resource;
+                return resource;
+            });
+        var updateSkill = new UpdateContractSkill(updateMediator);
+
+        var updateResult = await updateSkill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["contractId"] = workaroundCreated!.Id.ToString(),
+            ["clearGuaranteedHours"] = true
+        });
+        updateResult.Success.ShouldBeTrue();
+
+        directCreated!.GuaranteedHours.ShouldBeNull();
+        workaroundFinal!.GuaranteedHours.ShouldBeNull();
+
+        directCreated.MinimumHours.ShouldBe(decimal.Zero);
+        directCreated.MaximumHours.ShouldBe(decimal.Zero);
+        workaroundFinal.MinimumHours.ShouldBe(100m);
+        workaroundFinal.MaximumHours.ShouldBe(100m);
     }
 }
