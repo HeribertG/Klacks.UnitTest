@@ -29,8 +29,10 @@ public class SettingValueValidatorTests
     [TestCase(IndustrySlugs.Custom)]
     [TestCase(" CUSTOM ")]
     [TestCase(IndustrySlugs.Healthcare)]
+    [TestCase(IndustrySlugs.Hospitality)]
     [TestCase("SECURITY")]
     [TestCase("healthcare,security")]
+    [TestCase("hospitality,security")]
     [TestCase("Healthcare, SECURITY, logistics")]
     [TestCase(" healthcare ,security ")]
     public void Validate_ActiveIndustriesAcceptedValue_DoesNotThrow(string value)

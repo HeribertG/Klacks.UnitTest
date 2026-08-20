@@ -17,6 +17,7 @@ public class IndustryQualificationCategoryMapTests
     [TestCase("cleaning", QualificationCategory.Cleaning)]
     [TestCase(IndustrySlugs.Logistics, QualificationCategory.Logistics)]
     [TestCase("logistik", QualificationCategory.Logistics)]
+    [TestCase(IndustrySlugs.Hospitality, QualificationCategory.Gastronomy)]
     [TestCase("gastronomy", QualificationCategory.Gastronomy)]
     [TestCase("gastro", QualificationCategory.Gastronomy)]
     [TestCase("construction", QualificationCategory.Construction)]
