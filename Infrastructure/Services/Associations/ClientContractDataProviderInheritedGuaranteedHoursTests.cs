@@ -6,7 +6,10 @@
 /// month has no row), scaled by the contract percent; a scheduling rule's guaranteed hours are
 /// deliberately ignored while inheriting. An explicit contract value (including 0 for on-call
 /// contracts) is never scaled and keeps the original rule -> contract chain. WorkloadPercent
-/// carries the contract percent only for contracts deriving from the company value.
+/// carries the contract percent only for contracts deriving from the company value. The same
+/// "empty field inherits" rule applies to Contract.FullTime when it is 0 (the DTO's "not
+/// configured" sentinel) or null: the settings default full-time basis is used for the
+/// WorkloadPercent ratio instead of short-circuiting to the 100% implausibility fallback.
 /// </summary>
 
 namespace Klacks.UnitTest.Infrastructure.Services.Associations;
@@ -265,6 +268,29 @@ public class ClientContractDataProviderInheritedGuaranteedHoursTests
     }
 
     [Test]
+    public async Task WorkloadPercent_ContractFullTimeZero_FallsBackToSettingsDefault()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        await SeedFullTimeSettingAsync(180m);
+        var clientId = await SeedAsync(guaranteedHours: ExplicitContractHours, percent: null, fullTime: 0m);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.WorkloadPercent.ShouldBe(ExplicitContractHours / 180m * MonthlyTargetHoursConstants.FullWorkloadPercent);
+    }
+
+    [Test]
+    public async Task WorkloadPercent_ContractFullTimeZeroAndSettingsDefaultZero_FallsBackToFullWorkload()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        var clientId = await SeedAsync(guaranteedHours: ExplicitContractHours, percent: null, fullTime: 0m);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
+    }
+
+    [Test]
     public async Task WorkloadPercent_ContractlessClient_IsFullWorkload()
     {
         await SeedGuaranteedHoursSettingAsync();
@@ -370,6 +396,17 @@ public class ClientContractDataProviderInheritedGuaranteedHoursTests
             Id = Guid.NewGuid(),
             Type = SettingKeys.GuaranteedHours,
             Value = SettingsGuaranteedHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
+        await _context.SaveChangesAsync();
+    }
+
+    private async Task SeedFullTimeSettingAsync(decimal fullTime)
+    {
+        _context.Settings.Add(new SettingsEntity
+        {
+            Id = Guid.NewGuid(),
+            Type = SettingKeys.FullTime,
+            Value = fullTime.ToString(System.Globalization.CultureInfo.InvariantCulture),
         });
         await _context.SaveChangesAsync();
     }
