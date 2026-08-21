@@ -121,6 +121,22 @@ public class PeriodOverdueDetectorTests
     }
 
     [Test]
+    public async Task DetectAsync_MonthlyTargetHoursGroup_TenDaysOverdue_EmitsSamePeriodEndAsMonthly()
+    {
+        var group = MakeGroup(PaymentInterval.MonthlyTargetHours);
+        StubGroups(new List<Group> { group });
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var evt = (PeriodOverdueTriggerEvent)events[0];
+        Assert.That(evt.PeriodEndDate, Is.EqualTo(new DateOnly(2025, 12, 31)));
+        Assert.That(evt.DaysOverdue, Is.EqualTo(10));
+        Assert.That(evt.Severity, Is.EqualTo(AgentTriggerSeverity.Medium));
+    }
+
+    [Test]
     public async Task DetectAsync_MonthlyGroup_TwentyFiveDaysOverdue_EmitsHighSeverity()
     {
         StubGroups(new List<Group> { MakeGroup(PaymentInterval.Monthly) });

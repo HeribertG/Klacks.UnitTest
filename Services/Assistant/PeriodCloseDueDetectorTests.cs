@@ -137,6 +137,23 @@ public class PeriodCloseDueDetectorTests
     }
 
     [Test]
+    public async Task DetectAsync_MonthlyTargetHoursGroup_WithinWindow_EmitsSamePeriodEndAsMonthly()
+    {
+        var group = MakeGroup(PaymentInterval.MonthlyTargetHours);
+        StubGroups(new List<Group> { group });
+        _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay>());
+        _sut = CreateSut(new DateOnly(2026, 1, 29));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var evt = (PeriodCloseDueTriggerEvent)events[0];
+        Assert.That(evt.PeriodEndDate, Is.EqualTo(new DateOnly(2026, 1, 31)));
+        Assert.That(evt.DaysUntilDue, Is.EqualTo(2));
+    }
+
+    [Test]
     public async Task DetectAsync_MonthlyGroup_AlreadySealedAtEnd_Skips()
     {
         var group = MakeGroup(PaymentInterval.Monthly);

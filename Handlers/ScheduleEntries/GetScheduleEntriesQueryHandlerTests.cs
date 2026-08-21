@@ -12,6 +12,7 @@ using Klacks.Api.Application.Handlers.ScheduleEntries;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries.ScheduleEntries;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
@@ -232,6 +233,42 @@ public class GetScheduleEntriesQueryHandlerTests
 
         result.Clients[0].GroupItemValidFrom.ShouldBe(new DateOnly(2026, 1, 15));
         result.Clients[0].GroupItemValidUntil.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_ClientWithMonthlyTargetHoursContract_MonthlyViewFilter_HasContractTrue()
+    {
+        var clientId = Guid.NewGuid();
+        var client = new Client
+        {
+            Id = clientId,
+            ClientContracts = new List<ClientContract>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ClientId = clientId,
+                    IsActive = true,
+                    IsDeleted = false,
+                    FromDate = new DateOnly(2025, 1, 1),
+                    UntilDate = null,
+                    Contract = new Contract
+                    {
+                        Id = Guid.NewGuid(),
+                        PaymentInterval = PaymentInterval.MonthlyTargetHours,
+                        ValidFrom = new DateTime(2025, 1, 1),
+                    },
+                },
+            },
+        };
+        _workRepository.WorkList(Arg.Any<DomainWorkFilter>(), Arg.Any<CancellationToken>())
+            .Returns((new List<Client> { client }, 1));
+        _groupFilterService.GetVisibleGroupIdsAsync(null).ReturnsForAnyArgs(new List<Guid>());
+
+        var result = await _handler.Handle(CreateQuery(), CancellationToken.None);
+
+        result.Clients.ShouldHaveSingleItem();
+        result.Clients[0].HasContract.ShouldBeTrue();
     }
 
     private GetScheduleEntriesQuery CreateQuery(Guid? selectedGroup = null) =>
