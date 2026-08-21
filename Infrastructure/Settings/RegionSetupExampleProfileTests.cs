@@ -143,28 +143,7 @@ public class RegionSetupExampleProfileTests
         var compensatoryRest = profile.Compliance.ShouldNotBeNull().CompensatoryRest.ShouldNotBeNull();
         compensatoryRest.Enabled.ShouldBe(true);
         compensatoryRest.DeadlineDays.ShouldBe(3);
-        compensatoryRest.AutoPlan.ShouldBe(false);
         profile.Compliance!.Enforcement.ShouldNotBeNull().Rules.ShouldNotBeNull().CompensatoryRest.ShouldBe("warn");
-    }
-
-    [Test]
-    public async Task CompensatoryRestWithAutoPlanTrue_ThrowsInvalidRequestException()
-    {
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            await File.WriteAllTextAsync(
-                tempFile,
-                """{ "version": 1, "compliance": { "compensatoryRest": { "enabled": true, "deadlineDays": 14, "autoPlan": true } } }""");
-
-            var service = CreateFreshInstallationService(tempFile);
-
-            await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
     }
 
     [Test]

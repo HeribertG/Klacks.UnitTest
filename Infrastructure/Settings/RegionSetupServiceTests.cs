@@ -2524,7 +2524,7 @@ public class RegionSetupServiceTests
     }
 
     [Test]
-    public async Task ApplyAsync_RestrictedTimeWindowEqualDailyBounds_ThrowsWithoutAnyWrite()
+    public async Task ApplyAsync_RestrictedTimeWindowEqualDailyBounds_PersistsFullDayWindow()
     {
         var json = """
             { "version": 1, "compliance": { "restrictedTimeWindows": [
@@ -2532,9 +2532,11 @@ public class RegionSetupServiceTests
             """;
         var service = CreateService(WriteTempFile(json));
 
-        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+        await service.ApplyAsync();
 
-        _addedRestrictedTimeWindowRules.ShouldBeEmpty();
+        _addedRestrictedTimeWindowRules.Count.ShouldBe(1);
+        _addedRestrictedTimeWindowRules[0].DailyStart.ShouldBe(new TimeOnly(12, 30));
+        _addedRestrictedTimeWindowRules[0].DailyEnd.ShouldBe(new TimeOnly(12, 30));
     }
 
     [Test]

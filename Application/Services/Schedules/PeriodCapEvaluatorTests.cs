@@ -8,7 +8,10 @@
 /// overtime definition (tier ladder or contract-threshold fallback), week attribution by week start,
 /// skip when overtime is undefined, and the CustomWeeks trailing window. Rolling-average mode (K6): same
 /// warn/block escalation for the average-over-window comparison, plus the employment-start clamp that
-/// prevents padding a short history with non-existent zero weeks.
+/// prevents padding a short history with non-existent zero weeks. WarnAtPercent (both CapHours-based
+/// modes): no notification below the percentage threshold, an approaching-cap Warning between the
+/// threshold and the cap that never escalates to Error under Block enforcement, and the unchanged cap
+/// breach verdict above the cap.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Schedules;
@@ -87,7 +90,7 @@ public class PeriodCapEvaluatorTests
             _weekConfiguration);
     }
 
-    private void StubRule(decimal capHours)
+    private void StubRule(decimal capHours, int? warnAtPercent = null)
     {
         _ruleRepository.GetAllActiveAsync().Returns(new List<PeriodCapRule>
         {
@@ -97,6 +100,7 @@ public class PeriodCapEvaluatorTests
                 Period = PeriodCapPeriod.Month,
                 Scope = PeriodCapScope.TotalHours,
                 CapHours = capHours,
+                WarnAtPercent = warnAtPercent,
                 ImportSourceKey = "region-setup:compliance.periodCaps:month:totalhours",
                 ImportContentHash = "irrelevant-for-this-test",
             },
@@ -312,7 +316,11 @@ public class PeriodCapEvaluatorTests
             .CalculatePeriodHoursAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>());
     }
 
-    private void StubOvertimeRule(decimal capHours, PeriodCapPeriod period = PeriodCapPeriod.Month, int? customPeriodWeeks = null)
+    private void StubOvertimeRule(
+        decimal capHours,
+        PeriodCapPeriod period = PeriodCapPeriod.Month,
+        int? customPeriodWeeks = null,
+        int? warnAtPercent = null)
     {
         _ruleRepository.GetAllActiveAsync().Returns(new List<PeriodCapRule>
         {
@@ -323,6 +331,7 @@ public class PeriodCapEvaluatorTests
                 Scope = PeriodCapScope.OvertimeHours,
                 CapHours = capHours,
                 CustomPeriodWeeks = customPeriodWeeks,
+                WarnAtPercent = warnAtPercent,
                 ImportSourceKey = "region-setup:compliance.periodCaps:month:overtimehours",
                 ImportContentHash = "irrelevant-for-this-test",
             },
@@ -530,5 +539,171 @@ public class PeriodCapEvaluatorTests
         result.Count.ShouldBe(1);
         result[0].Type.ShouldBe(ScheduleValidationType.Error);
         result[0].CommentParams.ShouldContainKeyAndValue(ComplianceRuleNames.EnforcementRuleParamKey, ComplianceRuleNames.PeriodCap);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_BelowWarnAtPercent_ReturnsNoNotification()
+    {
+        StubRule(capHours: 200m, warnAtPercent: 80);
+        StubPersistedHours(hours: 150m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EvaluateAsync_AtWarnAtPercentUnderCap_ReturnsApproachingWarning()
+    {
+        StubRule(capHours: 200m, warnAtPercent: 80);
+        StubPersistedHours(hours: 160m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCapApproaching);
+        result[0].ClientId.ShouldBe(ClientId);
+        result[0].CommentParams.ShouldContainKeyAndValue("actualHours", "160.0");
+        result[0].CommentParams.ShouldContainKeyAndValue("capHours", "200");
+        result[0].CommentParams.ShouldContainKeyAndValue("warnAtPercent", "80");
+        result[0].CommentParams.ShouldContainKeyAndValue("period", "Month");
+        result[0].CommentParams.ShouldNotContainKey(ComplianceRuleNames.EnforcementRuleParamKey);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_AboveWarnAtPercentUnderCap_ReturnsApproachingWarning()
+    {
+        StubRule(capHours: 200m, warnAtPercent: 80);
+        StubPersistedHours(hours: 190m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCapApproaching);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_AtExactCapWithWarnAtPercent_ReturnsApproachingWarningNotBreach()
+    {
+        StubRule(capHours: 200m, warnAtPercent: 80);
+        StubPersistedHours(hours: 200m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // The breach verdict still requires strictly more than the cap; at exactly 100% only the
+        // informational pre-warning fires.
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCapApproaching);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_AtWarnAtPercentUnderCapWithBlockEnforcement_StaysWarning()
+    {
+        StubRule(capHours: 200m, warnAtPercent: 80);
+        StubPersistedHours(hours: 170m);
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.PeriodCap).Returns(RuleEnforcementMode.Block);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCapApproaching);
+        result[0].CommentParams.ShouldNotContainKey(ComplianceRuleNames.EnforcementRuleParamKey);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OverCapWithWarnAtPercent_ReturnsOnlyCapBreachWarning()
+    {
+        StubRule(capHours: 200m, warnAtPercent: 80);
+        StubPersistedHours(hours: 210m);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCap);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OverCapWithWarnAtPercentAndBlockEnforcement_ReturnsOnlyCapBreachError()
+    {
+        StubRule(capHours: 200m, warnAtPercent: 80);
+        StubPersistedHours(hours: 210m);
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.PeriodCap).Returns(RuleEnforcementMode.Block);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Error);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCap);
+        result[0].CommentParams.ShouldContainKeyAndValue(ComplianceRuleNames.EnforcementRuleParamKey, ComplianceRuleNames.PeriodCap);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OvertimeBelowWarnAtPercent_ReturnsNoNotification()
+    {
+        StubOvertimeRule(capHours: 10m, warnAtPercent: 90);
+        StubOvertimeConfig(OvertimeBasis.Week, tier1AfterHours: 40m);
+        StubWorkHours(
+            (MondayInMarch, 10m),
+            (MondayInMarch.AddDays(1), 10m),
+            (MondayInMarch.AddDays(2), 10m),
+            (MondayInMarch.AddDays(3), 10m),
+            (MondayInMarch.AddDays(4), 8m));
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // Week total 48h -> 8h overtime; warn threshold is 9h (90% of the 10h cap).
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OvertimeAtWarnAtPercentUnderCap_ReturnsApproachingWarning()
+    {
+        StubOvertimeRule(capHours: 10m, warnAtPercent: 80);
+        StubOvertimeConfig(OvertimeBasis.Week, tier1AfterHours: 40m);
+        StubWorkHours(
+            (MondayInMarch, 10m),
+            (MondayInMarch.AddDays(1), 10m),
+            (MondayInMarch.AddDays(2), 10m),
+            (MondayInMarch.AddDays(3), 10m),
+            (MondayInMarch.AddDays(4), 8m));
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // Week total 48h -> 8h overtime; warn threshold is 8h (80% of the 10h cap), cap not breached.
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCapOvertimeApproaching);
+        result[0].CommentParams.ShouldContainKeyAndValue("actualHours", "8.0");
+        result[0].CommentParams.ShouldContainKeyAndValue("capHours", "10");
+        result[0].CommentParams.ShouldContainKeyAndValue("warnAtPercent", "80");
+        result[0].CommentParams.ShouldContainKeyAndValue("period", "Month");
+        result[0].CommentParams.ShouldNotContainKey(ComplianceRuleNames.EnforcementRuleParamKey);
+    }
+
+    [Test]
+    public async Task EvaluateAsync_OvertimeCustomWeeksAtWarnAtPercentUnderCap_ReturnsApproachingWindowWarning()
+    {
+        StubOvertimeRule(capHours: 40m, period: PeriodCapPeriod.CustomWeeks, customPeriodWeeks: 4, warnAtPercent: 75);
+        StubOvertimeConfig(OvertimeBasis.Day, tier1AfterHours: 8m);
+        var days = Enumerable.Range(0, 10)
+            .Select(i => (new DateOnly(2026, 3, 2).AddDays(i), 11m))
+            .ToArray();
+        StubWorkHours(days);
+
+        var result = await _evaluator.EvaluateAsync(ClientId, "Jane Doe", Day);
+
+        // Ten 11h days -> 30h overtime; warn threshold is 30h (75% of the 40h cap), cap not breached.
+        result.Count.ShouldBe(1);
+        result[0].Type.ShouldBe(ScheduleValidationType.Warning);
+        result[0].Comment.ShouldBe(ScheduleValidationKeys.PeriodCapOvertimeWindowApproaching);
+        result[0].CommentParams.ShouldContainKeyAndValue("actualHours", "30.0");
+        result[0].CommentParams.ShouldContainKeyAndValue("warnAtPercent", "75");
+        result[0].CommentParams.ShouldContainKeyAndValue("windowWeeks", "4");
+        result[0].CommentParams.ShouldNotContainKey("period");
     }
 }

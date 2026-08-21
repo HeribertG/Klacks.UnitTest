@@ -131,15 +131,32 @@ public class PutCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_EmptyDailyWindow_ThrowsInvalidRequest_NoLookup()
+    public async Task Handle_EqualDailyBounds_FullDayWindow_Updates()
     {
         var id = Guid.NewGuid();
+        var existing = new RestrictedTimeWindowRule
+        {
+            Id = id,
+            SeasonFromMonth = 6,
+            SeasonFromDay = 15,
+            SeasonToMonth = 9,
+            SeasonToDay = 15,
+            DailyStart = new TimeOnly(12, 30),
+            DailyEnd = new TimeOnly(15, 0),
+            AppliesToGroupTag = "outdoor",
+            ImportSourceKey = string.Empty,
+            ImportContentHash = string.Empty,
+        };
+        _repository.GetAsync(id).Returns(existing);
+
         var resource = ValidResource(id);
         resource.DailyEnd = resource.DailyStart;
 
-        await Should.ThrowAsync<InvalidRequestException>(
-            () => _handler.Handle(new PutCommand<RestrictedTimeWindowRuleResource>(resource), CancellationToken.None));
+        var result = await _handler.Handle(new PutCommand<RestrictedTimeWindowRuleResource>(resource), CancellationToken.None);
 
-        _repository.DidNotReceive().Update(Arg.Any<RestrictedTimeWindowRule>());
+        result.ShouldNotBeNull();
+        result!.DailyStart.ShouldBe(result.DailyEnd);
+        _repository.Received(1).Update(existing);
+        await _unitOfWork.Received(1).CompleteAsync();
     }
 }

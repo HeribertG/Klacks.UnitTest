@@ -2,8 +2,8 @@
 
 /// <summary>
 /// Unit tests for RestrictedTimeWindowRuleValidation: season month bounds (1-12), season day bounds
-/// (1-31) for both endpoints, and the requirement that the daily forbidden window is non-empty
-/// (DailyStart differs from DailyEnd).
+/// (1-31) for both endpoints, and that every DailyStart/DailyEnd pair is accepted - per the R1 duration
+/// convention equal bounds mean a full 24 hour ban window, not an empty one.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Scheduling;
@@ -96,12 +96,21 @@ public class RestrictedTimeWindowRuleValidationTests
     }
 
     [Test]
-    public void Validate_EmptyDailyWindow_Throws()
+    public void Validate_EqualDailyBounds_FullDayWindow_DoesNotThrow()
     {
         var resource = ValidResource();
         resource.DailyEnd = resource.DailyStart;
 
-        var ex = Should.Throw<InvalidRequestException>(() => RestrictedTimeWindowRuleValidation.Validate(resource));
-        ex.Message.ShouldBe("DailyStart and DailyEnd must differ; an empty daily window is not allowed.");
+        Should.NotThrow(() => RestrictedTimeWindowRuleValidation.Validate(resource));
+    }
+
+    [Test]
+    public void Validate_WrappingDailyWindow_DoesNotThrow()
+    {
+        var resource = ValidResource();
+        resource.DailyStart = new TimeOnly(22, 0);
+        resource.DailyEnd = new TimeOnly(6, 0);
+
+        Should.NotThrow(() => RestrictedTimeWindowRuleValidation.Validate(resource));
     }
 }

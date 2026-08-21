@@ -4,7 +4,8 @@
 /// Unit tests for PreCommitConflictChecker using an in-memory DataBaseContext, the real
 /// TimelineCalculationService and a stubbed scheduling policy. Verifies that a planned placement's
 /// NEW conflicts are detected (collision = blocking, rest = warning), that a clean placement returns
-/// nothing, and that a pre-existing violation is NOT attributed to the placement (before/after diff).
+/// nothing, that a pre-existing violation is NOT attributed to the placement (before/after diff),
+/// and that planned work on a statutory holiday blocks in Block mode unless an exemption covers it.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Notifications;
@@ -13,9 +14,14 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces.Associations;
+using Klacks.Api.Domain.Interfaces.CalendarSelections;
+using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Scheduling;
+using Klacks.Api.Domain.Services.Holidays;
 using Klacks.Api.Domain.Services.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
@@ -40,6 +46,10 @@ public class PreCommitConflictCheckerTests
     private IPeriodCapEvaluator _periodCapEvaluator = null!;
     private IRestDayRotationEvaluator _restDayRotationEvaluator = null!;
     private ICounterRuleEvaluator _counterRuleEvaluator = null!;
+    private IRestrictedTimeWindowEvaluator _restrictedTimeWindowEvaluator = null!;
+    private IHolidayWorkEvaluator _holidayWorkEvaluator = null!;
+    private TimelineCalculationService _timelineCalculator = null!;
+    private ISchedulingPolicyResolver _policyResolver = null!;
 
     [SetUp]
     public void Setup()
@@ -50,11 +60,11 @@ public class PreCommitConflictCheckerTests
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
 
         var timeOptions = Options.Create(new ScheduleTimeOptions());
-        var timelineCalculator = new TimelineCalculationService(
+        _timelineCalculator = new TimelineCalculationService(
             timeOptions, Substitute.For<ILogger<TimelineCalculationService>>());
 
-        var resolver = Substitute.For<ISchedulingPolicyResolver>();
-        resolver.GetForClientAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>())
+        _policyResolver = Substitute.For<ISchedulingPolicyResolver>();
+        _policyResolver.GetForClientAsync(Arg.Any<Guid>(), Arg.Any<DateOnly>())
             .Returns(new SchedulingPolicy(
                 MinRestHours: TimeSpan.FromHours(11),
                 MaxDailyHours: TimeSpan.FromHours(10),
@@ -87,16 +97,20 @@ public class PreCommitConflictCheckerTests
             .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
 
-        var restrictedTimeWindowEvaluator = Substitute.For<IRestrictedTimeWindowEvaluator>();
-        restrictedTimeWindowEvaluator
+        _restrictedTimeWindowEvaluator = Substitute.For<IRestrictedTimeWindowEvaluator>();
+        _restrictedTimeWindowEvaluator
             .EvaluatePlannedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime, Guid? ShiftId)>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<ScheduleValidationNotificationDto>());
 
         _compensatoryRestEvaluator = NonReportingCompensatoryRestEvaluator();
+        _holidayWorkEvaluator = NonReportingHolidayWorkEvaluator();
 
-        _checker = new PreCommitConflictChecker(_context, timelineCalculator, resolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, restrictedTimeWindowEvaluator,
-            _compensatoryRestEvaluator);
+        _checker = BuildChecker(_holidayWorkEvaluator);
     }
+
+    private PreCommitConflictChecker BuildChecker(IHolidayWorkEvaluator holidayWorkEvaluator)
+        => new(_context, _timelineCalculator, _policyResolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, _restrictedTimeWindowEvaluator,
+            _compensatoryRestEvaluator, holidayWorkEvaluator);
 
     [TearDown]
     public void TearDown() => _context.Dispose();
@@ -435,6 +449,76 @@ public class PreCommitConflictCheckerTests
 
         await _compensatoryRestEvaluator.Received(1).EvaluateAsync(
             clientId, Arg.Any<string>(), new DateOnly(2091, 3, 14), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Planned work on a statutory holiday with the holidayWork rule in Block mode must block the
+    /// placement as an overridable (never hard) error. Before this the gate had no holiday-work
+    /// evaluator at all, so the autofill could place holiday work unimpeded.
+    /// </summary>
+    [Test]
+    public async Task HolidayWork_BlockMode_BlocksPlannedWorkOnStatutoryHoliday()
+    {
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.HolidayWork).Returns(RuleEnforcementMode.Block);
+        var checker = BuildChecker(RealHolidayWorkEvaluator());
+
+        var result = await checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0))]);
+
+        result.HasBlocking.ShouldBeTrue();
+        result.HasOverridableBlocking.ShouldBeTrue();
+        result.HasHardBlocking.ShouldBeFalse();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == ScheduleValidationKeys.HolidayWork
+            && c.Type == ScheduleValidationType.Error
+            && c.CommentParams[ComplianceRuleNames.EnforcementRuleParamKey] == ComplianceRuleNames.HolidayWork);
+    }
+
+    [Test]
+    public async Task HolidayWork_ActiveGlobalExemption_LetsThePlacementPass()
+    {
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.HolidayWork).Returns(RuleEnforcementMode.Block);
+        var checker = BuildChecker(RealHolidayWorkEvaluator(new HolidayWorkExemptionRule { SchedulingRuleId = null }));
+
+        var result = await checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0))]);
+
+        result.HasAny.ShouldBeFalse();
+        result.NewConflicts.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// The real evaluator on stubbed dependencies: Day is an official holiday for ClientA, whose
+    /// contract references no scheduling rule, so only a global exemption can cover it.
+    /// </summary>
+    private HolidayWorkEvaluator RealHolidayWorkEvaluator(params HolidayWorkExemptionRule[] exemptions)
+    {
+        var exemptionRepository = Substitute.For<IHolidayWorkExemptionRuleRepository>();
+        exemptionRepository.GetAllActiveAsync().Returns(exemptions.ToList());
+
+        var calculator = Substitute.For<IHolidaysListCalculator>();
+        calculator.IsHoliday(Day).Returns(HolidayStatus.OfficialHoliday);
+        calculator.GetHolidayInfo(Day).Returns(new HolidayDate { CurrentName = "Holiday" });
+
+        var calendarResolver = Substitute.For<IClientHolidayCalendarResolver>();
+        calendarResolver.GetCalculatorAsync(Arg.Any<Guid?>(), Arg.Any<int>()).Returns(calculator);
+
+        var contractData = Substitute.For<IClientContractDataProvider>();
+        contractData
+            .GetEffectiveContractDataForClientsRangeAsync(
+                Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
+            .Returns(new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>
+            {
+                [Day] = new() { [ClientA] = new EffectiveContractData { SchedulingRuleId = null } },
+            });
+
+        return new HolidayWorkEvaluator(exemptionRepository, calendarResolver, contractData, _enforcementResolver);
+    }
+
+    private static IHolidayWorkEvaluator NonReportingHolidayWorkEvaluator()
+    {
+        var evaluator = Substitute.For<IHolidayWorkEvaluator>();
+        evaluator.EvaluateAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<DateOnly>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
+        return evaluator;
     }
 
     private static ICompensatoryRestEvaluator NonReportingCompensatoryRestEvaluator()

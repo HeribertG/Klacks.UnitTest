@@ -57,6 +57,13 @@ public class CoreRestrictedTimeWindowTests
         // Early-morning window 05:00-07:00 all year, cross-midnight spillover
         new("cross-midnight into next-day window", 1, 1, 12, 31, Dawn0500, Morning0700, D(2026, 7, 1, 22, 0), D(2026, 7, 2, 7, 0), true),
         new("day shift misses early window", 1, 1, 12, 31, Dawn0500, Morning0700, D(2026, 7, 1, 8, 0), D(2026, 7, 1, 16, 0), false),
+
+        // Equal bounds 07:00-07:00 = full 24 h ban window per the R1 duration convention (owner ruling
+        // 2026-08-21): each in-season day anchors [start, start + 24 h), the windows tile without a gap
+        new("equal bounds blocks a midday slot", 6, 15, 9, 15, Morning0700, Morning0700, D(2026, 7, 1, 12, 0), D(2026, 7, 1, 16, 0), true),
+        new("equal bounds blocks early morning via the previous day's window", 6, 15, 9, 15, Morning0700, Morning0700, D(2026, 7, 1, 1, 0), D(2026, 7, 1, 5, 0), true),
+        new("equal bounds spills into the morning after the last season day", 6, 15, 9, 15, Morning0700, Morning0700, D(2026, 9, 16, 0, 0), D(2026, 9, 16, 6, 0), true),
+        new("equal bounds out of season", 6, 15, 9, 15, Morning0700, Morning0700, D(2026, 10, 1, 12, 0), D(2026, 10, 1, 16, 0), false),
     ];
 
     [Test]

@@ -3,8 +3,10 @@
 using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.ScheduleOptimizer.Models;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -225,6 +227,44 @@ public class WizardAgentSnapshotBuilderTests
         result.ContractDays.Single(d => d.Date == monday).WorksOnDay.ShouldBeTrue();
         result.ContractDays.Single(d => d.Date == sunday).WorksOnDay.ShouldBeFalse();
     }
+    [Test]
+    public async Task BuildAsync_CopiesSurchargeRatesAndTheirRateModes()
+    {
+        var agentId = Guid.NewGuid();
+        var monday = new DateOnly(2026, 4, 20);
+
+        var contractData = new EffectiveContractData
+        {
+            HasActiveContract = true,
+            ContractId = Guid.NewGuid(),
+            WorkOnMonday = true,
+            NightRate = 12m,
+            HolidayRate = 0.5m,
+            WE1Rate = 8m,
+            WE2Rate = 0.25m,
+            WE3Rate = 3m,
+            NightRateMode = SurchargeRateMode.FixedPerShift,
+            HolidayRateMode = SurchargeRateMode.Multiplier,
+            WE1RateMode = SurchargeRateMode.FixedPerHour,
+            WE2RateMode = SurchargeRateMode.Multiplier,
+            WE3RateMode = SurchargeRateMode.FixedPerShift,
+        };
+
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, monday, monday, new Dictionary<Guid, double>(), CancellationToken.None);
+
+        var agent = result.Agents.Single();
+        agent.NightRate.ShouldBe(12m);
+        agent.WE1Rate.ShouldBe(8m);
+        agent.NightRateMode.ShouldBe(CoreSurchargeRateMode.FixedPerShift);
+        agent.HolidayRateMode.ShouldBe(CoreSurchargeRateMode.Multiplier);
+        agent.WE1RateMode.ShouldBe(CoreSurchargeRateMode.FixedPerHour);
+        agent.WE2RateMode.ShouldBe(CoreSurchargeRateMode.Multiplier);
+        agent.WE3RateMode.ShouldBe(CoreSurchargeRateMode.FixedPerShift);
+    }
+
     [Test]
     public async Task BuildAsync_ResolvesTheContractDataOnceForTheWholePeriod()
     {

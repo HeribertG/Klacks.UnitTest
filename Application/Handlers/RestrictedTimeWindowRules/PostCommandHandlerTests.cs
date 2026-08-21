@@ -1,9 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for the RestrictedTimeWindowRule PostCommandHandler: season and daily-window validation
-/// runs before persistence, and that new rows always get a fresh Id and an empty
-/// ImportSourceKey/ImportContentHash regardless of what the caller sends.
+/// Unit tests for the RestrictedTimeWindowRule PostCommandHandler: season validation runs before
+/// persistence, equal daily bounds are accepted as a full 24 hour ban window (R1), and new rows always
+/// get a fresh Id and an empty ImportSourceKey/ImportContentHash regardless of what the caller sends.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -97,16 +97,16 @@ public class PostCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_EmptyDailyWindow_ThrowsInvalidRequest_NoPersist()
+    public async Task Handle_EqualDailyBounds_FullDayWindow_Persists()
     {
         var resource = ValidResource();
         resource.DailyEnd = resource.DailyStart;
 
-        var ex = await Should.ThrowAsync<InvalidRequestException>(
-            () => _handler.Handle(new PostCommand<RestrictedTimeWindowRuleResource>(resource), CancellationToken.None));
+        var result = await _handler.Handle(new PostCommand<RestrictedTimeWindowRuleResource>(resource), CancellationToken.None);
 
-        ex.Message.ShouldBe("DailyStart and DailyEnd must differ; an empty daily window is not allowed.");
-        _repository.DidNotReceive().Add(Arg.Any<RestrictedTimeWindowRule>());
+        result.ShouldNotBeNull();
+        _repository.Received(1).Add(Arg.Any<RestrictedTimeWindowRule>());
+        await _unitOfWork.Received(1).CompleteAsync();
     }
 
     [Test]
