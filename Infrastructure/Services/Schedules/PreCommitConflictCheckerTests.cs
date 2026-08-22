@@ -258,14 +258,25 @@ public class PreCommitConflictCheckerTests
     }
 
     [Test]
-    public async Task Collision_IsNeverOverridable_EvenWhenBlockModeConfigured()
+    public async Task Collision_IsNotHardBlocking_EvenWhenBlockModeConfigured()
     {
+        // Owner decision 2026-08-22: a schedule collision is Error-level (still HasBlocking) but no
+        // longer hard-blocking - it is reported into the error list, not refused at write time. Block
+        // mode is configured for every rule name here on purpose (this overlap also trips an unrelated
+        // Warning, e.g. overtime, that Block mode escalates - collateral, not the point of this test),
+        // to prove the collision entry itself carries no EnforcementRuleParamKey and is therefore never
+        // hard-blocking, regardless of enforcement mode.
         _enforcementResolver.GetModeAsync(Arg.Any<string>()).Returns(RuleEnforcementMode.Block);
         SeedWork(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(16, 0));
 
         var result = await _checker.CheckAsync([Row(new TimeOnly(12, 0), new TimeOnly(20, 0))]);
 
-        result.HasHardBlocking.ShouldBeTrue();
+        result.HasBlocking.ShouldBeTrue();
+        result.HasHardBlocking.ShouldBeFalse();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == "schedule.error-list.collision"
+            && c.Type == ScheduleValidationType.Error
+            && !c.CommentParams.ContainsKey(ComplianceRuleNames.EnforcementRuleParamKey));
     }
 
     [Test]
@@ -300,6 +311,33 @@ public class PreCommitConflictCheckerTests
         result.HasBlocking.ShouldBeFalse();
         result.NewConflicts.ShouldContain(c =>
             c.Comment == QualificationValidationKeys.ExpiringSoon && c.Type == ScheduleValidationType.Warning);
+    }
+
+    [Test]
+    public async Task MissingMandatoryQualification_IsHardBlocking_EvenWhenBlockModeConfigured()
+    {
+        // The one structural Error left that is never overridable and never silently accepted (owner
+        // decision 2026-08-22 downgraded the schedule collision, this one is unaffected). Block mode is
+        // configured here to prove eligibility hard-blocking does not depend on any enforcement mode -
+        // unlike a collision, it was never gated on one.
+        _enforcementResolver.GetModeAsync(Arg.Any<string>()).Returns(RuleEnforcementMode.Block);
+        var shiftId = Guid.NewGuid();
+        _context.ShiftRequiredQualification.Add(new Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification
+        {
+            Id = Guid.NewGuid(),
+            ShiftId = shiftId,
+            QualificationId = Guid.NewGuid(),
+            IsMandatory = true,
+            MinLevel = QualificationLevel.Basic
+        });
+        _context.SaveChanges();
+
+        var row = new PlannedWorkRow(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(16, 0), shiftId);
+        var result = await _checker.CheckAsync([row]);
+
+        result.HasBlocking.ShouldBeTrue();
+        result.HasHardBlocking.ShouldBeTrue();
+        result.HasOverridableBlocking.ShouldBeFalse();
     }
 
     [Test]

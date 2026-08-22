@@ -2,7 +2,9 @@
 
 /// <summary>
 /// Unit tests for the WorkChange create handler's replacement guard: which conflicts block the write,
-/// and where the supervisor override may lift a block and where it may not.
+/// and where the supervisor override may lift a block and where it may not. A schedule collision alone
+/// never blocks (owner decision 2026-08-22); only a non-overridable structural error (e.g. a missing
+/// mandatory qualification) still refuses the write unconditionally.
 /// </summary>
 
 using Klacks.Api.Application.Commands;
@@ -103,9 +105,20 @@ public class PostCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_StructuralErrorWithAuthorizedOverride_StillRefusesTheReplacement()
+    public async Task Handle_CollisionOnly_LetsTheReplacementThroughWithoutAnyOverride()
     {
-        GivenConflicts(StructuralError());
+        GivenConflicts(CollisionError());
+
+        await _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None);
+
+        await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
+        await _overrideAuthorizer.DidNotReceiveWithAnyArgs().IsAuthorizedAsync(Arg.Any<bool>());
+    }
+
+    [Test]
+    public async Task Handle_NonOverridableErrorWithAuthorizedOverride_StillRefusesTheReplacement()
+    {
+        GivenConflicts(HardBlockingError());
         _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
 
         Func<Task> act = async () => await _handler.Handle(ReplacementCommand(overrideBlock: true), CancellationToken.None);
@@ -127,9 +140,20 @@ public class PostCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_MixedConflicts_RefusesEvenWithAuthorizedOverride()
+    public async Task Handle_EscalatedErrorPlusCollisionWithAuthorizedOverride_LetsTheReplacementThrough()
     {
-        GivenConflicts(EscalatedError(), StructuralError());
+        GivenConflicts(EscalatedError(), CollisionError());
+        _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
+
+        await _handler.Handle(ReplacementCommand(overrideBlock: true), CancellationToken.None);
+
+        await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_MixedHardAndEscalatedConflicts_RefusesEvenWithAuthorizedOverride()
+    {
+        GivenConflicts(EscalatedError(), HardBlockingError());
         _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
 
         Func<Task> act = async () => await _handler.Handle(ReplacementCommand(overrideBlock: true), CancellationToken.None);
@@ -152,7 +176,7 @@ public class PostCommandHandlerTests
     [Test]
     public async Task Handle_PureCorrection_SkipsTheReplacementGuard()
     {
-        GivenConflicts(StructuralError());
+        GivenConflicts(CollisionError());
 
         await _handler.Handle(CorrectionCommand(), CancellationToken.None);
 
@@ -165,7 +189,7 @@ public class PostCommandHandlerTests
     public async Task Handle_ScenarioParentWork_SkipsTheReplacementGuard()
     {
         _workRepository.GetNoTracking(_workId).Returns(ParentWork(Guid.NewGuid()));
-        GivenConflicts(StructuralError());
+        GivenConflicts(CollisionError());
 
         await _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None);
 
@@ -232,12 +256,20 @@ public class PostCommandHandlerTests
             .Returns(new PreCommitCheckResult(conflicts));
     }
 
-    private ScheduleValidationNotificationDto StructuralError() => new()
+    private ScheduleValidationNotificationDto CollisionError() => new()
     {
         Type = ScheduleValidationType.Error,
         ClientId = _replaceClientId,
         Date = _date,
         Comment = "schedule.error-list.collision",
+    };
+
+    private ScheduleValidationNotificationDto HardBlockingError() => new()
+    {
+        Type = ScheduleValidationType.Error,
+        ClientId = _replaceClientId,
+        Date = _date,
+        Comment = "schedule.error-list.missing-mandatory-qualification",
     };
 
     private ScheduleValidationNotificationDto EscalatedError() => new()

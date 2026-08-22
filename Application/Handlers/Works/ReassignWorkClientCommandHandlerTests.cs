@@ -170,9 +170,22 @@ public class ReassignWorkClientCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_ThrowsConflict_WhenTargetClientWouldStructurallyCollide()
+    public async Task Handle_Reassigns_WhenTargetClientWouldOnlyCollide()
     {
-        GivenConflictCheckReturns(StructuralError());
+        GivenConflictCheckReturns(CollisionError());
+
+        var result = await _handler.Handle(
+            new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.Work!.ClientId.ShouldBe(_targetClientId);
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_ThrowsConflict_WhenTargetClientHasANonOverridableStructuralError()
+    {
+        GivenConflictCheckReturns(HardBlockingError());
 
         Func<Task> act = async () => await _handler.Handle(
             new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
@@ -246,12 +259,20 @@ public class ReassignWorkClientCommandHandlerTests
             .Returns(new PreCommitCheckResult(conflicts));
     }
 
-    private ScheduleValidationNotificationDto StructuralError() => new()
+    private ScheduleValidationNotificationDto CollisionError() => new()
     {
         Type = ScheduleValidationType.Error,
         ClientId = _targetClientId,
         Date = _date,
         Comment = "schedule.error-list.collision",
+    };
+
+    private ScheduleValidationNotificationDto HardBlockingError() => new()
+    {
+        Type = ScheduleValidationType.Error,
+        ClientId = _targetClientId,
+        Date = _date,
+        Comment = "schedule.error-list.missing-mandatory-qualification",
     };
 
     private ScheduleValidationNotificationDto EscalatedError() => new()
