@@ -490,7 +490,7 @@ public class PlanStepExecutorTests
 
         Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
         _backgroundTaskService.Received(1).TriggerConversationCompaction(
-            sessionId.ToString(), TaskBoundaryMinMessages);
+            sessionId.ToString(), plan.UserId!, TaskBoundaryMinMessages);
     }
 
     [Test]
@@ -504,7 +504,7 @@ public class PlanStepExecutorTests
 
         Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
         _backgroundTaskService.Received(1).TriggerConversationCompaction(
-            sessionId.ToString(), TaskBoundaryMinMessages);
+            sessionId.ToString(), plan.UserId!, TaskBoundaryMinMessages);
     }
 
     [Test]
@@ -519,7 +519,7 @@ public class PlanStepExecutorTests
 
         Assert.That(result.Status, Is.EqualTo(PlanStatus.Completed));
         _backgroundTaskService.DidNotReceive().TriggerConversationCompaction(
-            Arg.Any<string>(), Arg.Any<int>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
     }
 
     [Test]
@@ -535,7 +535,7 @@ public class PlanStepExecutorTests
 
         Assert.That(result.Status, Is.EqualTo(PlanStatus.Failed));
         _backgroundTaskService.DidNotReceive().TriggerConversationCompaction(
-            Arg.Any<string>(), Arg.Any<int>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
     }
 
     [Test]
@@ -562,7 +562,7 @@ public class PlanStepExecutorTests
 
         Assert.That(result.Status, Is.EqualTo(PlanStatus.Aborted));
         _backgroundTaskService.DidNotReceive().TriggerConversationCompaction(
-            Arg.Any<string>(), Arg.Any<int>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
     }
 
     [Test]

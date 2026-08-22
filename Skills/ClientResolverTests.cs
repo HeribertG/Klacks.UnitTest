@@ -9,9 +9,13 @@
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Services.Clients;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Staffs;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -133,5 +137,66 @@ public class ClientResolverTests
         Assert.That(client, Is.Null);
         Assert.That(error, Does.Contain("No client found matching"));
         Assert.That(error, Does.Contain("do not call this skill again with the same name"));
+    }
+
+    // ClientResolver is the entry point of every name-based write skill (add phone/email/note,
+    // assign contract, remove from group/qualification). It never validates visibility itself —
+    // its whole guarantee is that it only ever loads an id that came out of SearchAsync. This
+    // test wires the real search repository behind it so that guarantee is checked end to end
+    // instead of assumed: a restricted caller must not be able to mutate a foreign client.
+    [Test]
+    public async Task RestrictedUser_CannotResolveClientOfAnInvisibleGroup_AndNeverLoadsIt()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var invisibleGroupId = Guid.NewGuid();
+
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()).Options;
+        using var dbContext = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
+        dbContext.Database.EnsureCreated();
+
+        var foreignClientId = Guid.NewGuid();
+        dbContext.Client.Add(new Client
+        {
+            Id = foreignClientId,
+            FirstName = "Petra",
+            Name = "Steinmann",
+            IdNumber = 9101,
+            Type = EntityTypeEnum.Employee
+        });
+        dbContext.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = foreignClientId,
+            GroupId = invisibleGroupId,
+            AnalyseToken = null
+        });
+        dbContext.SaveChanges();
+
+        var groupVisibility = Substitute.For<IGroupVisibilityService>();
+        groupVisibility.GetVisibilityScopeAsync()
+            .Returns(GroupVisibilityScope.Restricted(new[] { visibleGroupId }, new[] { visibleGroupId }));
+        var userService = Substitute.For<IUserService>();
+        userService.GetIdString().Returns("restricted-user");
+
+        var fuzzySearchService = Substitute.For<IClientFuzzySearchService>();
+        fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client>());
+
+        var searchRepository = new ClientSearchRepository(
+            dbContext,
+            new ClientGroupFilterService(
+                Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>(),
+                groupVisibility,
+                userService,
+                Substitute.For<ILogger<ClientGroupFilterService>>()),
+            fuzzySearchService);
+
+        var (client, error) = await ClientResolver.ResolveByNameAsync(
+            searchRepository, _clientRepository, "Petra", "Steinmann", null, CancellationToken.None);
+
+        Assert.That(client, Is.Null);
+        Assert.That(error, Does.Contain("No client found matching"));
+        await _clientRepository.DidNotReceive().Get(Arg.Any<Guid>());
     }
 }

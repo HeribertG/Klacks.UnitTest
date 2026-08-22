@@ -62,7 +62,7 @@ public class SkillToolsetAssemblerProposalConfirmationTests
             .Returns(new RetrievalResult([]));
 
         _retrievalQueryBuilder = Substitute.For<IRetrievalQueryBuilder>();
-        _retrievalQueryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _retrievalQueryBuilder.BuildAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.ArgAt<string>(0));
 
         _expander = Substitute.For<ISkillRetrievalExpander>();

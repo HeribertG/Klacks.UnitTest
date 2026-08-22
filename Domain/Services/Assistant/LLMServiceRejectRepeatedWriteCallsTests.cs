@@ -59,6 +59,50 @@ public class LLMServiceRejectRepeatedWriteCallsTests
         });
     }
 
+    // The repeat guard and SkillRiskClassifier now share ReadOnlySkillPrefixes. These names were
+    // classified read-only by the classifier but treated as write calls by this guard before the merge.
+    [TestCase("find_replacement")]
+    [TestCase("read_email")]
+    [TestCase("read_messages")]
+    [TestCase("lookup_location")]
+    [TestCase("verify_my_last_action")]
+    [TestCase("check_absence_conflicts")]
+    [TestCase("detect_conflicts")]
+    [TestCase("interpret_resource_monitor")]
+    [TestCase("validate_address")]
+    [TestCase("test_imap_connection")]
+    [TestCase("evaluate_scenario")]
+    [TestCase("generate_period_summary")]
+    public void SharedReadOnlyPrefixes_MayRepeatAcrossIterations(string name)
+    {
+        var call = MakeCall(name);
+        var calls = new List<LLMFunctionCall> { call };
+
+        var executable = LLMService.RejectRepeatedWriteCalls(calls, Called(name), forceRecipe: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(executable, Has.Count.EqualTo(1));
+            Assert.That(call.IsRejectedRepeat, Is.False);
+        });
+    }
+
+    [TestCase("Get_Employee")]
+    [TestCase("NAVIGATE_TO")]
+    public void ReadOnlyAndNavigationDetection_IsCaseInsensitive(string name)
+    {
+        var call = MakeCall(name);
+        var calls = new List<LLMFunctionCall> { call };
+
+        var executable = LLMService.RejectRepeatedWriteCalls(calls, Called(name), forceRecipe: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(executable, Has.Count.EqualTo(1));
+            Assert.That(call.IsRejectedRepeat, Is.False);
+        });
+    }
+
     [Test]
     public void SameBatchDuplicates_StayAllowed_WhenNothingWasCalledBefore()
     {

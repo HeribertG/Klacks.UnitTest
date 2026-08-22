@@ -106,7 +106,7 @@ public class MemoryRetrievalServiceTests
         result.PromptText.ShouldBe(string.Empty);
         result.InjectedMemoryIds.ShouldBeEmpty();
         await _expander.DidNotReceive().ExpandAsync(
-            Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -122,7 +122,7 @@ public class MemoryRetrievalServiceTests
 
         result.PromptText.ShouldNotContain("[RELATED]");
         await _expander.DidNotReceive().ExpandAsync(
-            Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -132,7 +132,7 @@ public class MemoryRetrievalServiceTests
         _memoryRepo.HybridSearchAsync(AgentId, Arg.Any<string>(), Arg.Any<float[]?>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<MemorySearchResult> { hit });
         _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns<IReadOnlyList<AgentMemory>>(_ => throw new InvalidOperationException("boom"));
 
         var result = await _sut.RetrieveRelevantMemoriesAsync(AgentId, "hello there", budgetProfile: Budget);
@@ -150,7 +150,7 @@ public class MemoryRetrievalServiceTests
         _memoryRepo.HybridSearchAsync(AgentId, Arg.Any<string>(), Arg.Any<float[]?>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<MemorySearchResult> { hit });
         _expander.ExpandAsync(
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentMemory>>(), Arg.Any<IReadOnlyList<MemorySearchResult>>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<AgentMemory> { expanded });
 
         var result = await _sut.RetrieveRelevantMemoriesAsync(AgentId, "hello there", budgetProfile: Budget);

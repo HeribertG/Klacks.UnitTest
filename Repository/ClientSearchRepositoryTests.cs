@@ -6,8 +6,17 @@
 /// search_and_navigate resolve a disambiguated selection deterministically instead of relying on
 /// the LLM to carry the internal GUID id across a chat turn. Also covers the city, zip-prefix and
 /// qualification-validity filters used by fill_group_by_criteria.
+/// <para>
+/// 🔴 The group-visibility tests are load bearing. Until 2026-08-22 this fixture handed
+/// SearchAsync a bare IClientGroupFilterService substitute and asserted nothing about it, so the
+/// suite stayed green while SearchAsync never called the filter at all — every Klacksy search and
+/// every name-based client edit crossed group boundaries. Any change that makes SearchAsync stop
+/// routing its query (and its fuzzy fallback) through the filter, or that counts before filtering,
+/// must fail here.
+/// </para>
 /// </summary>
 
+using Klacks.Api.Application.Services.Clients;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Staffs;
@@ -16,14 +25,21 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Staffs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Repository;
 
 [TestFixture]
 public class ClientSearchRepositoryTests
 {
+    private const string RestrictedUserId = "restricted-user";
+
     private DataBaseContext _dbContext = null!;
+    private IClientGroupFilterService _groupFilterService = null!;
+    private Klacks.Api.Application.Interfaces.IClientFuzzySearchService _fuzzySearchService = null!;
     private ClientSearchRepository _repository = null!;
+    private Guid _gasparoli6556Id;
+    private Guid _gasparoli7001Id;
 
     [SetUp]
     public void SetUp()
@@ -33,15 +49,74 @@ public class ClientSearchRepositoryTests
         _dbContext = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _dbContext.Database.EnsureCreated();
 
+        _gasparoli6556Id = Guid.NewGuid();
+        _gasparoli7001Id = Guid.NewGuid();
         _dbContext.Client.AddRange(
-            new Client { Id = Guid.NewGuid(), FirstName = "Heribert", Name = "Gasparoli", IdNumber = 6556, Type = EntityTypeEnum.Employee },
-            new Client { Id = Guid.NewGuid(), FirstName = "Heribert", Name = "Gasparoli", IdNumber = 7001, Type = EntityTypeEnum.Employee });
+            new Client { Id = _gasparoli6556Id, FirstName = "Heribert", Name = "Gasparoli", IdNumber = 6556, Type = EntityTypeEnum.Employee },
+            new Client { Id = _gasparoli7001Id, FirstName = "Heribert", Name = "Gasparoli", IdNumber = 7001, Type = EntityTypeEnum.Employee });
         _dbContext.SaveChanges();
 
-        _repository = new ClientSearchRepository(
-            _dbContext,
-            Substitute.For<IClientGroupFilterService>(),
-            Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>());
+        _groupFilterService = Substitute.For<IClientGroupFilterService>();
+        PassThrough(_groupFilterService);
+        _fuzzySearchService = Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>();
+        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client>());
+
+        _repository = new ClientSearchRepository(_dbContext, _groupFilterService, _fuzzySearchService);
+    }
+
+    private static void PassThrough(IClientGroupFilterService filterService)
+    {
+        filterService
+            .FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>(), Arg.Any<bool>())
+            .Returns(call => Task.FromResult((IQueryable<Client>)call[1]));
+    }
+
+    private ClientSearchRepository CreateRepositoryForRestrictedUser(params Guid[] visibleGroupIds)
+    {
+        return CreateRepositoryWithRealGroupFilter(
+            RestrictedUserId, GroupVisibilityScope.Restricted(visibleGroupIds, visibleGroupIds));
+    }
+
+    private ClientSearchRepository CreateRepositoryWithRealGroupFilter(
+        string? callingUserId, GroupVisibilityScope scope)
+    {
+        var groupVisibility = Substitute.For<IGroupVisibilityService>();
+        groupVisibility.GetVisibilityScopeAsync().Returns(scope);
+
+        var userService = Substitute.For<IUserService>();
+        userService.GetIdString().Returns(callingUserId);
+
+        var realGroupFilter = new ClientGroupFilterService(
+            Substitute.For<Klacks.Api.Application.Interfaces.IGetAllClientIdsFromGroupAndSubgroups>(),
+            groupVisibility,
+            userService,
+            Substitute.For<ILogger<ClientGroupFilterService>>());
+
+        return new ClientSearchRepository(_dbContext, realGroupFilter, _fuzzySearchService);
+    }
+
+    private Guid AddClientInGroup(string firstName, string lastName, int idNumber, Guid groupId)
+    {
+        var clientId = Guid.NewGuid();
+        _dbContext.Client.Add(new Client
+        {
+            Id = clientId,
+            FirstName = firstName,
+            Name = lastName,
+            IdNumber = idNumber,
+            Type = EntityTypeEnum.Employee
+        });
+        _dbContext.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            GroupId = groupId,
+            AnalyseToken = null
+        });
+        _dbContext.SaveChanges();
+
+        return clientId;
     }
 
     [TearDown]
@@ -182,5 +257,101 @@ public class ClientSearchRepositoryTests
 
         result.TotalCount.ShouldBe(1);
         result.Items.Single().Id.ShouldBe(fullMatchId);
+    }
+
+    [Test]
+    public async Task SearchAsync_RoutesTheQueryThroughTheGroupFilter()
+    {
+        await _repository.SearchAsync(searchTerm: "Heribert Gasparoli", limit: 10);
+
+        await _groupFilterService.Received(1)
+            .FilterClientsByGroupId(null, Arg.Any<IQueryable<Client>>(), false);
+    }
+
+    [Test]
+    public async Task SearchAsync_ClientRemovedByGroupFilter_IsMissingFromItemsAndFromTotalCount()
+    {
+        _groupFilterService
+            .FilterClientsByGroupId(Arg.Any<Guid?>(), Arg.Any<IQueryable<Client>>(), Arg.Any<bool>())
+            .Returns(call => Task.FromResult(
+                ((IQueryable<Client>)call[1]).Where(c => c.Id == _gasparoli7001Id)));
+
+        var result = await _repository.SearchAsync(searchTerm: "Heribert Gasparoli", limit: 10);
+
+        result.Items.Select(i => i.Id).ShouldBe(new[] { _gasparoli7001Id });
+        result.TotalCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task SearchAsync_RestrictedUser_DoesNotFindClientOfAnInvisibleGroup()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var invisibleGroupId = Guid.NewGuid();
+        var ownClientId = AddClientInGroup("Petra", "Steiner", 8001, visibleGroupId);
+        AddClientInGroup("Petra", "Steinmann", 8002, invisibleGroupId);
+        var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
+
+        var result = await repository.SearchAsync(searchTerm: "Petra", limit: 10);
+
+        result.Items.Select(i => i.Id).ShouldBe(new[] { ownClientId });
+        result.TotalCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task SearchAsync_RestrictedUser_StillFindsClientWithoutAnyGroup()
+    {
+        var repository = CreateRepositoryForRestrictedUser(Guid.NewGuid());
+
+        var result = await repository.SearchAsync(searchTerm: "Heribert Gasparoli", limit: 10);
+
+        result.TotalCount.ShouldBe(2);
+    }
+
+    // Background and system callers (AnswerGroundingNameResolver, ClientSlotEntityResolver, the
+    // LLM background task path) reach SearchAsync without an HTTP user. There is nobody whose
+    // visibility could apply, so the query must stay unrestricted. Were this branch to fall
+    // through to the restricted one, scoping SearchAsync would silently blank out search for all
+    // of them — a Betriebsbruch none of the restricted-user tests above would notice.
+    [Test]
+    public async Task SearchAsync_NoCallingUser_StaysUnrestricted()
+    {
+        var invisibleGroupId = Guid.NewGuid();
+        AddClientInGroup("Petra", "Steinmann", 8005, invisibleGroupId);
+        var repository = CreateRepositoryWithRealGroupFilter(
+            callingUserId: null, GroupVisibilityScope.Restricted([], []));
+
+        var result = await repository.SearchAsync(searchTerm: "Petra", limit: 10);
+
+        result.TotalCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task SearchAsync_FuzzyFallback_RestrictedUser_DoesNotLeakClientOfAnInvisibleGroup()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var invisibleGroupId = Guid.NewGuid();
+        var foreignClientId = AddClientInGroup("Petra", "Mayer", 8003, invisibleGroupId);
+        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { new() { Id = foreignClientId, FirstName = "Petra", Name = "Mayer", IdNumber = 8003 } });
+        var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
+
+        var result = await repository.SearchAsync(searchTerm: "Meier", limit: 10);
+
+        result.Items.ShouldBeEmpty();
+        result.TotalCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task SearchAsync_FuzzyFallback_RestrictedUser_StillFindsClientOfAVisibleGroup()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var ownClientId = AddClientInGroup("Petra", "Mayer", 8004, visibleGroupId);
+        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { new() { Id = ownClientId, FirstName = "Petra", Name = "Mayer", IdNumber = 8004 } });
+        var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
+
+        var result = await repository.SearchAsync(searchTerm: "Meier", limit: 10);
+
+        result.Items.Select(i => i.Id).ShouldBe(new[] { ownClientId });
     }
 }

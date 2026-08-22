@@ -20,6 +20,7 @@ using Klacks.Api.Presentation.Controllers.Assistant;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using System.Security.Claims;
 
 namespace Klacks.UnitTest.Controllers.Assistant;
 
@@ -34,6 +35,7 @@ public class ChatControllerFastPathTests
     private ChatController _controller = null!;
 
     private const string FastPathRoute = "/workplace/edit-address";
+    private const string CurrentUserId = "11111111-1111-1111-1111-111111111111";
 
     [SetUp]
     public void Setup()
@@ -60,7 +62,7 @@ public class ChatControllerFastPathTests
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext()
+                HttpContext = CreateHttpContextFor(CurrentUserId)
             }
         };
 
@@ -75,6 +77,12 @@ public class ChatControllerFastPathTests
                 Score = 1.0,
                 Candidates = Array.Empty<NavigationCandidate>()
             });
+    }
+
+    private static DefaultHttpContext CreateHttpContextFor(string userId)
+    {
+        var identity = new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, userId) }, "Test");
+        return new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
     }
 
     [Test]
@@ -97,7 +105,7 @@ public class ChatControllerFastPathTests
     public async Task FastPath_Suppressed_WhenConversationHasHistory()
     {
         const string conversationId = "conv-1";
-        _llmRepository.GetConversationByConversationIdAsync(conversationId)
+        _llmRepository.GetConversationByConversationIdAsync(conversationId, CurrentUserId)
             .Returns(new LLMConversation { MessageCount = 2 });
         _mediator.Send(Arg.Any<ProcessLLMMessageCommand>())
             .Returns(new LLMResponse { Message = "Wie lautet die Adresse?" });
@@ -117,7 +125,7 @@ public class ChatControllerFastPathTests
     public async Task FastPath_Routes_MidConversation_WhenMessageIsExplicitNavigationCommand()
     {
         const string conversationId = "conv-1";
-        _llmRepository.GetConversationByConversationIdAsync(conversationId)
+        _llmRepository.GetConversationByConversationIdAsync(conversationId, CurrentUserId)
             .Returns(new LLMConversation { MessageCount = 2 });
 
         var request = new LLMRequest { Message = "Öffne Mitarbeiter", ConversationId = conversationId };
@@ -136,7 +144,7 @@ public class ChatControllerFastPathTests
     public async Task FastPath_Suppressed_MidConversation_WhenBareAnswerMatchesTargetExactly()
     {
         const string conversationId = "conv-1";
-        _llmRepository.GetConversationByConversationIdAsync(conversationId)
+        _llmRepository.GetConversationByConversationIdAsync(conversationId, CurrentUserId)
             .Returns(new LLMConversation { MessageCount = 2 });
         _mediator.Send(Arg.Any<ProcessLLMMessageCommand>())
             .Returns(new LLMResponse { Message = "Wie lautet die Adresse?" });
@@ -152,7 +160,7 @@ public class ChatControllerFastPathTests
     public async Task FastPath_Routes_WhenConversationIdHasNoStoredHistory()
     {
         const string conversationId = "conv-new";
-        _llmRepository.GetConversationByConversationIdAsync(conversationId)
+        _llmRepository.GetConversationByConversationIdAsync(conversationId, CurrentUserId)
             .Returns((LLMConversation?)null);
 
         var request = new LLMRequest { Message = "Mitarbeiter", ConversationId = conversationId };

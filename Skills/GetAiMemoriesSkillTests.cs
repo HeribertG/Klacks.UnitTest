@@ -58,7 +58,7 @@ public class GetAiMemoriesSkillTests
             Memory(injectedId, "already-in-context", importance: 9),
             Memory(Guid.NewGuid(), "fresh-one", importance: 8),
         };
-        _memoryRepo.GetAllAsync(AgentId, Arg.Any<CancellationToken>()).Returns(allMemories);
+        _memoryRepo.GetAllAsync(AgentId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(allMemories);
 
         var result = await _skill.ExecuteAsync(Ctx(new[] { injectedId }), new Dictionary<string, object>());
 
@@ -77,7 +77,7 @@ public class GetAiMemoriesSkillTests
             Memory(Guid.NewGuid(), "a"),
             Memory(Guid.NewGuid(), "b"),
         };
-        _memoryRepo.GetAllAsync(AgentId, Arg.Any<CancellationToken>()).Returns(allMemories);
+        _memoryRepo.GetAllAsync(AgentId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(allMemories);
 
         var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 

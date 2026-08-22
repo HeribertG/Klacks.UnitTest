@@ -15,7 +15,6 @@ public class ClientNameCandidateGrounderTests
     private const int MaxCandidateTerms = 3;
 
     private IClientSearchRepository _repository = null!;
-    private Klacks.Api.Application.Interfaces.IClientFuzzySearchService _fuzzySearchService = null!;
     private ILogger<ClientNameCandidateGrounder> _logger = null!;
     private ClientNameCandidateGrounder _grounder = null!;
 
@@ -23,11 +22,8 @@ public class ClientNameCandidateGrounderTests
     public void SetUp()
     {
         _repository = Substitute.For<IClientSearchRepository>();
-        _fuzzySearchService = Substitute.For<Klacks.Api.Application.Interfaces.IClientFuzzySearchService>();
-        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Client>());
         _logger = Substitute.For<ILogger<ClientNameCandidateGrounder>>();
-        _grounder = new ClientNameCandidateGrounder(_repository, _fuzzySearchService, _logger);
+        _grounder = new ClientNameCandidateGrounder(_repository, _logger);
     }
 
     [Test]
@@ -166,13 +162,19 @@ public class ClientNameCandidateGrounderTests
     public async Task GroundAsync_ShortLowercaseMessage_StrictValidation_RejectsTrigramNoise()
     {
         // Fuzzy candidates for arbitrary lowercase bigrams must not leak into the prompt
-        // unless they match exactly or phonetically.
+        // unless they match exactly or phonetically. The candidates arrive through
+        // SearchAsync, which owns the trigram/phonetic fallback and scopes it to the
+        // caller's visible groups.
         _repository.SearchAsync(
                 Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
                 Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new ClientSearchResult { Items = new List<ClientSearchItem>() });
-        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Client> { new() { Id = Guid.NewGuid(), FirstName = "Andreas", Name = "Zimmermann" } });
+            .Returns(new ClientSearchResult
+            {
+                Items = new List<ClientSearchItem>
+                {
+                    new() { Id = Guid.NewGuid(), FirstName = "Andreas", LastName = "Zimmermann" }
+                }
+            });
         var context = new LLMContext { Message = "nein das will ich nicht" };
 
         await _grounder.GroundAsync(context);
@@ -184,13 +186,17 @@ public class ClientNameCandidateGrounderTests
     public async Task GroundAsync_ContainsMiss_PhoneticFuzzyFallback_GroundsMisheardName()
     {
         // The 2026-07-11 core case: the misheard "Meier" finds the stored "Mayer" via the
-        // fuzzy second chance and Kölner Phonetik equality.
+        // fuzzy second chance in SearchAsync and Kölner Phonetik equality here.
         _repository.SearchAsync(
                 Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
                 Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new ClientSearchResult { Items = new List<ClientSearchItem>() });
-        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Client> { new() { Id = Guid.NewGuid(), IdNumber = 990003, FirstName = "Petra", Name = "Mayer" } });
+            .Returns(new ClientSearchResult
+            {
+                Items = new List<ClientSearchItem>
+                {
+                    new() { Id = Guid.NewGuid(), IdNumber = 990003, FirstName = "Petra", LastName = "Mayer" }
+                }
+            });
         var context = new LLMContext { Message = "Ändere die Nummer von Frau Meier" };
 
         await _grounder.GroundAsync(context);
