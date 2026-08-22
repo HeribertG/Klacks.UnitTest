@@ -79,6 +79,7 @@ public class MessagingServiceInboundIngestTests
             _messengerContactRepository,
             _ownerMessengerReader,
             _userMessengerContactRepository,
+            Substitute.For<IAppUserDirectoryReader>(),
             new[] { _inboundObserver },
             _logSuppressionCache,
             Substitute.For<IClientGroupReader>(),

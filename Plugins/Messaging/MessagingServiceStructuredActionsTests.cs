@@ -67,6 +67,7 @@ public class MessagingServiceStructuredActionsTests
             Substitute.For<IMessengerContactRepository>(),
             Substitute.For<IOwnerMessengerReader>(),
             Substitute.For<IUserMessengerContactRepository>(),
+            Substitute.For<IAppUserDirectoryReader>(),
             Array.Empty<IInboundMessengerObserver>(),
             _logSuppressionCache,
             Substitute.For<IClientGroupReader>(),

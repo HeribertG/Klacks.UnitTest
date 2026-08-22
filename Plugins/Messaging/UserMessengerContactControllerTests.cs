@@ -57,14 +57,18 @@ public class UserMessengerContactControllerTests
     [Test]
     public async Task CreatePairingCode_IssuesForTheAuthenticatedUserOnly()
     {
+        GiveEnabledProviders(new MessagingProvider
+        {
+            Id = Guid.NewGuid(), Name = "telegram-main", ProviderType = MessagingConstants.ProviderTelegram, IsEnabled = true
+        });
         _pairingService
-            .IssueCodeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .IssueCodeAsync(Arg.Any<string>(), Arg.Any<MessengerType>(), Arg.Any<CancellationToken>())
             .Returns(new UserMessengerPairingCode(
                 "K7M4PQRS", UserId, MessengerType.Telegram, DateTime.UtcNow, DateTime.UtcNow.AddMinutes(15), null));
 
-        var result = await _sut.CreatePairingCode(CancellationToken.None);
+        var result = await _sut.CreatePairingCode(provider: null, CancellationToken.None);
 
-        await _pairingService.Received(1).IssueCodeAsync(UserId, Arg.Any<CancellationToken>());
+        await _pairingService.Received(1).IssueCodeAsync(UserId, MessengerType.Telegram, Arg.Any<CancellationToken>());
         var dto = ((OkObjectResult)result.Result!).Value.ShouldBeOfType<UserMessengerPairingCodeDto>();
         dto.Code.ShouldBe("K7M4PQRS");
     }
@@ -74,10 +78,10 @@ public class UserMessengerContactControllerTests
     {
         SignInWithoutClaims();
 
-        var result = await _sut.CreatePairingCode(CancellationToken.None);
+        var result = await _sut.CreatePairingCode(provider: null, CancellationToken.None);
 
         result.Result.ShouldBeOfType<UnauthorizedResult>();
-        await _pairingService.DidNotReceive().IssueCodeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _pairingService.DidNotReceive().IssueCodeAsync(Arg.Any<string>(), Arg.Any<MessengerType>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -95,27 +99,28 @@ public class UserMessengerContactControllerTests
             new() { Id = Guid.NewGuid(), ProviderType = MessagingConstants.ProviderTelegram, IsEnabled = true, ConfigJson = "{\"token\":\"abc\"}" }
         });
         _inviteSendService
-            .SendAsync(OtherUserId, UserId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .SendAsync(OtherUserId, UserId, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(UserInviteSendResult.Success);
 
-        var result = await _sut.SendAdminInvite(OtherUserId, CancellationToken.None);
+        var result = await _sut.SendAdminInvite(OtherUserId, provider: null, CancellationToken.None);
 
-        await _inviteSendService.Received(1).SendAsync(OtherUserId, UserId, "{\"token\":\"abc\"}", Arg.Any<CancellationToken>());
+        await _inviteSendService.Received(1).SendAsync(
+            OtherUserId, UserId, MessagingConstants.ProviderTelegram, "{\"token\":\"abc\"}", Arg.Any<CancellationToken>());
         var body = ((OkObjectResult)result.Result!).Value;
         body.ShouldNotBeNull();
     }
 
     [Test]
-    public async Task SendAdminInvite_WithoutAnEnabledTelegramProvider_IsBadRequest()
+    public async Task SendAdminInvite_WithoutAnEnabledProvider_IsBadRequest()
     {
         SignIn(UserId, MessagingConstants.RoleAdmin);
         _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>());
 
-        var result = await _sut.SendAdminInvite(OtherUserId, CancellationToken.None);
+        var result = await _sut.SendAdminInvite(OtherUserId, provider: null, CancellationToken.None);
 
         result.Result.ShouldBeOfType<BadRequestObjectResult>();
         await _inviteSendService.DidNotReceive().SendAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -123,7 +128,7 @@ public class UserMessengerContactControllerTests
     {
         SignInWithoutClaims();
 
-        var result = await _sut.SendAdminInvite(OtherUserId, CancellationToken.None);
+        var result = await _sut.SendAdminInvite(OtherUserId, provider: null, CancellationToken.None);
 
         result.Result.ShouldBeOfType<UnauthorizedResult>();
     }
@@ -298,6 +303,9 @@ public class UserMessengerContactControllerTests
             });
         return id;
     }
+
+    private void GiveEnabledProviders(params MessagingProvider[] providers) =>
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>(providers));
 
     private void SignIn(string userId, params string[] roles)
     {

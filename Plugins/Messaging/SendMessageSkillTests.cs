@@ -156,13 +156,53 @@ public class SendMessageSkillTests
     }
 
     [Test]
-    public async Task ExecuteAsync_ClientPath_MissingProvider_ReturnsError()
+    public async Task ExecuteAsync_ClientPath_NoProviderGiven_NoEnabledProviders_ReturnsNoProviderConfiguredError()
     {
         var result = await _sut.ExecuteAsync(_context, Params(
             ("recipient", "Hans Muster"), ("content", "Hallo")));
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("provider");
+        result.Message.ShouldBe("No messaging provider is configured and enabled. An admin must set one up under Settings -> Messaging.");
+        await _messagingService.DidNotReceiveWithAnyArgs().SendMessageAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ClientPath_NoProviderGiven_MultipleEnabledProviders_ReturnsMustSpecifyError()
+    {
+        _providerRepository.GetEnabledAsync().Returns(new[]
+        {
+            new MessagingProvider { Id = Guid.NewGuid(), Name = "telegram-main", ProviderType = "telegram", IsEnabled = true },
+            new MessagingProvider { Id = Guid.NewGuid(), Name = "whatsapp-main", ProviderType = "whatsapp", IsEnabled = true },
+        });
+
+        var result = await _sut.ExecuteAsync(_context, Params(
+            ("recipient", "Hans Muster"), ("content", "Hallo")));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("telegram-main");
+        result.Message.ShouldContain("whatsapp-main");
+        await _messagingService.DidNotReceiveWithAnyArgs().SendMessageAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ClientPath_NoProviderGiven_ExactlyOneEnabledProvider_AutoResolvesAndSends()
+    {
+        _providerRepository.GetEnabledAsync().Returns(new[]
+        {
+            new MessagingProvider { Id = Guid.NewGuid(), Name = "telegram-main", ProviderType = "telegram", IsEnabled = true },
+        });
+        _messengerContactRepository
+            .SearchByClientNameAsync("Hans Muster", MessengerType.Telegram, Arg.Any<CancellationToken>())
+            .Returns(new[] { Match(Guid.NewGuid(), "chat-123", "Hans", "Muster") });
+
+        var result = await _sut.ExecuteAsync(_context, Params(
+            ("recipient", "Hans Muster"), ("content", "Hallo")));
+
+        result.Success.ShouldBeTrue();
+        await _messagingService.Received(1).SendMessageAsync(
+            "telegram",
+            Arg.Is<SendMessageRequest>(r => r.Recipient == "chat-123" && r.Content == "Hallo"),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

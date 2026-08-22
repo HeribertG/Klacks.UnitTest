@@ -190,7 +190,7 @@ public class UserMessengerPairingServiceTests
             .IssueAsync(UserId, MessengerType.Telegram, Arg.Any<CancellationToken>())
             .Returns(ValidCode());
 
-        var issued = await _sut.IssueCodeAsync(UserId);
+        var issued = await _sut.IssueCodeAsync(UserId, MessengerType.Telegram);
 
         issued.UserId.ShouldBe(UserId);
         await _codeStore.Received(1).IssueAsync(UserId, MessengerType.Telegram, Arg.Any<CancellationToken>());
@@ -217,7 +217,7 @@ public class UserMessengerPairingServiceTests
             .IssueAdminInviteAsync(UserId, MessengerType.Telegram, AdminId, Arg.Any<CancellationToken>())
             .Returns(invite);
 
-        var issued = await _sut.IssueAdminInviteAsync(UserId, AdminId);
+        var issued = await _sut.IssueAdminInviteAsync(UserId, AdminId, MessengerType.Telegram);
 
         issued.ShouldBe(invite);
         await _codeStore.Received(1).IssueAdminInviteAsync(
