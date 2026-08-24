@@ -1224,4 +1224,25 @@ public class AgentTriggerRateLimiterTests
         Assert.That(_sut.ShouldFire("user-a", AgentTriggerKinds.CuriosityQuestion), Is.False);
         Assert.That(_sut.GetRemainingBudget("user-a", AgentTriggerKinds.CuriosityQuestion), Is.EqualTo(0));
     }
+
+    /// <summary>
+    /// AgentConditionDigestService (Etappe 3h) relies on daily_digest never competing with the 13 other
+    /// trigger kinds for a user's 5/day budget. It has no entry in PerKindDailyBudget, so - like any
+    /// other unlisted kind - it falls back to the same default and is keyed independently by
+    /// (userId, triggerKind), exactly as IndependentKindsHaveIndependentBudgets already proves generically.
+    /// </summary>
+    [Test]
+    public void DailyDigestKind_HasTheDefaultBudget_IndependentOfEveryOtherKind()
+    {
+        Assert.That(_sut.GetRemainingBudget("user-a", AgentTriggerKinds.DailyDigest), Is.EqualTo(5));
+
+        for (var i = 0; i < 5; i++)
+        {
+            _sut.RecordFire("user-a", AgentTriggerKinds.OpenOrder);
+        }
+
+        Assert.That(_sut.ShouldFire("user-a", AgentTriggerKinds.OpenOrder), Is.False);
+        Assert.That(_sut.ShouldFire("user-a", AgentTriggerKinds.DailyDigest), Is.True);
+        Assert.That(_sut.GetRemainingBudget("user-a", AgentTriggerKinds.DailyDigest), Is.EqualTo(5));
+    }
 }

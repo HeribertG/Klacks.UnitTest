@@ -32,7 +32,8 @@ public class MessengerProactiveTextsTests
         [AgentTriggerKinds.UnstaffedShift] = ProactiveMessageI18nKeys.UnstaffedShift,
         [AgentTriggerKinds.WorkDroppedByErpImport] = ProactiveMessageI18nKeys.WorkDroppedByErpImport,
         [AgentTriggerKinds.OrderImportFailed] = ProactiveMessageI18nKeys.OrderImportFailed,
-        [AgentTriggerKinds.EscalationStageAlert] = ProactiveMessageI18nKeys.EscalationStageAlert
+        [AgentTriggerKinds.EscalationStageAlert] = ProactiveMessageI18nKeys.EscalationStageAlert,
+        [AgentTriggerKinds.DailyDigest] = ProactiveMessageI18nKeys.DailyDigest
     };
 
     [Test]

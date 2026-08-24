@@ -20,7 +20,8 @@ public class GoalTypeCatalogTests
     private static readonly string[] ExcludedKinds =
     [
         AgentTriggerKinds.CuriosityQuestion,
-        AgentTriggerKinds.MuteSuggestion
+        AgentTriggerKinds.MuteSuggestion,
+        AgentTriggerKinds.DailyDigest
     ];
 
     private static IEnumerable<string> AllTriggerKinds() =>
