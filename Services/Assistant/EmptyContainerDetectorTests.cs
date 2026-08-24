@@ -304,4 +304,34 @@ public class EmptyContainerDetectorTests
 
         Assert.That(events, Has.Count.EqualTo(EmptyContainerDetector.MaxFindingsPerTick));
     }
+
+    [Test]
+    public async Task DetectAsync_MoreEmptyContainersThanCap_SelectsOldestFromDateFirst()
+    {
+        // Regression test for the starvation bug: without an explicit OrderBy before Take, the cap
+        // picks from whatever order the query happens to return (effectively physical storage order),
+        // so the same subset is chosen on every tick regardless of which containers are actually
+        // oldest -- once dispatched, the other containers are permanently starved because dedup has
+        // no TTL. Inserting in an order that contradicts FromDate order proves the selection tracks
+        // FromDate, not insertion/storage order.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var totalContainers = EmptyContainerDetector.MaxFindingsPerTick + 5;
+        var containers = Enumerable.Range(0, totalContainers)
+            .Select(i => MakeContainer(today.AddDays(-(totalContainers - i)), today.AddDays(365)))
+            .ToList();
+        var insertionOrder = containers.OrderByDescending(c => c.FromDate).ToList();
+        await _context.Shift.AddRangeAsync(insertionOrder);
+        await _context.SaveChangesAsync();
+
+        var events = (await _sut.DetectAsync()).Cast<EmptyContainerTriggerEvent>().ToList();
+
+        var expectedIds = containers
+            .OrderBy(c => c.FromDate)
+            .Take(EmptyContainerDetector.MaxFindingsPerTick)
+            .Select(c => c.Id)
+            .ToHashSet();
+        var actualIds = events.Select(e => e.ShiftId).ToHashSet();
+
+        Assert.That(actualIds, Is.EqualTo(expectedIds));
+    }
 }

@@ -167,4 +167,32 @@ public class OpenOrderDetectorTests
 
         Assert.That(secondKey, Is.EqualTo(firstKey));
     }
+
+    [Test]
+    public async Task DetectAsync_MoreOpenOrdersThanCap_SelectsSoonestFromDateFirstUpToCap()
+    {
+        // Regression test for the missing defensive cap: this detector has no per-tick emission
+        // window like its two sibling detectors, so an unbounded table could scan indefinitely.
+        // Inserting in an order that contradicts FromDate order proves both that the cap is applied
+        // and that the selection tracks FromDate (soonest = highest severity), not insertion order.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var totalOrders = OpenOrderDetector.MaxCandidatesToScan + 5;
+        var shifts = Enumerable.Range(0, totalOrders)
+            .Select(i => MakeShift(today.AddDays(i)))
+            .ToList();
+        var insertionOrder = shifts.OrderByDescending(s => s.FromDate).ToList();
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(insertionOrder));
+
+        var events = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().ToList();
+
+        var expectedIds = shifts
+            .OrderBy(s => s.FromDate)
+            .Take(OpenOrderDetector.MaxCandidatesToScan)
+            .Select(s => s.Id)
+            .ToHashSet();
+        var actualIds = events.Select(e => e.ShiftId).ToHashSet();
+
+        Assert.That(events, Has.Count.EqualTo(OpenOrderDetector.MaxCandidatesToScan));
+        Assert.That(actualIds, Is.EqualTo(expectedIds));
+    }
 }
