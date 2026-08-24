@@ -30,8 +30,15 @@ namespace Klacks.UnitTest.Infrastructure.Repositories.Assistant;
 [TestFixture]
 public class AgentConditionRepositoryTests
 {
-    private const string Kind = "empty_container";
-    private const string OtherKind = "open_order";
+    private const string Kind = AgentTriggerKinds.EmptyContainer;
+    private const string OtherKind = AgentTriggerKinds.OpenOrder;
+
+    /// <summary>
+    /// A kind that does NOT declare RequiresGroupScope: its findings are about a client, not a group, so a
+    /// null GroupId genuinely means "concerns the whole installation" and stays visible to every planner.
+    /// Kept distinct from <see cref="Kind"/> because the two now behave differently on a null GroupId.
+    /// </summary>
+    private const string UngroupedByNatureKind = AgentTriggerKinds.TargetHoursDrift;
 
     private static readonly DateTime StartUtc = new(2026, 8, 24, 6, 0, 0, DateTimeKind.Utc);
 
@@ -268,7 +275,7 @@ public class AgentConditionRepositoryTests
         var ownRootFinding = Condition(Kind, "fp-own-root", AgentConditionStatus.Reported, StartUtc, groupId: ownRoot);
         var ownChildFinding = Condition(Kind, "fp-own-child", AgentConditionStatus.Reported, StartUtc, groupId: ownChild);
         var foreignFinding = Condition(Kind, "fp-foreign", AgentConditionStatus.Reported, StartUtc, groupId: foreignRoot);
-        var ungatedFinding = Condition(Kind, "fp-ungated", AgentConditionStatus.Reported, StartUtc, groupId: null);
+        var ungatedFinding = Condition(UngroupedByNatureKind, "fp-ungated", AgentConditionStatus.Reported, StartUtc, groupId: null);
         context.AgentConditions.AddRange(ownRootFinding, ownChildFinding, foreignFinding, ungatedFinding);
         await context.SaveChangesAsync();
 
@@ -282,6 +289,97 @@ public class AgentConditionRepositoryTests
         resultIds.ShouldNotContain(foreignFinding.Id);
     }
 
+    /// <summary>
+    /// The read-path half of the group-scope leak the live push closed first. A row of a
+    /// RequiresGroupScope kind whose GroupId is null does not mean "concerns everybody"; it means the group
+    /// of a group-owned entity could not be determined - the 52 empty_container/uncut_fullday_shift rows
+    /// that predate the push fix are exactly this, and they keep their null GroupId for as long as they
+    /// stay open because a re-detection only touches LastSeenAtUtc. A populated but unrelated scope is
+    /// tested alongside the empty one on purpose: the naive fix leaves the GroupId-null branch untouched,
+    /// which passes an empty-scope test and still leaks to every planner who has any visibility row at all.
+    /// </summary>
+    [Test]
+    public async Task GetOpenForScope_NonAdmin_DoesNotSeeAGroupScopedKindWhoseGroupIsUnknown()
+    {
+        using var context = CreateContext();
+        var ownRoot = Guid.NewGuid();
+        context.Group.Add(GroupRow(ownRoot, root: ownRoot, parent: null));
+
+        var groupScopedUngrouped = Condition(Kind, "fp-scoped-ungrouped", AgentConditionStatus.Reported, StartUtc, groupId: null);
+        var globalUngrouped = Condition(UngroupedByNatureKind, "fp-global-ungrouped", AgentConditionStatus.Reported, StartUtc, groupId: null);
+        context.AgentConditions.AddRange(groupScopedUngrouped, globalUngrouped);
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+        var withScope = await repository.GetOpenForScopeAsync(
+            isUnrestricted: false, visibleRootIds: new HashSet<Guid> { ownRoot }, take: 20);
+        var withoutScope = await repository.GetOpenForScopeAsync(
+            isUnrestricted: false, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        withScope.Select(c => c.Id).ShouldNotContain(groupScopedUngrouped.Id);
+        withScope.Select(c => c.Id).ShouldContain(globalUngrouped.Id);
+        withoutScope.Select(c => c.Id).ShouldNotContain(groupScopedUngrouped.Id);
+        withoutScope.Select(c => c.Id).ShouldContain(globalUngrouped.Id);
+    }
+
+    [Test]
+    public async Task CountOpenForScope_NonAdmin_ExcludesAGroupScopedKindWhoseGroupIsUnknown()
+    {
+        using var context = CreateContext();
+        context.AgentConditions.AddRange(
+            Condition(Kind, "fp-scoped-ungrouped", AgentConditionStatus.Reported, StartUtc, groupId: null),
+            Condition(OtherKind, "fp-scoped-ungrouped-2", AgentConditionStatus.Detected, StartUtc, groupId: null),
+            Condition(UngroupedByNatureKind, "fp-global-ungrouped", AgentConditionStatus.Reported, StartUtc, groupId: null));
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+
+        (await repository.CountOpenForScopeAsync(isUnrestricted: false, visibleRootIds: new HashSet<Guid>())).ShouldBe(1);
+        (await repository.CountOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>())).ShouldBe(3);
+    }
+
+    [Test]
+    public async Task GetOpenForScope_Admin_StillSeesAGroupScopedKindWhoseGroupIsUnknown()
+    {
+        // The withheld rows are not dropped, they fall back to the audience that is unrestricted anyway -
+        // the same landing place AgentTriggerService.ResolvePlannerAudienceAsync gives them on the push path.
+        using var context = CreateContext();
+        var groupScopedUngrouped = Condition(Kind, "fp-scoped-ungrouped", AgentConditionStatus.Reported, StartUtc, groupId: null);
+        context.AgentConditions.Add(groupScopedUngrouped);
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        result.Select(c => c.Id).ShouldContain(groupScopedUngrouped.Id);
+    }
+
+    [Test]
+    public async Task GetTopForContext_NonAdmin_DoesNotSeeAGroupScopedKindWhoseGroupIsUnknown()
+    {
+        // GetTopForContextAsync is the second entry point on the shared query fragment (the [OPEN_FINDINGS]
+        // chat block), so the withholding has to hold there too, not only in list_open_findings.
+        using var context = CreateContext();
+        var ownRoot = Guid.NewGuid();
+        context.Group.Add(GroupRow(ownRoot, root: ownRoot, parent: null));
+
+        var groupScopedUngrouped = Condition(
+            Kind, "fp-scoped-ungrouped", AgentConditionStatus.Reported, StartUtc, AgentTriggerSeverity.High);
+        var globalUngrouped = Condition(
+            UngroupedByNatureKind, "fp-global-ungrouped", AgentConditionStatus.Reported, StartUtc, AgentTriggerSeverity.High);
+        context.AgentConditions.AddRange(groupScopedUngrouped, globalUngrouped);
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context).GetTopForContextAsync(
+            isUnrestricted: false,
+            visibleRootIds: new HashSet<Guid> { ownRoot },
+            preferredGroupId: null,
+            take: 20);
+
+        result.Select(c => c.Id).ShouldNotContain(groupScopedUngrouped.Id);
+        result.Select(c => c.Id).ShouldContain(globalUngrouped.Id);
+    }
+
     [Test]
     public async Task GetOpenForScope_NonAdmin_WithNoGroupVisibilityRows_SeesOnlyUngatedRows()
     {
@@ -290,7 +388,7 @@ public class AgentConditionRepositoryTests
         context.Group.Add(GroupRow(someRoot, root: someRoot, parent: null));
 
         var gatedFinding = Condition(Kind, "fp-gated", AgentConditionStatus.Reported, StartUtc, groupId: someRoot);
-        var ungatedFinding = Condition(Kind, "fp-ungated", AgentConditionStatus.Reported, StartUtc, groupId: null);
+        var ungatedFinding = Condition(UngroupedByNatureKind, "fp-ungated", AgentConditionStatus.Reported, StartUtc, groupId: null);
         context.AgentConditions.AddRange(gatedFinding, ungatedFinding);
         await context.SaveChangesAsync();
 

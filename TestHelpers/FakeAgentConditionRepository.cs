@@ -150,7 +150,9 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
 
         return isUnrestricted
             ? relevant
-            : relevant.Where(c => c.GroupId == null || visibleRootIds.Contains(c.GroupId.Value));
+            : relevant.Where(c => c.GroupId.HasValue
+                ? visibleRootIds.Contains(c.GroupId.Value)
+                : !AgentTriggerGroupScopedKinds.Values.Contains(c.TriggerKind));
     }
 
     private static int SeverityRank(AgentCondition condition) =>

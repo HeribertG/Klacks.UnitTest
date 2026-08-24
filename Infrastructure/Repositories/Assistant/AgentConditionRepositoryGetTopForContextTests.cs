@@ -7,6 +7,7 @@
 /// scope, and a preferred group is ranked first without widening or narrowing visibility.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
@@ -156,11 +157,14 @@ public class AgentConditionRepositoryGetTopForContextTests
     [Test]
     public async Task RestrictedScope_IncludesUngatedCondition_EvenWithNoVisibleRoots()
     {
-        // Fail-closed applies to group-scoped rows only - a condition without a GroupId is a global
-        // finding meant for every planner, matching "Events ohne GroupId an alle Planer" from the 3e spec.
+        // client_missing_core_data is about a client, not a group, and declares no RequiresGroupScope, so a
+        // null GroupId here really does mean "the whole installation" and stays visible to every planner -
+        // "Events ohne GroupId an alle Planer" from the 3e spec. A null GroupId on one of
+        // AgentTriggerGroupScopedKinds.Values means the opposite and is withheld; that case is covered in
+        // AgentConditionRepositoryTests.
         using var context = CreateContext();
         context.AgentConditions.Add(
-            Condition("client_missing_core_data", AgentConditionStatus.Detected, "high", StartUtc, groupId: null));
+            Condition(AgentTriggerKinds.ClientMissingCoreData, AgentConditionStatus.Detected, "high", StartUtc, groupId: null));
         await context.SaveChangesAsync();
 
         var result = await new AgentConditionRepository(context).GetTopForContextAsync(
