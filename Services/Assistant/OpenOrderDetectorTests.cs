@@ -1,0 +1,170 @@
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+/// <summary>
+/// Unit tests for OpenOrderDetector -- covers empty-result, the three severity tiers by FromDate
+/// proximity, past-dated exclusion, scenario-clone exclusion (AnalyseToken / ScenarioSourceShiftId),
+/// soft-delete exclusion, non-OriginalOrder status exclusion, and DedupKey stability across two
+/// scans of the same order. open_order is deliberately not unstaffed_shift: an order can already be
+/// fully staffed and still be an open, unsealed draft, so this detector never looks at
+/// SumEmployees/Quantity.
+/// </summary>
+
+using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Klacks.UnitTest.Services.Assistant;
+
+[TestFixture]
+public class OpenOrderDetectorTests
+{
+    private IShiftRepository _repo = null!;
+    private OpenOrderDetector _sut = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _repo = Substitute.For<IShiftRepository>();
+        _sut = new OpenOrderDetector(_repo, NullLogger<OpenOrderDetector>.Instance);
+    }
+
+    private static Shift MakeShift(
+        DateOnly fromDate,
+        ShiftStatus status = ShiftStatus.OriginalOrder,
+        Guid? analyseToken = null,
+        Guid? scenarioSourceShiftId = null,
+        bool isDeleted = false,
+        Guid? id = null) => new()
+    {
+        Id = id ?? Guid.NewGuid(),
+        Status = status,
+        FromDate = fromDate,
+        Name = "Test Order",
+        AnalyseToken = analyseToken,
+        ScenarioSourceShiftId = scenarioSourceShiftId,
+        IsDeleted = isDeleted
+    };
+
+    [Test]
+    public async Task DetectAsync_NoShifts_ReturnsEmpty()
+    {
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift>()));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_OrderStartingWithin7Days_EmitsHighSeverityEvent()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3));
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var openOrder = events.Single() as OpenOrderTriggerEvent;
+        Assert.That(openOrder, Is.Not.Null);
+        Assert.That(openOrder!.Severity, Is.EqualTo(AgentTriggerSeverity.High));
+    }
+
+    [Test]
+    public async Task DetectAsync_OrderStartingBetween8And30Days_EmitsMediumSeverityEvent()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(15));
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().ToList();
+
+        Assert.That(events.Single().Severity, Is.EqualTo(AgentTriggerSeverity.Medium));
+    }
+
+    [Test]
+    public async Task DetectAsync_OrderStartingAfter30Days_EmitsLowSeverityEvent()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(45));
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().ToList();
+
+        Assert.That(events.Single().Severity, Is.EqualTo(AgentTriggerSeverity.Low));
+    }
+
+    [Test]
+    public async Task DetectAsync_OrderInThePast_IsNotReported()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(-1));
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_ScenarioCloneWithAnalyseToken_IsNotReported()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3), analyseToken: Guid.NewGuid());
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_ScenarioCloneWithScenarioSourceShiftId_IsNotReported()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3), scenarioSourceShiftId: Guid.NewGuid());
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_SoftDeletedShift_IsNotReported()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3), isDeleted: true);
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_NonOriginalOrderStatus_IsNotReported()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3), status: ShiftStatus.SealedOrder);
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_CalledTwice_ReturnsStableDedupKeyForSameShift()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3));
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var firstKey = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().Single().DedupKey;
+        var secondKey = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().Single().DedupKey;
+
+        Assert.That(secondKey, Is.EqualTo(firstKey));
+    }
+}

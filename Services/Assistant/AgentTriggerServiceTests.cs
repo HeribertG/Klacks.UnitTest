@@ -864,8 +864,11 @@ public class OperationalTriggerEventDedupKeyTests
         var availabilityGap = new AvailabilityGapTriggerEvent(Guid.NewGuid(), "Jane", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 10);
         var periodOverdue = new PeriodOverdueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 10);
         var missingCoreData = new ClientMissingCoreDataTriggerEvent(Guid.NewGuid(), "Jane", ClientMissingCoreDataTriggerEvent.AddressField);
+        var openOrder = new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 6, 30), null, 3);
+        var uncutFulldayShift = new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 3, null);
+        var emptyContainer = new EmptyContainerTriggerEvent(Guid.NewGuid(), "Container A", new DateOnly(2026, 6, 30), null);
 
-        foreach (var ev in new IAgentTriggerEvent[] { drift, period, unstaffed, lockConflict, scenario, contract, availabilityGap, periodOverdue, missingCoreData })
+        foreach (var ev in new IAgentTriggerEvent[] { drift, period, unstaffed, lockConflict, scenario, contract, availabilityGap, periodOverdue, missingCoreData, openOrder, uncutFulldayShift, emptyContainer })
         {
             Assert.That(ev.PlannersOnly, Is.True, $"{ev.Kind} must be planners-only");
             Assert.That(ev.Summary, Does.StartWith(ProactiveMessageMarkers.I18nPrefix), $"{ev.Kind} must use an i18n summary");
