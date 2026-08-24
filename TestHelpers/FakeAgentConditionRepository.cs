@@ -93,6 +93,69 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return Task.FromResult(matches);
     }
 
+    public Task<List<AgentCondition>> GetOpenForScopeAsync(
+        bool isUnrestricted,
+        IReadOnlySet<Guid> visibleRootIds,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var matches = ScopedPlannerRelevant(isUnrestricted, visibleRootIds)
+            .OrderBy(SeverityRank)
+            .ThenBy(c => c.DetectedAtUtc)
+            .Take(take)
+            .Select(Copy)
+            .ToList();
+
+        return Task.FromResult(matches);
+    }
+
+    public Task<int> CountOpenForScopeAsync(
+        bool isUnrestricted,
+        IReadOnlySet<Guid> visibleRootIds,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(ScopedPlannerRelevant(isUnrestricted, visibleRootIds).Count());
+    }
+
+    public Task<IReadOnlyList<AgentCondition>> GetTopForContextAsync(
+        bool isUnrestricted,
+        IReadOnlySet<Guid> visibleRootIds,
+        Guid? preferredGroupId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var contextSeverities = new HashSet<string>(StringComparer.Ordinal) { AgentTriggerSeverity.High, AgentTriggerSeverity.Medium };
+        var matches = ScopedPlannerRelevant(isUnrestricted, visibleRootIds)
+            .Where(c => contextSeverities.Contains(c.Severity))
+            .OrderBy(c => preferredGroupId.HasValue && c.GroupId == preferredGroupId ? 0 : 1)
+            .ThenBy(c => c.Severity == AgentTriggerSeverity.High ? 0 : 1)
+            .ThenBy(c => c.DetectedAtUtc)
+            .Take(take)
+            .Select(Copy)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<AgentCondition>>(matches);
+    }
+
+    /// <summary>
+    /// Simplification vs. the real repository: this fake has no Group table to resolve a GroupId's
+    /// Nested Set root through, so it compares GroupId directly against visibleRootIds instead of via a
+    /// root join. Sufficient for the ledger-service tests built on this fake, none of which exercise
+    /// group scoping; the real scope-filtering behaviour (root comparison, not flattened membership) is
+    /// proven in AgentConditionRepositoryTests against a real EF InMemory-backed AgentConditionRepository.
+    /// </summary>
+    private IEnumerable<AgentCondition> ScopedPlannerRelevant(bool isUnrestricted, IReadOnlySet<Guid> visibleRootIds)
+    {
+        var relevant = _conditions.Where(c => AgentConditionPlannerRelevantStatuses.Values.Contains(c.Status));
+
+        return isUnrestricted
+            ? relevant
+            : relevant.Where(c => c.GroupId == null || visibleRootIds.Contains(c.GroupId.Value));
+    }
+
+    private static int SeverityRank(AgentCondition condition) =>
+        condition.Severity == AgentTriggerSeverity.High ? 0 : condition.Severity == AgentTriggerSeverity.Medium ? 1 : 2;
+
     public Task<AgentCondition?> InsertAsync(AgentCondition condition, AgentConditionEvent detectionEvent, CancellationToken cancellationToken = default)
     {
         if (_insertRaceWinner != null)
