@@ -13,6 +13,11 @@
 /// with a positional constructor, and both Kind and RequiresGroupScope are expression-bodied constants
 /// that touch no field. A future event whose Kind depends on its state fails loudly here rather than
 /// producing a wrong answer.
+///
+/// Scope limit: the scan covers the Klacks.Api assembly only. No plugin assembly implements
+/// IAgentTriggerEvent today (checked 2026-08-25 against Klacks.Plugin.Messaging and
+/// Klacks.Plugin.Contracts); one that did would carry a group-scoped kind past both this guard and the
+/// curated list, the same blind spot ForbidChallengeSchemeGuardTests documents for its own source scan.
 /// </summary>
 
 using System.Runtime.CompilerServices;
