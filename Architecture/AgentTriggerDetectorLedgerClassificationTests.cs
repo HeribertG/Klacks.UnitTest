@@ -47,7 +47,6 @@ public class AgentTriggerDetectorLedgerClassificationTests
     private static readonly string[] LedgerTrackedWithoutResolveReconciliation =
     [
         nameof(LockConflictDetector),
-        nameof(TargetHoursDriftDetector),
         nameof(ScenarioPendingDetector),
         nameof(PeriodCloseDueDetector),
         nameof(ContractExpiringSoonDetector),
