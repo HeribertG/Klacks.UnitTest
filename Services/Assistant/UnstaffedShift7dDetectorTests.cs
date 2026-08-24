@@ -9,7 +9,9 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Filter;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Services.Assistant;
@@ -18,13 +20,15 @@ namespace Klacks.UnitTest.Services.Assistant;
 public class UnstaffedShift7dDetectorTests
 {
     private IShiftScheduleRepository _repo = null!;
+    private IShiftGroupScopeReader _groupScopeReader = null!;
     private UnstaffedShift7dDetector _sut = null!;
 
     [SetUp]
     public void Setup()
     {
         _repo = Substitute.For<IShiftScheduleRepository>();
-        _sut = new UnstaffedShift7dDetector(_repo, NullLogger<UnstaffedShift7dDetector>.Instance);
+        _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
+        _sut = new UnstaffedShift7dDetector(_repo, _groupScopeReader, NullLogger<UnstaffedShift7dDetector>.Instance);
     }
 
     private static ShiftDayAssignment MakeAssignment(DateOnly date, int sum, int quantity, Guid? id = null) => new()
@@ -113,4 +117,72 @@ public class UnstaffedShift7dDetectorTests
 
         Assert.That(events, Is.Empty);
     }
+
+    [Test]
+    public async Task DetectAsync_ShiftInOneGroup_CarriesThatGroup_AndPreselectsItInTheActionParams()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var assignment = MakeAssignment(today.AddDays(1), sum: 0, quantity: 2);
+        var groupId = Guid.NewGuid();
+        StubAssignments(assignment);
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (assignment.ShiftId, new[] { groupId }));
+
+        var unstaffed = (UnstaffedShiftTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(unstaffed.GroupIds, Is.EqualTo(new[] { groupId }));
+        Assert.That(unstaffed.ActionParams![ProactiveActionParamKeys.GroupId], Is.EqualTo(groupId.ToString()));
+        Assert.That(unstaffed.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_ShiftInTwoGroups_CarriesBoth_NotOnlyTheFirst()
+    {
+        // ShiftDayAssignment has no group of its own, so the groups are resolved afterwards; keeping
+        // only the first would deny the finding to every planner scoped to the second group.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var assignment = MakeAssignment(today.AddDays(1), sum: 0, quantity: 2);
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        StubAssignments(assignment);
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (assignment.ShiftId, new[] { firstGroupId, secondGroupId }));
+
+        var unstaffed = (UnstaffedShiftTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(unstaffed.GroupIds, Is.EquivalentTo(new[] { firstGroupId, secondGroupId }));
+    }
+
+    [Test]
+    public async Task DetectAsync_UngroupedShift_IsStillFound_ButCarriesNoGroup()
+    {
+        // The scan filter sets ShowUngroupedShifts, so an ungrouped shift must keep being detected;
+        // RequiresGroupScope then routes it to Admins instead of every planner.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var assignment = MakeAssignment(today.AddDays(1), sum: 0, quantity: 2);
+        StubAssignments(assignment);
+
+        var unstaffed = (UnstaffedShiftTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(unstaffed.GroupIds, Is.Empty);
+        Assert.That(unstaffed.ActionParams!.ContainsKey(ProactiveActionParamKeys.GroupId), Is.False);
+        Assert.That(unstaffed.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_ManyFindings_ResolvesGroupsInOneBatchedLookup_NeverOnePerFinding()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var assignments = Enumerable.Range(0, 10)
+            .Select(_ => MakeAssignment(today.AddDays(1), sum: 0, quantity: 2))
+            .ToArray();
+        StubAssignments(assignments);
+
+        await _sut.DetectAsync();
+
+        await _groupScopeReader.Received(1).GetGroupIdsByShiftIdsAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    private void StubAssignments(params ShiftDayAssignment[] assignments) =>
+        _repo.GetShiftScheduleAsync(Arg.Any<ShiftScheduleFilter>(), Arg.Any<CancellationToken>())
+            .Returns((assignments.ToList(), assignments.Length));
 }

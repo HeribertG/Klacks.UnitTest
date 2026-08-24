@@ -67,9 +67,22 @@ public class AgentTriggerServiceTests
             .TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(result);
 
-    private void SetPlanners(params string[] userIds) =>
-        _planningAudienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>())
-            .Returns((IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// The one group the shift-borne default event from MakeEvent belongs to.
+    /// </summary>
+    private static readonly Guid TestGroupId = Guid.NewGuid();
+
+    /// <summary>
+    /// Declares the planner audience for a dispatch test. It answers through the group-scoped resolver
+    /// as well, because every shift-borne kind is group-scoped: without that, each test using MakeEvent
+    /// would be asserting against an audience of nobody.
+    /// </summary>
+    private void SetPlanners(params string[] userIds)
+    {
+        var ids = (IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase);
+        _planningAudienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>()).Returns(ids);
+        _planningAudienceResolver.GetPlanningUserIdsForGroupAsync(TestGroupId, Arg.Any<CancellationToken>()).Returns(ids);
+    }
 
     private void SetAdmins(params string[] userIds) =>
         _planningAudienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
@@ -80,7 +93,7 @@ public class AgentTriggerServiceTests
             .Returns((IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase));
 
     private static UnstaffedShiftTriggerEvent MakeEvent(int daysUntil = 2) =>
-        new(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysUntil)), daysUntil, null);
+        new(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysUntil)), daysUntil, new[] { TestGroupId });
 
     private sealed record PlainBroadcastEvent(string SeverityValue, string SummaryText) : IAgentTriggerEvent
     {
@@ -738,7 +751,7 @@ public class AgentTriggerServiceTests
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetGroupScopedPlanners(groupId, "scoped-planner");
 
-        var triggerEvent = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, groupId);
+        var triggerEvent = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { groupId });
 
         await _sut.OnEventAsync(triggerEvent);
 
@@ -748,15 +761,130 @@ public class AgentTriggerServiceTests
     }
 
     [Test]
-    public async Task OnEventAsync_PlannersOnlyEventWithoutGroupId_UsesUnscopedAudience_NeverTheGroupScopedResolver()
+    public async Task OnEventAsync_PlannersOnlyEventThatIsNotGroupScoped_UsesUnscopedAudience_NeverTheGroupScopedResolver()
     {
+        // Installation-wide planner alerts (hours drift, expiring contract, missing client core data)
+        // do not set RequiresGroupScope and must keep reaching every planner.
         _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("planner-a");
 
-        await _sut.OnEventAsync(MakeEvent());
+        await _sut.OnEventAsync(new PlannerKindEvent("test_unscoped", AgentTriggerSeverity.Medium));
 
         await _planningAudienceResolver.Received(1).GetPlanningUserIdsAsync(Arg.Any<CancellationToken>());
         await _planningAudienceResolver.DidNotReceiveWithAnyArgs().GetPlanningUserIdsForGroupAsync(default, default);
+        await _dispatchRepository.Received(1).RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "planner-a"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_EventInTwoGroups_ResolvesTheUnionOfBothGroupAudiences()
+    {
+        // A shift can be a member of several groups at once. Resolving only the first would deny the
+        // finding to every planner scoped to the second - the whole point of GroupIds over GroupId.
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetGroupScopedPlanners(firstGroupId, "admin", "planner-first");
+        SetGroupScopedPlanners(secondGroupId, "admin", "planner-second");
+
+        var triggerEvent = new UnstaffedShiftTriggerEvent(
+            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { firstGroupId, secondGroupId });
+
+        await _sut.OnEventAsync(triggerEvent);
+
+        await _planningAudienceResolver.Received(1).GetPlanningUserIdsForGroupAsync(firstGroupId, Arg.Any<CancellationToken>());
+        await _planningAudienceResolver.Received(1).GetPlanningUserIdsForGroupAsync(secondGroupId, Arg.Any<CancellationToken>());
+        await _planningAudienceResolver.DidNotReceiveWithAnyArgs().GetPlanningUserIdsAsync(default);
+        foreach (var expectedRecipient in new[] { "admin", "planner-first", "planner-second" })
+        {
+            await _dispatchRepository.Received(1).RecordAsync(
+                Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == expectedRecipient), Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Test]
+    public async Task OnEventAsync_EventInTwoGroups_DeliversOnceToAPlannerVisibleInBoth()
+    {
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetGroupScopedPlanners(firstGroupId, "planner-both");
+        SetGroupScopedPlanners(secondGroupId, "planner-both");
+
+        var triggerEvent = new UnstaffedShiftTriggerEvent(
+            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { firstGroupId, secondGroupId });
+
+        await _sut.OnEventAsync(triggerEvent);
+
+        await _dispatchRepository.Received(1).RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "planner-both"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_GroupScopeRequiredEventWithoutAnyGroup_ReachesAdminsOnly_NotEveryPlanner()
+    {
+        // The security-relevant case: before GroupIds existed these five kinds carried no group at all
+        // and fell through to the unscoped planner broadcast, handing every planner the detail of a
+        // shift they may not see. An unattributable shift finding now stops at the admins.
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetPlanners("planner-a", "planner-b");
+        SetAdmins("admin");
+
+        var triggerEvent = new UnstaffedShiftTriggerEvent(
+            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, Array.Empty<Guid>());
+
+        await _sut.OnEventAsync(triggerEvent);
+
+        await _planningAudienceResolver.Received(1).GetAdminUserIdsAsync(Arg.Any<CancellationToken>());
+        await _planningAudienceResolver.DidNotReceiveWithAnyArgs().GetPlanningUserIdsAsync(default);
+        await _dispatchRepository.Received(1).RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "admin"), Arg.Any<CancellationToken>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "planner-a"), Arg.Any<CancellationToken>());
+        await _dispatchRepository.DidNotReceive().RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "planner-b"), Arg.Any<CancellationToken>());
+    }
+
+    [TestCaseSource(nameof(SingleGroupKindCases))]
+    public async Task OnEventAsync_KindsCarryingASingleGroupId_StillResolveThatOneGroupScopedAudience(
+        Func<Guid, IAgentTriggerEvent> makeEvent)
+    {
+        // Regression guard for period_close_due, period_overdue and scenario_pending: they keep a
+        // single GroupId and reach GroupIds through the interface default, so their audience must be
+        // exactly what it was before the union existed.
+        var groupId = Guid.NewGuid();
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        SetGroupScopedPlanners(groupId, "scoped-planner");
+
+        var triggerEvent = makeEvent(groupId);
+
+        Assert.That(triggerEvent.GroupIds, Is.EqualTo(new[] { groupId }));
+        Assert.That(triggerEvent.RequiresGroupScope, Is.False);
+
+        await _sut.OnEventAsync(triggerEvent);
+
+        await _planningAudienceResolver.Received(1).GetPlanningUserIdsForGroupAsync(groupId, Arg.Any<CancellationToken>());
+        await _planningAudienceResolver.DidNotReceiveWithAnyArgs().GetPlanningUserIdsAsync(default);
+        await _dispatchRepository.Received(1).RecordAsync(
+            Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "scoped-planner"), Arg.Any<CancellationToken>());
+    }
+
+    private static IEnumerable<TestCaseData> SingleGroupKindCases()
+    {
+        yield return new TestCaseData(new Func<Guid, IAgentTriggerEvent>(
+            groupId => new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3)))
+            .SetName("period_close_due");
+        yield return new TestCaseData(new Func<Guid, IAgentTriggerEvent>(
+            groupId => new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 10)))
+            .SetName("period_overdue");
+        yield return new TestCaseData(new Func<Guid, IAgentTriggerEvent>(
+            groupId => new ScenarioPendingTriggerEvent(Guid.NewGuid(), 80, groupId, "GE")))
+            .SetName("scenario_pending");
     }
 
     [Test]
@@ -784,7 +912,7 @@ public class AgentTriggerServiceTests
         // This event carries a GroupId, so ResolveRecipientsAsync now resolves the group-scoped
         // audience instead of the unscoped one (SetPlanners above) -- stub it too.
         SetGroupScopedPlanners(groupId, "user-a");
-        var triggerEvent = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 1, groupId);
+        var triggerEvent = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 1, new[] { groupId });
 
         await _sut.OnEventAsync(triggerEvent);
 
@@ -958,16 +1086,16 @@ public class OperationalTriggerEventDedupKeyTests
     {
         var drift = new TargetHoursDriftTriggerEvent(Guid.NewGuid(), "Jane", -170m, "2026-06");
         var period = new PeriodCloseDueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 3);
-        var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, null);
-        var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, null);
+        var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, Array.Empty<Guid>());
+        var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, Array.Empty<Guid>());
         var scenario = new ScenarioPendingTriggerEvent(Guid.NewGuid(), 80, null, "GE");
         var contract = new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), "Jane", new DateOnly(2026, 6, 30), 5);
         var availabilityGap = new AvailabilityGapTriggerEvent(Guid.NewGuid(), "Jane", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 10);
         var periodOverdue = new PeriodOverdueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 10);
         var missingCoreData = new ClientMissingCoreDataTriggerEvent(Guid.NewGuid(), "Jane", ClientMissingCoreDataTriggerEvent.AddressField);
-        var openOrder = new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 6, 30), null, 3);
-        var uncutFulldayShift = new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 3, null);
-        var emptyContainer = new EmptyContainerTriggerEvent(Guid.NewGuid(), "Container A", new DateOnly(2026, 6, 30), null);
+        var openOrder = new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 6, 30), null, 3, Array.Empty<Guid>());
+        var uncutFulldayShift = new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 3, Array.Empty<Guid>());
+        var emptyContainer = new EmptyContainerTriggerEvent(Guid.NewGuid(), "Container A", new DateOnly(2026, 6, 30), null, Array.Empty<Guid>());
 
         foreach (var ev in new IAgentTriggerEvent[] { drift, period, unstaffed, lockConflict, scenario, contract, availabilityGap, periodOverdue, missingCoreData, openOrder, uncutFulldayShift, emptyContainer })
         {
@@ -1055,16 +1183,16 @@ public class OperationalTriggerEventDedupKeyTests
         var clientId = Guid.NewGuid();
         var scenarioId = Guid.NewGuid();
 
-        var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, groupId);
+        var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
         Assert.That(unstaffed.ActionRoute, Is.EqualTo("/workplace/schedule"));
         Assert.That(unstaffed.ActionParams, Is.Not.Null);
         Assert.That(unstaffed.ActionParams!["groupId"], Is.EqualTo(groupId.ToString()));
         Assert.That(unstaffed.ActionParams["date"], Is.EqualTo("2026-08-03"));
 
-        var unstaffedWithoutGroup = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, null);
+        var unstaffedWithoutGroup = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
         Assert.That(unstaffedWithoutGroup.ActionParams!.Keys, Is.EquivalentTo(new[] { "date" }));
 
-        var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, groupId);
+        var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
         Assert.That(lockConflict.ActionRoute, Is.EqualTo("/workplace/schedule"));
         Assert.That(lockConflict.ActionParams!.Keys, Is.EquivalentTo(new[] { "date", "groupId" }));
 
@@ -1105,40 +1233,101 @@ public class OperationalTriggerEventDedupKeyTests
     [Test]
     public void GroupCarryingOperationalEvents_ExposeGroupIdThroughTheInterface_ForAudienceScoping()
     {
-        // AgentTriggerService.ResolveRecipientsAsync reads triggerEvent.GroupId through the
-        // IAgentTriggerEvent interface, not the concrete record type. PeriodCloseDue/PeriodOverdue
-        // carry a non-nullable Guid GroupId on the record and need an explicit interface bridge
-        // (Guid? IAgentTriggerEvent.GroupId => GroupId) -- a plain public Guid property does not
-        // implicitly satisfy a Guid? interface member, so asserting via the concrete type alone
-        // would not catch a missing bridge.
+        // AgentTriggerService.ResolveRecipientsAsync reads triggerEvent.GroupIds through the
+        // IAgentTriggerEvent interface, not the concrete record type. The three single-group kinds
+        // reach GroupIds through the interface DEFAULT, which derives it from their GroupId -- and
+        // PeriodCloseDue/PeriodOverdue carry a non-nullable Guid GroupId that needs an explicit bridge
+        // (Guid? IAgentTriggerEvent.GroupId => GroupId), because a plain public Guid property does not
+        // implicitly satisfy a Guid? interface member. Asserting via the concrete type alone would
+        // catch neither the missing bridge nor a broken default.
         var groupId = Guid.NewGuid();
 
-        IAgentTriggerEvent unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, groupId);
-        IAgentTriggerEvent lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, groupId);
+        IAgentTriggerEvent unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
+        IAgentTriggerEvent lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
         IAgentTriggerEvent scenario = new ScenarioPendingTriggerEvent(Guid.NewGuid(), 80, groupId, "GE");
         IAgentTriggerEvent periodClose = new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3);
         IAgentTriggerEvent periodOverdue = new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 10);
 
-        Assert.That(unstaffed.GroupId, Is.EqualTo(groupId));
-        Assert.That(lockConflict.GroupId, Is.EqualTo(groupId));
+        foreach (var groupCarrying in new[] { unstaffed, lockConflict, scenario, periodClose, periodOverdue })
+        {
+            Assert.That(groupCarrying.GroupIds, Is.EqualTo(new[] { groupId }), $"{groupCarrying.Kind} must expose its group");
+        }
+
         Assert.That(scenario.GroupId, Is.EqualTo(groupId));
         Assert.That(periodClose.GroupId, Is.EqualTo(groupId));
         Assert.That(periodOverdue.GroupId, Is.EqualTo(groupId));
 
-        IAgentTriggerEvent unstaffedWithoutGroup = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, null);
-        Assert.That(unstaffedWithoutGroup.GroupId, Is.Null);
+        IAgentTriggerEvent unstaffedWithoutGroup = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
+        Assert.That(unstaffedWithoutGroup.GroupIds, Is.Empty);
+    }
+
+    [Test]
+    public void ShiftBorneEvents_RequireGroupScope_WhileInstallationWideOnesDoNot()
+    {
+        // The flag is what separates "no group means admins only" from "no group means everybody":
+        // getting it wrong on a new kind silently re-opens the leak this guard exists for.
+        var groupId = Guid.NewGuid();
+
+        IAgentTriggerEvent[] shiftBorne =
+        [
+            new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId }),
+            new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId }),
+            new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 8, 3), null, 3, new[] { groupId }),
+            new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 3, new[] { groupId }),
+            new EmptyContainerTriggerEvent(Guid.NewGuid(), "Container A", new DateOnly(2026, 8, 3), null, new[] { groupId })
+        ];
+
+        IAgentTriggerEvent[] installationWide =
+        [
+            new TargetHoursDriftTriggerEvent(Guid.NewGuid(), "Jane", -20m, "2026-06"),
+            new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), "Jane", new DateOnly(2026, 6, 30), 5),
+            new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3),
+            new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 10),
+            new ScenarioPendingTriggerEvent(Guid.NewGuid(), 80, groupId, "GE")
+        ];
+
+        foreach (var triggerEvent in shiftBorne)
+        {
+            Assert.That(triggerEvent.RequiresGroupScope, Is.True, $"{triggerEvent.Kind} is shift-borne and must require group scope");
+        }
+
+        foreach (var triggerEvent in installationWide)
+        {
+            Assert.That(triggerEvent.RequiresGroupScope, Is.False, $"{triggerEvent.Kind} must keep its previous fallback behaviour");
+        }
+    }
+
+    [Test]
+    public void LedgerGroupIdFor_TakesTheFirstOfSeveralGroups_AndNullWhenThereIsNone()
+    {
+        // AgentCondition has one GroupId column. The representative it stores is a reporting attribute
+        // only; the dispatch audience is recomputed from the full GroupIds set every time.
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+
+        var twoGroups = new UnstaffedShiftTriggerEvent(
+            Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { firstGroupId, secondGroupId });
+        var noGroup = new UnstaffedShiftTriggerEvent(
+            Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
+        var singleGroupKind = new PeriodCloseDueTriggerEvent(firstGroupId, "GE", new DateOnly(2026, 6, 30), 3);
+
+        Assert.That(AgentConditionLedgerPolicy.LedgerGroupIdFor(twoGroups), Is.EqualTo(firstGroupId));
+        Assert.That(AgentConditionLedgerPolicy.LedgerGroupIdFor(noGroup), Is.Null);
+        Assert.That(AgentConditionLedgerPolicy.LedgerGroupIdFor(singleGroupKind), Is.EqualTo(firstGroupId));
     }
 
     [Test]
     public void EventsWithoutAnOwnGroupIdConcept_DefaultToNoGroupScoping_ThroughTheInterface()
     {
         // Drift and contract alerts are Client-scoped, not Group-scoped; they must keep the
-        // unscoped planner broadcast (IAgentTriggerEvent.GroupId defaults to null).
+        // unscoped planner broadcast (IAgentTriggerEvent.GroupId defaults to null, GroupIds to empty).
         IAgentTriggerEvent drift = new TargetHoursDriftTriggerEvent(Guid.NewGuid(), "Jane", -20m, "2026-06");
         IAgentTriggerEvent contract = new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), "Jane", new DateOnly(2026, 6, 30), 5);
 
         Assert.That(drift.GroupId, Is.Null);
         Assert.That(contract.GroupId, Is.Null);
+        Assert.That(drift.GroupIds, Is.Empty);
+        Assert.That(contract.GroupIds, Is.Empty);
     }
 
     [Test]

@@ -13,6 +13,7 @@ using Klacks.Api.Domain.Models.Imports;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Models.Staffs;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.ExceptionExtensions;
 
@@ -71,7 +72,7 @@ public class ErpOrderImportRunnerTests
             .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddMinutes(-5).ToString("O") });
 
         var resolver = new ErpCustomerResolver(_clientRepository);
-        var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
+        var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, ShiftGroupScopeReaderStub.WithoutAnyGroups(), _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
         _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _unitOfWork, NullLogger<ErpOrderImportRunner>.Instance);
     }
 

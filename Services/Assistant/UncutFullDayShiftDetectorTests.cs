@@ -12,6 +12,7 @@
 
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -21,13 +22,15 @@ namespace Klacks.UnitTest.Services.Assistant;
 public class UncutFullDayShiftDetectorTests
 {
     private IShiftRepository _shiftRepository = null!;
+    private IShiftGroupScopeReader _groupScopeReader = null!;
     private UncutFullDayShiftDetector _sut = null!;
 
     [SetUp]
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
-        _sut = new UncutFullDayShiftDetector(_shiftRepository, NullLogger<UncutFullDayShiftDetector>.Instance);
+        _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
+        _sut = new UncutFullDayShiftDetector(_shiftRepository, _groupScopeReader, NullLogger<UncutFullDayShiftDetector>.Instance);
     }
 
     private static Shift MakeUncutFullDayShift(
@@ -245,5 +248,63 @@ public class UncutFullDayShiftDetectorTests
         Assert.That(events, Has.Count.EqualTo(UncutFullDayShiftDetector.MaxFindingsPerTick));
         Assert.That(events.Any(e => e.ShiftId == upcomingShiftId), Is.True);
         Assert.That(events.Single(e => e.ShiftId == upcomingShiftId).Severity, Is.EqualTo(AgentTriggerSeverity.High));
+    }
+
+    [Test]
+    public async Task DetectAsync_ShiftInOneGroup_CarriesThatGroup_AndPreselectsItInTheActionParams()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeUncutFullDayShift(today.AddDays(3));
+        var groupId = Guid.NewGuid();
+        SetupQuery(shift);
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (shift.Id, new[] { groupId }));
+
+        var uncut = (UncutFullDayShiftTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(uncut.GroupIds, Is.EqualTo(new[] { groupId }));
+        Assert.That(uncut.ActionParams![ProactiveActionParamKeys.GroupId], Is.EqualTo(groupId.ToString()));
+        Assert.That(uncut.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_ShiftInTwoGroups_CarriesBoth_NotOnlyTheFirst()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeUncutFullDayShift(today.AddDays(3));
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        SetupQuery(shift);
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (shift.Id, new[] { firstGroupId, secondGroupId }));
+
+        var uncut = (UncutFullDayShiftTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(uncut.GroupIds, Is.EquivalentTo(new[] { firstGroupId, secondGroupId }));
+    }
+
+    [Test]
+    public async Task DetectAsync_ShiftWithoutAnyGroup_CarriesNoGroup_AndOmitsTheGroupActionParam()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeUncutFullDayShift(today.AddDays(3));
+        SetupQuery(shift);
+
+        var uncut = (UncutFullDayShiftTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(uncut.GroupIds, Is.Empty);
+        Assert.That(uncut.ActionParams!.ContainsKey(ProactiveActionParamKeys.GroupId), Is.False);
+        Assert.That(uncut.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_ManyShifts_ResolvesGroupsInOneBatchedLookup_NeverOnePerShift()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shifts = Enumerable.Range(0, 10).Select(i => MakeUncutFullDayShift(today.AddDays(i))).ToArray();
+        SetupQuery(shifts);
+
+        await _sut.DetectAsync();
+
+        await _groupScopeReader.Received(1).GetGroupIdsByShiftIdsAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
     }
 }

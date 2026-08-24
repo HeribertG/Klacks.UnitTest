@@ -9,6 +9,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Services.Imports;
@@ -21,6 +22,7 @@ public class OrderSupersessionServiceTests
     private IClientRepository _clientRepository = null!;
     private IAgentTriggerService _triggerService = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IShiftGroupScopeReader _groupScopeReader = null!;
     private OrderSupersessionService _service = null!;
     private static readonly Guid ClientId = Guid.NewGuid();
 
@@ -32,11 +34,12 @@ public class OrderSupersessionServiceTests
         _clientRepository = Substitute.For<IClientRepository>();
         _triggerService = Substitute.For<IAgentTriggerService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
 
-        _service = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
+        _service = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, _groupScopeReader, _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
     }
 
     private static Shift SealedOrder() => new()
@@ -130,6 +133,53 @@ public class OrderSupersessionServiceTests
         await _workRepository.Received(1).Delete(futureWork.Id);
         await _triggerService.Received(1).OnEventAsync(
             Arg.Is<IAgentTriggerEvent>(e => e.Kind == AgentTriggerKinds.WorkDroppedByErpImport && e.PlannersOnly),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HandleAsync_CancelledWork_ScopesTheAlertToEveryGroupOfItsShift()
+    {
+        // Resolved by SHIFT id on purpose: the work has just been soft-deleted, and the work-keyed
+        // lookup excludes deleted rows, so switching to it would silently narrow every ERP-supersede
+        // alert to admins. Both groups must survive - a shift can be a member of several at once.
+        var sealedOrder = SealedOrder();
+        var futureWork = new Work { Id = Guid.NewGuid(), ShiftId = sealedOrder.Id, ClientId = ClientId, CurrentDate = new DateOnly(2026, 9, 1), LockLevel = WorkLockLevel.None };
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        _shiftRepository.CutList(sealedOrder.Id, null, false).Returns([sealedOrder]);
+        _workRepository.GetFutureUnlockedByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns([futureWork]);
+        _clientRepository.GetNoTracking(ClientId).Returns(new Client { Id = ClientId, FirstName = "Jane", Name = "Doe" });
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (sealedOrder.Id, new[] { firstGroupId, secondGroupId }));
+
+        await _service.HandleAsync(sealedOrder, ChangedOrder(), ClientId);
+
+        await _triggerService.Received(1).OnEventAsync(
+            Arg.Is<IAgentTriggerEvent>(e =>
+                e.RequiresGroupScope
+                && e.GroupIds.Count == 2
+                && e.GroupIds.Contains(firstGroupId)
+                && e.GroupIds.Contains(secondGroupId)),
+            Arg.Any<CancellationToken>());
+        await _groupScopeReader.Received(1).GetGroupIdsByShiftIdsAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+        await _groupScopeReader.DidNotReceiveWithAnyArgs().GetGroupIdsByWorkIdsAsync(default!, default);
+    }
+
+    [Test]
+    public async Task HandleAsync_CancelledWorkOnAnUngroupedShift_CarriesNoGroup_AndStaysGroupScopeRequired()
+    {
+        var sealedOrder = SealedOrder();
+        var futureWork = new Work { Id = Guid.NewGuid(), ShiftId = sealedOrder.Id, ClientId = ClientId, CurrentDate = new DateOnly(2026, 9, 1), LockLevel = WorkLockLevel.None };
+        _shiftRepository.CutList(sealedOrder.Id, null, false).Returns([sealedOrder]);
+        _workRepository.GetFutureUnlockedByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns([futureWork]);
+        _clientRepository.GetNoTracking(ClientId).Returns(new Client { Id = ClientId, FirstName = "Jane", Name = "Doe" });
+
+        await _service.HandleAsync(sealedOrder, ChangedOrder(), ClientId);
+
+        await _triggerService.Received(1).OnEventAsync(
+            Arg.Is<IAgentTriggerEvent>(e => e.RequiresGroupScope && e.GroupIds.Count == 0),
             Arg.Any<CancellationToken>());
     }
 }

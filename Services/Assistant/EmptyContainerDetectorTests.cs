@@ -16,7 +16,9 @@
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Services.ContainerTemplates;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -29,6 +31,7 @@ public class EmptyContainerDetectorTests
     private DataBaseContext _context = null!;
     private ShiftRepository _shiftRepository = null!;
     private ContainerTemplateRepository _containerTemplateRepository = null!;
+    private IShiftGroupScopeReader _groupScopeReader = null!;
     private EmptyContainerDetector _sut = null!;
 
     [SetUp]
@@ -70,7 +73,9 @@ public class EmptyContainerDetectorTests
             collectionUpdateService,
             containerTemplateService);
 
-        _sut = new EmptyContainerDetector(_shiftRepository, _containerTemplateRepository, detectorLogger);
+        _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
+
+        _sut = new EmptyContainerDetector(_shiftRepository, _containerTemplateRepository, _groupScopeReader, detectorLogger);
     }
 
     [TearDown]
@@ -333,5 +338,67 @@ public class EmptyContainerDetectorTests
         var actualIds = events.Select(e => e.ShiftId).ToHashSet();
 
         Assert.That(actualIds, Is.EqualTo(expectedIds));
+    }
+
+    [Test]
+    public async Task DetectAsync_ContainerInOneGroup_CarriesThatGroup()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var container = MakeContainer(today.AddDays(-1), today.AddDays(30));
+        await _context.Shift.AddAsync(container);
+        await _context.SaveChangesAsync();
+        var groupId = Guid.NewGuid();
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (container.Id, new[] { groupId }));
+
+        var emptyContainerEvent = (EmptyContainerTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(emptyContainerEvent.GroupIds, Is.EqualTo(new[] { groupId }));
+        Assert.That(emptyContainerEvent.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_ContainerInTwoGroups_CarriesBoth_NotOnlyTheFirst()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var container = MakeContainer(today.AddDays(-1), today.AddDays(30));
+        await _context.Shift.AddAsync(container);
+        await _context.SaveChangesAsync();
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (container.Id, new[] { firstGroupId, secondGroupId }));
+
+        var emptyContainerEvent = (EmptyContainerTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(emptyContainerEvent.GroupIds, Is.EquivalentTo(new[] { firstGroupId, secondGroupId }));
+    }
+
+    [Test]
+    public async Task DetectAsync_ContainerWithoutAnyGroup_CarriesNoGroup_AndStaysGroupScopeRequired()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var container = MakeContainer(today.AddDays(-1), today.AddDays(30));
+        await _context.Shift.AddAsync(container);
+        await _context.SaveChangesAsync();
+
+        var emptyContainerEvent = (EmptyContainerTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(emptyContainerEvent.GroupIds, Is.Empty);
+        Assert.That(emptyContainerEvent.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_ManyContainers_ResolvesGroupsInOneBatchedLookup_NeverOnePerContainer()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var containers = Enumerable.Range(0, 10)
+            .Select(_ => MakeContainer(today.AddDays(-1), today.AddDays(30)))
+            .ToList();
+        await _context.Shift.AddRangeAsync(containers);
+        await _context.SaveChangesAsync();
+
+        await _sut.DetectAsync();
+
+        await _groupScopeReader.Received(1).GetGroupIdsByShiftIdsAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
     }
 }

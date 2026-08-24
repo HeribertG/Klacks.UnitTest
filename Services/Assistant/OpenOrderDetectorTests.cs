@@ -11,6 +11,7 @@
 
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -20,13 +21,15 @@ namespace Klacks.UnitTest.Services.Assistant;
 public class OpenOrderDetectorTests
 {
     private IShiftRepository _repo = null!;
+    private IShiftGroupScopeReader _groupScopeReader = null!;
     private OpenOrderDetector _sut = null!;
 
     [SetUp]
     public void Setup()
     {
         _repo = Substitute.For<IShiftRepository>();
-        _sut = new OpenOrderDetector(_repo, NullLogger<OpenOrderDetector>.Instance);
+        _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
+        _sut = new OpenOrderDetector(_repo, _groupScopeReader, NullLogger<OpenOrderDetector>.Instance);
     }
 
     private static Shift MakeShift(
@@ -194,5 +197,65 @@ public class OpenOrderDetectorTests
 
         Assert.That(events, Has.Count.EqualTo(OpenOrderDetector.MaxCandidatesToScan));
         Assert.That(actualIds, Is.EqualTo(expectedIds));
+    }
+
+    [Test]
+    public async Task DetectAsync_OrderInOneGroup_CarriesThatGroup()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3));
+        var groupId = Guid.NewGuid();
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (shift.Id, new[] { groupId }));
+
+        var openOrder = (OpenOrderTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(openOrder.GroupIds, Is.EqualTo(new[] { groupId }));
+        Assert.That(openOrder.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_OrderInTwoGroups_CarriesBoth_NotOnlyTheFirst()
+    {
+        // A shift is a member of MANY groups (GroupItem is a many-to-many join). Keeping only one of
+        // them would silently deny the finding to every planner scoped to the other group.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3));
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (shift.Id, new[] { firstGroupId, secondGroupId }));
+
+        var openOrder = (OpenOrderTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(openOrder.GroupIds, Is.EquivalentTo(new[] { firstGroupId, secondGroupId }));
+    }
+
+    [Test]
+    public async Task DetectAsync_OrderWithoutAnyGroup_CarriesNoGroup_AndStaysGroupScopeRequired()
+    {
+        // No group means the audience cannot be scoped; RequiresGroupScope is what makes
+        // AgentTriggerService route this to Admins instead of broadcasting it to every planner.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shift = MakeShift(today.AddDays(3));
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+
+        var openOrder = (OpenOrderTriggerEvent)(await _sut.DetectAsync()).Single();
+
+        Assert.That(openOrder.GroupIds, Is.Empty);
+        Assert.That(openOrder.RequiresGroupScope, Is.True);
+    }
+
+    [Test]
+    public async Task DetectAsync_ManyOrders_ResolvesGroupsInOneBatchedLookup_NeverOnePerOrder()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shifts = Enumerable.Range(0, 20).Select(i => MakeShift(today.AddDays(i))).ToList();
+        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts));
+
+        await _sut.DetectAsync();
+
+        await _groupScopeReader.Received(1).GetGroupIdsByShiftIdsAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
     }
 }

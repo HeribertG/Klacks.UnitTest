@@ -52,7 +52,7 @@ public class DetectorFingerprintContainmentTests
             .ToList();
         repository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(orders));
 
-        var sut = new OpenOrderDetector(repository, NullLogger<OpenOrderDetector>.Instance);
+        var sut = new OpenOrderDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<OpenOrderDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: OpenOrderDetector.MaxCandidatesToScan);
     }
@@ -77,7 +77,7 @@ public class DetectorFingerprintContainmentTests
             .ToList();
         repository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts));
 
-        var sut = new UncutFullDayShiftDetector(repository, NullLogger<UncutFullDayShiftDetector>.Instance);
+        var sut = new UncutFullDayShiftDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<UncutFullDayShiftDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: UncutFullDayShiftDetector.MaxFindingsPerTick);
     }
@@ -105,7 +105,7 @@ public class DetectorFingerprintContainmentTests
             new List<ContainerTemplate> { new() { Id = Guid.NewGuid(), ContainerId = containerWithTemplate.Id } }));
 
         var sut = new EmptyContainerDetector(
-            shiftRepository, templateRepository, NullLogger<EmptyContainerDetector>.Instance);
+            shiftRepository, templateRepository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<EmptyContainerDetector>.Instance);
 
         var fingerprints = await AssertContainmentAsync(
             sut, sut, expectedCappedCount: EmptyContainerDetector.MaxFindingsPerTick);
@@ -145,7 +145,7 @@ public class DetectorFingerprintContainmentTests
                 return (assignments.Where(a => pagedShiftIds.Contains(a.ShiftId)).ToList(), pagedShiftIds.Count);
             });
 
-        var sut = new UnstaffedShift7dDetector(repository, NullLogger<UnstaffedShift7dDetector>.Instance);
+        var sut = new UnstaffedShift7dDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<UnstaffedShift7dDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: cappedShiftCount);
     }
