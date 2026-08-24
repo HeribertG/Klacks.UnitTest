@@ -15,6 +15,7 @@ using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,6 +29,7 @@ public class AgentTriggerServiceTests
     private IAgentTriggerPreferenceService _preferenceService = null!;
     private IAssistantNotificationService _notificationService = null!;
     private IProactiveTriggerDispatchRepository _dispatchRepository = null!;
+    private IAgentConditionRepository _conditionRepository = null!;
     private IUserActivityTracker _activityTracker = null!;
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private IOfflineMessengerNotifier _offlineMessengerNotifier = null!;
@@ -44,6 +46,7 @@ public class AgentTriggerServiceTests
         _preferenceService = Substitute.For<IAgentTriggerPreferenceService>();
         _notificationService = Substitute.For<IAssistantNotificationService>();
         _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
+        _conditionRepository = Substitute.For<IAgentConditionRepository>();
         _activityTracker = Substitute.For<IUserActivityTracker>();
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _offlineMessengerNotifier = Substitute.For<IOfflineMessengerNotifier>();
@@ -55,8 +58,8 @@ public class AgentTriggerServiceTests
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.ChannelUnavailable);
         SetPlanners("user-a", "user-b");
         _sut = new AgentTriggerService(_rateLimiter, _preferenceService, _notificationService,
-            _dispatchRepository, _activityTracker, _planningAudienceResolver, _offlineMessengerNotifier,
-            _messengerTextComposer, _logger);
+            _dispatchRepository, _conditionRepository, _activityTracker, _planningAudienceResolver,
+            _offlineMessengerNotifier, _messengerTextComposer, _logger);
     }
 
     private void SetOfflineMessengerResult(OfflineMessengerDeliveryResult result) =>
@@ -856,6 +859,68 @@ public class AgentTriggerServiceTests
         Assert.That(recordedRow, Is.Not.Null);
         Assert.That(recordedRow!.ActionRoute, Is.EqualTo(ProactiveActionRoutes.Schedule));
         Assert.That(recordedRow.ActionParamsJson, Is.Null);
+    }
+
+    [Test]
+    public async Task OnEventAsync_LedgerTrackedEvent_LinksEveryDispatchRowToTheOpenConditionOfItsFingerprint()
+    {
+        var triggerEvent = MakeEvent(daysUntil: 1);
+        var condition = new AgentCondition { Id = Guid.NewGuid() };
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _conditionRepository
+            .FindOpenByFingerprintAsync(
+                AgentConditionLedgerPolicy.FingerprintFor(triggerEvent),
+                Arg.Any<CancellationToken>())
+            .Returns(condition);
+        var recordedRows = new List<ProactiveTriggerDispatchRow>();
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRows.Add(ci.ArgAt<ProactiveTriggerDispatchRow>(0)));
+
+        await _sut.OnEventAsync(triggerEvent);
+
+        Assert.That(recordedRows, Has.Count.EqualTo(2));
+        Assert.That(recordedRows.Select(row => row.ConditionId), Is.All.EqualTo(condition.Id));
+        await _conditionRepository.Received(1).FindOpenByFingerprintAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_CompanionBroadcast_NeverAsksTheLedgerAndLeavesTheLinkNull()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Broadcast."));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ConditionId, Is.Null);
+        await _conditionRepository.DidNotReceiveWithAnyArgs()
+            .FindOpenByFingerprintAsync(default!, default);
+    }
+
+    [Test]
+    public async Task OnEventAsync_LedgerLookupThrows_StillPersistsTheMessageWithoutALink()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _conditionRepository
+            .FindOpenByFingerprintAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AgentCondition?>>(_ => throw new InvalidOperationException("ledger down"));
+        var recordedRows = new List<ProactiveTriggerDispatchRow>();
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRows.Add(ci.ArgAt<ProactiveTriggerDispatchRow>(0)));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        Assert.That(recordedRows, Has.Count.EqualTo(2));
+        Assert.That(recordedRows.Select(row => row.ConditionId), Is.All.Null);
     }
 }
 

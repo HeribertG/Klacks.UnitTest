@@ -336,4 +336,75 @@ public class AgentConditionLedgerServiceTests
         resolvedCount.ShouldBe(2);
         _repository.Conditions.ShouldAllBe(c => c.Status == AgentConditionStatus.Resolved);
     }
+
+    [TestCase(AgentConditionStatus.Reported)]
+    [TestCase(AgentConditionStatus.Prepared)]
+    public async Task TryReject_FromAStatusThatAllowsIt_TransitionsFromWhereTheRowActuallyIs(AgentConditionStatus from)
+    {
+        var condition = _repository.Seed(Kind, "fp-reject", from, StartUtc);
+        var rejectedBy = Guid.NewGuid();
+        _timeProvider.Now = StartUtc.AddHours(3);
+
+        var rejected = await _service.TryRejectAsync(
+            condition.Id, AgentConditionRejectReason.WrongThisTime, rejectedBy);
+
+        rejected.ShouldBeTrue();
+        var stored = _repository.Stored(condition.Id);
+        stored.Status.ShouldBe(AgentConditionStatus.Rejected);
+        stored.RejectReason.ShouldBe(AgentConditionRejectReason.WrongThisTime);
+        stored.RejectedByUserId.ShouldBe(rejectedBy);
+        stored.HandledAtUtc.ShouldBe(StartUtc.AddHours(3));
+        var auditEvent = _repository.EventsFor(condition.Id).Single();
+        auditEvent.EventType.ShouldBe(AgentConditionStatus.Rejected.ToString());
+        auditEvent.UserId.ShouldBe(rejectedBy);
+    }
+
+    /// <summary>
+    /// Detected is the case a reader is most likely to assume works, and it does not: the state machine
+    /// grants Rejected only from Reported and Prepared, because a human can only reject what they were
+    /// told about. A row stays in Detected when the tick's notification step threw before it could mark
+    /// the row Reported, so this is reachable in production, not a theoretical status.
+    /// </summary>
+    [TestCase(AgentConditionStatus.Detected)]
+    [TestCase(AgentConditionStatus.Executed)]
+    [TestCase(AgentConditionStatus.Resolved)]
+    [TestCase(AgentConditionStatus.Escalated)]
+    public async Task TryReject_FromAStatusThatForbidsIt_ReportsFalseWithoutThrowingOrWriting(AgentConditionStatus from)
+    {
+        var condition = _repository.Seed(Kind, "fp-reject", from, StartUtc);
+
+        var rejected = await _service.TryRejectAsync(
+            condition.Id, AgentConditionRejectReason.GenerallyUnwanted, Guid.NewGuid());
+
+        rejected.ShouldBeFalse();
+        var stored = _repository.Stored(condition.Id);
+        stored.Status.ShouldBe(from);
+        stored.RejectReason.ShouldBeNull();
+        stored.RejectedByUserId.ShouldBeNull();
+        _repository.EventsFor(condition.Id).ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task TryReject_UnknownCondition_ReportsFalseWithoutThrowing()
+    {
+        var rejected = await _service.TryRejectAsync(
+            Guid.NewGuid(), AgentConditionRejectReason.AlreadyHandled, Guid.NewGuid());
+
+        rejected.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task TryReject_WithoutARejectingUser_StillRecordsTheReason()
+    {
+        var condition = _repository.Seed(Kind, "fp-reject", AgentConditionStatus.Reported, StartUtc);
+
+        var rejected = await _service.TryRejectAsync(
+            condition.Id, AgentConditionRejectReason.NoReason, rejectedByUserId: null);
+
+        rejected.ShouldBeTrue();
+        var stored = _repository.Stored(condition.Id);
+        stored.Status.ShouldBe(AgentConditionStatus.Rejected);
+        stored.RejectReason.ShouldBe(AgentConditionRejectReason.NoReason);
+        stored.RejectedByUserId.ShouldBeNull();
+    }
 }

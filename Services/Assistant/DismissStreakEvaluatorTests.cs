@@ -130,6 +130,7 @@ public class DismissStreakEvaluatorTests
             ReactionRow(ProactiveReaction.Dismissed, 3));
         var triggerService = new AgentTriggerService(
             rateLimiter, preferenceService, notificationService, _dispatchRepository,
+            Substitute.For<IAgentConditionRepository>(),
             activityTracker, planningAudienceResolver, Substitute.For<IOfflineMessengerNotifier>(),
             Substitute.For<IProactiveMessengerTextComposer>(),
             NullLogger<AgentTriggerService>.Instance);
