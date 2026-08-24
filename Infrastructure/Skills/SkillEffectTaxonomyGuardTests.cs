@@ -93,7 +93,7 @@ public class SkillEffectTaxonomyGuardTests
     public void NoMutateSkill_IsAlwaysOn()
     {
         var violations = LoadAllSeedSkills()
-            .Where(s => string.Equals(s.Effect, nameof(SkillEffect.Mutate), StringComparison.OrdinalIgnoreCase))
+            .Where(s => ParseEffectFailClosed(s.Effect) == SkillEffect.Mutate)
             .Where(s => s.AlwaysOn)
             .Where(s => !AlwaysOnMutateExceptions.Contains(s.Name))
             .Select(s => s.Name)
@@ -101,8 +101,44 @@ public class SkillEffectTaxonomyGuardTests
             .ToList();
 
         violations.ShouldBeEmpty(
-            $"A skill with effect={nameof(SkillEffect.Mutate)} must be found deliberately through retrieval, " +
-            "not force-injected into every toolset via alwaysOn=true. Violations: " + string.Join(", ", violations));
+            $"A skill with effect={nameof(SkillEffect.Mutate)} — including fail-closed, e.g. a missing or " +
+            "unparseable effect field — must be found deliberately through retrieval, not force-injected into " +
+            "every toolset via alwaysOn=true. Violations: " + string.Join(", ", violations));
+    }
+
+    [Test]
+    public void EverySeedSkill_HasParseableEffect()
+    {
+        var validNames = Enum.GetNames(typeof(SkillEffect));
+
+        var violations = LoadAllSeedSkills()
+            .Where(s => !IsKnownEffectName(s.Effect, validNames))
+            .Select(s => $"{s.Name} (effect={s.Effect ?? "null"})")
+            .OrderBy(v => v, StringComparer.Ordinal)
+            .ToList();
+
+        violations.ShouldBeEmpty(
+            "Every seed skill must carry an effect field that parses case-insensitively to a known " +
+            $"{nameof(SkillEffect)} value (Explain/Read/Advise/Mutate) — not null, not empty, no typo. " +
+            "Violations: " + string.Join(", ", violations));
+    }
+
+    private static bool IsKnownEffectName(string? effect, string[] validNames)
+    {
+        return !string.IsNullOrWhiteSpace(effect)
+            && validNames.Any(name => string.Equals(name, effect, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // Mirrors SkillSeedLoader.ParseEffect exactly: null/whitespace/unparseable falls back to
+    // AgentSkillDefaults.Effect (Mutate), the fail-closed runtime value — not the raw JSON string.
+    private static SkillEffect ParseEffectFailClosed(string? effect)
+    {
+        if (!string.IsNullOrWhiteSpace(effect) && Enum.TryParse<SkillEffect>(effect, ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+
+        return AgentSkillDefaults.Effect;
     }
 
     private static List<SeedSkill> LoadAllSeedSkills()
