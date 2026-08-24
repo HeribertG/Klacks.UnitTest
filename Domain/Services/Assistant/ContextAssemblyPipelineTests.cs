@@ -6,6 +6,7 @@
 /// (P1 of the Klacksy memory redesign).
 /// </summary>
 
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
@@ -22,6 +23,7 @@ public class ContextAssemblyPipelineTests
     private const int ExpectedOntologyTokenBudget = IKlacksOntologyService.DefaultMaxTokens;
 
     private const string SchedulingMarker = "[SCHEDULING CONTEXT]";
+    private const string OpenFindingsMarker = "[OPEN_FINDINGS]";
 
     private IIdentityContextProvider _identity = null!;
     private IKlacksOntologyService _ontology = null!;
@@ -29,6 +31,8 @@ public class ContextAssemblyPipelineTests
     private ISentimentAnalyzer _sentiment = null!;
     private IPendingUserNoteRepository _pendingNotes = null!;
     private IRecentEntityRepository _recentEntities = null!;
+    private IAgentConditionScopeResolver _conditionScope = null!;
+    private IAgentConditionRepository _conditionRepository = null!;
     private ContextAssemblyPipeline _sut = null!;
 
     [SetUp]
@@ -40,6 +44,8 @@ public class ContextAssemblyPipelineTests
         _sentiment = Substitute.For<ISentimentAnalyzer>();
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
         _recentEntities = Substitute.For<IRecentEntityRepository>();
+        _conditionScope = Substitute.For<IAgentConditionScopeResolver>();
+        _conditionRepository = Substitute.For<IAgentConditionRepository>();
 
         _identity.GetIdentityPromptAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(IdentityText);
@@ -56,11 +62,18 @@ public class ContextAssemblyPipelineTests
             .Returns(0);
         _recentEntities.GetRecentAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new List<RecentEntityRow>());
+        _conditionScope.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(AgentConditionVisibilityScope.NotAPlanner());
+        _conditionRepository.GetTopForContextAsync(
+                Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentCondition>());
 
         _sut = new ContextAssemblyPipeline(
             _identity, _ontology, _memory, _sentiment, new RuleContextProvider(),
             _pendingNotes,
             _recentEntities,
+            _conditionScope,
+            _conditionRepository,
             NullLogger<ContextAssemblyPipeline>.Instance);
     }
 
@@ -389,6 +402,7 @@ public class ContextAssemblyPipelineTests
         });
         _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
             .Returns(new SentimentResult(SentimentMood.Frustrated, 0.9f));
+        SetUpOpenFinding(userId);
 
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "please show me my open shifts for tomorrow", userId: userId, conversationId: "conv-1");
@@ -397,6 +411,7 @@ public class ContextAssemblyPipelineTests
         Assert.That(result.StablePrompt, Does.Not.Contain("[RECENTLY_TOUCHED]"));
         Assert.That(result.StablePrompt, Does.Not.Contain("USER_MOOD"));
         Assert.That(result.StablePrompt, Does.Not.Contain(MemoryText));
+        Assert.That(result.StablePrompt, Does.Not.Contain(OpenFindingsMarker));
     }
 
     [Test]
@@ -421,6 +436,7 @@ public class ContextAssemblyPipelineTests
         });
         _sentiment.AnalyzeSentimentAsync(Arg.Any<string>())
             .Returns(new SentimentResult(SentimentMood.Frustrated, 0.9f));
+        SetUpOpenFinding(userId);
 
         var result = await _sut.AssembleSoulAndMemoryPromptAsync(
             Guid.NewGuid(), "please show me my open shifts for tomorrow", userId: userId, conversationId: "conv-1");
@@ -429,5 +445,117 @@ public class ContextAssemblyPipelineTests
         Assert.That(result.VolatilePrompt, Does.Contain("[RECENTLY_TOUCHED]"));
         Assert.That(result.VolatilePrompt, Does.Contain("USER_MOOD"));
         Assert.That(result.VolatilePrompt, Does.Contain(MemoryText));
+        Assert.That(result.VolatilePrompt, Does.Contain(OpenFindingsMarker));
+    }
+
+    private void SetUpOpenFinding(Guid userId)
+    {
+        _conditionScope.ResolveAsync(userId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(AgentConditionVisibilityScope.Unrestricted());
+        _conditionRepository.GetTopForContextAsync(
+                Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentCondition>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    TriggerKind = "open_order",
+                    Fingerprint = $"open_order:{Guid.NewGuid()}",
+                    Severity = "high",
+                    Status = AgentConditionStatus.Detected,
+                    DetectedAtUtc = DateTime.UtcNow,
+                    LastSeenAtUtc = DateTime.UtcNow,
+                    PayloadJson = "{}"
+                }
+            });
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_IncludesOpenFindingsBlock_WhenPlannerHasFindings()
+    {
+        var userId = Guid.NewGuid();
+        SetUpOpenFinding(userId);
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there", userId: userId);
+
+        Assert.That(result.VolatilePrompt, Does.Contain(OpenFindingsMarker));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoOpenFindingsBlock_WhenRepositoryReturnsNone()
+    {
+        var userId = Guid.NewGuid();
+        _conditionScope.ResolveAsync(userId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(AgentConditionVisibilityScope.Unrestricted());
+        _conditionRepository.GetTopForContextAsync(
+                Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentCondition>());
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there", userId: userId);
+
+        Assert.That(result.VolatilePrompt, Does.Not.Contain(OpenFindingsMarker));
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoOpenFindingsBlock_WhenUserIsNotAPlanner()
+    {
+        var userId = Guid.NewGuid();
+        _conditionScope.ResolveAsync(userId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(AgentConditionVisibilityScope.NotAPlanner());
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there", userId: userId);
+
+        Assert.That(result.VolatilePrompt, Does.Not.Contain(OpenFindingsMarker));
+        await _conditionRepository.DidNotReceive().GetTopForContextAsync(
+            Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_NoOpenFindingsBlock_WhenUserIdMissing()
+    {
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there");
+
+        Assert.That(result.VolatilePrompt, Does.Not.Contain(OpenFindingsMarker));
+        await _conditionScope.DidNotReceive().ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_PassesParsedSelectedGroupId_AsPreferredGroup()
+    {
+        var userId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        SetUpOpenFinding(userId);
+        var pageContext = new AssistantPageContext { SelectedGroupId = groupId.ToString() };
+
+        await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there", userId: userId, pageContext: pageContext);
+
+        await _conditionRepository.Received(1).GetTopForContextAsync(
+            Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), groupId, Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_CapsFindingsRequestAtThree()
+    {
+        var userId = Guid.NewGuid();
+        SetUpOpenFinding(userId);
+
+        await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "hello there", userId: userId);
+
+        await _conditionRepository.Received(1).GetTopForContextAsync(
+            Arg.Any<bool>(), Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<Guid?>(), 3, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AssembleSoulAndMemoryPromptAsync_OpenFindingsBlock_SurvivesShortUtteranceEarlyReturn()
+    {
+        // A terse follow-up ("del it" = 6 chars) is below MinLengthForSemanticEnrichment and hits the
+        // early return; the block must still be present, which pins it before that return (mirrors
+        // AssembleSoulAndMemoryPromptAsync_InjectsRecentEntitiesBlock_WhenPresent for RECENTLY_TOUCHED).
+        var userId = Guid.NewGuid();
+        SetUpOpenFinding(userId);
+
+        var result = await _sut.AssembleSoulAndMemoryPromptAsync(Guid.NewGuid(), "del it", userId: userId);
+
+        Assert.That(result.VolatilePrompt, Does.Contain(OpenFindingsMarker));
     }
 }
