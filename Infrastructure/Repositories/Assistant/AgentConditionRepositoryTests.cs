@@ -13,8 +13,10 @@
 /// against a real PostgreSQL database.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Assistant;
 using Microsoft.AspNetCore.Http;
@@ -47,16 +49,32 @@ public class AgentConditionRepositoryTests
 
     private DataBaseContext CreateContext() => new(_options, _httpAccessor);
 
-    private static AgentCondition Condition(string triggerKind, string fingerprint, AgentConditionStatus status, DateTime detectedAtUtc) => new()
+    private static AgentCondition Condition(
+        string triggerKind,
+        string fingerprint,
+        AgentConditionStatus status,
+        DateTime detectedAtUtc,
+        string severity = AgentTriggerSeverity.Low,
+        Guid? groupId = null) => new()
     {
         Id = Guid.NewGuid(),
         TriggerKind = triggerKind,
         Fingerprint = fingerprint,
-        Severity = "low",
+        Severity = severity,
         Status = status,
         DetectedAtUtc = detectedAtUtc,
         LastSeenAtUtc = detectedAtUtc,
+        GroupId = groupId,
         PayloadJson = "{}"
+    };
+
+    private static Group GroupRow(Guid id, Guid? root, Guid? parent) => new()
+    {
+        Id = id,
+        Name = id.ToString(),
+        ValidFrom = StartUtc,
+        Root = root,
+        Parent = parent
     };
 
     private static AgentConditionEvent DetectionEvent(Guid conditionId, DateTime atUtc) => new()
@@ -169,5 +187,138 @@ public class AgentConditionRepositoryTests
         var storedEvent = await verify.AgentConditionEvents.SingleAsync();
         storedEvent.EventType.ShouldBe("AttemptFailed");
         storedEvent.Detail.ShouldBe("optimizer busy");
+    }
+
+    [Test]
+    public async Task GetOpenForScope_WithNoMatchingRows_ReturnsEmpty()
+    {
+        using var context = CreateContext();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GetOpenForScope_SortsBySeverityHighToLow_ThenByAgeOldestFirst()
+    {
+        using var context = CreateContext();
+        var medium = Condition(Kind, "fp-medium", AgentConditionStatus.Reported, StartUtc.AddHours(1), AgentTriggerSeverity.Medium);
+        var highNewer = Condition(Kind, "fp-high-newer", AgentConditionStatus.Reported, StartUtc.AddHours(3), AgentTriggerSeverity.High);
+        var highOlder = Condition(Kind, "fp-high-older", AgentConditionStatus.Reported, StartUtc, AgentTriggerSeverity.High);
+        var low = Condition(Kind, "fp-low", AgentConditionStatus.Detected, StartUtc.AddHours(2), AgentTriggerSeverity.Low);
+        context.AgentConditions.AddRange(medium, highNewer, highOlder, low);
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        result.Select(c => c.Id).ShouldBe(new[] { highOlder.Id, highNewer.Id, medium.Id, low.Id });
+    }
+
+    [Test]
+    public async Task GetOpenForScope_EscalatedRowAndAFreshReArmRow_BothAppear()
+    {
+        // Regression against the AgentConditionStateMachine.OpenStatuses trap (Etappe 3b): Escalated is
+        // terminal for the partial unique index, so a re-arm can legitimately open a fresh row for the
+        // same fingerprint while the Escalated row still exists. list_open_findings must show both -
+        // "escalated after N attempts, and re-detected since" - not silently drop the escalated one.
+        using var context = CreateContext();
+        var escalated = Condition(Kind, "fp-escalated", AgentConditionStatus.Escalated, StartUtc, AgentTriggerSeverity.High);
+        escalated.AttemptCount = 3;
+        escalated.EscalatedAtUtc = StartUtc.AddHours(1);
+        var reArmed = Condition(Kind, "fp-escalated", AgentConditionStatus.Detected, StartUtc.AddHours(2), AgentTriggerSeverity.High);
+        context.AgentConditions.AddRange(escalated, reArmed);
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        result.Select(c => c.Id).ShouldBe(new[] { escalated.Id, reArmed.Id });
+    }
+
+    [TestCase(AgentConditionStatus.Executed)]
+    [TestCase(AgentConditionStatus.Rejected)]
+    [TestCase(AgentConditionStatus.Resolved)]
+    public async Task GetOpenForScope_ExcludesTerminalStatusesOtherThanEscalated(AgentConditionStatus status)
+    {
+        using var context = CreateContext();
+        context.AgentConditions.Add(Condition(Kind, "fp-terminal", status, StartUtc));
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task GetOpenForScope_NonAdmin_SeesOwnSubtreeAndUngatedRows_NotAForeignRoot()
+    {
+        using var context = CreateContext();
+        var ownRoot = Guid.NewGuid();
+        var ownChild = Guid.NewGuid();
+        var foreignRoot = Guid.NewGuid();
+        context.Group.AddRange(
+            GroupRow(ownRoot, root: ownRoot, parent: null),
+            GroupRow(ownChild, root: ownRoot, parent: ownRoot),
+            GroupRow(foreignRoot, root: foreignRoot, parent: null));
+
+        var ownRootFinding = Condition(Kind, "fp-own-root", AgentConditionStatus.Reported, StartUtc, groupId: ownRoot);
+        var ownChildFinding = Condition(Kind, "fp-own-child", AgentConditionStatus.Reported, StartUtc, groupId: ownChild);
+        var foreignFinding = Condition(Kind, "fp-foreign", AgentConditionStatus.Reported, StartUtc, groupId: foreignRoot);
+        var ungatedFinding = Condition(Kind, "fp-ungated", AgentConditionStatus.Reported, StartUtc, groupId: null);
+        context.AgentConditions.AddRange(ownRootFinding, ownChildFinding, foreignFinding, ungatedFinding);
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeAsync(isUnrestricted: false, visibleRootIds: new HashSet<Guid> { ownRoot }, take: 20);
+
+        var resultIds = result.Select(c => c.Id).ToHashSet();
+        resultIds.ShouldContain(ownRootFinding.Id);
+        resultIds.ShouldContain(ownChildFinding.Id);
+        resultIds.ShouldContain(ungatedFinding.Id);
+        resultIds.ShouldNotContain(foreignFinding.Id);
+    }
+
+    [Test]
+    public async Task GetOpenForScope_NonAdmin_WithNoGroupVisibilityRows_SeesOnlyUngatedRows()
+    {
+        using var context = CreateContext();
+        var someRoot = Guid.NewGuid();
+        context.Group.Add(GroupRow(someRoot, root: someRoot, parent: null));
+
+        var gatedFinding = Condition(Kind, "fp-gated", AgentConditionStatus.Reported, StartUtc, groupId: someRoot);
+        var ungatedFinding = Condition(Kind, "fp-ungated", AgentConditionStatus.Reported, StartUtc, groupId: null);
+        context.AgentConditions.AddRange(gatedFinding, ungatedFinding);
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeAsync(isUnrestricted: false, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        var resultIds = result.Select(c => c.Id).ToHashSet();
+        resultIds.ShouldContain(ungatedFinding.Id);
+        resultIds.ShouldNotContain(gatedFinding.Id);
+    }
+
+    [Test]
+    public async Task GetOpenForScope_TakeCapsTheReturnedRows_ButCountIgnoresTheCap()
+    {
+        using var context = CreateContext();
+        context.AgentConditions.AddRange(
+            Condition(Kind, "fp-1", AgentConditionStatus.Detected, StartUtc),
+            Condition(Kind, "fp-2", AgentConditionStatus.Detected, StartUtc.AddMinutes(1)),
+            Condition(Kind, "fp-3", AgentConditionStatus.Detected, StartUtc.AddMinutes(2)),
+            Condition(Kind, "fp-4", AgentConditionStatus.Detected, StartUtc.AddMinutes(3)),
+            Condition(Kind, "fp-5", AgentConditionStatus.Detected, StartUtc.AddMinutes(4)));
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+        var capped = await repository.GetOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>(), take: 2);
+        var total = await repository.CountOpenForScopeAsync(isUnrestricted: true, visibleRootIds: new HashSet<Guid>());
+
+        capped.Count.ShouldBe(2);
+        total.ShouldBe(5);
     }
 }

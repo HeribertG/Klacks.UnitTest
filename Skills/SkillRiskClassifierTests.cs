@@ -89,6 +89,7 @@ public class SkillRiskClassifierTests
     [TestCase("interpret_resource_monitor")]
     [TestCase("evaluate_scenario")]
     [TestCase("generate_period_summary")]
+    [TestCase("list_open_findings")]
     public void Classify_QueryCategoryReadSkills_ReturnsReadOnly(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Query)), Is.EqualTo(SkillRiskClass.ReadOnly));
