@@ -24,6 +24,7 @@ public class SkillRiskClassifierTests
     [TestCase("assign_user_permissions")]
     [TestCase("set_user_group_scope")]
     [TestCase("set_autonomy_level")]
+    [TestCase("set_proactive_governance")]
     [TestCase("create_identity_provider")]
     [TestCase("update_identity_provider")]
     [TestCase("delete_identity_provider")]

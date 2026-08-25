@@ -19,6 +19,7 @@ public static class SkillFeatureCoverageMap
     public static readonly IReadOnlyDictionary<string, string> Decisions = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["AgentAutonomyController"] = Covered("get_autonomy_level", "set_autonomy_level"),
+        ["ProactiveGovernanceController"] = Covered("get_proactive_governance", "set_proactive_governance"),
         ["AgentMemoriesController"] = Covered("get_ai_memories", "add_ai_memory", "add_personal_memory", "update_ai_memory", "delete_ai_memory"),
         ["AgentPlansController"] = Excluded("Klacksy assistant infrastructure: persisted planner runs; plans are initiated via the propose_plan skill"),
         ["AgentSoulController"] = Covered("get_ai_soul", "update_ai_soul"),
