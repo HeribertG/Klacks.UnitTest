@@ -419,4 +419,61 @@ public class AgentConditionRepositoryTests
         capped.Count.ShouldBe(2);
         total.ShouldBe(5);
     }
+
+    /// <summary>
+    /// The single-row counterpart of <see cref="GetOpenForScope_NonAdmin_SeesOwnSubtreeAndUngatedRows_NotAForeignRoot"/>,
+    /// exercising the id filter Etappe 4e delegation relies on to answer "not found" for a condition
+    /// outside the caller's own scope instead of confirming it exists.
+    /// </summary>
+    [Test]
+    public async Task GetOpenForScopeById_NonAdmin_ReturnsOwnRootRowButNullForAForeignRoot()
+    {
+        using var context = CreateContext();
+        var ownRoot = Guid.NewGuid();
+        var foreignRoot = Guid.NewGuid();
+        context.Group.AddRange(
+            GroupRow(ownRoot, root: ownRoot, parent: null),
+            GroupRow(foreignRoot, root: foreignRoot, parent: null));
+
+        var ownFinding = Condition(Kind, "fp-own-root-single", AgentConditionStatus.Reported, StartUtc, groupId: ownRoot);
+        var foreignFinding = Condition(Kind, "fp-foreign-single", AgentConditionStatus.Reported, StartUtc, groupId: foreignRoot);
+        context.AgentConditions.AddRange(ownFinding, foreignFinding);
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+        var visibleRootIds = new HashSet<Guid> { ownRoot };
+        var ownResult = await repository.GetOpenForScopeByIdAsync(ownFinding.Id, isUnrestricted: false, visibleRootIds);
+        var foreignResult = await repository.GetOpenForScopeByIdAsync(foreignFinding.Id, isUnrestricted: false, visibleRootIds);
+
+        ownResult.ShouldNotBeNull();
+        ownResult!.Id.ShouldBe(ownFinding.Id);
+        foreignResult.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetOpenForScopeById_UnknownId_ReturnsNull()
+    {
+        using var context = CreateContext();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeByIdAsync(Guid.NewGuid(), isUnrestricted: true, new HashSet<Guid>());
+
+        result.ShouldBeNull();
+    }
+
+    [TestCase(AgentConditionStatus.Executed)]
+    [TestCase(AgentConditionStatus.Rejected)]
+    [TestCase(AgentConditionStatus.Resolved)]
+    public async Task GetOpenForScopeById_TerminalNonEscalatedStatus_ReturnsNull(AgentConditionStatus status)
+    {
+        using var context = CreateContext();
+        var condition = Condition(Kind, "fp-terminal-single", status, StartUtc);
+        context.AgentConditions.Add(condition);
+        await context.SaveChangesAsync();
+
+        var result = await new AgentConditionRepository(context)
+            .GetOpenForScopeByIdAsync(condition.Id, isUnrestricted: true, new HashSet<Guid>());
+
+        result.ShouldBeNull();
+    }
 }

@@ -127,6 +127,16 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return Task.FromResult(ScopedPlannerRelevant(isUnrestricted, visibleRootIds).Count());
     }
 
+    public Task<AgentCondition?> GetOpenForScopeByIdAsync(
+        Guid id,
+        bool isUnrestricted,
+        IReadOnlySet<Guid> visibleRootIds,
+        CancellationToken cancellationToken = default)
+    {
+        var match = ScopedPlannerRelevant(isUnrestricted, visibleRootIds).FirstOrDefault(c => c.Id == id);
+        return Task.FromResult(match == null ? null : Copy(match));
+    }
+
     public Task<IReadOnlyList<AgentCondition>> GetTopForContextAsync(
         bool isUnrestricted,
         IReadOnlySet<Guid> visibleRootIds,
@@ -230,6 +240,23 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         }
 
         stored.LastSeenAtUtc = seenAtUtc;
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> SetDelegationAsync(
+        Guid id,
+        ProactiveMaxAction maxAction,
+        Guid delegatingUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var stored = _conditions.FirstOrDefault(c => c.Id == id);
+        if (stored == null || !AgentConditionPlannerRelevantStatuses.Values.Contains(stored.Status))
+        {
+            return Task.FromResult(false);
+        }
+
+        stored.DelegatedMaxAction = maxAction;
+        stored.DelegatedByUserId = delegatingUserId;
         return Task.FromResult(true);
     }
 

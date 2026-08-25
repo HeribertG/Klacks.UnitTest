@@ -407,4 +407,52 @@ public class AgentConditionLedgerServiceTests
         stored.RejectReason.ShouldBe(AgentConditionRejectReason.NoReason);
         stored.RejectedByUserId.ShouldBeNull();
     }
+
+    [TestCase(AgentConditionStatus.Detected)]
+    [TestCase(AgentConditionStatus.Reported)]
+    [TestCase(AgentConditionStatus.Prepared)]
+    [TestCase(AgentConditionStatus.Escalated)]
+    public async Task TryDelegate_OnAPlannerRelevantRow_WritesTheGrantAndAnAuditEventWithoutChangingStatus(
+        AgentConditionStatus status)
+    {
+        var condition = _repository.Seed(Kind, "fp-delegate", status, StartUtc);
+        var delegatingUserId = Guid.NewGuid();
+        _timeProvider.Now = StartUtc.AddHours(2);
+
+        var delegated = await _service.TryDelegateAsync(condition.Id, ProactiveMaxAction.Prepare, delegatingUserId);
+
+        delegated.ShouldBeTrue();
+        var stored = _repository.Stored(condition.Id);
+        stored.Status.ShouldBe(status);
+        stored.DelegatedMaxAction.ShouldBe(ProactiveMaxAction.Prepare);
+        stored.DelegatedByUserId.ShouldBe(delegatingUserId);
+        var auditEvent = _repository.EventsFor(condition.Id).Single();
+        auditEvent.EventType.ShouldBe("Delegated");
+        auditEvent.UserId.ShouldBe(delegatingUserId);
+        auditEvent.AtUtc.ShouldBe(StartUtc.AddHours(2));
+    }
+
+    [TestCase(AgentConditionStatus.Executed)]
+    [TestCase(AgentConditionStatus.Rejected)]
+    [TestCase(AgentConditionStatus.Resolved)]
+    public async Task TryDelegate_OnATerminalNonPlannerRelevantRow_ReportsFalseWithoutWriting(AgentConditionStatus status)
+    {
+        var condition = _repository.Seed(Kind, "fp-delegate-terminal", status, StartUtc);
+
+        var delegated = await _service.TryDelegateAsync(condition.Id, ProactiveMaxAction.Prepare, Guid.NewGuid());
+
+        delegated.ShouldBeFalse();
+        var stored = _repository.Stored(condition.Id);
+        stored.DelegatedMaxAction.ShouldBeNull();
+        stored.DelegatedByUserId.ShouldBeNull();
+        _repository.EventsFor(condition.Id).ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task TryDelegate_UnknownCondition_ReportsFalseWithoutThrowing()
+    {
+        var delegated = await _service.TryDelegateAsync(Guid.NewGuid(), ProactiveMaxAction.Execute, Guid.NewGuid());
+
+        delegated.ShouldBeFalse();
+    }
 }
