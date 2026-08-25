@@ -139,10 +139,18 @@ public class ConditionScenarioPreparationServiceTests
         raised.Select(e => e.TargetUserId).ShouldBe(new Guid?[] { firstPlanner, secondPlanner }, ignoreOrder: true);
         raised.ShouldAllBe(e => e.Kind == AgentTriggerKinds.ScenarioPrepared);
 
-        // The audience gates are what AgentConditionLedgerPolicy.IsLedgerTracked keys on; a targeted
-        // event is excluded from the ledger, which is the whole point of the per-planner shape.
-        raised.ShouldAllBe(e => !e.PlannersOnly && !e.AdminOnly);
+        // The target is what excludes the event from the ledger - IsLedgerTracked reads TargetUserId
+        // first - and that exclusion is the whole point of the per-planner shape.
         raised.ShouldAllBe(e => AgentConditionLedgerPolicy.IsLedgerTracked(e) == false);
+
+        // PlannersOnly changes neither the audience nor the exclusion; it keeps the event out of the
+        // companion class, which IsLoudEvent would otherwise push live to every connected planner.
+        raised.ShouldAllBe(e => e.PlannersOnly && !e.AdminOnly);
+
+        // The sentence names the day, never the scenario name: the auto-generated name spells the
+        // trigger kind into itself, and user-facing text carries no internals.
+        raised.ShouldAllBe(e => e.SummaryParams!.ContainsKey("from"));
+        raised.ShouldAllBe(e => e.SummaryParams!.Values.All(value => !value.Contains(TriggerKind)));
     }
 
     [Test]
