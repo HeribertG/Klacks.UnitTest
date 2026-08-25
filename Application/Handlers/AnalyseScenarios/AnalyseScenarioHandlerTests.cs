@@ -289,7 +289,15 @@ public class RejectAnalyseScenarioCommandHandlerTests
         _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
 
         var logger = Substitute.For<ILogger<RejectAnalyseScenarioCommandHandler>>();
-        _handler = new RejectAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, _captureRepository, logger);
+        _handler = new RejectAnalyseScenarioCommandHandler(
+            _repository,
+            _scenarioService,
+            _unitOfWork,
+            _captureRepository,
+            Substitute.For<IAgentConditionRepository>(),
+            Substitute.For<IAgentConditionLedgerService>(),
+            Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>(),
+            logger);
     }
 
     [Test]

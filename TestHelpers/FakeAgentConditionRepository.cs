@@ -82,6 +82,16 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return Task.FromResult(match == null ? null : Copy(match));
     }
 
+    public Task<AgentCondition?> FindByScenarioIdAsync(Guid scenarioId, CancellationToken cancellationToken = default)
+    {
+        var match = _conditions
+            .Where(c => c.ScenarioId == scenarioId)
+            .OrderByDescending(c => c.DetectedAtUtc)
+            .FirstOrDefault();
+
+        return Task.FromResult(match == null ? null : Copy(match));
+    }
+
     public Task<List<AgentCondition>> GetOpenByKindAsync(string triggerKind, CancellationToken cancellationToken = default)
     {
         var matches = _conditions
