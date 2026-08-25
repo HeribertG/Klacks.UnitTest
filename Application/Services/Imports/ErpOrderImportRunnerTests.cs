@@ -32,6 +32,7 @@ public class ErpOrderImportRunnerTests
     private IErpImportExceptionRepository _exceptionRepository = null!;
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ErpImportRunState _runState = null!;
     private ErpOrderImportRunner _runner = null!;
 
     private static readonly ErpDropPoint DropPoint = new()
@@ -71,9 +72,11 @@ public class ErpOrderImportRunnerTests
         _settingsRepository.GetSettingNoTracking(ErpImportSettingsTypes.NextRunUtc)
             .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddMinutes(-5).ToString("O") });
 
+        _runState = new ErpImportRunState();
+
         var resolver = new ErpCustomerResolver(_clientRepository);
         var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, ShiftGroupScopeReaderStub.WithoutAnyGroups(), _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
-        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _unitOfWork, NullLogger<ErpOrderImportRunner>.Instance);
+        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _unitOfWork, _runState, NullLogger<ErpOrderImportRunner>.Instance);
     }
 
     private static ImportedOrderPayload Order(string reference = "ORD-1") => new()
@@ -318,6 +321,40 @@ public class ErpOrderImportRunnerTests
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
         await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
         await _objectStorageService.DidNotReceive().MoveAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_NotYetDue_LeavesRunStateFalse()
+    {
+        _settingsRepository.GetSettingNoTracking(ErpImportSettingsTypes.NextRunUtc)
+            .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddHours(1).ToString("O") });
+
+        await _runner.RunAsync();
+
+        _runState.IsRunning.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task RunAsync_ProcessedFile_LeavesRunStateFalseAfterCompletion()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns((Shift?)null);
+
+        await _runner.RunAsync();
+
+        _runState.IsRunning.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task RunAsync_OrderProcessingFailure_StillLeavesRunStateFalse()
+    {
+        SetupFile("customer-1/order-1.xml", Order());
+        _shiftRepository.FindActiveByExternalReferenceAsync("erp-1", "ORD-1", Arg.Any<CancellationToken>()).Returns((Shift?)null);
+        _shiftRepository.AddWithSealedOrderHandling(Arg.Any<Shift>()).ThrowsAsync(new InvalidOperationException("db down"));
+
+        await _runner.RunAsync();
+
+        _runState.IsRunning.ShouldBeFalse();
     }
 
     [Test]

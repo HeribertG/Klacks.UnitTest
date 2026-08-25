@@ -157,6 +157,31 @@ public sealed class AutofillStartGuardTests
     }
 
     [Test]
+    public void HasActiveRuns_NoLockHeld_IsFalse()
+    {
+        _sut.HasActiveRuns.ShouldBeFalse();
+    }
+
+    [Test]
+    public void HasActiveRuns_LockHeld_IsTrue()
+    {
+        _sut.AcquireRunLock(AutofillFamily.Wizard1, From, Until, null, [AgentA], Guid.NewGuid());
+
+        _sut.HasActiveRuns.ShouldBeTrue();
+    }
+
+    [Test]
+    public void HasActiveRuns_AfterRelease_IsFalseAgain()
+    {
+        var jobId = Guid.NewGuid();
+        _sut.AcquireRunLock(AutofillFamily.Wizard1, From, Until, null, [AgentA], jobId);
+
+        _sut.ReleaseRunLock(jobId);
+
+        _sut.HasActiveRuns.ShouldBeFalse();
+    }
+
+    [Test]
     public void AcquireRunLock_ConcurrentAttempts_LetExactlyOneThrough()
     {
         const int attempts = 32;
