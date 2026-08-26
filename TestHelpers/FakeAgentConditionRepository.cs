@@ -28,6 +28,7 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
 
     private AgentCondition? _insertRaceWinner;
     private Guid? _transitionLoserId;
+    private (Guid ConditionId, string PayloadJson)? _payloadRefreshOnNextTransition;
 
     public IReadOnlyList<AgentCondition> Conditions => _conditions;
 
@@ -77,6 +78,17 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
     public void LoseNextTransitionFor(Guid conditionId)
     {
         _transitionLoserId = conditionId;
+    }
+
+    /// <summary>
+    /// Reproduces a re-observation that rewrites PayloadJson between a caller's pre-flight read and its
+    /// claim: the claim itself still succeeds, and the row a re-read finds afterwards carries the new
+    /// payload. This is the only way the post-claim re-bind can be reached at all, because the claim
+    /// transition does not touch the payload by itself.
+    /// </summary>
+    public void RefreshPayloadOnNextTransitionFor(Guid conditionId, string payloadJson)
+    {
+        _payloadRefreshOnNextTransition = (conditionId, payloadJson);
     }
 
     public Task<AgentCondition?> FindOpenByFingerprintAsync(string fingerprint, CancellationToken cancellationToken = default)
@@ -257,6 +269,12 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         auditEvent.ConditionId = id;
         _events.Add(auditEvent);
 
+        if (_payloadRefreshOnNextTransition is { } refresh && refresh.ConditionId == id)
+        {
+            stored.PayloadJson = refresh.PayloadJson;
+            _payloadRefreshOnNextTransition = null;
+        }
+
         return Task.FromResult(true);
     }
 
@@ -314,13 +332,20 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return Task.FromResult(matches);
     }
 
+    /// <summary>
+    /// Mirrors the real repository's per-group scoping. A null groupId is the INSTALLATION-WIDE bucket -
+    /// the conditions that carry no group at all - and never "any group": a fake that ignored the
+    /// parameter would hand every group the same pooled number and hide the very defect the group-scoped
+    /// budget tests exist to pin.
+    /// </summary>
     public Task<int> CountActionClaimsAsync(
         string triggerKind,
+        Guid? groupId,
         DateTime sinceUtc,
         CancellationToken cancellationToken = default)
     {
         var conditionIds = _conditions
-            .Where(c => c.TriggerKind == triggerKind)
+            .Where(c => c.TriggerKind == triggerKind && c.GroupId == groupId)
             .Select(c => c.Id)
             .ToHashSet();
 

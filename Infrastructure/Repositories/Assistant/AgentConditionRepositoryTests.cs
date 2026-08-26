@@ -92,6 +92,15 @@ public class AgentConditionRepositoryTests
         AtUtc = atUtc
     };
 
+    private static AgentConditionEvent ClaimEvent(Guid conditionId, DateTime atUtc) => new()
+    {
+        Id = Guid.NewGuid(),
+        ConditionId = conditionId,
+        EventType = AgentConditionStatus.Prepared.ToString(),
+        AtUtc = atUtc,
+        Detail = AgentConditionActionDefaults.ActionClaimDetailPrefix + "seeded"
+    };
+
     [TestCase(AgentConditionStatus.Detected)]
     [TestCase(AgentConditionStatus.Reported)]
     [TestCase(AgentConditionStatus.Prepared)]
@@ -475,5 +484,94 @@ public class AgentConditionRepositoryTests
             .GetOpenForScopeByIdAsync(condition.Id, isUnrestricted: true, new HashSet<Guid>());
 
         result.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// The budget count is scoped to ONE group, because that is the scope its limit is configured in.
+    /// A claim of another group must never appear in this number: pooling is what let a busy group spend
+    /// a quiet one's budget.
+    ///
+    /// Proven here against the EF InMemory provider, which pins the FILTERING contract but not the SQL
+    /// the filter turns into. That the null branch really has to be written as a separate IS NULL query
+    /// rather than one GroupId == groupId comparison is a claim about Npgsql's translation, and only the
+    /// PostgreSQL-backed test of the same name in Klacks.IntegrationTest can speak to it.
+    /// </summary>
+    [Test]
+    public async Task CountActionClaims_CountsOnlyTheClaimsOfTheGroupItIsAskedAbout()
+    {
+        var busyGroupId = Guid.NewGuid();
+        var quietGroupId = Guid.NewGuid();
+
+        using var context = CreateContext();
+        var busy = Condition(Kind, "fp-claims-busy", AgentConditionStatus.Prepared, StartUtc, groupId: busyGroupId);
+        var quiet = Condition(Kind, "fp-claims-quiet", AgentConditionStatus.Prepared, StartUtc, groupId: quietGroupId);
+        context.AgentConditions.AddRange(busy, quiet);
+        context.AgentConditionEvents.AddRange(
+            ClaimEvent(busy.Id, StartUtc.AddMinutes(10)),
+            ClaimEvent(busy.Id, StartUtc.AddMinutes(20)),
+            ClaimEvent(quiet.Id, StartUtc.AddMinutes(30)));
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+
+        (await repository.CountActionClaimsAsync(Kind, busyGroupId, StartUtc)).ShouldBe(2);
+        (await repository.CountActionClaimsAsync(Kind, quietGroupId, StartUtc)).ShouldBe(
+            1,
+            "The busy group's two claims belong to the busy group's budget alone.");
+    }
+
+    /// <summary>
+    /// A null groupId is the installation-wide bucket - the rows that carry no group at all - and NOT
+    /// "any group". Both mistakes are silent in production: counting every group would block the
+    /// installation-wide kinds far too early, counting nothing would let them believe their budget
+    /// untouched forever.
+    /// </summary>
+    [Test]
+    public async Task CountActionClaims_WithoutAGroup_CountsTheGroupLessRows_NeitherAllOfThemNorNone()
+    {
+        var groupId = Guid.NewGuid();
+
+        using var context = CreateContext();
+        var installationWide = Condition(
+            UngroupedByNatureKind, "fp-claims-global", AgentConditionStatus.Prepared, StartUtc);
+        var grouped = Condition(
+            UngroupedByNatureKind, "fp-claims-grouped", AgentConditionStatus.Prepared, StartUtc, groupId: groupId);
+        context.AgentConditions.AddRange(installationWide, grouped);
+        context.AgentConditionEvents.AddRange(
+            ClaimEvent(installationWide.Id, StartUtc.AddMinutes(10)),
+            ClaimEvent(grouped.Id, StartUtc.AddMinutes(20)),
+            ClaimEvent(grouped.Id, StartUtc.AddMinutes(30)));
+        await context.SaveChangesAsync();
+
+        var count = await new AgentConditionRepository(context)
+            .CountActionClaimsAsync(UngroupedByNatureKind, groupId: null, StartUtc);
+
+        count.ShouldBe(
+            1,
+            "One claim carries no group. Zero would mean the null comparison matched nothing, three "
+            + "would mean the group filter was skipped altogether.");
+    }
+
+    [Test]
+    public async Task CountActionClaims_IgnoresOtherKinds_EventsWithoutTheClaimMarker_AndEventsBeforeTheWindow()
+    {
+        var groupId = Guid.NewGuid();
+
+        using var context = CreateContext();
+        var mine = Condition(Kind, "fp-claims-mine", AgentConditionStatus.Prepared, StartUtc, groupId: groupId);
+        var foreignKind = Condition(
+            OtherKind, "fp-claims-foreign", AgentConditionStatus.Prepared, StartUtc, groupId: groupId);
+        context.AgentConditions.AddRange(mine, foreignKind);
+        context.AgentConditionEvents.AddRange(
+            ClaimEvent(mine.Id, StartUtc.AddMinutes(10)),
+            ClaimEvent(mine.Id, StartUtc.AddMinutes(-10)),
+            DetectionEvent(mine.Id, StartUtc.AddMinutes(20)),
+            ClaimEvent(foreignKind.Id, StartUtc.AddMinutes(30)));
+        await context.SaveChangesAsync();
+
+        var count = await new AgentConditionRepository(context)
+            .CountActionClaimsAsync(Kind, groupId, StartUtc);
+
+        count.ShouldBe(1);
     }
 }
