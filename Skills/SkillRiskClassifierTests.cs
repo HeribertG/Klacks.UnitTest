@@ -203,6 +203,20 @@ public class SkillRiskClassifierTests
         _sut.Classify(Descriptor("delete_container_template")).ShouldBe(SkillRiskClass.Sensitive);
     }
 
+    // create_donation_checkout opens a Stripe Checkout session and hands back its payment link, so it
+    // starts a real payment flow. Owner decision - Sensitive, and the reason is unattended execution
+    // rather than irreversibility: its Action category alone would fall through to the classifier's
+    // Irreversible default, which a scheduled task carrying the per-task opt-in still passes at the
+    // Autonomous level (the dev default already sits at FullyAutonomous). Only Sensitive is
+    // unconditionally closed on every background path - proven by
+    // UnattendedSkillPolicyTests.Decide_CreateDonationCheckout_StaysDeniedAtTheHighestLevelEvenWithTheOptIn.
+    [Test]
+    public void Classify_CreateDonationCheckout_IsSensitive_BecauseItStartsAPaymentFlow()
+    {
+        _sut.Classify(Descriptor("create_donation_checkout", SkillCategory.Action))
+            .ShouldBe(SkillRiskClass.Sensitive);
+    }
+
     [TestCase(SkillCategory.Query)]
     [TestCase(SkillCategory.Read)]
     [TestCase(SkillCategory.Validation)]

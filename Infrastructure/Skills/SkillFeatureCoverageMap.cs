@@ -76,6 +76,7 @@ public static class SkillFeatureCoverageMap
 
         ["BaseController"] = Excluded("base class for API controllers, no own endpoints"),
         ["DashboardController"] = Covered("get_dashboard_summary", "get_client_locations_overview", "interpret_resource_monitor"),
+        ["DonationController"] = Covered("create_donation_checkout"),
         ["LanguageConfigController"] = Covered("list_languages", "install_language_pack", "uninstall_language_pack"),
         ["LoadFileController"] = Excluded("binary file upload/download infrastructure, not chat-addressable"),
         ["RouteOptimizationController"] = Gap("route optimization; geographic grouping is covered by propose_grouping/apply_grouping but route planning itself is not"),

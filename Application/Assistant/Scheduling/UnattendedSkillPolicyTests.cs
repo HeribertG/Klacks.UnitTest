@@ -25,6 +25,7 @@ public class UnattendedSkillPolicyTests
     private const string ScenarioGatedSkill = "cover_absence";
     private const string IrreversibleSkill = "update_client";
     private const string SensitiveSkill = "delete_client";
+    private const string DonationCheckoutSkill = "create_donation_checkout";
 
     private ISkillRegistry _registry = null!;
     private UnattendedSkillPolicy _policy = null!;
@@ -112,6 +113,41 @@ public class UnattendedSkillPolicyTests
             SensitiveSkill,
             autonomyLevel: AutonomyLevel.FullyAutonomous,
             allowIrreversibleUnattended: true));
+
+        decision.Allowed.ShouldBeFalse();
+        decision.DenyReason.ShouldBe(UnattendedDenyReason.SensitiveSkill);
+    }
+
+    // The actual proof that no background path can start a payment flow: highest autonomy level,
+    // scheduled task, per-task opt-in for irreversible runs all set - and it is still refused, because
+    // the classifier answers Sensitive and DenySensitive never consults level or opt-in. Runs against
+    // the real SkillRiskClassifier, so removing create_donation_checkout from SensitiveSkills turns
+    // this test red instead of silently opening the gate.
+    [Test]
+    public void Decide_CreateDonationCheckout_StaysDeniedAtTheHighestLevelEvenWithTheOptIn()
+    {
+        Known(DonationCheckoutSkill, SkillCategory.Action);
+
+        var decision = _policy.Decide(Request(
+            DonationCheckoutSkill,
+            autonomyLevel: AutonomyLevel.FullyAutonomous,
+            executionKind: UnattendedExecutionKind.ScheduledTask,
+            allowIrreversibleUnattended: true));
+
+        decision.Allowed.ShouldBeFalse();
+        decision.DenyReason.ShouldBe(UnattendedDenyReason.SensitiveSkill);
+        decision.Reason!.ShouldContain("must never run unattended");
+    }
+
+    [Test]
+    public void Decide_CreateDonationCheckout_IsAlsoDeniedOnTheProactiveHeartbeat()
+    {
+        Known(DonationCheckoutSkill, SkillCategory.Action);
+
+        var decision = _policy.Decide(Request(
+            DonationCheckoutSkill,
+            autonomyLevel: AutonomyLevel.FullyAutonomous,
+            executionKind: UnattendedExecutionKind.ProactiveHeartbeat));
 
         decision.Allowed.ShouldBeFalse();
         decision.DenyReason.ShouldBe(UnattendedDenyReason.SensitiveSkill);
