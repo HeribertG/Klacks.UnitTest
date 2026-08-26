@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for AgentTriggerService — verifies the severity routing matrix (high goes to the
@@ -1052,6 +1052,17 @@ public class AgentTriggerServiceTests
     }
 }
 
+/// <summary>
+/// One container schedule shared by the fixtures that only need an EmptyContainerTriggerEvent to exist.
+/// Its exact values are irrelevant to dedup keys and audience scoping; what matters is that the event
+/// carries the schedule its Etappe-5b remediation binder reads out of the payload.
+/// </summary>
+internal static class EmptyContainerTestSchedule
+{
+    public static readonly ContainerScheduleSnapshot Value =
+        new(new TimeOnly(8, 0), new TimeOnly(17, 0), new[] { 1 }, false, false);
+}
+
 [TestFixture]
 public class OperationalTriggerEventDedupKeyTests
 {
@@ -1095,7 +1106,9 @@ public class OperationalTriggerEventDedupKeyTests
         var missingCoreData = new ClientMissingCoreDataTriggerEvent(Guid.NewGuid(), "Jane", ClientMissingCoreDataTriggerEvent.AddressField);
         var openOrder = new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 6, 30), null, 3, Array.Empty<Guid>());
         var uncutFulldayShift = new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 3, Array.Empty<Guid>());
-        var emptyContainer = new EmptyContainerTriggerEvent(Guid.NewGuid(), "Container A", new DateOnly(2026, 6, 30), null, Array.Empty<Guid>());
+        var emptyContainer = new EmptyContainerTriggerEvent(
+            Guid.NewGuid(), "Container A", new DateOnly(2026, 6, 30), null, Array.Empty<Guid>(),
+            EmptyContainerTestSchedule.Value);
 
         foreach (var ev in new IAgentTriggerEvent[] { drift, period, unstaffed, lockConflict, scenario, contract, availabilityGap, periodOverdue, missingCoreData, openOrder, uncutFulldayShift, emptyContainer })
         {
@@ -1274,7 +1287,9 @@ public class OperationalTriggerEventDedupKeyTests
             new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId }),
             new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 8, 3), null, 3, new[] { groupId }),
             new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 3, new[] { groupId }),
-            new EmptyContainerTriggerEvent(Guid.NewGuid(), "Container A", new DateOnly(2026, 8, 3), null, new[] { groupId })
+            new EmptyContainerTriggerEvent(
+                Guid.NewGuid(), "Container A", new DateOnly(2026, 8, 3), null, new[] { groupId },
+                EmptyContainerTestSchedule.Value)
         ];
 
         IAgentTriggerEvent[] installationWide =

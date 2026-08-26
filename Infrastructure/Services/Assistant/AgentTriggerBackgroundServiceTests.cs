@@ -1,10 +1,11 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for the Etappe 3c tick integration: the ledger upsert that runs as a sibling step BEFORE
-/// the notification, the "only what is new gets announced" gate, the resolve reconciliation restricted
-/// to detectors that promise a complete fingerprint set, and the exclusion of companion events from the
-/// ledger altogether.
+/// Unit tests for the tick integration: the ledger upsert that runs as a sibling step BEFORE the
+/// notification, the STATUS-driven Detected-to-Reported transition (Etappe 5b replaced the original
+/// "only what is new gets announced" gate, see AgentTriggerBackgroundService.RunDetectorAsync for why),
+/// the resolve reconciliation restricted to detectors that promise a complete fingerprint set, and the
+/// exclusion of companion events from the ledger altogether.
 ///
 /// The ledger under test is the real AgentConditionLedgerService over FakeAgentConditionRepository
 /// rather than a substituted interface, so these tests exercise the actual re-arm and touch rules; only
@@ -41,6 +42,7 @@ public class AgentTriggerBackgroundServiceTests
     private SettableTimeProvider _timeProvider = null!;
     private IAgentConditionLedgerService _ledger = null!;
     private IAgentTriggerService _triggerService = null!;
+    private IAgentConditionActionService _actionService = null!;
 
     [SetUp]
     public void Setup()
@@ -50,6 +52,7 @@ public class AgentTriggerBackgroundServiceTests
         _ledger = new AgentConditionLedgerService(
             _repository, _timeProvider, NullLogger<AgentConditionLedgerService>.Instance);
         _triggerService = Substitute.For<IAgentTriggerService>();
+        _actionService = Substitute.For<IAgentConditionActionService>();
     }
 
     [Test]
@@ -91,7 +94,7 @@ public class AgentTriggerBackgroundServiceTests
     }
 
     [Test]
-    public async Task KnownCondition_IsNotAnnouncedAgainButItsLastSeenMovesForward()
+    public async Task KnownCondition_ReusesItsRowAndIsOfferedToTheNotificationPipelineAgain()
     {
         var triggerEvent = PlannerEvent("shift-42");
         var detector = new FakeDetector(TrackedKind, triggerEvent);
@@ -108,7 +111,49 @@ public class AgentTriggerBackgroundServiceTests
         _repository.Conditions.Single().LastSeenAtUtc.ShouldBe(secondTickUtc);
         _repository.Conditions.Single().DetectedAtUtc.ShouldBe(StartUtc);
 
-        await _triggerService.Received(1).OnEventAsync(triggerEvent, Arg.Any<CancellationToken>());
+        await _triggerService.Received(2).OnEventAsync(triggerEvent, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ARowLeftInDetectedByAFailedNotification_IsRetriedOnTheNextTick()
+    {
+        var triggerEvent = PlannerEvent("shift-42");
+        var detector = new FakeDetector(TrackedKind, triggerEvent);
+        _triggerService
+            .When(service => service.OnEventAsync(triggerEvent, Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("notification pipeline is down"));
+
+        await RunTickAsync(detector);
+
+        _repository.Conditions.Single().Status.ShouldBe(
+            AgentConditionStatus.Detected,
+            "A throwing notification must not leave the row Reported - it was never handed over.");
+
+        _triggerService = Substitute.For<IAgentTriggerService>();
+        _timeProvider.Now = StartUtc.AddHours(1);
+        await RunTickAsync(detector);
+
+        _repository.Conditions.Single().Status.ShouldBe(
+            AgentConditionStatus.Reported,
+            "Hanging the transition on the upsert's is-new flag would strand this row in Detected "
+            + "forever, and Detected to Prepared is not a legal transition - the action dispatcher "
+            + "would never see it again.");
+    }
+
+    [Test]
+    public async Task ARowAlreadyReported_IsNotTransitionedAgain()
+    {
+        var triggerEvent = PlannerEvent("shift-42");
+        var detector = new FakeDetector(TrackedKind, triggerEvent);
+
+        await RunTickAsync(detector);
+        _timeProvider.Now = StartUtc.AddHours(1);
+        await RunTickAsync(detector);
+
+        var stored = _repository.Conditions.Single();
+        _repository.EventsFor(stored.Id)
+            .Count(auditEvent => auditEvent.EventType == AgentConditionStatus.Reported.ToString())
+            .ShouldBe(1, "Re-offering the event must not append a second Reported audit event.");
     }
 
     [Test]
@@ -209,6 +254,7 @@ public class AgentTriggerBackgroundServiceTests
 
         services.AddScoped(_ => _triggerService);
         services.AddScoped(_ => _ledger);
+        services.AddScoped(_ => _actionService);
 
         using var provider = services.BuildServiceProvider();
         using var sut = new AgentTriggerBackgroundService(

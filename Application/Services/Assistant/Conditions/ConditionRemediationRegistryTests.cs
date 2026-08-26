@@ -1,13 +1,14 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Guard tests for ConditionRemediationRegistry (Etappe 4b): the registry is deliberately empty as of
-/// this stage (Owner decision 2026-08-25, see the class's own XML doc), so this pins the invariant that
-/// makes that safe rather than merely convenient - a trigger kind with no registered remediation can
-/// never be steered past Hint, no matter what agent_trigger_governance configured for it. Exercised
-/// against the three real Etappe-2 kinds (the concrete case the 2026-08-25 correction is about) and a
-/// synthetic unknown kind (the general case, so the test still means something once a future kind does
-/// get an entry).
+/// Guard tests for ConditionRemediationRegistry. The invariant they pin is what makes the registry a
+/// security gate rather than a lookup table: a trigger kind with no registered remediation can never be
+/// steered past Hint, no matter what agent_trigger_governance or an Etappe-4e delegation configured for
+/// it, because nothing exists that could carry the remediation out.
+///
+/// Etappe 5b added the first entry (empty_container). The kinds below are the ones that are still
+/// deliberately absent - open_order and uncut_fullday_shift, whose remediations were never built - plus
+/// a synthetic unknown kind, so the general case keeps being covered as further kinds gain entries.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Conditions;
@@ -32,7 +33,6 @@ public class ConditionRemediationRegistryTests
     private static IEnumerable<string> UnregisteredKinds()
     {
         yield return AgentTriggerKinds.OpenOrder;
-        yield return AgentTriggerKinds.EmptyContainer;
         yield return AgentTriggerKinds.UncutFulldayShift;
         yield return SyntheticUnregisteredKind;
     }
@@ -70,19 +70,40 @@ public class ConditionRemediationRegistryTests
         Assert.That(effective, Is.EqualTo(ProactiveMaxAction.Hint));
     }
 
-    /// <summary>
-    /// Pins the current, honest state of the registry itself: every governed kind (the full set
-    /// ProactiveGovernanceResolver iterates) is absent. If this ever fails because a kind gained an
-    /// entry, that is expected and this test's UnregisteredKinds source (and this assertion) should be
-    /// updated deliberately - not a regression to chase blindly.
-    /// </summary>
     [Test]
-    public void Registry_HasNoEntryForAnyCurrentlyGovernedKind()
+    public void EmptyContainer_IsRemediatedByCreateContainerTemplateAndIsExecuteOnly()
     {
-        foreach (var kind in ProactiveGovernanceDefaults.GovernedKinds)
+        var found = _sut.TryGetEntry(AgentTriggerKinds.EmptyContainer, out var entry);
+
+        Assert.That(found, Is.True);
+        Assert.That(entry!.RemediationSkillName, Is.EqualTo(CreateContainerTemplateParameters.SkillName));
+        Assert.That(
+            entry.IsScenarioCapable,
+            Is.False,
+            "Creating a container template is a structural Shift change; AcceptAnalyseScenarioCommandHandler "
+            + "only ever promotes Work, WorkChange and Expenses rows out of a scenario, so staging one "
+            + "would leave an AnalyseScenario nobody can accept.");
+        Assert.That(entry.RequiredArguments, Is.EquivalentTo(CreateContainerTemplateParameters.Required));
+    }
+
+    [Test]
+    public void EmptyContainer_ConfiguredExecute_KeepsExecute()
+    {
+        var effective = _sut.TryGetEffectiveMaxAction(AgentTriggerKinds.EmptyContainer, ProactiveMaxAction.Execute);
+
+        Assert.That(effective, Is.EqualTo(ProactiveMaxAction.Execute));
+    }
+
+    [Test]
+    public void RegisteredKinds_AreAllGovernedKinds()
+    {
+        foreach (var kind in _sut.RegisteredKinds)
         {
-            var found = _sut.TryGetEntry(kind, out _);
-            Assert.That(found, Is.False, $"Expected no remediation entry for '{kind}' at Etappe 4b.");
+            Assert.That(
+                ProactiveGovernanceDefaults.IsGovernedKind(kind),
+                Is.True,
+                $"'{kind}' has a remediation but no governance rule can address it, so nothing could ever "
+                + "raise it past the fail-safe Hint default - the entry would be unreachable.");
         }
     }
 }

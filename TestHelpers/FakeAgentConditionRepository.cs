@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// In-memory stand-in for IAgentConditionRepository used by the ledger-service tests.
@@ -27,6 +27,7 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
     private readonly List<AgentConditionEvent> _events = new();
 
     private AgentCondition? _insertRaceWinner;
+    private Guid? _transitionLoserId;
 
     public IReadOnlyList<AgentCondition> Conditions => _conditions;
 
@@ -65,6 +66,17 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
     public void LoseNextInsertTo(AgentCondition winner)
     {
         _insertRaceWinner = winner;
+    }
+
+    /// <summary>
+    /// Makes the next transition of this row report false without writing anything - the shape the real
+    /// repository's compare-and-swap has when another instance moved the row first, and also the shape
+    /// of the false NEGATIVE the retrying execution strategy can produce after a committed transaction.
+    /// Callers of the ledger must treat both the same way: skip the row, never retry it here.
+    /// </summary>
+    public void LoseNextTransitionFor(Guid conditionId)
+    {
+        _transitionLoserId = conditionId;
     }
 
     public Task<AgentCondition?> FindOpenByFingerprintAsync(string fingerprint, CancellationToken cancellationToken = default)
@@ -210,6 +222,12 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         AgentConditionEvent auditEvent,
         CancellationToken cancellationToken = default)
     {
+        if (_transitionLoserId == id)
+        {
+            _transitionLoserId = null;
+            return Task.FromResult(false);
+        }
+
         var stored = _conditions.FirstOrDefault(c => c.Id == id);
         if (stored == null || stored.Status != fromStatus)
         {
@@ -224,11 +242,98 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         stored.HandlingKind = fields?.HandlingKind ?? stored.HandlingKind;
         stored.RejectReason = fields?.RejectReason ?? stored.RejectReason;
         stored.RejectedByUserId = fields?.RejectedByUserId ?? stored.RejectedByUserId;
+        stored.LastAttemptAtUtc = fields?.LastAttemptAtUtc ?? stored.LastAttemptAtUtc;
+        stored.AttemptCount += fields?.AttemptIncrement ?? 0;
 
         auditEvent.ConditionId = id;
         _events.Add(auditEvent);
 
         return Task.FromResult(true);
+    }
+
+    public Task<bool> TryReclaimStaleAsync(
+        Guid id,
+        DateTime staleBeforeUtc,
+        DateTime claimedAtUtc,
+        AgentConditionEvent auditEvent,
+        CancellationToken cancellationToken = default)
+    {
+        var stored = _conditions.FirstOrDefault(c => c.Id == id);
+        if (stored == null
+            || stored.Status != AgentConditionStatus.Prepared
+            || stored.LastAttemptAtUtc is not { } lastAttemptAtUtc
+            || lastAttemptAtUtc >= staleBeforeUtc)
+        {
+            return Task.FromResult(false);
+        }
+
+        stored.LastAttemptAtUtc = claimedAtUtc;
+        stored.AttemptCount++;
+
+        auditEvent.ConditionId = id;
+        _events.Add(auditEvent);
+
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TrySetCausedByAsync(Guid id, Guid causedByConditionId, CancellationToken cancellationToken = default)
+    {
+        var stored = _conditions.FirstOrDefault(c => c.Id == id);
+        if (stored == null || stored.CausedByConditionId != null)
+        {
+            return Task.FromResult(false);
+        }
+
+        stored.CausedByConditionId = causedByConditionId;
+        return Task.FromResult(true);
+    }
+
+    public Task<List<AgentCondition>> GetActionableByKindAsync(
+        string triggerKind,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var matches = _conditions
+            .Where(c => c.TriggerKind == triggerKind
+                && (c.Status == AgentConditionStatus.Reported || c.Status == AgentConditionStatus.Prepared))
+            .OrderBy(SeverityRank)
+            .ThenBy(c => c.DetectedAtUtc)
+            .Take(take)
+            .Select(Copy)
+            .ToList();
+
+        return Task.FromResult(matches);
+    }
+
+    public Task<int> CountActionClaimsAsync(
+        string triggerKind,
+        DateTime sinceUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var conditionIds = _conditions
+            .Where(c => c.TriggerKind == triggerKind)
+            .Select(c => c.Id)
+            .ToHashSet();
+
+        var count = _events.Count(e =>
+            conditionIds.Contains(e.ConditionId)
+            && e.AtUtc >= sinceUtc
+            && e.Detail != null
+            && e.Detail.StartsWith(AgentConditionActionDefaults.ActionClaimDetailPrefix, StringComparison.Ordinal));
+
+        return Task.FromResult(count);
+    }
+
+    public Task<List<AgentCondition>> GetExecutedSinceAsync(DateTime sinceUtc, CancellationToken cancellationToken = default)
+    {
+        var matches = _conditions
+            .Where(c => c.Status == AgentConditionStatus.Executed
+                && c.HandledAtUtc != null
+                && c.HandledAtUtc >= sinceUtc)
+            .Select(Copy)
+            .ToList();
+
+        return Task.FromResult(matches);
     }
 
     public Task<bool> TouchLastSeenAsync(Guid id, DateTime seenAtUtc, CancellationToken cancellationToken = default)
