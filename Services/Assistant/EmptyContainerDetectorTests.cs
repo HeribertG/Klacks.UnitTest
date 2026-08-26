@@ -28,6 +28,10 @@ namespace Klacks.UnitTest.Services.Assistant;
 [TestFixture]
 public class EmptyContainerDetectorTests
 {
+    private static readonly DateOnly BulkFromDate = new(2025, 1, 1);
+
+    private const int ClockAdvancePollMilliseconds = 5;
+
     private DataBaseContext _context = null!;
     private ShiftRepository _shiftRepository = null!;
     private ContainerTemplateRepository _containerTemplateRepository = null!;
@@ -82,6 +86,21 @@ public class EmptyContainerDetectorTests
     public void TearDown()
     {
         _context.Dispose();
+    }
+
+    /// <summary>
+    /// CreateTime is stamped by OnBeforeSaving from DateTime.UtcNow, whose granularity can be coarser than
+    /// the time two SaveChanges calls take. Waiting for the clock to actually move is what makes "created
+    /// later" mean later, instead of relying on the two batches landing in different ticks by luck.
+    /// </summary>
+    private static async Task WaitForTheClockToAdvanceAsync()
+    {
+        var before = DateTime.UtcNow;
+
+        while (DateTime.UtcNow <= before)
+        {
+            await Task.Delay(ClockAdvancePollMilliseconds);
+        }
     }
 
     private static Shift MakeContainer(
@@ -338,6 +357,60 @@ public class EmptyContainerDetectorTests
         var actualIds = events.Select(e => e.ShiftId).ToHashSet();
 
         Assert.That(actualIds, Is.EqualTo(expectedIds));
+    }
+
+    [Test]
+    public async Task DetectAsync_CapIsFullAndTheBacklogSharesOneFromDate_StillReportsAContainerCreatedLater()
+    {
+        // The degenerate case the FromDate order cannot handle, and the one the reference installation
+        // actually has: every backlog container carries the same FromDate, so the sort collapses onto the
+        // random-GUID tiebreaker and a container created today sorts behind all of them forever.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var backlog = Enumerable.Range(0, EmptyContainerDetector.MaxFindingsPerTick + 20)
+            .Select(_ => MakeContainer(BulkFromDate, today.AddDays(365)))
+            .ToList();
+        await _context.Shift.AddRangeAsync(backlog);
+        await _context.SaveChangesAsync();
+
+        await WaitForTheClockToAdvanceAsync();
+
+        var createdLater = MakeContainer(today, today.AddDays(365));
+        await _context.Shift.AddAsync(createdLater);
+        await _context.SaveChangesAsync();
+
+        Assume.That(
+            createdLater.CreateTime,
+            Is.GreaterThan(backlog.Max(container => container.CreateTime)),
+            "the clock did not advance between the two saves, so this test cannot tell the batches apart");
+
+        var events = (await _sut.DetectAsync()).Cast<EmptyContainerTriggerEvent>().ToList();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(events.Select(e => e.ShiftId), Does.Contain(createdLater.Id));
+            Assert.That(events, Has.Count.EqualTo(EmptyContainerDetector.MaxFindingsPerTick + 1));
+        });
+    }
+
+    [Test]
+    public async Task DetectAsync_FewerCandidatesThanTheCap_ReportsEachExactlyOnce()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var containers = Enumerable.Range(0, 5)
+            .Select(_ => MakeContainer(BulkFromDate, today.AddDays(365)))
+            .ToList();
+        await _context.Shift.AddRangeAsync(containers);
+        await _context.SaveChangesAsync();
+
+        await WaitForTheClockToAdvanceAsync();
+
+        var createdLater = MakeContainer(today, today.AddDays(365));
+        await _context.Shift.AddAsync(createdLater);
+        await _context.SaveChangesAsync();
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(containers.Count + 1));
     }
 
     [Test]
