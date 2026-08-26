@@ -6,10 +6,14 @@
 /// covered here too, and only the registry is substituted. The matrix is deliberately stricter than the
 /// interactive one: reversible skills need Autonomous, scenario-gated skills need Assisted, and an
 /// irreversible skill runs only on a scheduled task that explicitly opted in — never on the heartbeat.
+/// Every refusal text is checked to state the CAUSE and the REMEDY and to claim no consequence: the
+/// policy serves the scheduled runner and the proactive heartbeat alike, and only the caller knows
+/// whether a task was paused, disabled, or — on the heartbeat — never existed to begin with.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Scheduling;
 using Klacks.Api.Application.Skills.Meta;
+using Klacks.Api.Domain.Constants;
 
 namespace Klacks.UnitTest.Application.Assistant.Scheduling;
 
@@ -63,7 +67,7 @@ public class UnattendedSkillPolicyTests
         var decision = _policy.Decide(Request(IrreversibleSkill, Array.Empty<string>()));
 
         decision.Allowed.ShouldBeFalse();
-        decision.Reason!.ShouldContain("never frozen");
+        decision.Reason!.ShouldContain("no permissions at all");
         decision.DenyReason.ShouldBe(UnattendedDenyReason.NoPermissions);
     }
 
@@ -122,7 +126,34 @@ public class UnattendedSkillPolicyTests
 
         decision.Allowed.ShouldBeFalse();
         decision.DenyReason.ShouldBe(UnattendedDenyReason.IrreversibleWithoutOptIn);
-        decision.Reason!.ShouldContain("paused");
+        decision.Reason!.ShouldContain("explicitly opts in");
+    }
+
+    [Test]
+    public void Decide_EveryRefusal_StatesTheCauseWithoutClaimingAConsequence()
+    {
+        Known(IrreversibleSkill);
+        Known(SensitiveSkill);
+        Known(ReversibleSkill);
+        _registry.GetSkillByName("vanished_skill").Returns((SkillDescriptor?)null);
+
+        var refusals = new[]
+        {
+            _policy.Decide(Request(IrreversibleSkill, Array.Empty<string>())),
+            _policy.Decide(Request("vanished_skill")),
+            _policy.Decide(Request(SensitiveSkill)),
+            _policy.Decide(Request(IrreversibleSkill)),
+            _policy.Decide(Request(IrreversibleSkill, autonomyLevel: AutonomyLevel.Assisted, allowIrreversibleUnattended: true)),
+            _policy.Decide(Request(ReversibleSkill, autonomyLevel: AutonomyLevel.Assisted))
+        };
+
+        foreach (var refusal in refusals)
+        {
+            refusal.Allowed.ShouldBeFalse();
+            refusal.Reason!.ToLowerInvariant().ShouldNotContain("was disabled");
+            refusal.Reason!.ToLowerInvariant().ShouldNotContain("was paused");
+            refusal.Reason!.ToLowerInvariant().ShouldNotContain("task was");
+        }
     }
 
     [Test]
@@ -207,6 +238,38 @@ public class UnattendedSkillPolicyTests
 
         decision.Allowed.ShouldBeFalse();
         decision.DenyReason.ShouldBe(UnattendedDenyReason.AutonomyLevelTooLow);
+    }
+
+    // Etappe 5 depends on this end to end: create_container_template must clear the hardened matrix at
+    // the DEFAULT autonomy level without any per-task opt-in, otherwise the autonomous remediation of an
+    // empty container is gated behind a wall it can never pass. The real classifier is used here, so this
+    // breaks the moment the skill loses its registered inverse.
+    [Test]
+    public void Decide_CreateContainerTemplate_RunsUnattendedAtTheDefaultLevelWithoutAnOptIn()
+    {
+        Known("create_container_template");
+
+        var decision = _policy.Decide(Request(
+            "create_container_template",
+            autonomyLevel: AutonomyDefaults.DefaultLevel,
+            allowIrreversibleUnattended: false));
+
+        decision.Allowed.ShouldBeTrue();
+        decision.DenyReason.ShouldBe(UnattendedDenyReason.None);
+    }
+
+    [Test]
+    public void Decide_DeleteContainerTemplate_NeverRunsUnattended_NotEvenWithTheOptIn()
+    {
+        Known("delete_container_template");
+
+        var decision = _policy.Decide(Request(
+            "delete_container_template",
+            autonomyLevel: AutonomyLevel.FullyAutonomous,
+            allowIrreversibleUnattended: true));
+
+        decision.Allowed.ShouldBeFalse();
+        decision.DenyReason.ShouldBe(UnattendedDenyReason.SensitiveSkill);
     }
 
     [Test]

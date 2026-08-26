@@ -180,6 +180,29 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Query)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
+    // Etappe 5: create_container_template used to fall through to the Irreversible default (Crud is a
+    // write category), which the hardened UnattendedSkillPolicy refuses on every background path unless a
+    // scheduled task opts in - so the autonomous remediation of an empty container would have hit a wall.
+    // It is Reversible now because a real inverse skill exists and is registered, not because it was
+    // asserted into ReversibleExtras.
+    [Test]
+    public void Classify_CreateContainerTemplate_IsReversible_ThroughItsRegisteredInverse()
+    {
+        InverseSkillRegistry.TryGet("create_container_template", out var inverse).ShouldBeTrue();
+        inverse.SkillName.ShouldBe("delete_container_template");
+
+        _sut.Classify(Descriptor("create_container_template")).ShouldBe(SkillRiskClass.Reversible);
+    }
+
+    // The inverse itself is container-scoped: it deletes EVERY weekday template of the container, so it
+    // must not run unconfirmed at the default Autonomous level. Being Sensitive does not weaken the
+    // reversibility it lends its counterpart - IsReversible only asks whether an inverse is registered.
+    [Test]
+    public void Classify_DeleteContainerTemplate_IsSensitive_BecauseItWipesEveryTemplateOfTheContainer()
+    {
+        _sut.Classify(Descriptor("delete_container_template")).ShouldBe(SkillRiskClass.Sensitive);
+    }
+
     [TestCase(SkillCategory.Query)]
     [TestCase(SkillCategory.Read)]
     [TestCase(SkillCategory.Validation)]

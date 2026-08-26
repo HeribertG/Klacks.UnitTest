@@ -4,9 +4,11 @@
 /// Unit tests for ScheduledTaskRunner: it fires due tasks, skips stale ones, runs skills under the
 /// owner's identity with the autonomy gate bypassed, always stashes a durable pending note and only
 /// acknowledges it after a successful live send, and records the outcome; a lost claim does nothing. Skill actions the unattended policy refuses disable
-/// the task instead of running, while reminders never consult the policy at all. The one refusal that
-/// does NOT disable is the missing opt-in for an irreversible skill: it pauses the task, leaving the
-/// owner's IsEnabled intent and the schedule intact, and tells the owner how to lift it.
+/// the task instead of running, while reminders never consult the policy at all. The refusals that do
+/// NOT disable are the ones whose cause the owner can fix from the outside - a missing irreversible
+/// opt-in and a too-low autonomy level: they pause the task, leaving the owner's IsEnabled intent and
+/// the schedule intact. Since the policy states cause and remedy only, the runner is also what appends
+/// the sentence naming the follow-up it applied, so a paused task cannot read like a disabled one.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Scheduling;
@@ -34,7 +36,14 @@ public class ScheduledTaskRunnerTests
 
     private const string IrreversibleRefusal =
         "Skill 'update_client' is classified as irreversible and does not run unattended unless this " +
-        "task explicitly opts in. The task was paused, not disabled.";
+        "task explicitly opts in.";
+
+    private const string AutonomyRefusal =
+        "Skill 'update_client' is classified as Irreversible and needs autonomy level Autonomous or " +
+        "higher to run unattended even with the opt-in, but the owner is at Assisted.";
+
+    private const string PauseFollowUpFragment = "paused, not disabled";
+    private const string DisableFollowUpFragment = "was disabled and its schedule dropped";
 
     [SetUp]
     public void SetUp()
@@ -386,12 +395,76 @@ public class ScheduledTaskRunnerTests
         await _repository.Received(1).UpdateAsync(
             Arg.Is<ScheduledTask>(t =>
                 t.IsPaused &&
-                t.PausedReason == IrreversibleRefusal &&
+                t.PausedReason!.Contains(IrreversibleRefusal) &&
+                t.PausedReason!.Contains(PauseFollowUpFragment) &&
                 t.IsEnabled &&
                 t.NextRunUtc != null &&
                 t.RunCount == 0 &&
                 t.LastStatus == ScheduledTaskRunStatus.Error),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_RefusedForATooLowAutonomyLevel_PausesInsteadOfDestroyingTheTask()
+    {
+        var task = SkillTask("update_client");
+        task.AllowIrreversibleUnattended = true;
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                AutonomyRefusal, UnattendedDenyReason.AutonomyLevelTooLow));
+
+        await _runner.RunDueAsync();
+
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<ScheduledTask>(t =>
+                t.IsPaused &&
+                t.IsEnabled &&
+                t.NextRunUtc != null &&
+                t.PausedReason!.Contains(AutonomyRefusal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_PausedTask_TellsTheOwnerHowToResumeIt()
+    {
+        var task = SkillTask("update_client");
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                IrreversibleRefusal, UnattendedDenyReason.IrreversibleWithoutOptIn));
+
+        await _runner.RunDueAsync();
+
+        await _notification.Received(1).SendProactiveMessageAsync(
+            Owner.ToString(),
+            Arg.Is<string>(m =>
+                m.Contains(IrreversibleRefusal) &&
+                m.Contains(PauseFollowUpFragment) &&
+                m.Contains("same name")));
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_DisabledTask_SaysSoInsteadOfPromisingAResume()
+    {
+        var task = SkillTask("delete_client");
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                "Skill 'delete_client' is now classified as sensitive.", UnattendedDenyReason.SensitiveSkill));
+
+        await _runner.RunDueAsync();
+
+        await _notification.Received(1).SendProactiveMessageAsync(
+            Owner.ToString(),
+            Arg.Is<string>(m =>
+                m.Contains(DisableFollowUpFragment) &&
+                !m.Contains(PauseFollowUpFragment)));
     }
 
     [Test]
@@ -408,6 +481,31 @@ public class ScheduledTaskRunnerTests
 
         await _pendingNotes.Received(1).AddAsync(
             Arg.Is<PendingUserNote>(n => n.UserId == Owner && n.Content.Contains(IrreversibleRefusal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    // The stored PausedReason is capped at 500 characters and the resume instruction sits at its TAIL,
+    // which is exactly the half an owner reads back later through list_recurring_tasks. This pins that
+    // the longest refusal the policy can actually produce still fits, so a future wording change that
+    // pushes it over the cap fails here instead of silently swallowing the advice.
+    [Test]
+    public async Task RunDueAsync_LongestRefusal_KeepsTheResumeAdviceInsideTheStoredReason()
+    {
+        var task = SkillTask("bundle_nearby_time_range_shifts_into_container");
+        task.AllowIrreversibleUnattended = true;
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                "Skill 'bundle_nearby_time_range_shifts_into_container' is classified as Irreversible and " +
+                "needs autonomy level Autonomous or higher to run unattended even with the opt-in, but the " +
+                "owner is at FullyAutonomous. Raise the autonomy level to Autonomous or higher.",
+                UnattendedDenyReason.AutonomyLevelTooLow));
+
+        await _runner.RunDueAsync();
+
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<ScheduledTask>(t => t.IsPaused && t.PausedReason!.Contains("same name")),
             Arg.Any<CancellationToken>());
     }
 
