@@ -4,7 +4,9 @@
 /// Unit tests for ScheduledTaskRunner: it fires due tasks, skips stale ones, runs skills under the
 /// owner's identity with the autonomy gate bypassed, always stashes a durable pending note and only
 /// acknowledges it after a successful live send, and records the outcome; a lost claim does nothing. Skill actions the unattended policy refuses disable
-/// the task instead of running, while reminders never consult the policy at all.
+/// the task instead of running, while reminders never consult the policy at all. The one refusal that
+/// does NOT disable is the missing opt-in for an irreversible skill: it pauses the task, leaving the
+/// owner's IsEnabled intent and the schedule intact, and tells the owner how to lift it.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Scheduling;
@@ -22,12 +24,17 @@ public class ScheduledTaskRunnerTests
     private IPendingUserNoteRepository _pendingNotes = null!;
     private IAgentRepository _agentRepository = null!;
     private IUnattendedSkillPolicy _unattendedPolicy = null!;
+    private IAgentAutonomyPreferenceRepository _autonomyRepository = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
     private ScheduledTaskRunner _runner = null!;
     private List<PendingUserNote> _stashedNotes = null!;
 
     private static readonly Guid Owner = Guid.NewGuid();
     private static readonly Guid AgentGuid = Guid.NewGuid();
+
+    private const string IrreversibleRefusal =
+        "Skill 'update_client' is classified as irreversible and does not run unattended unless this " +
+        "task explicitly opts in. The task was paused, not disabled.";
 
     [SetUp]
     public void SetUp()
@@ -38,6 +45,7 @@ public class ScheduledTaskRunnerTests
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
         _agentRepository = Substitute.For<IAgentRepository>();
         _unattendedPolicy = Substitute.For<IUnattendedSkillPolicy>();
+        _autonomyRepository = Substitute.For<IAgentAutonomyPreferenceRepository>();
         _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
 
         _stashedNotes = new List<PendingUserNote>();
@@ -48,7 +56,7 @@ public class ScheduledTaskRunnerTests
             .Returns(true);
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>())
             .Returns(new Agent { Id = AgentGuid });
-        _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
             .Returns(UnattendedSkillDecision.Allow());
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.Authorised }));
@@ -60,6 +68,7 @@ public class ScheduledTaskRunnerTests
             _pendingNotes,
             _agentRepository,
             _unattendedPolicy,
+            _autonomyRepository,
             _tokenIssuer,
             Substitute.For<ILogger<ScheduledTaskRunner>>());
     }
@@ -77,6 +86,15 @@ public class ScheduledTaskRunnerTests
         IsEnabled = true,
         NextRunUtc = nextRunUtc
     };
+
+    private ScheduledTask SkillTask(string skillName)
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        task.ActionType = ScheduledTaskActionTypes.Skill;
+        task.SkillName = skillName;
+        task.MessageText = null;
+        return task;
+    }
 
     private void Due(params ScheduledTask[] tasks) =>
         _repository.GetDueAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(tasks.ToList());
@@ -285,8 +303,9 @@ public class ScheduledTaskRunnerTests
         task.OwnerPermissionsCsv = null;
         Due(task);
         _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
-        _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
-            .Returns(UnattendedSkillDecision.Deny("Owner permissions were never frozen."));
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                "Owner permissions were never frozen.", UnattendedDenyReason.NoPermissions));
 
         await _runner.RunDueAsync();
 
@@ -309,8 +328,9 @@ public class ScheduledTaskRunnerTests
         task.MessageText = null;
         Due(task);
         _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
-        _unattendedPolicy.Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
-            .Returns(UnattendedSkillDecision.Deny("Skill 'delete_client' is now classified as sensitive."));
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                "Skill 'delete_client' is now classified as sensitive.", UnattendedDenyReason.SensitiveSkill));
 
         await _runner.RunDueAsync();
 
@@ -328,7 +348,7 @@ public class ScheduledTaskRunnerTests
 
         await _runner.RunDueAsync();
 
-        _unattendedPolicy.DidNotReceive().Decide(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>());
+        _unattendedPolicy.DidNotReceive().Decide(Arg.Any<UnattendedSkillRequest>());
         await _repository.Received(1).UpdateAsync(
             Arg.Is<ScheduledTask>(t => t.LastStatus == ScheduledTaskRunStatus.Ok && t.IsEnabled),
             Arg.Any<CancellationToken>());
@@ -347,5 +367,100 @@ public class ScheduledTaskRunnerTests
         await _repository.Received(1).UpdateAsync(
             Arg.Is<ScheduledTask>(t => !t.IsEnabled && t.NextRunUtc == null && t.RunCount == 1),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_RefusedForAMissingIrreversibleOptIn_PausesInsteadOfDisabling()
+    {
+        var task = SkillTask("update_client");
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                IrreversibleRefusal, UnattendedDenyReason.IrreversibleWithoutOptIn));
+
+        await _runner.RunDueAsync();
+
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<ScheduledTask>(t =>
+                t.IsPaused &&
+                t.PausedReason == IrreversibleRefusal &&
+                t.IsEnabled &&
+                t.NextRunUtc != null &&
+                t.RunCount == 0 &&
+                t.LastStatus == ScheduledTaskRunStatus.Error),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_RefusedForAMissingIrreversibleOptIn_StashesADurableNoteForTheOwner()
+    {
+        var task = SkillTask("update_client");
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(false);
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                IrreversibleRefusal, UnattendedDenyReason.IrreversibleWithoutOptIn));
+
+        await _runner.RunDueAsync();
+
+        await _pendingNotes.Received(1).AddAsync(
+            Arg.Is<PendingUserNote>(n => n.UserId == Owner && n.Content.Contains(IrreversibleRefusal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_RefusedAsSensitive_StillDisablesAndNeverPauses()
+    {
+        var task = SkillTask("delete_client");
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _unattendedPolicy.Decide(Arg.Any<UnattendedSkillRequest>())
+            .Returns(UnattendedSkillDecision.Deny(
+                "Skill 'delete_client' is now classified as sensitive.", UnattendedDenyReason.SensitiveSkill));
+
+        await _runner.RunDueAsync();
+
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<ScheduledTask>(t => !t.IsEnabled && !t.IsPaused && t.PausedReason == null && t.NextRunUtc == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_AsksThePolicyWithTheOwnersLevelTheScheduledKindAndTheTasksOptIn()
+    {
+        var task = SkillTask("update_client");
+        task.AllowIrreversibleUnattended = true;
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _autonomyRepository.GetAsync(Owner.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = Owner.ToString(), Level = AutonomyLevel.FullyAutonomous });
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null, "done"));
+
+        await _runner.RunDueAsync();
+
+        _unattendedPolicy.Received(1).Decide(Arg.Is<UnattendedSkillRequest>(r =>
+            r.SkillName == "update_client" &&
+            r.AutonomyLevel == AutonomyLevel.FullyAutonomous &&
+            r.ExecutionKind == UnattendedExecutionKind.ScheduledTask &&
+            r.AllowIrreversibleUnattended));
+    }
+
+    [Test]
+    public async Task RunDueAsync_SkillAction_WithoutAnAutonomyRow_FallsBackToTheSystemDefaultLevel()
+    {
+        var task = SkillTask("update_client");
+        Due(task);
+        _notification.IsUserConnectedAsync(Owner.ToString()).Returns(true);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null, "done"));
+
+        await _runner.RunDueAsync();
+
+        _unattendedPolicy.Received(1).Decide(
+            Arg.Is<UnattendedSkillRequest>(r => r.AutonomyLevel == AutonomyDefaults.DefaultLevel));
     }
 }
