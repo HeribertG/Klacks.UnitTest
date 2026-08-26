@@ -233,11 +233,14 @@ public class AcceptAnalyseScenarioCommandHandlerTests
         var overrideAuthorizer = Substitute.For<Klacks.Api.Application.Interfaces.Schedules.ISupervisorOverrideAuthorizer>();
         var timelineService = Substitute.For<IScheduleTimelineService>();
         var httpContextAccessor = Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+        var conditionRepository = Substitute.For<Klacks.Api.Domain.Interfaces.Assistant.IAgentConditionRepository>();
+        var ledgerService = Substitute.For<Klacks.Api.Domain.Interfaces.Assistant.IAgentConditionLedgerService>();
 
         var logger = Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>();
         _handler = new AcceptAnalyseScenarioCommandHandler(
             _repository, _scenarioService, _unitOfWork, softeningRepository,
-            complianceService, overrideAuthorizer, timelineService, httpContextAccessor, logger);
+            complianceService, overrideAuthorizer, timelineService,
+            conditionRepository, ledgerService, httpContextAccessor, logger);
     }
 
     [Test]

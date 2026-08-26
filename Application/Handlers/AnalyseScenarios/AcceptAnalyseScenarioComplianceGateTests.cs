@@ -10,6 +10,7 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -63,6 +64,8 @@ public class AcceptAnalyseScenarioComplianceGateTests
             _complianceService,
             _overrideAuthorizer,
             _timelineService,
+            Substitute.For<IAgentConditionRepository>(),
+            Substitute.For<IAgentConditionLedgerService>(),
             Substitute.For<IHttpContextAccessor>(),
             Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>());
     }

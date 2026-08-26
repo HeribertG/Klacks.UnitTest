@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for SetProactiveReactionCommandHandler — verifies that a reaction is stored on the
@@ -364,5 +364,69 @@ public class SetProactiveReactionCommandHandlerTests
         Assert.That(row.Reaction, Is.EqualTo(ProactiveReaction.Dismissed));
         await _dispatchRepository.Received(1).UpdateAsync(row, Arg.Any<CancellationToken>());
         await _dismissStreakEvaluator.Received(1).EvaluateAsync(OwnerUserId, row.TriggerKind, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// The Etappe 6 evidence path (B2): the reason lives on the dismisser's OWN dispatch row, so the
+    /// second and every later dismisser of the same finding keeps theirs even though the ledger's
+    /// terminal Rejected status was already claimed by the first.
+    /// </summary>
+    [Test]
+    public async Task Handle_DismissedWithReason_StoresTheReasonOnTheDispatchRowEvenWhenTheLedgerTransitionIsLost()
+    {
+        var id = Guid.NewGuid();
+        var row = MakeRow(id, OwnerUserId, Guid.NewGuid());
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+        _ledgerService
+            .TryRejectAsync(Arg.Any<Guid>(), Arg.Any<AgentConditionRejectReason>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Dismissed,
+            RejectReason = AgentConditionRejectReason.GenerallyUnwanted
+        }, CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        Assert.That(row.RejectReason, Is.EqualTo(AgentConditionRejectReason.GenerallyUnwanted));
+        await _dispatchRepository.Received(1).UpdateAsync(row, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_DismissedOnAnUnlinkedRow_StillStoresTheReasonOnTheDispatchRow()
+    {
+        var id = Guid.NewGuid();
+        var row = MakeRow(id, OwnerUserId);
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+
+        await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Dismissed,
+            RejectReason = AgentConditionRejectReason.AlreadyHandled
+        }, CancellationToken.None);
+
+        Assert.That(row.RejectReason, Is.EqualTo(AgentConditionRejectReason.AlreadyHandled));
+    }
+
+    [Test]
+    public async Task Handle_Helpful_LeavesTheRejectReasonNull()
+    {
+        var id = Guid.NewGuid();
+        var row = MakeRow(id, OwnerUserId);
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+
+        await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Helpful,
+            RejectReason = AgentConditionRejectReason.WrongThisTime
+        }, CancellationToken.None);
+
+        Assert.That(row.RejectReason, Is.Null);
     }
 }

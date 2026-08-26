@@ -33,6 +33,8 @@ public class AgentConditionLedgerServiceTests
     private const string OtherKind = "open_order";
     private const string Severity = "high";
     private const string Payload = "{\"containerId\":\"x\"}";
+    private const string StalePayload = "{\"shiftId\":\"x\"}";
+    private const string RefreshedPayload = "{\"shiftId\":\"x\",\"isoWeekdays\":[1,3]}";
 
     private static readonly DateTime StartUtc = new(2026, 8, 24, 6, 0, 0, DateTimeKind.Utc);
 
@@ -233,7 +235,7 @@ public class AgentConditionLedgerServiceTests
     }
 
     [Test]
-    public async Task UpsertDetected_SecondSightingMovesLastSeenOnly()
+    public async Task UpsertDetected_SecondSightingWithAnUnchangedPayload_MovesLastSeenOnly()
     {
         var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-again", null, null, Severity, Payload);
 
@@ -244,8 +246,98 @@ public class AgentConditionLedgerServiceTests
         second.Id.ShouldBe(first.Id);
         second.LastSeenAtUtc.ShouldBe(StartUtc.AddMinutes(5));
         second.DetectedAtUtc.ShouldBe(StartUtc);
+        _repository.Stored(first.Id).PayloadJson.ShouldBe(Payload);
         _repository.Conditions.Count.ShouldBe(1);
         _repository.EventsFor(first.Id).Count.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// The Etappe 5 unlock: a row opened before a detector started capturing a field has to be able to
+    /// pick that field up while it stays open, or it can never be remediated and therefore never leaves
+    /// the queue. Everything that makes the row the SAME memory is asserted to be unchanged - the
+    /// fingerprint above all, because a changed one would open a second row and split the history.
+    /// </summary>
+    [Test]
+    public async Task UpsertDetected_SecondSightingWithAChangedPayload_RefreshesItAndLeavesTheRowsIdentityAndLifecycleAlone()
+    {
+        var seeded = _repository.Seed(Kind, "fp-refresh", AgentConditionStatus.Reported, StartUtc);
+        seeded.PayloadJson = StalePayload;
+        seeded.AttemptCount = 2;
+        seeded.HandledAtUtc = StartUtc.AddMinutes(1);
+        seeded.RejectReason = AgentConditionRejectReason.WrongThisTime;
+
+        _timeProvider.Now = StartUtc.AddMinutes(5);
+        var (condition, isNew) = await _service.UpsertDetectedAsync(
+            Kind, "fp-refresh", null, null, Severity, RefreshedPayload);
+
+        isNew.ShouldBeFalse();
+        condition.Id.ShouldBe(seeded.Id);
+
+        var stored = _repository.Stored(seeded.Id);
+        stored.PayloadJson.ShouldBe(RefreshedPayload);
+        condition.PayloadJson.ShouldBe(RefreshedPayload);
+
+        stored.Fingerprint.ShouldBe("fp-refresh");
+        stored.Status.ShouldBe(AgentConditionStatus.Reported);
+        stored.AttemptCount.ShouldBe(2);
+        stored.HandledAtUtc.ShouldBe(StartUtc.AddMinutes(1));
+        stored.RejectReason.ShouldBe(AgentConditionRejectReason.WrongThisTime);
+        stored.DetectedAtUtc.ShouldBe(StartUtc);
+        _repository.EventsFor(seeded.Id).ShouldBeEmpty();
+        _repository.Conditions.Count.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// Two ticks can share a timestamp - a test driving a fake clock always does, and so do two API
+    /// instances scanning within the same clock resolution. A refresh gated on the timestamp alone would
+    /// be dropped in exactly those cases, which is the failure this pins.
+    /// </summary>
+    [Test]
+    public async Task UpsertDetected_ChangedPayloadWithoutTheClockAdvancing_StillRefreshes()
+    {
+        var seeded = _repository.Seed(Kind, "fp-sameclock", AgentConditionStatus.Reported, StartUtc);
+        seeded.PayloadJson = StalePayload;
+
+        var (_, isNew) = await _service.UpsertDetectedAsync(
+            Kind, "fp-sameclock", null, null, Severity, RefreshedPayload);
+
+        isNew.ShouldBeFalse();
+        _repository.Stored(seeded.Id).PayloadJson.ShouldBe(RefreshedPayload);
+        _repository.Stored(seeded.Id).LastSeenAtUtc.ShouldBe(StartUtc);
+    }
+
+    [Test]
+    public async Task UpsertDetected_DetectorReportingNothingStructured_NeverClearsAPopulatedPayload()
+    {
+        var seeded = _repository.Seed(Kind, "fp-empty", AgentConditionStatus.Reported, StartUtc);
+        seeded.PayloadJson = RefreshedPayload;
+
+        _timeProvider.Now = StartUtc.AddMinutes(5);
+        await _service.UpsertDetectedAsync(Kind, "fp-empty", null, null, Severity, "{}");
+
+        _repository.Stored(seeded.Id).PayloadJson.ShouldBe(RefreshedPayload);
+    }
+
+    /// <summary>
+    /// A terminal row is history. The fingerprint lookup never returns one, so a re-detection opens a
+    /// fresh row and the old payload survives untouched - this pins that the refresh cannot reach back
+    /// into a closed row through the re-arm path.
+    /// </summary>
+    [Test]
+    public async Task UpsertDetected_ChangedPayloadAfterTheRowWentTerminal_LeavesTheHistoryRowUntouched()
+    {
+        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-terminal", null, null, Severity, StalePayload);
+        await _service.TryTransitionAsync(first.Id, AgentConditionStatus.Detected, AgentConditionStatus.Resolved);
+
+        _timeProvider.Now = StartUtc.AddHours(1);
+        var (second, isNew) = await _service.UpsertDetectedAsync(
+            Kind, "fp-terminal", null, null, Severity, RefreshedPayload);
+
+        isNew.ShouldBeTrue();
+        second.Id.ShouldNotBe(first.Id);
+        _repository.Stored(first.Id).PayloadJson.ShouldBe(StalePayload);
+        _repository.Stored(first.Id).Status.ShouldBe(AgentConditionStatus.Resolved);
+        _repository.Stored(second.Id).PayloadJson.ShouldBe(RefreshedPayload);
     }
 
     [Test]

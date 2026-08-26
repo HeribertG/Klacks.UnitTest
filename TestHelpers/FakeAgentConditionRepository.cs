@@ -243,6 +243,7 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         stored.RejectReason = fields?.RejectReason ?? stored.RejectReason;
         stored.RejectedByUserId = fields?.RejectedByUserId ?? stored.RejectedByUserId;
         stored.LastAttemptAtUtc = fields?.LastAttemptAtUtc ?? stored.LastAttemptAtUtc;
+        stored.ApprovedByUserId = fields?.ApprovedByUserId ?? stored.ApprovedByUserId;
         stored.AttemptCount += fields?.AttemptIncrement ?? 0;
 
         auditEvent.ConditionId = id;
@@ -336,15 +337,33 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return Task.FromResult(matches);
     }
 
-    public Task<bool> TouchLastSeenAsync(Guid id, DateTime seenAtUtc, CancellationToken cancellationToken = default)
+    public Task<bool> TouchLastSeenAsync(
+        Guid id,
+        DateTime seenAtUtc,
+        string? payloadJson = null,
+        CancellationToken cancellationToken = default)
     {
         var stored = _conditions.FirstOrDefault(c => c.Id == id);
-        if (stored == null || !AgentConditionStateMachine.IsOpen(stored.Status) || stored.LastSeenAtUtc >= seenAtUtc)
+        if (stored == null || !AgentConditionStateMachine.IsOpen(stored.Status))
         {
             return Task.FromResult(false);
         }
 
-        stored.LastSeenAtUtc = seenAtUtc;
+        if (stored.LastSeenAtUtc >= seenAtUtc && payloadJson == null)
+        {
+            return Task.FromResult(false);
+        }
+
+        if (seenAtUtc > stored.LastSeenAtUtc)
+        {
+            stored.LastSeenAtUtc = seenAtUtc;
+        }
+
+        if (payloadJson != null)
+        {
+            stored.PayloadJson = payloadJson;
+        }
+
         return Task.FromResult(true);
     }
 
