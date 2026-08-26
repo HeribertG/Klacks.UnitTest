@@ -3,8 +3,9 @@
 /// <summary>
 /// Unit tests for SetProactiveReactionCommandHandler — verifies that a reaction is stored on the
 /// user's own dispatch row, that unknown ids or rows of other users are reported as not found,
-/// that a stored dismissal invokes the dismiss-streak evaluator (helpful reactions do not), and
-/// that an evaluator failure never fails the reaction request.
+/// that a stored dismissal invokes the dismiss-streak evaluator (helpful reactions do not), that
+/// every stored reaction invokes the helpful-boost evaluator, and that an evaluator failure never
+/// fails the reaction request.
 ///
 /// The condition-ledger write-back is covered here as the secondary effect it is: a dismissal of a
 /// message that reported a ledger finding rejects that finding with the given reason, a dismissal of
@@ -14,6 +15,7 @@
 
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -28,6 +30,7 @@ public class SetProactiveReactionCommandHandlerTests
     private IProactiveTriggerDispatchRepository _dispatchRepository = null!;
     private IDismissStreakEvaluator _dismissStreakEvaluator = null!;
     private IAgentConditionLedgerService _ledgerService = null!;
+    private IHelpfulBoostEvaluator _helpfulBoostEvaluator = null!;
     private SetProactiveReactionCommandHandler _sut = null!;
 
     [SetUp]
@@ -36,6 +39,7 @@ public class SetProactiveReactionCommandHandlerTests
         _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
         _dismissStreakEvaluator = Substitute.For<IDismissStreakEvaluator>();
         _ledgerService = Substitute.For<IAgentConditionLedgerService>();
+        _helpfulBoostEvaluator = Substitute.For<IHelpfulBoostEvaluator>();
         _ledgerService
             .TryRejectAsync(Arg.Any<Guid>(), Arg.Any<AgentConditionRejectReason>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -43,6 +47,7 @@ public class SetProactiveReactionCommandHandlerTests
             _dispatchRepository,
             _dismissStreakEvaluator,
             _ledgerService,
+            _helpfulBoostEvaluator,
             NullLogger<SetProactiveReactionCommandHandler>.Instance);
     }
 
@@ -296,6 +301,45 @@ public class SetProactiveReactionCommandHandlerTests
         Assert.That(result, Is.True);
         Assert.That(row.Reaction, Is.EqualTo(ProactiveReaction.Dismissed));
         await _dispatchRepository.Received(1).UpdateAsync(row, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(ProactiveReaction.Helpful)]
+    [TestCase(ProactiveReaction.Dismissed)]
+    public async Task Handle_AnyReaction_InvokesHelpfulBoostEvaluatorWithRowUserAndKind(ProactiveReaction reaction)
+    {
+        var id = Guid.NewGuid();
+        var row = MakeRow(id, OwnerUserId);
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+
+        await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = reaction
+        }, CancellationToken.None);
+
+        await _helpfulBoostEvaluator.Received(1).EvaluateAsync(OwnerUserId, row.TriggerKind, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_HelpfulBoostEvaluatorThrows_ReactionIsStillStoredAndTrueReturned()
+    {
+        var id = Guid.NewGuid();
+        var row = MakeRow(id, OwnerUserId);
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+        _helpfulBoostEvaluator
+            .EvaluateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("evaluation failed")));
+
+        var result = await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Helpful
+        }, CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        Assert.That(row.Reaction, Is.EqualTo(ProactiveReaction.Helpful));
     }
 
     [Test]
