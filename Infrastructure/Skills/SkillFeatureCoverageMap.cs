@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Curated Klacksy feature-coverage decisions for every API controller in Klacks.Api.
@@ -37,6 +37,7 @@ public static class SkillFeatureCoverageMap
         ["KlacksyTrainingController"] = Excluded("Klacksy training and knowledge ingestion, assistant infrastructure"),
         ["ModelSyncController"] = Excluded("admin-only LLM model catalog synchronization; day-to-day model management is covered by the llm model skills"),
         ["ModelsController"] = Covered("list_llm_models", "create_llm_model", "update_llm_model", "delete_llm_model"),
+        ["ProactiveConditionsController"] = Excluded("read-only grid decoration: marks which service-grid entities Klacksy's remediation already handled, read off the condition ledger the list_open_findings skill already exposes in chat"),
         ["ProactiveMessagesController"] = Excluded("Klacksy assistant self-feedback: helpful/dismissed reactions on proactive messages are set via the chat bubble actions, not chat-addressable"),
         ["ProvidersController"] = Covered("list_llm_providers", "create_llm_provider", "update_llm_provider", "delete_llm_provider"),
         ["SkillCoverageController"] = Excluded("Klacksy skill introspection endpoint, assistant infrastructure"),

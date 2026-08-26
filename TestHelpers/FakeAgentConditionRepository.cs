@@ -180,9 +180,17 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
     {
         var relevant = _conditions.Where(c => AgentConditionPlannerRelevantStatuses.Values.Contains(c.Status));
 
+        return ApplyGroupScope(relevant, isUnrestricted, visibleRootIds);
+    }
+
+    private static IEnumerable<AgentCondition> ApplyGroupScope(
+        IEnumerable<AgentCondition> conditions,
+        bool isUnrestricted,
+        IReadOnlySet<Guid> visibleRootIds)
+    {
         return isUnrestricted
-            ? relevant
-            : relevant.Where(c => c.GroupId.HasValue
+            ? conditions
+            : conditions.Where(c => c.GroupId.HasValue
                 ? visibleRootIds.Contains(c.GroupId.Value)
                 : !AgentTriggerGroupScopedKinds.Values.Contains(c.TriggerKind));
     }
@@ -323,6 +331,26 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
             && e.Detail.StartsWith(AgentConditionActionDefaults.ActionClaimDetailPrefix, StringComparison.Ordinal));
 
         return Task.FromResult(count);
+    }
+
+    public Task<List<AgentCondition>> GetExecutedForEntitiesAsync(
+        IReadOnlyCollection<Guid> entityIds,
+        bool isUnrestricted,
+        IReadOnlySet<Guid> visibleRootIds,
+        CancellationToken cancellationToken = default)
+    {
+        var requested = entityIds.ToHashSet();
+        var executed = _conditions.Where(c => c.Status == AgentConditionStatus.Executed
+            && c.EntityId.HasValue
+            && requested.Contains(c.EntityId.Value));
+
+        var matches = ApplyGroupScope(executed, isUnrestricted, visibleRootIds)
+            .OrderByDescending(c => c.HandledAtUtc.HasValue)
+            .ThenByDescending(c => c.HandledAtUtc)
+            .Select(Copy)
+            .ToList();
+
+        return Task.FromResult(matches);
     }
 
     public Task<List<AgentCondition>> GetExecutedSinceAsync(DateTime sinceUtc, CancellationToken cancellationToken = default)
