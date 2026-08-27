@@ -50,7 +50,8 @@ public class AgentTriggerDetectorLedgerClassificationTests
         nameof(ScenarioPendingDetector),
         nameof(PeriodCloseDueDetector),
         nameof(ContractExpiringSoonDetector),
-        nameof(PeriodOverdueDetector)
+        nameof(PeriodOverdueDetector),
+        nameof(NextPeriodSchedulingDueDetector)
     ];
 
     private static IReadOnlyList<Type> DetectorTypes() =>
