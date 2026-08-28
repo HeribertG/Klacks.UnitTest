@@ -36,6 +36,7 @@ public class NextPeriodAutoCommitServiceTests
     private IMediator _mediator = null!;
     private IAgentConditionLedgerService _ledgerService = null!;
     private IAgentTriggerService _triggerService = null!;
+    private IProactiveGovernanceResolver _governanceResolver = null!;
     private NextPeriodAutoCommitService _sut = null!;
 
     [SetUp]
@@ -45,6 +46,8 @@ public class NextPeriodAutoCommitServiceTests
         _mediator = Substitute.For<IMediator>();
         _ledgerService = Substitute.For<IAgentConditionLedgerService>();
         _triggerService = Substitute.For<IAgentTriggerService>();
+        _governanceResolver = Substitute.For<IProactiveGovernanceResolver>();
+        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(false);
 
         _ledgerService.UpsertDetectedAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
@@ -56,6 +59,7 @@ public class NextPeriodAutoCommitServiceTests
         provider.GetService(typeof(IMediator)).Returns(_mediator);
         provider.GetService(typeof(IAgentConditionLedgerService)).Returns(_ledgerService);
         provider.GetService(typeof(IAgentTriggerService)).Returns(_triggerService);
+        provider.GetService(typeof(IProactiveGovernanceResolver)).Returns(_governanceResolver);
 
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(provider);
@@ -93,6 +97,21 @@ public class NextPeriodAutoCommitServiceTests
             Arg.Any<CancellationToken>());
         await _triggerService.Received(1).OnEventAsync(
             Arg.Any<NextPeriodPlanCommittedTriggerEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CommitCompletedChain_KillSwitchActive_WithholdsAcceptAndLeavesDraft()
+    {
+        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(true);
+        StubCompliance();
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        await CommitAsync();
+
+        await _complianceService.DidNotReceiveWithAnyArgs().EvaluateAsync(
+            default, default, default, default, default);
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+        await _triggerService.DidNotReceiveWithAnyArgs().OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

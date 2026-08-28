@@ -35,6 +35,7 @@ public class NextPeriodSchedulingDueDetectorTests
     private INextPeriodAutoCommitService _autoCommitService = null!;
     private IPlanningAudienceResolver _audienceResolver = null!;
     private IAgentAutonomyPreferenceRepository _autonomyPreferences = null!;
+    private IProactiveGovernanceResolver _governanceResolver = null!;
     private ISettingsReader _settingsReader = null!;
     private IReceivedEmailRepository _receivedEmailRepository = null!;
     private NextPeriodSchedulingDueDetector _sut = null!;
@@ -51,6 +52,7 @@ public class NextPeriodSchedulingDueDetectorTests
         _autoCommitService = Substitute.For<INextPeriodAutoCommitService>();
         _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _autonomyPreferences = Substitute.For<IAgentAutonomyPreferenceRepository>();
+        _governanceResolver = Substitute.For<IProactiveGovernanceResolver>();
         _settingsReader = Substitute.For<ISettingsReader>();
         _receivedEmailRepository = Substitute.For<IReceivedEmailRepository>();
 
@@ -59,6 +61,7 @@ public class NextPeriodSchedulingDueDetectorTests
         StubScenarios();
         StubAdmins((AdminId, AutonomyLevel.Propose));
         StubAgentsAndShifts();
+        StubKillSwitch(active: false);
 
         _sut = CreateSut(new DateOnly(2026, 1, 28));
     }
@@ -77,10 +80,16 @@ public class NextPeriodSchedulingDueDetectorTests
             _autoCommitService,
             _audienceResolver,
             _autonomyPreferences,
+            _governanceResolver,
             _settingsReader,
             _receivedEmailRepository,
             NullLogger<NextPeriodSchedulingDueDetector>.Instance,
             tp);
+    }
+
+    private void StubKillSwitch(bool active)
+    {
+        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(active);
     }
 
     private void StubWeekStart(DayOfWeek weekStartDay)
@@ -254,6 +263,22 @@ public class NextPeriodSchedulingDueDetectorTests
         {
             _autoCommitService.DidNotReceiveWithAnyArgs().QueueAutoCommit(default, default, default!, default, default);
         }
+    }
+
+    [TestCase(AutonomyLevel.Autonomous)]
+    [TestCase(AutonomyLevel.FullyAutonomous)]
+    public async Task DetectAsync_KillSwitchActive_FallsBackToHintEvenAtAutonomousOrHigher(AutonomyLevel level)
+    {
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubAdmins((AdminId, level));
+        StubKillSwitch(active: true);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        Assert.That(events[0], Is.TypeOf<NextPeriodSchedulingDueTriggerEvent>());
+        await _autoWizardJobRunner.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
+        _autoCommitService.DidNotReceiveWithAnyArgs().QueueAutoCommit(default, default, default!, default, default);
     }
 
     [Test]
