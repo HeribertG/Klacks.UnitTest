@@ -13,6 +13,8 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Interfaces.Schedules;
+using Klacks.Api.Application.Services.Assistant.Scheduling;
+using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Email;
@@ -41,6 +43,7 @@ public class EmailActionOrchestratorTests
     private IClientContractDataProvider _contractDataProvider = null!;
     private IEmailCapacityAdvisor _capacityAdvisor = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
+    private ISkillRegistry _skillRegistry = null!;
     private EmailActionOrchestrator _orchestrator = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -89,15 +92,27 @@ public class EmailActionOrchestratorTests
                 Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
             .Returns(EmailCapacityVerdict.NotEvaluated());
 
+        // The real policy and the real classifier, not a substitute that always allows: an always-allow
+        // mock would let every assertion below pass while the gate does nothing. The registry is the only
+        // seam a test needs to make a skill vanish or change class.
+        _skillRegistry = Substitute.For<ISkillRegistry>();
+        _skillRegistry.GetSkillByName(Arg.Any<string>())
+            .Returns(call => Descriptor(call.Arg<string>()));
+
         _orchestrator = new EmailActionOrchestrator(
             _autonomyPreferences, _audienceResolver, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
             _capacityAdvisor,
             _tokenIssuer,
+            new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
             Options.Create(new EmailAutomationOptions()),
             Substitute.For<ILogger<EmailActionOrchestrator>>());
     }
+
+    private static SkillDescriptor Descriptor(string name) => new(
+        name, name, SkillCategory.Action,
+        Array.Empty<SkillParameter>(), Array.Empty<string>(), Array.Empty<LLMCapability>(), null);
 
     private void CapacityGap(string note = "Capacity reserve is not sufficient.")
     {
@@ -913,6 +928,7 @@ public class EmailActionOrchestratorTests
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
             _capacityAdvisor,
             _tokenIssuer,
+            new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
             Options.Create(new EmailAutomationOptions { ServiceAccountId = serviceAccountId.ToString() }),
             Substitute.For<ILogger<EmailActionOrchestrator>>());
 
@@ -936,5 +952,23 @@ public class EmailActionOrchestratorTests
         await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
 
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Execution_IsRefused_WhenTheSkillNoLongerPassesTheUnattendedPolicy()
+    {
+        // The point of the policy in this flow: the intent mapping still allows the action, but the
+        // skill itself has changed underneath it. A skill that vanished from the registry (the same
+        // path a reclassification to Sensitive takes) must stop the write, not reach the executor.
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _skillRegistry.GetSkillByName("set_client_availability").Returns((SkillDescriptor?)null);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 12), startHour: 8, endHour: 16));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
     }
 }
