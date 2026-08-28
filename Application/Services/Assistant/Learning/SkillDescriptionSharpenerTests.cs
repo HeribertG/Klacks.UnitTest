@@ -161,6 +161,65 @@ public class SkillDescriptionSharpenerTests
         await _skills.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
     }
 
+    // The gate is measured on a live description, so a probe that throws leaves a description in the
+    // catalogue that nothing ever judged. It has to come back out again, and the proposal has to stay
+    // open rather than be recorded as a verdict nobody reached.
+    [Test]
+    public async Task AGateThatThrows_PutsTheDescriptionBackAndLeavesTheProposalPending()
+    {
+        var proposal = GivenPending();
+        _oracle.FindFailingGoldenCasesAsync(
+                Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => [], _ => throw new InvalidOperationException("the index is unreachable"));
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(0);
+        _skill.Description.ShouldBe(Before);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        proposal.ReviewedAt.ShouldBeNull();
+        await _refresher.Received(2).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // One unreachable probe must not cost the proposals queued behind it.
+    [Test]
+    public async Task AGateThatThrowsOnOneProposal_DoesNotAbortTheRest()
+    {
+        var first = GivenPending();
+        var second = new ProposedSkillChange
+        {
+            Id = Guid.NewGuid(),
+            SkillId = _skill.Id,
+            SkillName = _skill.Name,
+            Field = ProposedChangeFields.Description,
+            ValueBefore = Before,
+            ValueAfter = After,
+            Status = ProposedChangeStatuses.Pending
+        };
+        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([first, second]);
+
+        var throws = true;
+        _oracle.FindFailingGoldenCasesAsync(
+                Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => [], _ =>
+            {
+                if (throws)
+                {
+                    throws = false;
+                    throw new InvalidOperationException("the index is unreachable");
+                }
+
+                return [];
+            });
+
+        var (applied, _) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(1);
+        first.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        second.Status.ShouldBe(ProposedChangeStatuses.AppliedAuto);
+    }
+
     [Test]
     public async Task AnAppliedChangeReachesRetrievalThroughACatalogueRefresh()
     {

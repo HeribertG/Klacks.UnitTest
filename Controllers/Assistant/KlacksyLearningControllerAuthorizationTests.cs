@@ -114,6 +114,49 @@ public class KlacksyLearningControllerAuthorizationTests
         payload.Reason.ShouldNotBeNullOrWhiteSpace();
     }
 
+    // The way back out of unfulfillable the state machine always described. It must go through the same
+    // admin gate as the rest of the card, and it must answer 404 for a wish that is not there.
+    [Test]
+    public async Task AWishHandedBackToTheLoop_Answers204()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<RetryUnfulfillableWishCommand>(), Arg.Any<CancellationToken>())
+            .Returns(LearningMutationResult.Success());
+
+        var result = await new KlacksyLearningController(mediator)
+            .RetryUnfulfillable(Guid.NewGuid(), CancellationToken.None);
+
+        result.ShouldBeOfType<NoContentResult>();
+    }
+
+    [Test]
+    public async Task AWishThatIsNotUnfulfillable_Answers400()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<RetryUnfulfillableWishCommand>(), Arg.Any<CancellationToken>())
+            .Returns(LearningMutationResult.Invalid("wrong status"));
+
+        var result = await new KlacksyLearningController(mediator)
+            .RetryUnfulfillable(Guid.NewGuid(), CancellationToken.None);
+
+        result.ShouldBeOfType<BadRequestObjectResult>();
+    }
+
+    // A rejected description that could not be put back is a conflict, not a success: the card would
+    // otherwise report the automatic change as undone while a foreign description stays live.
+    [Test]
+    public async Task AStaleDescription_Answers409()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<DeleteLearnedPhraseCommand>(), Arg.Any<CancellationToken>())
+            .Returns(LearningMutationResult.StaleDescription());
+
+        var result = await new KlacksyLearningController(mediator)
+            .DeletePhrase(Guid.NewGuid(), CancellationToken.None);
+
+        result.ShouldBeOfType<ConflictObjectResult>();
+    }
+
     [Test]
     public async Task ASuccessfulMutation_Answers204()
     {

@@ -97,6 +97,68 @@ public class SkillLearningLoopTests
                 Arg.Any<SkillLearningClusterContext>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(PhraseLearningOutcome.Failure(error));
 
+    // The classifier answers for the whole batch at once, so its failure is the batch's failure - and a
+    // claim nobody is working on would otherwise sit in learning until the stale sweep expires it an hour
+    // later. The attempt count must survive untouched: an outage is not a failed attempt.
+    [Test]
+    public async Task AClassifierThatThrows_HandsEveryClaimedClusterStraightBackToReady()
+    {
+        var cluster = GivenReadyCluster(attemptCount: 1);
+        GivenProbe(false);
+        _generator.ClassifyAsync(
+                Arg.Any<IReadOnlyList<SkillLearningTriageInput>>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<SkillLearningClassification>>(_ =>
+                throw new InvalidOperationException("the model is unreachable"));
+
+        var summary = await _loop.RunAsync();
+
+        summary.Failed.ShouldBe(1);
+        await _clusters.Received(1).FinishLearningAsync(
+            cluster.Id,
+            Arg.Is(SkillLearningClusterStatuses.Ready),
+            Arg.Is((string?)null),
+            Arg.Is((string?)null),
+            Arg.Is<string?>(reason => reason != null && reason.Contains("unreachable")),
+            1,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AClassifierThatThrows_LearnsNothing()
+    {
+        GivenReadyCluster();
+        GivenProbe(false);
+        _generator.ClassifyAsync(
+                Arg.Any<IReadOnlyList<SkillLearningTriageInput>>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<SkillLearningClassification>>(_ =>
+                throw new InvalidOperationException("the model is unreachable"));
+
+        await _loop.RunAsync();
+
+        await _phraseLearner.DidNotReceive().LearnAsync(
+            Arg.Any<SkillLearningClusterContext>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // The sharpening is the second, independent half of a run. A cluster that already finished must keep
+    // its outcome when the sharpening falls over, or the next run would redo work that succeeded.
+    [Test]
+    public async Task ASharpeningThatThrows_DoesNotTakeTheRunDownWithIt()
+    {
+        var cluster = GivenReadyCluster();
+        GivenCorrection(cluster.Id, Target);
+        GivenProbe(false);
+        GivenClassification(cluster.Id, SkillLearningClassifications.PhraseGap, Target);
+        GivenPhraseLearned(Guid.NewGuid());
+        _sharpener.RunAsync(Arg.Any<CancellationToken>())
+            .Returns<(int, int)>(_ => throw new InvalidOperationException("the optimizer is unreachable"));
+
+        var summary = await _loop.RunAsync();
+
+        summary.Learned.ShouldBe(1);
+        summary.Sharpened.ShouldBe(0);
+        summary.Blocked.ShouldBe(0);
+    }
+
     [Test]
     public async Task EveryRunFirstReleasesClaimsAProcessDiedOn()
     {
@@ -137,6 +199,28 @@ public class SkillLearningLoopTests
 
         await _generator.DidNotReceive().ClassifyAsync(
             Arg.Any<IReadOnlyList<SkillLearningTriageInput>>(), Arg.Any<CancellationToken>());
+    }
+
+    // An idle run must stay observable: without a summary line, a stuck loop and a healthy but quiet one
+    // look identical from the logs, and nobody notices the loop stopped working.
+    [Test]
+    public async Task AnIdleRun_StillLogsItsSummary()
+    {
+        var logger = Substitute.For<ILogger<SkillLearningLoop>>();
+        var loop = new SkillLearningLoop(
+            _clusters, _cases, _candidates, _generator, _oracle, _phraseLearner, _sharpener, logger);
+        _clusters.ListByStatusAsync(
+                Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        await loop.RunAsync();
+
+        logger.Received(1).Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     // If the corrected target is already retrievable there was never a routing gap - learning a phrase for
