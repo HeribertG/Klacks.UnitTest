@@ -6,6 +6,11 @@
 /// same skill. navigation_target_synonyms has the same source column but replaces on
 /// (TargetId, Language) only, which is how a single training call could rewrite every row as "user"
 /// and permanently disable the seed refresh. The tests below pin that this table does not repeat it.
+/// The single-row writers are pinned the same way: the learning card addresses phrases by id alone, so
+/// without the Learned filter it could rewrite or reject a seed row that the seed loader owns. Only
+/// TryUpdatePhraseTextAsync is covered here: SetStatusAsync writes through ExecuteUpdateAsync, which the
+/// in-memory provider refuses outright, and reshaping the production write into a tracked load-and-save
+/// just to make it testable would trade a single statement for a read plus a write.
 /// </summary>
 namespace Klacks.UnitTest.Infrastructure.Repositories.Assistant;
 
@@ -255,6 +260,90 @@ public class SkillPhraseRepositoryTests
         var rows = await ActiveRowsAsync();
 
         rows.Select(p => p.Phrase).ShouldBe(["gruppe", "team"], ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task TryUpdatePhraseText_OnALearnedPhrase_RewritesIt()
+    {
+        var id = await GivenPhraseWithIdAsync(SkillPhraseSources.Learned, "umsatz pro kunde");
+
+        var updated = await _repository.TryUpdatePhraseTextAsync(id, "umsatzstatistik pro kunde");
+
+        updated.ShouldBeTrue();
+        var rows = await ActiveRowsAsync();
+        rows.Single(p => p.Id == id).Phrase.ShouldBe("umsatzstatistik pro kunde");
+    }
+
+    // The learning card knows only the id. Without the source filter this call would overwrite a row the
+    // seed loader owns, and the next startup would fight the card over the same text.
+    [Test]
+    public async Task TryUpdatePhraseText_OnASeedPhrase_ReportsNotFoundAndChangesNothing()
+    {
+        var id = await GivenPhraseWithIdAsync(SkillPhraseSources.Seed, "gruppe zuweisen");
+
+        var updated = await _repository.TryUpdatePhraseTextAsync(id, "etwas anderes");
+
+        updated.ShouldBeFalse();
+        var rows = await ActiveRowsAsync();
+        rows.Single(p => p.Id == id).Phrase.ShouldBe("gruppe zuweisen");
+    }
+
+    [Test]
+    public async Task TryUpdatePhraseText_OnAnAdminPhrase_ReportsNotFoundAndChangesNothing()
+    {
+        var id = await GivenPhraseWithIdAsync(SkillPhraseSources.Admin, "handverlesen");
+
+        var updated = await _repository.TryUpdatePhraseTextAsync(id, "etwas anderes");
+
+        updated.ShouldBeFalse();
+        var rows = await ActiveRowsAsync();
+        rows.Single(p => p.Id == id).Phrase.ShouldBe("handverlesen");
+    }
+
+    // The update handler probes GetByIdAsync to decide which of the card's two id spaces an id belongs to.
+    // An unfiltered read would claim a seed id for the phrase branch, where the rejected write then reads
+    // as a wording conflict instead of the 404 the card expects.
+    [Test]
+    public async Task GetById_OnALearnedPhrase_ReturnsIt()
+    {
+        var id = await GivenPhraseWithIdAsync(SkillPhraseSources.Learned, "umsatz pro kunde");
+
+        var found = await _repository.GetByIdAsync(id);
+
+        found.ShouldNotBeNull();
+        found!.Phrase.ShouldBe("umsatz pro kunde");
+    }
+
+    [Test]
+    [TestCase(SkillPhraseSources.Seed)]
+    [TestCase(SkillPhraseSources.LanguagePack)]
+    [TestCase(SkillPhraseSources.Admin)]
+    public async Task GetById_OnAPhraseOfAnotherSource_ReturnsNull(string source)
+    {
+        var id = await GivenPhraseWithIdAsync(source, "gruppe zuweisen");
+
+        (await _repository.GetByIdAsync(id)).ShouldBeNull();
+    }
+
+    private async Task<Guid> GivenPhraseWithIdAsync(string source, string phrase)
+    {
+        var id = Guid.NewGuid();
+        _context.SkillPhrases.Add(new SkillPhrase
+        {
+            Id = id,
+            OwnerKind = SkillPhraseOwnerKinds.Skill,
+            OwnerName = SkillName,
+            Language = "de",
+            Kind = SkillPhraseKinds.Synonym,
+            Phrase = phrase,
+            SortOrder = 0,
+            Source = source,
+            Status = SkillPhraseStatuses.Active
+        });
+
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+        return id;
     }
 
     private async Task GivenPhraseAsync(

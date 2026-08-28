@@ -4,7 +4,7 @@
 /// Quality gate for the per-language conversation-signals.json plugin files. Guarantees that
 /// every installed plugin language ships a parseable file with all five signal lists populated
 /// and normalized (trimmed, lowercase, unique), so AffirmationDetector, ImplicitCorrectionDetector,
-/// RecipeCancellationDetector and SkillGapDetector work in every supported language and a recipe
+/// RecipeCancellationDetector and RefusalSignalDetector work in every supported language and a recipe
 /// confirmation can never be silently cancelled because a language lacks affirmation entries.
 /// </summary>
 

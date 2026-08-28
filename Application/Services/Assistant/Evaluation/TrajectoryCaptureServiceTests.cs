@@ -5,7 +5,8 @@
 /// the user message via MutationIntentDetector, so tool-call-free turns can later be split into
 /// "legitimate info question" vs. "should have acted" for measuring skill-routing quality; and
 /// that a same-user follow-up containing a negation/complaint marks the previous trajectory as
-/// implicitly corrected only within the short reactive time window.
+/// implicitly corrected only within the short reactive time window, and hands that preceding turn to
+/// the learning collector under the cluster key of its own utterance.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Evaluation;
@@ -21,6 +22,7 @@ namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation;
 public class TrajectoryCaptureServiceTests
 {
     private ISkillSelectionTrajectoryRepository _repository = null!;
+    private ISkillLearningCaseCollector _caseCollector = null!;
     private TrajectoryCaptureService _service = null!;
     private Guid _agentId;
 
@@ -28,7 +30,9 @@ public class TrajectoryCaptureServiceTests
     public void SetUp()
     {
         _repository = Substitute.For<ISkillSelectionTrajectoryRepository>();
-        _service = new TrajectoryCaptureService(_repository, Substitute.For<ILogger<TrajectoryCaptureService>>());
+        _caseCollector = Substitute.For<ISkillLearningCaseCollector>();
+        _service = new TrajectoryCaptureService(
+            _repository, _caseCollector, Substitute.For<ILogger<TrajectoryCaptureService>>());
         _agentId = Guid.NewGuid();
     }
 
@@ -101,6 +105,43 @@ public class TrajectoryCaptureServiceTests
         await _repository.Received(1).UpdateAsync(previous);
     }
 
+    // The correction belongs to the preceding utterance, so the case must land on that utterance's
+    // cluster - the stored hash, never a hash of the negation that revealed it.
+    [Test]
+    public async Task NegationFollowUp_WithinWindow_CollectsAnImplicitCaseForThePrecedingUtterance()
+    {
+        var previous = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = _agentId,
+            UserId = "user-1",
+            Locale = "de",
+            UserMessageHash = "abc123def4567890",
+            IntentExcerpt = "Zeige mir die Umsatzstatistik pro Kunde",
+            KnowledgeIndexCandidatesJson = "[{\"name\":\"list_clients\"}]",
+            LlmChosenSkill = "list_clients",
+            WasCorrected = false,
+            CreateTime = DateTime.UtcNow.AddSeconds(-30),
+        };
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        var context = new LLMContext { Message = "Nein, das war nicht richtig", UserId = "user-1" };
+
+        await _service.CaptureAsync(_agentId, context, "Entschuldigung.", []);
+
+        await _caseCollector.Received(1).CollectImplicitCorrectionAsync(
+            Arg.Is<SkillLearningImplicitCorrection>(c =>
+                c.AgentId == _agentId
+                && c.ClusterKey == previous.UserMessageHash
+                && c.IntentExcerpt == previous.IntentExcerpt
+                && c.UserId == "user-1"
+                && c.Locale == "de"
+                && c.ChosenSkill == "list_clients"
+                && c.ToolsetJson == previous.KnowledgeIndexCandidatesJson
+                && c.TrajectoryId == previous.Id),
+            Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task NegationFollowUp_OutsideWindow_DoesNotMarkPreviousTrajectory()
     {
@@ -120,6 +161,7 @@ public class TrajectoryCaptureServiceTests
 
         previous.WasCorrected.ShouldBeFalse();
         await _repository.DidNotReceive().UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
     }
 
     [Test]
@@ -142,6 +184,7 @@ public class TrajectoryCaptureServiceTests
 
         await _repository.DidNotReceive().UpdateAsync(previous);
         previous.CorrectionType.ShouldBe(CorrectionTypes.WrongSkill);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
     }
 
     [Test]
@@ -152,5 +195,6 @@ public class TrajectoryCaptureServiceTests
         await _service.CaptureAsync(_agentId, context, "Hier sind die offenen Schichten.", []);
 
         await _repository.DidNotReceiveWithAnyArgs().FindMostRecentByAgentAndUserAsync(default, default!);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
     }
 }

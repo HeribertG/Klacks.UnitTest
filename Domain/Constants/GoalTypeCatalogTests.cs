@@ -22,7 +22,8 @@ public class GoalTypeCatalogTests
         AgentTriggerKinds.CuriosityQuestion,
         AgentTriggerKinds.MuteSuggestion,
         AgentTriggerKinds.DailyDigest,
-        AgentTriggerKinds.ScenarioPrepared
+        AgentTriggerKinds.ScenarioPrepared,
+        AgentTriggerKinds.KlacksyLearnedDigest
     ];
 
     private static IEnumerable<string> AllTriggerKinds() =>

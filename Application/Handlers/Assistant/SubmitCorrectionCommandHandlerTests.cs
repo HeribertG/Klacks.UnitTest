@@ -1,17 +1,17 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for SubmitCorrectionCommandHandler hash lookup, validation and trajectory update.
+/// Tests for SubmitCorrectionCommandHandler hash lookup, validation, trajectory update and the mapping
+/// from correction type to learning signal.
 /// </summary>
 namespace Klacks.UnitTest.Application.Handlers.Assistant;
 
-using System.Security.Cryptography;
-using System.Text;
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -20,12 +20,11 @@ using Shouldly;
 [TestFixture]
 public class SubmitCorrectionCommandHandlerTests
 {
-    private const int HashPrefixLength = 16;
-
     private ISkillSelectionTrajectoryRepository _repository = null!;
     private ILLMBackgroundTaskService _backgroundTasks = null!;
     private ILogger<SubmitCorrectionCommandHandler> _logger = null!;
     private IAgentMemoryRepository _agentMemories = null!;
+    private ISkillLearningCaseCollector _caseCollector = null!;
     private SubmitCorrectionCommandHandler _handler = null!;
 
     [SetUp]
@@ -35,10 +34,11 @@ public class SubmitCorrectionCommandHandlerTests
         _backgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
         _logger = Substitute.For<ILogger<SubmitCorrectionCommandHandler>>();
         _agentMemories = Substitute.For<IAgentMemoryRepository>();
+        _caseCollector = Substitute.For<ISkillLearningCaseCollector>();
         _agentMemories.GetByCategoryAndKeysAsync(
                 Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new List<AgentMemory>());
-        _handler = new SubmitCorrectionCommandHandler(_repository, _backgroundTasks, _agentMemories, _logger);
+        _handler = new SubmitCorrectionCommandHandler(_repository, _backgroundTasks, _agentMemories, _caseCollector, _logger);
     }
 
     [Test]
@@ -189,6 +189,77 @@ public class SubmitCorrectionCommandHandlerTests
     }
 
     [Test]
+    [TestCase(CorrectionTypes.WrongSkill, SkillLearningSignals.WrongSkill)]
+    [TestCase(CorrectionTypes.NoneNeeded, SkillLearningSignals.NoneNeeded)]
+    public async Task Handle_RoutingCorrection_ForwardsTheMappedSignalToTheCollector(
+        string correctionType, string expectedSignal)
+    {
+        const string userId = "user-1";
+        const string message = "Zeige mir die Umsatzstatistik pro Kunde";
+        var agentId = Guid.NewGuid();
+        var existing = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = agentId,
+            UserId = userId,
+            Locale = "de",
+            UserMessageHash = ExpectedHashPrefix(message),
+            LlmChosenSkill = "list_clients"
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = correctionType,
+            ExpectedSkill = "list_orders"
+        }, CancellationToken.None);
+
+        await _caseCollector.Received(1).CollectCorrectionAsync(
+            Arg.Is<SkillLearningCorrection>(c =>
+                c.AgentId == agentId
+                && c.Signal == expectedSignal
+                && c.UserMessage == message
+                && c.ChosenSkill == "list_clients"
+                && c.ExpectedSkill == "list_orders"
+                && c.TrajectoryId == existing.Id),
+            Arg.Any<CancellationToken>());
+    }
+
+    // A wrong parameter and a repeated request say nothing about which capability was missing. The old
+    // filter tested membership in SkillLearningSignals.All, which happens to give the same answer here
+    // but would also let a signal named like a correction type through.
+    [Test]
+    [TestCase(CorrectionTypes.WrongParam)]
+    [TestCase(CorrectionTypes.RepeatedRequest)]
+    public async Task Handle_NonRoutingCorrection_CollectsNoLearningCase(string correctionType)
+    {
+        const string userId = "user-1";
+        const string message = "Zeige mir die Umsatzstatistik pro Kunde";
+        var existing = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = Guid.NewGuid(),
+            UserId = userId,
+            UserMessageHash = ExpectedHashPrefix(message),
+            LlmChosenSkill = "list_clients"
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = correctionType
+        }, CancellationToken.None);
+
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectCorrectionAsync(default!, default);
+    }
+
+    [Test]
     public async Task Handle_TrajectoryMissing_ReturnsNotFoundWithoutUpdate()
     {
         _repository.FindMostRecentByUserAndHashAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -245,9 +316,7 @@ public class SubmitCorrectionCommandHandlerTests
         Should.Throw<ArgumentException>(act).Message.ShouldContain("UserMessage");
     }
 
-    private static string ExpectedHashPrefix(string message)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(message));
-        return Convert.ToHexString(bytes)[..HashPrefixLength];
-    }
+    // The handler hashes through MessageNormalizer, so the expectation must too: the hash is taken over
+    // the normalised message, not the raw one.
+    private static string ExpectedHashPrefix(string message) => MessageNormalizer.Hash(message);
 }
