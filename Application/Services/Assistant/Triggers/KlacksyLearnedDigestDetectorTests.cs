@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for the weekly learning digest. The two rules that matter: it stays silent when nothing was
-/// learned, and it reports the FINISHED week - a digest over the running week would be empty every Monday
-/// morning and would therefore never fire at all.
+/// Tests for the weekly learning digest. The rules that matter: it stays silent when nothing happened, it
+/// reports the FINISHED week - a digest over the running week would be empty every Monday morning and
+/// would therefore never fire at all - and a week whose only event was a blocked description sharpening
+/// still produces a digest.
 /// </summary>
 namespace Klacks.UnitTest.Application.Services.Assistant.Triggers;
 
@@ -26,6 +27,7 @@ public class KlacksyLearnedDigestDetectorTests
     private static readonly DateTime ExpectedWindowEnd = new(2026, 8, 24, 0, 0, 0, DateTimeKind.Utc);
 
     private ISkillLearningClusterRepository _clusters = null!;
+    private IProposedSkillChangeRepository _proposals = null!;
     private ICompanyClock _clock = null!;
     private KlacksyLearnedDigestDetector _detector = null!;
 
@@ -33,15 +35,24 @@ public class KlacksyLearnedDigestDetectorTests
     public void SetUp()
     {
         _clusters = Substitute.For<ISkillLearningClusterRepository>();
+        _proposals = Substitute.For<IProposedSkillChangeRepository>();
         _clock = Substitute.For<ICompanyClock>();
         _clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(Today);
-        _detector = new KlacksyLearnedDigestDetector(_clusters, _clock);
+        GivenBlocked(0);
+        _detector = new KlacksyLearnedDigestDetector(_clusters, _proposals, _clock);
     }
 
     private void GivenCounts(Dictionary<string, int> counts) =>
         _clusters.CountByStatusInWindowAsync(
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(counts);
+
+    private void GivenBlocked(int blocked) =>
+        _proposals.CountByStatusInWindowAsync(
+                Arg.Any<IReadOnlyList<string>>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(blocked == 0
+                ? new Dictionary<string, int>()
+                : new Dictionary<string, int> { [ProposedChangeStatuses.BlockedRegression] = blocked });
 
     [Test]
     public void Kind_IsTheLearnedDigestKind()
@@ -64,9 +75,9 @@ public class KlacksyLearnedDigestDetectorTests
         {
             [SkillLearningClusterStatuses.LearnedPhrase] = 2,
             [SkillLearningClusterStatuses.LearnedCapability] = 1,
-            [SkillLearningClusterStatuses.Ready] = 3,
             [SkillLearningClusterStatuses.Unfulfillable] = 1
         });
+        GivenBlocked(3);
 
         var events = await _detector.DetectAsync();
 
@@ -74,8 +85,34 @@ public class KlacksyLearnedDigestDetectorTests
         var digest = events[0].ShouldBeOfType<KlacksyLearnedDigestTriggerEvent>();
         digest.Phrases.ShouldBe(2);
         digest.Capabilities.ShouldBe(1);
-        digest.Unfulfillable.ShouldBe(4);
+        digest.Unfulfillable.ShouldBe(1);
+        digest.Blocked.ShouldBe(3);
         digest.Total.ShouldBe(7);
+    }
+
+    // A wish that merely reached the threshold is mid-flight, not unservable: the loop drains ready
+    // clusters within hours, and counting them would report the same wish as unfulfillable and then again
+    // as learned a week later.
+    [Test]
+    public async Task AClusterOnlyWaitingToBeLearned_IsNotReportedAsUnfulfillable()
+    {
+        GivenCounts(new Dictionary<string, int> { [SkillLearningClusterStatuses.Ready] = 3 });
+
+        (await _detector.DetectAsync()).ShouldBeEmpty();
+    }
+
+    // The sharpening half of the loop must be able to speak on its own, or a week in which the gate
+    // withheld every proposed change would look like a week in which nothing happened.
+    [Test]
+    public async Task ABlockedSharpeningAlone_StillProducesADigest()
+    {
+        GivenCounts([]);
+        GivenBlocked(2);
+
+        var events = await _detector.DetectAsync();
+
+        events.Count.ShouldBe(1);
+        events[0].ShouldBeOfType<KlacksyLearnedDigestTriggerEvent>().Blocked.ShouldBe(2);
     }
 
     [Test]
@@ -144,8 +181,9 @@ public class KlacksyLearnedDigestDetectorTests
         GivenCounts(new Dictionary<string, int>
         {
             [SkillLearningClusterStatuses.LearnedPhrase] = 2,
-            [SkillLearningClusterStatuses.Ready] = 1
+            [SkillLearningClusterStatuses.Unfulfillable] = 1
         });
+        GivenBlocked(4);
 
         var digest = (await _detector.DetectAsync())[0];
 
@@ -153,7 +191,8 @@ public class KlacksyLearnedDigestDetectorTests
         digest.SummaryParams!["phrases"].ShouldBe("2");
         digest.SummaryParams["capabilities"].ShouldBe("0");
         digest.SummaryParams["unfulfillable"].ShouldBe("1");
-        digest.SummaryParams["total"].ShouldBe("3");
+        digest.SummaryParams["blocked"].ShouldBe("4");
+        digest.SummaryParams["total"].ShouldBe("7");
     }
 
     [Test]

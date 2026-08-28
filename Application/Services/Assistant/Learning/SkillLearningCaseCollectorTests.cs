@@ -235,6 +235,51 @@ public class SkillLearningCaseCollectorTests
         await _cases.DidNotReceive().AddAsync(Arg.Any<SkillLearningCase>(), Arg.Any<CancellationToken>());
     }
 
+    // A refusal is something an assistant says, never something a user corrects. Validating the correction
+    // path against every learning signal would let it through and open a cluster on a signal no correction
+    // can carry.
+    [Test]
+    public async Task ARefusalArrivingThroughTheCorrectionPath_IsIgnored()
+    {
+        await _collector.CollectCorrectionAsync(new SkillLearningCorrection(
+            AgentId, Wish, SkillLearningSignals.Refusal, "user-1", "de", null, null, null));
+
+        await _cases.DidNotReceive().AddAsync(Arg.Any<SkillLearningCase>(), Arg.Any<CancellationToken>());
+    }
+
+    // One unhappy exchange is one case. The refusal and the negation in the following turn are the same
+    // moment seen twice, and counting both would move a cluster a third of the way to the threshold on a
+    // single failed answer.
+    [Test]
+    public async Task ASecondSignalFromTheSameUserInsideTheWindow_IsNotCountedAgain()
+    {
+        var existing = ExistingCluster(occurrenceCount: 1);
+        _clusters.FindByKeyAsync(AgentId, MessageNormalizer.Hash(Wish), Arg.Any<CancellationToken>())
+            .Returns(existing);
+        _cases.HasCaseSinceAsync(existing.Id, "user-1", Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        await _collector.CollectFromTurnAsync(Turn());
+
+        await _cases.DidNotReceive().AddAsync(Arg.Any<SkillLearningCase>(), Arg.Any<CancellationToken>());
+        await _clusters.DidNotReceive().RegisterOccurrenceAsync(
+            Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TheDeduplicationWindowIsScopedToTheUserWhoAsked()
+    {
+        var existing = ExistingCluster(occurrenceCount: 1);
+        _clusters.FindByKeyAsync(AgentId, MessageNormalizer.Hash(Wish), Arg.Any<CancellationToken>())
+            .Returns(existing);
+        _cases.HasCaseSinceAsync(existing.Id, "user-1", Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        await _collector.CollectFromTurnAsync(Turn(userId: "user-2"));
+
+        await _cases.Received(1).AddAsync(Arg.Any<SkillLearningCase>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task ARepositoryFailure_IsSwallowed()
     {

@@ -1,7 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for ApproveProposedSkillChangeCommandHandler — apply, stale-skip, missing-proposal/skill paths.
+/// Tests for ApproveProposedSkillChangeCommandHandler - apply, stale-skip, missing-proposal/skill paths.
+/// Since the learning loop applies pending proposals by itself, this handler is the administrator's
+/// override of the routing regression gate: it accepts a regression-blocked proposal and refuses a pending
+/// one, which belongs to the loop.
 /// </summary>
 namespace Klacks.UnitTest.Application.Handlers.Assistant;
 
@@ -49,7 +52,7 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             Field = ProposedChangeFields.Description,
             ValueBefore = "Old description",
             ValueAfter = "Tighter description",
-            Status = ProposedChangeStatuses.Pending
+            Status = ProposedChangeStatuses.BlockedRegression
         };
         var skill = new AgentSkill { Id = skillId, Name = "delete_employee", Description = "Old description", Version = 3 };
 
@@ -84,7 +87,7 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             Field = ProposedChangeFields.Description,
             ValueBefore = "Old description",
             ValueAfter = "Tighter description",
-            Status = ProposedChangeStatuses.Pending
+            Status = ProposedChangeStatuses.BlockedRegression
         };
         var skill = new AgentSkill { Id = skillId, Description = "Description was changed elsewhere", Version = 5 };
 
@@ -102,6 +105,25 @@ public class ApproveProposedSkillChangeCommandHandlerTests
         skill.Description.ShouldBe("Description was changed elsewhere");
         await _skillRepo.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
         await _refresher.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // Two writers for one transition is the failure mode this guards: the loop applies pending proposals
+    // automatically, so a person approving one in parallel would race it and the loser would be silent.
+    [Test]
+    public async Task Handle_PendingProposal_IsLeftToTheLearningLoop()
+    {
+        var proposal = new ProposedSkillChange { Id = Guid.NewGuid(), Status = ProposedChangeStatuses.Pending };
+        _proposalRepo.GetByIdAsync(proposal.Id, Arg.Any<CancellationToken>()).Returns(proposal);
+
+        var result = await _handler.Handle(new ApproveProposedSkillChangeCommand
+        {
+            ProposalId = proposal.Id,
+            ReviewedBy = "admin"
+        }, CancellationToken.None);
+
+        result.Applied.ShouldBeFalse();
+        result.Error.ShouldNotBeNull().ShouldContain("pending");
+        await _skillRepo.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

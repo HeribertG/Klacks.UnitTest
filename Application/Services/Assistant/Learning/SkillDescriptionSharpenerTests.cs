@@ -1,0 +1,173 @@
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+
+/// <summary>
+/// Tests for the automatic description sharpening. The gate is the whole feature: a description is the
+/// largest part of a skill's index text, so a change that helps one skill can push a neighbouring skill
+/// out of reach for a query nobody proposed anything about. The only honest check is to apply it, replay
+/// the goldset and roll it back when something turned red - and the rollback is what these tests pin.
+/// </summary>
+namespace Klacks.UnitTest.Application.Services.Assistant.Learning;
+
+using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Application.Services.Assistant.Learning;
+using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+using NUnit.Framework;
+using Shouldly;
+
+[TestFixture]
+public class SkillDescriptionSharpenerTests
+{
+    private const string Before = "Lists everything about clients.";
+    private const string After = "Lists the contract data of one client.";
+
+    private ISkillDescriptionOptimizer _optimizer = null!;
+    private IProposedSkillChangeRepository _proposals = null!;
+    private IAgentSkillRepository _skills = null!;
+    private ISkillLearningGoldenCaseRepository _goldenCases = null!;
+    private ISkillRoutingOracle _oracle = null!;
+    private ISkillCatalogRefresher _refresher = null!;
+    private SkillDescriptionSharpener _sharpener = null!;
+    private AgentSkill _skill = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _optimizer = Substitute.For<ISkillDescriptionOptimizer>();
+        _proposals = Substitute.For<IProposedSkillChangeRepository>();
+        _skills = Substitute.For<IAgentSkillRepository>();
+        _goldenCases = Substitute.For<ISkillLearningGoldenCaseRepository>();
+        _goldenCases.ListAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+
+        _oracle = Substitute.For<ISkillRoutingOracle>();
+        _oracle.FindFailingGoldenCasesAsync(
+                Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        _refresher = Substitute.For<ISkillCatalogRefresher>();
+
+        _skill = new AgentSkill { Id = Guid.NewGuid(), Name = "list_clients", Description = Before, Version = 3 };
+        _skills.GetByIdAsync(_skill.Id, Arg.Any<CancellationToken>()).Returns(_skill);
+
+        _sharpener = new SkillDescriptionSharpener(
+            _optimizer, _proposals, _skills, _goldenCases, _oracle, _refresher,
+            Substitute.For<ILogger<SkillDescriptionSharpener>>());
+    }
+
+    private ProposedSkillChange GivenPending(string valueBefore = Before)
+    {
+        var proposal = new ProposedSkillChange
+        {
+            Id = Guid.NewGuid(),
+            SkillId = _skill.Id,
+            SkillName = _skill.Name,
+            Field = ProposedChangeFields.Description,
+            ValueBefore = valueBefore,
+            ValueAfter = After,
+            Status = ProposedChangeStatuses.Pending
+        };
+
+        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([proposal]);
+        return proposal;
+    }
+
+    [Test]
+    public async Task NewProposalsAreAskedForBeforeTheOpenOnesAreDecided()
+    {
+        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+
+        await _sharpener.RunAsync();
+
+        await _optimizer.Received(1).GenerateProposalsAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutOpenProposals_NothingIsReplayed()
+    {
+        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(0);
+        await _oracle.DidNotReceive().FindFailingGoldenCasesAsync(
+            Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AChangeThatBreaksNothing_IsAppliedAutomatically()
+    {
+        var proposal = GivenPending();
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(1);
+        blocked.ShouldBe(0);
+        _skill.Description.ShouldBe(After);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.AppliedAuto);
+        proposal.ReviewedBy.ShouldBe(SkillLearningDefaults.AutomaticReviewer);
+        proposal.ReviewedAt.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task AChangeThatBreaksAGoldenCase_IsRolledBackAndBlocked()
+    {
+        var proposal = GivenPending();
+        _oracle.FindFailingGoldenCasesAsync(
+                Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>())
+            .Returns([], ["'kunde anlegen' no longer reaches 'create_client'"]);
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(1);
+        _skill.Description.ShouldBe(Before);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.BlockedRegression);
+        proposal.Justification.ShouldContain("create_client");
+        await _refresher.Received(2).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // A case that was red before anything was touched is not this proposal's doing.
+    [Test]
+    public async Task AGoldenCaseThatWasAlreadyFailing_DoesNotBlockTheChange()
+    {
+        var proposal = GivenPending();
+        _oracle.FindFailingGoldenCasesAsync(
+                Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>())
+            .Returns(["already broken"]);
+
+        var (applied, _) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(1);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.AppliedAuto);
+    }
+
+    // Applying a proposal written against a description that has since changed would silently discard
+    // whatever changed it.
+    [Test]
+    public async Task AProposalWrittenAgainstAnOlderDescription_IsLeftAlone()
+    {
+        var proposal = GivenPending("Something else entirely.");
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(0);
+        _skill.Description.ShouldBe(Before);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        await _skills.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AnAppliedChangeReachesRetrievalThroughACatalogueRefresh()
+    {
+        GivenPending();
+
+        await _sharpener.RunAsync();
+
+        await _refresher.Received(1).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+}

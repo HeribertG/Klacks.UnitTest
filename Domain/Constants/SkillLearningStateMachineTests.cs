@@ -86,6 +86,39 @@ public class SkillLearningStateMachineTests
             .ShouldBeFalse();
     }
 
+    // Retention has to reach unfulfillable clusters, but unfulfillable may not become terminal: it still
+    // counts recurrences, and a later round may legally re-open it. The two lists are therefore different
+    // on purpose, and this pins that difference rather than letting it look like an oversight.
+    [Test]
+    public void RetentionCoversTheFinishedStatuses_IncludingUnfulfillable()
+    {
+        SkillLearningStateMachine.RetentionEligibleStatuses
+            .ShouldContain(SkillLearningClusterStatuses.Unfulfillable);
+
+        foreach (var status in SkillLearningStateMachine.TerminalStatuses)
+        {
+            SkillLearningStateMachine.IsRetentionEligible(status).ShouldBeTrue();
+        }
+    }
+
+    [Test]
+    public void AnUnfulfillableCluster_StillCountsAndCanBeReopened()
+    {
+        SkillLearningStateMachine.IsTerminal(SkillLearningClusterStatuses.Unfulfillable).ShouldBeFalse();
+        SkillLearningStateMachine.IsCounting(SkillLearningClusterStatuses.Unfulfillable).ShouldBeTrue();
+        SkillLearningStateMachine
+            .IsLegalTransition(SkillLearningClusterStatuses.Unfulfillable, SkillLearningClusterStatuses.Ready)
+            .ShouldBeTrue();
+    }
+
+    [Test]
+    public void AClusterStillCollecting_IsNotRetentionEligible()
+    {
+        SkillLearningStateMachine.IsRetentionEligible(SkillLearningClusterStatuses.Collecting).ShouldBeFalse();
+        SkillLearningStateMachine.IsRetentionEligible(SkillLearningClusterStatuses.Ready).ShouldBeFalse();
+        SkillLearningStateMachine.IsRetentionEligible(SkillLearningClusterStatuses.LearnedPhrase).ShouldBeFalse();
+    }
+
     [Test]
     public void EveryNonTerminalStatus_CanBeDismissed()
     {

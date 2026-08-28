@@ -97,6 +97,23 @@ public class KlacksyLearningControllerAuthorizationTests
         result.ShouldBeOfType<BadRequestObjectResult>();
     }
 
+    // The manual trigger is the one endpoint that changes the system without a body, so its admin gate is
+    // the only thing between an anonymous request and a run that rewrites the knowledge index.
+    [Test]
+    public async Task TheManualRun_ReportsWhetherARunWasStarted()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<RunSkillLearningCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillLearningRunResponse(false, "A learning run is already in progress."));
+
+        var result = await new KlacksyLearningController(mediator).Run(CancellationToken.None);
+
+        var payload = result.Result.ShouldBeOfType<OkObjectResult>().Value
+            .ShouldBeOfType<SkillLearningRunResponse>();
+        payload.Started.ShouldBeFalse();
+        payload.Reason.ShouldNotBeNullOrWhiteSpace();
+    }
+
     [Test]
     public async Task ASuccessfulMutation_Answers204()
     {
