@@ -21,7 +21,6 @@ internal class AuthenticationServiceLockoutTests
     private UserManager<AppUser> _userManager = null!;
     private IIdentityProviderRepository _identityProviderRepository = null!;
     private ILdapService _ldapService = null!;
-    private IUsernameGeneratorService _usernameGenerator = null!;
     private AuthenticationService _sut = null!;
 
     [SetUp]
@@ -30,7 +29,6 @@ internal class AuthenticationServiceLockoutTests
         _userManager = CreateUserManager();
         _identityProviderRepository = Substitute.For<IIdentityProviderRepository>();
         _ldapService = Substitute.For<ILdapService>();
-        _usernameGenerator = Substitute.For<IUsernameGeneratorService>();
 
         // No identity providers configured, so the LDAP fallback always fails.
         _identityProviderRepository.GetAuthenticationProviders()
@@ -44,7 +42,6 @@ internal class AuthenticationServiceLockoutTests
             jwtValidator,
             _identityProviderRepository,
             _ldapService,
-            _usernameGenerator,
             logger);
     }
 
