@@ -104,16 +104,8 @@ public class DetectorFingerprintContainmentTests
         templateRepository.GetQuery().Returns(new TestAsyncEnumerable<ContainerTemplate>(
             new List<ContainerTemplate> { new() { Id = Guid.NewGuid(), ContainerId = containerWithTemplate.Id } }));
 
-        // All candidates already open in the ledger: isolates this test to the first slice's own cap,
-        // which is what expectedCappedCount below asserts -- the second slice's ledger-exclusion
-        // behaviour has its own coverage in EmptyContainerDetectorTests.
-        var agentConditionRepository = Substitute.For<IAgentConditionRepository>();
-        agentConditionRepository.GetOpenByKindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(containers.Select(container => new AgentCondition { EntityId = container.Id }).ToList());
-
         var sut = new EmptyContainerDetector(
-            shiftRepository, templateRepository, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
-            agentConditionRepository, NullLogger<EmptyContainerDetector>.Instance);
+            shiftRepository, templateRepository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), NullLogger<EmptyContainerDetector>.Instance);
 
         var fingerprints = await AssertContainmentAsync(
             sut, sut, expectedCappedCount: EmptyContainerDetector.MaxFindingsPerTick);
