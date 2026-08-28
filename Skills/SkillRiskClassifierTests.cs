@@ -69,13 +69,16 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Reversible));
     }
 
+    // Ordinary writers that may run unconfirmed at the default Autonomous level. Since the classifier
+    // fails closed, they are Irreversible because IrreversibleSkills lists them - not because they fell
+    // through anything.
     [TestCase("accept_scenario")]
     [TestCase("update_client")]
     [TestCase("delete_shift")]
     [TestCase("update_general_settings")]
-    [TestCase("email_schedule_to_client")]
     [TestCase("create_calendar_selection")]
-    public void Classify_UnmappedWriters_ReturnsIrreversible(string name)
+    [TestCase("reset_container_day")]
+    public void Classify_ListedWriters_ReturnsIrreversible(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Irreversible));
     }
@@ -226,14 +229,16 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor("some_unknown_skill", category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
-    // The trap: a write-category skill whose name carries a read-only prefix must NOT be read-only.
+    // The trap: a write-category skill whose name carries a read-only prefix must NOT be read-only. None
+    // of these is listed anywhere, so they land on the fail-closed Sensitive default - the point of the
+    // test is that the read-only prefix buys them nothing.
     [TestCase("evaluate_revenue")]
     [TestCase("generate_invoice")]
     [TestCase("check_balance")]
     [TestCase("detect_fraud")]
-    public void Classify_WriteCategoryWithReadPrefix_ReturnsIrreversible(string name)
+    public void Classify_WriteCategoryWithReadPrefix_IsNeverReadOnly(string name)
     {
-        Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Crud)), Is.EqualTo(SkillRiskClass.Irreversible));
+        Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Crud)), Is.EqualTo(SkillRiskClass.Sensitive));
     }
 
     // A read-only name prefix still classifies non-write categories (e.g. System) as read-only.
@@ -245,10 +250,114 @@ public class SkillRiskClassifierTests
             Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
+    // The fail-closed default. A write skill nobody classified used to be Irreversible, which passes the
+    // chat gate unconfirmed at the factory-default Autonomous level and passes an opted-in scheduled task
+    // - so simply forgetting a new skill handed it live data unasked. Sensitive is held at every level and
+    // refused on every unattended path instead. WriteSkillRiskDecisionCoverageTests makes sure a real
+    // seeded skill never gets here silently.
     [Test]
-    public void Classify_UnknownCrudSkill_DefaultsToIrreversible()
+    public void Classify_UnlistedWriteSkill_FailsClosedToSensitive()
     {
-        Assert.That(_sut.Classify(Descriptor("brand_new_writer")), Is.EqualTo(SkillRiskClass.Irreversible));
+        Assert.That(_sut.Classify(Descriptor("brand_new_writer")), Is.EqualTo(SkillRiskClass.Sensitive));
+        Assert.That(_sut.Classify(Descriptor("brand_new_writer", SkillCategory.Action)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // The messaging plugin seeds category "Communication", which SkillCategory does not know, so
+    // ParseCategory falls back to Action - a write category. That made two plain reads Irreversible and
+    // therefore gated; they are allow-listed explicitly now, while the plugin's writer stays Sensitive.
+    [TestCase("read_messages")]
+    [TestCase("list_messaging_providers")]
+    public void Classify_MessagingPluginReads_ReturnsReadOnly(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Action)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
+    // send_message reaches a client's phone through Telegram, WhatsApp, Signal or SMS and cannot be
+    // recalled - the same outward-facing, irrevocable shape as create_donation_checkout.
+    [Test]
+    public void Classify_SendMessage_IsSensitive_BecauseItLeavesTheInstallation()
+    {
+        Assert.That(_sut.Classify(Descriptor("send_message", SkillCategory.Action)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // rollback_my_last_change only looks the inverse up and returns it as a proposal; the inverse call it
+    // suggests runs through the gate on its own. Same reason as create_plan.
+    [Test]
+    public void Classify_RollbackProposal_ReturnsReadOnly()
+    {
+        Assert.That(_sut.Classify(Descriptor("rollback_my_last_change", SkillCategory.Action)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
+    // seal_shift turns an order into a permanently immutable SealedOrder and no unseal skill exists;
+    // set_sealed_order_until_date is the single change that row ever accepts again, and only once.
+    [TestCase("seal_shift")]
+    [TestCase("set_sealed_order_until_date")]
+    public void Classify_SealLifecycleWriters_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // Membership dates are the plannability boundary - the reason delete_membership is Sensitive.
+    [TestCase("end_client_membership")]
+    [TestCase("update_membership")]
+    public void Classify_MembershipBoundaryWriters_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // Same payroll blast radius that put delete_contract, delete_macro, delete_monthly_target_hours and
+    // update_calendar_selection into SensitiveSkills: a wrong value silently moves figures that were
+    // already computed against it.
+    [TestCase("update_contract")]
+    [TestCase("create_macro")]
+    [TestCase("update_macro")]
+    [TestCase("create_monthly_target_hours")]
+    [TestCase("update_monthly_target_hours")]
+    [TestCase("update_overtime_settings")]
+    [TestCase("update_surcharge_mode_settings")]
+    [TestCase("update_compensatory_rest_settings")]
+    [TestCase("update_owner_locale_settings")]
+    [TestCase("import_calendar_rules")]
+    public void Classify_PayrollRelevantWriters_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // create_spam_rule and update_spam_rule call the same TriggerReclassification() sweep that put
+    // delete_spam_rule into SensitiveSkills.
+    [TestCase("create_spam_rule")]
+    [TestCase("update_spam_rule")]
+    public void Classify_SpamRuleWriters_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // Klacksy never widens its own mandate: its instructions, its personality and the switch that decides
+    // whether a working-time protection refuses or merely warns; plus installing or removing a plugin,
+    // which is what ADDS skills to it in the first place.
+    [TestCase("update_ai_guidelines", SkillCategory.Crud)]
+    [TestCase("update_ai_soul", SkillCategory.Crud)]
+    [TestCase("update_compliance_enforcement_settings", SkillCategory.Crud)]
+    [TestCase("install_feature_plugin", SkillCategory.Crud)]
+    [TestCase("uninstall_feature_plugin", SkillCategory.Crud)]
+    [TestCase("install_whisper_plugin", SkillCategory.Crud)]
+    [TestCase("uninstall_whisper_plugin", SkillCategory.Crud)]
+    public void Classify_MandateWideningWriters_ReturnsSensitive(string name, SkillCategory category)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
+    // update_user changes somebody else's login name and email and update_my_account the caller's own -
+    // the same fields either way; update_data_retention_settings drives the background job that
+    // hard-deletes soft-deleted rows; clear_client_availability wipes every availability row of a client
+    // across a whole range and its clear_ name hides it from the delete_/remove_ guard.
+    [TestCase("update_user")]
+    [TestCase("update_my_account")]
+    [TestCase("update_data_retention_settings")]
+    [TestCase("clear_client_availability")]
+    public void Classify_IdentityAndBulkLossWriters_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
     }
 
     // The three non-mutating UiActions must stay un-gated: search_in_list and select_group classify
@@ -258,6 +367,7 @@ public class SkillRiskClassifierTests
     [TestCase("search_in_list", SkillCategory.Query)]
     [TestCase("select_group", SkillCategory.Query)]
     [TestCase("start_guided_tour", SkillCategory.Action)]
+    [TestCase("email_schedule_to_client", SkillCategory.UI)]
     public void Classify_NonMutatingUiActions_ReturnsReadOnly(string name, SkillCategory category)
     {
         Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));

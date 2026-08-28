@@ -1,18 +1,16 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Risk-decision guard for destructive skills: every enabled seed skill whose name starts with
-/// delete_ or remove_ must carry a conscious risk decision. On the default Autonomous autonomy
-/// level only Sensitive skills are confirmed, so a destructive skill that falls through to the
-/// Irreversible default in SkillRiskClassifier runs WITHOUT any confirmation. This guard forces
-/// a choice per skill: either the classifier classifies it deliberately (Sensitive, Reversible
-/// or ScenarioGated via its explicit lists), or the skill is listed in AcceptedIrreversibleDeletes
-/// with a written English justification why unconfirmed execution at the default level is
-/// acceptable. A stale check keeps the acceptance map honest when skills disappear from the seeds
-/// or get reclassified.
+/// Justification guard for destructive skills: every enabled seed skill whose name starts with
+/// delete_ or remove_ that the classifier reports as Irreversible needs a written English reason why
+/// unconfirmed execution is acceptable. Irreversible is what a skill has to be listed for in
+/// SkillRiskClassifier.IrreversibleSkills, and it is the class that runs WITHOUT any confirmation at the
+/// default Autonomous autonomy level - so the coverage guard (WriteSkillRiskDecisionCoverageTests) forces
+/// the decision to exist, and this map forces it to be argued for the destructive ones. A skill the
+/// classifier decides differently (Sensitive, Reversible or ScenarioGated) does not belong here, which
+/// the stale check enforces along with skills that disappeared from the seeds.
 /// </summary>
 
-using System.Text.Json;
 using Klacks.Api.Application.Skills.Meta;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
@@ -20,32 +18,15 @@ namespace Klacks.UnitTest.Infrastructure.Skills;
 [TestFixture]
 public class DestructiveSkillRiskDecisionGuardTests
 {
-    private const string SkillSeedsFileName = "skill-seeds.json";
-    private const string SettingsReaderSkillsFileName = "settings-reader-skills.json";
-    private const string SkillsJsonProperty = "skills";
-    private const string SkillNameJsonProperty = "name";
-    private const string SkillCategoryJsonProperty = "category";
-    private const string SkillIsEnabledJsonProperty = "isEnabled";
-
     private static readonly string[] DestructiveNamePrefixes = ["delete_", "remove_"];
-
-    private static readonly string[] DefinitionsRelativePath =
-    [
-        "Klacks.Api", "Application", "Skills", "Definitions"
-    ];
-
-    private static readonly string[] PluginsFeaturesRelativePath =
-    [
-        "Klacks.Api", "Plugins", "Features"
-    ];
 
     /// <summary>
     /// Destructive skills consciously accepted to run as Irreversible WITHOUT confirmation on the
     /// default Autonomous autonomy level. Every entry needs an honest, specific justification.
-    /// A delete_/remove_ skill that is neither classified by SkillRiskClassifier (SensitiveSkills,
-    /// ReversibleExtras, ScenarioGatedSkills) nor listed here fails the guard until someone makes
-    /// that decision. Entries marked as ESCALATION CANDIDATE are accepted for now but should be
-    /// promoted to SensitiveSkills in SkillRiskClassifier.
+    /// A delete_/remove_ skill that SkillRiskClassifier puts in IrreversibleSkills but that is not
+    /// justified here fails the guard until someone writes the reason down. Entries marked as
+    /// ESCALATION CANDIDATE are accepted for now but should be promoted to SensitiveSkills in
+    /// SkillRiskClassifier.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> AcceptedIrreversibleDeletes =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -163,8 +144,6 @@ public class DestructiveSkillRiskDecisionGuardTests
                 "set_shift_required_qualification; the symmetric setter restores it exactly."
         };
 
-    private sealed record DestructiveSkill(string Name, SkillCategory Category);
-
     [Test]
     public void EveryDestructiveSkill_MustHaveAnExplicitRiskDecision()
     {
@@ -173,7 +152,7 @@ public class DestructiveSkillRiskDecisionGuardTests
 
         foreach (var skill in LoadDestructiveSeedSkills().OrderBy(s => s.Name, StringComparer.Ordinal))
         {
-            var riskClass = classifier.Classify(ToDescriptor(skill));
+            var riskClass = classifier.Classify(SkillSeedCatalog.ToDescriptor(skill));
             if (riskClass != SkillRiskClass.Irreversible)
             {
                 continue;
@@ -188,13 +167,13 @@ public class DestructiveSkillRiskDecisionGuardTests
         }
 
         undecided.ShouldBeEmpty(
-            "Destructive skills (delete_*/remove_*) classified as Irreversible run WITHOUT " +
-            "confirmation on the default Autonomous autonomy level. Each of these skills needs a " +
-            "conscious risk decision: EITHER register it in SkillRiskClassifier (SensitiveSkills " +
-            "for always-confirm, ReversibleExtras if a true inverse exists, ScenarioGatedSkills if " +
-            "mutations land in a scenario) OR add it to AcceptedIrreversibleDeletes in this test " +
-            "with an honest justification why unconfirmed execution is acceptable. Undecided " +
-            "skills: " + string.Join(", ", undecided));
+            "Destructive skills (delete_*/remove_*) that SkillRiskClassifier.IrreversibleSkills lets " +
+            "run WITHOUT confirmation on the default Autonomous autonomy level need the reason " +
+            "written down: EITHER move the skill to a stricter decision in SkillRiskClassifier " +
+            "(SensitiveSkills for always-confirm, ReversibleExtras if a true inverse exists, " +
+            "ScenarioGatedSkills if mutations land in a scenario) OR add it to " +
+            "AcceptedIrreversibleDeletes in this test with an honest justification why unconfirmed " +
+            "execution is acceptable. Unjustified skills: " + string.Join(", ", undecided));
     }
 
     [Test]
@@ -214,7 +193,7 @@ public class DestructiveSkillRiskDecisionGuardTests
                 continue;
             }
 
-            var riskClass = classifier.Classify(ToDescriptor(skill));
+            var riskClass = classifier.Classify(SkillSeedCatalog.ToDescriptor(skill));
             if (riskClass != SkillRiskClass.Irreversible)
             {
                 staleEntries.Add(
@@ -242,134 +221,11 @@ public class DestructiveSkillRiskDecisionGuardTests
             "not a decision. Affected: " + string.Join(", ", unjustified));
     }
 
-    private static SkillDescriptor ToDescriptor(DestructiveSkill skill)
+    private static IReadOnlyCollection<SeedSkill> LoadDestructiveSeedSkills()
     {
-        return new SkillDescriptor(
-            skill.Name,
-            string.Empty,
-            skill.Category,
-            Array.Empty<SkillParameter>(),
-            Array.Empty<string>(),
-            Array.Empty<LLMCapability>(),
-            null);
-    }
-
-    private static IReadOnlyCollection<DestructiveSkill> LoadDestructiveSeedSkills()
-    {
-        var skills = new Dictionary<string, DestructiveSkill>(StringComparer.OrdinalIgnoreCase);
-        CollectFromDefinitionsFile(LocateDefinitionsFile(SkillSeedsFileName), skills);
-        CollectFromDefinitionsFile(LocateDefinitionsFile(SettingsReaderSkillsFileName), skills);
-        CollectFromPluginSeeds(skills);
-        return skills.Values;
-    }
-
-    private static void CollectFromDefinitionsFile(string filePath, Dictionary<string, DestructiveSkill> skills)
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(filePath));
-        foreach (var element in document.RootElement.GetProperty(SkillsJsonProperty).EnumerateArray())
-        {
-            AddIfDestructive(element, skills);
-        }
-    }
-
-    private static void CollectFromPluginSeeds(Dictionary<string, DestructiveSkill> skills)
-    {
-        var featuresDir = TryLocateDir(PluginsFeaturesRelativePath);
-        if (featuresDir == null)
-        {
-            return;
-        }
-
-        foreach (var pluginDir in Directory.GetDirectories(featuresDir))
-        {
-            var seedFile = Path.Combine(pluginDir, SkillSeedsFileName);
-            if (!File.Exists(seedFile))
-            {
-                continue;
-            }
-
-            using var document = JsonDocument.Parse(File.ReadAllText(seedFile));
-            foreach (var element in document.RootElement.EnumerateArray())
-            {
-                AddIfDestructive(element, skills);
-            }
-        }
-    }
-
-    private static void AddIfDestructive(JsonElement element, Dictionary<string, DestructiveSkill> skills)
-    {
-        if (!element.TryGetProperty(SkillNameJsonProperty, out var nameProperty) ||
-            nameProperty.ValueKind != JsonValueKind.String)
-        {
-            return;
-        }
-
-        var name = nameProperty.GetString()!;
-        if (!DestructiveNamePrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-
-        var isEnabled = !element.TryGetProperty(SkillIsEnabledJsonProperty, out var enabled) || enabled.GetBoolean();
-        if (!isEnabled)
-        {
-            return;
-        }
-
-        skills.TryAdd(name, new DestructiveSkill(name, ParseCategory(element)));
-    }
-
-    private static SkillCategory ParseCategory(JsonElement element)
-    {
-        if (element.TryGetProperty(SkillCategoryJsonProperty, out var category) &&
-            category.ValueKind == JsonValueKind.String &&
-            Enum.TryParse<SkillCategory>(category.GetString(), true, out var parsed))
-        {
-            return parsed;
-        }
-
-        // Missing or unknown category falls back to Crud (a write category), so a seed typo can
-        // never make a destructive skill look read-only to the classifier.
-        return SkillCategory.Crud;
-    }
-
-    private static string LocateDefinitionsFile(string fileName)
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(DefinitionsRelativePath);
-            segments.Add(fileName);
-            var candidate = Path.Combine(segments.ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', DefinitionsRelativePath)}/{fileName} by walking up from the test base directory.");
-    }
-
-    private static string? TryLocateDir(string[] relativePath)
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
+        return SkillSeedCatalog.EnabledSkills()
+            .Where(skill => DestructiveNamePrefixes.Any(
+                prefix => skill.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 }

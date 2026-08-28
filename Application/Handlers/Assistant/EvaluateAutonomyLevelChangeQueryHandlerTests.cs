@@ -27,11 +27,13 @@ public class EvaluateAutonomyLevelChangeQueryHandlerTests
 
     // One skill per risk class, using real names already classified by SkillRiskClassifier's fixed
     // lists (place_work -> Reversible via InverseSkillRegistry, cover_absence -> ScenarioGated,
-    // set_autonomy_level -> Sensitive) plus two fixture names for ReadOnly/Irreversible.
+    // update_client -> Irreversible via IrreversibleSkills, set_autonomy_level -> Sensitive) plus one
+    // fixture name for ReadOnly, which any Query-category name satisfies. Irreversible cannot use a
+    // fixture name any more: the classifier fails closed, so an unlisted write name is Sensitive.
     private static readonly SkillDescriptor ReadOnlySkill = Descriptor("fixture_readonly_probe", SkillCategory.Query);
     private static readonly SkillDescriptor ReversibleSkill = Descriptor("place_work", SkillCategory.Crud);
     private static readonly SkillDescriptor ScenarioGatedSkill = Descriptor("cover_absence", SkillCategory.Crud);
-    private static readonly SkillDescriptor IrreversibleSkill = Descriptor("fixture_irreversible_probe", SkillCategory.Crud);
+    private static readonly SkillDescriptor IrreversibleSkill = Descriptor("update_client", SkillCategory.Crud);
     private static readonly SkillDescriptor SensitiveSkill = Descriptor("set_autonomy_level", SkillCategory.Crud);
 
     private IAgentAutonomyPreferenceRepository _preferenceRepository = null!;
@@ -112,7 +114,7 @@ public class EvaluateAutonomyLevelChangeQueryHandlerTests
         var result = await Handler().Handle(
             new EvaluateAutonomyLevelChangeQuery(UserId, AutonomyLevel.Autonomous), CancellationToken.None);
 
-        Assert.That(result.SkillsNewlyUnconfirmedInChat, Is.EqualTo(1), "fixture_irreversible_probe");
+        Assert.That(result.SkillsNewlyUnconfirmedInChat, Is.EqualTo(1), "update_client");
 
         var irreversible = Impact(result.Impacts, SkillRiskClass.Irreversible);
         Assert.That(irreversible.ChatBehaviorChanges, Is.True);
@@ -147,7 +149,7 @@ public class EvaluateAutonomyLevelChangeQueryHandlerTests
 
         Assert.That(result.IsDowngrade, Is.True);
         Assert.That(result.SkillsNewlyConfirmedInChat, Is.EqualTo(3),
-            "place_work + cover_absence + fixture_irreversible_probe");
+            "place_work + cover_absence + update_client");
     }
 
     [Test]

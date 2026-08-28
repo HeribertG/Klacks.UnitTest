@@ -23,7 +23,7 @@ public static class SkillFeatureCoverageMap
         ["AgentMemoriesController"] = Covered("get_ai_memories", "add_ai_memory", "add_personal_memory", "update_ai_memory", "delete_ai_memory"),
         ["AgentPlansController"] = Excluded("Klacksy assistant infrastructure: persisted planner runs; plans are initiated via the propose_plan skill"),
         ["AgentSoulController"] = Covered("get_ai_soul", "update_ai_soul"),
-        ["AgentTriggerPreferencesController"] = Excluded("Klacksy assistant self-configuration: per-user trigger mute/snooze managed in the assistant settings UI; heartbeat tuning is exposed via configure_heartbeat"),
+        ["AgentTriggerPreferencesController"] = Excluded("Klacksy assistant self-configuration: per-user trigger mute/snooze managed in the assistant settings UI"),
         ["AgentsController"] = Excluded("Klacksy assistant administration (agent registry), assistant infrastructure"),
         ["ChatController"] = Excluded("Klacksy chat pipeline itself: the host that executes skills, covering it with skills would be circular"),
         ["CustomSttProviderController"] = Excluded("voice STT provider plumbing; configuration visibility via get_speech_settings"),
