@@ -105,16 +105,37 @@ public class RecipeDraftValidatorTests
         verdict.Error.ShouldContain("allOf");
     }
 
-    // Every recipe is a guided mutation flow, so one that fires on a plain question drags that question
-    // into a confirmation gate. The guard is written in rather than demanded from the generator.
+    // A capability that WRITES must not fire on a plain question - that is the guided-mutation rule every
+    // hand-written recipe follows, and it is written in rather than demanded from the generator.
     [Test]
-    public void TheQuestionGuard_IsAddedToEveryAcceptedTrigger()
+    public void AWritingCapability_GetsTheQuestionGuard()
     {
-        var verdict = _validator.Validate(Draft(), [], []);
+        var verdict = _validator.Validate(Draft(mutates: true), [], []);
 
+        verdict.IsAccepted.ShouldBeTrue(verdict.Error);
         verdict.Trigger!.NoneOf.ShouldNotBeEmpty();
         RecipeTriggerMatcher.Matches(verdict.Trigger, "Wann laufen die offenen Dienste?").ShouldBeFalse();
         RecipeTriggerMatcher.Matches(verdict.Trigger, "Welche offenen Dienste gibt es?").ShouldBeFalse();
+    }
+
+    // A read-only capability is the opposite case: answering a question IS its purpose, and most such
+    // wishes are phrased as one. Applied there the guard is self-defeating - the trigger would carry
+    // "welche" in allOf and in noneOf at once, which no utterance can satisfy. Two capabilities passed
+    // every other gate and executed all their steps for real before the live engine refused to resolve
+    // them for exactly this reason.
+    [Test]
+    public void AReadOnlyCapability_KeepsAnsweringQuestions()
+    {
+        var verdict = _validator.Validate(Draft(), [], []);
+
+        verdict.IsAccepted.ShouldBeTrue(verdict.Error);
+        verdict.Trigger!.NoneOf.ShouldBeEmpty();
+
+        // IsVetoed rather than Matches: whether the allOf conditions happen to be satisfied by this
+        // sentence is beside the point. What must hold is that a question-leading utterance is not
+        // rejected out of hand, which is exactly what the guard would do.
+        RecipeTriggerMatcher.IsVetoed(verdict.Trigger, "Welche offenen Dienstberichte gibt es?")
+            .ShouldBeFalse();
     }
 
     [Test]
@@ -219,7 +240,7 @@ public class RecipeDraftValidatorTests
         };
 
     private static LearnedRecipeDraft Draft(
-        string name = "open-shift-report", IReadOnlyList<string>? stems = null) =>
+        string name = "open-shift-report", IReadOnlyList<string>? stems = null, bool mutates = false) =>
         new(
             name,
             "Report the open shifts of the coming week",
@@ -238,5 +259,11 @@ public class RecipeDraftValidatorTests
                         .Select(stem => new RecipeCondition { AnyWordStart = [stem] })
                 ]
             },
-            [new RecipeStep { Kind = RecipeStepKinds.Search, Skill = "list_open_shifts" }]);
+            [
+                new RecipeStep
+                {
+                    Kind = mutates ? RecipeStepKinds.Mutate : RecipeStepKinds.Search,
+                    Skill = "list_open_shifts"
+                }
+            ]);
 }
