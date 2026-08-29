@@ -105,6 +105,76 @@ public class RecipeDraftValidatorTests
         verdict.Error.ShouldContain("allOf");
     }
 
+    // A slot reference is the whole inject value or nothing: "$currentMonth-01" makes the runtime look
+    // up a slot literally called "currentMonth-01", which nothing captures, so the parameter is dropped
+    // without a word.
+    [TestCase("$currentMonth-01")]
+    [TestCase("$a-$b")]
+    [TestCase("prefix$slot")]
+    public void AnInjectValueJoiningASlotReferenceToOtherText_IsRejected(string value)
+    {
+        var draft = Draft(inject: new Dictionary<string, string> { ["month"] = value });
+
+        var verdict = _validator.Validate(draft, [], []);
+
+        verdict.IsAccepted.ShouldBeFalse();
+        verdict.Error.ShouldContain("A slot reference is the whole value");
+        verdict.Error.ShouldContain(value);
+    }
+
+    // Without the prefix this is not a slot reference at all: the runtime treats it as a literal
+    // constant and the braces reach a real user's turn verbatim.
+    [TestCase("{{month}}-01")]
+    [TestCase("{month}")]
+    public void AnInjectValueInForeignPlaceholderSyntax_IsRejected(string value)
+    {
+        var draft = Draft(inject: new Dictionary<string, string> { ["month"] = value });
+
+        var verdict = _validator.Validate(draft, [], []);
+
+        verdict.IsAccepted.ShouldBeFalse();
+        verdict.Error.ShouldContain("looks like a placeholder");
+        verdict.Error.ShouldContain(value);
+    }
+
+    [TestCase("$clientId")]
+    [TestCase("Customer")]
+    [TestCase("september 2026")]
+    public void AnInjectValueThatIsAWholeSlotReferenceOrPlainLiteral_IsAccepted(string value)
+    {
+        var draft = Draft(inject: new Dictionary<string, string> { ["client"] = value });
+
+        var verdict = _validator.Validate(draft, [], []);
+
+        verdict.IsAccepted.ShouldBeTrue(verdict.Error);
+    }
+
+    // ExtractCapture silently yields nothing for any other spelling, and a capture that yields nothing
+    // deactivates the whole recipe at runtime.
+    [TestCase("result.id as month")]
+    [TestCase("items[].id")]
+    [TestCase("items as month")]
+    public void ACaptureThatIsNotAnArrayFieldSlotSpec_IsRejected(string capture)
+    {
+        var draft = Draft(capture: capture);
+
+        var verdict = _validator.Validate(draft, [], []);
+
+        verdict.IsAccepted.ShouldBeFalse();
+        verdict.Error.ShouldContain("A capture reads one field out of a list");
+        verdict.Error.ShouldContain(capture);
+    }
+
+    [Test]
+    public void ACaptureSpelledArrayFieldAsSlot_IsAccepted()
+    {
+        var draft = Draft(capture: "items[].id as itemId");
+
+        var verdict = _validator.Validate(draft, [], []);
+
+        verdict.IsAccepted.ShouldBeTrue(verdict.Error);
+    }
+
     // A capability that WRITES must not fire on a plain question - that is the guided-mutation rule every
     // hand-written recipe follows, and it is written in rather than demanded from the generator.
     [Test]
@@ -240,7 +310,11 @@ public class RecipeDraftValidatorTests
         };
 
     private static LearnedRecipeDraft Draft(
-        string name = "open-shift-report", IReadOnlyList<string>? stems = null, bool mutates = false) =>
+        string name = "open-shift-report",
+        IReadOnlyList<string>? stems = null,
+        bool mutates = false,
+        Dictionary<string, string>? inject = null,
+        string? capture = null) =>
         new(
             name,
             "Report the open shifts of the coming week",
@@ -263,7 +337,9 @@ public class RecipeDraftValidatorTests
                 new RecipeStep
                 {
                     Kind = mutates ? RecipeStepKinds.Mutate : RecipeStepKinds.Search,
-                    Skill = "list_open_shifts"
+                    Skill = "list_open_shifts",
+                    Inject = inject,
+                    Capture = capture
                 }
             ]);
 }
