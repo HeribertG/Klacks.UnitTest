@@ -354,6 +354,39 @@ public class AgentConditionActionServiceTests
     }
 
     [Test]
+    public async Task ADelegation_IsCappedByTheGlobalAutonomyLevel()
+    {
+        // The global level (Owner decision 2026-08-28) caps a delegation exactly like the kill switch
+        // and a disabled kind do: a human's earlier "you handle this one" grant does not survive an
+        // admin holding the installation at Prepare.
+        GivenGovernance(ProactiveMaxAction.Hint, globalAutonomyCap: ProactiveMaxAction.Prepare);
+        var delegated = GivenCondition(AgentConditionStatus.Reported);
+        _repository.Stored(delegated.Id).DelegatedMaxAction = ProactiveMaxAction.Execute;
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.Zero, "Execute is above the level cap; the delegation may raise only up to Prepare.");
+            Assert.That(
+                _repository.Stored(delegated.Id).Status,
+                Is.Not.EqualTo(AgentConditionStatus.Executed));
+        });
+    }
+
+    [Test]
+    public async Task ADelegation_UpToTheGlobalAutonomyLevelStillExecutes()
+    {
+        GivenGovernance(ProactiveMaxAction.Hint, globalAutonomyCap: ProactiveMaxAction.Execute);
+        var delegated = GivenCondition(AgentConditionStatus.Reported);
+        _repository.Stored(delegated.Id).DelegatedMaxAction = ProactiveMaxAction.Execute;
+
+        var result = await RunAsync();
+
+        Assert.That(result.Executed, Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task AnIdentityRefusal_NeverExecutesAndCountsAsAFailedAttempt()
     {
         _identityProvider
@@ -527,12 +560,14 @@ public class AgentConditionActionServiceTests
         bool withResponsibleOwner = true,
         int dailyActionBudget = 50,
         int windowActionLimit = 50,
-        int windowMinutes = 60)
+        int windowMinutes = 60,
+        ProactiveMaxAction globalAutonomyCap = ProactiveMaxAction.Execute)
     {
+        var cappedMaxAction = maxAction < globalAutonomyCap ? maxAction : globalAutonomyCap;
         var decision = new ProactiveGovernanceDecision(
             TriggerKind: Kind,
             GroupId: null,
-            EffectiveMaxAction: killSwitchActive || !enabled ? ProactiveMaxAction.Hint : maxAction,
+            EffectiveMaxAction: killSwitchActive || !enabled ? ProactiveMaxAction.Hint : cappedMaxAction,
             ConfiguredMaxAction: maxAction,
             Enabled: enabled,
             KillSwitchActive: killSwitchActive,
@@ -540,7 +575,8 @@ public class AgentConditionActionServiceTests
             DailyActionBudget: dailyActionBudget,
             WindowActionLimit: windowActionLimit,
             WindowMinutes: windowMinutes,
-            IsStored: true);
+            IsStored: true,
+            GlobalAutonomyCap: globalAutonomyCap);
 
         _governance
             .ResolveAsync(Kind, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())

@@ -82,7 +82,8 @@ public class EmptyContainerDetectorTests
         _agentConditionRepository = new AgentConditionRepository(_context);
 
         _sut = new EmptyContainerDetector(
-            _shiftRepository, _containerTemplateRepository, _groupScopeReader, _agentConditionRepository, detectorLogger);
+            _shiftRepository, _containerTemplateRepository, _groupScopeReader, _agentConditionRepository,
+            TimeProvider.System, detectorLogger);
     }
 
     [TearDown]

@@ -125,7 +125,7 @@ public class EmptyContainerRemediationBinderTests
 
     private static IReadOnlyDictionary<string, object?> RoundTrip(ContainerScheduleSnapshot schedule) =>
         RoundTripRaw(new EmptyContainerTriggerEvent(
-            ContainerId, "Container A", FromDate, null, Array.Empty<Guid>(), schedule).Payload);
+            ContainerId, "Container A", FromDate, null, Array.Empty<Guid>(), schedule, IsPeriodActive: true).Payload);
 
     /// <summary>
     /// Serializes and deserializes exactly the way the tick does, so the binder sees JsonElement values

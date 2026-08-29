@@ -113,7 +113,7 @@ public class DetectorFingerprintContainmentTests
 
         var sut = new EmptyContainerDetector(
             shiftRepository, templateRepository, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
-            agentConditionRepository, NullLogger<EmptyContainerDetector>.Instance);
+            agentConditionRepository, TimeProvider.System, NullLogger<EmptyContainerDetector>.Instance);
 
         var fingerprints = await AssertContainmentAsync(
             sut, sut, expectedCappedCount: EmptyContainerDetector.MaxFindingsPerTick);

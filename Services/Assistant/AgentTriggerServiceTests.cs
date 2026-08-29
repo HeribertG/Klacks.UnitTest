@@ -1108,7 +1108,7 @@ public class OperationalTriggerEventDedupKeyTests
         var uncutFulldayShift = new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 3, Array.Empty<Guid>());
         var emptyContainer = new EmptyContainerTriggerEvent(
             Guid.NewGuid(), "Container A", new DateOnly(2026, 6, 30), null, Array.Empty<Guid>(),
-            EmptyContainerTestSchedule.Value);
+            EmptyContainerTestSchedule.Value, IsPeriodActive: true);
 
         foreach (var ev in new IAgentTriggerEvent[] { drift, period, unstaffed, lockConflict, scenario, contract, availabilityGap, periodOverdue, missingCoreData, openOrder, uncutFulldayShift, emptyContainer })
         {
@@ -1289,7 +1289,7 @@ public class OperationalTriggerEventDedupKeyTests
             new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 3, new[] { groupId }),
             new EmptyContainerTriggerEvent(
                 Guid.NewGuid(), "Container A", new DateOnly(2026, 8, 3), null, new[] { groupId },
-                EmptyContainerTestSchedule.Value)
+                EmptyContainerTestSchedule.Value, IsPeriodActive: true)
         ];
 
         IAgentTriggerEvent[] installationWide =
@@ -1376,7 +1376,7 @@ public class AgentTriggerRateLimiterTests
     [SetUp]
     public void Setup()
     {
-        _sut = new AgentTriggerRateLimiter();
+        _sut = new AgentTriggerRateLimiter(TimeProvider.System);
     }
 
     [Test]

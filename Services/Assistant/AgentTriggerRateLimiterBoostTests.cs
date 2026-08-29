@@ -29,7 +29,7 @@ public class AgentTriggerRateLimiterBoostTests
     [SetUp]
     public void Setup()
     {
-        _sut = new AgentTriggerRateLimiter();
+        _sut = new AgentTriggerRateLimiter(TimeProvider.System);
         _baseBudget = _sut.GetRemainingBudget(UserA, KindA);
     }
 

@@ -123,7 +123,7 @@ public class AgentTriggerKindsAllGuardTests
         var identity = new ClaimsIdentity(
             new[] { new Claim(ClaimTypes.NameIdentifier, CurrentUserId) }, "Test");
 
-        return new AgentTriggerPreferencesController(new InMemoryAgentTriggerPreferenceService())
+        return new AgentTriggerPreferencesController(new InMemoryAgentTriggerPreferenceService(TimeProvider.System))
         {
             ControllerContext = new ControllerContext
             {

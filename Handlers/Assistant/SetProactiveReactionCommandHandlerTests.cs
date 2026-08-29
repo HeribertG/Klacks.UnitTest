@@ -48,6 +48,7 @@ public class SetProactiveReactionCommandHandlerTests
             _dismissStreakEvaluator,
             _ledgerService,
             _helpfulBoostEvaluator,
+            TimeProvider.System,
             NullLogger<SetProactiveReactionCommandHandler>.Instance);
     }
 

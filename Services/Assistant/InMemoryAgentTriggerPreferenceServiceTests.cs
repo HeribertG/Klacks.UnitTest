@@ -17,7 +17,7 @@ public class InMemoryAgentTriggerPreferenceServiceTests
     [SetUp]
     public void Setup()
     {
-        _sut = new InMemoryAgentTriggerPreferenceService();
+        _sut = new InMemoryAgentTriggerPreferenceService(TimeProvider.System);
     }
 
     [Test]

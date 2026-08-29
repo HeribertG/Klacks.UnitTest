@@ -65,7 +65,7 @@ public class ProactiveTriggerDispatchRepositoryTests
     public async Task RecordAsync_PersistsRow()
     {
         using var context = CreateContext();
-        var repository = new ProactiveTriggerDispatchRepository(context);
+        var repository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
 
         await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
 
@@ -77,7 +77,7 @@ public class ProactiveTriggerDispatchRepositoryTests
     public async Task RecordAsync_SameUserKindAndDedupKey_IsRecordedOnlyOnce()
     {
         using var context = CreateContext();
-        var repository = new ProactiveTriggerDispatchRepository(context);
+        var repository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
 
         await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
         await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
@@ -93,7 +93,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         var newestId = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(oldestId, "user-a", "dedup-1"));
             await Task.Delay(TimeSpan.FromMilliseconds(10));
             await repository.RecordAsync(Row(newestId, "user-a", "dedup-2"));
@@ -101,7 +101,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         }
 
         using var context = CreateContext();
-        var result = await new ProactiveTriggerDispatchRepository(context)
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
             .ListForUserAsync("user-a", unreadOnly: false, take: 10);
 
         result.Count.ShouldBe(2);
@@ -116,14 +116,14 @@ public class ProactiveTriggerDispatchRepositoryTests
         var unreadId = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(readId, "user-a", "dedup-1"));
             await repository.RecordAsync(Row(unreadId, "user-a", "dedup-2"));
             await repository.MarkReadAsync(readId, "user-a");
         }
 
         using var context = CreateContext();
-        var result = await new ProactiveTriggerDispatchRepository(context)
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
             .ListForUserAsync("user-a", unreadOnly: true, take: 10);
 
         result.Count.ShouldBe(1);
@@ -135,14 +135,14 @@ public class ProactiveTriggerDispatchRepositoryTests
     {
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
             await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-2"));
             await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-3"));
         }
 
         using var context = CreateContext();
-        var result = await new ProactiveTriggerDispatchRepository(context)
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
             .ListForUserAsync("user-a", unreadOnly: false, take: 2);
 
         result.Count.ShouldBe(2);
@@ -164,7 +164,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         var baseTime = new DateTime(2026, 7, 24, 12, 0, 0, DateTimeKind.Utc);
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(ReactedRow("user-a", "test_kind", "dedup-1", ProactiveReaction.Dismissed, baseTime.AddMinutes(-3)));
             await repository.RecordAsync(ReactedRow("user-a", "test_kind", "dedup-2", ProactiveReaction.Helpful, baseTime.AddMinutes(-2)));
             await repository.RecordAsync(ReactedRow("user-a", "test_kind", "dedup-3", ProactiveReaction.Dismissed, baseTime.AddMinutes(-1)));
@@ -174,7 +174,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         }
 
         using var context = CreateContext();
-        var result = await new ProactiveTriggerDispatchRepository(context)
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
             .GetRecentReactionsAsync("user-a", "test_kind", take: 2);
 
         result.Count.ShouldBe(2);
@@ -190,7 +190,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         var readId = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(readId, "user-a", "dedup-1"));
             await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-2"));
             await repository.RecordAsync(Row(Guid.NewGuid(), "user-b", "dedup-3"));
@@ -198,7 +198,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         }
 
         using var context = CreateContext();
-        var count = await new ProactiveTriggerDispatchRepository(context).CountUnreadAsync("user-a");
+        var count = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).CountUnreadAsync("user-a");
 
         count.ShouldBe(1);
     }
@@ -208,13 +208,13 @@ public class ProactiveTriggerDispatchRepositoryTests
     {
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
             await repository.RecordAsync(DedupOnlyRow(Guid.NewGuid(), "user-a", "dedup-2"));
         }
 
         using var context = CreateContext();
-        var rows = await new ProactiveTriggerDispatchRepository(context).ListForUserAsync("user-a", unreadOnly: false, take: 50);
+        var rows = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).ListForUserAsync("user-a", unreadOnly: false, take: 50);
 
         rows.Count.ShouldBe(1);
         rows[0].DedupKey.ShouldBe("dedup-1");
@@ -225,13 +225,13 @@ public class ProactiveTriggerDispatchRepositoryTests
     {
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", "dedup-1"));
             await repository.RecordAsync(DedupOnlyRow(Guid.NewGuid(), "user-a", "dedup-2"));
         }
 
         using var context = CreateContext();
-        var count = await new ProactiveTriggerDispatchRepository(context).CountUnreadAsync("user-a");
+        var count = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).CountUnreadAsync("user-a");
 
         count.ShouldBe(1);
     }
@@ -241,12 +241,12 @@ public class ProactiveTriggerDispatchRepositoryTests
     {
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(DedupOnlyRow(Guid.NewGuid(), "user-a", "dedup-1"));
         }
 
         using var context = CreateContext();
-        var wasDispatched = await new ProactiveTriggerDispatchRepository(context)
+        var wasDispatched = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
             .WasDispatchedAsync("user-a", "test_kind", "dedup-1");
 
         wasDispatched.ShouldBeTrue();
@@ -258,12 +258,12 @@ public class ProactiveTriggerDispatchRepositoryTests
         var id = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            await new ProactiveTriggerDispatchRepository(seedContext).RecordAsync(Row(id, "user-a", "dedup-1"));
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System).RecordAsync(Row(id, "user-a", "dedup-1"));
         }
 
         var before = DateTime.UtcNow;
         using var context = CreateContext();
-        var result = await new ProactiveTriggerDispatchRepository(context).MarkReadAsync(id, "user-a");
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).MarkReadAsync(id, "user-a");
 
         result.ShouldBeTrue();
         using var verify = CreateContext();
@@ -278,7 +278,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         var id = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(id, "user-a", "dedup-1"));
             await repository.MarkReadAsync(id, "user-a");
         }
@@ -291,7 +291,7 @@ public class ProactiveTriggerDispatchRepositoryTests
 
         await Task.Delay(TimeSpan.FromMilliseconds(10));
         using var context = CreateContext();
-        var result = await new ProactiveTriggerDispatchRepository(context).MarkReadAsync(id, "user-a");
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).MarkReadAsync(id, "user-a");
 
         result.ShouldBeTrue();
         using var verify = CreateContext();
@@ -304,11 +304,11 @@ public class ProactiveTriggerDispatchRepositoryTests
         var id = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            await new ProactiveTriggerDispatchRepository(seedContext).RecordAsync(Row(id, "user-b", "dedup-1"));
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System).RecordAsync(Row(id, "user-b", "dedup-1"));
         }
 
         using var context = CreateContext();
-        var result = await new ProactiveTriggerDispatchRepository(context).MarkReadAsync(id, "user-a");
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).MarkReadAsync(id, "user-a");
 
         result.ShouldBeFalse();
         using var verify = CreateContext();
@@ -320,7 +320,7 @@ public class ProactiveTriggerDispatchRepositoryTests
     {
         using var context = CreateContext();
 
-        var result = await new ProactiveTriggerDispatchRepository(context).MarkReadAsync(Guid.NewGuid(), "user-a");
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).MarkReadAsync(Guid.NewGuid(), "user-a");
 
         result.ShouldBeFalse();
     }
@@ -332,7 +332,7 @@ public class ProactiveTriggerDispatchRepositoryTests
         const int pageSize = 50;
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             for (var i = 0; i < unreadRows; i++)
             {
                 await repository.RecordAsync(Row(Guid.NewGuid(), "user-a", $"dedup-{i}"));
@@ -340,14 +340,14 @@ public class ProactiveTriggerDispatchRepositoryTests
         }
 
         using var context = CreateContext();
-        var inboxRepository = new ProactiveTriggerDispatchRepository(context);
+        var inboxRepository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
         var page = await inboxRepository.ListForUserAsync("user-a", unreadOnly: true, take: pageSize);
         page.Count.ShouldBe(pageSize);
 
         await inboxRepository.MarkManyReadAsync(page.Select(row => row.Id).ToList(), "user-a");
 
         using var verify = CreateContext();
-        var verifyRepository = new ProactiveTriggerDispatchRepository(verify);
+        var verifyRepository = new ProactiveTriggerDispatchRepository(verify, TimeProvider.System);
         (await verifyRepository.CountUnreadAsync("user-a")).ShouldBe(unreadRows - pageSize);
         var shownIds = page.Select(row => row.Id).ToHashSet();
         (await verify.AgentTriggerDispatches
@@ -362,13 +362,13 @@ public class ProactiveTriggerDispatchRepositoryTests
         var foreignId = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            var repository = new ProactiveTriggerDispatchRepository(seedContext);
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
             await repository.RecordAsync(Row(ownId, "user-a", "dedup-own"));
             await repository.RecordAsync(Row(foreignId, "user-b", "dedup-foreign"));
         }
 
         using var context = CreateContext();
-        await new ProactiveTriggerDispatchRepository(context)
+        await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
             .MarkManyReadAsync([ownId, foreignId], "user-a");
 
         using var verify = CreateContext();
@@ -382,11 +382,11 @@ public class ProactiveTriggerDispatchRepositoryTests
         var id = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            await new ProactiveTriggerDispatchRepository(seedContext).RecordAsync(Row(id, "user-a", "dedup-1"));
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System).RecordAsync(Row(id, "user-a", "dedup-1"));
         }
 
         using var context = CreateContext();
-        await new ProactiveTriggerDispatchRepository(context).MarkManyReadAsync([], "user-a");
+        await new ProactiveTriggerDispatchRepository(context, TimeProvider.System).MarkManyReadAsync([], "user-a");
 
         using var verify = CreateContext();
         (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == id)).ReadAtUtc.ShouldBeNull();
@@ -398,11 +398,11 @@ public class ProactiveTriggerDispatchRepositoryTests
         var duplicateId = Guid.NewGuid();
         using (var seedContext = CreateContext())
         {
-            await new ProactiveTriggerDispatchRepository(seedContext).RecordAsync(Row(duplicateId, "user-a", "dedup-1"));
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System).RecordAsync(Row(duplicateId, "user-a", "dedup-1"));
         }
 
         using var context = CreateContext();
-        var repository = new ProactiveTriggerDispatchRepository(context);
+        var repository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
 
         await Should.ThrowAsync<Exception>(
             () => repository.RecordAsync(Row(duplicateId, "user-b", "dedup-2")));
