@@ -79,9 +79,18 @@ public class SkillLearningLoopTests
         _cases.ListByClusterAsync(clusterId, Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([new SkillLearningCase { ClusterId = clusterId, ExpectedSkill = expectedSkill }]);
 
-    private void GivenProbe(bool found, params string[] offered) =>
+    // The reachable list defaults to the offered one, so every case written before the two were told apart
+    // keeps its original meaning. GivenReachable widens it where a test cares.
+    private void GivenProbe(bool found, params string[] offered)
+    {
         _oracle.ProbeAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new SkillRoutingProbe(found, offered));
+        GivenReachable(offered);
+    }
+
+    private void GivenReachable(params string[] names) =>
+        _oracle.ListReachableSkillsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<string>>(names);
 
     private void GivenClassification(Guid clusterId, string kind, string? skill = null, string? reason = null) =>
         _generator.ClassifyAsync(Arg.Any<IReadOnlyList<SkillLearningTriageInput>>(), Arg.Any<CancellationToken>())

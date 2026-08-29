@@ -8,9 +8,10 @@
 /// The end-to-end fixture used to cover this against a real model; since the routing probe was raised to
 /// the production cap on 2026-08-29 its phrase_gap wish is answered as "already routed" before any of
 /// this runs, and that arm has proved nothing since.
-/// All three reachable endings of the arm are here, including the one that says the arm is a dead end
-/// without an explicit correction - that is not a defect of these tests but the shape of the loop, and
-/// it is asserted so it cannot change unnoticed.
+/// Every reachable ending of the arm is here. The most important one is that a wish with NO correction
+/// can now be learned when the classifier names a skill retrieval reaches but the toolset did not offer:
+/// until the offered and the reachable list were told apart, that was structurally impossible, because
+/// the classifier could only name skills the "already routed" dismissal then threw out.
 /// </summary>
 namespace Klacks.UnitTest.Application.Services.Assistant.Learning;
 
@@ -99,14 +100,45 @@ public class SkillLearningPhraseGapPathTests
     }
 
     /// <summary>
-    /// The dead end, asserted rather than described. Without a correction the classifier may only name a
-    /// skill from the offered list (ReadClassification), and LearnPhraseAsync dismisses precisely when the
-    /// target is in that list - so the two conditions are the same list and no classifier-chosen target
-    /// can ever be learned. Nothing in this file works around that; it is pinned so a future change to
-    /// either side is visible.
+    /// The proof that a classifier-chosen wish is learnable at all. The named skill is one retrieval can
+    /// reach but the assembler did not offer - the shape of a real routing gap, and the shape that used to
+    /// be unreachable: while the classifier could only name offered skills, the "already routed" dismissal
+    /// threw out everything it was allowed to name.
+    /// No correction is seeded here on purpose. This is the path the refusal detector feeds, and until now
+    /// that path could never produce a phrase.
     /// </summary>
     [Test]
-    public async Task APhraseGapVerdictWithoutACorrection_IsDismissedBecauseTheTargetMustComeFromTheOfferedList()
+    public async Task APhraseGapVerdictNamingAReachableButUnofferedSkill_LearnsThePhraseWithoutAnyCorrection()
+    {
+        var cluster = GivenReadyCluster();
+        GivenProbe(OfferedSkill);
+        GivenReachable(Target);
+        GivenAnswer(Target);
+        var phraseId = Guid.NewGuid();
+        _phraseLearner.LearnAsync(
+                Arg.Any<SkillLearningClusterContext>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(PhraseLearningOutcome.Success(phraseId, "kundenverfuegbarkeit festlegen"));
+
+        var summary = await _loop.RunAsync();
+
+        summary.Learned.ShouldBe(1);
+        summary.AlreadyRouted.ShouldBe(0);
+        await _phraseLearner.Received(1).LearnAsync(
+            Arg.Any<SkillLearningClusterContext>(), Target, Arg.Any<CancellationToken>());
+        await _clusters.Received(1).FinishLearningAsync(
+            cluster.Id, SkillLearningClusterStatuses.LearnedPhrase, SkillLearningOutcomeKinds.Phrase,
+            phraseId.ToString(), null, 0, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// The dismissal is still right and must stay: a skill the assembler already offers is served, so a
+    /// phrase for it would add noise to the index and claim credit for what retrieval already does. What
+    /// changed is that this is no longer the ONLY possible outcome - the test above names a skill outside
+    /// the toolset and gets learned. Widening this check too would make the loop write phrases for skills
+    /// that are already routed.
+    /// </summary>
+    [Test]
+    public async Task APhraseGapVerdictNamingAnAlreadyOfferedSkill_IsStillDismissed()
     {
         var cluster = GivenReadyCluster();
         GivenProbe(OfferedSkill, Target);
@@ -180,9 +212,18 @@ public class SkillLearningPhraseGapPathTests
 
     // Never found: a wish whose target is already offered is dismissed before the model is asked at all,
     // and then none of the classification code under test here would run.
-    private void GivenProbe(params string[] offered) =>
+    private void GivenProbe(params string[] offered)
+    {
         _oracle.ProbeAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new SkillRoutingProbe(false, offered));
+        GivenReachable(offered);
+    }
+
+    // What retrieval can still reach beyond the toolset. The loop unions this with the offered names, so
+    // passing only the extra names is enough.
+    private void GivenReachable(params string[] names) =>
+        _oracle.ListReachableSkillsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<string>>(names);
 
     private void GivenAnswer(string skill) =>
         _provider.Answering(

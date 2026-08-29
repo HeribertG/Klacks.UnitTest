@@ -46,9 +46,15 @@ public class LearnedArtifactGeneratorTests
     private static SkillLearningClusterContext Cluster(string? expectedSkill = null) =>
         new(ClusterId, "Zeige mir die Umsatzstatistik pro Kunde", "de", expectedSkill, null, [], 0, null);
 
+    // Offered and reachable are the same list here, which is the shape every case had before the two were
+    // told apart. Tests that care about the difference use OneWidenedCase.
     private static IReadOnlyList<SkillLearningTriageInput> OneCase(
         string? expectedSkill = null, params string[] candidates) =>
-        [new SkillLearningTriageInput(Cluster(expectedSkill), candidates)];
+        [new SkillLearningTriageInput(Cluster(expectedSkill), candidates, candidates)];
+
+    private static IReadOnlyList<SkillLearningTriageInput> OneWidenedCase(
+        string[] offered, string[] alsoReachable) =>
+        [new SkillLearningTriageInput(Cluster(), offered, [.. offered.Concat(alsoReachable)])];
 
     [Test]
     public async Task WithNoEnabledModel_NothingIsClassified()
@@ -75,8 +81,11 @@ public class LearnedArtifactGeneratorTests
 
         var inputs = new List<SkillLearningTriageInput>
         {
-            new(Cluster(), ["list_clients"]),
-            new(new SkillLearningClusterContext(Guid.NewGuid(), "etwas anderes", "de", null, null, [], 0, null), [])
+            new(Cluster(), ["list_clients"], ["list_clients"]),
+            new(
+                new SkillLearningClusterContext(Guid.NewGuid(), "etwas anderes", "de", null, null, [], 0, null),
+                [],
+                [])
         };
 
         var results = await _generator.ClassifyAsync(inputs);
@@ -91,7 +100,7 @@ public class LearnedArtifactGeneratorTests
     // A name the model made up cannot be verified by the routing oracle - it would simply never be found,
     // and the cluster would burn its attempt budget on a skill that never existed.
     [Test]
-    public async Task ASkillOutsideTheOfferedList_IsDropped()
+    public async Task ASkillOutsideBothListsIsDropped()
     {
         _provider.Answering(
             "{\"cases\":[{\"index\":0,\"kind\":\"phrase_gap\",\"skill\":\"invent_revenue_report\"}]}");
@@ -99,6 +108,52 @@ public class LearnedArtifactGeneratorTests
         var results = await _generator.ClassifyAsync(OneCase(null, "list_clients"));
 
         results.ShouldHaveSingleItem().TargetSkill.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// The whole reason the offered list and the reachable list were split. Validating a named skill
+    /// against what was OFFERED made this guard test the same set as the "already routed" dismissal in
+    /// SkillLearningLoop.LearnPhraseAsync: anything the classifier was allowed to name, the loop then threw
+    /// out, so a classifier-chosen wish could never be learned. Existence is what belongs here.
+    /// </summary>
+    [Test]
+    public async Task ASkillThatRetrievalReachesButTheToolsetDidNotOffer_IsKept()
+    {
+        _provider.Answering(
+            "{\"cases\":[{\"index\":0,\"kind\":\"phrase_gap\",\"skill\":\"set_client_availability\"}]}");
+
+        var results = await _generator.ClassifyAsync(
+            OneWidenedCase(["list_clients"], ["set_client_availability"]));
+
+        results.ShouldHaveSingleItem().TargetSkill.ShouldBe("set_client_availability");
+    }
+
+    /// <summary>
+    /// The model is told only about the skills it did NOT get offered, never the union: repeating the
+    /// offered names under a second heading spends tokens telling a cheap model the same thing twice and
+    /// blurs the distinction the second list exists to draw.
+    /// </summary>
+    [Test]
+    public async Task ThePromptNamesTheUnofferedSkillsSeparatelyAndDoesNotRepeatTheOfferedOnes()
+    {
+        _provider.Answering("{\"cases\":[{\"index\":0,\"kind\":\"needs_code\"}]}");
+
+        await _generator.ClassifyAsync(OneWidenedCase(["list_clients"], ["set_client_availability"]));
+
+        var message = _provider.Requests.ShouldHaveSingleItem().Message;
+        message.ShouldContain("Offered skills: list_clients");
+        message.ShouldContain("were not offered: set_client_availability");
+        message.ShouldNotContain("were not offered: list_clients");
+    }
+
+    [Test]
+    public async Task WithoutAnyUnofferedSkill_ThePromptOmitsTheSecondListEntirely()
+    {
+        _provider.Answering("{\"cases\":[{\"index\":0,\"kind\":\"needs_code\"}]}");
+
+        await _generator.ClassifyAsync(OneCase(null, "list_clients"));
+
+        _provider.Requests.ShouldHaveSingleItem().Message.ShouldNotContain("were not offered");
     }
 
     [Test]
