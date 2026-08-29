@@ -23,6 +23,7 @@ public class TrajectoryCaptureServiceTests
 {
     private ISkillSelectionTrajectoryRepository _repository = null!;
     private ISkillLearningCaseCollector _caseCollector = null!;
+    private ISkillPhraseRepository _phrases = null!;
     private TrajectoryCaptureService _service = null!;
     private Guid _agentId;
 
@@ -31,8 +32,12 @@ public class TrajectoryCaptureServiceTests
     {
         _repository = Substitute.For<ISkillSelectionTrajectoryRepository>();
         _caseCollector = Substitute.For<ISkillLearningCaseCollector>();
+        _phrases = Substitute.For<ISkillPhraseRepository>();
+        _phrases
+            .GetActiveBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
         _service = new TrajectoryCaptureService(
-            _repository, _caseCollector, Substitute.For<ILogger<TrajectoryCaptureService>>());
+            _repository, _caseCollector, _phrases, Substitute.For<ILogger<TrajectoryCaptureService>>());
         _agentId = Guid.NewGuid();
     }
 
@@ -50,6 +55,82 @@ public class TrajectoryCaptureServiceTests
         captured!.WasExecuted.ShouldBeFalse();
         captured.HadMutationIntent.ShouldBeTrue();
     }
+
+    // The only link between a turn and a composed capability, and therefore the denominator of that
+    // capability's usefulness quote. It is read off the context because the recipe plan is a local of the
+    // chat loop that would otherwise never leave it.
+    [Test]
+    public async Task TheActiveRecipe_IsRecordedOnTheTrajectory()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        var context = new LLMContext
+        {
+            Message = "Melde die offenen Dienste",
+            UserId = "user-1",
+            ActiveRecipeName = "learned-open-shift-report"
+        };
+
+        await _service.CaptureAsync(_agentId, context, "Erledigt.", []);
+
+        captured!.RecipeName.ShouldBe("learned-open-shift-report");
+    }
+
+    [Test]
+    public async Task WithoutAnActiveRecipe_TheTrajectoryRecordsNone()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1" }, "Bitte.", []);
+
+        captured!.RecipeName.ShouldBeNull();
+    }
+
+    // Attribution for the fitness quote of a learned phrase, matched on the normalised text so that
+    // casing and spacing in the utterance do not decide whether a phrase counts as used. Recorded now
+    // rather than derived later, so a phrase learned next week cannot claim credit for today's turn.
+    [Test]
+    public async Task AnUtteranceContainingALearnedWording_IsAttributedToTheOwningSkill()
+    {
+        GivenLearnedPhrase("list_open_shifts", "offene dienste");
+
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Zeig mir die   OFFENE   Dienste von morgen", UserId = "user-1" },
+            "Hier sind sie.",
+            []);
+
+        captured!.LearnedPhraseHit.ShouldBe("list_open_shifts");
+    }
+
+    [Test]
+    public async Task AnUtteranceWithoutAnyLearnedWording_CarriesNoAttribution()
+    {
+        GivenLearnedPhrase("list_open_shifts", "offene dienste");
+
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Wie viele Kunden haben wir?", UserId = "user-1" },
+            "Achtzehn.",
+            []);
+
+        captured!.LearnedPhraseHit.ShouldBeNull();
+    }
+
+    private void GivenLearnedPhrase(string ownerName, string phrase) =>
+        _phrases
+            .GetActiveBySourceAsync(
+                SkillPhraseSources.Learned, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new SkillPhrase { OwnerName = ownerName, Phrase = phrase }]);
 
     [Test]
     public async Task InfoQuestionWithoutToolCall_IsNotFlaggedAsHadMutationIntent()

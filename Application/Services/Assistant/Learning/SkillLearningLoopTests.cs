@@ -26,7 +26,7 @@ public class SkillLearningLoopTests
 
     private ISkillLearningClusterRepository _clusters = null!;
     private ISkillLearningCaseRepository _cases = null!;
-    private ISkillLearningCandidateRepository _candidates = null!;
+    private ICapabilityLearner _capabilityLearner = null!;
     private ILearnedArtifactGenerator _generator = null!;
     private ISkillRoutingOracle _oracle = null!;
     private IPhraseLearner _phraseLearner = null!;
@@ -44,7 +44,7 @@ public class SkillLearningLoopTests
         _cases = Substitute.For<ISkillLearningCaseRepository>();
         _cases.ListByClusterAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
-        _candidates = Substitute.For<ISkillLearningCandidateRepository>();
+        _capabilityLearner = Substitute.For<ICapabilityLearner>();
         _generator = Substitute.For<ILearnedArtifactGenerator>();
         _oracle = Substitute.For<ISkillRoutingOracle>();
         _phraseLearner = Substitute.For<IPhraseLearner>();
@@ -53,7 +53,7 @@ public class SkillLearningLoopTests
         _sharpener.RunAsync(Arg.Any<CancellationToken>()).Returns((0, 0));
 
         _loop = new SkillLearningLoop(
-            _clusters, _cases, _candidates, _generator, _oracle, _phraseLearner, _sharpener,
+            _clusters, _cases, _generator, _oracle, _phraseLearner, _capabilityLearner, _sharpener,
             Substitute.For<ILogger<SkillLearningLoop>>());
     }
 
@@ -208,7 +208,8 @@ public class SkillLearningLoopTests
     {
         var logger = Substitute.For<ILogger<SkillLearningLoop>>();
         var loop = new SkillLearningLoop(
-            _clusters, _cases, _candidates, _generator, _oracle, _phraseLearner, _sharpener, logger);
+            _clusters, _cases, _generator, _oracle, _phraseLearner, _capabilityLearner, _sharpener,
+            logger);
         _clusters.ListByStatusAsync(
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
@@ -341,24 +342,74 @@ public class SkillLearningLoopTests
             "no skill reports revenue", 0, Arg.Any<CancellationToken>());
     }
 
-    // Stage G2 cannot compose skills, so a composable wish is recorded for stage G3 and closed as
-    // unservable for now rather than re-classified by a model every six hours forever.
+    // A composable wish is handed to the capability learner with the very candidate list the retrieval
+    // produced for it: the pool a composition may be drawn from is what retrieval already offered, not
+    // the whole catalogue.
     [Test]
-    public async Task AComposableWish_IsRecordedForCapabilityLearning()
+    public async Task AComposableWish_IsHandedToTheCapabilityLearner()
     {
         var cluster = GivenReadyCluster();
         GivenProbe(false, "list_clients");
         GivenClassification(cluster.Id, SkillLearningClassifications.Composable, null, "chain two skills");
+        GivenCapabilityOutcome(CapabilityLearningOutcome.Success("learned-revenue-report", false));
 
         var summary = await _loop.RunAsync();
 
-        summary.Unfulfillable.ShouldBe(1);
-        await _candidates.Received(1).AddAsync(
-            Arg.Is<SkillLearningCandidate>(candidate =>
-                candidate.ClusterId == cluster.Id
-                && candidate.Kind == SkillLearningCandidateKinds.Capability),
+        summary.Learned.ShouldBe(1);
+        await _capabilityLearner.Received(1).LearnAsync(
+            Arg.Is<SkillLearningClusterContext>(context => context.ClusterId == cluster.Id),
+            Arg.Is<IReadOnlyList<string>>(skills => skills.Contains("list_clients")),
+            Arg.Any<CancellationToken>());
+
+        await _clusters.Received(1).FinishLearningAsync(
+            cluster.Id,
+            SkillLearningClusterStatuses.LearnedCapability,
+            SkillLearningOutcomeKinds.Capability,
+            "learned-revenue-report",
+            null,
+            0,
             Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task ACompositionNoOracleAccepted_CostsAnAttemptLikeAnyOtherFailedRound()
+    {
+        var cluster = GivenReadyCluster();
+        GivenProbe(false, "list_clients");
+        GivenClassification(cluster.Id, SkillLearningClassifications.Composable, null, "chain two skills");
+        GivenCapabilityOutcome(CapabilityLearningOutcome.Failure("no composition survived"));
+
+        await _loop.RunAsync();
+
+        await _clusters.Received(1).FinishLearningAsync(
+            cluster.Id, SkillLearningClusterStatuses.Ready, null, null, "no composition survived", 1,
+            Arg.Any<CancellationToken>());
+    }
+
+    // An identity the probe could not mint says nothing about the wish. Spending an attempt on it would
+    // let an outage declare a serviceable composition unservable.
+    [Test]
+    public async Task ACompositionThatCouldNotBeJudged_GoesBackWithoutSpendingAnAttempt()
+    {
+        var cluster = GivenReadyCluster();
+        GivenProbe(false, "list_clients");
+        GivenClassification(cluster.Id, SkillLearningClassifications.Composable, null, "chain two skills");
+        GivenCapabilityOutcome(CapabilityLearningOutcome.Unjudged("the owner's token was refused"));
+
+        await _loop.RunAsync();
+
+        await _clusters.Received(1).FinishLearningAsync(
+            cluster.Id, SkillLearningClusterStatuses.Ready, null, null, "the owner's token was refused", 0,
+            Arg.Any<CancellationToken>());
+    }
+
+    private void GivenCapabilityOutcome(CapabilityLearningOutcome outcome) =>
+        _capabilityLearner
+            .LearnAsync(
+                Arg.Any<SkillLearningClusterContext>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(outcome);
 
     // An unreachable model must not spend the budget: the budget exists to stop the loop grinding on a
     // wish nobody can serve, not to declare wishes unservable during an outage.
