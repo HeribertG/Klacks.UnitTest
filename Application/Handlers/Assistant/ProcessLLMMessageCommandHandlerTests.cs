@@ -106,7 +106,16 @@ public class ProcessLLMMessageCommandHandlerTests
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            NoLearnedPhrases(),
             Substitute.For<ILogger<SkillToolsetAssembler>>());
+    }
+
+    private static ISkillPhraseRepository NoLearnedPhrases()
+    {
+        var repository = Substitute.For<ISkillPhraseRepository>();
+        repository.GetActiveBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SkillPhrase>());
+        return repository;
     }
 
     private ProcessLLMMessageCommandHandler CreateHandler()

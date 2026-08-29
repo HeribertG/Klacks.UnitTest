@@ -212,6 +212,7 @@ public class SkillToolsetAssemblerProposalConfirmationTests
             _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
             _pendingUserNoteRepository, _recipeEngine, _confirmationStore,
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            NoLearnedPhrases(),
             Substitute.For<ILogger<SkillToolsetAssembler>>());
 
         return assembler.AssembleAsync(
@@ -254,5 +255,13 @@ public class SkillToolsetAssemblerProposalConfirmationTests
 
         return new RecipeEngineService(
             scopeFactory, Substitute.For<IPendingRecipeStore>(), Substitute.For<ILogger<RecipeEngineService>>());
+    }
+
+    private static ISkillPhraseRepository NoLearnedPhrases()
+    {
+        var repository = Substitute.For<ISkillPhraseRepository>();
+        repository.GetActiveBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SkillPhrase>());
+        return repository;
     }
 }

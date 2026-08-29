@@ -48,6 +48,7 @@ public class SkillRoutingOracleTests
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<int>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>())
             .Returns(new SkillToolsetResult
             {
@@ -89,8 +90,11 @@ public class SkillRoutingOracleTests
         probe.TopSkills.Count.ShouldBe(2);
     }
 
+    // The learned-phrase guarantee is switched off here, and that argument is the load-bearing one:
+    // PhraseLearner probes with the wording it has just written, so a guarantee keyed on that wording
+    // would make every generated phrase reach its own target and leave O1 with nothing left to judge.
     [Test]
-    public async Task TheProbeRunsAsAdministratorWithoutAUserIdentity()
+    public async Task TheProbeRunsAsAdministratorWithoutAUserIdentityOrTheLearnedPhraseGuarantee()
     {
         await _oracle.ProbeAsync("umsatz pro kunde", "de", "revenue_per_client");
 
@@ -103,6 +107,7 @@ public class SkillRoutingOracleTests
             Guid.Empty.ToString(),
             "de",
             SkillLearningDefaults.RoutingProbeTopK,
+            false,
             Arg.Any<CancellationToken>());
     }
 
@@ -117,7 +122,7 @@ public class SkillRoutingOracleTests
         await _assembler.DidNotReceive().AssembleAsync(
             Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
-            Arg.Any<CancellationToken>());
+            Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

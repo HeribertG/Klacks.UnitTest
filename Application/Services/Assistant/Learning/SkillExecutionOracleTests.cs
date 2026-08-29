@@ -298,6 +298,90 @@ public class SkillExecutionOracleTests
         probe.Error.ShouldContain("at most");
     }
 
+    /// <summary>
+    /// The distinct skills behind the eight steps oracle O2 has really executed in the live capability
+    /// runs of 2026-08-29: four in the first passing probe (get_current_time, search_client_absences,
+    /// check_absence_capacity_reserve, navigate_to), one in the second (search_and_navigate), three in the
+    /// run that first proved the capability path (search_client_absences, get_group_absence_overlap,
+    /// check_absence_capacity_reserve), plus get_user_context, which the same runs named as a step that
+    /// cannot fail. Three of those eight steps were load-bearing evidence and five were not, so what those
+    /// runs showed is that a step CAN pass - never that a failing one is noticed.
+    /// </summary>
+    private static readonly string[] ProbedStepSkills =
+    [
+        "get_current_time",
+        "get_user_context",
+        "navigate_to",
+        "search_and_navigate",
+        "search_client_absences",
+        "check_absence_capacity_reserve",
+        "get_group_absence_overlap"
+    ];
+
+    /// <summary>
+    /// The half the live runs could not show. A skill that cannot fail in practice proves nothing about
+    /// detection, and three of the eight probed steps were of exactly that kind - so the failure is
+    /// injected here instead, for every skill the loop has actually put through the oracle.
+    /// </summary>
+    [TestCaseSource(nameof(ProbedStepSkills))]
+    public async Task AProbedStepThatFails_IsDetectedAsAFailure(string skill)
+    {
+        GivenSkill(skill, SkillRiskClass.ReadOnly);
+        GivenExecutionResult(SkillResult.Error("The requested period is not open."));
+
+        var probe = await _oracle.ProbeAsync([Step(skill)], OwnerId, Guid.NewGuid());
+
+        probe.Verdict.ShouldBe(SkillExecutionVerdict.Rejected);
+        probe.Error.ShouldContain(skill);
+        probe.Error.ShouldContain("The requested period is not open.");
+        probe.Steps.ShouldHaveSingleItem().Success.ShouldBeFalse();
+    }
+
+    [TestCaseSource(nameof(ProbedStepSkills))]
+    public async Task AProbedStepThatThrows_IsDetectedAsAFailureRatherThanTakingTheProbeDown(string skill)
+    {
+        GivenSkill(skill, SkillRiskClass.ReadOnly);
+        _executor
+            .ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns<SkillResult>(_ => throw new InvalidOperationException("repository unreachable"));
+
+        var probe = await _oracle.ProbeAsync([Step(skill)], OwnerId, Guid.NewGuid());
+
+        probe.Verdict.ShouldBe(SkillExecutionVerdict.Rejected);
+        probe.Error.ShouldContain("repository unreachable");
+    }
+
+    [TestCaseSource(nameof(ProbedStepSkills))]
+    public async Task AProbedStepThatSucceeds_PassesAndIsMarkedExecuted(string skill)
+    {
+        GivenSkill(skill, SkillRiskClass.ReadOnly);
+
+        var probe = await _oracle.ProbeAsync([Step(skill)], OwnerId, Guid.NewGuid());
+
+        probe.Verdict.ShouldBe(SkillExecutionVerdict.Passed);
+        probe.FullyExecuted.ShouldBeTrue();
+        probe.Steps.ShouldHaveSingleItem().Executed.ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// Why navigate_to is not evidence, written down as a test rather than as a footnote. SkillResult
+    /// .Navigation sets Success unconditionally and there is no browser behind an unattended probe, so the
+    /// step reports a success that describes nothing that happened. The oracle is right to take the result
+    /// at face value - it cannot know better - but a composition proved only by steps of this shape has
+    /// not been proved.
+    /// </summary>
+    [Test]
+    public async Task ANavigationResult_CountsAsSuccessAlthoughNothingWasNavigated()
+    {
+        GivenSkill("navigate_to", SkillRiskClass.ReadOnly);
+        GivenExecutionResult(SkillResult.Navigation(new { route = "/employees" }, "Navigating."));
+
+        var probe = await _oracle.ProbeAsync([Step("navigate_to")], OwnerId, Guid.NewGuid());
+
+        probe.Verdict.ShouldBe(SkillExecutionVerdict.Passed);
+        probe.Steps.ShouldHaveSingleItem().Success.ShouldBeTrue();
+    }
+
     private static RecipeStep Step(string skill) =>
         new() { Kind = RecipeStepKinds.Search, Skill = skill };
 

@@ -10,6 +10,7 @@
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
@@ -37,6 +38,16 @@ public class SkillToolsetAssemblerTests
     private const string UserMessage = "Bitte such mir die passenden Mitarbeitenden zusammen";
     private const string UserId = "user-1";
 
+    // The skill the 2026-08-29 end-to-end runs watched stay outside the toolset over six generated
+    // wordings while its neighbour got through every time. It is the canonical shape of a routing gap:
+    // retrieval knows the skill, the provider cap drops it, and a learned wording used to change nothing.
+    private const string LearnedSkillName = "set_client_availability";
+    private const string SecondLearnedSkillName = "clear_client_availability";
+    private const string ThirdLearnedSkillName = "get_export_formats_settings";
+    private const string LongLearnedWording = "die passenden mitarbeitenden";
+    private const string ShortLearnedWording = "such mir";
+    private const string ThirdLearnedWording = "zusammen";
+
     private ISkillCacheService _skillCache = null!;
     private IKnowledgeRetrievalService _retrieval = null!;
     private IRetrievalQueryBuilder _retrievalQueryBuilder = null!;
@@ -44,6 +55,7 @@ public class SkillToolsetAssemblerTests
     private IPendingUserNoteRepository _pendingUserNoteRepository = null!;
     private RecipeEngineService _recipeEngine = null!;
     private IPendingPlanningProfileDraftStore _planningProfileDraftStore = null!;
+    private ISkillPhraseRepository _skillPhrases = null!;
     private Agent _agent = null!;
 
     [SetUp]
@@ -81,6 +93,13 @@ public class SkillToolsetAssemblerTests
 
         _planningProfileDraftStore = PendingStoreTestFactory.CreatePlanningProfileDraftStore();
 
+        // Nothing learned is the state every installation starts in, so it is also the default here:
+        // every assertion that predates the learned-phrase guarantee must stay exactly as true as before.
+        _skillPhrases = Substitute.For<ISkillPhraseRepository>();
+        _skillPhrases.GetActiveBySourceAsync(
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SkillPhrase>());
+
         _agent = new Agent { Id = Guid.NewGuid() };
         _skillCache.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(_agent);
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
@@ -94,7 +113,10 @@ public class SkillToolsetAssemblerTests
                 CreateSkill("set_planning_profile_parameters"),
                 CreateSkill("preview_planning_profile"),
                 CreateSkill("apply_planning_profile"),
-                CreateSkill("cancel_planning_profile_setup")
+                CreateSkill("cancel_planning_profile_setup"),
+                CreateSkill(LearnedSkillName, sortOrder: 900),
+                CreateSkill(SecondLearnedSkillName, sortOrder: 910),
+                CreateSkill(ThirdLearnedSkillName, sortOrder: 920)
             });
 
         SetupRetrievalResult(new RetrievalResult([]));
@@ -145,6 +167,7 @@ public class SkillToolsetAssemblerTests
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
             _planningProfileDraftStore,
+            _skillPhrases,
             Substitute.For<ILogger<SkillToolsetAssembler>>());
     }
 
@@ -172,7 +195,8 @@ public class SkillToolsetAssemblerTests
         return new RetrievalResult(candidates);
     }
 
-    private static AgentSkill CreateSkill(string name, bool alwaysOn = false, string? requiredPermission = null)
+    private static AgentSkill CreateSkill(
+        string name, bool alwaysOn = false, string? requiredPermission = null, int sortOrder = 0)
     {
         return new AgentSkill
         {
@@ -180,9 +204,31 @@ public class SkillToolsetAssemblerTests
             Description = "A skill.",
             ParametersJson = "[]",
             AlwaysOn = alwaysOn,
-            RequiredPermission = requiredPermission
+            RequiredPermission = requiredPermission,
+            SortOrder = sortOrder
         };
     }
+
+    private void GivenLearnedPhrases(params (string OwnerName, string Phrase, string OwnerKind)[] phrases)
+    {
+        _skillPhrases.GetActiveBySourceAsync(
+                SkillPhraseSources.Learned, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(phrases
+                .Select(p => new SkillPhrase
+                {
+                    OwnerKind = p.OwnerKind,
+                    OwnerName = p.OwnerName,
+                    Phrase = p.Phrase,
+                    Language = "de",
+                    Kind = SkillPhraseKinds.Synonym,
+                    Source = SkillPhraseSources.Learned,
+                    Status = SkillPhraseStatuses.Active
+                })
+                .ToList());
+    }
+
+    private void GivenLearnedSkillPhrase(string ownerName, string phrase) =>
+        GivenLearnedPhrases((ownerName, phrase, SkillPhraseOwnerKinds.Skill));
 
     private Task<SkillToolsetResult> AssembleAsync(List<string>? userRights = null)
     {
@@ -373,5 +419,156 @@ public class SkillToolsetAssemblerTests
     {
         await Task.CompletedTask;
         yield break;
+    }
+
+    /// <summary>
+    /// The point of learning a wording. A learned row reaches the embedding text and nothing else, so
+    /// before this guarantee existed the only thing a lesson could do was nudge a ranking that had
+    /// already failed - which is why six generated wordings in a row left their skill outside the toolset.
+    /// </summary>
+    [Test]
+    public async Task ALearnedWordingInTheMessage_PutsItsSkillInTheToolsetRetrievalNeverOffered()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        GivenLearnedSkillPhrase(LearnedSkillName, LongLearnedWording);
+
+        var result = await AssembleAsync();
+
+        FunctionNames(result).ShouldContain(LearnedSkillName);
+    }
+
+    /// <summary>
+    /// Presence alone would prove nothing: an uncapped turn contains everything. The cap is set so that
+    /// truncation really runs, and the learned skill carries the WORST sort order in the set - without a
+    /// guarantee slot it would be the first thing dropped, not the last.
+    /// </summary>
+    [Test]
+    public async Task ALearnedWordingsSkill_OutranksRetrievedSkillsAtTheProviderCap()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName, NeighbourSkillName, MultiPermissionSkillName));
+        GivenLearnedSkillPhrase(LearnedSkillName, LongLearnedWording);
+        var userRights = new List<string> { "CanEditClients", "CanViewGroups" };
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, userRights, UserMessage, conversationId: null, currentRoute: null, UserId,
+            language: null, maxToolsForProvider: 3, cancellationToken: CancellationToken.None);
+
+        var names = FunctionNames(result);
+        names.Count.ShouldBe(3);
+        names.ShouldContain(AlwaysOnSkillName);
+        names.ShouldContain(LearnedSkillName);
+        names.Count(name => name is RetrievedSkillName or NeighbourSkillName or MultiPermissionSkillName)
+            .ShouldBe(1, "Two retrieved skills had to give way to the always-on and the guaranteed one.");
+    }
+
+    [Test]
+    public async Task ALearnedWordingThatDoesNotOccurInTheMessage_GuaranteesNothing()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        GivenLearnedSkillPhrase(LearnedSkillName, "verfuegbarkeit eines kunden festlegen");
+
+        var result = await AssembleAsync();
+
+        FunctionNames(result).ShouldNotContain(LearnedSkillName);
+    }
+
+    /// <summary>
+    /// A capability writes its learned wording against the RECIPE name. That name is never a function, so
+    /// a recipe-owned row could only ever burn a guarantee slot and resolve to nothing.
+    /// </summary>
+    [Test]
+    public async Task ALearnedWordingOfARecipe_TakesNoSkillSlot()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        GivenLearnedPhrases((LearnedSkillName, LongLearnedWording, SkillPhraseOwnerKinds.Recipe));
+
+        var result = await AssembleAsync();
+
+        FunctionNames(result).ShouldNotContain(LearnedSkillName);
+    }
+
+    /// <summary>
+    /// Guaranteed skills survive the cap ahead of retrieved ones, so an unbounded number of them would let
+    /// the learning loop crowd out the retrieval it is meant to complement. The longest wording is the most
+    /// specific one and therefore the one that keeps its slot.
+    /// </summary>
+    [Test]
+    public async Task MoreMatchingWordingsThanTheCap_GuaranteeTheLongestOnesOnly()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        GivenLearnedPhrases(
+            (LearnedSkillName, LongLearnedWording, SkillPhraseOwnerKinds.Skill),
+            (SecondLearnedSkillName, ShortLearnedWording, SkillPhraseOwnerKinds.Skill),
+            (ThirdLearnedSkillName, ThirdLearnedWording, SkillPhraseOwnerKinds.Skill));
+
+        var result = await AssembleAsync();
+
+        var names = FunctionNames(result);
+        names.ShouldContain(LearnedSkillName);
+        names.Count(name => name is LearnedSkillName or SecondLearnedSkillName or ThirdLearnedSkillName)
+            .ShouldBe(LearnedPhraseMatcher.GuaranteeCap);
+    }
+
+    /// <summary>
+    /// A wording this short matches by accident. The learning loop never produces one, but the admin card
+    /// can rewrite a learned row to anything, and a two-letter row would otherwise guarantee its skill on
+    /// almost every turn.
+    /// </summary>
+    [Test]
+    public async Task ALearnedWordingShorterThanTheMatchFloor_GuaranteesNothing()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        GivenLearnedSkillPhrase(LearnedSkillName, "mi");
+
+        var result = await AssembleAsync();
+
+        FunctionNames(result).ShouldNotContain(LearnedSkillName);
+    }
+
+    [Test]
+    public async Task AFailingPhraseLookup_LeavesTheRestOfTheToolsetIntact()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        _skillPhrases.GetActiveBySourceAsync(
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<SkillPhrase>>(_ => throw new InvalidOperationException("phrase store down"));
+
+        var result = await AssembleAsync();
+
+        var names = FunctionNames(result);
+        names.ShouldContain(RetrievedSkillName);
+        names.ShouldContain(AlwaysOnSkillName);
+        names.ShouldNotContain(LearnedSkillName);
+    }
+
+    /// <summary>
+    /// The switch routing oracle O1 flips. PhraseLearner probes with the wording it has just written, so a
+    /// guarantee keyed on that wording would report every generated phrase a success - including one that
+    /// merely echoes the utterance and generalises to nothing.
+    /// </summary>
+    [Test]
+    public async Task WithTheGuaranteeSwitchedOff_ALearnedWordingChangesNothing()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        GivenLearnedSkillPhrase(LearnedSkillName, LongLearnedWording);
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), UserMessage, conversationId: null, currentRoute: null, UserId,
+            language: null, applyLearnedPhraseGuarantee: false, cancellationToken: CancellationToken.None);
+
+        FunctionNames(result).ShouldNotContain(LearnedSkillName);
+    }
+
+    [Test]
+    public async Task WithTheGuaranteeSwitchedOff_ThePhraseStoreIsNotEvenRead()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+
+        await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), UserMessage, conversationId: null, currentRoute: null, UserId,
+            language: null, applyLearnedPhraseGuarantee: false, cancellationToken: CancellationToken.None);
+
+        await _skillPhrases.DidNotReceive().GetActiveBySourceAsync(
+            Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 }
