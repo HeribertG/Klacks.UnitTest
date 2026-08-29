@@ -387,6 +387,48 @@ public class AgentConditionActionServiceTests
     }
 
     [Test]
+    public async Task ANonRegisteredKind_IsNeverEvenQueried()
+    {
+        // §3.3 "Nur registrierte Kinds" - RunAsync loops _registry.RegisteredKinds only, so a condition
+        // of a kind absent from the registry is never fetched from the repository at all, regardless of
+        // governance or status. TestRemediationRegistry.RegisteredKinds only ever names Kind (see the
+        // class below), matching production's single-source-of-truth (ConditionRemediationRegistry).
+        const string unregisteredKind = "some_kind_with_no_remediation";
+        var stray = _repository.Seed(
+            unregisteredKind, Guid.NewGuid().ToString(), AgentConditionStatus.Reported, NowUtc.AddHours(-1));
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Considered, Is.Zero, "An unregistered kind's rows must never reach the tally.");
+            Assert.That(_repository.Stored(stray.Id).Status, Is.EqualTo(AgentConditionStatus.Reported));
+        });
+    }
+
+    [Test]
+    public async Task PrepareOnAnExecuteOnlyRemediation_SkipsRatherThanStagingAScenario()
+    {
+        // §3.3 "Effektiv < Execute" combined with the spec's own most-likely-to-be-wrong cell (§9):
+        // TestRemediationRegistry's entry is IsScenarioCapable=false by construction (the record's
+        // default, see ConditionRemediationEntry), exactly like the real empty_container entry. Prepare
+        // must therefore behave like Hint here - report and wait - not stage a scenario nobody can ever
+        // accept back out.
+        GivenGovernance(ProactiveMaxAction.Prepare);
+        var condition = GivenCondition(AgentConditionStatus.Reported);
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.Zero);
+            Assert.That(_repository.Stored(condition.Id).Status, Is.EqualTo(AgentConditionStatus.Reported));
+        });
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task AnIdentityRefusal_NeverExecutesAndCountsAsAFailedAttempt()
     {
         _identityProvider
