@@ -9,6 +9,7 @@
 /// the learning collector under the cluster key of its own utterance.
 /// </summary>
 
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Evaluation;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -24,6 +25,7 @@ public class TrajectoryCaptureServiceTests
     private ISkillSelectionTrajectoryRepository _repository = null!;
     private ISkillLearningCaseCollector _caseCollector = null!;
     private ISkillPhraseRepository _phrases = null!;
+    private ISkillUsageRepository _usage = null!;
     private TrajectoryCaptureService _service = null!;
     private Guid _agentId;
 
@@ -33,11 +35,15 @@ public class TrajectoryCaptureServiceTests
         _repository = Substitute.For<ISkillSelectionTrajectoryRepository>();
         _caseCollector = Substitute.For<ISkillLearningCaseCollector>();
         _phrases = Substitute.For<ISkillPhraseRepository>();
+        _usage = Substitute.For<ISkillUsageRepository>();
         _phrases
             .GetActiveBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
+        _usage
+            .GetByTurnIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns([]);
         _service = new TrajectoryCaptureService(
-            _repository, _caseCollector, _phrases, Substitute.For<ILogger<TrajectoryCaptureService>>());
+            _repository, _caseCollector, _phrases, _usage, Substitute.For<ILogger<TrajectoryCaptureService>>());
         _agentId = Guid.NewGuid();
     }
 
@@ -131,6 +137,87 @@ public class TrajectoryCaptureServiceTests
             .GetActiveBySourceAsync(
                 SkillPhraseSources.Learned, Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([new SkillPhrase { OwnerName = ownerName, Phrase = phrase }]);
+
+    // W1.1: the turn id travels from the chat context onto the trajectory, where it forms the join
+    // key to llm_usages.id and skill_usage_records.turn_id.
+    [Test]
+    public async Task TheTurnId_IsRecordedOnTheTrajectory()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1", TurnId = turnId },
+            "Bitte.",
+            []);
+
+        captured!.TurnId.ShouldBe(turnId);
+    }
+
+    // W1.3: was_successful is derived at capture time from the turn's skill_usage_records rows —
+    // all successes make the turn successful, one failure spoils it, no rows leave it unknown.
+    [Test]
+    public async Task AllUsageRowsSuccessful_MarksTheTurnSuccessful()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _usage.GetByTurnIdAsync(turnId, Arg.Any<CancellationToken>())
+            .Returns([Usage(turnId, true), Usage(turnId, true)]);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Öffne die Dienste", UserId = "user-1", TurnId = turnId },
+            "Erledigt.",
+            [new LLMFunctionCall { FunctionName = "list_open_shifts" }]);
+
+        captured!.WasSuccessful.ShouldBe(true);
+    }
+
+    [Test]
+    public async Task OneFailedUsageRow_MarksTheTurnFailed()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _usage.GetByTurnIdAsync(turnId, Arg.Any<CancellationToken>())
+            .Returns([Usage(turnId, true), Usage(turnId, false)]);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Öffne die Dienste", UserId = "user-1", TurnId = turnId },
+            "Erledigt.",
+            [new LLMFunctionCall { FunctionName = "list_open_shifts" }]);
+
+        captured!.WasSuccessful.ShouldBe(false);
+    }
+
+    [Test]
+    public async Task WithoutUsageRows_WasSuccessfulStaysUnknown()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1", TurnId = Guid.NewGuid() },
+            "Bitte.",
+            []);
+
+        captured!.WasSuccessful.ShouldBeNull();
+    }
+
+    private static SkillUsageRecord Usage(Guid turnId, bool success) => new()
+    {
+        SkillName = "list_open_shifts",
+        Category = SkillCategory.Query,
+        UserId = Guid.NewGuid(),
+        TenantId = Guid.NewGuid(),
+        Success = success,
+        TurnId = turnId
+    };
 
     [Test]
     public async Task InfoQuestionWithoutToolCall_IsNotFlaggedAsHadMutationIntent()

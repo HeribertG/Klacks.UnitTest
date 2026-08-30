@@ -21,13 +21,14 @@ public class SkillUsageTrackerServiceTests
         "add_break", "desc", SkillCategory.Crud, Array.Empty<SkillParameter>(),
         Array.Empty<string>(), Array.Empty<LLMCapability>(), null);
 
-    private static SkillExecutionContext Context(string? sessionId) => new()
+    private static SkillExecutionContext Context(string? sessionId, Guid? turnId = null) => new()
     {
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
         UserPermissions = new List<string>(),
         SessionId = sessionId,
+        TurnId = turnId,
     };
 
     private static (SkillUsageTrackerService Sut, Func<SkillUsageRecord?> Saved) Build()
@@ -64,5 +65,39 @@ public class SkillUsageTrackerServiceTests
 
         saved().ShouldNotBeNull();
         saved()!.SessionId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task TrackAsync_WritesTurnIdFromContext()
+    {
+        var (sut, saved) = Build();
+        var turnId = Guid.NewGuid();
+
+        await sut.TrackAsync(Descriptor(), Context(null, turnId), new Dictionary<string, object>(),
+            SkillResult.SuccessResult(null), TimeSpan.FromMilliseconds(5));
+
+        saved().ShouldNotBeNull();
+        saved()!.TurnId.ShouldBe(turnId);
+        saved()!.FailureKind.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task TrackFailureAsync_WritesFailureClassTurnIdAndError()
+    {
+        var (sut, saved) = Build();
+        var turnId = Guid.NewGuid();
+
+        await sut.TrackFailureAsync(
+            "list_llm_models", SkillFailureKind.PermissionDenied, Context(null, turnId),
+            new Dictionary<string, object> { ["provider"] = "openai" }, "Missing permission",
+            TimeSpan.FromMilliseconds(3));
+
+        saved().ShouldNotBeNull();
+        saved()!.Success.ShouldBeFalse();
+        saved()!.FailureKind.ShouldBe(SkillFailureKind.PermissionDenied);
+        saved()!.TurnId.ShouldBe(turnId);
+        saved()!.ErrorMessage.ShouldBe("Missing permission");
+        saved()!.Category.ShouldBe(SkillCategory.Action);
+        saved()!.ParametersJson.ShouldNotBeNull();
     }
 }
