@@ -93,6 +93,7 @@ public class LLMServiceRecipeConfirmationGateTests
             backgroundTaskService: null!,
             pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
+            recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!);

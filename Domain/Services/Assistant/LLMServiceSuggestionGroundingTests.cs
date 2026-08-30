@@ -40,6 +40,7 @@ public class LLMServiceSuggestionGroundingTests
             backgroundTaskService: null!,
             pendingConfirmationStore: null!,
             recipeEngine: null!,
+            recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             slotExtractor: null!,
             suggestionEntityNameReader: _nameReader,
             contextBudgetPolicy: null!);

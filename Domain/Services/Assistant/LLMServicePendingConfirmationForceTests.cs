@@ -48,6 +48,7 @@ public class LLMServicePendingConfirmationForceTests
             backgroundTaskService: null!,
             pendingConfirmationStore: _confirmationStore,
             recipeEngine: null!,
+            recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             slotExtractor: null!,
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!);
