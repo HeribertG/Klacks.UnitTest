@@ -209,14 +209,53 @@ public class TrajectoryCaptureServiceTests
         captured!.WasSuccessful.ShouldBeNull();
     }
 
-    private static SkillUsageRecord Usage(Guid turnId, bool success) => new()
+    // W1.4: a dispatched UiAction is not a verdict yet, so a turn consisting only of pending UI
+    // actions stays unknown instead of being booked as a false success.
+    [Test]
+    public async Task OnlyDispatchedUiActions_WasSuccessfulStaysUnknown()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _usage.GetByTurnIdAsync(turnId, Arg.Any<CancellationToken>())
+            .Returns([Usage(turnId, true, UiActionStatus.Dispatched)]);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Öffne die Einstellungen", UserId = "user-1", TurnId = turnId },
+            "Wird ausgeführt.",
+            [new LLMFunctionCall { FunctionName = "open_settings" }]);
+
+        captured!.WasSuccessful.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task DispatchedUiActionPlusCompletedSuccess_MarksTheTurnSuccessful()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _usage.GetByTurnIdAsync(turnId, Arg.Any<CancellationToken>())
+            .Returns([Usage(turnId, true, UiActionStatus.Completed)]);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Öffne die Einstellungen", UserId = "user-1", TurnId = turnId },
+            "Erledigt.",
+            [new LLMFunctionCall { FunctionName = "open_settings" }]);
+
+        captured!.WasSuccessful.ShouldBe(true);
+    }
+
+    private static SkillUsageRecord Usage(Guid turnId, bool success, UiActionStatus? uiActionStatus = null) => new()
     {
         SkillName = "list_open_shifts",
         Category = SkillCategory.Query,
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         Success = success,
-        TurnId = turnId
+        TurnId = turnId,
+        UiActionStatus = uiActionStatus
     };
 
     [Test]

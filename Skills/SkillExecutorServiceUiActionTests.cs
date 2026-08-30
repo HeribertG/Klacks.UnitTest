@@ -130,9 +130,10 @@ public class SkillExecutorServiceUiActionTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.UiActionSteps, Is.EqualTo(UiActionStepsConfig));
         Assert.That(result.UiActionParameters, Is.SameAs(parameters));
+        Assert.That(result.UiActionTrackingId, Is.Not.Null);
         await _usageTracker.Received(1).TrackAsync(
             Arg.Any<SkillDescriptor>(), Arg.Any<SkillExecutionContext>(), Arg.Any<Dictionary<string, object>>(),
-            Arg.Any<SkillResult>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+            Arg.Any<SkillResult>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>(), result.UiActionTrackingId);
         await _genericDispatcher.DidNotReceive().ExecuteAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>());
     }

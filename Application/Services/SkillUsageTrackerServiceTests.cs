@@ -100,4 +100,32 @@ public class SkillUsageTrackerServiceTests
         saved()!.Category.ShouldBe(SkillCategory.Action);
         saved()!.ParametersJson.ShouldNotBeNull();
     }
+
+    [Test]
+    public async Task TrackAsync_UiActionResult_BooksDispatchedStatusAndRecordId()
+    {
+        var (sut, saved) = Build();
+        var trackingId = Guid.NewGuid();
+
+        var result = SkillResult.UiAction("{\"steps\":[]}", new Dictionary<string, object>(), "UI action", trackingId);
+        await sut.TrackAsync(Descriptor(), Context(null), new Dictionary<string, object>(), result,
+            TimeSpan.FromMilliseconds(5), recordId: trackingId);
+
+        saved().ShouldNotBeNull();
+        saved()!.Id.ShouldBe(trackingId);
+        saved()!.UiActionStatus.ShouldBe(UiActionStatus.Dispatched);
+        saved()!.Success.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task TrackAsync_NonUiActionResult_HasNoUiActionStatus()
+    {
+        var (sut, saved) = Build();
+
+        await sut.TrackAsync(Descriptor(), Context(null), new Dictionary<string, object>(),
+            SkillResult.SuccessResult(null), TimeSpan.FromMilliseconds(5));
+
+        saved().ShouldNotBeNull();
+        saved()!.UiActionStatus.ShouldBeNull();
+    }
 }
