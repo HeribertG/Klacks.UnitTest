@@ -3,8 +3,9 @@
 /// <summary>
 /// Unit tests for SkillParameterTypeValidator: values that are parsable as their declared type pass
 /// (including string representations like "5" for an Integer and "today" for a Date), unparsable
-/// values fail loudly with parameter name, expected type and received value, and null/blank/undeclared
-/// parameters are left to the skill itself.
+/// values fail loudly with parameter name, expected type and received value, Enum values are checked
+/// against the declared enumValues (case-insensitive), and null/blank/undeclared parameters are left
+/// to the skill itself.
 /// </summary>
 
 using System.Text.Json;
@@ -180,13 +181,49 @@ public class SkillParameterTypeValidatorTests
     }
 
     [Test]
-    public void Enum_AnyStringValue_Passes()
+    public void Enum_DeclaredValue_Passes()
+    {
+        var descriptor = Descriptor(new SkillParameter(
+            "canton", "test", SkillParameterType.Enum, Required: false,
+            EnumValues: new[] { "BE", "ZH" }));
+
+        var errors = SkillParameterTypeValidator.Validate(descriptor, With("canton", "BE"));
+
+        Assert.That(errors, Is.Empty);
+    }
+
+    [Test]
+    public void Enum_UndeclaredValue_FailsWithNameTypeAndValue()
     {
         var descriptor = Descriptor(new SkillParameter(
             "canton", "test", SkillParameterType.Enum, Required: false,
             EnumValues: new[] { "BE", "ZH" }));
 
         var errors = SkillParameterTypeValidator.Validate(descriptor, With("canton", "JU"));
+
+        Assert.That(errors, Has.Count.EqualTo(1));
+        Assert.That(errors[0], Does.Contain("'canton'").And.Contain("BE").And.Contain("JU"));
+    }
+
+    [Test]
+    public void Enum_DeclaredValueCaseInsensitive_Passes()
+    {
+        var descriptor = Descriptor(new SkillParameter(
+            "canton", "test", SkillParameterType.Enum, Required: false,
+            EnumValues: new[] { "BE", "ZH" }));
+
+        var errors = SkillParameterTypeValidator.Validate(descriptor, With("canton", "be"));
+
+        Assert.That(errors, Is.Empty);
+    }
+
+    [Test]
+    public void Enum_WithoutEnumValues_PassesAnyValue()
+    {
+        var descriptor = Descriptor(new SkillParameter(
+            "canton", "test", SkillParameterType.Enum, Required: false));
+
+        var errors = SkillParameterTypeValidator.Validate(descriptor, With("canton", "anything"));
 
         Assert.That(errors, Is.Empty);
     }
