@@ -5,6 +5,8 @@
 /// Since the learning loop applies pending proposals by itself, this handler is the administrator's
 /// override of the routing regression gate: it accepts a regression-blocked proposal and refuses a pending
 /// one, which belongs to the loop.
+/// The outcome is a LearningMutationResult like every other mutation on the learning card: not found is
+/// 404, the stale-description auto-reject is 409, everything else refusing is 400.
 /// </summary>
 namespace Klacks.UnitTest.Application.Handlers.Assistant;
 
@@ -65,8 +67,9 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             ReviewedBy = "admin@klacks"
         }, CancellationToken.None);
 
-        result.Applied.ShouldBeTrue();
-        result.NewSkillVersion.ShouldBe(4);
+        result.Found.ShouldBeTrue();
+        result.Conflict.ShouldBeFalse();
+        result.Error.ShouldBeNull();
         skill.Description.ShouldBe("Tighter description");
         skill.Version.ShouldBe(4);
         proposal.Status.ShouldBe(ProposedChangeStatuses.Approved);
@@ -77,7 +80,7 @@ public class ApproveProposedSkillChangeCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_StaleProposal_AutoRejects()
+    public async Task Handle_StaleProposal_AutoRejectsAsConflict()
     {
         var skillId = Guid.NewGuid();
         var proposal = new ProposedSkillChange
@@ -100,7 +103,7 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             ReviewedBy = "admin"
         }, CancellationToken.None);
 
-        result.Applied.ShouldBeFalse();
+        result.Conflict.ShouldBeTrue();
         proposal.Status.ShouldBe(ProposedChangeStatuses.Rejected);
         skill.Description.ShouldBe("Description was changed elsewhere");
         await _skillRepo.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
@@ -121,7 +124,6 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             ReviewedBy = "admin"
         }, CancellationToken.None);
 
-        result.Applied.ShouldBeFalse();
         result.Error.ShouldNotBeNull().ShouldContain("pending");
         await _skillRepo.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
     }
@@ -138,12 +140,11 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             ReviewedBy = "admin"
         }, CancellationToken.None);
 
-        result.Applied.ShouldBeFalse();
         result.Error.ShouldNotBeNull().ShouldContain("approved");
     }
 
     [Test]
-    public async Task Handle_MissingProposal_ReturnsError()
+    public async Task Handle_MissingProposal_AnswersNotFound()
     {
         _proposalRepo.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((ProposedSkillChange?)null);
 
@@ -153,8 +154,30 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             ReviewedBy = "admin"
         }, CancellationToken.None);
 
-        result.Applied.ShouldBeFalse();
-        result.Error.ShouldNotBeNull().ShouldContain("not found");
+        result.Found.ShouldBeFalse();
+        result.Error.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Handle_MissingSkill_AnswersNotFound()
+    {
+        var proposal = new ProposedSkillChange
+        {
+            Id = Guid.NewGuid(),
+            SkillId = Guid.NewGuid(),
+            Field = ProposedChangeFields.Description,
+            Status = ProposedChangeStatuses.BlockedRegression
+        };
+        _proposalRepo.GetByIdAsync(proposal.Id, Arg.Any<CancellationToken>()).Returns(proposal);
+        _skillRepo.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns((AgentSkill?)null);
+
+        var result = await _handler.Handle(new ApproveProposedSkillChangeCommand
+        {
+            ProposalId = proposal.Id,
+            ReviewedBy = "admin"
+        }, CancellationToken.None);
+
+        result.Found.ShouldBeFalse();
     }
 
     [Test]
@@ -166,7 +189,6 @@ public class ApproveProposedSkillChangeCommandHandlerTests
             ReviewedBy = string.Empty
         }, CancellationToken.None);
 
-        result.Applied.ShouldBeFalse();
         result.Error.ShouldNotBeNull().ShouldContain("ReviewedBy");
     }
 }

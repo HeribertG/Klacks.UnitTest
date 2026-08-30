@@ -10,6 +10,8 @@
 namespace Klacks.UnitTest.Controllers.Assistant;
 
 using System.Reflection;
+using System.Security.Claims;
+using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Commands.Assistant.Learning;
 using Klacks.Api.Application.DTOs.Assistant.Learning;
 using Klacks.Api.Domain.Constants;
@@ -17,6 +19,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.Assistant;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using NUnit.Framework;
@@ -168,5 +171,46 @@ public class KlacksyLearningControllerAuthorizationTests
             .DismissUnfulfillable(Guid.NewGuid(), CancellationToken.None);
 
         result.ShouldBeOfType<NoContentResult>();
+    }
+
+    // Approving a blocked description proposal changes a live skill description, so the reviewer is read
+    // from the JWT and recorded - a call without an identity claim is refused before any work happens.
+    [Test]
+    public async Task AnApproveWithoutIdentity_Answers401()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var controller = new KlacksyLearningController(mediator)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var result = await controller.ApprovePhraseProposal(Guid.NewGuid(), CancellationToken.None);
+
+        result.ShouldBeOfType<UnauthorizedResult>();
+        await mediator.DidNotReceive().Send(
+            Arg.Any<ApproveProposedSkillChangeCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AnApproveOfAMissingProposal_Answers404()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<ApproveProposedSkillChangeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(LearningMutationResult.NotFound());
+        var controller = new KlacksyLearningController(mediator)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(
+                        new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "admin@klacks")]))
+                }
+            }
+        };
+
+        var result = await controller.ApprovePhraseProposal(Guid.NewGuid(), CancellationToken.None);
+
+        result.ShouldBeOfType<NotFoundResult>();
     }
 }

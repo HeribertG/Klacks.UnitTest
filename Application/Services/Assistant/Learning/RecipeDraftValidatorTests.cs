@@ -188,6 +188,21 @@ public class RecipeDraftValidatorTests
         RecipeTriggerMatcher.Matches(verdict.Trigger, "Welche offenen Dienste gibt es?").ShouldBeFalse();
     }
 
+    // The guard matches as a plain startsWith, so its leads end at a word boundary: "Listenbericht ..."
+    // merely begins with the letters of the lead "liste" and must not be vetoed, while the real
+    // question opening still is.
+    [Test]
+    public void TheQuestionGuard_StopsAtWordBoundaries()
+    {
+        var verdict = _validator.Validate(Draft(mutates: true), [], []);
+
+        verdict.IsAccepted.ShouldBeTrue(verdict.Error);
+        RecipeTriggerMatcher.IsVetoed(verdict.Trigger, "Listenbericht der offenen Dienste ausgeben")
+            .ShouldBeFalse();
+        RecipeTriggerMatcher.IsVetoed(verdict.Trigger, "Liste alle offenen Dienste auf")
+            .ShouldBeTrue();
+    }
+
     // A read-only capability is the opposite case: answering a question IS its purpose, and most such
     // wishes are phrased as one. Applied there the guard is self-defeating - the trigger would carry
     // "welche" in allOf and in noneOf at once, which no utterance can satisfy. Two capabilities passed
