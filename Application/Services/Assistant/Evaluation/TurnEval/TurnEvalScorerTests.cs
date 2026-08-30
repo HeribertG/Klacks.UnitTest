@@ -348,6 +348,7 @@ public class TurnEvalScorerTests
     public void ComputeComposite_AllDimensions_WeightedSum()
     {
         var dimensions = new TurnEvalDimensions(
+            HonestyAccuracy: 1.0,
             ToolAccuracy: 1.0,
             SlotAccuracy: 0.8,
             NoToolAccuracy: 1.0,
@@ -361,7 +362,7 @@ public class TurnEvalScorerTests
 
         var composite = TurnEvalScorer.ComputeComposite(dimensions);
 
-        composite.ShouldBe(0.925, Precision);
+        composite.ShouldBe(0.935, Precision);
     }
 
     [Test]
@@ -401,7 +402,7 @@ public class TurnEvalScorerTests
 
         var composite = TurnEvalScorer.ComputeComposite(dimensions);
 
-        composite.ShouldBe(0.9, Precision);
+        composite.ShouldBe(0.8823529411764706, Precision);
     }
 
     private static List<TurnEvalItemResult> MixedItems()

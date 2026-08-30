@@ -66,6 +66,7 @@ public static class SkillFeatureCoverageMap
 
         ["AccountsController"] = Covered("create_user", "delete_system_user", "list_system_users", "assign_user_permissions", "get_user_permissions"),
         ["IdentityProvidersController"] = Covered("list_identity_providers", "create_identity_provider", "update_identity_provider", "delete_identity_provider"),
+        ["SetupController"] = Excluded("admin setup gate status/complete endpoints; onboarding infrastructure, not chat-addressable"),
         ["OAuth2Controller"] = Excluded("auth infrastructure: browser redirect flow, not chat-addressable"),
         ["OAuthAuthorizationServerController"] = Excluded("OAuth authorization server endpoints; not chat-skill material"),
         ["OAuthAuthorizationServerMetadataController"] = Excluded("OAuth authorization server endpoints; not chat-skill material"),

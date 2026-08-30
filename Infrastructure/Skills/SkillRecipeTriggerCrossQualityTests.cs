@@ -72,6 +72,15 @@ public class SkillRecipeTriggerCrossQualityTests
         ("explain_page_shifts", "create-shift-order"),
         ("explain_page_employees", "onboard-employee"),
         ("explain_page_period_closing", "close-payroll-period"),
+        // Same explain-page rationale, completed 2026-08-30 from the full synonym sweep: these pages
+        // deliberately carry action phrases, and the deterministic route to the action is the desired UX.
+        ("explain_page_employees", "record-employee-address-change"),
+        ("explain_page_groups", "create-group"),
+        ("explain_page_groups", "move-group"),
+        ("explain_period_closing_model", "close-payroll-period"),
+        ("explain_roles_and_permissions", "user-onboarding"),
+        ("explain_legal_entity_rule", "onboard-employee"),
+        ("update_membership", "offboard-employee"),
         // setup-planning-profile IS the guided flow for these four. They share the vocabulary on
         // purpose: the recipe asks the base question and opens the draft with start_planning_profile_setup
         // (its own step skill), and these four then carry the rest of the same dialogue. Guarding the
@@ -87,7 +96,7 @@ public class SkillRecipeTriggerCrossQualityTests
 
     private sealed record RecipeUnderTest(string Name, RecipeTrigger Trigger, HashSet<string> StepSkills);
 
-    private sealed record SkillUnderTest(string Name, IReadOnlyList<string> Keywords);
+    private sealed record SkillUnderTest(string Name, IReadOnlyList<string> Keywords, IReadOnlyList<string> Synonyms);
 
     // triggerKeywords is an object keyed by language since the keyword rebuild; the flat array is
     // still accepted so a partially migrated seed file does not make this gate silently pass on an
@@ -152,6 +161,50 @@ public class SkillRecipeTriggerCrossQualityTests
             "noneOf guard to the recipe in recipe-seeds.json (and bump its version), or — only when the " +
             "recipe is genuinely the guided flow for that exact action — add the pair to " +
             "IntendedOverlaps with a justification. Violations: " + string.Join("; ", violations));
+    }
+
+    [Test]
+    public void SkillSynonymPhrases_MustNotFullyMatchAForeignRecipeTrigger()
+    {
+        var recipes = LoadRecipes();
+        var violations = new List<string>();
+
+        foreach (var skill in LoadSkills())
+        {
+            var phrases = skill.Synonyms
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (phrases.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var recipe in recipes)
+            {
+                if (recipe.StepSkills.Contains(skill.Name)
+                    || IntendedOverlaps.Contains((skill.Name, recipe.Name)))
+                {
+                    continue;
+                }
+
+                var hit = phrases.FirstOrDefault(p =>
+                    CouldMatchAllConditions(recipe.Trigger, p)
+                    && RecipeTriggerMatcher.Matches(recipe.Trigger, null, p));
+                if (hit != null)
+                {
+                    violations.Add($"skill '{skill.Name}' synonym '{hit}' matches recipe '{recipe.Name}'");
+                }
+            }
+        }
+
+        violations.ShouldBeEmpty(
+            "A skill's own core synonym must never fully match a foreign recipe trigger — the recipe " +
+            "hijacks the chat turn deterministically before the LLM can call the skill. Fix: add a " +
+            "distinguishing noneOf guard to the recipe (and bump its version), reformulate the synonym, " +
+            "or — only when the recipe is genuinely the guided flow for that exact action — add the pair " +
+            "to IntendedOverlaps with a justification. Violations: " + string.Join("; ", violations));
     }
 
     [Test]
@@ -368,7 +421,13 @@ public class SkillRecipeTriggerCrossQualityTests
                 keywords.AddRange(ReadKeywordPhrases(kw));
             }
 
-            result.Add(new SkillUnderTest(name.GetString()!, keywords));
+            var synonyms = new List<string>();
+            if (skill.TryGetProperty("synonyms", out var syn))
+            {
+                synonyms.AddRange(ReadKeywordPhrases(syn));
+            }
+
+            result.Add(new SkillUnderTest(name.GetString()!, keywords, synonyms));
         }
     }
 
