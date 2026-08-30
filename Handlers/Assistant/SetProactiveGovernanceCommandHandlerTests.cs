@@ -88,10 +88,11 @@ public class SetProactiveGovernanceCommandHandlerTests
         int? dailyActionBudget = null,
         int? windowActionLimit = null,
         int? windowMinutes = null,
-        bool? killSwitch = null)
+        bool? killSwitch = null,
+        AutonomyLevel? autonomyLevel = null)
         => new(
             triggerKind, null, maxAction, enabled, responsibleOwnerUserId, clearResponsibleOwner,
-            dailyActionBudget, windowActionLimit, windowMinutes, killSwitch);
+            dailyActionBudget, windowActionLimit, windowMinutes, killSwitch, autonomyLevel);
 
     private void GivenExistingRule(AgentTriggerGovernance rule)
         => _repository.FindAsync(rule.TriggerKind, rule.GroupId, Arg.Any<CancellationToken>())
@@ -287,6 +288,57 @@ public class SetProactiveGovernanceCommandHandlerTests
 
         // Assert
         await Should.ThrowAsync<InvalidRequestException>(act);
+    }
+
+    [Test]
+    public async Task Handle_AutonomyLevelAlone_IsWrittenAsAPlainSettingsRowAndFlushed()
+    {
+        // Arrange
+        var command = Command(triggerKind: null, autonomyLevel: AutonomyLevel.Autonomous);
+
+        // Act
+        await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        // Same stage-only trap as the kill switch: without CompleteAsync the level row would never
+        // reach the database.
+        await _settingsRepository.Received(1)
+            .UpsertSettingAsync(SettingKeys.KlacksyProactiveAutonomyLevel, "2");
+        await _unitOfWork.Received().CompleteAsync();
+        await _repository.DidNotReceive()
+            .UpsertAsync(Arg.Any<AgentTriggerGovernance>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AutonomyLevelOutsideTheEnum_Throws()
+    {
+        // Arrange
+        var command = Command(triggerKind: null, autonomyLevel: (AutonomyLevel)4);
+
+        // Act
+        var act = async () => await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        await Should.ThrowAsync<InvalidRequestException>(act);
+        await _settingsRepository.DidNotReceive()
+            .UpsertSettingAsync(SettingKeys.KlacksyProactiveAutonomyLevel, Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Handle_AutonomyLevelWrite_RunsInsideTheSameTransaction()
+    {
+        // Arrange
+        var command = Command(triggerKind: null, killSwitch: false, autonomyLevel: AutonomyLevel.Assisted);
+
+        // Act
+        await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        // The stage-only settings repository and the self-committing governance repository must not be
+        // mixed unguarded; the transaction is what keeps the combined write atomic.
+        await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+        await _settingsRepository.Received(1)
+            .UpsertSettingAsync(SettingKeys.KlacksyProactiveAutonomyLevel, "1");
     }
 
     [Test]

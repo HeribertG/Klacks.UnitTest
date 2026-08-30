@@ -67,4 +67,23 @@ public class SettingValueValidatorTests
     {
         Should.NotThrow(() => _sut.Validate(SettingKeys.ActiveIndustries, null!));
     }
+
+    [TestCase("0")]
+    [TestCase("1")]
+    [TestCase("2")]
+    [TestCase("3")]
+    public void Validate_ProactiveAutonomyLevelInRange_DoesNotThrow(string value)
+    {
+        Should.NotThrow(() => _sut.Validate(SettingKeys.KlacksyProactiveAutonomyLevel, value));
+    }
+
+    [TestCase("-1")]
+    [TestCase("4")]
+    [TestCase("autonomous")]
+    [TestCase("")]
+    public void Validate_ProactiveAutonomyLevelOutOfRangeOrNotANumber_Throws(string value)
+    {
+        Should.Throw<InvalidRequestException>(
+            () => _sut.Validate(SettingKeys.KlacksyProactiveAutonomyLevel, value));
+    }
 }

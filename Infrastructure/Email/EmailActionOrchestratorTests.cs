@@ -44,6 +44,7 @@ public class EmailActionOrchestratorTests
     private IEmailCapacityAdvisor _capacityAdvisor = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
     private ISkillRegistry _skillRegistry = null!;
+    private IProactiveGovernanceResolver _governanceResolver = null!;
     private EmailActionOrchestrator _orchestrator = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -99,6 +100,12 @@ public class EmailActionOrchestratorTests
         _skillRegistry.GetSkillByName(Arg.Any<string>())
             .Returns(call => Descriptor(call.Arg<string>()));
 
+        // Default: no global cap, so the per-admin aggregation alone decides; a test that cares
+        // overrides this with a lower level.
+        _governanceResolver = Substitute.For<IProactiveGovernanceResolver>();
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
+            .Returns(AutonomyLevel.FullyAutonomous);
+
         _orchestrator = new EmailActionOrchestrator(
             _autonomyPreferences, _audienceResolver, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
@@ -106,6 +113,7 @@ public class EmailActionOrchestratorTests
             _capacityAdvisor,
             _tokenIssuer,
             new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
+            _governanceResolver,
             Options.Create(new EmailAutomationOptions()),
             Substitute.For<ILogger<EmailActionOrchestrator>>());
     }
@@ -375,6 +383,21 @@ public class EmailActionOrchestratorTests
 
         var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
 
+        outcome!.Executed.ShouldBeFalse();
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task GlobalAutonomyLevelBelowAutonomous_BlocksExecution_EvenWhenAllAdminsAllowIt()
+    {
+        AdminLevel(AutonomyLevel.Autonomous);
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
+            .Returns(AutonomyLevel.Propose);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+
+        // The installation-wide cap throttles the whole flow: at global level 0 nothing executes
+        // automatically, no matter what every single admin has chosen.
         outcome!.Executed.ShouldBeFalse();
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
     }
@@ -929,6 +952,7 @@ public class EmailActionOrchestratorTests
             _capacityAdvisor,
             _tokenIssuer,
             new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
+            _governanceResolver,
             Options.Create(new EmailAutomationOptions { ServiceAccountId = serviceAccountId.ToString() }),
             Substitute.For<ILogger<EmailActionOrchestrator>>());
 

@@ -90,6 +90,11 @@ public class NextPeriodSchedulingDueDetectorTests
     private void StubKillSwitch(bool active)
     {
         _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(active);
+
+        // Default: no global cap, so the per-admin aggregation alone decides; a test that cares
+        // overrides this with a lower level.
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
+            .Returns(AutonomyLevel.FullyAutonomous);
     }
 
     private void StubWeekStart(DayOfWeek weekStartDay)
@@ -303,6 +308,23 @@ public class NextPeriodSchedulingDueDetectorTests
 
         var events = await _sut.DetectAsync();
 
+        Assert.That(events, Has.Count.EqualTo(1));
+        Assert.That(events[0], Is.TypeOf<NextPeriodSchedulingDueTriggerEvent>());
+        await _autoWizardJobRunner.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
+    }
+
+    [Test]
+    public async Task DetectAsync_GlobalAutonomyLevelBelowAutonomous_BlocksAutoStartDespiteAdminLevel()
+    {
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubAdmins((AdminId, AutonomyLevel.Autonomous));
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
+            .Returns(AutonomyLevel.Propose);
+
+        var events = await _sut.DetectAsync();
+
+        // The installation-wide cap throttles the automatic start: at global level 0 the detector
+        // falls back to the hint, no matter what the admins have chosen.
         Assert.That(events, Has.Count.EqualTo(1));
         Assert.That(events[0], Is.TypeOf<NextPeriodSchedulingDueTriggerEvent>());
         await _autoWizardJobRunner.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
