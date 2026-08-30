@@ -30,6 +30,7 @@ public class SkillDescriptionSharpenerTests
     private ISkillLearningGoldenCaseRepository _goldenCases = null!;
     private ISkillRoutingOracle _oracle = null!;
     private ISkillCatalogRefresher _refresher = null!;
+    private ILogger<SkillDescriptionSharpener> _logger = null!;
     private SkillDescriptionSharpener _sharpener = null!;
     private AgentSkill _skill = null!;
 
@@ -48,13 +49,13 @@ public class SkillDescriptionSharpenerTests
             .Returns([]);
 
         _refresher = Substitute.For<ISkillCatalogRefresher>();
+        _logger = Substitute.For<ILogger<SkillDescriptionSharpener>>();
 
         _skill = new AgentSkill { Id = Guid.NewGuid(), Name = "list_clients", Description = Before, Version = 3 };
         _skills.GetByIdAsync(_skill.Id, Arg.Any<CancellationToken>()).Returns(_skill);
 
         _sharpener = new SkillDescriptionSharpener(
-            _optimizer, _proposals, _skills, _goldenCases, _oracle, _refresher,
-            Substitute.For<ILogger<SkillDescriptionSharpener>>());
+            _optimizer, _proposals, _skills, _goldenCases, _oracle, _refresher, _logger);
     }
 
     private ProposedSkillChange GivenPending(string valueBefore = Before)
@@ -228,5 +229,37 @@ public class SkillDescriptionSharpenerTests
         await _sharpener.RunAsync();
 
         await _refresher.Received(1).RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // A restore that fails must not pass silently: the never-judged description would stay live and
+    // look like a reviewed one. The run therefore logs an error and fails loudly instead.
+    [Test]
+    public async Task ARestoreThatThrows_FailsTheRunLoudly()
+    {
+        var proposal = GivenPending();
+        _oracle.FindFailingGoldenCasesAsync(
+                Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>())
+            .Returns([], ["'kunde anlegen' no longer reaches 'create_client'"]);
+
+        var updateCalls = 0;
+        _skills.When(x => x.UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>()))
+            .Do(_ =>
+            {
+                if (++updateCalls == 2)
+                {
+                    throw new InvalidOperationException("the database went away");
+                }
+            });
+
+        var exception = Assert.ThrowsAsync<InvalidOperationException>(() => _sharpener.RunAsync());
+
+        exception!.Message.ShouldContain("database went away");
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        _logger.Received(1).Log(
+            LogLevel.Error,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 }

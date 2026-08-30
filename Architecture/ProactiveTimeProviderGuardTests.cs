@@ -6,7 +6,8 @@
 /// the system clock directly via DateTime.UtcNow were migrated to the injected TimeProvider pattern
 /// (see AgentConditionActionService and AgentConditionLedgerService, which established it), so their
 /// day-key derivation, snooze-expiry checks and timestamps are testable with a fake clock instead of
-/// racing the real one. This guard fails if DateTime.UtcNow ever creeps back into exactly these seven
+/// racing the real one. This guard fails if a direct system-clock read (DateTime.UtcNow,
+/// DateTimeOffset.UtcNow, DateTime.Now, DateTime.Today) ever creeps back into exactly these seven
 /// files.
 ///
 /// A source scan is used deliberately, mirroring ForbidChallengeSchemeGuardTests: the violation is an
@@ -33,8 +34,17 @@ public class ProactiveTimeProviderGuardTests
 {
     private const string ApiProjectDirectory = "Klacks.Api";
     private const string ApiProjectMarkerDirectory = "Application";
-    private const string ForbiddenPattern = "DateTime.UtcNow";
     private const string LineCommentPrefix = "//";
+
+    // Every direct read of the system clock, not just DateTime.UtcNow: DateTimeOffset.UtcNow,
+    // DateTime.Now and DateTime.Today race the real clock in exactly the same way.
+    private static readonly string[] ForbiddenPatterns =
+    [
+        "DateTime.UtcNow",
+        "DateTimeOffset.UtcNow",
+        "DateTime.Now",
+        "DateTime.Today",
+    ];
 
     private static readonly string[] GuardedRelativeFiles =
     [
@@ -48,7 +58,7 @@ public class ProactiveTimeProviderGuardTests
     ];
 
     [Test]
-    public void GuardedProactiveFiles_MustNotUseDateTimeUtcNow()
+    public void GuardedProactiveFiles_MustNotReadTheSystemClock()
     {
         var apiRoot = LocateApiProject();
         var violations = new List<(string File, int Line)>();
@@ -76,9 +86,13 @@ public class ProactiveTimeProviderGuardTests
                     continue;
                 }
 
-                if (line.Contains(ForbiddenPattern, StringComparison.Ordinal))
+                foreach (var pattern in ForbiddenPatterns)
                 {
-                    violations.Add((relativeFile, i + 1));
+                    if (line.Contains(pattern, StringComparison.Ordinal))
+                    {
+                        violations.Add((relativeFile, i + 1));
+                        break;
+                    }
                 }
             }
         }
@@ -94,7 +108,8 @@ public class ProactiveTimeProviderGuardTests
         }
 
         violations.ShouldBeEmpty(
-            "DateTime.UtcNow reappeared in a file I2 migrated to the injected TimeProvider pattern. " +
+            "A direct system-clock read (DateTime.UtcNow/DateTimeOffset.UtcNow/DateTime.Now/" +
+            "DateTime.Today) reappeared in a file I2 migrated to the injected TimeProvider pattern. " +
             "Use the injected TimeProvider (_timeProvider.GetUtcNow().UtcDateTime) instead, so the " +
             $"clock stays testable.{Environment.NewLine}{report}");
     }
