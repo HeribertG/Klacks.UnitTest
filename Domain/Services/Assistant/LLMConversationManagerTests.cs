@@ -62,4 +62,46 @@ public class LLMConversationManagerTests
         captured.ShouldNotBeNull();
         captured!.FunctionsCalled.ShouldBeNull();
     }
+
+    // W1.9: the tool_choice measurement flags travel onto the usage row.
+    [Test]
+    public async Task TrackUsageAsync_WritesToolChoiceFlags()
+    {
+        LLMUsage? captured = null;
+        await _repository.TrackUsageAsync(Arg.Do<LLMUsage>(u => captured = u));
+
+        await _manager.TrackUsageAsync(
+            "user-1",
+            new LLMModel { Id = Guid.NewGuid(), ModelId = "deepseek-v4-pro" },
+            new LLMConversation { ConversationId = Guid.NewGuid().ToString(), UserId = "user-1" },
+            new Klacks.Api.Domain.Services.Assistant.Providers.LLMUsage(),
+            900,
+            toolChoiceRequested: true,
+            toolChoiceSupported: true,
+            toolCallReturned: true);
+
+        captured.ShouldNotBeNull();
+        captured!.ToolChoiceRequested.ShouldBeTrue();
+        captured.ToolChoiceSupported.ShouldBeTrue();
+        captured.ToolCallReturned.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task TrackUsageAsync_WithoutToolChoiceFlags_DefaultsToFalse()
+    {
+        LLMUsage? captured = null;
+        await _repository.TrackUsageAsync(Arg.Do<LLMUsage>(u => captured = u));
+
+        await _manager.TrackUsageAsync(
+            "user-1",
+            new LLMModel { Id = Guid.NewGuid(), ModelId = "deepseek-v4-pro" },
+            new LLMConversation { ConversationId = Guid.NewGuid().ToString(), UserId = "user-1" },
+            new Klacks.Api.Domain.Services.Assistant.Providers.LLMUsage(),
+            900);
+
+        captured.ShouldNotBeNull();
+        captured!.ToolChoiceRequested.ShouldBeFalse();
+        captured.ToolChoiceSupported.ShouldBeFalse();
+        captured.ToolCallReturned.ShouldBeFalse();
+    }
 }
