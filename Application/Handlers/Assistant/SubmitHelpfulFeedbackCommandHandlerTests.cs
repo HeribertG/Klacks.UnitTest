@@ -26,14 +26,16 @@ public class SubmitHelpfulFeedbackCommandHandlerTests
     private const string Message = "Zeig mir die offenen Dienste";
 
     private ISkillSelectionTrajectoryRepository _repository = null!;
+    private ISkillLearningCaseCollector _caseCollector = null!;
     private SubmitHelpfulFeedbackCommandHandler _handler = null!;
 
     [SetUp]
     public void SetUp()
     {
         _repository = Substitute.For<ISkillSelectionTrajectoryRepository>();
+        _caseCollector = Substitute.For<ISkillLearningCaseCollector>();
         _handler = new SubmitHelpfulFeedbackCommandHandler(
-            _repository, Substitute.For<ILogger<SubmitHelpfulFeedbackCommandHandler>>());
+            _repository, _caseCollector, Substitute.For<ILogger<SubmitHelpfulFeedbackCommandHandler>>());
     }
 
     [Test]
@@ -127,6 +129,89 @@ public class SubmitHelpfulFeedbackCommandHandlerTests
 
     private static SubmitHelpfulFeedbackCommand Command(string message) =>
         new() { UserId = UserId, UserMessage = message };
+
+    private static SubmitHelpfulFeedbackCommand Command(string message, bool helpful, string? comment = null) =>
+        new() { UserId = UserId, UserMessage = message, Helpful = helpful, Comment = comment };
+
+    // W1.8: a thumbs-down marks the turn not helpful, stores the optional comment, and forwards an
+    // explicit negative case to the learning loop.
+    [Test]
+    public async Task AThumbsDown_MarksTheTurnNotHelpfulWithItsComment()
+    {
+        var trajectory = GivenTrajectory();
+
+        var result = await _handler.Handle(
+            Command(Message, helpful: false, comment: "Antwort war zu dünn."), CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        trajectory.Helpful.ShouldBe(false);
+        trajectory.HelpfulComment.ShouldBe("Antwort war zu dünn.");
+        await _repository.Received(1).UpdateAsync(trajectory, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AThumbsDown_CollectsAnExplicitLearningCaseForTheTurn()
+    {
+        var trajectory = GivenTrajectory();
+
+        await _handler.Handle(Command(Message, helpful: false, comment: "Falsch."), CancellationToken.None);
+
+        await _caseCollector.Received(1).CollectNotHelpfulFeedbackAsync(
+            Arg.Is<SkillLearningFeedback>(f =>
+                f.AgentId == trajectory.AgentId
+                && f.UserMessage == Message
+                && f.TrajectoryId == trajectory.Id
+                && f.ChosenSkill == trajectory.LlmChosenSkill
+                && f.ToolsetJson == trajectory.KnowledgeIndexCandidatesJson),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AThumbsUp_NeverCollectsALearningCase()
+    {
+        GivenTrajectory();
+
+        await _handler.Handle(Command(Message, helpful: true), CancellationToken.None);
+
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectNotHelpfulFeedbackAsync(default!, default);
+    }
+
+    [Test]
+    public async Task ACommentLongerThanTheColumn_IsTruncated()
+    {
+        var trajectory = GivenTrajectory();
+        var longComment = new string('x', SkillLearningDefaults.FeedbackCommentMaxLength + 50);
+
+        await _handler.Handle(Command(Message, helpful: false, comment: longComment), CancellationToken.None);
+
+        trajectory.HelpfulComment.ShouldNotBeNull();
+        trajectory.HelpfulComment!.Length.ShouldBe(SkillLearningDefaults.FeedbackCommentMaxLength);
+    }
+
+    [Test]
+    public async Task ARepeatedIdenticalThumbsDown_DoesNotUpdateAgain()
+    {
+        var trajectory = GivenTrajectory();
+        trajectory.Helpful = false;
+        trajectory.HelpfulComment = "Falsch.";
+
+        await _handler.Handle(Command(Message, helpful: false, comment: "Falsch."), CancellationToken.None);
+
+        await _repository.DidNotReceive().UpdateAsync(trajectory, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AThumbsUpAfterAThumbsDown_OverwritesWithTheNewestJudgement()
+    {
+        var trajectory = GivenTrajectory();
+        trajectory.Helpful = false;
+        trajectory.HelpfulComment = "Falsch.";
+
+        await _handler.Handle(Command(Message, helpful: true), CancellationToken.None);
+
+        trajectory.Helpful.ShouldBe(true);
+        trajectory.HelpfulComment.ShouldBeNull();
+    }
 
     private SkillSelectionTrajectory GivenTrajectory()
     {
