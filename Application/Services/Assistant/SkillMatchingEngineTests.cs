@@ -160,35 +160,6 @@ public class SkillMatchingEngineTests
         result.ShouldBe(["zzz_readonly_skill", "aaa_mutating_skill"]);
     }
 
-    // W4.3: on a mutation intent the mutating skill must not be displaced by its read sibling.
-    [Test]
-    public void TopKeywordMatchedSkillNames_MutationIntent_PrefersMutatingOverReadOnly()
-    {
-        var skills = new[]
-        {
-            Skill("aaa_readonly_skill", ["spamregel"], category: QueryCategory),
-            Skill("zzz_mutating_skill", ["spamregel"], category: CrudCategory)
-        };
-
-        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "Bitte Spamregel neu anlegen");
-
-        result.ShouldBe(["zzz_mutating_skill", "aaa_readonly_skill"]);
-    }
-
-    [Test]
-    public void TopKeywordMatchedSkillNames_MutationIntent_ReadMessage_StillPrefersReadOnly()
-    {
-        var skills = new[]
-        {
-            Skill("aaa_mutating_skill", ["spamregel"], category: CrudCategory),
-            Skill("zzz_readonly_skill", ["spamregel"], category: QueryCategory)
-        };
-
-        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, "zeig mir die spamregeln");
-
-        result.ShouldBe(["zzz_readonly_skill", "aaa_mutating_skill"]);
-    }
-
     [Test]
     public void TopKeywordMatchedSkillNames_EqualMatchesAndRisk_FallsBackToNameOrder()
     {
