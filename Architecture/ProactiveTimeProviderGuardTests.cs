@@ -59,6 +59,9 @@ public class ProactiveTimeProviderGuardTests
         // Joined the guarded set with package F: it stamps the first reminder due date from the
         // injected TimeProvider and must never fall back to the system clock.
         "Application/Services/Assistant/Triggers/AgentTriggerService.cs",
+        // Joined the guarded set with package F (B5): the reminder sweep stamps reminded-at and the
+        // next due date from the injected TimeProvider.
+        "Application/Services/Assistant/Triggers/ProactiveReminderService.cs",
     ];
 
     [Test]
