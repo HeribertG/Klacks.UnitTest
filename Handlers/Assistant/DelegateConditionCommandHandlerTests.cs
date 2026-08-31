@@ -14,6 +14,7 @@ using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Handlers.Assistant;
 
@@ -41,7 +42,8 @@ public class DelegateConditionCommandHandlerTests
             _dispatchRepository,
             _scopeResolver,
             _conditionRepository,
-            _ledgerService);
+            _ledgerService,
+            NullLogger<DelegateConditionCommandHandler>.Instance);
     }
 
     private static ProactiveTriggerDispatchRow MakeRow(Guid id, string userId, Guid? conditionId) =>
@@ -232,5 +234,71 @@ public class DelegateConditionCommandHandlerTests
         var result = await _sut.Handle(MakeCommand(messageId, ProactiveMaxAction.Prepare), CancellationToken.None);
 
         Assert.That(result, Is.EqualTo(DelegateConditionOutcome.Delegated));
+    }
+
+    [Test]
+    public async Task Handle_Delegated_AcknowledgesTheDispatchRowBestEffort()
+    {
+        var messageId = Guid.NewGuid();
+        var conditionId = Guid.NewGuid();
+        var row = MakeRow(messageId, DelegatingUserId.ToString(), conditionId);
+        _dispatchRepository.GetByIdAsync(messageId, Arg.Any<CancellationToken>()).Returns(row);
+        var scope = AgentConditionVisibilityScope.Unrestricted();
+        _scopeResolver.ResolveAsync(DelegatingUserId.ToString(), Arg.Any<CancellationToken>()).Returns(scope);
+        _conditionRepository.GetOpenForScopeByIdAsync(conditionId, scope.IsUnrestricted, scope.VisibleRootIds, Arg.Any<CancellationToken>())
+            .Returns(new AgentCondition { Id = conditionId });
+        _ledgerService.TryDelegateAsync(conditionId, ProactiveMaxAction.Prepare, DelegatingUserId, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _sut.Handle(MakeCommand(messageId, ProactiveMaxAction.Prepare), CancellationToken.None);
+
+        Assert.That(result, Is.EqualTo(DelegateConditionOutcome.Delegated));
+        await _dispatchRepository.Received(1).AcknowledgeAsync(
+            messageId, DelegatingUserId.ToString(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AcknowledgementThrows_DelegationIsStillReported()
+    {
+        var messageId = Guid.NewGuid();
+        var conditionId = Guid.NewGuid();
+        var row = MakeRow(messageId, DelegatingUserId.ToString(), conditionId);
+        _dispatchRepository.GetByIdAsync(messageId, Arg.Any<CancellationToken>()).Returns(row);
+        var scope = AgentConditionVisibilityScope.Unrestricted();
+        _scopeResolver.ResolveAsync(DelegatingUserId.ToString(), Arg.Any<CancellationToken>()).Returns(scope);
+        _conditionRepository.GetOpenForScopeByIdAsync(conditionId, scope.IsUnrestricted, scope.VisibleRootIds, Arg.Any<CancellationToken>())
+            .Returns(new AgentCondition { Id = conditionId });
+        _ledgerService.TryDelegateAsync(conditionId, ProactiveMaxAction.Prepare, DelegatingUserId, Arg.Any<CancellationToken>())
+            .Returns(true);
+        _dispatchRepository
+            .AcknowledgeAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new InvalidOperationException("store is down"));
+
+        var result = await _sut.Handle(MakeCommand(messageId, ProactiveMaxAction.Prepare), CancellationToken.None);
+
+        Assert.That(
+            result,
+            Is.EqualTo(DelegateConditionOutcome.Delegated),
+            "The grant is already written when the acknowledgement runs; its failure must not fail the delegation.");
+    }
+
+    [Test]
+    public async Task Handle_LedgerLosesTheRace_NeverAcknowledgesTheDispatchRow()
+    {
+        var messageId = Guid.NewGuid();
+        var conditionId = Guid.NewGuid();
+        var row = MakeRow(messageId, DelegatingUserId.ToString(), conditionId);
+        _dispatchRepository.GetByIdAsync(messageId, Arg.Any<CancellationToken>()).Returns(row);
+        var scope = AgentConditionVisibilityScope.Unrestricted();
+        _scopeResolver.ResolveAsync(DelegatingUserId.ToString(), Arg.Any<CancellationToken>()).Returns(scope);
+        _conditionRepository.GetOpenForScopeByIdAsync(conditionId, scope.IsUnrestricted, scope.VisibleRootIds, Arg.Any<CancellationToken>())
+            .Returns(new AgentCondition { Id = conditionId });
+        _ledgerService.TryDelegateAsync(conditionId, Arg.Any<ProactiveMaxAction>(), DelegatingUserId, Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _sut.Handle(MakeCommand(messageId, ProactiveMaxAction.Prepare), CancellationToken.None);
+
+        Assert.That(result, Is.EqualTo(DelegateConditionOutcome.NotFound));
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().AcknowledgeAsync(default, default!, default);
     }
 }
