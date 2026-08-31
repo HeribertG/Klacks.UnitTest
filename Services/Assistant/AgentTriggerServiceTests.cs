@@ -34,10 +34,13 @@ public class AgentTriggerServiceTests
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private IOfflineMessengerNotifier _offlineMessengerNotifier = null!;
     private IProactiveMessengerTextComposer _messengerTextComposer = null!;
+    private SettableTimeProvider _timeProvider = null!;
     private RecordingLogger<AgentTriggerService> _logger = null!;
     private AgentTriggerService _sut = null!;
 
     private const string ComposedMessengerText = "Eine Schicht ist noch unbesetzt.";
+
+    private static readonly DateTime FakeNow = new(2026, 8, 10, 8, 0, 0, DateTimeKind.Utc);
 
     [SetUp]
     public void Setup()
@@ -51,6 +54,7 @@ public class AgentTriggerServiceTests
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _offlineMessengerNotifier = Substitute.For<IOfflineMessengerNotifier>();
         _messengerTextComposer = Substitute.For<IProactiveMessengerTextComposer>();
+        _timeProvider = new SettableTimeProvider(FakeNow);
         _logger = new RecordingLogger<AgentTriggerService>();
         _preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _messengerTextComposer.ComposeAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
@@ -59,7 +63,7 @@ public class AgentTriggerServiceTests
         SetPlanners("user-a", "user-b");
         _sut = new AgentTriggerService(_rateLimiter, _preferenceService, _notificationService,
             _dispatchRepository, _conditionRepository, _activityTracker, _planningAudienceResolver,
-            _offlineMessengerNotifier, _messengerTextComposer, _logger);
+            _offlineMessengerNotifier, _messengerTextComposer, _timeProvider, _logger);
     }
 
     private void SetOfflineMessengerResult(OfflineMessengerDeliveryResult result) =>
@@ -1049,6 +1053,72 @@ public class AgentTriggerServiceTests
 
         Assert.That(recordedRows, Has.Count.EqualTo(2));
         Assert.That(recordedRows.Select(row => row.ConditionId), Is.All.Null);
+    }
+
+    [Test]
+    public async Task OnEventAsync_LedgerTrackedEvent_SchedulesTheFirstReminderOnTheBackoffLadder()
+    {
+        var triggerEvent = MakeEvent(daysUntil: 1);
+        var condition = new AgentCondition { Id = Guid.NewGuid() };
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _conditionRepository
+            .FindOpenByFingerprintAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(condition);
+        var recordedRows = new List<ProactiveTriggerDispatchRow>();
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRows.Add(ci.ArgAt<ProactiveTriggerDispatchRow>(0)));
+
+        await _sut.OnEventAsync(triggerEvent);
+
+        var expectedFirstDue = ProactiveReminderSchedule.FirstDueAfter(FakeNow);
+        Assert.That(recordedRows, Has.Count.EqualTo(2));
+        Assert.That(recordedRows.Select(row => row.NextReminderAtUtc), Is.All.EqualTo(expectedFirstDue),
+            "A condition-linked row joins the reminder loop with the first backoff step (one hour).");
+        await _dispatchRepository.Received(1).WasDispatchedAsync(
+            "user-a", triggerEvent.Kind, triggerEvent.DedupKey, condition.Id, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OnEventAsync_EventWithoutConditionLink_KeepsTheReminderScheduleEmpty()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+
+        await _sut.OnEventAsync(new PlainBroadcastEvent(AgentTriggerSeverity.Low, "Broadcast."));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.ConditionId, Is.Null);
+        Assert.That(recordedRow.NextReminderAtUtc, Is.Null,
+            "A row without a condition link is a plain inbox message and must never re-fire.");
+    }
+
+    [Test]
+    public async Task OnEventAsync_ReminderDueDate_ComesFromTheInjectedClock_NotTheSystemClock()
+    {
+        var distantPast = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        _timeProvider.Now = distantPast;
+        var condition = new AgentCondition { Id = Guid.NewGuid() };
+        _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _conditionRepository
+            .FindOpenByFingerprintAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(condition);
+        ProactiveTriggerDispatchRow? recordedRow = null;
+        _dispatchRepository
+            .When(r => r.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>()))
+            .Do(ci => recordedRow = ci.ArgAt<ProactiveTriggerDispatchRow>(0));
+
+        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        Assert.That(recordedRow, Is.Not.Null);
+        Assert.That(recordedRow!.NextReminderAtUtc, Is.EqualTo(distantPast.AddHours(1)),
+            "The due date must be stamped from the injected TimeProvider, never from DateTime.UtcNow.");
     }
 }
 
