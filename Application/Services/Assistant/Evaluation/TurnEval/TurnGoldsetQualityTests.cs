@@ -11,9 +11,16 @@ using Shouldly;
 public class TurnGoldsetQualityTests
 {
     private const string SkillSeedsFileName = "skill-seeds.json";
+    private const string RecipesSeedFileName = "recipe-seeds.json";
     private const string ClientEntityType = "client";
     private const string HonestyGoldsetFileName = "turn-honesty-v1.json";
     private const string HonestyModeMustAbstain = "must-abstain";
+
+    // W0.5: lower bounds for the goldset build-out. The recipe and messaging targets are exact
+    // (every recipe, every messaging plugin skill), the mutating-skill target is a floor.
+    private const int MinTotalItemsAcrossGoldsets = 200;
+    private const double MinMutatingSkillCoverage = 0.5;
+    private const string MutatingEffect = "Mutate";
 
     private static readonly string[] GoldsetFileNames = ["turn-selection-v1.json", "turn-names-v1.json", HonestyGoldsetFileName];
 
@@ -32,6 +39,11 @@ public class TurnGoldsetQualityTests
     private static readonly string[] DefinitionsRelativePath =
     [
         "Klacks.Api", "Application", "Skills", "Definitions"
+    ];
+
+    private static readonly string[] PluginsFeaturesRelativePath =
+    [
+        "Klacks.Api", "Plugins", "Features"
     ];
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -208,6 +220,59 @@ public class TurnGoldsetQualityTests
         violations.ShouldBeEmpty();
     }
 
+    // W0.5: the build-out target is expressed as testable lower bounds, not just a plan number.
+    [Test]
+    public void Goldsets_MeetW05CoverageTargets()
+    {
+        var documents = LoadGoldsets();
+        var items = documents.SelectMany(d => d.Document.Items).ToList();
+        var expectedTools = items
+            .Where(i => i.ExpectedTool != null)
+            .Select(i => i.ExpectedTool!)
+            .ToHashSet(StringComparer.Ordinal);
+        var expectedRecipes = items
+            .Where(i => i.ExpectedRecipe != null)
+            .Select(i => i.ExpectedRecipe!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var violations = new List<string>();
+
+        if (items.Count < MinTotalItemsAcrossGoldsets)
+        {
+            violations.Add($"goldset total {items.Count} below {MinTotalItemsAcrossGoldsets}");
+        }
+
+        // 25/25 recipes must appear as expectedRecipe items.
+        foreach (var recipeName in LoadRecipeNames())
+        {
+            if (!expectedRecipes.Contains(recipeName))
+            {
+                violations.Add($"recipe '{recipeName}' has no expectedRecipe item");
+            }
+        }
+
+        // 3/3 messaging plugin skills must appear as expectedTool items.
+        foreach (var messagingSkill in LoadMessagingSkillNames())
+        {
+            if (!expectedTools.Contains(messagingSkill))
+            {
+                violations.Add($"messaging skill '{messagingSkill}' has no expectedTool item");
+            }
+        }
+
+        // >= 50 % of mutating skills must be covered by at least one expectedTool item.
+        var mutatingSkills = LoadSkillEffects()[MutatingEffect];
+        var coveredMutating = mutatingSkills.Count(expectedTools.Contains);
+        var coverage = (double)coveredMutating / mutatingSkills.Count;
+        if (coverage < MinMutatingSkillCoverage)
+        {
+            violations.Add(
+                $"mutating-skill coverage {coverage:P1} ({coveredMutating}/{mutatingSkills.Count}) below {MinMutatingSkillCoverage:P0}");
+        }
+
+        violations.ShouldBeEmpty();
+    }
+
     private static List<(string FileName, TurnGoldsetDocument Document)> LoadGoldsets()
     {
         return GoldsetFileNames
@@ -223,10 +288,25 @@ public class TurnGoldsetQualityTests
 
     private static Dictionary<string, HashSet<string>> LoadSkillParameters()
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(LocateRepoFile(DefinitionsRelativePath, SkillSeedsFileName)));
         var skills = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
-        foreach (var skill in document.RootElement.GetProperty("skills").EnumerateArray())
+        AddParametersFromSeedFile(skills, LocateRepoFile(DefinitionsRelativePath, SkillSeedsFileName));
+
+        // W0.5: plugin seeds (messaging send_message/read_messages/list_messaging_providers) live in
+        // Plugins/Features/*/skill-seeds.json and were invisible to the quality gates before.
+        foreach (var pluginSeedFile in EnumeratePluginSeedFiles())
+        {
+            AddParametersFromSeedFile(skills, pluginSeedFile);
+        }
+
+        return skills;
+    }
+
+    private static void AddParametersFromSeedFile(Dictionary<string, HashSet<string>> skills, string path)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+
+        foreach (var skill in EnumerateSkills(document.RootElement))
         {
             var name = skill.GetProperty("name").GetString() ?? string.Empty;
             var parameters = new HashSet<string>(StringComparer.Ordinal);
@@ -246,8 +326,106 @@ public class TurnGoldsetQualityTests
 
             skills[name] = parameters;
         }
+    }
 
-        return skills;
+    private static IEnumerable<JsonElement> EnumerateSkills(JsonElement root)
+    {
+        // Core seeds are { "version": …, "skills": […] }, plugin seeds are a bare array.
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            return root.EnumerateArray().ToList();
+        }
+
+        if (root.TryGetProperty("skills", out var skillsArray) && skillsArray.ValueKind == JsonValueKind.Array)
+        {
+            return skillsArray.EnumerateArray().ToList();
+        }
+
+        return [];
+    }
+
+    private static HashSet<string> LoadRecipeNames()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(LocateRepoFile(DefinitionsRelativePath, RecipesSeedFileName)));
+        return document.RootElement
+            .GetProperty("recipes")
+            .EnumerateArray()
+            .Select(r => r.GetProperty("name").GetString() ?? string.Empty)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static HashSet<string> LoadMessagingSkillNames()
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var pluginSeedFile in EnumeratePluginSeedFiles())
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(pluginSeedFile));
+            foreach (var skill in EnumerateSkills(document.RootElement))
+            {
+                names.Add(skill.GetProperty("name").GetString() ?? string.Empty);
+            }
+        }
+
+        return names;
+    }
+
+    private static Dictionary<string, HashSet<string>> LoadSkillEffects()
+    {
+        var effects = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        AddEffectsFromSeedFile(effects, LocateRepoFile(DefinitionsRelativePath, SkillSeedsFileName));
+        foreach (var pluginSeedFile in EnumeratePluginSeedFiles())
+        {
+            AddEffectsFromSeedFile(effects, pluginSeedFile);
+        }
+
+        return effects;
+    }
+
+    private static void AddEffectsFromSeedFile(Dictionary<string, HashSet<string>> effects, string path)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+
+        foreach (var skill in EnumerateSkills(document.RootElement))
+        {
+            var name = skill.GetProperty("name").GetString() ?? string.Empty;
+            var effect = skill.TryGetProperty("effect", out var effectProperty) && effectProperty.ValueKind == JsonValueKind.String
+                ? effectProperty.GetString() ?? string.Empty
+                : string.Empty;
+
+            if (!effects.TryGetValue(effect, out var names))
+            {
+                names = new HashSet<string>(StringComparer.Ordinal);
+                effects[effect] = names;
+            }
+
+            names.Add(name);
+        }
+    }
+
+    private static IEnumerable<string> EnumeratePluginSeedFiles()
+    {
+        var pluginsDir = LocateRepoDirectory(PluginsFeaturesRelativePath);
+        return Directory.GetFiles(pluginsDir, SkillSeedsFileName, SearchOption.AllDirectories);
+    }
+
+    private static string LocateRepoDirectory(string[] relativePath)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            var candidate = Path.Combine([dir.FullName, .. relativePath]);
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new DirectoryNotFoundException(
+            $"Could not locate {string.Join('/', relativePath)} by walking up from the test base directory.");
     }
 
     private static string LocateRepoFile(string[] relativePath, string fileName)

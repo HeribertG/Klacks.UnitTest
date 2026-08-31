@@ -277,6 +277,75 @@ public class TurnEvalScorerTests
         result.SlotScore.ShouldBe(1.0);
     }
 
+    // W0.5: recipe items measure "did the expected recipe engage" instead of being excluded.
+    [Test]
+    public void ScoreItem_ExpectedRecipe_MatchingForcedRecipe_PassesAndIsNotExcluded()
+    {
+        var item = new TurnGoldsetItem { Id = "recipe-1", Message = "onboard employee", ExpectedRecipe = "onboard-employee" };
+        var replay = new TurnReplayResult
+        {
+            Success = true,
+            RecipeWouldForce = true,
+            ForcedRecipeName = "onboard-employee"
+        };
+
+        var result = TurnEvalScorer.ScoreItem(item, replay);
+
+        result.RecipeHit.ShouldBe(true);
+        result.Excluded.ShouldBe(false);
+        result.Passed.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ScoreItem_ExpectedRecipe_MatchingEngineRecipe_Passes()
+    {
+        var item = new TurnGoldsetItem { Id = "recipe-2", Message = "plan", ExpectedRecipe = "setup-planning-profile" };
+        var replay = new TurnReplayResult
+        {
+            Success = true,
+            EngineRecipeWouldTrigger = true,
+            TriggeredRecipeName = "setup-planning-profile"
+        };
+
+        var result = TurnEvalScorer.ScoreItem(item, replay);
+
+        result.RecipeHit.ShouldBe(true);
+        result.Excluded.ShouldBe(false);
+        result.Passed.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ScoreItem_ExpectedRecipe_WrongRecipe_FailsButIsNotExcluded()
+    {
+        var item = new TurnGoldsetItem { Id = "recipe-3", Message = "x", ExpectedRecipe = "onboard-employee" };
+        var replay = new TurnReplayResult
+        {
+            Success = true,
+            RecipeWouldForce = true,
+            ForcedRecipeName = "create-shift-order"
+        };
+
+        var result = TurnEvalScorer.ScoreItem(item, replay);
+
+        result.RecipeHit.ShouldBe(false);
+        result.Excluded.ShouldBe(false);
+        result.Passed.ShouldBeFalse();
+    }
+
+    [Test]
+    public void Aggregate_RecipeItems_DoNotPolluteNoToolAccuracy()
+    {
+        var dimensions = TurnEvalScorer.Aggregate(new[]
+        {
+            new TurnEvalItemResult { ExpectedRecipe = "onboard-employee", RecipeHit = true, Passed = true }
+        });
+
+        dimensions.NoToolAccuracy.ShouldBeNull();
+        dimensions.ToolAccuracy.ShouldBeNull();
+        dimensions.ItemsTotal.ShouldBe(1);
+        dimensions.ItemsPassed.ShouldBe(1);
+    }
+
     [Test]
     public void Aggregate_MixedItems_ComputesAllDimensions()
     {
