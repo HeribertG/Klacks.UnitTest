@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for AgentTriggerService — verifies the severity routing matrix (high goes to the
@@ -473,7 +473,7 @@ public class AgentTriggerServiceTests
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("user-a");
         _dispatchRepository
-            .WasDispatchedAsync("user-a", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .WasDispatchedAsync("user-a", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
         await _sut.OnEventAsync(MakeEvent());

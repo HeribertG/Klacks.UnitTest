@@ -7,10 +7,14 @@
 /// Also covers the inbox surface: listing own rows newest first with unread filter and take,
 /// counting unread rows, loading recent reactions per kind for dismiss-streak learning, and
 /// marking single rows (ownership enforced) as read and marking exactly the rows of one fetched
-/// page as read, which must leave every unread row beyond that page untouched.
+/// page as read, which must leave every unread row beyond that page untouched. Also covers the
+/// reminder surface: condition-scoped dedup (a recurrence under a new ConditionId gets its own row),
+/// the due-for-reminder listing with its filter and ordering rules, and acknowledgement as the only
+/// stop truth (ownership enforced, idempotent, clears the schedule).
 /// Uses a shared in-memory DataBaseContext, mirroring the neighbouring repository tests.
-/// MarkAllReadAsync uses ExecuteUpdateAsync, which the EF in-memory provider does not support,
-/// so it is intentionally not covered here (same as the other ExecuteUpdateAsync repositories).
+/// MarkAllReadAsync and the two Try*Reminder compare-and-swap methods use ExecuteUpdateAsync, which
+/// the EF in-memory provider does not support, so they are intentionally not covered here (same as
+/// the other ExecuteUpdateAsync repositories).
 /// </summary>
 
 using Klacks.Api.Domain.Models.Assistant;
@@ -247,7 +251,7 @@ public class ProactiveTriggerDispatchRepositoryTests
 
         using var context = CreateContext();
         var wasDispatched = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
-            .WasDispatchedAsync("user-a", "test_kind", "dedup-1");
+            .WasDispatchedAsync("user-a", "test_kind", "dedup-1", null);
 
         wasDispatched.ShouldBeTrue();
     }
@@ -415,5 +419,212 @@ public class ProactiveTriggerDispatchRepositoryTests
 
         using var verify = CreateContext();
         (await verify.AgentTriggerDispatches.CountAsync()).ShouldBe(2);
+    }
+
+    private static ProactiveTriggerDispatchRow ReminderRow(
+        Guid id,
+        string userId,
+        string dedupKey,
+        Guid? conditionId,
+        DateTime? nextReminderAtUtc,
+        DateTime? acknowledgedAtUtc = null,
+        string? contentKey = "content") => new()
+    {
+        Id = id,
+        UserId = userId,
+        TriggerKind = "test_kind",
+        DedupKey = dedupKey,
+        ContentKey = contentKey,
+        Severity = "low",
+        ConditionId = conditionId,
+        NextReminderAtUtc = nextReminderAtUtc,
+        AcknowledgedAtUtc = acknowledgedAtUtc
+    };
+
+    [Test]
+    public async Task WasDispatchedAsync_WithConditionId_MatchesOnlyTheRowOfThatCondition()
+    {
+        var conditionId = Guid.NewGuid();
+        using (var seedContext = CreateContext())
+        {
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System)
+                .RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-1", conditionId, null));
+        }
+
+        using var context = CreateContext();
+        var repository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
+
+        (await repository.WasDispatchedAsync("user-a", "test_kind", "dedup-1", conditionId)).ShouldBeTrue();
+        (await repository.WasDispatchedAsync("user-a", "test_kind", "dedup-1", Guid.NewGuid())).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task WasDispatchedAsync_NullConditionId_MatchesRegardlessOfTheConditionLink()
+    {
+        using (var seedContext = CreateContext())
+        {
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System)
+                .RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-1", Guid.NewGuid(), null));
+        }
+
+        using var context = CreateContext();
+        var wasDispatched = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+            .WasDispatchedAsync("user-a", "test_kind", "dedup-1", null);
+
+        wasDispatched.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task RecordAsync_RecurrenceWithNewConditionId_CreatesANewRow()
+    {
+        using var context = CreateContext();
+        var repository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
+
+        await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-1", Guid.NewGuid(), null));
+        await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-1", Guid.NewGuid(), null));
+
+        using var verify = CreateContext();
+        (await verify.AgentTriggerDispatches.CountAsync()).ShouldBe(2);
+    }
+
+    [Test]
+    public async Task RecordAsync_SameConditionId_IsRecordedOnlyOnce()
+    {
+        var conditionId = Guid.NewGuid();
+        using var context = CreateContext();
+        var repository = new ProactiveTriggerDispatchRepository(context, TimeProvider.System);
+
+        await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-1", conditionId, null));
+        await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-1", conditionId, null));
+
+        using var verify = CreateContext();
+        (await verify.AgentTriggerDispatches.CountAsync()).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task GetDueForReminderAsync_ReturnsDueRowsOrderedByDueDate_AndExcludesNotDueAcknowledgedUnlinkedAndLedgerOnlyRows()
+    {
+        var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+        var dueEarlierId = Guid.NewGuid();
+        var dueLaterId = Guid.NewGuid();
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
+            await repository.RecordAsync(ReminderRow(dueLaterId, "user-a", "dedup-1", Guid.NewGuid(), now.AddHours(-1)));
+            await repository.RecordAsync(ReminderRow(dueEarlierId, "user-a", "dedup-2", Guid.NewGuid(), now.AddHours(-2)));
+            await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-3", Guid.NewGuid(), now.AddHours(1)));
+            await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-4", Guid.NewGuid(), now.AddHours(-3), acknowledgedAtUtc: now.AddHours(-4)));
+            await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-5", null, now.AddHours(-5)));
+            await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-6", Guid.NewGuid(), now.AddHours(-6), contentKey: null));
+            await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", "dedup-7", Guid.NewGuid(), null));
+        }
+
+        using var context = CreateContext();
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+            .GetDueForReminderAsync(now, take: 10);
+
+        result.Count.ShouldBe(2);
+        result[0].Id.ShouldBe(dueEarlierId);
+        result[1].Id.ShouldBe(dueLaterId);
+    }
+
+    [Test]
+    public async Task GetDueForReminderAsync_RespectsTake()
+    {
+        var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
+            for (var i = 0; i < 3; i++)
+            {
+                await repository.RecordAsync(ReminderRow(Guid.NewGuid(), "user-a", $"dedup-{i}", Guid.NewGuid(), now.AddHours(-1 - i)));
+            }
+        }
+
+        using var context = CreateContext();
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+            .GetDueForReminderAsync(now, take: 2);
+
+        result.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task AcknowledgeAsync_OwnRow_SetsAcknowledgedAtUtcAndClearsTheReminderSchedule()
+    {
+        var id = Guid.NewGuid();
+        using (var seedContext = CreateContext())
+        {
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System)
+                .RecordAsync(ReminderRow(id, "user-a", "dedup-1", Guid.NewGuid(), DateTime.UtcNow.AddHours(1)));
+        }
+
+        var before = DateTime.UtcNow;
+        using var context = CreateContext();
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+            .AcknowledgeAsync(id, "user-a");
+
+        result.ShouldBeTrue();
+        using var verify = CreateContext();
+        var row = await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == id);
+        row.AcknowledgedAtUtc.ShouldNotBeNull();
+        row.AcknowledgedAtUtc.Value.ShouldBeGreaterThanOrEqualTo(before);
+        row.NextReminderAtUtc.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task AcknowledgeAsync_AlreadyAcknowledgedRow_KeepsTheFirstTimestampAndReturnsTrue()
+    {
+        var id = Guid.NewGuid();
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
+            await repository.RecordAsync(ReminderRow(id, "user-a", "dedup-1", Guid.NewGuid(), DateTime.UtcNow.AddHours(1)));
+            await repository.AcknowledgeAsync(id, "user-a");
+        }
+
+        DateTime? firstAcknowledgedAt;
+        using (var verifyFirst = CreateContext())
+        {
+            firstAcknowledgedAt = (await verifyFirst.AgentTriggerDispatches.SingleAsync(d => d.Id == id)).AcknowledgedAtUtc;
+        }
+
+        await Task.Delay(TimeSpan.FromMilliseconds(10));
+        using var context = CreateContext();
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+            .AcknowledgeAsync(id, "user-a");
+
+        result.ShouldBeTrue();
+        using var verify = CreateContext();
+        (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == id)).AcknowledgedAtUtc.ShouldBe(firstAcknowledgedAt);
+    }
+
+    [Test]
+    public async Task AcknowledgeAsync_RowOfOtherUser_ReturnsFalseAndDoesNotAcknowledge()
+    {
+        var id = Guid.NewGuid();
+        using (var seedContext = CreateContext())
+        {
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System)
+                .RecordAsync(ReminderRow(id, "user-b", "dedup-1", Guid.NewGuid(), DateTime.UtcNow.AddHours(1)));
+        }
+
+        using var context = CreateContext();
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+            .AcknowledgeAsync(id, "user-a");
+
+        result.ShouldBeFalse();
+        using var verify = CreateContext();
+        (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == id)).AcknowledgedAtUtc.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task AcknowledgeAsync_UnknownId_ReturnsFalse()
+    {
+        using var context = CreateContext();
+
+        var result = await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+            .AcknowledgeAsync(Guid.NewGuid(), "user-a");
+
+        result.ShouldBeFalse();
     }
 }
