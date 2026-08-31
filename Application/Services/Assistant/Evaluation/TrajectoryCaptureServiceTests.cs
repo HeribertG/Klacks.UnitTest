@@ -9,9 +9,11 @@
 /// the learning collector under the cluster key of its own utterance.
 /// </summary>
 
+using System.Text.Json;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant.Evaluation;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
@@ -403,5 +405,58 @@ public class TrajectoryCaptureServiceTests
 
         await _repository.DidNotReceiveWithAnyArgs().FindMostRecentByAgentAndUserAsync(default, default!);
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    // W1.6: the candidates JSON records name, provenance, 1-based rank in the offered list and the
+    // retrieval score where one exists, so "which source won" is a SQL query over the jsonb column.
+    [Test]
+    public async Task CandidatesJson_RecordsNameSourceRankAndScore()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        var context = new LLMContext
+        {
+            Message = "Zeig mir die offenen dienste",
+            UserId = "user-1",
+            AvailableFunctions =
+            [
+                new LLMFunction { Name = "navigate_to", ToolsetSource = ToolsetSkillSource.AlwaysOn },
+                new LLMFunction
+                {
+                    Name = "list_open_shifts",
+                    ToolsetSource = ToolsetSkillSource.Retrieved,
+                    RetrievalScore = 0.87
+                }
+            ]
+        };
+
+        await _service.CaptureAsync(_agentId, context, "Erledigt.", []);
+
+        using var document = JsonDocument.Parse(captured!.KnowledgeIndexCandidatesJson);
+        var candidates = document.RootElement.EnumerateArray().ToList();
+        candidates.Count.ShouldBe(2);
+
+        candidates[0].GetProperty("name").GetString().ShouldBe("navigate_to");
+        candidates[0].GetProperty("source").GetString().ShouldBe("AlwaysOn");
+        candidates[0].GetProperty("rank").GetInt32().ShouldBe(1);
+        candidates[0].GetProperty("score").ValueKind.ShouldBe(JsonValueKind.Null);
+
+        candidates[1].GetProperty("name").GetString().ShouldBe("list_open_shifts");
+        candidates[1].GetProperty("source").GetString().ShouldBe("Retrieved");
+        candidates[1].GetProperty("rank").GetInt32().ShouldBe(2);
+        candidates[1].GetProperty("score").GetDouble().ShouldBe(0.87);
+    }
+
+    [Test]
+    public async Task WithoutAvailableFunctions_CandidatesJsonStaysAnEmptyArray()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1" }, "Bitte.", []);
+
+        captured!.KnowledgeIndexCandidatesJson.ShouldBe("[]");
     }
 }

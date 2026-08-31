@@ -11,6 +11,7 @@ using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
@@ -196,7 +197,8 @@ public class SkillToolsetAssemblerTests
     }
 
     private static AgentSkill CreateSkill(
-        string name, bool alwaysOn = false, string? requiredPermission = null, int sortOrder = 0)
+        string name, bool alwaysOn = false, string? requiredPermission = null, int sortOrder = 0,
+        string triggerKeywords = "[]")
     {
         return new AgentSkill
         {
@@ -205,7 +207,8 @@ public class SkillToolsetAssemblerTests
             ParametersJson = "[]",
             AlwaysOn = alwaysOn,
             RequiredPermission = requiredPermission,
-            SortOrder = sortOrder
+            SortOrder = sortOrder,
+            TriggerKeywords = triggerKeywords
         };
     }
 
@@ -570,5 +573,90 @@ public class SkillToolsetAssemblerTests
 
         await _skillPhrases.DidNotReceive().GetActiveBySourceAsync(
             Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    // W1.6: every function carries the reason why it is in the toolset, so the trajectory snapshot
+    // can later answer "which source won" per chosen skill.
+    [Test]
+    public async Task AlwaysOnSkill_IsMarkedAlwaysOnWithoutScore()
+    {
+        var result = await AssembleAsync();
+
+        var function = result.Functions.Single(f => f.Name == AlwaysOnSkillName);
+        function.ToolsetSource.ShouldBe(ToolsetSkillSource.AlwaysOn);
+        function.RetrievalScore.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task RetrievedSkill_IsMarkedRetrievedWithItsRerankScore()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+
+        var result = await AssembleAsync();
+
+        var function = result.Functions.Single(f => f.Name == RetrievedSkillName);
+        function.ToolsetSource.ShouldBe(ToolsetSkillSource.Retrieved);
+        function.RetrievalScore.ShouldBe(0.9);
+    }
+
+    [Test]
+    public async Task LearnedPhraseSkill_IsMarkedLearnedPhrase()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        GivenLearnedSkillPhrase(LearnedSkillName, LongLearnedWording);
+
+        var result = await AssembleAsync();
+
+        result.Functions.Single(f => f.Name == LearnedSkillName).ToolsetSource
+            .ShouldBe(ToolsetSkillSource.LearnedPhrase);
+    }
+
+    [Test]
+    public async Task KeywordMatchedSkill_IsMarkedKeyword()
+    {
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                CreateSkill(AlwaysOnSkillName, alwaysOn: true),
+                CreateSkill(RetrievedSkillName, triggerKeywords: "[\"offene dienste\"]")
+            });
+        SetupRetrievalResult(new RetrievalResult([]));
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir die offene dienste", conversationId: null,
+            currentRoute: null, UserId, language: "de");
+
+        result.Functions.Single(f => f.Name == RetrievedSkillName).ToolsetSource
+            .ShouldBe(ToolsetSkillSource.Keyword);
+    }
+
+    [Test]
+    public async Task ExpandedNeighbour_IsMarkedExpansion()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        _expander.ExpandAsync(
+                _agent.Id, Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => new List<AgentSkill> { CreateSkill(NeighbourSkillName) });
+
+        var result = await AssembleAsync();
+
+        result.Functions.Single(f => f.Name == NeighbourSkillName).ToolsetSource
+            .ShouldBe(ToolsetSkillSource.Expansion);
+    }
+
+    [Test]
+    public async Task PlanningProfileDraftLoopSkills_AreMarkedHint()
+    {
+        var userId = Guid.NewGuid();
+        const string conversationId = "conv-planning-profile-provenance";
+        _planningProfileDraftStore.Set(userId, conversationId, new PlanningProfileDraft());
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Sicherheitsdienst", conversationId, currentRoute: null,
+            userId.ToString(), language: "de");
+
+        result.Functions.Single(f => f.Name == "set_planning_profile_parameters").ToolsetSource
+            .ShouldBe(ToolsetSkillSource.Hint);
     }
 }
