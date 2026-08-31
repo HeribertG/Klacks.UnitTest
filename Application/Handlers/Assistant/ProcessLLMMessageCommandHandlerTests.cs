@@ -10,9 +10,11 @@
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
+using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
 using Klacks.UnitTest.TestHelpers;
@@ -284,5 +286,39 @@ public class ProcessLLMMessageCommandHandlerTests
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.AvailableFunctions.ShouldContain(f => f.Name == DashboardSkillName);
         _capturedContext.AvailableFunctions.ShouldContain(f => f.Name == NeighbourSkillName);
+    }
+
+    // W1.7: provider/model of the resolved model must reach the context so the skill executor can
+    // copy them into skill_usage_records.
+    [Test]
+    public async Task Handle_WithResolvedModel_SetsProviderAndModelOnContext()
+    {
+        var model = new LLMModel
+        {
+            Id = Guid.NewGuid(),
+            ModelId = "deepseek-v4-pro",
+            ProviderId = "deepseek",
+            IsEnabled = true
+        };
+        var llmRepository = Substitute.For<ILLMRepository>();
+        llmRepository.GetDefaultModelAsync().Returns(model);
+        llmRepository.GetModelByIdAsync("deepseek-v4-pro").Returns(model);
+        var providerFactory = Substitute.For<ILLMProviderFactory>();
+        providerFactory.GetProviderForModelAsync("deepseek-v4-pro")
+            .Returns(Substitute.For<ILLMProvider>());
+        var providerOrchestrator = new LLMProviderOrchestrator(
+            Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, llmRepository);
+
+        var handler = new ProcessLLMMessageCommandHandler(
+            _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher,
+            Substitute.For<IEntityCandidateGrounder>(),
+            providerOrchestrator,
+            new ContextBudgetPolicy());
+
+        await handler.Handle(CreateCommand(null), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.ProviderId.ShouldBe(LLMProviderType.DeepSeek);
+        _capturedContext.ModelId.ShouldBe("deepseek-v4-pro");
     }
 }

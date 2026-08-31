@@ -28,6 +28,7 @@ public class TrajectoryCaptureServiceTests
     private ISkillLearningCaseCollector _caseCollector = null!;
     private ISkillPhraseRepository _phrases = null!;
     private ISkillUsageRepository _usage = null!;
+    private ILLMRepository _llm = null!;
     private TrajectoryCaptureService _service = null!;
     private Guid _agentId;
 
@@ -38,6 +39,7 @@ public class TrajectoryCaptureServiceTests
         _caseCollector = Substitute.For<ISkillLearningCaseCollector>();
         _phrases = Substitute.For<ISkillPhraseRepository>();
         _usage = Substitute.For<ISkillUsageRepository>();
+        _llm = Substitute.For<ILLMRepository>();
         _phrases
             .GetActiveBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
@@ -45,7 +47,7 @@ public class TrajectoryCaptureServiceTests
             .GetByTurnIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns([]);
         _service = new TrajectoryCaptureService(
-            _repository, _caseCollector, _phrases, _usage, Substitute.For<ILogger<TrajectoryCaptureService>>());
+            _repository, _caseCollector, _phrases, _usage, _llm, Substitute.For<ILogger<TrajectoryCaptureService>>());
         _agentId = Guid.NewGuid();
     }
 
@@ -458,5 +460,72 @@ public class TrajectoryCaptureServiceTests
             _agentId, new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1" }, "Bitte.", []);
 
         captured!.KnowledgeIndexCandidatesJson.ShouldBe("[]");
+    }
+
+    // W1.7: the trajectory latencies are copied from the turn's llm_usage row (written before the
+    // background capture starts) instead of staying hard-coded zero.
+    [Test]
+    public async Task LlmUsageRow_FillsTrajectoryLatencies()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _llm.GetUsageByIdAsync(turnId, Arg.Any<CancellationToken>()).Returns(new Klacks.Api.Domain.Models.Assistant.LLMUsage
+        {
+            ResponseTimeMs = 1200,
+            ToolsetAssemblyMs = 150,
+            TtftMs = 800
+        });
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1", TurnId = turnId },
+            "Bitte.",
+            []);
+
+        captured!.LatencyMsTotal.ShouldBe(1200);
+        captured.LatencyMsKnowledge.ShouldBe(150);
+        captured.LatencyMsLlm.ShouldBe(800);
+    }
+
+    [Test]
+    public async Task LlmUsageWithoutTtft_FallsBackToRemainderForLlmLatency()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _llm.GetUsageByIdAsync(turnId, Arg.Any<CancellationToken>()).Returns(new Klacks.Api.Domain.Models.Assistant.LLMUsage
+        {
+            ResponseTimeMs = 1200,
+            ToolsetAssemblyMs = 150,
+            TtftMs = null
+        });
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1", TurnId = turnId },
+            "Bitte.",
+            []);
+
+        captured!.LatencyMsTotal.ShouldBe(1200);
+        captured.LatencyMsKnowledge.ShouldBe(150);
+        captured.LatencyMsLlm.ShouldBe(1050);
+    }
+
+    [Test]
+    public async Task WithoutLlmUsageRow_KnowledgeLatencyFallsBackToContextValue()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1", ToolsetAssemblyMs = 95 },
+            "Bitte.",
+            []);
+
+        captured!.LatencyMsKnowledge.ShouldBe(95);
+        captured.LatencyMsTotal.ShouldBe(0);
+        captured.LatencyMsLlm.ShouldBe(0);
     }
 }
