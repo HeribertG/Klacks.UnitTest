@@ -560,6 +560,56 @@ public class RecipeSeedQualityTests
             "single recipe. Violations: " + string.Join("; ", violations));
     }
 
+    /// <summary>
+    /// W3.8: a guided recipe may ask at most 4 slot questions before it must switch to injecting the
+    /// values it can extract from the first message. The three allowlisted recipes are the ask-heavy
+    /// onboarding/creation flows W5.2/W5.3 will reduce; they stay explicit so the gate fails loudly
+    /// when a new recipe joins them.
+    /// </summary>
+    private static readonly HashSet<string> AskStepAllowlist = new(StringComparer.Ordinal)
+    {
+        "onboard-employee", "create-shift-order", "bundle-mobile-services-into-container"
+    };
+
+    [Test]
+    public void Recipes_MustNotAskMoreThanFourSlotQuestions()
+    {
+        const int maxAskSteps = 4;
+
+        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(RecipeSeedsFileName)));
+        var recipes = document.RootElement.ValueKind == JsonValueKind.Array
+            ? document.RootElement
+            : document.RootElement.GetProperty("recipes");
+
+        var violations = new List<string>();
+
+        foreach (var recipe in recipes.EnumerateArray())
+        {
+            var name = recipe.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? "?" : "?";
+            if (AskStepAllowlist.Contains(name))
+            {
+                continue;
+            }
+
+            var askCount = 0;
+            if (recipe.TryGetProperty("steps", out var steps) && steps.ValueKind == JsonValueKind.Array)
+            {
+                askCount = steps.EnumerateArray().Count(step =>
+                    step.TryGetProperty("kind", out var kind) &&
+                    string.Equals(kind.GetString(), "ask", StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (askCount > maxAskSteps)
+            {
+                violations.Add($"{name}: {askCount} ask steps");
+            }
+        }
+
+        violations.ShouldBeEmpty(
+            $"Recipes must have at most {maxAskSteps} ask steps (allowlist: {string.Join(", ", AskStepAllowlist)}). " +
+            "Extract slots from the first message instead of asking. Violations: " + string.Join("; ", violations));
+    }
+
     private static bool IsSubstringEither(string a, string b) =>
         a.Contains(b, StringComparison.OrdinalIgnoreCase) ||
         b.Contains(a, StringComparison.OrdinalIgnoreCase);
