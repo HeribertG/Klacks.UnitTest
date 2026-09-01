@@ -8,6 +8,7 @@
 /// </summary>
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -15,6 +16,7 @@ namespace Klacks.UnitTest.Infrastructure.Skills;
 public class SkillSeedDescriptionQualityTests
 {
     private const string SkillSeedsFileName = "skill-seeds.json";
+    private const string SkillRelationSeedsFileName = "skill-relation-seeds.json";
     private const int DescriptionMinLength = 40;
     private const int DescriptionMaxLength = 500;
     private const int KnowledgePageDescriptionMaxLength = 1000;
@@ -61,6 +63,41 @@ public class SkillSeedDescriptionQualityTests
             string.Join(" | ", violations));
     }
 
+    /// <summary>
+    /// W3.2: a description may only name another skill when a relation between the two skills exists
+    /// in the skill graph (learned or curated). Free name-drops bypass skill-discoverability §4 and
+    /// would lock a cross-reference into the LLM context without any graph edge to back it.
+    /// </summary>
+    [Test]
+    public void Descriptions_MustOnlyNameSkills_WithExistingRelation()
+    {
+        var skillNames = EnumerateSkillNames();
+        var relationPairs = LoadRelationPairs();
+
+        var violations = new List<string>();
+
+        foreach (var (skillName, description) in EnumerateDescriptions())
+        {
+            foreach (var other in skillNames)
+            {
+                if (string.Equals(skillName, other, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (Regex.IsMatch(description, $@"\b{Regex.Escape(other)}\b", RegexOptions.IgnoreCase)
+                    && !relationPairs.Contains((skillName, other)))
+                {
+                    violations.Add($"{skillName} mentions {other}");
+                }
+            }
+        }
+
+        violations.ShouldBeEmpty(
+            $"{SkillSeedsFileName} descriptions may only mention another skill when a relation " +
+            $"connects the two skills in {SkillRelationSeedsFileName}. Offenders: " + string.Join(" | ", violations));
+    }
+
     [Test]
     public void ParameterDescriptions_MustBeAtLeast15Characters()
     {
@@ -103,6 +140,37 @@ public class SkillSeedDescriptionQualityTests
             $"{SkillSeedsFileName} skills must declare at most {ParameterCountMax} parameters. " +
             "Form-heavy skills belong in the allowlist with a justification. Offenders: " +
             string.Join(" | ", violations));
+    }
+
+    private static HashSet<string> EnumerateSkillNames()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName)));
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var skill in document.RootElement.GetProperty("skills").EnumerateArray())
+        {
+            var name = skill.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
+            if (name.Length > 0)
+            {
+                names.Add(name);
+            }
+        }
+
+        return names;
+    }
+
+    private static HashSet<(string A, string B)> LoadRelationPairs()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillRelationSeedsFileName)));
+        var pairs = new HashSet<(string A, string B)>();
+        foreach (var relation in document.RootElement.GetProperty("relations").EnumerateArray())
+        {
+            var a = relation.TryGetProperty("skillAName", out var aElement) ? aElement.GetString() ?? string.Empty : string.Empty;
+            var b = relation.TryGetProperty("skillBName", out var bElement) ? bElement.GetString() ?? string.Empty : string.Empty;
+            pairs.Add((a, b));
+            pairs.Add((b, a));
+        }
+
+        return pairs;
     }
 
     private static IEnumerable<(string SkillName, string Description)> EnumerateDescriptions()
