@@ -332,6 +332,36 @@ public class TurnEvalScorerTests
         result.Passed.ShouldBeFalse();
     }
 
+    // W4: check-then-act sequences count as a hit on the action call, with slots read from it.
+    [Test]
+    public void ScoreItem_MultiStepReplay_CheckThenAct_CountsActionCall()
+    {
+        var item = new TurnGoldsetItem
+        {
+            Id = "multi-1",
+            Message = "Bitte Spamregel neu anlegen",
+            ExpectedTool = "create_spam_rule",
+            ExpectedSlots = [ExactSlot("pattern", "block-this-domain")]
+        };
+        var replay = new TurnReplayResult
+        {
+            Success = true,
+            ChosenTool = "list_spam_rules",
+            ToolParameters = new Dictionary<string, object>(),
+            ToolCalls =
+            [
+                new TurnReplayToolCall { Name = "list_spam_rules", Parameters = new Dictionary<string, object>() },
+                new TurnReplayToolCall { Name = "create_spam_rule", Parameters = new Dictionary<string, object> { ["pattern"] = "block-this-domain" } }
+            ]
+        };
+
+        var result = TurnEvalScorer.ScoreItem(item, replay);
+
+        result.ToolHit.ShouldBe(true);
+        result.SlotScore.ShouldBe(1.0);
+        result.Passed.ShouldBeTrue();
+    }
+
     [Test]
     public void Aggregate_RecipeItems_DoNotPolluteNoToolAccuracy()
     {
