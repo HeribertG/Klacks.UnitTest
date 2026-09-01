@@ -26,6 +26,13 @@ public class MutationIntentDetectorTests
     [TestCase("Ordne die Mitarbeiter den Gruppen zu")]
     [TestCase("Ordne die Mitarbeiter nach ihrer Adresse den passenden Gruppen zu")]
     [TestCase("Gruppiere die Mitarbeiter nach Adresse")]
+    // W4: German imperative forms of mutation verbs.
+    [TestCase("Leg die Spamregel an")]
+    [TestCase("Mach eine neue Spamregel")]
+    [TestCase("Setz den Haken bei Überstunden")]
+    [TestCase("Füg den Kunden der Gruppe hinzu")]
+    [TestCase("Stell die Standardsprache ein")]
+    [TestCase("Trag den Kunden ein")]
     [TestCase("create a customer named Acme Ltd")]
     [TestCase("delete client 5")]
     [TestCase("add the employee to the Bern group")]
