@@ -563,8 +563,10 @@ public class RecipeSeedQualityTests
     /// <summary>
     /// W3.8: a guided recipe may ask at most 4 slot questions before it must switch to injecting the
     /// values it can extract from the first message. The three allowlisted recipes are the ask-heavy
-    /// onboarding/creation flows W5.2/W5.3 will reduce; they stay explicit so the gate fails loudly
-    /// when a new recipe joins them.
+    /// onboarding/creation flows; the engine now pre-fills times/dates/weekdays from the first message
+    /// (W5.3 RecipeInitialSlotExtractor), so their effective question count drops at runtime while the
+    /// definitions still carry the ask steps as the slot bag. They stay explicit so the gate fails
+    /// loudly when a new recipe joins them.
     /// </summary>
     private static readonly HashSet<string> AskStepAllowlist = new(StringComparer.Ordinal)
     {
