@@ -6,6 +6,7 @@
 /// question openers and excluded substrings keep the recipe silent.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 
@@ -65,6 +66,87 @@ public class RecipeTriggerMatcherTests
 
         // Assert
         Assert.That(result, Is.False);
+    }
+
+    [TestCase("Wie?")]
+    [TestCase("Wie!")]
+    [TestCase("Wie geht das")]
+    public void StartsWith_WholeWordLead_VetoesTheQuestion_EvenWithoutAFollowingSpace(string message)
+    {
+        // Arrange — "wie " carries a trailing space, which marks it as a whole word rather than a stem.
+        // A plain prefix compare needed a literal space and therefore let the one-word question through.
+        var trigger = new RecipeTrigger
+        {
+            NoneOf = [new RecipeCondition { StartsWith = ["wie "] }]
+        };
+
+        // Act
+        var result = RecipeTriggerMatcher.IsVetoed(trigger, message);
+
+        // Assert
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void StartsWith_WholeWordLead_DoesNotVetoALongerWordStartingWithIt()
+    {
+        // Arrange — the word boundary must not turn the lead into an open stem.
+        var trigger = new RecipeTrigger
+        {
+            NoneOf = [new RecipeCondition { StartsWith = ["wie "] }]
+        };
+
+        // Act
+        var result = RecipeTriggerMatcher.IsVetoed(trigger, "Wiederholung der Dienste anlegen");
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void StartsWith_TermWithoutATrailingSpace_StaysAnOpenStem()
+    {
+        // Arrange — the seeded recipes rely on "zeig" covering "zeige"; only the trailing space switches
+        // a term to whole-word matching.
+        var trigger = new RecipeTrigger
+        {
+            NoneOf = [new RecipeCondition { StartsWith = ["zeig"] }]
+        };
+
+        // Act & Assert
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "Zeige mir die Gruppen"), Is.True);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "Zeig die Gruppen"), Is.True);
+    }
+
+    [Test]
+    public void StartsWith_MultiWordLead_KeepsItsInnerSpaces()
+    {
+        // Arrange
+        var trigger = new RecipeTrigger
+        {
+            NoneOf = [new RecipeCondition { StartsWith = ["gibt es "] }]
+        };
+
+        // Act & Assert
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "Gibt es?"), Is.True);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "Gibt es offene Dienste"), Is.True);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "Gibt eskalation frei"), Is.False);
+    }
+
+    [Test]
+    public void QuestionLeads_VetoEveryOneWordQuestionOfTheCoreLanguages()
+    {
+        // Arrange — the list RecipeDraftValidator writes into every generated recipe's noneOf.
+        var trigger = new RecipeTrigger
+        {
+            NoneOf = [new RecipeCondition { StartsWith = [.. RecipeQuestionLeads.All] }]
+        };
+
+        // Act & Assert
+        foreach (var question in new[] { "Wie?", "Wer?", "Warum?", "Was?", "How?", "Who?", "Qui?", "Chi?" })
+        {
+            Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, question), Is.True, question);
+        }
     }
 
     [Test]

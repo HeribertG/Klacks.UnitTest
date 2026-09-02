@@ -212,6 +212,56 @@ public class ProactiveReminderServiceTests
     }
 
     [Test]
+    public async Task RunAsync_LivePushFails_KeepsTheAdvanceAndStillCountsTheReminder()
+    {
+        // Persist-before-push: TryAdvance already claimed the row and moved its due date on. Rolling that
+        // back on a failed push would hand the very next sweep a due row and reminder the user twice for
+        // one step. The failure is a warning; the row stays reachable through the inbox.
+        var row = MakeRow(severity: AgentTriggerSeverity.High);
+        _notificationService
+            .SendProactiveMessageAsync(
+                UserId, Arg.Any<string>(), conversationId: null,
+                contentParams: Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                messageId: row.Id.ToString(), kind: Arg.Any<string>(),
+                actionRoute: Arg.Any<string>(),
+                actionParams: Arg.Any<IReadOnlyDictionary<string, string>?>())
+            .Returns<Task>(_ => throw new InvalidOperationException("hub connection dropped"));
+        Connect(UserId);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Reminded, Is.EqualTo(1));
+        Assert.That(result.Lost, Is.EqualTo(0));
+        await _dispatchRepository.Received(1).TryAdvanceReminderAsync(
+            row.Id, row.NextReminderAtUtc!.Value, FakeNow, FakeNow.AddHours(4), Arg.Any<CancellationToken>());
+        await _dispatchRepository.DidNotReceiveWithAnyArgs()
+            .TryRescheduleReminderAsync(default, default, default, default);
+        Assert.That(_logger.Entries.Count(entry => entry.Level == LogLevel.Warning), Is.EqualTo(1));
+        Assert.That(_logger.Entries.Any(entry => entry.Level == LogLevel.Error), Is.False);
+    }
+
+    [Test]
+    public async Task RunAsync_InboxSignalFails_KeepsTheAdvanceAndStillCountsTheReminder()
+    {
+        var row = MakeRow(severity: AgentTriggerSeverity.Medium);
+        _notificationService
+            .SendProactiveInboxChangedAsync(UserId, Arg.Any<int>())
+            .Returns<Task>(_ => throw new InvalidOperationException("hub connection dropped"));
+        Connect(UserId);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Reminded, Is.EqualTo(1));
+        await _dispatchRepository.Received(1).TryAdvanceReminderAsync(
+            row.Id, row.NextReminderAtUtc!.Value, FakeNow, FakeNow.AddHours(4), Arg.Any<CancellationToken>());
+        await _dispatchRepository.DidNotReceiveWithAnyArgs()
+            .TryRescheduleReminderAsync(default, default, default, default);
+        Assert.That(_logger.Entries.Count(entry => entry.Level == LogLevel.Warning), Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task RunAsync_ConnectedRecentlyActiveRow_IsNotLoudAndSignalsInbox()
     {
         var row = MakeRow(severity: AgentTriggerSeverity.High);

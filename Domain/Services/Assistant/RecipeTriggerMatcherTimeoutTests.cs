@@ -54,6 +54,29 @@ public class RecipeTriggerMatcherTimeoutTests
     }
 
     [Test]
+    public void StartsWith_RegexTimeout_IsContained_AndReportedAsNoMatch()
+    {
+        // The whole-word branch of MatchesStartsWith is the second regex on the per-turn path and needs
+        // the same containment proof as MatchesWordStart.
+        var logger = Substitute.For<ILogger>();
+
+        var matched = RecipeTriggerMatcher.MatchesStartsWith(
+            ["erstelle ", "lege "], Message, logger, Unmeetable);
+
+        matched.ShouldBeFalse();
+        logger.ReceivedWithAnyArgs(1).Log(default, default, default!, default, default!);
+    }
+
+    [Test]
+    public void StartsWith_WithAWorkableBudget_TheSameInputStillMatches()
+    {
+        var matched = RecipeTriggerMatcher.MatchesStartsWith(
+            ["erstelle ", "lege "], Message, null, TimeSpan.FromSeconds(1));
+
+        matched.ShouldBeTrue();
+    }
+
+    [Test]
     public void WithAWorkableBudget_TheSameInputStillMatches()
     {
         // Counterpart: the timeout branch must be the reason for the false above, not a broken pattern.

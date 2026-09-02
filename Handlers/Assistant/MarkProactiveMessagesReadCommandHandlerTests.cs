@@ -2,7 +2,8 @@
 
 /// <summary>
 /// Unit tests for MarkProactiveMessagesReadCommandHandler — verifies exactly the listed message
-/// ids of the requesting user are handed to the repository.
+/// ids of the requesting user are handed to the repository, and that marking them read never
+/// acknowledges them (package F1: reading is not acknowledging).
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
@@ -38,5 +39,22 @@ public class MarkProactiveMessagesReadCommandHandlerTests
             "user-a",
             Arg.Any<CancellationToken>());
         await _dispatchRepository.DidNotReceive().MarkAllReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_DoesNotAcknowledge_SoReadingNeverStopsTheReminderLoop()
+    {
+        // F1 negative case: acknowledgement is the ONLY stop truth of the reminder backoff, and reading
+        // a message is not acknowledging it. A row the user merely scrolled past must keep its
+        // AcknowledgedAtUtc and its NextReminderAtUtc, so the sweep reminds again on schedule.
+        await _sut.Handle(
+            new MarkProactiveMessagesReadCommand { UserId = "user-a", Ids = [Guid.NewGuid()] },
+            CancellationToken.None);
+
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().AcknowledgeAsync(default, default!);
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().AcknowledgeAllForKindAsync(default!, default!);
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().TryRescheduleReminderAsync(default, default, default);
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().TryAdvanceReminderAsync(default, default, default, default);
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().UpdateAsync(default!);
     }
 }

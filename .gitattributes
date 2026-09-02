@@ -1,0 +1,4 @@
+# Golden export fixtures are compared byte for byte against generated output.
+# Line-ending normalisation would rewrite them on checkout and produce diffs
+# that have nothing to do with the exporter under test.
+*.golden -text

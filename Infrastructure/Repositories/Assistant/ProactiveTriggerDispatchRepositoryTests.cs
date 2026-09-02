@@ -7,7 +7,9 @@
 /// Also covers the inbox surface: listing own rows newest first with unread filter and take,
 /// counting unread rows, loading recent reactions per kind for dismiss-streak learning, and
 /// marking single rows (ownership enforced) as read and marking exactly the rows of one fetched
-/// page as read, which must leave every unread row beyond that page untouched. Also covers the
+/// page as read, which must leave every unread row beyond that page untouched - and, for both mark-read
+/// paths, that reading a row never touches AcknowledgedAtUtc or NextReminderAtUtc (package F1: reading
+/// is not acknowledging; the MarkAllReadAsync counterpart lives in the CAS integration test). Also covers the
 /// reminder surface: condition-scoped dedup (a recurrence under a new ConditionId gets its own row),
 /// the due-for-reminder listing with its filter and ordering rules, and acknowledgement as the only
 /// stop truth (ownership enforced, idempotent, clears the schedule).
@@ -396,6 +398,68 @@ public class ProactiveTriggerDispatchRepositoryTests
 
         using var verify = CreateContext();
         (await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == id)).ReadAtUtc.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task MarkReadAsync_LeavesTheAcknowledgementAndTheReminderScheduleUntouched()
+    {
+        // F1 negative case: acknowledgement is the ONLY stop truth of the reminder backoff. Reading a
+        // message must not quietly end the loop, so neither column may move.
+        var id = Guid.NewGuid();
+        var due = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        using (var seedContext = CreateContext())
+        {
+            var row = Row(id, "user-a", "dedup-ack-1");
+            row.NextReminderAtUtc = due;
+            row.ReminderCount = 2;
+            await new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System).RecordAsync(row);
+        }
+
+        using (var context = CreateContext())
+        {
+            (await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+                .MarkReadAsync(id, "user-a")).ShouldBeTrue();
+        }
+
+        using var verify = CreateContext();
+        var stored = await verify.AgentTriggerDispatches.SingleAsync(d => d.Id == id);
+        stored.ReadAtUtc.ShouldNotBeNull();
+        stored.AcknowledgedAtUtc.ShouldBeNull();
+        stored.NextReminderAtUtc.ShouldBe(due);
+        stored.ReminderCount.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task MarkManyReadAsync_LeavesTheAcknowledgementAndTheReminderScheduleUntouched()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var due = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        using (var seedContext = CreateContext())
+        {
+            var repository = new ProactiveTriggerDispatchRepository(seedContext, TimeProvider.System);
+            foreach (var (id, dedup) in new[] { (first, "dedup-ack-2"), (second, "dedup-ack-3") })
+            {
+                var row = Row(id, "user-a", dedup);
+                row.NextReminderAtUtc = due;
+                row.ReminderCount = 1;
+                await repository.RecordAsync(row);
+            }
+        }
+
+        using (var context = CreateContext())
+        {
+            await new ProactiveTriggerDispatchRepository(context, TimeProvider.System)
+                .MarkManyReadAsync([first, second], "user-a");
+        }
+
+        using var verify = CreateContext();
+        var rows = await verify.AgentTriggerDispatches.Where(d => d.Id == first || d.Id == second).ToListAsync();
+        rows.Count.ShouldBe(2);
+        rows.ShouldAllBe(d => d.ReadAtUtc != null);
+        rows.ShouldAllBe(d => d.AcknowledgedAtUtc == null);
+        rows.ShouldAllBe(d => d.NextReminderAtUtc == due);
+        rows.ShouldAllBe(d => d.ReminderCount == 1);
     }
 
     [Test]
