@@ -67,6 +67,11 @@ public class SkillSeedDescriptionQualityTests
     /// W3.2: a description may only name another skill when a relation between the two skills exists
     /// in the skill graph (learned or curated). Free name-drops bypass skill-discoverability §4 and
     /// would lock a cross-reference into the LLM context without any graph edge to back it.
+    /// Edge TYPE is deliberately not checked: the edge that licenses a plain cross-reference is
+    /// SkillRelationType.SeeAlso, which exists for exactly this purpose and is retrieval-neutral, so
+    /// naming a skill costs nothing in the expander. Backing a name-drop with CoRequired instead
+    /// would make every mention compete for an expansion slot at curated confidence — the W3.2
+    /// regression this gate must not tempt anybody back into.
     /// </summary>
     [Test]
     public void Descriptions_MustOnlyNameSkills_WithExistingRelation()

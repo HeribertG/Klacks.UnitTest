@@ -34,6 +34,40 @@ public class SkillRetrievalExpanderTests
         result.Select(s => s.Name).ShouldBe(new[] { "bb" });
     }
 
+    /// <summary>
+    /// W3.2 regression guard: the 148 curated "see also" cross-references carry confidence 1.0, above
+    /// anything the learner can reach (0.95). While they were typed CoRequired they won every ranking
+    /// and pushed learned co-occurrence evidence out of all three expansion slots. SeeAlso must stay
+    /// retrieval-neutral — it licenses a name-drop inside a description, it is not evidence.
+    /// </summary>
+    [Test]
+    public void Expansion_IgnoresSeeAlsoEdges_EvenAtMaximumConfidence()
+    {
+        var result = SkillRetrievalExpander.BuildExpansion(
+            new[] { Edge("aa", "bb", 1.0, type: SkillRelationType.SeeAlso) },
+            new[] { Skill("aa") },
+            new[] { Skill("aa"), Skill("bb") },
+            slots: 3);
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Expansion_SeeAlsoEdge_DoesNotDisplaceLearnedCoRequiredNeighbour()
+    {
+        var result = SkillRetrievalExpander.BuildExpansion(
+            new[]
+            {
+                Edge("aa", "bb", 1.0, type: SkillRelationType.SeeAlso),
+                Edge("aa", "cc", 0.95),
+            },
+            new[] { Skill("aa") },
+            new[] { Skill("aa"), Skill("bb"), Skill("cc") },
+            slots: 1);
+
+        result.Select(s => s.Name).ShouldBe(new[] { "cc" });
+    }
+
     [Test]
     public void Expansion_ExcludesNonPermittedNeighbour()
     {
