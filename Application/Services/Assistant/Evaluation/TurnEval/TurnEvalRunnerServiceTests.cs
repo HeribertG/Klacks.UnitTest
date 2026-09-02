@@ -79,13 +79,56 @@ public class TurnEvalRunnerServiceTests
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
         _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(ToolName));
-        _evalRunRepository.GetLatestAsync(GoldsetName, ModelId, Arg.Any<CancellationToken>())
+        _evalRunRepository.GetBestBaselineAsync(
+                GoldsetName, ModelId, 1, TurnEvalScorer.ScorerVersion, Arg.Any<CancellationToken>())
             .Returns(new Klacks.Api.Domain.Models.Assistant.EvalRun { CompositeScore = 0.5m });
 
         var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
 
         result.Run.CompositeScore.ShouldBe(1.0m);
         result.Run.RegressionVsBaseline.ShouldBe(0.5m);
+        result.Run.ScorerVersion.ShouldBe(TurnEvalScorer.ScorerVersion);
+        result.Run.IsPartial.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task RunAsync_PartialRun_IsMarkedPartialAndAsksForNoBaseline()
+    {
+        var items = new List<TurnGoldsetItem>
+        {
+            new() { Id = "t-1", Message = "one", ExpectedTool = ToolName },
+            new() { Id = "t-2", Message = "two", ExpectedTool = ToolName }
+        };
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(SuccessReplay(ToolName));
+
+        var result = await _service.RunAsync(GoldsetName, ModelId, 1, UserId, UserRights);
+
+        // A capped run covers a different population, so it reports no regression and can never
+        // become the baseline of a later full run.
+        result.Run.IsPartial.ShouldBeTrue();
+        result.Run.RegressionVsBaseline.ShouldBeNull();
+        await _evalRunRepository.DidNotReceive().GetBestBaselineAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_FullRun_QueriesTheBaselineByItemCountAndScorerVersion()
+    {
+        var items = new List<TurnGoldsetItem>
+        {
+            new() { Id = "t-1", Message = "one", ExpectedTool = ToolName },
+            new() { Id = "t-2", Message = "two", ExpectedTool = ToolName }
+        };
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(SuccessReplay(ToolName));
+
+        await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        await _evalRunRepository.Received(1).GetBestBaselineAsync(
+            GoldsetName, ModelId, 2, TurnEvalScorer.ScorerVersion, Arg.Any<CancellationToken>());
     }
 
     [Test]

@@ -52,15 +52,43 @@ public class TurnEvalScorerTests
     }
 
     [Test]
-    public void ScoreItem_OnlyIgnoreSlots_SlotScoreIsOne()
+    public void ScoreItem_OnlyIgnoreSlots_SlotScoreIsNotMeasured()
     {
         var item = ToolItem(ToolName, IgnoreSlot("firstName"));
         var replay = SuccessReplay(ToolName);
 
         var result = TurnEvalScorer.ScoreItem(item, replay);
 
-        result.SlotScore.ShouldBe(1.0);
+        // Nothing was compared, so there is no slot score. Scorer version 1 returned 1.0 here.
+        result.SlotScore.ShouldBeNull();
         result.Passed.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ScoreItem_NoExpectedSlots_SlotScoreIsNotMeasured()
+    {
+        var item = ToolItem(ToolName);
+        var replay = SuccessReplay(ToolName, new Dictionary<string, object> { ["lastName"] = "Müller" });
+
+        var result = TurnEvalScorer.ScoreItem(item, replay);
+
+        result.ToolHit.ShouldBe(true);
+        result.SlotScore.ShouldBeNull();
+        result.Passed.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Aggregate_ItemsWithoutExpectedSlots_LeaveSlotDimensionUnmeasured()
+    {
+        var item = ToolItem(ToolName);
+        var replay = SuccessReplay(ToolName);
+
+        var dimensions = TurnEvalScorer.Aggregate([TurnEvalScorer.ScoreItem(item, replay)]);
+
+        // The whole point of scorer version 2: a goldset without expected slots must not report a
+        // perfect slot accuracy, and the composite must not be dominated by that phantom value.
+        dimensions.SlotAccuracy.ShouldBeNull();
+        TurnEvalScorer.ComputeComposite(dimensions).ShouldBe(1.0, Precision);
     }
 
     [Test]
@@ -431,7 +459,8 @@ public class TurnEvalScorerTests
 
         var composite = TurnEvalScorer.ComputeComposite(dimensions);
 
-        composite.ShouldBe(0.935, Precision);
+        // tool 0.45*1.0 + slot 0.20*0.8 + noTool 0.10*1.0 + honesty 0.15*1.0 = 0.86 over weight 0.90.
+        composite.ShouldBe(0.86 / 0.90, Precision);
     }
 
     [Test]
@@ -455,24 +484,97 @@ public class TurnEvalScorerTests
     }
 
     [Test]
-    public void ComputeComposite_LatencyAboveNormalizer_ClampsToZero()
+    public void ComputeComposite_IsIndependentOfLatency()
     {
-        var dimensions = new TurnEvalDimensions(
+        var fast = new TurnEvalDimensions(
             ToolAccuracy: 1.0,
             SlotAccuracy: 1.0,
             NoToolAccuracy: 1.0,
             NameResolutionAccuracy: 1.0,
-            AvgLatencyMs: 16000,
+            AvgLatencyMs: 10,
             TotalCost: 0m,
             ItemsTotal: 1,
             ItemsPassed: 1,
             ItemsExcluded: 0,
             ItemsErrored: 0);
+        var slow = fast with { AvgLatencyMs = 90000 };
 
-        var composite = TurnEvalScorer.ComputeComposite(dimensions);
-
-        composite.ShouldBe(0.8823529411764706, Precision);
+        // Latency left the composite in scorer version 2: with the old 8000 ms normaliser it was 0
+        // in nearly every real run, so the only visible movement between iterations was latency
+        // noise on a bit-identical tool accuracy.
+        TurnEvalScorer.ComputeComposite(fast).ShouldBe(1.0, Precision);
+        TurnEvalScorer.ComputeComposite(slow).ShouldBe(TurnEvalScorer.ComputeComposite(fast), Precision);
     }
+
+    [Test]
+    public void ComputeComposite_NoDimensionMeasured_IsZero()
+    {
+        var dimensions = new TurnEvalDimensions(
+            ToolAccuracy: null,
+            SlotAccuracy: null,
+            NoToolAccuracy: null,
+            NameResolutionAccuracy: null,
+            AvgLatencyMs: 1000,
+            TotalCost: 0m,
+            ItemsTotal: 0,
+            ItemsPassed: 0,
+            ItemsExcluded: 0,
+            ItemsErrored: 0);
+
+        TurnEvalScorer.ComputeComposite(dimensions).ShouldBe(0.0, Precision);
+    }
+
+    [Test]
+    public void Aggregate_RecipeItems_FormTheirOwnWeightedDimension()
+    {
+        var hit = TurnEvalScorer.ScoreItem(RecipeItem("onboard-employee"), RecipeReplay(forcedRecipe: "onboard-employee"));
+        var miss = TurnEvalScorer.ScoreItem(RecipeItem("onboard-employee"), RecipeReplay(forcedRecipe: "offboard-employee"));
+
+        var dimensions = TurnEvalScorer.Aggregate([hit, miss]);
+
+        dimensions.RecipeAccuracy.ShouldBe(0.5);
+        dimensions.ToolAccuracy.ShouldBeNull();
+        dimensions.NoToolAccuracy.ShouldBeNull();
+
+        // Recipe is the only measured dimension, so the composite IS the recipe accuracy. In scorer
+        // version 1 recipe items carried weight 0 while still counting towards the pass rate, so
+        // composite and pass rate scored different populations.
+        TurnEvalScorer.ComputeComposite(dimensions).ShouldBe(0.5, Precision);
+    }
+
+    [Test]
+    public void ComputeComposite_RecipeDimension_CarriesItsWeightNextToTool()
+    {
+        var withRecipe = new TurnEvalDimensions(
+            ToolAccuracy: 1.0,
+            SlotAccuracy: null,
+            NoToolAccuracy: null,
+            NameResolutionAccuracy: null,
+            AvgLatencyMs: 0,
+            TotalCost: 0m,
+            ItemsTotal: 2,
+            ItemsPassed: 1,
+            ItemsExcluded: 0,
+            ItemsErrored: 0,
+            RecipeAccuracy: 0.0);
+
+        // tool 0.45*1.0 + recipe 0.10*0.0 over weight 0.55.
+        TurnEvalScorer.ComputeComposite(withRecipe).ShouldBe(0.45 / 0.55, Precision);
+    }
+
+    private static TurnGoldsetItem RecipeItem(string recipe) => new()
+    {
+        Id = $"recipe-{recipe}",
+        Message = "do the thing",
+        ExpectedRecipe = recipe
+    };
+
+    private static TurnReplayResult RecipeReplay(string forcedRecipe) => new()
+    {
+        Success = true,
+        RecipeWouldForce = true,
+        ForcedRecipeName = forcedRecipe
+    };
 
     private static List<TurnEvalItemResult> MixedItems()
     {
