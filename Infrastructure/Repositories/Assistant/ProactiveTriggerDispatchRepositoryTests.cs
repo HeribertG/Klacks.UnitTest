@@ -12,9 +12,11 @@
 /// the due-for-reminder listing with its filter and ordering rules, and acknowledgement as the only
 /// stop truth (ownership enforced, idempotent, clears the schedule).
 /// Uses a shared in-memory DataBaseContext, mirroring the neighbouring repository tests.
-/// MarkAllReadAsync and the two Try*Reminder compare-and-swap methods use ExecuteUpdateAsync, which
-/// the EF in-memory provider does not support, so they are intentionally not covered here (same as
-/// the other ExecuteUpdateAsync repositories).
+/// MarkAllReadAsync, the two Try*Reminder compare-and-swap methods and the set-based
+/// AcknowledgeAllForKindAsync of F1 (muting a kind acknowledges the user's open rows of it) use
+/// ExecuteUpdateAsync, which the EF in-memory provider does not support, so they are intentionally
+/// not covered here (same as the other ExecuteUpdateAsync repositories); their real behaviour is
+/// verified by ProactiveTriggerDispatchRepositoryReminderCasTests against a real database.
 /// </summary>
 
 using Klacks.Api.Domain.Models.Assistant;

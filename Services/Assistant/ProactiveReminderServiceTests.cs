@@ -8,7 +8,9 @@
 /// delivery failure never rolls the advance back), the DeliverAsync-mirroring delivery matrix (loud
 /// row to a connected user goes to the chat with messageId = row id, a quiet row only nudges the
 /// inbox badge, an offline user gets nothing live but still counts as reminded), and that one broken
-/// row never aborts the rest of the batch.
+/// row never aborts the rest of the batch. The gate order itself is pinned by a combination case:
+/// a terminal condition on a row of a muted user stops the row instead of deferring it, because the
+/// condition gate is checked before the preference gate.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Triggers;
@@ -109,6 +111,24 @@ public class ProactiveReminderServiceTests
         await _dispatchRepository.Received(1).TryRescheduleReminderAsync(
             row.Id, row.NextReminderAtUtc!.Value, null, Arg.Any<CancellationToken>());
         await _dispatchRepository.DidNotReceiveWithAnyArgs().TryAdvanceReminderAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task RunAsync_ConditionTerminalAndUserMuted_StopsRatherThanSkips()
+    {
+        var row = MakeRow();
+        _conditionRepository.GetByIdAsync(row.ConditionId!.Value, Arg.Any<CancellationToken>())
+            .Returns(new AgentCondition { Status = AgentConditionStatus.Resolved });
+        _preferenceService.IsAllowedAsync(UserId, row.TriggerKind, Arg.Any<string>()).Returns(false);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Stopped, Is.EqualTo(1), "The condition gate runs first, so a terminal finding wins over the mute.");
+        Assert.That(result.Skipped, Is.EqualTo(0));
+        await _dispatchRepository.Received(1).TryRescheduleReminderAsync(
+            row.Id, row.NextReminderAtUtc!.Value, null, Arg.Any<CancellationToken>());
+        await _preferenceService.DidNotReceiveWithAnyArgs().IsAllowedAsync(default!, default!, default!);
     }
 
     [Test]
