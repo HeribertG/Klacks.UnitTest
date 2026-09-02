@@ -122,7 +122,7 @@ public class DismissStreakEvaluatorTests
         preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         notificationService.GetConnectedUserIdsAsync().Returns(new[] { UserId });
         _dispatchRepository
-            .WasDispatchedAsync(UserId, AgentTriggerKinds.MuteSuggestion, "mute-suggestion:" + AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>())
+            .WasDispatchedAsync(UserId, AgentTriggerKinds.MuteSuggestion, "mute-suggestion:" + AgentTriggerKinds.UnstaffedShift, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(true);
         SetRecentReactions(
             ReactionRow(ProactiveReaction.Dismissed, 1),
@@ -133,6 +133,7 @@ public class DismissStreakEvaluatorTests
             Substitute.For<IAgentConditionRepository>(),
             activityTracker, planningAudienceResolver, Substitute.For<IOfflineMessengerNotifier>(),
             Substitute.For<IProactiveMessengerTextComposer>(),
+            TimeProvider.System,
             NullLogger<AgentTriggerService>.Instance);
         var evaluator = new DismissStreakEvaluator(_dispatchRepository, triggerService);
 

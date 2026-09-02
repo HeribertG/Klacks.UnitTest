@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for SetProactiveReactionCommandHandler — verifies that a reaction is stored on the
@@ -83,6 +83,51 @@ public class SetProactiveReactionCommandHandlerTests
         Assert.That(row.ReactionAtUtc, Is.Not.Null);
         Assert.That(row.ReactionAtUtc, Is.GreaterThanOrEqualTo(before));
         await _dispatchRepository.Received(1).UpdateAsync(row, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AnyReaction_AcknowledgesTheRowAndEndsItsReminderLoop()
+    {
+        var id = Guid.NewGuid();
+        var row = MakeRow(id, OwnerUserId);
+        row.NextReminderAtUtc = DateTime.UtcNow.AddHours(6);
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+        var before = DateTime.UtcNow;
+
+        var result = await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Dismissed
+        }, CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        Assert.That(
+            row.AcknowledgedAtUtc,
+            Is.GreaterThanOrEqualTo(before),
+            "A reaction settles the message, so it is also its acknowledgement - the only stop truth "
+            + "for the reminder loop.");
+        Assert.That(row.NextReminderAtUtc, Is.Null, "An acknowledged row must leave the reminder loop.");
+        await _dispatchRepository.Received(1).UpdateAsync(row, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AlreadyAcknowledgedRow_KeepsTheFirstAcknowledgementTimestamp()
+    {
+        var id = Guid.NewGuid();
+        var firstAcknowledgedAtUtc = DateTime.UtcNow.AddDays(-1);
+        var row = MakeRow(id, OwnerUserId);
+        row.AcknowledgedAtUtc = firstAcknowledgedAtUtc;
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+
+        await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Helpful
+        }, CancellationToken.None);
+
+        Assert.That(row.AcknowledgedAtUtc, Is.EqualTo(firstAcknowledgedAtUtc));
     }
 
     [Test]

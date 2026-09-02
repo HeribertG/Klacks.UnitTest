@@ -23,6 +23,7 @@ using System.Security.Claims;
 using Klacks.Api.Application.DTOs.Assistant;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.Assistant;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -123,7 +124,12 @@ public class AgentTriggerKindsAllGuardTests
         var identity = new ClaimsIdentity(
             new[] { new Claim(ClaimTypes.NameIdentifier, CurrentUserId) }, "Test");
 
-        return new AgentTriggerPreferencesController(new InMemoryAgentTriggerPreferenceService(TimeProvider.System))
+        // The mute branch runs through MuteTriggerKindCommand since F1, where it also acknowledges the
+        // user's open rows of that kind. A substituted mediator keeps this guard on its own subject -
+        // the kind-validation gate of the endpoint - instead of dragging the dispatch repository in.
+        return new AgentTriggerPreferencesController(
+            new InMemoryAgentTriggerPreferenceService(TimeProvider.System),
+            Substitute.For<IMediator>())
         {
             ControllerContext = new ControllerContext
             {

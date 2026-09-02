@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for the tick integration: the ledger upsert that runs as a sibling step BEFORE the
@@ -23,6 +23,7 @@
 using Klacks.Api.Application.Services.Assistant.Conditions;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.UnitTest.TestHelpers;
@@ -43,6 +44,7 @@ public class AgentTriggerBackgroundServiceTests
     private IAgentConditionLedgerService _ledger = null!;
     private IAgentTriggerService _triggerService = null!;
     private IAgentConditionActionService _actionService = null!;
+    private IProactiveReminderService _reminderService = null!;
 
     [SetUp]
     public void Setup()
@@ -53,6 +55,10 @@ public class AgentTriggerBackgroundServiceTests
             _repository, _timeProvider, NullLogger<AgentConditionLedgerService>.Instance);
         _triggerService = Substitute.For<IAgentTriggerService>();
         _actionService = Substitute.For<IAgentConditionActionService>();
+        _reminderService = Substitute.For<IProactiveReminderService>();
+        _reminderService
+            .RunAsync(Arg.Any<CancellationToken>())
+            .Returns(new ProactiveReminderSweepResult(0, 0, 0, 0, 0));
     }
 
     [Test]
@@ -244,6 +250,36 @@ public class AgentTriggerBackgroundServiceTests
         await _triggerService.Received(1).OnEventAsync(survivor, Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task ReminderSweep_RunsAfterTheActionDispatcher()
+    {
+        await RunTickAsync(new FakeDetector(TrackedKind));
+
+        Received.InOrder(async () =>
+        {
+            await _actionService.RunAsync(Arg.Any<CancellationToken>());
+            await _reminderService.RunAsync(Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task AThrowingReminderSweep_DoesNotFailTheTick()
+    {
+        var triggerEvent = PlannerEvent("shift-42");
+        var detector = new FakeDetector(TrackedKind, triggerEvent);
+        _reminderService
+            .RunAsync(Arg.Any<CancellationToken>())
+            .Returns<Task<ProactiveReminderSweepResult>>(_ => throw new InvalidOperationException("sweep is down"));
+
+        await RunTickAsync(detector);
+
+        _repository.Conditions.Single().Status.ShouldBe(
+            AgentConditionStatus.Reported,
+            "The sweep runs last in the tick; its failure must not cost the tick the detection work "
+            + "that was already persisted before it ran.");
+        await _triggerService.Received(1).OnEventAsync(triggerEvent, Arg.Any<CancellationToken>());
+    }
+
     private async Task RunTickAsync(params IAgentTriggerDetector[] detectors)
     {
         var services = new ServiceCollection();
@@ -255,6 +291,7 @@ public class AgentTriggerBackgroundServiceTests
         services.AddScoped(_ => _triggerService);
         services.AddScoped(_ => _ledger);
         services.AddScoped(_ => _actionService);
+        services.AddScoped(_ => _reminderService);
 
         using var provider = services.BuildServiceProvider();
         using var sut = new AgentTriggerBackgroundService(

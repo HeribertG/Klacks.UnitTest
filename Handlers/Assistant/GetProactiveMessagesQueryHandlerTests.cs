@@ -72,6 +72,23 @@ public class GetProactiveMessagesQueryHandlerTests
     }
 
     [Test]
+    public async Task Handle_MapsReminderLoopFields()
+    {
+        var row = MakeRow();
+        row.ReminderCount = 2;
+        row.LastRemindedAtUtc = new DateTime(2026, 7, 25, 8, 0, 0, DateTimeKind.Utc);
+        row.AcknowledgedAtUtc = new DateTime(2026, 7, 25, 9, 30, 0, DateTimeKind.Utc);
+        SetupRows(row);
+
+        var result = await _sut.Handle(new GetProactiveMessagesQuery { UserId = UserId }, CancellationToken.None);
+
+        var dto = result[0];
+        Assert.That(dto.ReminderCount, Is.EqualTo(2));
+        Assert.That(dto.LastRemindedAtUtc, Is.EqualTo(row.LastRemindedAtUtc));
+        Assert.That(dto.AcknowledgedAtUtc, Is.EqualTo(row.AcknowledgedAtUtc));
+    }
+
+    [Test]
     public async Task Handle_RowWithAction_MapsActionRouteAndParams()
     {
         var row = MakeRow(

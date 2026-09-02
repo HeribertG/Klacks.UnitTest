@@ -6,23 +6,24 @@
 /// the system clock directly via DateTime.UtcNow were migrated to the injected TimeProvider pattern
 /// (see AgentConditionActionService and AgentConditionLedgerService, which established it), so their
 /// day-key derivation, snooze-expiry checks and timestamps are testable with a fake clock instead of
-/// racing the real one. This guard fails if a direct system-clock read (DateTime.UtcNow,
-/// DateTimeOffset.UtcNow, DateTime.Now, DateTime.Today) ever creeps back into exactly these seven
-/// files.
+/// racing the real one. AgentTriggerService joined the guarded set later (package F): it stamps the
+/// reminder due dates from the injected clock. This guard fails if a direct system-clock read
+/// (DateTime.UtcNow, DateTimeOffset.UtcNow, DateTime.Now, DateTime.Today) ever creeps back into any of
+/// the guarded files.
 ///
 /// A source scan is used deliberately, mirroring ForbidChallengeSchemeGuardTests: the violation is an
 /// expression inside a method body, and reflection sees only signatures and attributes, not what a
 /// property getter or method does internally.
 ///
-/// Deliberately scoped to these seven files only, not the whole repository: most of Klacks.Api still
+/// Deliberately scoped to these files only, not the whole repository: most of Klacks.Api still
 /// reads DateTime.UtcNow directly, and that is explicitly out of scope for I2 - a whole-repository scan
 /// would fail for reasons this task never touched.
 ///
 /// Scope note — what this guard does NOT cover:
 /// - Whitespace or comment variants such as "DateTime . UtcNow" or "DateTime/*x*/.UtcNow". The literal
 ///   is matched verbatim, so a deliberately reformatted access slips through.
-/// - Any other file in the repository that still uses DateTime.UtcNow. Only the seven files named in
-///   I2 are guarded; a repository-wide guard is a separate, larger effort.
+/// - Any other file in the repository that still uses DateTime.UtcNow. Only the files listed in
+///   GuardedRelativeFiles are guarded; a repository-wide guard is a separate, larger effort.
 /// </summary>
 
 using System.Text;
@@ -55,6 +56,12 @@ public class ProactiveTimeProviderGuardTests
         "Application/Services/Assistant/Triggers/EmptyContainerTriggerEvent.cs",
         "Application/Services/Assistant/Triggers/UserActivityTracker.cs",
         "Application/Handlers/Assistant/SetProactiveReactionCommandHandler.cs",
+        // Joined the guarded set with package F: it stamps the first reminder due date from the
+        // injected TimeProvider and must never fall back to the system clock.
+        "Application/Services/Assistant/Triggers/AgentTriggerService.cs",
+        // Joined the guarded set with package F (B5): the reminder sweep stamps reminded-at and the
+        // next due date from the injected TimeProvider.
+        "Application/Services/Assistant/Triggers/ProactiveReminderService.cs",
     ];
 
     [Test]
@@ -99,7 +106,7 @@ public class ProactiveTimeProviderGuardTests
 
         scannedFiles.ShouldBe(
             GuardedRelativeFiles.Length,
-            "Not every file named in I2 was scanned; the guard cannot have inspected all seven.");
+            "Not every guarded file was scanned; the guard cannot have inspected the full set.");
 
         var report = new StringBuilder();
         foreach (var violation in violations)
