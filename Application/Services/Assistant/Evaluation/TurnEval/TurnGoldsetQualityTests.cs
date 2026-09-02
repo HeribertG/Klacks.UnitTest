@@ -3,6 +3,7 @@
 namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using NUnit.Framework;
 using Shouldly;
@@ -15,6 +16,7 @@ public class TurnGoldsetQualityTests
     private const string ClientEntityType = "client";
     private const string HonestyGoldsetFileName = "turn-honesty-v1.json";
     private const string HonestyModeMustAbstain = "must-abstain";
+    private const string NoExpectedToolSentinel = " no-tool";
 
     // W0.5: lower bounds for the goldset build-out. The recipe and messaging targets are exact
     // (every recipe, every messaging plugin skill), the mutating-skill target is a floor.
@@ -22,13 +24,29 @@ public class TurnGoldsetQualityTests
     private const double MinMutatingSkillCoverage = 0.5;
     private const string MutatingEffect = "Mutate";
 
-    private static readonly string[] GoldsetFileNames = ["turn-selection-v1.json", "turn-names-v1.json", HonestyGoldsetFileName];
+    // W0.5 nacharbeiten (Prüfbericht 2026-09-02): a goldset item must not just repeat the skill's
+    // German/English label back as "Bitte <Label> <Verb>." — that tests the goldset build, not
+    // selection. A tool item counts as discoverable when it either names a genuine alternative
+    // skill, or shares at least one real word with the skill's name/synonyms.
+    private const int MinSharedTokenLength = 4;
+    private const double MinDiscoverableToolItemCoverage = 0.5;
 
-    private static readonly Dictionary<string, (int Version, string Kind)> ExpectedVersionAndKind = new(StringComparer.Ordinal)
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
+    private static readonly Regex TemplateMessageRegex = new(
+        @"^(Bitte|Please)\s.+\s(abbrechen|aktivieren|akzeptieren|anlegen|anwenden|anzeigen|aktualisieren|ausführen|ausfüllen|bündeln|deaktivieren|deinstallieren|entfernen|geokodieren|gruppieren|hinzufügen|installieren|löschen|machen|markieren|optimieren|schneiden|setzen|starten|verschieben|versiegeln|verwerfen|widerrufen|zurücksetzen|zuweisen|ändern|execute|add|create|show|delete|update)\.$",
+        RegexOptions.Compiled,
+        RegexTimeout);
+
+    private static readonly Regex WordRegex = new(@"\p{L}+", RegexOptions.Compiled, RegexTimeout);
+
+    // W0.5 nacharbeiten: every turn-selection/turn-honesty file under Goldsets/ is picked up by
+    // scanning the directory instead of a hardcoded file list, so a file can no longer go
+    // unnoticed by the gate (as turn-selection-crud-v1.json did before it was removed).
+    private static readonly Dictionary<string, int> ExpectedVersionByKind = new(StringComparer.Ordinal)
     {
-        ["turn-selection-v1.json"] = (2, "turn-selection"),
-        ["turn-names-v1.json"] = (2, "turn-selection"),
-        [HonestyGoldsetFileName] = (1, "turn-honesty")
+        ["turn-selection"] = 2,
+        ["turn-honesty"] = 1
     };
 
     private static readonly string[] GoldsetsRelativePath =
@@ -56,11 +74,85 @@ public class TurnGoldsetQualityTests
     {
         foreach (var (fileName, document) in LoadGoldsets())
         {
-            var expected = ExpectedVersionAndKind[fileName];
-            document.Version.ShouldBe(expected.Version, fileName);
-            document.Kind.ShouldBe(expected.Kind, fileName);
+            document.Kind.ShouldNotBeNullOrWhiteSpace(fileName);
+            ExpectedVersionByKind.ContainsKey(document.Kind!).ShouldBeTrue($"{fileName}: unknown kind '{document.Kind}'");
+            document.Version.ShouldBe(ExpectedVersionByKind[document.Kind!], fileName);
             document.Items.ShouldNotBeEmpty(fileName);
         }
+    }
+
+    // W0.5 nacharbeiten: a goldset must not carry two items with the identical message+locale
+    // that resolve to different expectedTools — the model cannot possibly satisfy both, so the
+    // item pair measures goldset authoring quality rather than skill selection.
+    [Test]
+    public void Goldsets_MessagesMustNotMapToDifferentExpectedTools()
+    {
+        var violations = new List<string>();
+
+        var allItems = LoadGoldsets()
+            .SelectMany(g => g.Document.Items.Select(item => (g.FileName, Item: item)))
+            .ToList();
+
+        var groups = allItems.GroupBy(x => (x.Item.Message, Locale: x.Item.Locale ?? string.Empty));
+
+        foreach (var group in groups)
+        {
+            var distinctTools = group
+                .Select(x => x.Item.ExpectedTool ?? NoExpectedToolSentinel)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (distinctTools.Count > 1)
+            {
+                var occurrences = string.Join(", ", group.Select(x => $"{x.FileName}/{x.Item.Id}={x.Item.ExpectedTool ?? "null"}"));
+                violations.Add($"message '{group.Key.Message}' ({group.Key.Locale}) is ambiguous: {occurrences}");
+            }
+        }
+
+        violations.ShouldBeEmpty();
+    }
+
+    // W0.5 nacharbeiten: a goldset item must not simply hand the skill's own label back as
+    // "Bitte <Label> <Verb>." / "Please <Label> <Verb>." — that is a template of the goldset
+    // build, not a message a real user would type, and it tests nothing about skill selection.
+    [Test]
+    public void Goldsets_MessagesMustNotFollowTheBitteLabelVerbTemplate()
+    {
+        var violations = new List<string>();
+
+        foreach (var (fileName, document) in LoadGoldsets())
+        {
+            violations.AddRange(document.Items
+                .Where(item => TemplateMessageRegex.IsMatch(item.Message))
+                .Select(item => $"{fileName}/{item.Id}: message '{item.Message}' follows the Bitte/Please-label-verb template"));
+        }
+
+        violations.ShouldBeEmpty();
+    }
+
+    // W0.5 nacharbeiten: at least half of the tool items must be discoverable from their message
+    // alone — either a genuinely equivalent alternativeTool is declared, or the message shares a
+    // real word (>= MinSharedTokenLength characters) with the skill's name or one of its seeded
+    // synonyms. Below that bar, the item measures the goldset author's word choice, not whether
+    // the model can find the right skill from what a user would plausibly type.
+    [Test]
+    public void Goldsets_ToolItemsMustBeDiscoverableFromAlternativesOrSharedVocabulary()
+    {
+        var vocabulary = LoadSkillVocabulary();
+        var toolItems = LoadGoldsets()
+            .SelectMany(g => g.Document.Items)
+            .Where(item => item.ExpectedTool != null)
+            .ToList();
+
+        toolItems.ShouldNotBeEmpty();
+
+        var discoverable = toolItems.Count(item => IsDiscoverableFromAlternativesOrVocabulary(item, vocabulary));
+        var coverage = (double)discoverable / toolItems.Count;
+
+        coverage.ShouldBeGreaterThanOrEqualTo(
+            MinDiscoverableToolItemCoverage,
+            $"only {discoverable}/{toolItems.Count} ({coverage:P1}) tool items have alternativeTools or a shared token with " +
+            $"their skill's name/synonyms, required >= {MinDiscoverableToolItemCoverage:P0}");
     }
 
     [Test]
@@ -273,17 +365,40 @@ public class TurnGoldsetQualityTests
         violations.ShouldBeEmpty();
     }
 
+    // W0.5 nacharbeiten: scans every *.json file under Goldsets/ instead of a hardcoded list, so a
+    // new or forgotten file can no longer sit outside the gate. Files that are not shaped like a
+    // { version, kind, items } turn-selection/turn-honesty document (knowledge-index-v1.json is a
+    // bare array, speech-wer-v1.json is a different kind/item shape) are skipped on purpose —
+    // they have their own format and are not this test's concern.
     private static List<(string FileName, TurnGoldsetDocument Document)> LoadGoldsets()
     {
-        return GoldsetFileNames
-            .Select(fileName =>
+        var goldsetsDir = LocateRepoDirectory(GoldsetsRelativePath);
+        var result = new List<(string, TurnGoldsetDocument)>();
+
+        foreach (var path in Directory.GetFiles(goldsetsDir, "*.json").OrderBy(p => p, StringComparer.Ordinal))
+        {
+            var fileName = Path.GetFileName(path);
+            TurnGoldsetDocument? document;
+
+            try
             {
-                var path = LocateRepoFile(GoldsetsRelativePath, fileName);
-                var document = JsonSerializer.Deserialize<TurnGoldsetDocument>(File.ReadAllText(path), SerializerOptions);
-                document.ShouldNotBeNull(fileName);
-                return (fileName, document!);
-            })
-            .ToList();
+                document = JsonSerializer.Deserialize<TurnGoldsetDocument>(File.ReadAllText(path), SerializerOptions);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            if (document?.Kind == null || !ExpectedVersionByKind.ContainsKey(document.Kind))
+            {
+                continue;
+            }
+
+            result.Add((fileName, document));
+        }
+
+        result.ShouldNotBeEmpty("no turn-selection/turn-honesty goldset file was found");
+        return result;
     }
 
     private static Dictionary<string, HashSet<string>> LoadSkillParameters()
@@ -325,6 +440,80 @@ public class TurnGoldsetQualityTests
             }
 
             skills[name] = parameters;
+        }
+    }
+
+    private static bool IsDiscoverableFromAlternativesOrVocabulary(
+        TurnGoldsetItem item, Dictionary<string, HashSet<string>> vocabulary)
+    {
+        if (item.AlternativeTools.Count > 0)
+        {
+            return true;
+        }
+
+        if (item.ExpectedTool == null || !vocabulary.TryGetValue(item.ExpectedTool, out var skillTokens) || skillTokens.Count == 0)
+        {
+            return false;
+        }
+
+        return WordRegex.Matches(item.Message)
+            .Select(match => match.Value)
+            .Where(token => token.Length >= MinSharedTokenLength)
+            .Any(skillTokens.Contains);
+    }
+
+    private static Dictionary<string, HashSet<string>> LoadSkillVocabulary()
+    {
+        var vocabulary = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        AddVocabularyFromSeedFile(vocabulary, LocateRepoFile(DefinitionsRelativePath, SkillSeedsFileName));
+        foreach (var pluginSeedFile in EnumeratePluginSeedFiles())
+        {
+            AddVocabularyFromSeedFile(vocabulary, pluginSeedFile);
+        }
+
+        return vocabulary;
+    }
+
+    private static void AddVocabularyFromSeedFile(Dictionary<string, HashSet<string>> vocabulary, string path)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+
+        foreach (var skill in EnumerateSkills(document.RootElement))
+        {
+            var name = skill.GetProperty("name").GetString() ?? string.Empty;
+            var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            AddTokens(tokens, name.Replace('_', ' '));
+
+            if (skill.TryGetProperty("synonyms", out var synonymsElement) && synonymsElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var localeProperty in synonymsElement.EnumerateObject())
+                {
+                    if (localeProperty.Value.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (var synonym in localeProperty.Value.EnumerateArray())
+                    {
+                        AddTokens(tokens, synonym.GetString() ?? string.Empty);
+                    }
+                }
+            }
+
+            vocabulary[name] = tokens;
+        }
+    }
+
+    private static void AddTokens(HashSet<string> tokens, string text)
+    {
+        foreach (Match match in WordRegex.Matches(text))
+        {
+            if (match.Value.Length >= MinSharedTokenLength)
+            {
+                tokens.Add(match.Value);
+            }
         }
     }
 
