@@ -20,6 +20,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Associations;
+using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -43,7 +44,7 @@ public class ClientContractDataProviderRangeTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         _context = new DataBaseContext(_options, Substitute.For<IHttpContextAccessor>());
-        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance);
+        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance, new SettingsChangeVersion());
     }
 
     [TearDown]
@@ -168,7 +169,7 @@ public class ClientContractDataProviderRangeTests
         for (var date = rangeFrom; date <= rangeUntil; date = date.AddDays(1))
         {
             using var referenceContext = new DataBaseContext(_options, Substitute.For<IHttpContextAccessor>());
-            var reference = await new ClientContractDataProvider(referenceContext, NullLogger<ClientContractDataProvider>.Instance)
+            var reference = await new ClientContractDataProvider(referenceContext, NullLogger<ClientContractDataProvider>.Instance, new SettingsChangeVersion())
                 .GetEffectiveContractDataForClientsAsync(clientIds, date);
 
             range.ShouldContainKey(date);

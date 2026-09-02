@@ -9,6 +9,7 @@
 namespace Klacks.UnitTest.Infrastructure.Services.Associations;
 
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
@@ -17,6 +18,7 @@ using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Associations;
+using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -28,6 +30,7 @@ public class ClientContractDataProviderNightWindowTests
 {
     private DataBaseContext _context = null!;
     private ClientContractDataProvider _sut = null!;
+    private ISettingsChangeVersion _settingsChangeVersion = null!;
 
     [SetUp]
     public void SetUp()
@@ -36,8 +39,13 @@ public class ClientContractDataProviderNightWindowTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        _context = new DataBaseContext(options, httpContextAccessor);
-        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance);
+        _settingsChangeVersion = new SettingsChangeVersion();
+        _context = new DataBaseContext(
+            options,
+            httpContextAccessor,
+            settingsEncryptionService: null,
+            settingsChangeVersion: _settingsChangeVersion);
+        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance, _settingsChangeVersion);
     }
 
     [TearDown]
@@ -112,8 +120,13 @@ public class ClientContractDataProviderNightWindowTests
     }
 
     [Test]
-    public async Task GetEffectiveContractDataAsync_SettingsEditedWithinTheSameScope_KeepsTheResolvedSnapshot()
+    public async Task GetEffectiveContractDataAsync_SettingsEditedWithinTheSameScope_PicksUpTheChangeAfterVersionBump()
     {
+        // Skill chains and plan runs (SkillExecutorService.ExecuteChainAsync, PlanStepExecutor) execute
+        // several skills in one DI scope, so a settings-writing skill followed by a contract-data
+        // resolve in the same chain shares this provider instance. DataBaseContext.SaveChangesAsync
+        // bumps ISettingsChangeVersion after a successful settings write, which is exactly what
+        // UpdateSettingAsync below exercises - the cache must not survive that.
         var clientId = Guid.NewGuid();
         await SeedSettingsAsync("22:00", "04:00");
         await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
@@ -121,13 +134,41 @@ public class ClientContractDataProviderNightWindowTests
         await UpdateSettingAsync(SettingKeys.SurchargeNightStart, "21:00");
         var again = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
 
-        // Not a stale read to be fixed: no code path writes settings and resolves contract data in the
-        // same scope, and re-reading them per Work is the single largest cost of a recalculation run.
+        again.NightStart.ShouldBe("21:00");
+    }
+
+    [Test]
+    public async Task GetEffectiveContractDataAsync_SettingsChangedWithoutVersionBump_StaleValueSurvives()
+    {
+        // Same scenario as above, but this context has no ISettingsChangeVersion wired at all, so
+        // SaveChangesAsync never bumps anything - the negative case for the previous test, proving the
+        // cache is genuinely driven by the version and not by some other side effect of the write.
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var unversionedContext = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
+        var provider = new ClientContractDataProvider(
+            unversionedContext, NullLogger<ClientContractDataProvider>.Instance, new SettingsChangeVersion());
+        var clientId = Guid.NewGuid();
+
+        unversionedContext.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeNightStart, Value = "22:00" });
+        unversionedContext.Settings.Add(new Settings { Id = Guid.NewGuid(), Type = SettingKeys.SurchargeNightEnd, Value = "04:00" });
+        await unversionedContext.SaveChangesAsync();
+
+        await provider.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        var row = unversionedContext.Settings.Single(s => s.Type == SettingKeys.SurchargeNightStart);
+        row.Value = "21:00";
+        await unversionedContext.SaveChangesAsync();
+
+        var again = await provider.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
         again.NightStart.ShouldBe("22:00");
     }
 
     /// <summary>A provider as the DI container would hand it out for the next request.</summary>
-    private ClientContractDataProvider NextScopeProvider() => new(_context, NullLogger<ClientContractDataProvider>.Instance);
+    private ClientContractDataProvider NextScopeProvider() =>
+        new(_context, NullLogger<ClientContractDataProvider>.Instance, _settingsChangeVersion);
 
     private async Task SeedSettingsAsync(string nightStart, string nightEnd)
     {

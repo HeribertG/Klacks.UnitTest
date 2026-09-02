@@ -18,6 +18,7 @@ using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Associations;
+using Klacks.Api.Infrastructure.Services.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -47,7 +48,7 @@ public class ClientContractDataProviderMonthlyTargetHoursTests
             .Options;
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
-        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance);
+        _sut = new ClientContractDataProvider(_context, NullLogger<ClientContractDataProvider>.Instance, new SettingsChangeVersion());
     }
 
     [TearDown]
