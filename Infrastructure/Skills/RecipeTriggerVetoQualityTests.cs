@@ -4,7 +4,8 @@
 /// Guards the recipe-trigger veto vocabulary (W3.6): every recipe must carry the full core-language
 /// question-word veto in its noneOf startsWith block, so an information question ("How do I create an
 /// employee?") can never deterministically start the mutation recipe. The DE/fr/it part was fixed
-/// 2026-08-28; the EN part and the fr/it copula veto were added 2026-08-30 (see
+/// 2026-08-28; the EN part and the fr/it copula veto were added 2026-08-30; the English copula
+/// ("is "/"are ") was completed 2026-09-02 after a review found it in only 21 of 25 recipes (see
 /// docs/knowledge/klacksy-recipe-trigger-noneof-question-word-gap-2026-08-28.md).
 /// </summary>
 
@@ -25,7 +26,8 @@ public class RecipeTriggerVetoQualityTests
 
     private static readonly string[] RequiredEnglishQuestionVeto =
     [
-        "how ", "what ", "why ", "when ", "where ", "who ", "whom ", "which ", "show ", "explain", "is there"
+        "how ", "what ", "why ", "when ", "where ", "who ", "whom ", "which ", "show ", "explain", "is there",
+        "is ", "are "
     ];
 
     private static readonly string[] RequiredCopulaVeto =
