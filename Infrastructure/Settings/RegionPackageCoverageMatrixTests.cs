@@ -62,7 +62,7 @@ public class RegionPackageCoverageMatrixTests
     [
         "version", "region", "languages", "locale", "calendar", WorktimeMember, "surcharges",
         "export", ComplianceMember, IndustryProfilesMember, "activeIndustries", "package",
-        "macros", "seedDemoData"
+        "macros", "seedDemoData", "seedDemoShiftsAndGroups"
     ];
 
     private static readonly string[] WorktimeFields =

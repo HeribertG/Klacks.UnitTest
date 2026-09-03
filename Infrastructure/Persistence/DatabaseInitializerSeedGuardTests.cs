@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Persistence.StoredProcedures;
@@ -19,6 +20,7 @@ namespace Klacks.UnitTest.Infrastructure.Persistence;
 public class DatabaseInitializerSeedGuardTests
 {
     private DataBaseContext _context = null!;
+    private IDemoOrderSeedFileWriter _demoOrderSeedFileWriter = null!;
 
     [SetUp]
     public void SetUp()
@@ -27,6 +29,7 @@ public class DatabaseInitializerSeedGuardTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
+        _demoOrderSeedFileWriter = Substitute.For<IDemoOrderSeedFileWriter>();
     }
 
     [TearDown]
@@ -53,6 +56,18 @@ public class DatabaseInitializerSeedGuardTests
         var initializer = CreateInitializer(regionFilePath: null);
 
         await Should.NotThrowAsync(initializer.SeedDataAsync);
+    }
+
+    [Test]
+    public async Task SeedDataAsync_AlreadySeeded_DoesNotWriteTheDemoOrderFile()
+    {
+        _context.Client.Add(new Client { Id = Guid.NewGuid(), FirstName = "John", Name = "Doe" });
+        await _context.SaveChangesAsync();
+        var initializer = CreateInitializer(regionFilePath: null);
+
+        await initializer.SeedDataAsync();
+
+        await _demoOrderSeedFileWriter.DidNotReceiveWithAnyArgs().WriteAsync(default!, default);
     }
 
     [Test]
@@ -86,6 +101,7 @@ public class DatabaseInitializerSeedGuardTests
             NullLogger<DatabaseInitializer>.Instance,
             configuration,
             Substitute.For<IStoredProcedureInitializer>(),
-            Substitute.For<IIdentityProviderSecretBackfill>());
+            Substitute.For<IIdentityProviderSecretBackfill>(),
+            _demoOrderSeedFileWriter);
     }
 }

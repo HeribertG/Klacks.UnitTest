@@ -213,4 +213,33 @@ public class FileSystemObjectStorageServiceTests
     {
         Should.Throw<ArgumentException>(() => _service.DownloadAsync(" "));
     }
+
+    [Test]
+    public void ResolvePath_ReturnsAbsolutePathUnderRoot()
+    {
+        var resolved = _service.ResolvePath(DropPointPrefix);
+
+        var expected = Path.GetFullPath(Path.Combine(_rootPath, "erp", "exports") + Path.DirectorySeparatorChar);
+        resolved.ShouldBe(expected);
+    }
+
+    [Test]
+    public void ResolvePath_PerformsNoFileSystemIo()
+    {
+        _service.ResolvePath(DropPointPrefix);
+
+        Directory.Exists(_rootPath).ShouldBeFalse();
+    }
+
+    [Test]
+    public void ResolvePath_KeyEscapingRoot_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _service.ResolvePath("../outside.xml"));
+    }
+
+    [Test]
+    public void ResolvePath_EmptyKey_Throws()
+    {
+        Should.Throw<ArgumentException>(() => _service.ResolvePath(" "));
+    }
 }

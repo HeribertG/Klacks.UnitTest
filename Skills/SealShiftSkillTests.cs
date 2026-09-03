@@ -7,6 +7,7 @@
 /// false success, and orders that are not sealable (wrong status, missing group) are rejected up front.
 /// </summary>
 
+using Klacks.Api.Application.Services.Orders;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
@@ -32,7 +33,7 @@ public class SealShiftSkillTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _skill = new SealShiftSkill(_shiftRepository, _unitOfWork);
+        _skill = new SealShiftSkill(new OrderSealingService(_shiftRepository, _unitOfWork));
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
             .Returns(ci => ci.Arg<Func<Task<Guid>>>()());

@@ -12,54 +12,105 @@ public class DemoDataSeedDecisionTests
     [Test]
     public void Decide_RegionFileConfiguredAndProfileTrue_SeedsFromProfile()
     {
-        var (seedDemoData, source) = DemoDataSeedDecision.Decide(true, true, false);
+        var (seedDemoClients, seedDemoShiftsAndGroups, source) = DemoDataSeedDecision.Decide(true, true, null, false);
 
-        seedDemoData.ShouldBeTrue();
+        seedDemoClients.ShouldBeTrue();
+        seedDemoShiftsAndGroups.ShouldBeTrue();
         source.ShouldBe(DemoDataSeedSource.RegionSetupProfile);
     }
 
     [Test]
     public void Decide_RegionFileConfiguredAndProfileFalse_DoesNotSeed()
     {
-        var (seedDemoData, source) = DemoDataSeedDecision.Decide(true, false, true);
+        var (seedDemoClients, seedDemoShiftsAndGroups, source) = DemoDataSeedDecision.Decide(true, false, null, true);
 
-        seedDemoData.ShouldBeFalse();
+        seedDemoClients.ShouldBeFalse();
+        seedDemoShiftsAndGroups.ShouldBeFalse();
         source.ShouldBe(DemoDataSeedSource.RegionSetupProfile);
     }
 
     [Test]
     public void Decide_RegionFileConfiguredAndProfileOmitted_DoesNotSeedEvenWhenLegacyFlagIsTrue()
     {
-        var (seedDemoData, source) = DemoDataSeedDecision.Decide(true, null, true);
+        var (seedDemoClients, seedDemoShiftsAndGroups, source) = DemoDataSeedDecision.Decide(true, null, null, true);
 
-        seedDemoData.ShouldBeFalse();
+        seedDemoClients.ShouldBeFalse();
+        seedDemoShiftsAndGroups.ShouldBeFalse();
         source.ShouldBe(DemoDataSeedSource.RegionSetupProfile);
     }
 
     [Test]
     public void Decide_RegionFileConfiguredAndProfileTrue_IgnoresLegacyFlagFalse()
     {
-        var (seedDemoData, source) = DemoDataSeedDecision.Decide(true, true, true);
+        var (seedDemoClients, seedDemoShiftsAndGroups, source) = DemoDataSeedDecision.Decide(true, true, null, true);
 
-        seedDemoData.ShouldBeTrue();
+        seedDemoClients.ShouldBeTrue();
+        seedDemoShiftsAndGroups.ShouldBeTrue();
         source.ShouldBe(DemoDataSeedSource.RegionSetupProfile);
     }
 
     [Test]
     public void Decide_NoRegionFileAndLegacyFlagTrue_SeedsFromLegacyConfiguration()
     {
-        var (seedDemoData, source) = DemoDataSeedDecision.Decide(false, null, true);
+        var (seedDemoClients, seedDemoShiftsAndGroups, source) = DemoDataSeedDecision.Decide(false, null, null, true);
 
-        seedDemoData.ShouldBeTrue();
+        seedDemoClients.ShouldBeTrue();
+        seedDemoShiftsAndGroups.ShouldBeTrue();
         source.ShouldBe(DemoDataSeedSource.LegacyFakeConfiguration);
     }
 
     [Test]
     public void Decide_NoRegionFileAndLegacyFlagFalse_DoesNotSeed()
     {
-        var (seedDemoData, source) = DemoDataSeedDecision.Decide(false, null, false);
+        var (seedDemoClients, seedDemoShiftsAndGroups, source) = DemoDataSeedDecision.Decide(false, null, null, false);
 
-        seedDemoData.ShouldBeFalse();
+        seedDemoClients.ShouldBeFalse();
+        seedDemoShiftsAndGroups.ShouldBeFalse();
         source.ShouldBe(DemoDataSeedSource.LegacyFakeConfiguration);
+    }
+
+    [Test]
+    public void Decide_ProfileShiftsAndGroupsOmitted_FollowsSeedDemoData()
+    {
+        var (seedDemoClients, seedDemoShiftsAndGroups, _) = DemoDataSeedDecision.Decide(true, true, null, false);
+
+        seedDemoClients.ShouldBeTrue();
+        seedDemoShiftsAndGroups.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Decide_ProfileShiftsAndGroupsExplicitTrue_SeedsShiftsAndGroups()
+    {
+        var (seedDemoClients, seedDemoShiftsAndGroups, _) = DemoDataSeedDecision.Decide(true, true, true, false);
+
+        seedDemoClients.ShouldBeTrue();
+        seedDemoShiftsAndGroups.ShouldBeTrue();
+    }
+
+    [Test]
+    public void Decide_ProfileShiftsAndGroupsExplicitFalse_SeedsClientsOnly()
+    {
+        var (seedDemoClients, seedDemoShiftsAndGroups, _) = DemoDataSeedDecision.Decide(true, true, false, false);
+
+        seedDemoClients.ShouldBeTrue();
+        seedDemoShiftsAndGroups.ShouldBeFalse();
+    }
+
+    [Test]
+    public void Decide_ProfileShiftsAndGroupsTrueButSeedDemoDataFalse_StaysFalse()
+    {
+        var (seedDemoClients, seedDemoShiftsAndGroups, _) = DemoDataSeedDecision.Decide(true, false, true, false);
+
+        seedDemoClients.ShouldBeFalse();
+        seedDemoShiftsAndGroups.ShouldBeFalse();
+    }
+
+    [Test]
+    public void Decide_NoRegionFileAndLegacyFlagTrue_AlwaysIncludesShiftsAndGroups()
+    {
+        var (seedDemoClients, seedDemoShiftsAndGroups, _) = DemoDataSeedDecision.Decide(false, null, false, true);
+
+        seedDemoClients.ShouldBeTrue();
+        seedDemoShiftsAndGroups.ShouldBeTrue();
     }
 }

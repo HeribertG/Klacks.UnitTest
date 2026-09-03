@@ -23,6 +23,7 @@ namespace Klacks.UnitTest.Application.Services.Imports;
 public class ErpOrderImportRunnerTests
 {
     private IErpDropPointRepository _dropPointRepository = null!;
+    private IErpDefaultDropPointProvider _defaultDropPointProvider = null!;
     private IObjectStorageService _objectStorageService = null!;
     private IOrderImportParser _parser = null!;
     private IClientRepository _clientRepository = null!;
@@ -48,6 +49,7 @@ public class ErpOrderImportRunnerTests
     public void SetUp()
     {
         _dropPointRepository = Substitute.For<IErpDropPointRepository>();
+        _defaultDropPointProvider = Substitute.For<IErpDefaultDropPointProvider>();
         _objectStorageService = Substitute.For<IObjectStorageService>();
         _parser = Substitute.For<IOrderImportParser>();
         _clientRepository = Substitute.For<IClientRepository>();
@@ -76,7 +78,7 @@ public class ErpOrderImportRunnerTests
 
         var resolver = new ErpCustomerResolver(_clientRepository);
         var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, ShiftGroupScopeReaderStub.WithoutAnyGroups(), _unitOfWork, NullLogger<OrderSupersessionService>.Instance);
-        _runner = new ErpOrderImportRunner(_dropPointRepository, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _unitOfWork, _runState, NullLogger<ErpOrderImportRunner>.Instance);
+        _runner = new ErpOrderImportRunner(_dropPointRepository, _defaultDropPointProvider, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _unitOfWork, _runState, NullLogger<ErpOrderImportRunner>.Instance);
     }
 
     private static ImportedOrderPayload Order(string reference = "ORD-1") => new()
@@ -109,6 +111,26 @@ public class ErpOrderImportRunnerTests
 
         await _objectStorageService.DidNotReceive().ListAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _settingsRepository.Received(1).AddSetting(Arg.Is<Settings>(s => s.Type == ErpImportSettingsTypes.NextRunUtc));
+    }
+
+    [Test]
+    public async Task RunAsync_Due_CreatesDefaultDropPointBeforeListing()
+    {
+        await _runner.RunAsync();
+
+        await _defaultDropPointProvider.Received(1).GetOrCreateDefaultAsync(Arg.Any<CancellationToken>());
+        await _dropPointRepository.Received(1).List();
+    }
+
+    [Test]
+    public async Task RunAsync_NotYetDue_DoesNotCreateDefaultDropPoint()
+    {
+        _settingsRepository.GetSettingNoTracking(ErpImportSettingsTypes.NextRunUtc)
+            .Returns(new Settings { Type = ErpImportSettingsTypes.NextRunUtc, Value = DateTime.UtcNow.AddHours(1).ToString("O") });
+
+        await _runner.RunAsync();
+
+        await _defaultDropPointProvider.DidNotReceive().GetOrCreateDefaultAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
