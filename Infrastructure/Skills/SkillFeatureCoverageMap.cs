@@ -34,6 +34,7 @@ public static class SkillFeatureCoverageMap
         ["EvalController"] = Excluded("Klacksy evaluation harness, developer tooling"),
         ["GlobalRulesController"] = Covered("get_ai_guidelines", "update_ai_guidelines"),
         ["GoalCandidatesController"] = Excluded("deliberately NOT skill-addressable: these are Klacksy's own self-generated goal candidates, so a skill that approves them would let the assistant authorize its own work. Approval must stay a human action in the UI"),
+        ["KnowledgeIndexSnapshotController"] = Excluded("developer tooling: admin-only export of the knowledge index embedding snapshot that is committed to the repository; not an end-user feature"),
         ["KlacksyTrainingController"] = Excluded("Klacksy training and knowledge ingestion, assistant infrastructure"),
         ["ModelSyncController"] = Excluded("admin-only LLM model catalog synchronization; day-to-day model management is covered by the llm model skills"),
         ["ModelsController"] = Covered("list_llm_models", "create_llm_model", "update_llm_model", "delete_llm_model"),

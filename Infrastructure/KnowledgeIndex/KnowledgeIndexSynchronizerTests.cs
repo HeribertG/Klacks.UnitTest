@@ -10,6 +10,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Application.Services;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -23,6 +24,8 @@ public class KnowledgeIndexSynchronizerTests
     private IEmbeddingProvider _embeddings = null!;
     private IKnowledgeIndexRepository _repo = null!;
     private ISkillPhraseRepository _phrases = null!;
+    private IKnowledgeEmbeddingSnapshotReader _snapshotReader = null!;
+    private ILogger<KnowledgeIndexSynchronizer> _logger = null!;
 
     [SetUp]
     public void Setup()
@@ -36,7 +39,17 @@ public class KnowledgeIndexSynchronizerTests
         _phrases = Substitute.For<ISkillPhraseRepository>();
         _phrases.GetAllActiveAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<SkillPhrase>)new List<SkillPhrase>());
+        _snapshotReader = Substitute.For<IKnowledgeEmbeddingSnapshotReader>();
+        GivenSnapshot(new Dictionary<string, float[]>());
+        _logger = Substitute.For<ILogger<KnowledgeIndexSynchronizer>>();
     }
+
+    private KnowledgeIndexSynchronizer CreateSut() =>
+        new(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases, _snapshotReader, _logger);
+
+    private void GivenSnapshot(Dictionary<string, float[]> snapshot) =>
+        _snapshotReader.LoadAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyDictionary<string, float[]>)snapshot);
 
     private static byte[] HashFor(string spaceId, string embeddingText) =>
         SHA256.HashData(Encoding.UTF8.GetBytes(spaceId + "\n" + embeddingText));
@@ -84,7 +97,7 @@ public class KnowledgeIndexSynchronizerTests
                 { (KnowledgeEntryKind.Skill, "X"), existingHash }
             });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
@@ -111,7 +124,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.Received(1).EmbedBatchAsync(
@@ -133,7 +146,7 @@ public class KnowledgeIndexSynchronizerTests
                 { (KnowledgeEntryKind.Skill, "OrphanSkill"), new byte[] { 1, 2, 3 } }
             });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).DeleteAsync(
@@ -157,7 +170,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _embeddings.Received(1).EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
@@ -186,7 +199,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -211,7 +224,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -247,7 +260,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new float[][] { new float[384] });
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -280,7 +293,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.Arg<IReadOnlyList<string>>().Select(_ => new float[384]).ToArray());
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         await _repo.Received(1).UpsertAsync(
@@ -305,7 +318,7 @@ public class KnowledgeIndexSynchronizerTests
 
         var captured = CaptureUpsertedEntries();
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         captured.Single().Text.ShouldBe("S. Desc\nParameters: \nSynonyms: gemeinsam, shared, partilhado");
@@ -324,7 +337,7 @@ public class KnowledgeIndexSynchronizerTests
 
         var captured = CaptureUpsertedEntries();
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: plan, Plan, plan");
@@ -344,7 +357,7 @@ public class KnowledgeIndexSynchronizerTests
 
         var captured = CaptureUpsertedEntries();
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         captured.Single().Text.ShouldBe("r. Goal.\nKeywords: plan, Plan");
@@ -365,7 +378,7 @@ public class KnowledgeIndexSynchronizerTests
 
         var captured = CaptureUpsertedEntries();
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: heartbeat, monitoring\nSynonyms: überwachung");
@@ -384,7 +397,7 @@ public class KnowledgeIndexSynchronizerTests
 
         var captured = CaptureUpsertedEntries();
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: Plan\nSynonyms: entwurf");
@@ -403,7 +416,7 @@ public class KnowledgeIndexSynchronizerTests
 
         var captured = CaptureUpsertedEntries();
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: token");
@@ -422,10 +435,105 @@ public class KnowledgeIndexSynchronizerTests
 
         var captured = CaptureUpsertedEntries();
 
-        var sync = new KnowledgeIndexSynchronizer(_skillRegistry, _recipeRepository, _embeddings, _repo, _phrases);
+        var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
         captured.Single().Text.ShouldBe("S. Desc\nParameters: \nKeywords: plan, plan\nSynonyms: entwurf");
+    }
+
+    [Test]
+    public async Task SyncAsync_DirtyEntryFoundInSnapshot_IsUpsertedWithoutEmbedding()
+    {
+        var descriptor = new SkillDescriptor("X", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+
+        var snapshotVector = new[] { 0.1f, 0.2f, 0.3f, 0.4f };
+        GivenSnapshot(new Dictionary<string, float[]>
+        {
+            { KnowledgeEmbeddingCodec.ToHex(HashFor("test-space", "X. Desc\nParameters: ")), snapshotVector }
+        });
+
+        var captured = CaptureUpsertedEntries();
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _embeddings.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+        captured.Single().SourceId.ShouldBe("X");
+        captured.Single().Embedding.ShouldBe(snapshotVector);
+    }
+
+    [Test]
+    public async Task SyncAsync_PartialSnapshotHit_EmbedsOnlyTheMissAndKeepsVectorsAligned()
+    {
+        var first = new SkillDescriptor("A", "DescA", SkillCategory.System, [], [], [], null);
+        var second = new SkillDescriptor("B", "DescB", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([first, second]);
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+
+        var snapshotVector = new[] { 1f, 1f, 1f, 1f };
+        GivenSnapshot(new Dictionary<string, float[]>
+        {
+            { KnowledgeEmbeddingCodec.ToHex(HashFor("test-space", "A. DescA\nParameters: ")), snapshotVector }
+        });
+
+        var embeddedVector = new[] { 2f, 2f, 2f, 2f };
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { embeddedVector });
+
+        var captured = new List<KnowledgeEntry>();
+        _repo.When(r => r.UpsertAsync(Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>()))
+            .Do(callInfo => captured.AddRange(callInfo.Arg<IReadOnlyList<KnowledgeEntry>>()));
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _embeddings.Received(1).EmbedBatchAsync(
+            Arg.Is<IReadOnlyList<string>>(texts => texts.Count == 1 && texts[0] == "B. DescB\nParameters: "),
+            Arg.Any<CancellationToken>());
+
+        captured.Count.ShouldBe(2);
+        captured.Single(e => e.SourceId == "A").Embedding.ShouldBe(snapshotVector);
+        captured.Single(e => e.SourceId == "B").Embedding.ShouldBe(embeddedVector);
+    }
+
+    [Test]
+    public async Task SyncAsync_EmptySnapshot_EmbedsEveryDirtyEntryAsBefore()
+    {
+        var first = new SkillDescriptor("A", "DescA", SkillCategory.System, [], [], [], null);
+        var second = new SkillDescriptor("B", "DescB", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([first, second]);
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+
+        var vectorA = new[] { 1f, 0f };
+        var vectorB = new[] { 0f, 1f };
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { vectorA, vectorB });
+
+        var captured = new List<KnowledgeEntry>();
+        _repo.When(r => r.UpsertAsync(Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>()))
+            .Do(callInfo => captured.AddRange(callInfo.Arg<IReadOnlyList<KnowledgeEntry>>()));
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _embeddings.Received(1).EmbedBatchAsync(
+            Arg.Is<IReadOnlyList<string>>(texts =>
+                texts.Count == 2 &&
+                texts[0] == "A. DescA\nParameters: " &&
+                texts[1] == "B. DescB\nParameters: "),
+            Arg.Any<CancellationToken>());
+
+        captured.Count.ShouldBe(2);
+        captured.Single(e => e.SourceId == "A").Embedding.ShouldBe(vectorA);
+        captured.Single(e => e.SourceId == "B").Embedding.ShouldBe(vectorB);
     }
 
     private List<KnowledgeEntry> CaptureUpsertedEntries()
