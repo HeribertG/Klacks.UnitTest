@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.Api.Application.Services.Imports;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -33,7 +34,7 @@ public class SetErpImportScheduleSkillTests
         _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _skill = new SetErpImportScheduleSkill(
-            _settingsRepository, _companyClock, _unitOfWork, NullLogger<SetErpImportScheduleSkill>.Instance);
+            _settingsRepository, _companyClock, _unitOfWork, NullLogger<SetErpImportScheduleSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
     }
 
     private static SkillExecutionContext Ctx() => new()

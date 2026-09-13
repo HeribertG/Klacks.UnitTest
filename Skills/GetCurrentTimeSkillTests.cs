@@ -18,13 +18,14 @@ public class GetCurrentTimeSkillTests
 {
     private static readonly DateTimeOffset FixedUtcInstant = new(2026, 6, 27, 23, 30, 0, TimeSpan.Zero);
 
-    private static SkillExecutionContext Ctx(string? userTimezone = null) => new()
+    private static SkillExecutionContext Ctx(string? userTimezone = null, string? userLanguage = null) => new()
     {
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
         UserPermissions = new List<string>(),
-        UserTimezone = userTimezone
+        UserTimezone = userTimezone,
+        UserLanguage = userLanguage
     };
 
     private static GetCurrentTimeSkill CreateSkill(FixedCompanyClock companyClock)
@@ -73,5 +74,32 @@ public class GetCurrentTimeSkillTests
         result.Success.ShouldBeTrue();
         var json = System.Text.Json.JsonSerializer.Serialize(result.Data);
         json.ShouldContain("America/St_Johns");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_FrenchUser_ReportsTheWeekdayInFrench_AndKeepsTheInvariantEnumName()
+    {
+        var companyClock = new FixedCompanyClock(FixedUtcInstant, TimeZoneInfo.Utc);
+        var skill = CreateSkill(companyClock);
+
+        var result = await skill.ExecuteAsync(
+            Ctx(userLanguage: "fr"), new Dictionary<string, object> { ["format"] = "date" });
+
+        result.Success.ShouldBeTrue();
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        json.ShouldContain("Saturday");
+        json.ShouldContain("samedi");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WithoutUserLanguage_KeepsTheEnglishWeekdayName()
+    {
+        var companyClock = new FixedCompanyClock(FixedUtcInstant, TimeZoneInfo.Utc);
+        var skill = CreateSkill(companyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["format"] = "date" });
+
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        json.ShouldContain("Saturday");
     }
 }

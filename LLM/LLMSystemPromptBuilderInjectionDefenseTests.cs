@@ -14,6 +14,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -31,7 +32,7 @@ public class LLMSystemPromptBuilderInjectionDefenseTests
     {
         _translationProvider = Substitute.For<IPromptTranslationProvider>();
         _translationProvider.GetTranslationsAsync(Arg.Any<string>()).Returns(Translations());
-        _builder = new LLMSystemPromptBuilder(_translationProvider);
+        _builder = new LLMSystemPromptBuilder(_translationProvider, TestClock());
     }
 
     private static Dictionary<string, string> Translations() => new()
@@ -47,6 +48,9 @@ public class LLMSystemPromptBuilderInjectionDefenseTests
         { "SettingsNoPermission", "No settings permission" },
         { "SettingsViewOnly", "View settings only" }
     };
+
+    private static FixedCompanyClock TestClock() =>
+        new(new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
 
     private static LLMContext CreateContext(bool withFunctions = true) => new()
     {

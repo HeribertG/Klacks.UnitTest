@@ -15,6 +15,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.Api.Application.Services.Imports;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -42,7 +43,7 @@ public class GetErpImportStatusSkillTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpImportStatusSkill(
-            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance);
+            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -75,7 +76,7 @@ public class GetErpImportStatusSkillTests
             .Returns(new SettingsModel { Type = ErpImportSettingsTypes.NextRunUtc, Value = new DateTime(2026, 7, 4, 10, 0, 0, DateTimeKind.Utc).ToString("O") });
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpImportStatusSkill(
-            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance);
+            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -95,7 +96,7 @@ public class GetErpImportStatusSkillTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo"));
         var skill = new GetErpImportStatusSkill(
-            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance);
+            mediator, settingsReader, companyClock, NullLogger<GetErpImportStatusSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 

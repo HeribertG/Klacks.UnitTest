@@ -18,6 +18,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.Api.Application.Services.Imports;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -61,7 +62,7 @@ public class GetErpDropPointSettingsSkillTests
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
             mediator, objectStorageService, settingsReader, companyClock,
-            NullLogger<GetErpDropPointSettingsSkill>.Instance);
+            NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -82,7 +83,7 @@ public class GetErpDropPointSettingsSkillTests
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
             mediator, objectStorageService, settingsReader, companyClock,
-            NullLogger<GetErpDropPointSettingsSkill>.Instance);
+            NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -108,7 +109,7 @@ public class GetErpDropPointSettingsSkillTests
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
             mediator, objectStorageService, settingsReader, companyClock,
-            NullLogger<GetErpDropPointSettingsSkill>.Instance);
+            NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -129,7 +130,7 @@ public class GetErpDropPointSettingsSkillTests
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo"));
         var skill = new GetErpDropPointSettingsSkill(
             mediator, objectStorageService, settingsReader, companyClock,
-            NullLogger<GetErpDropPointSettingsSkill>.Instance);
+            NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -149,7 +150,7 @@ public class GetErpDropPointSettingsSkillTests
         var companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         var skill = new GetErpDropPointSettingsSkill(
             mediator, objectStorageService, settingsReader, companyClock,
-            NullLogger<GetErpDropPointSettingsSkill>.Instance);
+            NullLogger<GetErpDropPointSettingsSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
 
         await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 

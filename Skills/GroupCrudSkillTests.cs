@@ -47,7 +47,8 @@ public class GroupCrudSkillTests
     }
 
     private UpdateGroupSkill UpdateSkill(IGroupScopeGuard guard) =>
-        new(_groupRepository, guard, _calendarSelectionRepository, new GroupMapper(), _api.Client);
+        new(_groupRepository, guard, _calendarSelectionRepository, new GroupMapper(), _api.Client,
+            _companyClock);
 
     private Group WireGroup(Guid id, Group group)
     {
@@ -368,5 +369,73 @@ public class GroupCrudSkillTests
 
         Assert.That(result.Success, Is.True);
         _api.SingleCall.Method.ShouldBe(HttpMethod.Post);
+    }
+
+    [Test]
+    public async Task CreateGroup_RelativeValidFromWord_ResolvesAgainstTheCompanyDay()
+    {
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Bern",
+            ["validFrom"] = "morgen"
+        });
+
+        result.Success.ShouldBeTrue();
+        var sent = _api.BodyOf<GroupResource>();
+        sent.ShouldNotBeNull();
+        sent!.ValidFrom.ShouldBe(new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task CreateGroup_UnreadableValidFrom_IsRejected_InsteadOfSilentlyUsingToday()
+    {
+        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Bern",
+            ["validFrom"] = "irgendwann"
+        });
+
+        result.Success.ShouldBeFalse();
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task UpdateGroup_RelativeValidFromWord_ResolvesAgainstTheCompanyDay()
+    {
+        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
+        var id = Guid.NewGuid();
+        var group = WireGroup(id, new Group { Id = id, Name = "Bern", ValidFrom = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc) });
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = id.ToString(),
+            ["validFrom"] = "heute"
+        });
+
+        result.Success.ShouldBeTrue();
+        group.ValidFrom.ShouldBe(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task UpdateGroup_UnreadableValidUntil_IsRejected_InsteadOfSilentlyClearingIt()
+    {
+        var skill = UpdateSkill(TestGroupScopeGuard.Unrestricted());
+        var id = Guid.NewGuid();
+        var until = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var group = WireGroup(id, new Group { Id = id, Name = "Bern", ValidFrom = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc), ValidUntil = until });
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = id.ToString(),
+            ["validUntil"] = "irgendwann"
+        });
+
+        result.Success.ShouldBeFalse();
+        group.ValidUntil.ShouldBe(until);
+        _api.Calls.ShouldBeEmpty();
     }
 }

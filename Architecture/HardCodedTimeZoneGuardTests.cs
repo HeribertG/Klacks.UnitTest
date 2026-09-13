@@ -18,8 +18,12 @@
 /// - Klacks.Api/Plugins/** contains no .cs files (language packs are JSON data, not code) and no
 ///   appsettings*.json, so it is scanned but contributes nothing; checked manually 2026-09-11 and
 ///   confirmed clean of both literals.
-/// - There is no deploy/ directory in this repository (checked manually 2026-09-11); if one is added
-///   later it is out of scope here (not Klacks.Api source/config).
+/// - Klacks.Api/deploy/onprem/regions/*.json (the on-prem region profiles) DO contain zone ids such as
+///   Europe/Zurich in ch.json and Europe/Berlin in de.json. That is legitimate: they are per-region
+///   installation data, chosen deliberately per profile, not a default baked into shipped code or
+///   config. They are outside this guard by construction, because only appsettings*.json is scanned -
+///   do not widen the JSON pattern to reach them. Their own correctness (a country with no derivable
+///   zone must ship an explicit one) is covered by CountryTimeZoneCoverageGuardTests.
 /// - Other projects (Klacks.UnitTest, Klacks.IntegrationTest, Klacks.Ui, ...) are not scanned.
 /// </summary>
 
@@ -57,8 +61,7 @@ public class HardCodedTimeZoneGuardTests
 
     private static readonly IReadOnlyDictionary<string, int> AllowedCsOccurrences = new Dictionary<string, int>
     {
-        ["Application/Constants/CountryTimeZones.cs"] = 2,
-        ["Infrastructure/Persistence/Seed/SeedGenerator.cs"] = 1
+        ["Application/Constants/CountryTimeZones.cs"] = 2
     };
 
     [Test]

@@ -236,6 +236,72 @@ public class CompanyClockTests
         resolution.Source.ShouldBe(CompanyTimeZoneSource.Utc);
     }
 
+    [TestCase("US")]
+    [TestCase("USA")]
+    [TestCase("CA")]
+    [TestCase("AU")]
+    [TestCase("BR")]
+    public async Task GetTimeZoneResolutionAsync_MultiZoneAddressCountry_SourceIsUtcMultiZoneCountry(string countryCode)
+    {
+        SetSetting(SettingsConstants.APP_ADDRESS_COUNTRY, countryCode);
+        var clock = CreateClock("2026-06-27T12:00:00Z");
+
+        var resolution = await clock.GetTimeZoneResolutionAsync();
+
+        resolution.Zone.ShouldBe(TimeZoneInfo.Utc);
+        resolution.Source.ShouldBe(
+            CompanyTimeZoneSource.UtcMultiZoneCountry,
+            "a country that spans several zones must be reported as such, not as a plain 'nothing " +
+            "configured' UTC fallback - otherwise the admin is never told why no zone could be derived");
+    }
+
+    [Test]
+    public async Task GetTimeZoneResolutionAsync_MultiZoneCalendarCountry_SourceIsUtcMultiZoneCountry()
+    {
+        SetSetting(SettingKeys.GlobalCalendarCountry, "CA");
+        var clock = CreateClock("2026-06-27T12:00:00Z");
+
+        var resolution = await clock.GetTimeZoneResolutionAsync();
+
+        resolution.Source.ShouldBe(CompanyTimeZoneSource.UtcMultiZoneCountry);
+    }
+
+    [Test]
+    public async Task GetTimeZoneResolutionAsync_UnknownCountry_SourceStaysPlainUtc()
+    {
+        SetSetting(SettingsConstants.APP_ADDRESS_COUNTRY, "XX");
+        var clock = CreateClock("2026-06-27T12:00:00Z");
+
+        var resolution = await clock.GetTimeZoneResolutionAsync();
+
+        resolution.Source.ShouldBe(CompanyTimeZoneSource.Utc);
+    }
+
+    [Test]
+    public async Task GetTimeZoneResolutionAsync_AlphaThreeCountryCode_ResolvesTheSameAsAlphaTwo()
+    {
+        SetSetting(SettingsConstants.APP_ADDRESS_COUNTRY, "CHE");
+        var clock = CreateClock("2026-06-27T12:00:00Z");
+
+        var resolution = await clock.GetTimeZoneResolutionAsync();
+
+        resolution.IanaId.ShouldBe("Europe/Zurich");
+        resolution.Source.ShouldBe(CompanyTimeZoneSource.AddressCountry);
+    }
+
+    [Test]
+    public async Task GetTimeZoneResolutionAsync_MultiZoneCountryWithExplicitZone_SourceIsSetting()
+    {
+        SetSetting(SettingsConstants.APP_ADDRESS_TIMEZONE, "America/New_York");
+        SetSetting(SettingsConstants.APP_ADDRESS_COUNTRY, "USA");
+        var clock = CreateClock("2026-06-27T12:00:00Z");
+
+        var resolution = await clock.GetTimeZoneResolutionAsync();
+
+        resolution.IanaId.ShouldBe("America/New_York");
+        resolution.Source.ShouldBe(CompanyTimeZoneSource.Setting);
+    }
+
     [Test]
     public async Task GetTimeZoneResolutionAsync_InvalidExplicitZone_FallsThroughToCountrySource()
     {

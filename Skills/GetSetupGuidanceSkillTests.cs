@@ -21,6 +21,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.Api.Application.Services.Imports;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -59,7 +60,7 @@ public class GetSetupGuidanceSkillTests
 
         _sut = new GetSetupGuidanceSkill(
             _mediator, _activityProbe, _objectStorageService, _settingsReader, _companyClock,
-            NullLogger<GetSetupGuidanceSkill>.Instance);
+            NullLogger<GetSetupGuidanceSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
     }
 
     private void StubState(bool hasOrders, bool hasShifts, bool hasWork) =>
@@ -133,5 +134,57 @@ public class GetSetupGuidanceSkillTests
         payload.ShouldContain("cut-shift");
         payload.ShouldContain("schedule");
         payload.ShouldContain("new-plannable-shift");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_CompanyTimeZoneNotConfigured_ReportsItFirstInDataAndMessage()
+    {
+        _companyClock.Source = CompanyTimeZoneSource.Utc;
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Message.ShouldStartWith("FIRST:");
+        result.Message.ShouldContain("owner-address");
+        var payload = DataOf(result);
+        payload.ShouldContain("\"Configured\":false");
+        payload.ShouldContain("owner-address");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_CountrySpansSeveralZones_SaysWhyNoZoneCouldBeDerived()
+    {
+        _companyClock.Source = CompanyTimeZoneSource.UtcMultiZoneCountry;
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        var payload = DataOf(result) + result.Message;
+        payload.ShouldContain("spans several time zones");
+        payload.ShouldContain("UtcMultiZoneCountry");
+    }
+
+    [TestCase(CompanyTimeZoneSource.Setting)]
+    [TestCase(CompanyTimeZoneSource.AddressCountry)]
+    [TestCase(CompanyTimeZoneSource.CalendarCountry)]
+    public async Task ExecuteAsync_CompanyTimeZoneConfigured_SaysNothingAboutIt(CompanyTimeZoneSource source)
+    {
+        _companyClock.Source = source;
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Message.ShouldNotStartWith("FIRST:");
+        DataOf(result).ShouldContain("\"Configured\":true");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_SetupCompleteButNoTimeZoneConfigured_StillReportsTheTimeZone()
+    {
+        StubState(hasOrders: true, hasShifts: true, hasWork: true);
+        _companyClock.Source = CompanyTimeZoneSource.Utc;
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        DataOf(result).ShouldContain("\"SetupComplete\":true");
+        result.Message.ShouldStartWith("FIRST:");
+        result.Message.ShouldContain("Setup is complete");
     }
 }

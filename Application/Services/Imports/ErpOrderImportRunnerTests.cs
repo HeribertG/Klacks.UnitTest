@@ -80,7 +80,7 @@ public class ErpOrderImportRunnerTests
 
         var resolver = new ErpCustomerResolver(_clientRepository);
         var supersessionService = new OrderSupersessionService(_shiftRepository, _workRepository, _clientRepository, _triggerService, ShiftGroupScopeReaderStub.WithoutAnyGroups(), _unitOfWork, _companyClock, NullLogger<OrderSupersessionService>.Instance);
-        _runner = new ErpOrderImportRunner(_dropPointRepository, _defaultDropPointProvider, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _companyClock, _unitOfWork, _runState, NullLogger<ErpOrderImportRunner>.Instance);
+        _runner = new ErpOrderImportRunner(_dropPointRepository, _defaultDropPointProvider, _objectStorageService, _parser, resolver, _shiftRepository, supersessionService, _exceptionRepository, _triggerService, _settingsRepository, _companyClock, _unitOfWork, _runState, NullLogger<ErpOrderImportRunner>.Instance, new ErpCronTimeZoneDriftNotifier());
     }
 
     private static ImportedOrderPayload Order(string reference = "ORD-1") => new()

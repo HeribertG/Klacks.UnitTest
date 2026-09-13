@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.Api.Application.Services.Imports;
 
 namespace Klacks.UnitTest.Application.Skills;
 
@@ -123,6 +124,6 @@ public class GetSetupGuidanceSkillPhaseTests
 
         return new GetSetupGuidanceSkill(
             mediator, activityProbe, objectStorageService, settingsReader, companyClock,
-            NullLogger<GetSetupGuidanceSkill>.Instance);
+            NullLogger<GetSetupGuidanceSkill>.Instance, new ErpCronTimeZoneDriftNotifier());
     }
 }

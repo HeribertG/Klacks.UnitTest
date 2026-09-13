@@ -1,13 +1,19 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Architecture guard against DateTime.Parse/TryParse and DateTimeOffset.Parse/TryParse calls that do
-/// not pass a DateTimeStyles argument - or pass only DateTimeStyles.None, which is not an explicit style
-/// in the sense this guard requires (it still yields Kind=Unspecified/Local depending on the input) - in
-/// Klacks.Api/Application and Klacks.Api/Domain/Services. Every timestamp column is 'timestamp with time
-/// zone': a value parsed without a real style either keeps a non-Utc Kind (rejected outright by Npgsql
-/// once it reaches a query parameter) or, for a calendar-boundary value such as a birthdate/validFrom,
-/// silently drifts by the caller's local UTC offset. This is a statement-level scan (walks from the
+/// Architecture guard over the four calendar parse entry points in Klacks.Api/Application and
+/// Klacks.Api/Domain/Services, with one rule per parsed type because the types fail differently.
+/// DateTime/DateTimeOffset must pass a DateTimeStyles argument - and not only DateTimeStyles.None,
+/// which is not an explicit style in the sense this guard requires (it still yields
+/// Kind=Unspecified/Local depending on the input): every timestamp column is 'timestamp with time
+/// zone', so a value parsed without a real style either keeps a non-Utc Kind (rejected outright by
+/// Npgsql once it reaches a query parameter) or, for a calendar-boundary value such as a
+/// birthdate/validFrom, silently drifts by the caller's local UTC offset. DateOnly/TimeOnly have no
+/// Kind, so DateTimeStyles is meaningless for them; their hazard is the culture. Without an explicit
+/// format provider they read CultureInfo.CurrentCulture, which is InvariantCulture in the production
+/// container and the OS culture on a developer machine, so "04.03.2026" becomes 3 April in production
+/// and 4 March on the dev box. CultureInfo.CurrentCulture is a violation for that same reason;
+/// user-supplied calendar strings belong in SkillCalendarStringParser. This is a statement-level scan (walks from the
 /// call's opening paren to its matching closing paren, not line-by-line) because several correct call
 /// sites split the DateTimeStyles argument onto its own line.
 /// </summary>
@@ -25,23 +31,32 @@ public class DateTimeStylesGuardTests
     private const string LineCommentPrefix = "//";
     private const string DateTimeStylesToken = "DateTimeStyles";
     private const string DateTimeStylesNoneToken = "DateTimeStyles.None";
+    private const string CultureToken = "Culture";
+    private const string CurrentCultureToken = "CultureInfo.CurrentCulture";
+    private const string DateOnlyTypeName = "DateOnly";
+    private const string TimeOnlyTypeName = "TimeOnly";
     private const int MinimumScannedFiles = 2000;
 
     /// <summary>
     /// A fixed sample fed directly to <see cref="FindViolationLines"/> (not the real source tree) so the
     /// scanner's correctness does not depend on how many real call sites happen to exist right now - a
     /// prior version of this guard asserted a specific minimum count against the live scan, which made
-    /// the test brittle to unrelated code changes instead of anti-vacuous. Line 1 passes a proper
-    /// DateTimeStyles argument and must NOT be flagged; line 2 passes none and MUST be flagged.
+    /// the test brittle to unrelated code changes instead of anti-vacuous. Lines 1 and 3 are correct -
+    /// an explicit DateTimeStyles for DateTime, an explicit culture for DateOnly - and must NOT be
+    /// flagged; lines 2, 4 and 5 (no style, no culture, CurrentCulture) MUST be flagged.
     /// </summary>
     private const string ScannerSelfTestSample =
         "var a = DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var value);\n"
-        + "var b = DateTime.TryParse(s, out var other);\n";
+        + "var b = DateTime.TryParse(s, out var other);\n"
+        + "var c = DateOnly.TryParseExact(s, Format, CultureInfo.InvariantCulture, out var third);\n"
+        + "var d = DateOnly.TryParse(s, out var fourth);\n"
+        + "var e = TimeOnly.TryParse(s, CultureInfo.CurrentCulture, out var fifth);\n";
 
     private static readonly Regex ForbiddenCallPattern =
-        new(@"\b(DateTime|DateTimeOffset)\.(Parse|TryParse)\(", RegexOptions.Compiled);
+        new(@"\b(DateTime|DateTimeOffset|DateOnly|TimeOnly)\.(Parse|TryParse|ParseExact|TryParseExact)\(",
+            RegexOptions.Compiled);
 
-    private static readonly string[] GuardedDirectories = ["Application", "Domain/Services"];
+    private static readonly string[] GuardedDirectories = ["Application", "Domain/Services", "Infrastructure"];
 
     private static readonly IReadOnlyDictionary<string, (int Count, string Reason)> AllowedOccurrences =
         new Dictionary<string, (int, string)>
@@ -52,7 +67,70 @@ public class DateTimeStylesGuardTests
             ["Domain/Services/Assistant/Skills/SkillParameterTypeValidator.cs"] =
                 (1, "Only the boolean TryParse result is used (out _ discards the parsed value) to check " +
                     "whether an LLM-supplied skill parameter LOOKS LIKE a date before dispatch - the value " +
-                    "itself never reaches a database column or any caller, so its Kind is irrelevant.")
+                    "itself never reaches a database column or any caller, so its Kind is irrelevant. The " +
+                    "culture is explicit and iterates SkillDateCultureResolver.AllSupportedCultures."),
+            ["Domain/Services/Assistant/Skills/SkillCalendarStringParser.cs"] =
+                (2, "Both calls pass an explicit style through the named DateTimeStyles constant " +
+                    "CalendarParseStyles (AssumeUniversal | AllowWhiteSpaces); the scanner only reads " +
+                    "the argument text, so it cannot follow the constant. Listed deliberately rather " +
+                    "than named to contain the token 'DateTimeStyles' and pass by accident."),
+            ["Domain/Services/Assistant/RecipeInitialSlotExtractor.cs"] =
+                (1, "Only the boolean result is used (out _) to check whether a regex-assembled " +
+                    "yyyy-MM-dd candidate is a real calendar day; the string, not the parsed value, is " +
+                    "what the caller keeps."),
+            ["Domain/Services/Settings/CompanyRuleDraftValidator.cs"] =
+                (1, "Only the boolean result is used (out _) to validate that a draft parameter matches " +
+                    "the configured time-of-day format; no value is produced or stored."),
+            ["Infrastructure/Services/Exports/ReportXlsxBuilder.cs"] =
+                (2, "The parsed value is written straight into a ClosedXML cell that carries its own " +
+                    "date number format and never reaches a database column, so Kind is irrelevant; " +
+                    "the input comes from a report field the export must render as written."),
+            ["Domain/Services/Settings/PlanningProfileDraftValidator.cs"] =
+                (1, "Only the boolean result is used (out _) to validate that a draft parameter matches " +
+                    "the configured time-of-day format; no value is produced or stored.")
+        };
+
+
+    /// <summary>
+    /// DateOnly/TimeOnly call sites that already existed when the culture rule was introduced. They read
+    /// CultureInfo.CurrentCulture, so the same LLM- or import-supplied string becomes a different day in
+    /// the production container than on a developer machine. They are counted rather than hidden: the
+    /// count may only go down as call sites move to SkillCalendarStringParser, and any NEW occurrence
+    /// fails the guard.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, int> CultureSensitiveBacklog =
+        new Dictionary<string, int>
+        {
+            ["Application/Services/Assistant/PlanningScopeEnricher.cs"] = 1,
+            ["Application/Services/Schedules/WizardContextBuilder.cs"] = 3,
+            ["Application/Skills/AddBreakSkill.cs"] = 2,
+            ["Application/Skills/AddWorkChangeSkill.cs"] = 2,
+            ["Application/Skills/AssignContractByNameSkill.cs"] = 2,
+            ["Application/Skills/AssignContractToClientSkill.cs"] = 2,
+            ["Application/Skills/BundleNearbyTimeRangeShiftsIntoContainerSkill.cs"] = 4,
+            ["Application/Skills/CreateContainerTemplateSkill.cs"] = 2,
+            ["Application/Skills/CreateIndividualPeriodSkill.cs"] = 2,
+            ["Application/Skills/CreateShiftSkill.cs"] = 4,
+            ["Application/Skills/CreateTestEnvironmentSkill.cs"] = 1,
+            ["Application/Skills/CutShiftSkill.cs"] = 2,
+            ["Application/Skills/DetectConflictsSkill.cs"] = 2,
+            ["Application/Skills/GeneratePeriodSummarySkill.cs"] = 2,
+            ["Application/Skills/ListHolidaysForPeriodSkill.cs"] = 2,
+            ["Application/Skills/PlaceWorkSkill.cs"] = 2,
+            ["Application/Skills/ProposePlanSkill.cs"] = 3,
+            ["Application/Skills/ReadScheduleStateSkill.cs"] = 2,
+            ["Application/Skills/ResetContainerDaySkill.cs"] = 1,
+            ["Application/Skills/SearchClientAbsencesSkill.cs"] = 1,
+            ["Application/Skills/SetClientAvailabilitySkill.cs"] = 1,
+            ["Application/Skills/SetSealedOrderUntilDateSkill.cs"] = 1,
+            ["Application/Skills/StartAutoWizardSkill.cs"] = 2,
+            ["Application/Skills/UpdateBreakSkill.cs"] = 2,
+            ["Application/Skills/UpdateIndividualPeriodSkill.cs"] = 2,
+            ["Application/Skills/UpdateShiftSkill.cs"] = 4,
+            ["Application/Skills/UpdateWorkChangeSkill.cs"] = 2,
+            ["Application/Skills/UpdateWorkSkill.cs"] = 2,
+            ["Application/Skills/ValidateHolidayOverlapSkill.cs"] = 1,
+            ["Domain/Services/Assistant/Grounding/ToolResultGroundingPoolBuilder.cs"] = 1
         };
 
     /// <summary>
@@ -80,6 +158,7 @@ public class DateTimeStylesGuardTests
 
         var violations = occurrences
             .Where(o => !AllowedOccurrences.ContainsKey(o.Key))
+            .Where(o => !IsWithinTheBacklog(o.Key, o.Value.Count))
             .ToList();
 
         var report = new StringBuilder();
@@ -90,10 +169,12 @@ public class DateTimeStylesGuardTests
         }
 
         violations.ShouldBeEmpty(
-            "DateTime.Parse/TryParse and DateTimeOffset.Parse/TryParse must pass an explicit " +
+            "DateTime/DateTimeOffset Parse/TryParse/ParseExact/TryParseExact must pass an explicit " +
             "DateTimeStyles argument (e.g. AssumeUniversal | AdjustToUniversal for a true instant, or " +
-            "use SkillUtcDateTimeParser for a calendar-boundary value). If a hit is provably harmless, " +
-            $"add it to AllowedOccurrences with a reason.{Environment.NewLine}{report}");
+            "use SkillUtcDateTimeParser for a calendar-boundary value); DateOnly/TimeOnly must pass an " +
+            "explicit format provider that is not CultureInfo.CurrentCulture, or better, go through " +
+            "SkillCalendarStringParser. If a hit is provably harmless, add it to AllowedOccurrences " +
+            $"with a reason.{Environment.NewLine}{report}");
     }
 
     [Test]
@@ -116,6 +197,29 @@ public class DateTimeStylesGuardTests
             {
                 stale.AppendLine($"  {path}: expected {expectedCount} occurrence(s) but found {actual.Count} " +
                                  $"at line(s) {string.Join(", ", actual.Lines)}.");
+            }
+        }
+
+        foreach (var (path, expectedCount) in CultureSensitiveBacklog)
+        {
+            if (!occurrences.TryGetValue(path, out var remaining))
+            {
+                stale.AppendLine($"  {path}: listed in the culture-sensitive backlog but contains no " +
+                                 "occurrence anymore - remove the entry.");
+                continue;
+            }
+
+            if (remaining.Count > expectedCount)
+            {
+                stale.AppendLine($"  {path}: the backlog allows {expectedCount} occurrence(s) but found " +
+                                 $"{remaining.Count} at line(s) {string.Join(", ", remaining.Lines)}. " +
+                                 "The backlog is a ratchet - new occurrences are not allowed.");
+            }
+
+            if (remaining.Count < expectedCount)
+            {
+                stale.AppendLine($"  {path}: only {remaining.Count} of {expectedCount} backlog " +
+                                 "occurrence(s) are left - lower the number so the ratchet keeps its grip.");
             }
         }
 
@@ -163,13 +267,14 @@ public class DateTimeStylesGuardTests
         var (violationLines, matchCount) = FindViolationLines(ScannerSelfTestSample);
 
         matchCount.ShouldBe(
-            2,
-            "The regex must match both call sites in the fixed sample - a broken regex could produce a " +
+            5,
+            "The regex must match every call site in the fixed sample - a broken regex could produce a " +
             "vacuous green guard.");
         violationLines.ShouldBe(
-            new List<int> { 2 },
-            "Only the unstyled call on line 2 must be flagged; the styled call on line 1 passes " +
-            "DateTimeStyles and must not be.");
+            new List<int> { 2, 4, 5 },
+            "The unstyled DateTime call (line 2), the cultureless DateOnly call (line 4) and the " +
+            "CurrentCulture TimeOnly call (line 5) must be flagged; the styled DateTime call (line 1) " +
+            "and the InvariantCulture DateOnly call (line 3) must not be.");
     }
 
     [Test]
@@ -202,6 +307,9 @@ public class DateTimeStylesGuardTests
             "\"DateTimeStyles.None\" would wrongly flag this as None-only and correct callers would have " +
             "to work around a guard bug.");
     }
+
+    private static bool IsWithinTheBacklog(string relativePath, int count) =>
+        CultureSensitiveBacklog.TryGetValue(relativePath, out var allowed) && count <= allowed;
 
     private static (
         Dictionary<string, (int Count, List<int> Lines)> Occurrences,
@@ -265,15 +373,31 @@ public class DateTimeStylesGuardTests
                 ? text.Substring(openParenIndex, closeParenIndex - openParenIndex + 1)
                 : text[openParenIndex..];
 
-            var hasAnExplicitStyle = span.Contains(DateTimeStylesToken, StringComparison.Ordinal);
-            var isNoneOnly = IsNoneOnlyStyleArgument(span);
-            if (!hasAnExplicitStyle || isNoneOnly)
+            if (IsViolation(match.Groups[1].Value, span))
             {
                 violations.Add(CountLineNumber(text, match.Index));
             }
         }
 
         return (violations, matchCount);
+    }
+
+    /// <summary>
+    /// DateOnly/TimeOnly carry no Kind, so their rule is the culture, not the style: the call must pass
+    /// an explicit format provider, and it must not be CultureInfo.CurrentCulture - exactly the ambient
+    /// this guard exists to remove. DateTime/DateTimeOffset keep the DateTimeStyles rule.
+    /// </summary>
+    private static bool IsViolation(string parsedTypeName, string span)
+    {
+        if (parsedTypeName is DateOnlyTypeName or TimeOnlyTypeName)
+        {
+            var normalizedSpan = string.Concat(span.Where(c => !char.IsWhiteSpace(c)));
+            return !normalizedSpan.Contains(CultureToken, StringComparison.Ordinal)
+                   || normalizedSpan.Contains(CurrentCultureToken, StringComparison.Ordinal);
+        }
+
+        return !span.Contains(DateTimeStylesToken, StringComparison.Ordinal)
+               || IsNoneOnlyStyleArgument(span);
     }
 
     /// <summary>

@@ -388,4 +388,46 @@ public class CreateEmployeeSkillTests
         Assert.That(phone.Prefix, Is.EqualTo(expectedPrefix));
         Assert.That(phone.Value, Is.EqualTo(expectedValue));
     }
+
+    [Test]
+    public async Task RelativeMemberSinceWord_ResolvesAgainstTheCompanyDay()
+    {
+        var parameters = CompleteParameters();
+        parameters["memberSince"] = "morgen";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        var capturedMemberSince = _api.BodyOf<ClientResource>();
+        Assert.That(capturedMemberSince, Is.Not.Null);
+        Assert.That(capturedMemberSince!.Membership, Is.Not.Null);
+        Assert.That(capturedMemberSince.Membership!.ValidFrom,
+            Is.EqualTo(new DateTime(2026, 5, 30, 0, 0, 0, DateTimeKind.Utc)));
+    }
+
+    [TestCase("heute")]
+    [TestCase("morgen")]
+    public async Task ReturnsError_WhenBirthdateIsARelativeDayWord(string raw)
+    {
+        var parameters = CompleteParameters();
+        parameters["birthdate"] = raw;
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("Invalid birthdate"));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenBirthdateIsUnreadable_InsteadOfSilentlyDroppingIt()
+    {
+        var parameters = CompleteParameters();
+        parameters["birthdate"] = "irgendwann";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        _api.Calls.ShouldBeEmpty();
+    }
 }

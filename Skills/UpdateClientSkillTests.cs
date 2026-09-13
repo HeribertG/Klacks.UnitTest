@@ -141,5 +141,41 @@ public class UpdateClientSkillTests
         _api.SingleCall.Route.ShouldBe("api/backend/Clients");
     }
 
+    [TestCase("heute")]
+    [TestCase("morgen")]
+    public async Task ReturnsError_WhenBirthdateIsARelativeDayWord(string raw)
+    {
+        var id = Guid.NewGuid();
+        var existing = new Client { Id = id, FirstName = "Anna", Name = "Müller", Gender = GenderEnum.Female };
+        _clientRepository.Get(id).Returns(existing);
+        _clientRepository.GetNoTracking(id).Returns(existing);
 
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = id.ToString(),
+            ["birthdate"] = raw
+        });
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("Invalid birthdate"));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ReturnsError_WhenBirthdateIsUnreadable_InsteadOfSilentlyIgnoringIt()
+    {
+        var id = Guid.NewGuid();
+        var existing = new Client { Id = id, FirstName = "Anna", Name = "Müller", Gender = GenderEnum.Female };
+        _clientRepository.Get(id).Returns(existing);
+        _clientRepository.GetNoTracking(id).Returns(existing);
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = id.ToString(),
+            ["birthdate"] = "irgendwann"
+        });
+
+        Assert.That(result.Success, Is.False);
+        _api.Calls.ShouldBeEmpty();
+    }
 }

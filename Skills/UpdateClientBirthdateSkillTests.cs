@@ -161,4 +161,18 @@ public class UpdateClientBirthdateSkillTests
         _api.SingleCall.Route.ShouldBe("api/backend/Clients");
         _api.SingleCall.Method.ShouldBe(HttpMethod.Put);
     }
+
+    [TestCase("heute")]
+    [TestCase("morgen")]
+    [TestCase("明日")]
+    public async Task ReturnsError_WhenBirthdateIsARelativeDayWord(string raw)
+    {
+        WireResolvedClient();
+
+        var result = await _skill.ExecuteAsync(Ctx(), Parameters(birthdate: raw));
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("Invalid birthdate"));
+        _api.Calls.ShouldBeEmpty();
+    }
 }

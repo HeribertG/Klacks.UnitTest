@@ -9,6 +9,7 @@
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.LLM;
 
@@ -34,8 +35,11 @@ public class LLMSystemPromptBuilderPageContextTests
             { "SettingsNoPermission", "no settings" },
             { "SettingsViewOnly", "view only" }
         });
-        _builder = new LLMSystemPromptBuilder(_translationProvider);
+        _builder = new LLMSystemPromptBuilder(_translationProvider, TestClock());
     }
+
+    private static FixedCompanyClock TestClock() =>
+        new(new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
 
     private static LLMContext CreateContext(AssistantPageContext? pageContext)
     {

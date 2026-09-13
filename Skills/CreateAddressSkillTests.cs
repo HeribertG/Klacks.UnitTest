@@ -12,11 +12,16 @@ using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class CreateAddressSkillTests
 {
+    private static FixedCompanyClock TestCompanyClock() =>
+        new(new DateTimeOffset(2026, 9, 12, 8, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
+
     private static SkillExecutionContext Ctx() => new()
     {
         UserId = Guid.NewGuid(),
@@ -45,7 +50,7 @@ public class CreateAddressSkillTests
     {
         var clientId = Guid.NewGuid();
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -72,7 +77,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_PassesValidFromThrough()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -93,7 +98,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_ValidFrom_PersistsKindUtc_SoNpgsqlAcceptsTheTimestamptzWrite()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -112,7 +117,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_ValidFromWithOffset_KeepsTheWrittenCalendarDay()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -133,7 +138,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_InvalidValidFrom_ReturnsError_NoPost()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -153,7 +158,7 @@ public class CreateAddressSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<PostCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns((AddressResource?)null);
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -172,7 +177,7 @@ public class CreateAddressSkillTests
             .Returns(ci => ((PostCommand<AddressResource>)ci[0]).Resource);
         mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns<AddressResource>(_ => throw new KeyNotFoundException());
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -198,7 +203,7 @@ public class CreateAddressSkillTests
             State = posted.State,
             Type = posted.Type
         });
-        var skill = new CreateAddressSkill(mediator);
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -209,5 +214,42 @@ public class CreateAddressSkillTests
         result.Success.ShouldBeFalse();
         result.Message!.ShouldContain("mismatching fields");
         result.Message!.ShouldContain("city");
+    }
+
+    [Test]
+    public async Task CreateAddress_RelativeValidFromWord_ResolvesAgainstTheCompanyDay()
+    {
+        var mediator = MediatorWithEchoingPostAndReRead();
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = Guid.NewGuid().ToString(),
+            ["city"] = "Bern",
+            ["validFrom"] = "morgen"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<AddressResource>>(c =>
+                c.Resource.ValidFrom == new DateTime(2026, 9, 13, 0, 0, 0, DateTimeKind.Utc)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CreateAddress_UnreadableValidFrom_IsRejected()
+    {
+        var mediator = MediatorWithEchoingPostAndReRead();
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = Guid.NewGuid().ToString(),
+            ["city"] = "Bern",
+            ["validFrom"] = "irgendwann"
+        });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PostCommand<AddressResource>>(), Arg.Any<CancellationToken>());
     }
 }
