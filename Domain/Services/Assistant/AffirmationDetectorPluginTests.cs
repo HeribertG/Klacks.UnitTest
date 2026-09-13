@@ -22,6 +22,12 @@ public class AffirmationDetectorPluginTests
             negations: ["nie", "やめて", "ですか", "ไม่", "아니요"]);
     }
 
+    [OneTimeTearDown]
+    public void ResetPluginEntries()
+    {
+        AffirmationDetector.Reset();
+    }
+
     [TestCase("tak")]
     [TestCase("Tak, wykonaj")]
     [TestCase("はい")]

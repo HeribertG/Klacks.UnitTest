@@ -23,6 +23,7 @@ public class SkillLearningLoopTests
 {
     private const string Target = "revenue_per_client";
     private const string Excerpt = "Zeige mir die Umsatzstatistik pro Kunde";
+    private const string DeclinedRecipe = "setup-consultation";
 
     private ISkillLearningClusterRepository _clusters = null!;
     private ISkillLearningCaseRepository _cases = null!;
@@ -31,6 +32,7 @@ public class SkillLearningLoopTests
     private ISkillRoutingOracle _oracle = null!;
     private IPhraseLearner _phraseLearner = null!;
     private ISkillDescriptionSharpener _sharpener = null!;
+    private IProposedSkillChangeRepository _proposals = null!;
     private SkillLearningLoop _loop = null!;
 
     [SetUp]
@@ -52,9 +54,13 @@ public class SkillLearningLoopTests
         _sharpener = Substitute.For<ISkillDescriptionSharpener>();
         _sharpener.RunAsync(Arg.Any<CancellationToken>()).Returns((0, 0));
 
+        _proposals = Substitute.For<IProposedSkillChangeRepository>();
+        _proposals.GetPendingAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
         _loop = new SkillLearningLoop(
             _clusters, _cases, _generator, _oracle, _phraseLearner, _capabilityLearner, _sharpener,
-            Substitute.For<ILogger<SkillLearningLoop>>());
+            _proposals, Substitute.For<ILogger<SkillLearningLoop>>());
     }
 
     private SkillLearningCluster GivenReadyCluster(int attemptCount = 0)
@@ -218,7 +224,7 @@ public class SkillLearningLoopTests
         var logger = Substitute.For<ILogger<SkillLearningLoop>>();
         var loop = new SkillLearningLoop(
             _clusters, _cases, _generator, _oracle, _phraseLearner, _capabilityLearner, _sharpener,
-            logger);
+            _proposals, logger);
         _clusters.ListByStatusAsync(
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
@@ -490,4 +496,145 @@ public class SkillLearningLoopTests
             SkillLearningDefaults.MaxClustersPerRun,
             Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task ARecipeDeclineCluster_ProducesAPendingNarrowingProposalAndIsClosed()
+    {
+        var cluster = GivenReadyCluster();
+        cluster.AgentId = Guid.NewGuid();
+        cluster.SignalKindsJson = "{\"recipe_declined\":3}";
+        cluster.OccurrenceCount = 3;
+        GivenCases(cluster.Id, DeclinedCase(DeclinedRecipe));
+
+        ProposedSkillChange? proposal = null;
+        await _proposals.AddAsync(Arg.Do<ProposedSkillChange>(p => proposal = p), Arg.Any<CancellationToken>());
+
+        var summary = await _loop.RunAsync();
+
+        proposal.ShouldNotBeNull();
+        proposal!.AgentId.ShouldBe(cluster.AgentId);
+        proposal.SkillName.ShouldBe(DeclinedRecipe);
+        proposal.Field.ShouldBe(ProposedChangeFields.RecipeTriggerNarrowing);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        proposal.ValueAfter.ShouldBe(Excerpt);
+        summary.RecipeTriggerProposals.ShouldBe(1);
+        await _oracle.DidNotReceiveWithAnyArgs().ProbeAsync(default!, default!, default!, default);
+        await _clusters.Received(1).FinishLearningAsync(
+            cluster.Id,
+            Arg.Is(SkillLearningClusterStatuses.Dismissed),
+            Arg.Is((string?)null),
+            Arg.Is((string?)null),
+            Arg.Any<string>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    // A mixed cluster is the realistic shape: the same utterance was declined at a confirmation gate a few
+    // times and implicitly corrected a few times. The implicit cases name the skill the model called, which
+    // is an ordinary routing target - putting that name on a narrowing proposal would ask an administrator
+    // to narrow a trigger that never fired.
+    [Test]
+    public async Task AMixedRecipeDeclineCluster_NamesTheDeclinedRecipeAndNotTheSkillOfAnotherSignal()
+    {
+        var cluster = GivenReadyCluster();
+        cluster.AgentId = Guid.NewGuid();
+        cluster.SignalKindsJson = "{\"recipe_declined\":4,\"implicit\":3}";
+        cluster.OccurrenceCount = 7;
+        GivenCases(
+            cluster.Id,
+            new SkillLearningCase
+            {
+                ClusterId = cluster.Id,
+                Signal = SkillLearningSignals.Implicit,
+                ChosenSkill = Target,
+                ToolsetJson = "[]"
+            },
+            DeclinedCase(DeclinedRecipe));
+
+        ProposedSkillChange? proposal = null;
+        await _proposals.AddAsync(Arg.Do<ProposedSkillChange>(p => proposal = p), Arg.Any<CancellationToken>());
+
+        var summary = await _loop.RunAsync();
+
+        proposal.ShouldNotBeNull();
+        proposal!.SkillName.ShouldBe(DeclinedRecipe);
+        proposal.Justification.ShouldContain(DeclinedRecipe);
+        summary.RecipeTriggerProposals.ShouldBe(1);
+    }
+
+    // Nothing can be reviewed about a recipe nobody can name, and a proposal carrying an empty name would
+    // be an unanswerable question in the card. Such a cluster is left to the ordinary path so it still
+    // terminates instead of being re-examined on every run.
+    [Test]
+    public async Task ARecipeDeclineClusterWhoseDeclinesNameNoRecipe_OpensNoProposal()
+    {
+        var cluster = GivenReadyCluster();
+        cluster.SignalKindsJson = "{\"recipe_declined\":3}";
+        GivenCases(
+            cluster.Id,
+            new SkillLearningCase
+            {
+                ClusterId = cluster.Id,
+                Signal = SkillLearningSignals.RecipeDeclined,
+                ChosenSkill = null,
+                ExpectedSkill = Target,
+                ToolsetJson = "[]"
+            });
+        GivenProbe(true, Target);
+
+        var summary = await _loop.RunAsync();
+
+        await _proposals.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        summary.RecipeTriggerProposals.ShouldBe(0);
+        summary.AlreadyRouted.ShouldBe(1);
+        await _oracle.Received(1).ProbeAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // The proposal and the dismissal are two writes; a run that died between them would otherwise open a
+    // second proposal for the same cluster on its next pass, and an administrator would review the same
+    // recipe twice.
+    [Test]
+    public async Task ARecipeDeclineClusterThatAlreadyCarriesAPendingNarrowing_DoesNotOpenASecondOne()
+    {
+        var cluster = GivenReadyCluster();
+        cluster.SignalKindsJson = "{\"recipe_declined\":3}";
+        GivenCases(cluster.Id, DeclinedCase(DeclinedRecipe));
+        _proposals.GetPendingAsync(
+                ProposedChangeFields.RecipeTriggerNarrowing, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new ProposedSkillChange
+                {
+                    Id = Guid.NewGuid(),
+                    SkillName = DeclinedRecipe,
+                    Field = ProposedChangeFields.RecipeTriggerNarrowing,
+                    Status = ProposedChangeStatuses.Pending,
+                    EvidenceJson = "{\"clusterId\":\"" + cluster.Id + "\"}"
+                }
+            ]);
+
+        var summary = await _loop.RunAsync();
+
+        await _proposals.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        summary.RecipeTriggerProposals.ShouldBe(1);
+        await _clusters.Received(1).FinishLearningAsync(
+            cluster.Id,
+            Arg.Is(SkillLearningClusterStatuses.Dismissed),
+            Arg.Is((string?)null),
+            Arg.Is((string?)null),
+            Arg.Any<string>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    private void GivenCases(Guid clusterId, params SkillLearningCase[] cases) =>
+        _cases.ListByClusterAsync(clusterId, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<SkillLearningCase>>(cases);
+
+    private static SkillLearningCase DeclinedCase(string recipeName) => new()
+    {
+        Signal = SkillLearningSignals.RecipeDeclined,
+        ChosenSkill = recipeName,
+        ToolsetJson = "[]"
+    };
 }

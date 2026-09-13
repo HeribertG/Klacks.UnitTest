@@ -44,7 +44,7 @@ public class LearnedArtifactGeneratorTests
             .Returns((provider == null ? null : new LLMModel { ApiModelId = "fake-1" }, provider));
 
     private static SkillLearningClusterContext Cluster(string? expectedSkill = null) =>
-        new(ClusterId, "Zeige mir die Umsatzstatistik pro Kunde", "de", expectedSkill, null, [], 0, null);
+        new(ClusterId, "Zeige mir die Umsatzstatistik pro Kunde", "de", expectedSkill, null, [], 0, null, null);
 
     // Offered and reachable are the same list here, which is the shape every case had before the two were
     // told apart. Tests that care about the difference use OneWidenedCase.
@@ -83,7 +83,7 @@ public class LearnedArtifactGeneratorTests
         {
             new(Cluster(), ["list_clients"], ["list_clients"]),
             new(
-                new SkillLearningClusterContext(Guid.NewGuid(), "etwas anderes", "de", null, null, [], 0, null),
+                new SkillLearningClusterContext(Guid.NewGuid(), "etwas anderes", "de", null, null, [], 0, null, null),
                 [],
                 [])
         };

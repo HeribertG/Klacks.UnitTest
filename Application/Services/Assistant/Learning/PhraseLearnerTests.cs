@@ -58,7 +58,7 @@ public class PhraseLearnerTests
 
         _candidates = Substitute.For<ISkillLearningCandidateRepository>();
         _goldenCases = Substitute.For<ISkillLearningGoldenCaseRepository>();
-        _goldenCases.ListAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
         _generator = Substitute.For<ILearnedArtifactGenerator>();
         _oracle = Substitute.For<ISkillRoutingOracle>();
@@ -74,7 +74,7 @@ public class PhraseLearnerTests
     }
 
     private static SkillLearningClusterContext Cluster(string locale = "de", string? lastError = null) =>
-        new(ClusterId, Excerpt, locale, null, null, [], 0, lastError);
+        new(ClusterId, Excerpt, locale, null, null, [], 0, lastError, null);
 
     private void GivenPhrases(params string[] phrases) =>
         _generator.GeneratePhrasesAsync(

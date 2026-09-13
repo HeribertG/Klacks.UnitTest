@@ -29,6 +29,7 @@ public class KlacksyLearnedDigestDetectorTests
     private ISkillLearningClusterRepository _clusters = null!;
     private IProposedSkillChangeRepository _proposals = null!;
     private ICompanyClock _clock = null!;
+    private IEvalRunRepository _evalRuns = null!;
     private KlacksyLearnedDigestDetector _detector = null!;
 
     [SetUp]
@@ -38,8 +39,12 @@ public class KlacksyLearnedDigestDetectorTests
         _proposals = Substitute.For<IProposedSkillChangeRepository>();
         _clock = Substitute.For<ICompanyClock>();
         _clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(Today);
+        _evalRuns = Substitute.For<IEvalRunRepository>();
+        _evalRuns.ListRecentFullRunsAsync(
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
         GivenBlocked(0);
-        _detector = new KlacksyLearnedDigestDetector(_clusters, _proposals, _clock);
+        _detector = new KlacksyLearnedDigestDetector(_clusters, _proposals, _clock, _evalRuns);
     }
 
     private void GivenCounts(Dictionary<string, int> counts) =>
@@ -222,5 +227,50 @@ public class KlacksyLearnedDigestDetectorTests
         KlacksyLearnedDigestTriggerEvent
             .DedupKeyFor(new DateOnly(2026, 1, 1))
             .ShouldBe(string.Create(CultureInfo.InvariantCulture, $"2026-W01"));
+    }
+
+    // The digest is the one place an administrator sees the loop's numbers at all; without the eval
+    // figures it reports what was learned and stays silent about whether it helped.
+    [Test]
+    public async Task TheDigest_CarriesTheLatestFullEvalRunNumbers()
+    {
+        GivenCounts(new Dictionary<string, int>
+        {
+            [SkillLearningClusterStatuses.LearnedPhrase] = 1
+        });
+        _evalRuns.ListRecentFullRunsAsync(
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new EvalRun
+                {
+                    Id = Guid.NewGuid(),
+                    ItemsTotal = 335,
+                    DimensionsJson =
+                        "{\"RetrievalHit\":0.82,\"SelectionHit\":0.61,\"AvgLatencyMs\":0,\"TotalCost\":0,"
+                        + "\"ItemsTotal\":335,\"ItemsPassed\":99,\"ItemsExcluded\":0,\"ItemsErrored\":0}"
+                }
+            ]);
+
+        var digest = (await _detector.DetectAsync())[0];
+
+        digest.SummaryParams.ShouldNotBeNull();
+        digest.SummaryParams!["evalRetrieval"].ShouldBe("0.82");
+        digest.SummaryParams["evalSelection"].ShouldBe("0.61");
+        digest.SummaryParams["evalItems"].ShouldBe("335");
+    }
+
+    [Test]
+    public async Task WithoutAFullEvalRun_TheDigestSaysSoInsteadOfInventingZeroes()
+    {
+        GivenCounts(new Dictionary<string, int>
+        {
+            [SkillLearningClusterStatuses.LearnedPhrase] = 1
+        });
+
+        var digest = (await _detector.DetectAsync())[0];
+
+        digest.SummaryParams!["evalRetrieval"].ShouldBe("n/a");
+        digest.SummaryParams["evalSelection"].ShouldBe("n/a");
+        digest.SummaryParams["evalItems"].ShouldBe("n/a");
     }
 }

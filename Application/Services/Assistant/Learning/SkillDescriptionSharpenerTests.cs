@@ -23,6 +23,7 @@ public class SkillDescriptionSharpenerTests
 {
     private const string Before = "Lists everything about clients.";
     private const string After = "Lists the contract data of one client.";
+    private const int RaisedMinimum = SkillLearningDefaults.MinGoldenCasesForAutoApply + 1;
 
     private ISkillDescriptionOptimizer _optimizer = null!;
     private IProposedSkillChangeRepository _proposals = null!;
@@ -30,6 +31,8 @@ public class SkillDescriptionSharpenerTests
     private ISkillLearningGoldenCaseRepository _goldenCases = null!;
     private ISkillRoutingOracle _oracle = null!;
     private ISkillCatalogRefresher _refresher = null!;
+    private ISkillLearningOptionsProvider _options = null!;
+    private IGoldsetHoldoutReplayGate _holdoutGate = null!;
     private ILogger<SkillDescriptionSharpener> _logger = null!;
     private SkillDescriptionSharpener _sharpener = null!;
     private AgentSkill _skill = null!;
@@ -41,7 +44,9 @@ public class SkillDescriptionSharpenerTests
         _proposals = Substitute.For<IProposedSkillChangeRepository>();
         _skills = Substitute.For<IAgentSkillRepository>();
         _goldenCases = Substitute.For<ISkillLearningGoldenCaseRepository>();
-        _goldenCases.ListAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _goldenCases.CountHoldoutAsync(Arg.Any<CancellationToken>())
+            .Returns(SkillLearningDefaults.MinGoldenCasesForAutoApply);
 
         _oracle = Substitute.For<ISkillRoutingOracle>();
         _oracle.FindFailingGoldenCasesAsync(
@@ -49,13 +54,27 @@ public class SkillDescriptionSharpenerTests
             .Returns([]);
 
         _refresher = Substitute.For<ISkillCatalogRefresher>();
+
+        _options = Substitute.For<ISkillLearningOptionsProvider>();
+        _options.GetAsync(Arg.Any<CancellationToken>()).Returns(new SkillLearningOptions(
+            SkillLearningDefaults.MinOccurrences,
+            SkillLearningDefaults.MinDistinctUsers,
+            SkillLearningDefaults.PruneDays,
+            SkillLearningDefaults.RetentionDays,
+            SkillLearningDefaults.MinGoldenCasesForAutoApply));
+
+        _holdoutGate = Substitute.For<IGoldsetHoldoutReplayGate>();
+        _holdoutGate.EvaluateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new GoldsetHoldoutReplayVerdict(true, []));
+
         _logger = Substitute.For<ILogger<SkillDescriptionSharpener>>();
 
         _skill = new AgentSkill { Id = Guid.NewGuid(), Name = "list_clients", Description = Before, Version = 3 };
         _skills.GetByIdAsync(_skill.Id, Arg.Any<CancellationToken>()).Returns(_skill);
 
         _sharpener = new SkillDescriptionSharpener(
-            _optimizer, _proposals, _skills, _goldenCases, _oracle, _refresher, _logger);
+            _optimizer, _proposals, _skills, _goldenCases, _oracle, _refresher, _options,
+            _holdoutGate, _logger);
     }
 
     private ProposedSkillChange GivenPending(string valueBefore = Before)
@@ -71,14 +90,23 @@ public class SkillDescriptionSharpenerTests
             Status = ProposedChangeStatuses.Pending
         };
 
-        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([proposal]);
+        _proposals.GetPendingAsync(
+            ProposedChangeFields.Description, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([proposal]);
+        return proposal;
+    }
+
+    private ProposedSkillChange GivenPendingGoldsetProposal()
+    {
+        var proposal = GivenPending();
+        proposal.Origin = ProposedChangeOrigins.GoldsetEval;
         return proposal;
     }
 
     [Test]
     public async Task NewProposalsAreAskedForBeforeTheOpenOnesAreDecided()
     {
-        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _proposals.GetPendingAsync(
+            ProposedChangeFields.Description, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
         await _sharpener.RunAsync();
 
@@ -88,7 +116,8 @@ public class SkillDescriptionSharpenerTests
     [Test]
     public async Task WithoutOpenProposals_NothingIsReplayed()
     {
-        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _proposals.GetPendingAsync(
+            ProposedChangeFields.Description, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
         var (applied, blocked) = await _sharpener.RunAsync();
 
@@ -127,6 +156,7 @@ public class SkillDescriptionSharpenerTests
         blocked.ShouldBe(1);
         _skill.Description.ShouldBe(Before);
         proposal.Status.ShouldBe(ProposedChangeStatuses.BlockedRegression);
+        proposal.Justification.ShouldStartWith("Blocked by the routing regression gate");
         proposal.Justification.ShouldContain("create_client");
         await _refresher.Received(2).RefreshAndWaitForIndexAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -198,7 +228,8 @@ public class SkillDescriptionSharpenerTests
             ValueAfter = After,
             Status = ProposedChangeStatuses.Pending
         };
-        _proposals.GetPendingAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([first, second]);
+        _proposals.GetPendingAsync(
+            ProposedChangeFields.Description, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([first, second]);
 
         var throws = true;
         _oracle.FindFailingGoldenCasesAsync(
@@ -261,5 +292,123 @@ public class SkillDescriptionSharpenerTests
             Arg.Any<object>(),
             Arg.Any<Exception>(),
             Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    // A green gate over four golden cases means "almost nothing was measured", not "nothing broke".
+    // Below the minimum the proposal therefore stays open for a person instead of going live.
+    [Test]
+    public async Task WithTooFewHoldoutGoldenCases_TheProposalStaysPendingAndTheDescriptionIsUntouched()
+    {
+        var proposal = GivenPending();
+        _goldenCases.CountHoldoutAsync(Arg.Any<CancellationToken>())
+            .Returns(SkillLearningDefaults.MinGoldenCasesForAutoApply - 1);
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(0);
+        _skill.Description.ShouldBe(Before);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        await _skills.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+        await _oracle.DidNotReceive().FindFailingGoldenCasesAsync(
+            Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>());
+    }
+
+    // The settings key exists so the minimum can be raised without a deploy. A gate that compared the
+    // compiled default instead of the resolved option would pass every other test in this fixture,
+    // because the fixture resolves that option to exactly the default.
+    [Test]
+    public async Task AMinimumRaisedInTheSettings_IsWhatTheGateCompares()
+    {
+        var proposal = GivenPending();
+        _options.GetAsync(Arg.Any<CancellationToken>()).Returns(new SkillLearningOptions(
+            SkillLearningDefaults.MinOccurrences,
+            SkillLearningDefaults.MinDistinctUsers,
+            SkillLearningDefaults.PruneDays,
+            SkillLearningDefaults.RetentionDays,
+            RaisedMinimum));
+        _goldenCases.CountHoldoutAsync(Arg.Any<CancellationToken>())
+            .Returns(SkillLearningDefaults.MinGoldenCasesForAutoApply);
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(0);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        await _oracle.DidNotReceive().FindFailingGoldenCasesAsync(
+            Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>());
+    }
+
+    // Training cases are what the optimizer learned from; replaying them would let the loop be judged
+    // on the very evidence it optimised against.
+    [Test]
+    public async Task TheGateReplaysTheHoldoutPartitionOnly()
+    {
+        GivenPending();
+
+        await _sharpener.RunAsync();
+
+        await _goldenCases.Received().ListHoldoutAsync(
+            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ACorrectionBornProposal_IsNotSentThroughTheTargetedReplay()
+    {
+        GivenPending();
+
+        await _sharpener.RunAsync();
+
+        await _holdoutGate.DidNotReceive().EvaluateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AGoldsetBornProposalWithACleanHoldoutReplay_IsAppliedAutomatically()
+    {
+        var proposal = GivenPendingGoldsetProposal();
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(1);
+        blocked.ShouldBe(0);
+        _skill.Description.ShouldBe(After);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.AppliedAuto);
+        await _holdoutGate.Received(1).EvaluateAsync(_skill.Name, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AGoldsetBornProposalThatBreaksAHoldoutItem_IsRolledBackAndBlocked()
+    {
+        var proposal = GivenPendingGoldsetProposal();
+        _holdoutGate.EvaluateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new GoldsetHoldoutReplayVerdict(
+                true, ["'ts-042' (Umsatz pro Kunde) no longer selects 'revenue_per_client' but 'nothing'"]));
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(1);
+        _skill.Description.ShouldBe(Before);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.BlockedRegression);
+        proposal.Justification.ShouldStartWith("Blocked by the targeted holdout replay");
+        proposal.Justification.ShouldContain("ts-042");
+    }
+
+    // A verdict nobody could measure is not a pass. The description comes back out and the proposal
+    // waits for a person, exactly like an unmeasurable golden-case gate.
+    [Test]
+    public async Task AGoldsetBornProposalTheTargetedGateCouldNotMeasure_StaysPending()
+    {
+        var proposal = GivenPendingGoldsetProposal();
+        _holdoutGate.EvaluateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(GoldsetHoldoutReplayVerdict.NotMeasured);
+
+        var (applied, blocked) = await _sharpener.RunAsync();
+
+        applied.ShouldBe(0);
+        blocked.ShouldBe(0);
+        _skill.Description.ShouldBe(Before);
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        proposal.ReviewedAt.ShouldBeNull();
     }
 }

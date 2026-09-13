@@ -14,6 +14,12 @@ namespace Klacks.UnitTest.Domain.Services.Assistant;
 [TestFixture]
 public class AffirmationDetectorTests
 {
+    [TearDown]
+    public void ResetPluginEntries()
+    {
+        AffirmationDetector.Reset();
+    }
+
     [TestCase("ja")]
     [TestCase("Ja")]
     [TestCase("Ja bitte")]
@@ -77,5 +83,27 @@ public class AffirmationDetectorTests
     public void IsAffirmation_False_For_Null()
     {
         AffirmationDetector.IsAffirmation(null).ShouldBeFalse();
+    }
+
+    [Test]
+    public void Reset_DiscardsEveryConfiguredPluginEntry()
+    {
+        AffirmationDetector.Configure(["tak"], ["nie"]);
+
+        AffirmationDetector.Reset();
+
+        AffirmationDetector.IsAffirmation("tak").ShouldBeFalse();
+        AffirmationDetector.IsAffirmation("ja, nie").ShouldBeTrue();
+    }
+
+    [Test]
+    public void Reset_KeepsTheCoreLanguageTokens()
+    {
+        AffirmationDetector.Configure(["tak"], []);
+
+        AffirmationDetector.Reset();
+
+        AffirmationDetector.IsAffirmation("Ja bitte").ShouldBeTrue();
+        AffirmationDetector.IsAffirmation("nein").ShouldBeFalse();
     }
 }
