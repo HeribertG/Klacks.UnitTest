@@ -12,6 +12,7 @@
 using Klacks.Api.Application.Commands.Orders;
 using Klacks.Api.Application.DTOs.Orders;
 using Klacks.Api.Application.Services.Assistant.Triggers;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Orders;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,7 +38,7 @@ public class SealOpenOrdersJobBackgroundServiceTests
         _triggerService = Substitute.For<IAgentTriggerService>();
         _notified = new TaskCompletionSource<IAgentTriggerEvent>();
         _triggerService.OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask)
+            .Returns(ProactiveDispatchOutcome.Empty)
             .AndDoes(ci => _notified.TrySetResult(ci.Arg<IAgentTriggerEvent>()));
 
         var services = new ServiceCollection();

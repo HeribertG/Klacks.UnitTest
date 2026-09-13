@@ -209,7 +209,7 @@ public class PlanStepExecutorTests
         _riskClassifier.Classify(destructiveDescriptor).Returns(SkillRiskClass.Irreversible);
         _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
         _triggerService.OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new InvalidOperationException("trigger dispatch boom")));
+            .Returns<Task<ProactiveDispatchOutcome>>(_ => throw new InvalidOperationException("trigger dispatch boom"));
 
         var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
 

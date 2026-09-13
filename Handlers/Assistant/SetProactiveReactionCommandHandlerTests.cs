@@ -112,6 +112,47 @@ public class SetProactiveReactionCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_ReactionOnUnreadRow_SetsReadAtUtc()
+    {
+        var id = Guid.NewGuid();
+        var row = MakeRow(id, OwnerUserId);
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+        var before = DateTime.UtcNow;
+
+        var result = await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Helpful
+        }, CancellationToken.None);
+
+        Assert.That(result, Is.True);
+        Assert.That(
+            row.ReadAtUtc,
+            Is.Not.Null.And.GreaterThanOrEqualTo(before),
+            "A reaction implies the message was read - the frontend no longer sends a separate read-mark on the dismiss path.");
+    }
+
+    [Test]
+    public async Task Handle_ReactionOnAlreadyReadRow_KeepsTheEarlierReadAtUtc()
+    {
+        var id = Guid.NewGuid();
+        var firstReadAtUtc = DateTime.UtcNow.AddDays(-1);
+        var row = MakeRow(id, OwnerUserId);
+        row.ReadAtUtc = firstReadAtUtc;
+        _dispatchRepository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(row);
+
+        await _sut.Handle(new SetProactiveReactionCommand
+        {
+            Id = id,
+            UserId = OwnerUserId,
+            Reaction = ProactiveReaction.Helpful
+        }, CancellationToken.None);
+
+        Assert.That(row.ReadAtUtc, Is.EqualTo(firstReadAtUtc));
+    }
+
+    [Test]
     public async Task Handle_AlreadyAcknowledgedRow_KeepsTheFirstAcknowledgementTimestamp()
     {
         var id = Guid.NewGuid();

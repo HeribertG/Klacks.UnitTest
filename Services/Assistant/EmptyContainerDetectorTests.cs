@@ -5,8 +5,9 @@
 /// no-template-at-all case, the negative case with at least one template (which proves
 /// empty_container is disjoint from unstaffed_shift rather than a subset of it), the
 /// non-container (Task) exclusion, scenario-copy exclusion, soft-delete exclusion on both
-/// Shift and ContainerTemplate, dedup-key stability, the active-period severity rule, and
-/// the MaxFindingsPerTick emission cap.
+/// Shift and ContainerTemplate, dedup-key stability, the active-period severity rule, the
+/// MaxFindingsPerTick emission cap, and the rotation that decides which candidates fill that
+/// cap -- never-opened candidates first, then the open ledger rows least recently observed.
 /// Uses a real EF Core InMemory DataBaseContext with the real ShiftRepository and
 /// ContainerTemplateRepository (as ContainerAvailableTasksServiceTests.cs does) because the
 /// detector composes IQueryable via GetQuery() and awaits ToListAsync(), which a plain
@@ -30,7 +31,9 @@ public class EmptyContainerDetectorTests
 {
     private static readonly DateOnly BulkFromDate = new(2025, 1, 1);
 
-    private const int ClockAdvancePollMilliseconds = 5;
+    private static readonly DateTime FirstTickInstant = new(2026, 9, 13, 6, 0, 0, DateTimeKind.Utc);
+
+    private const int RotationBacklogOverflow = 10;
 
     private DataBaseContext _context = null!;
     private ShiftRepository _shiftRepository = null!;
@@ -93,21 +96,6 @@ public class EmptyContainerDetectorTests
         _context.Dispose();
     }
 
-    /// <summary>
-    /// CreateTime is stamped by OnBeforeSaving from DateTime.UtcNow, whose granularity can be coarser than
-    /// the time two SaveChanges calls take. Waiting for the clock to actually move is what makes "created
-    /// later" mean later, instead of relying on the two batches landing in different ticks by luck.
-    /// </summary>
-    private static async Task WaitForTheClockToAdvanceAsync()
-    {
-        var before = DateTime.UtcNow;
-
-        while (DateTime.UtcNow <= before)
-        {
-            await Task.Delay(ClockAdvancePollMilliseconds);
-        }
-    }
-
     private static Shift MakeContainer(
         DateOnly fromDate,
         DateOnly? untilDate = null,
@@ -142,14 +130,25 @@ public class EmptyContainerDetectorTests
     };
 
     /// <summary>
-    /// Marks the given containers as already having an open ledger row for empty_container, the way a
-    /// prior tick's UpsertDetectedAsync would have left them -- exactly what NotYetOpenInLedgerAsync
-    /// excludes from its second slice.
+    /// Gives the containers an open ledger row for empty_container observed at
+    /// <paramref name="lastSeenAtUtc"/>, or moves an existing row's observation time forward -- the two
+    /// halves of what AgentConditionLedgerService.UpsertDetectedAsync does after a real tick. The
+    /// observation time is explicit because it is the rotation's sort key: rows seen longer ago come back
+    /// first.
     /// </summary>
-    private async Task MarkOpenInLedgerAsync(params Guid[] containerIds)
+    private async Task ObserveInLedgerAsync(DateTime lastSeenAtUtc, params Guid[] containerIds)
     {
         foreach (var containerId in containerIds)
         {
+            var existing = await _context.AgentConditions
+                .FirstOrDefaultAsync(condition => condition.EntityId == containerId);
+
+            if (existing != null)
+            {
+                existing.LastSeenAtUtc = lastSeenAtUtc;
+                continue;
+            }
+
             await _context.AgentConditions.AddAsync(new AgentCondition
             {
                 TriggerKind = AgentTriggerKinds.EmptyContainer,
@@ -157,13 +156,28 @@ public class EmptyContainerDetectorTests
                 EntityId = containerId,
                 Severity = AgentTriggerSeverity.Medium,
                 Status = AgentConditionStatus.Reported,
-                DetectedAtUtc = DateTime.UtcNow,
-                LastSeenAtUtc = DateTime.UtcNow
+                DetectedAtUtc = lastSeenAtUtc,
+                LastSeenAtUtc = lastSeenAtUtc
             });
         }
 
         await _context.SaveChangesAsync();
     }
+
+    private async Task<List<Guid>> SeedBulkBacklogAsync(int size)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var backlog = Enumerable.Range(0, size)
+            .Select(_ => MakeContainer(BulkFromDate, today.AddDays(365)))
+            .ToList();
+        await _context.Shift.AddRangeAsync(backlog);
+        await _context.SaveChangesAsync();
+
+        return backlog.Select(container => container.Id).ToList();
+    }
+
+    private async Task<List<Guid>> ReportedShiftIdsAsync() =>
+        (await _sut.DetectAsync()).Cast<EmptyContainerTriggerEvent>().Select(e => e.ShiftId).ToList();
 
     [Test]
     public async Task DetectAsync_EmptyDatabase_ReturnsEmpty()
@@ -346,11 +360,8 @@ public class EmptyContainerDetectorTests
     [Test]
     public async Task DetectAsync_MoreEmptyContainersThanCap_StopsAtMaxFindingsPerTick()
     {
-        // Comfortably past both the cap and the second slice's own limit, so nothing being open in
-        // the ledger yet still leaves a real cap to prove.
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var totalContainers =
-            EmptyContainerDetector.MaxFindingsPerTick + EmptyContainerDetector.RecentlyCreatedSlots + 5;
+        var totalContainers = EmptyContainerDetector.MaxFindingsPerTick + RotationBacklogOverflow;
         var containers = Enumerable.Range(0, totalContainers)
             .Select(_ => MakeContainer(today.AddDays(-1), today.AddDays(30)))
             .ToList();
@@ -359,8 +370,7 @@ public class EmptyContainerDetectorTests
 
         var events = await _sut.DetectAsync();
 
-        Assert.That(events, Has.Count.EqualTo(
-            EmptyContainerDetector.MaxFindingsPerTick + EmptyContainerDetector.RecentlyCreatedSlots));
+        Assert.That(events, Has.Count.EqualTo(EmptyContainerDetector.MaxFindingsPerTick));
     }
 
     [Test]
@@ -387,10 +397,11 @@ public class EmptyContainerDetectorTests
             .Select(c => c.Id)
             .ToHashSet();
 
-        // Mark the leftover newest containers as already open, isolating this test to the first
-        // slice's FromDate ordering -- the second slice's own behaviour has its own tests below.
+        // Mark the leftover newest containers as already open, so the rotation sorts them behind the
+        // never-opened ones and this test is isolated to the FromDate order inside a single group --
+        // the rotation between the groups has its own tests below.
         var leftoverIds = containers.Select(c => c.Id).Except(expectedIds).ToArray();
-        await MarkOpenInLedgerAsync(leftoverIds);
+        await ObserveInLedgerAsync(FirstTickInstant, leftoverIds);
 
         var events = (await _sut.DetectAsync()).Cast<EmptyContainerTriggerEvent>().ToList();
         var actualIds = events.Select(e => e.ShiftId).ToHashSet();
@@ -399,89 +410,99 @@ public class EmptyContainerDetectorTests
     }
 
     [Test]
-    public async Task DetectAsync_CapIsFullAndBacklogSharesOneFromDate_SecondTickReportsWhatFirstTickStarved()
+    public async Task DetectAsync_BacklogSharesOneFromDateAndLedgerIsEmpty_FirstTickFillsTheCap()
     {
-        // The degenerate case plain FromDate order cannot handle, and the one the reference
-        // installation actually has: every backlog container carries the same FromDate, so the cap's
-        // oldest-first selection collapses onto the random-GUID tiebreaker and would pick the same
-        // fixed subset forever under the old "CreateTime strictly greater" second slice, because a
-        // shared CreateTime across the whole backlog makes that floor unbeatable. Excluding by ledger
-        // membership instead has no such degenerate case: whatever the cap and the first tick's second
-        // slice did not reach is still eligible next tick, once the ledger has recorded what was
-        // already reported -- mirroring what AgentConditionLedgerService.UpsertDetectedAsync does
-        // after every real tick.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var backlog = Enumerable.Range(0, EmptyContainerDetector.MaxFindingsPerTick + 20)
-            .Select(_ => MakeContainer(BulkFromDate, today.AddDays(365)))
-            .ToList();
-        await _context.Shift.AddRangeAsync(backlog);
-        await _context.SaveChangesAsync();
+        // Every candidate shares one FromDate -- the shape the reference installation actually has, and
+        // the one a plain oldest-first cap degenerates on. With nothing open in the ledger yet, every
+        // candidate is in the never-opened group, so the cap alone decides how many are reported.
+        var backlogSize = EmptyContainerDetector.MaxFindingsPerTick + RotationBacklogOverflow;
+        var backlogIds = await SeedBulkBacklogAsync(backlogSize);
 
-        var firstTick = (await _sut.DetectAsync()).Cast<EmptyContainerTriggerEvent>().ToList();
-        Assert.That(firstTick, Has.Count.EqualTo(
-            EmptyContainerDetector.MaxFindingsPerTick + EmptyContainerDetector.RecentlyCreatedSlots));
+        var reported = await ReportedShiftIdsAsync();
 
-        var stillStarved = backlog
-            .Select(container => container.Id)
-            .Except(firstTick.Select(e => e.ShiftId))
-            .ToHashSet();
-        Assert.That(stillStarved, Is.Not.Empty, "the fixture must actually starve someone on tick 1, otherwise this proves nothing");
-
-        await MarkOpenInLedgerAsync(firstTick.Select(e => e.ShiftId).ToArray());
-
-        var secondTick = (await _sut.DetectAsync()).Cast<EmptyContainerTriggerEvent>().ToList();
-
-        // The first slice re-reports its same oldest-first 50 every tick regardless of ledger status
-        // -- by design, so a row being re-observed keeps having its payload refreshed. The point of
-        // this test is the second slice: everyone tick 1 starved must be among tick 2's findings.
-        Assert.That(secondTick.Select(e => e.ShiftId), Is.SupersetOf(stillStarved));
+        Assert.That(reported, Has.Count.EqualTo(EmptyContainerDetector.MaxFindingsPerTick));
+        Assert.That(reported, Is.SubsetOf(backlogIds));
+        Assert.That(reported.Distinct().Count(), Is.EqualTo(reported.Count));
     }
 
     [Test]
-    public async Task DetectAsync_RepeatedTicksWithLedgerUpdates_EventuallyReportsEveryStarvedCandidate()
+    public async Task DetectAsync_AfterTheFirstTickWasObserved_SecondTickLeadsWithTheNeverReportedRest()
     {
-        // Same degenerate shape at a size that needs several ticks to fully drain, proving the fix
-        // converges rather than only clearing a single leftover.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var backlogSize = EmptyContainerDetector.MaxFindingsPerTick + EmptyContainerDetector.RecentlyCreatedSlots * 3;
-        var backlog = Enumerable.Range(0, backlogSize)
-            .Select(_ => MakeContainer(BulkFromDate, today.AddDays(365)))
-            .ToList();
-        await _context.Shift.AddRangeAsync(backlog);
-        await _context.SaveChangesAsync();
+        // What the fixed first slice could never do: once the first tick's findings carry an open ledger
+        // row, the rotation puts the candidates that were never opened at the front, and fills the rest of
+        // the cap with the longest-unobserved of the already reported ones -- so a recipient who was
+        // throttled on tick 1 is offered them again instead of losing them forever.
+        var backlogSize = EmptyContainerDetector.MaxFindingsPerTick + RotationBacklogOverflow;
+        var backlogIds = await SeedBulkBacklogAsync(backlogSize);
 
-        var seenIds = new HashSet<Guid>();
-        const int maxTicks = 20;
-        for (var tick = 0; tick < maxTicks && seenIds.Count < backlogSize; tick++)
+        var firstTick = await ReportedShiftIdsAsync();
+        await ObserveInLedgerAsync(FirstTickInstant, firstTick.ToArray());
+        var starved = backlogIds.Except(firstTick).ToList();
+
+        var secondTick = await ReportedShiftIdsAsync();
+
+        Assert.That(starved, Has.Count.EqualTo(RotationBacklogOverflow));
+        Assert.That(secondTick, Has.Count.EqualTo(EmptyContainerDetector.MaxFindingsPerTick));
+        Assert.That(secondTick.Take(RotationBacklogOverflow), Is.EquivalentTo(starved),
+            "the candidates no tick has ever opened a ledger row for must lead the second tick");
+        Assert.That(secondTick.Skip(RotationBacklogOverflow), Is.SubsetOf(firstTick));
+    }
+
+    [Test]
+    public async Task DetectAsync_EveryCandidateOpenWithStaggeredLastSeen_ReportsTheLongestUnobservedOnes()
+    {
+        // No never-opened candidates left at all: the whole selection is then the LastSeenAtUtc order,
+        // oldest observation first, which is what makes the backlog cycle instead of stalling.
+        var backlogSize = EmptyContainerDetector.MaxFindingsPerTick + RotationBacklogOverflow;
+        var backlogIds = await SeedBulkBacklogAsync(backlogSize);
+
+        for (var index = 0; index < backlogIds.Count; index++)
         {
-            var events = (await _sut.DetectAsync()).Cast<EmptyContainerTriggerEvent>().ToList();
-            var newIds = events.Select(e => e.ShiftId).Where(id => seenIds.Add(id)).ToArray();
-            await MarkOpenInLedgerAsync(newIds);
+            await ObserveInLedgerAsync(FirstTickInstant.AddMinutes(index), backlogIds[index]);
         }
 
-        Assert.That(seenIds, Has.Count.EqualTo(backlogSize),
-            "every backlog candidate must eventually reach the ledger, even when they all share one FromDate");
+        var reported = await ReportedShiftIdsAsync();
+
+        Assert.That(reported, Is.EqualTo(backlogIds.Take(EmptyContainerDetector.MaxFindingsPerTick).ToList()));
     }
 
     [Test]
-    public async Task DetectAsync_FewerCandidatesThanTheCap_ReportsEachExactlyOnce()
+    public async Task DetectAsync_RepeatedTicksWithLedgerUpdates_OffersEveryCandidateWithinOneFullCycle()
+    {
+        // The convergence guarantee the fixed cap never had: with LastSeenAtUtc advanced on everything a
+        // tick reports -- what AgentConditionLedgerService.UpsertDetectedAsync does after every real tick
+        // -- the whole backlog is offered within ceil(candidates / cap) ticks, even though every candidate
+        // shares one FromDate and the business order can therefore not separate them.
+        var backlogSize = EmptyContainerDetector.MaxFindingsPerTick * 2 - RotationBacklogOverflow;
+        var backlogIds = await SeedBulkBacklogAsync(backlogSize);
+        var ticksPerCycle = (backlogSize + EmptyContainerDetector.MaxFindingsPerTick - 1)
+            / EmptyContainerDetector.MaxFindingsPerTick;
+
+        var seenIds = new HashSet<Guid>();
+        for (var tick = 0; tick < ticksPerCycle; tick++)
+        {
+            var reported = await ReportedShiftIdsAsync();
+            seenIds.UnionWith(reported);
+            await ObserveInLedgerAsync(FirstTickInstant.AddHours(tick), reported.ToArray());
+        }
+
+        Assert.That(seenIds, Is.EquivalentTo(backlogIds),
+            "every candidate must be offered within one full rotation cycle, even sharing one FromDate");
+    }
+
+    [Test]
+    public async Task DetectAsync_FewerCandidatesThanTheCap_ReportsAllOfThemInBusinessOrder()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var containers = Enumerable.Range(0, 5)
-            .Select(_ => MakeContainer(BulkFromDate, today.AddDays(365)))
+            .Select(offset => MakeContainer(BulkFromDate.AddDays(offset), today.AddDays(365)))
             .ToList();
-        await _context.Shift.AddRangeAsync(containers);
+        await _context.Shift.AddRangeAsync(containers.AsEnumerable().Reverse());
         await _context.SaveChangesAsync();
 
-        await WaitForTheClockToAdvanceAsync();
+        var reported = await ReportedShiftIdsAsync();
 
-        var createdLater = MakeContainer(today, today.AddDays(365));
-        await _context.Shift.AddAsync(createdLater);
-        await _context.SaveChangesAsync();
-
-        var events = await _sut.DetectAsync();
-
-        Assert.That(events, Has.Count.EqualTo(containers.Count + 1));
+        Assert.That(reported, Is.EqualTo(containers.Select(container => container.Id).ToList()));
     }
 
     [Test]

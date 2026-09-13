@@ -226,4 +226,61 @@ public class PeriodCloseDueDetectorTests
 
         Assert.That(events, Is.Empty);
     }
+
+    [Test]
+    public async Task GetActiveFingerprintsAsync_GroupWithPeriodEndInTwoDays_ContainsItsFingerprint()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(new List<Group> { group });
+        _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay>());
+        _sut = CreateSut(new DateOnly(2026, 1, 29));
+
+        var fingerprints = await _sut.GetActiveFingerprintsAsync();
+
+        var expectedPeriodEnd = new DateOnly(2026, 1, 31);
+        fingerprints.ShouldContain(
+            AgentConditionLedgerPolicy.FingerprintFor(
+                _sut.Kind, PeriodCloseDueTriggerEvent.DedupKeyFor(group.Id, expectedPeriodEnd)));
+    }
+
+    [Test]
+    public async Task GetActiveFingerprintsAsync_GroupAlreadySealedAtPeriodEnd_DoesNotContainItsFingerprint()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(new List<Group> { group });
+        _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), group.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay> { new() { Id = Guid.NewGuid() } });
+        _sut = CreateSut(new DateOnly(2026, 1, 29));
+
+        var fingerprints = await _sut.GetActiveFingerprintsAsync();
+
+        fingerprints.ShouldNotContain(
+            AgentConditionLedgerPolicy.FingerprintFor(
+                _sut.Kind, PeriodCloseDueTriggerEvent.DedupKeyFor(group.Id, new DateOnly(2026, 1, 31))),
+            "A sealed period is the resolved condition itself - the shared window computation must drop "
+            + "it before it ever reaches the fingerprint set, or its ledger row would never auto-resolve.");
+    }
+
+    [Test]
+    public async Task GetActiveFingerprintsAsync_GroupWithPeriodEndYesterday_DoesNotContainItsFingerprint()
+    {
+        // Weekly/Biweekly/Monthly all compute the NEXT period end from "today", so a real group can
+        // never end up with a periodEnd in the past on its own - the week configuration is stubbed
+        // directly here to force exactly that boundary, exercising the daysUntil < 0 guard the same
+        // way a stale or misconfigured IWeekConfiguration answer would.
+        var group = MakeGroup(PaymentInterval.Weekly);
+        StubGroups(new List<Group> { group });
+        var today = new DateOnly(2026, 1, 10);
+        var periodEndYesterday = today.AddDays(-1);
+        _weekConfiguration.GetWeekStartAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(periodEndYesterday.AddDays(-6));
+        _sut = CreateSut(today);
+
+        var fingerprints = await _sut.GetActiveFingerprintsAsync();
+
+        fingerprints.ShouldNotContain(
+            AgentConditionLedgerPolicy.FingerprintFor(
+                _sut.Kind, PeriodCloseDueTriggerEvent.DedupKeyFor(group.Id, periodEndYesterday)));
+    }
 }

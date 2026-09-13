@@ -48,7 +48,6 @@ public class AgentTriggerDetectorLedgerClassificationTests
     [
         nameof(LockConflictDetector),
         nameof(ScenarioPendingDetector),
-        nameof(PeriodCloseDueDetector),
         nameof(ContractExpiringSoonDetector),
         nameof(PeriodOverdueDetector),
         nameof(NextPeriodSchedulingDueDetector)

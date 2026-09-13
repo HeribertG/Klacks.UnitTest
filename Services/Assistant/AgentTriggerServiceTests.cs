@@ -475,6 +475,36 @@ public class AgentTriggerServiceTests
     }
 
     [Test]
+    public async Task OnEventAsync_OneRecipientThrottled_ReturnsOutcomeCountingBothPersistedAndThrottled()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a", "user-b" });
+        _rateLimiter.ShouldFire("user-a", Arg.Any<string>()).Returns(true);
+        _rateLimiter.ShouldFire("user-b", Arg.Any<string>()).Returns(false);
+
+        var outcome = await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        Assert.That(outcome.Persisted, Is.EqualTo(1));
+        Assert.That(outcome.Throttled, Is.EqualTo(1));
+        Assert.That(outcome.Muted, Is.EqualTo(0));
+        Assert.That(outcome.Deduped, Is.EqualTo(0));
+        Assert.That(outcome.Failed, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task OnEventAsync_OneRecipientMuted_ReturnsOutcomeCountingIt()
+    {
+        _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a", "user-b" });
+        _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _preferenceService.IsAllowedAsync("user-a", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _preferenceService.IsAllowedAsync("user-b", Arg.Any<string>(), Arg.Any<string>()).Returns(false);
+
+        var outcome = await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+
+        Assert.That(outcome.Persisted, Is.EqualTo(1));
+        Assert.That(outcome.Muted, Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task OnEventAsync_AlreadyDispatched_DedupBlocksBeforePersist()
     {
         _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a" });

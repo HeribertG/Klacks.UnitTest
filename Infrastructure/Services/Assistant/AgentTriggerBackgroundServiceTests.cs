@@ -53,7 +53,7 @@ public class AgentTriggerBackgroundServiceTests
         _timeProvider = new SettableTimeProvider(StartUtc);
         _ledger = new AgentConditionLedgerService(
             _repository, _timeProvider, NullLogger<AgentConditionLedgerService>.Instance);
-        _triggerService = Substitute.For<IAgentTriggerService>();
+        _triggerService = CreateTriggerServiceSubstitute();
         _actionService = Substitute.For<IAgentConditionActionService>();
         _reminderService = Substitute.For<IProactiveReminderService>();
         _reminderService
@@ -135,7 +135,7 @@ public class AgentTriggerBackgroundServiceTests
             AgentConditionStatus.Detected,
             "A throwing notification must not leave the row Reported - it was never handed over.");
 
-        _triggerService = Substitute.For<IAgentTriggerService>();
+        _triggerService = CreateTriggerServiceSubstitute();
         _timeProvider.Now = StartUtc.AddHours(1);
         await RunTickAsync(detector);
 
@@ -278,6 +278,19 @@ public class AgentTriggerBackgroundServiceTests
             "The sweep runs last in the tick; its failure must not cost the tick the detection work "
             + "that was already persisted before it ran.");
         await _triggerService.Received(1).OnEventAsync(triggerEvent, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A substitute whose OnEventAsync is configured to return Empty by default, so RunDetectorAsync's
+    /// unconditional outcome.Add(...) never sees a null - production code deliberately does not
+    /// null-coalesce an unconfigured test double, so the double must be configured instead.
+    /// </summary>
+    private static IAgentTriggerService CreateTriggerServiceSubstitute()
+    {
+        var triggerService = Substitute.For<IAgentTriggerService>();
+        triggerService.OnEventAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
+            .Returns(ProactiveDispatchOutcome.Empty);
+        return triggerService;
     }
 
     private async Task RunTickAsync(params IAgentTriggerDetector[] detectors)

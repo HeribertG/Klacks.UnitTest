@@ -203,6 +203,58 @@ public class DetectorFingerprintContainmentTests
             + "fingerprints per client exactly as DetectAsync emits two events per client.");
     }
 
+    [Test]
+    public async Task PeriodCloseDueDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
+    {
+        var groupRepository = Substitute.For<IGroupRepository>();
+        var sealedDayRepository = Substitute.For<ISealedDayRepository>();
+        var weekConfiguration = Substitute.For<IWeekConfiguration>();
+        var activityProbe = Substitute.For<IScheduleActivityProbe>();
+
+        var reported = new Group { Id = Guid.NewGuid(), Name = "Reported", PaymentInterval = PaymentInterval.Monthly, ValidFrom = DateTime.UtcNow.Date };
+        var alreadySealed = new Group { Id = Guid.NewGuid(), Name = "Sealed", PaymentInterval = PaymentInterval.Monthly, ValidFrom = DateTime.UtcNow.Date };
+        var unplanned = new Group { Id = Guid.NewGuid(), Name = "Unplanned", PaymentInterval = PaymentInterval.Monthly, ValidFrom = DateTime.UtcNow.Date };
+        var groups = new List<Group> { reported, alreadySealed, unplanned };
+
+        groupRepository.List().Returns(groups);
+        groupRepository.GetGroupIdsWithMembersAsync(Arg.Any<CancellationToken>())
+            .Returns(groups.Select(group => group.Id).ToList());
+        weekConfiguration.GetWeekStartAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<DateOnly>());
+        activityProbe.HasWorkInRangeAsync(Arg.Is<Group>(g => g.Id == reported.Id), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        activityProbe.HasWorkInRangeAsync(Arg.Is<Group>(g => g.Id == unplanned.Id), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), alreadySealed.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay> { new() { Id = Guid.NewGuid() } });
+        sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), reported.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay>());
+        sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), unplanned.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay>());
+
+        var today = new DateOnly(2026, 1, 29);
+        var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        var sut = new PeriodCloseDueDetector(
+            groupRepository, sealedDayRepository, weekConfiguration, activityProbe,
+            NullLogger<PeriodCloseDueDetector>.Instance, clock);
+
+        var expectedPeriodEnd = new DateOnly(2026, 1, 31);
+        var fingerprints = await AssertContainmentAsync(sut, sut, expectedCappedCount: 1);
+
+        fingerprints.ShouldNotContain(
+            AgentConditionLedgerPolicy.FingerprintFor(
+                sut.Kind, PeriodCloseDueTriggerEvent.DedupKeyFor(alreadySealed.Id, expectedPeriodEnd)),
+            "A sealed period is the resolved condition itself - both paths must drop it together, or its "
+            + "ledger row would never auto-resolve while the group still sits inside the warn window.");
+
+        fingerprints.ShouldContain(
+            AgentConditionLedgerPolicy.FingerprintFor(
+                sut.Kind, PeriodCloseDueTriggerEvent.DedupKeyFor(unplanned.Id, expectedPeriodEnd)),
+            "The activity probe is an anti-spam guard, not a truth condition - a still-unplanned but open "
+            + "period must stay in the fingerprint scan, or its ledger row would be resolved and re-armed "
+            + "on the next tick the moment it gets planned.");
+    }
+
     private static FixedCompanyClock FixedClock() =>
         new(new DateTimeOffset(Today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
 

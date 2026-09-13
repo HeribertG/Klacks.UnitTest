@@ -3,9 +3,13 @@
 /// <summary>
 /// Unit tests for NextPeriodSchedulingDueDetector — covers the autonomy gating branch (hint below
 /// Autonomous, automatic AutoWizard start from Autonomous upwards, MIN aggregation over admins),
-/// the Individual-interval skip, the email-backlog gate and the scenario-already-exists skip.
+/// the Individual-interval skip, the email-backlog gate, the scenario-already-exists skip and the
+/// interrupted auto-commit an API restart leaves behind. The autonomy aggregation runs through the
+/// REAL NextPeriodAutonomyResolver rather than a substitute: it is the piece the detector shares with
+/// the auto-commit watcher, and stubbing it here would stop testing the rule the tests are named after.
 /// </summary>
 
+using System.Text.Json;
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Interfaces.Assistant;
@@ -13,6 +17,7 @@ using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Email;
+using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Models.Email;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,6 +31,7 @@ public class NextPeriodSchedulingDueDetectorTests
 {
     private const string AdminId = "3f1c9a52-0000-0000-0000-000000000001";
     private const string SecondAdminId = "3f1c9a52-0000-0000-0000-000000000002";
+    private static readonly DateTime NowUtc = new(2026, 1, 28, 9, 0, 0, DateTimeKind.Utc);
 
     private IGroupRepository _groupRepository = null!;
     private IWeekConfiguration _weekConfiguration = null!;
@@ -37,9 +43,11 @@ public class NextPeriodSchedulingDueDetectorTests
     private INextPeriodAutoCommitService _autoCommitService = null!;
     private IPlanningAudienceResolver _audienceResolver = null!;
     private IAgentAutonomyPreferenceRepository _autonomyPreferences = null!;
+    private IAgentConditionRepository _conditionRepository = null!;
     private IProactiveGovernanceResolver _governanceResolver = null!;
     private ISettingsReader _settingsReader = null!;
     private IReceivedEmailRepository _receivedEmailRepository = null!;
+    private SettableTimeProvider _timeProvider = null!;
     private NextPeriodSchedulingDueDetector _sut = null!;
 
     [SetUp]
@@ -57,9 +65,13 @@ public class NextPeriodSchedulingDueDetectorTests
         _autoCommitService = Substitute.For<INextPeriodAutoCommitService>();
         _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _autonomyPreferences = Substitute.For<IAgentAutonomyPreferenceRepository>();
+        _conditionRepository = Substitute.For<IAgentConditionRepository>();
+        _conditionRepository.GetOpenByKindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentCondition>());
         _governanceResolver = Substitute.For<IProactiveGovernanceResolver>();
         _settingsReader = Substitute.For<ISettingsReader>();
         _receivedEmailRepository = Substitute.For<IReceivedEmailRepository>();
+        _timeProvider = new SettableTimeProvider(NowUtc);
 
         StubWeekStart(DayOfWeek.Monday);
         StubEmailAnalysis(enabled: false, backlogCount: 0);
@@ -83,14 +95,18 @@ public class NextPeriodSchedulingDueDetectorTests
             _clientRepository,
             _shiftScheduleRepository,
             _autoCommitService,
-            _audienceResolver,
-            _autonomyPreferences,
+            CreateAutonomyResolver(),
+            _conditionRepository,
             _governanceResolver,
             _settingsReader,
             _receivedEmailRepository,
             NullLogger<NextPeriodSchedulingDueDetector>.Instance,
-            clock);
+            clock,
+            _timeProvider);
     }
+
+    private NextPeriodAutonomyResolver CreateAutonomyResolver() =>
+        new(_audienceResolver, _autonomyPreferences, _governanceResolver);
 
     private void StubKillSwitch(bool active)
     {
@@ -446,8 +462,9 @@ public class NextPeriodSchedulingDueDetectorTests
         _sut = new NextPeriodSchedulingDueDetector(
             _groupRepository, _weekConfiguration, _scenarioRepository, _activityProbe,
             _autoWizardJobRunner, _clientRepository, _shiftScheduleRepository, _autoCommitService,
-            _audienceResolver, _autonomyPreferences, _governanceResolver, _settingsReader,
-            _receivedEmailRepository, NullLogger<NextPeriodSchedulingDueDetector>.Instance, clock);
+            CreateAutonomyResolver(), _conditionRepository, _governanceResolver, _settingsReader,
+            _receivedEmailRepository, NullLogger<NextPeriodSchedulingDueDetector>.Instance, clock,
+            _timeProvider);
 
         var events = await _sut.DetectAsync();
 
@@ -464,6 +481,183 @@ public class NextPeriodSchedulingDueDetectorTests
         _activityProbe.HasPlannableShiftsInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(false);
         StubGroups(MakeGroup(PaymentInterval.Monthly));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    private static AnalyseScenario ActiveFebruaryScenario(Guid groupId) => new()
+    {
+        Id = Guid.NewGuid(),
+        GroupId = groupId,
+        FromDate = new DateOnly(2026, 2, 1),
+        UntilDate = new DateOnly(2026, 2, 28),
+        Status = AnalyseScenarioStatus.Active
+    };
+
+    /// <summary>
+    /// The ledger row the tick writes for an automatic start, built from the real event so the payload
+    /// the detector reads back is the one production actually stores.
+    /// </summary>
+    private static AgentCondition AutofillLedgerRow(
+        Guid groupId, Guid jobId, bool autoCommitIntended, DateTime detectedAtUtc)
+    {
+        var startedEvent = new NextPeriodAutofillStartedTriggerEvent(
+            groupId, "Bern", new DateOnly(2026, 2, 1), new DateOnly(2026, 2, 28), jobId, autoCommitIntended);
+
+        return new AgentCondition
+        {
+            Id = Guid.NewGuid(),
+            TriggerKind = AgentTriggerKinds.NextPeriodSchedulingDue,
+            Fingerprint = AgentConditionLedgerPolicy.FingerprintFor(startedEvent),
+            GroupId = groupId,
+            Status = AgentConditionStatus.Reported,
+            DetectedAtUtc = detectedAtUtc,
+            PayloadJson = JsonSerializer.Serialize(startedEvent.Payload)
+        };
+    }
+
+    private static AgentCondition OutcomeLedgerRow(NextPeriodAutoCommitBlockedTriggerEvent blocked) => new()
+    {
+        Id = Guid.NewGuid(),
+        TriggerKind = AgentTriggerKinds.NextPeriodSchedulingDue,
+        Fingerprint = AgentConditionLedgerPolicy.FingerprintFor(blocked),
+        GroupId = blocked.GroupId,
+        Status = AgentConditionStatus.Reported,
+        DetectedAtUtc = BeyondGrace
+    };
+
+    private void StubOpenConditions(params AgentCondition[] rows) =>
+        _conditionRepository.GetOpenByKindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(rows.ToList());
+
+    private static DateTime BeyondGrace =>
+        NowUtc.AddMinutes(-NextPeriodScheduling.AutoCommitInterruptedGraceMinutes - 1);
+
+    [Test]
+    public async Task DetectAsync_AutoCommitWatcherGoneAndDraftUnaccepted_ReportsInterruptedOnce()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        var scenario = ActiveFebruaryScenario(group.Id);
+        StubScenarios(scenario);
+        var jobId = Guid.NewGuid();
+        StubOpenConditions(AutofillLedgerRow(group.Id, jobId, autoCommitIntended: true, BeyondGrace));
+        _autoWizardJobRunner.IsRunning(jobId).Returns(false);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var blocked = (NextPeriodAutoCommitBlockedTriggerEvent)events[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.Interrupted));
+            Assert.That(blocked.ScenarioId, Is.EqualTo(scenario.Id));
+            Assert.That(blocked.DedupKey, Does.Contain(scenario.Id.ToString()),
+                "The scenario id keeps a second draft for the same period from being folded into the first.");
+        });
+        await _autoWizardJobRunner.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
+        _autoCommitService.DidNotReceiveWithAnyArgs().QueueAutoCommit(default, default, default!, default, default);
+    }
+
+    [Test]
+    public async Task DetectAsync_InterruptedAlreadyReported_SecondTickStaysSilent()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        var scenario = ActiveFebruaryScenario(group.Id);
+        StubScenarios(scenario);
+        var jobId = Guid.NewGuid();
+        StubOpenConditions(
+            AutofillLedgerRow(group.Id, jobId, autoCommitIntended: true, BeyondGrace),
+            OutcomeLedgerRow(new NextPeriodAutoCommitBlockedTriggerEvent(
+                group.Id, group.Name, new DateOnly(2026, 2, 1), new DateOnly(2026, 2, 28), scenario.Id, 0,
+                NextPeriodAutoCommitBlockReason.Interrupted)));
+        _autoWizardJobRunner.IsRunning(jobId).Returns(false);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_WatcherAlreadyReportedATimeout_DoesNotAlsoReportInterrupted()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        StubScenarios(ActiveFebruaryScenario(group.Id));
+        var jobId = Guid.NewGuid();
+        StubOpenConditions(
+            AutofillLedgerRow(group.Id, jobId, autoCommitIntended: true, BeyondGrace),
+            OutcomeLedgerRow(new NextPeriodAutoCommitBlockedTriggerEvent(
+                group.Id, group.Name, new DateOnly(2026, 2, 1), new DateOnly(2026, 2, 28), null, 0,
+                NextPeriodAutoCommitBlockReason.Timeout)));
+        _autoWizardJobRunner.IsRunning(jobId).Returns(false);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty,
+            "A finished watcher that blocked leaves the same draft behind; reporting it again as interrupted would double-notify.");
+    }
+
+    [Test]
+    public async Task DetectAsync_AutofillRunWithoutAutoCommitIntent_IsNeverInterrupted()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        StubScenarios(ActiveFebruaryScenario(group.Id));
+        var jobId = Guid.NewGuid();
+        StubOpenConditions(AutofillLedgerRow(group.Id, jobId, autoCommitIntended: false, BeyondGrace));
+        _autoWizardJobRunner.IsRunning(jobId).Returns(false);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_AutoCommitJobStillRunning_IsNotInterrupted()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        StubScenarios(ActiveFebruaryScenario(group.Id));
+        var jobId = Guid.NewGuid();
+        StubOpenConditions(AutofillLedgerRow(group.Id, jobId, autoCommitIntended: true, BeyondGrace));
+        _autoWizardJobRunner.IsRunning(jobId).Returns(true);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_AutoCommitRunInsideGraceWindow_IsNotYetInterrupted()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        StubScenarios(ActiveFebruaryScenario(group.Id));
+        var jobId = Guid.NewGuid();
+        StubOpenConditions(AutofillLedgerRow(group.Id, jobId, autoCommitIntended: true, NowUtc.AddMinutes(-1)));
+        _autoWizardJobRunner.IsRunning(jobId).Returns(false);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty,
+            "The job registry is per API instance; inside the grace window another instance may still be watching this very chain.");
+    }
+
+    [Test]
+    public async Task DetectAsync_AcceptedScenario_IsNeverReportedAsInterrupted()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        var accepted = ActiveFebruaryScenario(group.Id);
+        accepted.Status = AnalyseScenarioStatus.Accepted;
+        StubScenarios(accepted);
+        var jobId = Guid.NewGuid();
+        StubOpenConditions(AutofillLedgerRow(group.Id, jobId, autoCommitIntended: true, BeyondGrace));
+        _autoWizardJobRunner.IsRunning(jobId).Returns(false);
 
         var events = await _sut.DetectAsync();
 
