@@ -11,7 +11,11 @@
 /// The check is a source scan of the TypeScript file rather than a build artefact, for the same
 /// reason NavigationManifestPermissionGuardTests scans the generated manifests: the value is a
 /// string literal in a file the backend build never compiles. Klacks.Ui is located as a sibling
-/// directory of the Klacks.Api project.
+/// directory of the Klacks.Api project. Where that sibling directory is absent the repository was
+/// never checked out, and the guard reports itself inconclusive instead of failing a job that cannot
+/// see the frontend at all — the same split EvalRegressionI18nGateTests makes. A Klacks.Ui that IS
+/// checked out but carries no constants file stays a hard failure: that is drift, not a missing
+/// checkout.
 ///
 /// Scope note — what this guard does NOT cover:
 /// - Whether a given permission is used correctly in the Angular routes or templates. That is the
@@ -19,6 +23,8 @@
 /// - Roles other than Admin. Authorised and User are not mirrored into the UI by spec 3.1.
 /// - Values assembled at runtime (string concatenation, computed keys). Only plain literals of the
 ///   PERMISSIONS object and the ROLE_ADMIN constant are read.
+/// - Whether Klacks.Ui is checked out at all. A workflow that stops checking it out turns this guard
+///   inconclusive rather than red, so the checkout step is what keeps the check alive.
 /// </summary>
 
 using System.Reflection;
@@ -56,12 +62,20 @@ public class PermissionConstantsUiMirrorGuardTests
     [Test]
     public void UiPermissionConstants_MustMirrorTheBackendPermissionsAndAdminRole()
     {
-        var path = ConstantsFilePath();
+        var uiProject = LocateUiProject();
+        if (!Directory.Exists(uiProject))
+        {
+            Assert.Inconclusive(
+                $"'{uiProject}' is not reachable from this working tree, so the mirror cannot be compared here.");
+            return;
+        }
+
+        var path = Path.Combine(uiProject, Path.Combine(ConstantsFileSegments));
 
         File.Exists(path).ShouldBeTrue(
             $"The Angular permission constants file is missing: {path}. Option B spec 3.1 requires it; " +
-            "until it exists the UI has no shared vocabulary with the backend and this guard cannot " +
-            "compare anything — which is a failure, not a pass.");
+            $"{UiProjectDirectory} is checked out but carries no constants file, so the UI has no shared " +
+            "vocabulary with the backend — which is drift, not a missing checkout.");
 
         var source = File.ReadAllText(path);
         var uiValues = ReadPermissionLiterals(source);
@@ -162,9 +176,6 @@ public class PermissionConstantsUiMirrorGuardTests
 
         return values;
     }
-
-    private static string ConstantsFilePath()
-        => Path.Combine(LocateUiProject(), Path.Combine(ConstantsFileSegments));
 
     private static string LocateUiProject()
     {
