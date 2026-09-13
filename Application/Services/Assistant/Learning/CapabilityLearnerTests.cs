@@ -61,7 +61,8 @@ public class CapabilityLearnerTests
         _cases.ListByClusterAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
         _goldenCases = Substitute.For<ISkillLearningGoldenCaseRepository>();
-        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns([]);
 
         _generator = Substitute.For<ILearnedArtifactGenerator>();
         _validator = Substitute.For<IRecipeDraftValidator>();
@@ -263,11 +264,34 @@ public class CapabilityLearnerTests
             Arg.Any<CancellationToken>());
     }
 
+    // A composed capability has no golden cases of its own yet, so the population at risk is the skill
+    // the user said should have been chosen; without a correction there is nothing to prioritise.
+    [Test]
+    public async Task TheGate_ReplaysTheHoldoutCasesOfTheCorrectedSkillFirst()
+    {
+        await _learner.LearnAsync(ClusterCorrecting(Skill), [Skill]);
+
+        await _goldenCases.Received(1).ListHoldoutAsync(
+            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, Skill, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AClusterWithoutACorrection_PrioritisesNothing()
+    {
+        await _learner.LearnAsync(Cluster(), [Skill]);
+
+        await _goldenCases.Received(1).ListHoldoutAsync(
+            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, null, Arg.Any<CancellationToken>());
+    }
+
     // The excerpt deliberately contains the trigger stem. The engine only falls back to semantic
     // matching when no keyword trigger fires, and that path needs the whole retrieval stack; a test
     // about activation order has no business exercising it.
     private static SkillLearningClusterContext Cluster() =>
         new(Guid.NewGuid(), "melde den dienstbericht der woche", "de", null, null, [], 0, null, null);
+
+    private static SkillLearningClusterContext ClusterCorrecting(string expectedSkill) =>
+        new(Guid.NewGuid(), "melde den dienstbericht der woche", "de", expectedSkill, null, [], 0, null, null);
 
     private static RecipeTrigger Trigger() =>
         new() { AllOf = [new RecipeCondition { AnyWordStart = ["dienstbericht"] }] };

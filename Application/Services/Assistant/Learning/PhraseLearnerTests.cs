@@ -58,7 +58,8 @@ public class PhraseLearnerTests
 
         _candidates = Substitute.For<ISkillLearningCandidateRepository>();
         _goldenCases = Substitute.For<ISkillLearningGoldenCaseRepository>();
-        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns([]);
 
         _generator = Substitute.For<ILearnedArtifactGenerator>();
         _oracle = Substitute.For<ISkillRoutingOracle>();
@@ -85,6 +86,21 @@ public class PhraseLearnerTests
     private void GivenProbe(string utterance, bool found) =>
         _oracle.ProbeAsync(utterance, Arg.Any<string?>(), Target, Arg.Any<CancellationToken>())
             .Returns(new SkillRoutingProbe(found, found ? [Target] : ["list_clients"]));
+
+    // The budget the gate replays is smaller than the goldset, so it is spent on the cases of the skill
+    // this round is about to widen with a new phrase.
+    [Test]
+    public async Task TheGate_ReplaysTheHoldoutCasesOfTheTargetSkillFirst()
+    {
+        GivenPhrases("umsatz pro kunde");
+        GivenProbe(Excerpt, true);
+        GivenProbe("umsatz pro kunde", true);
+
+        await _learner.LearnAsync(Cluster(), Target);
+
+        await _goldenCases.Received(1).ListHoldoutAsync(
+            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, Target, Arg.Any<CancellationToken>());
+    }
 
     [Test]
     public async Task AWordingThatMakesTheWishReachTheSkill_IsKept()

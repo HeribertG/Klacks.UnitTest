@@ -24,6 +24,8 @@ public class SkillDescriptionSharpenerTests
     private const string Before = "Lists everything about clients.";
     private const string After = "Lists the contract data of one client.";
     private const int RaisedMinimum = SkillLearningDefaults.MinGoldenCasesForAutoApply + 1;
+    private const string OtherSkill = "create_client";
+    private const string Narrowed = "Lists the contract data of one client by client number.";
 
     private ISkillDescriptionOptimizer _optimizer = null!;
     private IProposedSkillChangeRepository _proposals = null!;
@@ -44,7 +46,8 @@ public class SkillDescriptionSharpenerTests
         _proposals = Substitute.For<IProposedSkillChangeRepository>();
         _skills = Substitute.For<IAgentSkillRepository>();
         _goldenCases = Substitute.For<ISkillLearningGoldenCaseRepository>();
-        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns([]);
         _goldenCases.CountHoldoutAsync(Arg.Any<CancellationToken>())
             .Returns(SkillLearningDefaults.MinGoldenCasesForAutoApply);
 
@@ -94,6 +97,24 @@ public class SkillDescriptionSharpenerTests
             ProposedChangeFields.Description, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([proposal]);
         return proposal;
     }
+
+    private ProposedSkillChange ProposalFor(
+        AgentSkill skill, string valueBefore = Before, string valueAfter = After) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            SkillId = skill.Id,
+            SkillName = skill.Name,
+            Field = ProposedChangeFields.Description,
+            ValueBefore = valueBefore,
+            ValueAfter = valueAfter,
+            Status = ProposedChangeStatuses.Pending
+        };
+
+    private void GivenPendingPair(ProposedSkillChange first, ProposedSkillChange second) =>
+        _proposals.GetPendingAsync(
+                ProposedChangeFields.Description, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([first, second]);
 
     private ProposedSkillChange GivenPendingGoldsetProposal()
     {
@@ -349,7 +370,44 @@ public class SkillDescriptionSharpenerTests
         await _sharpener.RunAsync();
 
         await _goldenCases.Received().ListHoldoutAsync(
-            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, Arg.Any<CancellationToken>());
+            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, _skill.Name, Arg.Any<CancellationToken>());
+    }
+
+    // The replay budget is far smaller than the goldset, so it has to be spent on the cases of the skill
+    // this proposal changes - a gate measured on somebody else's cases says nothing about this change.
+    [Test]
+    public async Task EachProposal_IsGatedOnTheHoldoutCasesOfItsOwnSkill()
+    {
+        var first = GivenPending();
+        var other = new AgentSkill
+        {
+            Id = Guid.NewGuid(), Name = OtherSkill, Description = Before, Version = 1
+        };
+        _skills.GetByIdAsync(other.Id, Arg.Any<CancellationToken>()).Returns(other);
+        GivenPendingPair(first, ProposalFor(other));
+
+        await _sharpener.RunAsync();
+
+        await _goldenCases.Received(1).ListHoldoutAsync(
+            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, _skill.Name, Arg.Any<CancellationToken>());
+        await _goldenCases.Received(1).ListHoldoutAsync(
+            SkillLearningDefaults.MaxGoldenCasesPerRegressionCheck, other.Name, Arg.Any<CancellationToken>());
+    }
+
+    // Two proposals for one skill see the same population, so the round pays one baseline pass plus one
+    // gated pass per proposal instead of two baselines.
+    [Test]
+    public async Task TwoProposalsForTheSameSkill_ShareOneBaselinePass()
+    {
+        var first = GivenPending();
+        GivenPendingPair(first, ProposalFor(_skill, After, Narrowed));
+
+        await _sharpener.RunAsync();
+
+        await _goldenCases.Received(1).ListHoldoutAsync(
+            Arg.Any<int>(), _skill.Name, Arg.Any<CancellationToken>());
+        await _oracle.Received(3).FindFailingGoldenCasesAsync(
+            Arg.Any<IReadOnlyList<SkillLearningGoldenCase>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
