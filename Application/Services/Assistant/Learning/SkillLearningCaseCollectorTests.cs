@@ -383,4 +383,28 @@ public class SkillLearningCaseCollectorTests
         OccurrenceCount = occurrenceCount,
         DistinctUserCount = 1
     };
+
+    [Test]
+    public async Task ARecipeDecline_OpensACaseUnderTheTriggerUtterancesCluster()
+    {
+        SkillLearningCase? recorded = null;
+        await _cases.AddAsync(Arg.Do<SkillLearningCase>(c => recorded = c), Arg.Any<CancellationToken>());
+
+        await _collector.CollectRecipeDeclineAsync(new SkillLearningRecipeDecline(
+            AgentId, "abc123def4567890", Wish, "user-1", "de", "setup-consultation", "[]", Guid.NewGuid()));
+
+        recorded.ShouldNotBeNull();
+        recorded!.Signal.ShouldBe(SkillLearningSignals.RecipeDeclined);
+        recorded.ChosenSkill.ShouldBe("setup-consultation");
+        recorded.IntentExcerpt.ShouldBe(Wish);
+    }
+
+    [Test]
+    public async Task ARecipeDeclineWithoutAClusterKey_IsIgnored()
+    {
+        await _collector.CollectRecipeDeclineAsync(new SkillLearningRecipeDecline(
+            AgentId, string.Empty, Wish, "user-1", "de", "setup-consultation", "[]", Guid.NewGuid()));
+
+        await _cases.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+    }
 }

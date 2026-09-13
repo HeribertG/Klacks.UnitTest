@@ -68,6 +68,7 @@ public class SkillLearningPhraseGapPathTests
 
         _loop = new SkillLearningLoop(
             _clusters, _cases, generator, _oracle, _phraseLearner, _capabilityLearner, sharpener,
+            Substitute.For<IProposedSkillChangeRepository>(),
             Substitute.For<ILogger<SkillLearningLoop>>());
     }
 

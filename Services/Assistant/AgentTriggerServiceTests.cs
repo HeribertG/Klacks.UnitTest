@@ -1233,7 +1233,7 @@ public class OperationalTriggerEventDedupKeyTests
     [Test]
     public void EachOperationalEventType_ProducesAnI18nSummary()
     {
-        var drift = new TargetHoursDriftTriggerEvent(Guid.NewGuid(), "Jane", -170m, "2026-06");
+        var drift = new TargetHoursDriftTriggerEvent([new TargetHoursDriftAffectedClient(Guid.NewGuid(), "Jane", -170m)], "2026-06");
         var period = new PeriodCloseDueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 3);
         var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, Array.Empty<Guid>());
         var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, Array.Empty<Guid>());
@@ -1347,9 +1347,9 @@ public class OperationalTriggerEventDedupKeyTests
         Assert.That(lockConflict.ActionRoute, Is.EqualTo("/workplace/schedule"));
         Assert.That(lockConflict.ActionParams!.Keys, Is.EquivalentTo(new[] { "date", "groupId" }));
 
-        var drift = new TargetHoursDriftTriggerEvent(clientId, "Jane", -20m, "2026-06");
+        var drift = new TargetHoursDriftTriggerEvent([new TargetHoursDriftAffectedClient(clientId, "Jane", -20m)], "2026-06");
         Assert.That(drift.ActionRoute, Is.EqualTo("/workplace/schedule"));
-        Assert.That(drift.ActionParams!["clientId"], Is.EqualTo(clientId.ToString()));
+        Assert.That(drift.ActionParams!.Keys, Is.EquivalentTo(new[] { "period" }));
         Assert.That(drift.ActionParams["period"], Is.EqualTo("2026-06"));
 
         var periodClose = new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3);
@@ -1432,7 +1432,7 @@ public class OperationalTriggerEventDedupKeyTests
 
         IAgentTriggerEvent[] installationWide =
         [
-            new TargetHoursDriftTriggerEvent(Guid.NewGuid(), "Jane", -20m, "2026-06"),
+            new TargetHoursDriftTriggerEvent([new TargetHoursDriftAffectedClient(Guid.NewGuid(), "Jane", -20m)], "2026-06"),
             new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), "Jane", new DateOnly(2026, 6, 30), 5),
             new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3),
             new PeriodOverdueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 10),
@@ -1474,7 +1474,7 @@ public class OperationalTriggerEventDedupKeyTests
     {
         // Drift and contract alerts are Client-scoped, not Group-scoped; they must keep the
         // unscoped planner broadcast (IAgentTriggerEvent.GroupId defaults to null, GroupIds to empty).
-        IAgentTriggerEvent drift = new TargetHoursDriftTriggerEvent(Guid.NewGuid(), "Jane", -20m, "2026-06");
+        IAgentTriggerEvent drift = new TargetHoursDriftTriggerEvent([new TargetHoursDriftAffectedClient(Guid.NewGuid(), "Jane", -20m)], "2026-06");
         IAgentTriggerEvent contract = new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), "Jane", new DateOnly(2026, 6, 30), 5);
 
         Assert.That(drift.GroupId, Is.Null);

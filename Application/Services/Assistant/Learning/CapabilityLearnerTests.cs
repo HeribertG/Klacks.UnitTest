@@ -61,7 +61,7 @@ public class CapabilityLearnerTests
         _cases.ListByClusterAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
         _goldenCases = Substitute.For<ISkillLearningGoldenCaseRepository>();
-        _goldenCases.ListAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        _goldenCases.ListHoldoutAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
 
         _generator = Substitute.For<ILearnedArtifactGenerator>();
         _validator = Substitute.For<IRecipeDraftValidator>();
@@ -148,6 +148,23 @@ public class CapabilityLearnerTests
                 && recipe.Origin == AgentRecipeOrigins.Learned
                 && recipe.IsEnabled
                 && recipe.SortOrder == SkillLearningDefaults.LearnedRecipeSortOrder),
+            Arg.Any<CancellationToken>());
+    }
+
+    // The gate reads the holdout partition. A cluster-born expectation that arrived there by entity
+    // default rather than by decision would silently move the moment that default changes.
+    [Test]
+    public async Task TheFrozenWish_IsAClusterBornHoldoutCase()
+    {
+        GivenEngineResolvesTo(RecipeName);
+
+        await _learner.LearnAsync(Cluster(), [Skill]);
+
+        await _goldenCases.Received(1).AddAsync(
+            Arg.Is<SkillLearningGoldenCase>(c =>
+                c.ExpectedSourceId == RecipeName
+                && c.Origin == GoldenCaseOrigins.Cluster
+                && c.Partition == GoldenCasePartitions.Holdout),
             Arg.Any<CancellationToken>());
     }
 
@@ -250,7 +267,7 @@ public class CapabilityLearnerTests
     // matching when no keyword trigger fires, and that path needs the whole retrieval stack; a test
     // about activation order has no business exercising it.
     private static SkillLearningClusterContext Cluster() =>
-        new(Guid.NewGuid(), "melde den dienstbericht der woche", "de", null, null, [], 0, null);
+        new(Guid.NewGuid(), "melde den dienstbericht der woche", "de", null, null, [], 0, null, null);
 
     private static RecipeTrigger Trigger() =>
         new() { AllOf = [new RecipeCondition { AnyWordStart = ["dienstbericht"] }] };

@@ -13,6 +13,12 @@ namespace Klacks.UnitTest.Domain.Services.Assistant;
 [TestFixture]
 public class DeclineDetectorTests
 {
+    [TearDown]
+    public void ResetPluginEntries()
+    {
+        DeclineDetector.Reset();
+    }
+
     [TestCase("Nein")]
     [TestCase("Nein, nein, nein, nein, nein, nein.")]
     [TestCase("Nein, im Moment will ich nicht zuhören.")]
@@ -63,5 +69,66 @@ public class DeclineDetectorTests
         DeclineDetector.Configure(["nie"], []);
 
         DeclineDetector.LeadsWithNegation("Nie, dziękuję.").ShouldBeTrue();
+    }
+
+    [TestCase("Nein")]
+    [TestCase("nein.")]
+    [TestCase("Nein, nein!")]
+    [TestCase("No")]
+    [TestCase("Non")]
+    [TestCase("Nö")]
+    public void IsBareNegation_PureRefusals_ReturnsTrue(string message)
+    {
+        DeclineDetector.IsBareNegation(message).ShouldBeTrue();
+    }
+
+    [TestCase("no thanks")]
+    [TestCase("Nein, zeig mir stattdessen die Kunden")]
+    [TestCase("Nicht jetzt, sondern morgen bitte")]
+    [TestCase("Zeig mir die offenen Schichten")]
+    [TestCase("")]
+    [TestCase(null)]
+    public void IsBareNegation_AnythingCarryingContent_ReturnsFalse(string? message)
+    {
+        DeclineDetector.IsBareNegation(message).ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsBareNegation_SingleTokenPluginNegation_ReturnsTrue()
+    {
+        DeclineDetector.Configure(["nie"], []);
+
+        DeclineDetector.IsBareNegation("Nie.").ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsBareNegation_MultiWordPluginNegation_ReturnsFalse()
+    {
+        DeclineDetector.Configure(["ahora no"], []);
+
+        DeclineDetector.IsBareNegation("Ahora no").ShouldBeFalse();
+    }
+
+    [Test]
+    public void Reset_DiscardsEveryConfiguredPluginEntry()
+    {
+        DeclineDetector.Configure(["nie"], ["mas tarde"]);
+
+        DeclineDetector.Reset();
+
+        DeclineDetector.LeadsWithNegation("Nie, dziękuję.").ShouldBeFalse();
+        DeclineDetector.LeadsWithNegation("Mas tarde, gracias.").ShouldBeFalse();
+        DeclineDetector.IsBareNegation("Nie.").ShouldBeFalse();
+    }
+
+    [Test]
+    public void Reset_KeepsTheCoreLanguageTokens()
+    {
+        DeclineDetector.Configure(["nie"], []);
+
+        DeclineDetector.Reset();
+
+        DeclineDetector.LeadsWithNegation("Nein danke.").ShouldBeTrue();
+        DeclineDetector.IsBareNegation("Nein").ShouldBeTrue();
     }
 }

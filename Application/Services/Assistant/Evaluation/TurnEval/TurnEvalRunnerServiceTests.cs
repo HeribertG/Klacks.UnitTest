@@ -24,19 +24,32 @@ public class TurnEvalRunnerServiceTests
     private ITurnReplayService _replayService = null!;
     private ISlotEntityResolver _slotEntityResolver = null!;
     private IEvalRunRepository _evalRunRepository = null!;
+    private IEvalRunItemRepository _evalRunItemRepository = null!;
     private ILogger<TurnEvalRunnerService> _logger = null!;
     private TurnEvalRunnerService _service = null!;
+    private List<Klacks.Api.Domain.Models.Assistant.EvalRunItem> _persistedItems = null!;
 
     [SetUp]
     public void SetUp()
     {
+        _persistedItems = [];
+
         _goldsetLoader = Substitute.For<ITurnGoldsetLoader>();
         _replayService = Substitute.For<ITurnReplayService>();
         _slotEntityResolver = Substitute.For<ISlotEntityResolver>();
         _evalRunRepository = Substitute.For<IEvalRunRepository>();
+        _evalRunItemRepository = Substitute.For<IEvalRunItemRepository>();
+        _evalRunItemRepository
+            .When(x => x.AddRangeAsync(
+                Arg.Any<IReadOnlyList<Klacks.Api.Domain.Models.Assistant.EvalRunItem>>(),
+                Arg.Any<CancellationToken>()))
+            .Do(call => _persistedItems.AddRange(
+                call.Arg<IReadOnlyList<Klacks.Api.Domain.Models.Assistant.EvalRunItem>>()));
+
         _logger = Substitute.For<ILogger<TurnEvalRunnerService>>();
         _service = new TurnEvalRunnerService(
-            _goldsetLoader, _replayService, _slotEntityResolver, _evalRunRepository, _logger);
+            _goldsetLoader, _replayService, _slotEntityResolver, _evalRunRepository,
+            _evalRunItemRepository, _logger);
     }
 
     [Test]
@@ -232,6 +245,74 @@ public class TurnEvalRunnerServiceTests
         await _slotEntityResolver.DidNotReceiveWithAnyArgs()
             .ResolvesToExpectedEntityAsync(default!, default!, default);
         result.Run.ItemsPassed.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task RunAsync_WritesOneItemRowPerReplayedItem_LinkedToTheRun()
+    {
+        var items = new List<TurnGoldsetItem>
+        {
+            new() { Id = "t-1", Message = "add a note", Locale = "de", ExpectedTool = ToolName },
+            new() { Id = "t-2", Message = "hello", Locale = "en" }
+        };
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(SuccessReplay(ToolName));
+        _replayService.ReplayAsync(items[1], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(SuccessReplay(null));
+
+        var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        _persistedItems.Count.ShouldBe(2);
+        _persistedItems.ShouldAllBe(i => i.EvalRunId == result.Run.Id);
+        _persistedItems.Select(i => i.ItemId).ShouldContain("t-1");
+        _persistedItems.Select(i => i.ItemId).ShouldContain("t-2");
+    }
+
+    [Test]
+    public async Task RunAsync_ItemRowsCarryTheToolsetAndBothVerdicts()
+    {
+        var items = new List<TurnGoldsetItem>
+        {
+            new() { Id = "t-1", Message = "add a note", Locale = "de", ExpectedTool = ToolName }
+        };
+        var replay = SuccessReplay("navigate_to");
+        replay.AvailableToolNames = ["navigate_to", ToolName];
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(replay);
+
+        await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        var row = _persistedItems.Single();
+        row.ExpectedTool.ShouldBe(ToolName);
+        row.ChosenTool.ShouldBe("navigate_to");
+        row.Locale.ShouldBe("de");
+        row.RetrievalHit.ShouldBe(true);
+        row.SelectionHit.ShouldBe(false);
+        row.Passed.ShouldBeFalse();
+        row.ToolsetNamesJson.ShouldContain(ToolName);
+    }
+
+    [Test]
+    public async Task RunAsync_TheDimensionsJsonCarriesBothNewDimensions()
+    {
+        var items = new List<TurnGoldsetItem>
+        {
+            new() { Id = "t-1", Message = "add a note", ExpectedTool = ToolName }
+        };
+        var replay = SuccessReplay(ToolName);
+        replay.AvailableToolNames = [ToolName];
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(replay);
+
+        var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        var dimensions = JsonSerializer.Deserialize<TurnEvalDimensions>(result.Run.DimensionsJson);
+        dimensions.ShouldNotBeNull();
+        dimensions!.RetrievalHit.ShouldBe(1.0);
+        dimensions.SelectionHit.ShouldBe(1.0);
     }
 
     private static TurnReplayResult SuccessReplay(string? tool, Dictionary<string, object>? parameters = null)

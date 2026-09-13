@@ -12,6 +12,7 @@
 namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation;
 
 using Klacks.Api.Application.Services.Assistant.Evaluation;
+using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -37,6 +38,9 @@ public class SkillDescriptionOptimizerTests
     private IAgentRepository _agents = null!;
     private ISkillLearningCaseRepository _cases = null!;
     private ISkillLearningGoldenCaseRepository _goldenCases = null!;
+    private IEvalRunRepository _evalRuns = null!;
+    private IEvalRunItemRepository _evalRunItems = null!;
+    private ITurnGoldsetLoader _goldsetLoader = null!;
     private FakeLLMProvider _provider = null!;
     private SkillDescriptionOptimizer _optimizer = null!;
     private Agent _agent = null!;
@@ -71,6 +75,13 @@ public class SkillDescriptionOptimizerTests
         _goldenCases.ExistsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
+        _evalRuns = Substitute.For<IEvalRunRepository>();
+        _evalRuns.GetLatestFullRunAsync(
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((EvalRun?)null);
+        _evalRunItems = Substitute.For<IEvalRunItemRepository>();
+        _goldsetLoader = Substitute.For<ITurnGoldsetLoader>();
+
         _provider = new FakeLLMProvider();
 
         var factory = Substitute.For<ILLMProviderFactory>();
@@ -80,7 +91,8 @@ public class SkillDescriptionOptimizerTests
         llm.GetModelsAsync(true).Returns([new LLMModel { ModelId = "fake", ApiModelId = "fake-1" }]);
 
         _optimizer = new SkillDescriptionOptimizer(
-            _trajectories, _proposals, _skills, _agents, _cases, _goldenCases, factory, llm,
+            _trajectories, _proposals, _skills, _agents, _cases, _goldenCases,
+            _evalRuns, _evalRunItems, _goldsetLoader, factory, llm,
             Substitute.For<ILogger<SkillDescriptionOptimizer>>());
     }
 

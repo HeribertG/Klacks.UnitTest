@@ -32,6 +32,8 @@ public class TrajectoryCaptureServiceTests
     private TrajectoryCaptureService _service = null!;
     private Guid _agentId;
 
+    private const string PluginNegationToken = "nie";
+
     [SetUp]
     public void SetUp()
     {
@@ -49,6 +51,15 @@ public class TrajectoryCaptureServiceTests
         _service = new TrajectoryCaptureService(
             _repository, _caseCollector, _phrases, _usage, _llm, Substitute.For<ILogger<TrajectoryCaptureService>>());
         _agentId = Guid.NewGuid();
+    }
+
+    // Both detectors, not only the one this fixture configures: TrajectoryCaptureService consults
+    // AffirmationDetector as well, so entries left behind here would decide a later fixture's outcome.
+    [TearDown]
+    public void ResetPluginEntries()
+    {
+        DeclineDetector.Reset();
+        AffirmationDetector.Reset();
     }
 
     [Test]
@@ -302,6 +313,7 @@ public class TrajectoryCaptureServiceTests
             Id = Guid.NewGuid(),
             AgentId = _agentId,
             UserId = "user-1",
+            LlmChosenSkill = "list_clients",
             WasCorrected = false,
             CreateTime = DateTime.UtcNow.AddSeconds(-30),
         };
@@ -532,5 +544,241 @@ public class TrajectoryCaptureServiceTests
         captured!.LatencyMsKnowledge.ShouldBe(95);
         captured.LatencyMsTotal.ShouldBe(95);
         captured.LatencyMsLlm.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task AConfirmationPromptTurn_IsCapturedAsAPendingRecipeOutcome()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        var context = new LLMContext
+        {
+            Message = "Wie fange ich an?",
+            UserId = "user-1",
+            ActiveRecipeName = "setup-consultation",
+            RecipeAwaitingConfirmation = true
+        };
+
+        await _service.CaptureAsync(_agentId, context, "Soll ich die Einrichtung starten?", []);
+
+        captured!.RecipeOutcome.ShouldBe(RecipeOutcomes.Pending);
+    }
+
+    [Test]
+    public async Task AnOrdinaryTurn_CarriesNoRecipeOutcome()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1" }, "Bitte.", []);
+
+        captured!.RecipeOutcome.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task NegationFollowUp_AfterATurnThatCalledNothing_IsNoCorrection()
+    {
+        var previous = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = _agentId,
+            UserId = "user-1",
+            LlmChosenSkill = null,
+            WasCorrected = false,
+            CreateTime = DateTime.UtcNow.AddSeconds(-30),
+        };
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Nein, das war falsch", UserId = "user-1" }, "Ok.", []);
+
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceive().UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    [Test]
+    public async Task BareNegationAfterAConfirmationPrompt_IsRecordedAsARecipeDecline()
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Nein", UserId = "user-1" }, "Alles klar.", []);
+
+        previous.WasCorrected.ShouldBeFalse();
+        previous.CorrectionType.ShouldBe(CorrectionTypes.None);
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Declined);
+        await _repository.Received(1).UpdateAsync(previous);
+        await _caseCollector.Received(1).CollectRecipeDeclineAsync(
+            Arg.Is<SkillLearningRecipeDecline>(d =>
+                d.AgentId == _agentId
+                && d.ClusterKey == previous.UserMessageHash
+                && d.IntentExcerpt == previous.IntentExcerpt
+                && d.UserId == "user-1"
+                && d.Locale == "de"
+                && d.RecipeName == "setup-consultation"
+                && d.ToolsetJson == previous.KnowledgeIndexCandidatesJson
+                && d.TrajectoryId == previous.Id),
+            Arg.Any<CancellationToken>());
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    [Test]
+    public async Task ResumingTheSameRecipe_ResolvesThePendingGateAsConfirmed()
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext
+            {
+                Message = "Ja, bitte",
+                UserId = "user-1",
+                ActiveRecipeName = "setup-consultation"
+            },
+            "Ich starte die Einrichtung.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Confirmed);
+        await _repository.Received(1).UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
+    }
+
+    [Test]
+    public async Task ANegationCorrectingCourseAfterAConfirmationPrompt_IsNeitherDeclineNorCorrection()
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Nein, zeig mir stattdessen die Kunden", UserId = "user-1" },
+            "Hier sind die Kunden.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Pending);
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceive().UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    // "Nö" is a refusal the correction vocabulary does not know. Before the gate admitted bare
+    // negations of its own, such a reply never reached the lookup and left the confirmation gate pending
+    // for good.
+    [TestCase("Nö")]
+    [TestCase("Nee")]
+    [TestCase("Nope")]
+    [TestCase("Rien")]
+    public async Task ABareNegationOutsideTheCorrectionVocabulary_IsRecordedAsARecipeDecline(string message)
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = message, UserId = "user-1" }, "Alles klar.", []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Declined);
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.Received(1).UpdateAsync(previous);
+        await _caseCollector.Received(1).CollectRecipeDeclineAsync(
+            Arg.Any<SkillLearningRecipeDecline>(), Arg.Any<CancellationToken>());
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    // Plugin languages answer the same question: a single-token negation from a language pack resolves the
+    // gate exactly like a core-language one.
+    [Test]
+    public async Task ABarePluginLanguageNegation_IsRecordedAsARecipeDecline()
+    {
+        DeclineDetector.Configure([PluginNegationToken], []);
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Nie.", UserId = "user-1" }, "W porządku.", []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Declined);
+        previous.WasCorrected.ShouldBeFalse();
+        await _caseCollector.Received(1).CollectRecipeDeclineAsync(
+            Arg.Any<SkillLearningRecipeDecline>(), Arg.Any<CancellationToken>());
+    }
+
+    // A declined gate is finished business. By the time a correction arrives, the decline turn itself is
+    // the most recent trajectory, so the correction lands there - the declined row is never reopened.
+    [Test]
+    public async Task ADeclinedGate_IsNotReopenedByALaterCorrection()
+    {
+        var declined = GivenPendingConfirmation();
+        var written = new List<SkillSelectionTrajectory>();
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(written.Add));
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Nö", UserId = "user-1" },
+            "Alles klar, hier sind die Kunden.",
+            [new LLMFunctionCall { FunctionName = "list_clients" }]);
+
+        written.Count.ShouldBe(1);
+        var declineTurn = written[0];
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(declineTurn);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Nein, das war falsch", UserId = "user-1" },
+            "Entschuldigung.",
+            []);
+
+        declined.WasCorrected.ShouldBeFalse();
+        declined.RecipeOutcome.ShouldBe(RecipeOutcomes.Declined);
+        await _repository.DidNotReceive().UpdateAsync(
+            Arg.Is<SkillSelectionTrajectory>(t => t.Id == declined.Id && t.WasCorrected));
+        await _repository.Received(1).UpdateAsync(
+            Arg.Is<SkillSelectionTrajectory>(t => t.Id == declineTurn.Id && t.WasCorrected));
+    }
+
+    // The same recipe running again is not by itself a confirmation: a rejection discards the pending
+    // recipe and is matched afresh, which can re-trigger the very same recipe. Only an affirmation clears
+    // the gate, which is the same evidence LLMService itself acts on.
+    [Test]
+    public async Task TheSameRecipeReTriggeredByARejection_LeavesThePendingGateUnresolved()
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext
+            {
+                Message = "Nein, neue Gruppe anlegen",
+                UserId = "user-1",
+                ActiveRecipeName = "setup-consultation"
+            },
+            "Ich lege die Gruppe an.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Pending);
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceive().UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
+    }
+
+    private SkillSelectionTrajectory GivenPendingConfirmation()
+    {
+        var previous = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = _agentId,
+            UserId = "user-1",
+            Locale = "de",
+            UserMessageHash = "abc123def4567890",
+            IntentExcerpt = "Wie fange ich an?",
+            KnowledgeIndexCandidatesJson = "[{\"name\":\"navigate_to\"}]",
+            LlmChosenSkill = null,
+            RecipeName = "setup-consultation",
+            RecipeOutcome = RecipeOutcomes.Pending,
+            WasCorrected = false,
+            CreateTime = DateTime.UtcNow.AddSeconds(-30),
+        };
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+        return previous;
     }
 }

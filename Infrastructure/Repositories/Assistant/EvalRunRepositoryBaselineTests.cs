@@ -6,6 +6,9 @@
 /// the tolerance below its predecessor, so quality ratchets downwards run by run); partial runs are
 /// never a baseline; a different item count, model, goldset or scorer version is not comparable;
 /// and equal composites fall back to the newer run so the pick is deterministic.
+/// Also covers ListRecentFullRunsAsync, the read the regression alert compares two runs from: it must
+/// hand out completed runs of one goldset newest first, and it must withhold the partial and the
+/// empty run, because either would be compared against a population it never measured.
 /// </summary>
 
 using Klacks.Api.Domain.Models.Assistant;
@@ -26,6 +29,8 @@ public class EvalRunRepositoryBaselineTests
     private const string Model = "deepseek-v4-pro";
     private const int ItemsTotal = 334;
     private const int ScorerVersion = 2;
+    private const int RecentRunLimit = 50;
+    private const int TwoRunLimit = 2;
 
     private static readonly DateTime BaseTime = new(2026, 9, 1, 3, 30, 0, DateTimeKind.Utc);
 
@@ -106,6 +111,48 @@ public class EvalRunRepositoryBaselineTests
 
         baseline.ShouldNotBeNull();
         baseline!.ItemsPassed.ShouldBe(201);
+    }
+
+    // DataBaseContext stamps CreateTime with its own UtcNow per inserted entity, so the seeded value is
+    // overwritten and the SEED ORDER is the chronological order these three tests assert against.
+    [Test]
+    public async Task ListRecentFullRunsAsync_ReturnsCompletedRunsOfTheGoldsetNewestFirst()
+    {
+        await SeedAsync(
+            Run(composite: 0.40m, passed: 130, at: BaseTime),
+            Run(composite: 0.60m, passed: 200, at: BaseTime.AddDays(1), scorerVersion: 1),
+            Run(composite: 0.50m, passed: 170, at: BaseTime.AddDays(2), model: "gpt-54"));
+
+        var runs = await NewRepository().ListRecentFullRunsAsync(Goldset, RecentRunLimit);
+
+        runs.Select(run => run.CompositeScore).ShouldBe([0.50m, 0.60m, 0.40m]);
+    }
+
+    [Test]
+    public async Task ListRecentFullRunsAsync_WithholdsPartialAndEmptyRunsAndOtherGoldsets()
+    {
+        await SeedAsync(
+            Run(composite: 0.40m, passed: 130, at: BaseTime),
+            Run(composite: 0.93m, passed: 300, at: BaseTime.AddDays(1), goldset: "turn-selection-crud-v1"),
+            Run(composite: 0.94m, passed: 0, at: BaseTime.AddDays(2), itemsTotal: 0),
+            Run(composite: 0.95m, passed: 320, at: BaseTime.AddDays(3), isPartial: true));
+
+        var runs = await NewRepository().ListRecentFullRunsAsync(Goldset, RecentRunLimit);
+
+        runs.Select(run => run.CompositeScore).ShouldBe([0.40m]);
+    }
+
+    [Test]
+    public async Task ListRecentFullRunsAsync_KeepsTheNewestRunsWhenTheLimitCuts()
+    {
+        await SeedAsync(
+            Run(composite: 0.40m, passed: 130, at: BaseTime),
+            Run(composite: 0.50m, passed: 170, at: BaseTime.AddDays(1)),
+            Run(composite: 0.60m, passed: 200, at: BaseTime.AddDays(2)));
+
+        var runs = await NewRepository().ListRecentFullRunsAsync(Goldset, TwoRunLimit);
+
+        runs.Select(run => run.CompositeScore).ShouldBe([0.60m, 0.50m]);
     }
 
     private EvalRunRepository NewRepository() => new(CreateContext());

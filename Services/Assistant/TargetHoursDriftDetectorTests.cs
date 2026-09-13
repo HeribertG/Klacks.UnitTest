@@ -97,8 +97,10 @@ public class TargetHoursDriftDetectorTests
 
         Assert.That(events, Has.Count.EqualTo(1));
         var drift = events.Single() as TargetHoursDriftTriggerEvent;
-        Assert.That(drift!.DriftHours, Is.EqualTo(-30m));
+        Assert.That(drift!.AffectedClients.Single().DriftHours, Is.EqualTo(-30m));
         Assert.That(drift.Severity, Is.EqualTo(AgentTriggerSeverity.High));
+        Assert.That(drift.Summary, Is.EqualTo(
+            ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.TargetHoursDriftSummary));
     }
 
     [Test]
@@ -119,7 +121,7 @@ public class TargetHoursDriftDetectorTests
     }
 
     [Test]
-    public async Task DetectAsync_MixedRoster_EmitsForStaffOnly()
+    public async Task DetectAsync_MixedRoster_EmitsOneEventForStaffOnly()
     {
         var customer = MakeClient("Clara", EntityTypeEnum.Customer);
         var employee = MakeClient("Anna");
@@ -136,9 +138,55 @@ public class TargetHoursDriftDetectorTests
 
         var events = await _sut.DetectAsync();
 
-        Assert.That(events, Has.Count.EqualTo(2));
-        var clientIds = events.Cast<TargetHoursDriftTriggerEvent>().Select(e => e.ClientId).ToList();
+        Assert.That(events, Has.Count.EqualTo(1));
+        var drift = events.Single() as TargetHoursDriftTriggerEvent;
+        var clientIds = drift!.AffectedClients.Select(c => c.ClientId).ToList();
         Assert.That(clientIds, Is.EquivalentTo(new[] { employee.Id, externEmp.Id }));
+        Assert.That(drift.SummaryParams!["count"], Is.EqualTo("2"));
+        Assert.That(drift.SummaryParams.ContainsKey("name"), Is.False);
+        Assert.That(drift.SummaryParams["names"], Does.Contain("Anna Müller").And.Contain("Matteo Müller"));
+        Assert.That(drift.DedupKey, Is.EqualTo("2026-07"));
+    }
+
+    [Test]
+    public async Task DetectAsync_MoreThanTenAffected_ListsTenNamesAndAnOverflowCount()
+    {
+        var clients = Enumerable.Range(1, 12).Select(i => MakeClient("Person" + i)).ToArray();
+        SetupClients(clients);
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(clients.ToDictionary(
+                c => c.Id, _ => new PeriodHoursResource { Hours = 0, GuaranteedHours = 170 }));
+
+        var events = await _sut.DetectAsync();
+
+        var drift = events.Single() as TargetHoursDriftTriggerEvent;
+        Assert.That(drift!.SummaryParams!["count"], Is.EqualTo("12"));
+        Assert.That(drift.SummaryParams["names"], Does.EndWith(" +2"));
+        Assert.That(drift.SummaryParams["names"].Split(", ", StringSplitOptions.None), Has.Length.EqualTo(10));
+    }
+
+    // The sentence is rendered by the frontend, so a parameter the event stops emitting or starts emitting
+    // under a new name is not a compile error anywhere - it renders as a literal "{{hours}}" in the user's
+    // language. The same list drives TargetHoursDriftSummaryI18nGateTests, so the event and every catalogue
+    // are pinned to one contract.
+    [Test]
+    public async Task DetectAsync_SummaryParams_CarryExactlyThePlaceholdersTheCataloguesInterpolate()
+    {
+        var employee = MakeClient();
+        SetupClients(employee);
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, PeriodHoursResource>
+            {
+                [employee.Id] = new() { Hours = 0, GuaranteedHours = 170 }
+            });
+
+        var events = await _sut.DetectAsync();
+
+        var drift = events.Single() as TargetHoursDriftTriggerEvent;
+        drift!.SummaryParams!.Keys.ShouldBe(
+            TargetHoursDriftSummaryPlaceholders.Names, ignoreOrder: true);
     }
 
     [Test]
@@ -255,18 +303,18 @@ public class TargetHoursDriftDetectorTests
     }
 
     [Test]
-    public async Task GetActiveFingerprintsAsync_MatchesDetectAsync_SinceThisDetectorHasNoCap()
+    public async Task GetActiveFingerprintsAsync_MatchesDetectAsync_AsOneFingerprintPerPeriod()
     {
         var overThreshold = MakeClient("Anna");
-        var withinThreshold = MakeClient("Bruno");
+        var alsoOverThreshold = MakeClient("Bruno");
         var customer = MakeClient("Clara", EntityTypeEnum.Customer);
-        SetupClients(overThreshold, withinThreshold, customer);
+        SetupClients(overThreshold, alsoOverThreshold, customer);
         _workRepository.GetPeriodHoursForClients(
             Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, PeriodHoursResource>
             {
                 [overThreshold.Id] = new() { Hours = 100, GuaranteedHours = 160 },
-                [withinThreshold.Id] = new() { Hours = 158, GuaranteedHours = 160 },
+                [alsoOverThreshold.Id] = new() { Hours = 120, GuaranteedHours = 160 },
                 [customer.Id] = new() { Hours = 0, GuaranteedHours = 170 }
             });
 
@@ -282,7 +330,7 @@ public class TargetHoursDriftDetectorTests
         Assert.That(fingerprints.Single(), Is.EqualTo(
             AgentConditionLedgerPolicy.FingerprintFor(
                 AgentTriggerKinds.TargetHoursDrift,
-                TargetHoursDriftTriggerEvent.DedupKeyFor(overThreshold.Id, "2026-07"))));
+                TargetHoursDriftTriggerEvent.DedupKeyFor("2026-07"))));
     }
 
     [Test]
