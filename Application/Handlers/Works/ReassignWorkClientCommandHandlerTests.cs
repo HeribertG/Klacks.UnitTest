@@ -78,7 +78,7 @@ public class ReassignWorkClientCommandHandlerTests
         _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns((List<Guid>?)null);
         _completionService.SaveAndTrackMoveAsync(
                 _targetClientId, _date, _periodStart, _periodEnd, _sourceClientId, _date, null)
-            .Returns(new PeriodHoursResource { Hours = 8 });
+            .Returns((new PeriodHoursResource { Hours = 8 }, (PeriodHoursResource?)new PeriodHoursResource { Hours = 3 }));
 
         var cells = new[]
         {
@@ -131,6 +131,28 @@ public class ReassignWorkClientCommandHandlerTests
 
         await _completionService.Received(1).SaveAndTrackMoveAsync(
             _targetClientId, _date, _periodStart, _periodEnd, _sourceClientId, _date, null);
+    }
+
+    [Test]
+    public async Task Handle_NotifiesPeriodHoursUpdated_ForBothSourceAndTargetClient()
+    {
+        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        await _notificationFacade.Received(1).NotifyPeriodHoursUpdatedAsync(
+            _targetClientId, _periodStart, _periodEnd,
+            Arg.Is<PeriodHoursResource>(p => p.Hours == 8), "connection-1", null);
+        await _notificationFacade.Received(1).NotifyPeriodHoursUpdatedAsync(
+            _sourceClientId, _periodStart, _periodEnd,
+            Arg.Is<PeriodHoursResource>(p => p.Hours == 3), "connection-1", null);
+    }
+
+    [Test]
+    public async Task Handle_ReturnsSourcePeriodHours_ForTheInitiatingConnection()
+    {
+        var result = await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        result!.SourcePeriodHours.ShouldNotBeNull();
+        result.SourcePeriodHours!.Hours.ShouldBe(3);
     }
 
     [Test]
