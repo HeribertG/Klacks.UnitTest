@@ -2,8 +2,9 @@
 
 /// <summary>
 /// Tests for GetTurnOptionsQueryHandler: hashing of the raw message, the user-scoped trajectory
-/// lookup, removal of always-on plumbing and of the skill the model chose, rank order, the option
-/// cap, the description lookup and the behaviour on unparsable candidate json.
+/// lookup, removal of always-on plumbing - by recorded provenance and by the skill's own flag - and of
+/// the skill the model chose, rank order, the option cap, the description lookup, the logged miss and
+/// the behaviour on unparsable candidate json.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Assistant;
@@ -15,6 +16,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -30,6 +32,7 @@ public class GetTurnOptionsQueryHandlerTests
 
     private ISkillSelectionTrajectoryRepository _trajectories = null!;
     private ISkillCacheService _skillCache = null!;
+    private ILogger<GetTurnOptionsQueryHandler> _logger = null!;
     private GetTurnOptionsQueryHandler _handler = null!;
 
     [SetUp]
@@ -39,8 +42,13 @@ public class GetTurnOptionsQueryHandlerTests
         _skillCache = Substitute.For<ISkillCacheService>();
         _skillCache.GetAllEnabledSkillsAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<AgentSkill>)new List<AgentSkill>());
-        _handler = new GetTurnOptionsQueryHandler(_trajectories, _skillCache);
+        _logger = Substitute.For<ILogger<GetTurnOptionsQueryHandler>>();
+        _handler = new GetTurnOptionsQueryHandler(_trajectories, _skillCache, _logger);
     }
+
+    private void GivenSkills(params AgentSkill[] skills) =>
+        _skillCache.GetAllEnabledSkillsAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<AgentSkill>)skills.ToList());
 
     private static SkillSelectionTrajectory MakeTrajectory(string userId, string candidatesJson, string? chosenSkill) => new()
     {
@@ -108,6 +116,65 @@ public class GetTurnOptionsQueryHandlerTests
         result.Options.Select(option => option.SkillName).ShouldBe(new[] { "create_client" });
     }
 
+    // The provenance is a string on a telemetry row and was only added with the capture of W1.6: a turn
+    // recorded before that names no source at all. Without the structural check such a candidate carries
+    // plumbing into the menu, and an expected_skill naming it would send the sharpener after a tool no
+    // user ever wants.
+    [Test]
+    public async Task Handle_DropsAnAlwaysOnSkillWhoseCandidateNamesNoSource()
+    {
+        GivenSkills(
+            new AgentSkill { Name = "get_user_context", Description = "Reads the current context.", AlwaysOn = true },
+            new AgentSkill { Name = "create_client", Description = "Creates a new client record." });
+        GivenTrajectory(MakeTrajectory(
+            UserId,
+            "[{\"name\":\"get_user_context\",\"rank\":1},"
+            + "{\"name\":\"create_client\",\"rank\":2,\"score\":0.6,\"source\":\"Retrieved\"}]",
+            chosenSkill: null));
+
+        var result = await HandleAsync();
+
+        result.Outcome.ShouldBe(TurnOptionsOutcome.Found);
+        result.Options.Select(option => option.SkillName).ShouldBe(new[] { "create_client" });
+    }
+
+    // The cache holds the enabled skills of every agent, so one name can arrive more than once. A
+    // last-one-wins entry would let plumbing back into the menu as soon as a second agent carries the
+    // same skill without the flag.
+    [Test]
+    public async Task Handle_DropsAnAlwaysOnSkillEvenWhenAnotherAgentCarriesItWithoutTheFlag()
+    {
+        GivenSkills(
+            new AgentSkill { Name = "get_user_context", Description = "Reads the current context.", AlwaysOn = true },
+            new AgentSkill { Name = "get_user_context", Description = "Reads the current context." });
+        GivenTrajectory(MakeTrajectory(
+            UserId, "[{\"name\":\"get_user_context\",\"rank\":1}]", chosenSkill: null));
+
+        var result = await HandleAsync();
+
+        result.Options.ShouldBeEmpty();
+    }
+
+    // The outcome never reaches the wire, so without a log line the difference between "no turn of this
+    // caller was captured" and "the captured turn offers nothing" leaves no trace at all, and a menu
+    // that stays empty cannot be told apart from one that was never found.
+    [Test]
+    public async Task Handle_NoTrajectoryForTheHash_IsLoggedAtInformation()
+    {
+        _trajectories.FindMostRecentByUserAndHashAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((SkillSelectionTrajectory?)null);
+
+        await HandleAsync();
+
+        _logger.Received(1).Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
     [Test]
     public async Task Handle_KeepsTheRankOrderAndCapsTheList()
     {
@@ -125,11 +192,7 @@ public class GetTurnOptionsQueryHandlerTests
     [Test]
     public async Task Handle_AddsDisplayNameAndDescription()
     {
-        _skillCache.GetAllEnabledSkillsAsync(Arg.Any<CancellationToken>())
-            .Returns((IReadOnlyList<AgentSkill>)new List<AgentSkill>
-            {
-                new() { Name = "create_client", Description = "Creates a new client record." }
-            });
+        GivenSkills(new AgentSkill { Name = "create_client", Description = "Creates a new client record." });
         GivenTrajectory(MakeTrajectory(
             UserId,
             "[{\"name\":\"create_client\",\"rank\":1,\"score\":null,\"source\":\"Retrieved\"},"

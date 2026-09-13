@@ -24,6 +24,7 @@ public class SkillLearningCaseCollectorTests
     private const string RefusalAnswer = "Das ist nicht möglich, dafür habe ich keine Fähigkeit.";
     private const string NeutralAnswer = "Hier sind die drei Mitarbeiter, die du gesucht hast.";
     private const string Wish = "Zeige mir die Umsatzstatistik pro Kunde";
+    private const int OverlongSkillNameLength = 300;
 
     private static readonly Guid AgentId = Guid.NewGuid();
 
@@ -224,6 +225,25 @@ public class SkillLearningCaseCollectorTests
         recorded!.Signal.ShouldBe(SkillLearningSignals.WrongSkill);
         recorded.ChosenSkill.ShouldBe("list_clients");
         recorded.ExpectedSkill.ShouldBe("list_orders");
+    }
+
+    // The expected skill is free text from the correction menu, the column that takes it is
+    // SkillLearningDefaults.SkillNameMaxLength wide, and the correction endpoint has already committed
+    // WasCorrected = true by the time this insert runs - an unclipped value would answer the correction
+    // with a 400 and lose the learning case.
+    [Test]
+    public async Task ACorrectionWithAnOverlongExpectedSkill_IsStoredClippedToTheColumnWidth()
+    {
+        SkillLearningCase? recorded = null;
+        await _cases.AddAsync(Arg.Do<SkillLearningCase>(c => recorded = c), Arg.Any<CancellationToken>());
+        var overlong = new string('x', OverlongSkillNameLength);
+
+        await Should.NotThrowAsync(() => _collector.CollectCorrectionAsync(new SkillLearningCorrection(
+            AgentId, Wish, SkillLearningSignals.WrongSkill, "user-1", "de", "list_clients", overlong, null)));
+
+        recorded.ShouldNotBeNull();
+        recorded!.ExpectedSkill.ShouldNotBeNull();
+        recorded.ExpectedSkill!.Length.ShouldBe(SkillLearningDefaults.SkillNameMaxLength);
     }
 
     [Test]
