@@ -43,6 +43,15 @@ public class GroupingIntentResolverTests
         result.ShouldContain("check_group_geocoding_status");
     }
 
+    [TestCase("Erstelle Standortgruppen aus allen Adressen von Mitarbeitern, Kunden und Externen")]
+    [TestCase("create location groups from all customer and employee addresses")]
+    public void GuaranteedSkillNames_GroupingIntent_IncludesPartitionClientsByAddress(string message)
+    {
+        var result = GroupingIntentResolver.GuaranteedSkillNames(message);
+
+        result.ShouldContain("partition_clients_by_address");
+    }
+
     [TestCase("Ja, wende die Gruppierung an")]
     [TestCase("Ja, gruppiere sie")]
     [TestCase("yes, apply the grouping")]

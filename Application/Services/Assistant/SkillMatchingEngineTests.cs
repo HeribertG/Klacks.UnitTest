@@ -277,4 +277,62 @@ public class SkillMatchingEngineTests
 
         result.ShouldBeEmpty();
     }
+
+    [Test]
+    public void TopKeywordMatchedSkillNames_SealOpenOrders_MatchesGermanImperativePhrasing()
+    {
+        var skills = new[] { LoadSealOpenOrdersFromSeeds() };
+
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(
+            skills,
+            "Versiegle alle offenen Bestellungen und ordne die fehlenden Gruppen automatisch aus den Kundenadressen zu.");
+
+        result.ShouldContain("seal_open_orders");
+    }
+
+    private static AgentSkill LoadSealOpenOrdersFromSeeds()
+    {
+        const string skillName = "seal_open_orders";
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(LocateSkillSeedsFile()));
+
+        foreach (var element in document.RootElement.GetProperty("skills").EnumerateArray())
+        {
+            if (element.GetProperty("name").GetString() != skillName)
+            {
+                continue;
+            }
+
+            var synonyms = element.TryGetProperty("synonyms", out var synonymsElement)
+                ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<string>>>(synonymsElement.GetRawText())
+                : null;
+
+            return new AgentSkill
+            {
+                Name = skillName,
+                Category = CrudCategory,
+                TriggerKeywords = element.GetProperty("triggerKeywords").GetRawText(),
+                Synonyms = synonyms
+            };
+        }
+
+        throw new InvalidOperationException($"'{skillName}' not found in skill-seeds.json.");
+    }
+
+    private static string LocateSkillSeedsFile()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName, "Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not locate skill-seeds.json by walking up from the test base directory.");
+    }
 }
