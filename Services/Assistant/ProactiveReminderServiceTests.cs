@@ -11,6 +11,11 @@
 /// row never aborts the rest of the batch. The gate order itself is pinned by a combination case:
 /// a terminal condition on a row of a muted user stops the row instead of deferring it, because the
 /// condition gate is checked before the preference gate.
+///
+/// Also pins the live-payload rendering: a reminder of a row that still points at an open ledger row
+/// takes its content parameters from that row's current PayloadJson, falling back to the parameters
+/// frozen on the dispatch row for every key the payload does not carry (and entirely when the payload
+/// is empty or unreadable), while the action parameters stay untouched by it.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Triggers;
@@ -36,6 +41,15 @@ public class ProactiveReminderServiceTests
     private ProactiveReminderService _sut = null!;
 
     private const string UserId = "user-a";
+
+    private const string FrozenParamsJson = """{"count":"2","period":"2026-08","names":"Ann"}""";
+
+    private const string LivePayloadJson =
+        """{"count":5,"period":"2026-09","clients":[{"ClientName":"Ann"},{"ClientName":"Bob"}],"resolved":null}""";
+
+    private const string EmptyPayloadJson = "{}";
+
+    private const string ActionParamsJson = """{"period":"2026-08"}""";
 
     private static readonly DateTime FakeNow = new(2026, 8, 10, 8, 0, 0, DateTimeKind.Utc);
 
@@ -334,6 +348,142 @@ public class ProactiveReminderServiceTests
         Assert.That(_logger.Entries.Count(entry => entry.Level == LogLevel.Error), Is.EqualTo(1));
     }
 
+    [Test]
+    public async Task RunAsync_OpenConditionCarriesPayload_RendersFromTheLivePayload()
+    {
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        GiveCondition(row, LivePayloadJson);
+        Connect(UserId);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Reminded, Is.EqualTo(1));
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            UserId,
+            Arg.Any<string>(),
+            conversationId: null,
+            contentParams: Arg.Is<IReadOnlyDictionary<string, string>?>(
+                sent => sent != null
+                    && sent["count"] == "5"
+                    && sent["period"] == "2026-09"
+                    && !sent.ContainsKey("clients")),
+            messageId: row.Id.ToString(),
+            kind: Arg.Any<string>(),
+            actionRoute: Arg.Any<string>(),
+            actionParams: Arg.Any<IReadOnlyDictionary<string, string>?>());
+    }
+
+    [Test]
+    public async Task RunAsync_LivePayloadCarriesNoValueForAParam_KeepsTheFrozenOne()
+    {
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        GiveCondition(row, LivePayloadJson);
+        Connect(UserId);
+        SetDueRows(row);
+
+        await _sut.RunAsync();
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            UserId,
+            Arg.Any<string>(),
+            conversationId: null,
+            contentParams: Arg.Is<IReadOnlyDictionary<string, string>?>(sent => sent != null && sent["names"] == "Ann"),
+            messageId: row.Id.ToString(),
+            kind: Arg.Any<string>(),
+            actionRoute: Arg.Any<string>(),
+            actionParams: Arg.Any<IReadOnlyDictionary<string, string>?>());
+    }
+
+    [Test]
+    public async Task RunAsync_OpenConditionWithEmptyPayload_FallsBackToTheFrozenParams()
+    {
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        GiveCondition(row, EmptyPayloadJson);
+        Connect(UserId);
+        SetDueRows(row);
+
+        await _sut.RunAsync();
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            UserId,
+            Arg.Any<string>(),
+            conversationId: null,
+            contentParams: Arg.Is<IReadOnlyDictionary<string, string>?>(
+                sent => sent != null && sent.Count == 3 && sent["count"] == "2" && sent["period"] == "2026-08"),
+            messageId: row.Id.ToString(),
+            kind: Arg.Any<string>(),
+            actionRoute: Arg.Any<string>(),
+            actionParams: Arg.Any<IReadOnlyDictionary<string, string>?>());
+    }
+
+    [Test]
+    public async Task RunAsync_OpenConditionWithBrokenPayload_FallsBackToTheFrozenParams()
+    {
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        GiveCondition(row, "not json at all");
+        Connect(UserId);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Reminded, Is.EqualTo(1));
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            UserId,
+            Arg.Any<string>(),
+            conversationId: null,
+            contentParams: Arg.Is<IReadOnlyDictionary<string, string>?>(
+                sent => sent != null && sent.Count == 3 && sent["count"] == "2"),
+            messageId: row.Id.ToString(),
+            kind: Arg.Any<string>(),
+            actionRoute: Arg.Any<string>(),
+            actionParams: Arg.Any<IReadOnlyDictionary<string, string>?>());
+    }
+
+    [Test]
+    public async Task RunAsync_LivePayload_NeverLeaksIntoTheActionParams()
+    {
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        row.ActionParamsJson = ActionParamsJson;
+        GiveCondition(row, LivePayloadJson);
+        Connect(UserId);
+        SetDueRows(row);
+
+        await _sut.RunAsync();
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            UserId,
+            Arg.Any<string>(),
+            conversationId: null,
+            contentParams: Arg.Any<IReadOnlyDictionary<string, string>?>(),
+            messageId: row.Id.ToString(),
+            kind: Arg.Any<string>(),
+            actionRoute: Arg.Any<string>(),
+            actionParams: Arg.Is<IReadOnlyDictionary<string, string>?>(
+                sent => sent != null && sent.Count == 1 && sent["period"] == "2026-08"));
+    }
+
+    [Test]
+    public async Task RunAsync_RowWithoutConditionId_StopsWithoutDelivery()
+    {
+        var row = MakeRow(withCondition: false);
+        Connect(UserId);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Stopped, Is.EqualTo(1));
+        Assert.That(result.Reminded, Is.EqualTo(0));
+        await _conditionRepository.DidNotReceiveWithAnyArgs().GetByIdAsync(default);
+        await _dispatchRepository.Received(1).TryRescheduleReminderAsync(
+            row.Id, row.NextReminderAtUtc!.Value, null, Arg.Any<CancellationToken>());
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+    }
+
+    private void GiveCondition(ProactiveTriggerDispatchRow row, string payloadJson) =>
+        _conditionRepository.GetByIdAsync(row.ConditionId!.Value, Arg.Any<CancellationToken>())
+            .Returns(new AgentCondition { Status = AgentConditionStatus.Reported, PayloadJson = payloadJson });
+
     private void Connect(string userId) =>
         _notificationService.GetConnectedUserIdsAsync().Returns(new List<string> { userId });
 
@@ -344,15 +494,18 @@ public class ProactiveReminderServiceTests
     private static ProactiveTriggerDispatchRow MakeRow(
         string userId = UserId,
         string severity = AgentTriggerSeverity.High,
-        int reminderCount = 0) => new()
+        int reminderCount = 0,
+        string? contentParamsJson = null,
+        bool withCondition = true) => new()
     {
         Id = Guid.NewGuid(),
         UserId = userId,
         TriggerKind = AgentTriggerKinds.UnstaffedShift,
         DedupKey = Guid.NewGuid().ToString("N"),
         ContentKey = "shift.unstaffed",
+        ContentParamsJson = contentParamsJson,
         Severity = severity,
-        ConditionId = Guid.NewGuid(),
+        ConditionId = withCondition ? Guid.NewGuid() : null,
         ReminderCount = reminderCount,
         NextReminderAtUtc = FakeNow.AddHours(-1)
     };
