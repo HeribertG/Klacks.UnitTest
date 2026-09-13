@@ -1,10 +1,12 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for PartitionClientsByAddressSkill: entityType=Customer and any unrecognised entityType
-/// or level are rejected before the command is ever sent, a restricted group scope is refused (this
-/// skill creates groups at the top of the tree), an unresolvable rootGroupName is rejected with the
-/// real group names, and a valid call resolves rootGroupName and forwards apply/level/entityType as given.
+/// Unit tests for PartitionClientsByAddressSkill: any unrecognised entityType, level or out-of-range
+/// clusterSharePercent is rejected before the command is ever sent, a restricted group scope is
+/// refused (this skill creates groups at the top of the tree), an unresolvable rootGroupName is
+/// rejected with the real group names, entityType defaults to all three client types and 'Customer'
+/// is accepted, and a valid call resolves rootGroupName and forwards apply/level/entityType/
+/// clusterSharePercent as given.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Groups;
@@ -45,7 +47,7 @@ public class PartitionClientsByAddressSkillTests
             {
                 var cmd = ci.Arg<PartitionClientsByAddressCommand>();
                 return Task.FromResult(new PartitionClientsByAddressResult(
-                    cmd.Apply, cmd.Level.ToString(), cmd.EntityType.ToString(), 1, 0, 0,
+                    cmd.Apply, cmd.Level.ToString(), cmd.EntityTypes.Count == 1 ? cmd.EntityTypes[0].ToString() : "All", 1, 0, 0,
                     cmd.Apply ? 1 : 0, cmd.Apply ? 1 : 0, 0,
                     new List<PartitionGroupSummary> { new("BE", null, false, null, 1) },
                     new List<Klacks.Api.Application.DTOs.Grouping.UnassignablePartitionClient>(),
@@ -63,16 +65,6 @@ public class PartitionClientsByAddressSkillTests
 
     private PartitionClientsByAddressSkill Skill(IGroupScopeGuard? scopeGuard = null) =>
         new(_groupRepository, scopeGuard ?? TestGroupScopeGuard.Unrestricted(), _mediator, _companyClock);
-
-    [Test]
-    public async Task ReturnsError_WhenEntityTypeIsCustomer()
-    {
-        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["entityType"] = "Customer" });
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("Customer"));
-        await _mediator.DidNotReceive().Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>());
-    }
 
     [Test]
     public async Task ReturnsError_WhenEntityTypeIsUnrecognised()
@@ -125,10 +117,31 @@ public class PartitionClientsByAddressSkillTests
         await _mediator.Received(1).Send(
             Arg.Is<PartitionClientsByAddressCommand>(cmd =>
                 !cmd.Apply &&
-                cmd.Level == GroupPartitionLevelEnum.CantonCity &&
-                cmd.EntityType == EntityTypeEnum.Employee &&
+                cmd.Level == GroupPartitionLevelEnum.Cluster &&
+                cmd.EntityTypes.Count == 3 &&
                 cmd.RootGroupId == HeadOfficeGroupId),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_Message_ReportsNewAndReusedGroupCounts()
+    {
+        _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new PartitionClientsByAddressResult(
+                true, "State", "Employee", 2, 0, 0, 2, 2, 0,
+                new List<PartitionGroupSummary>
+                {
+                    new("Deutschschweiz Mitte", null, true, HeadOfficeGroupId, 0),
+                    new("BE", "Deutschschweiz Mitte", false, Guid.NewGuid(), 2)
+                },
+                new List<Klacks.Api.Application.DTOs.Grouping.UnassignablePartitionClient>(),
+                new List<string>())));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("1 new");
+        result.Message.ShouldContain("1 reused");
     }
 
     [Test]
@@ -147,5 +160,95 @@ public class PartitionClientsByAddressSkillTests
             Arg.Is<PartitionClientsByAddressCommand>(cmd =>
                 cmd.Apply && cmd.IncludeAlreadyGrouped && cmd.Level == GroupPartitionLevelEnum.City),
             Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("state", GroupPartitionLevelEnum.State)]
+    [TestCase("state_city", GroupPartitionLevelEnum.StateCity)]
+    [TestCase("cluster", GroupPartitionLevelEnum.Cluster)]
+    public async Task Execute_LevelNames_MapToLevels(string level, GroupPartitionLevelEnum expected)
+    {
+        var parameters = new Dictionary<string, object> { ["level"] = level };
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(
+            Arg.Is<PartitionClientsByAddressCommand>(c => c.Level == expected), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Execute_UnknownLevel_ReturnsErrorNamingNeutralLevels()
+    {
+        var parameters = new Dictionary<string, object> { ["level"] = "kanton" };
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("cluster, state, city, state_city");
+    }
+
+    [Test]
+    public async Task Execute_NoParameters_DefaultsToClusterLevelAndAllTypesWithTenPercent()
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(
+            Arg.Is<PartitionClientsByAddressCommand>(c =>
+                c.Level == GroupPartitionLevelEnum.Cluster &&
+                c.EntityTypes.Count == 3 &&
+                c.ClusterSharePercent == 10 &&
+                !c.Apply),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("Employee", EntityTypeEnum.Employee)]
+    [TestCase("ExternEmp", EntityTypeEnum.ExternEmp)]
+    [TestCase("customer", EntityTypeEnum.Customer)]
+    public async Task Execute_SingleEntityType_IsForwarded(string entityType, EntityTypeEnum expected)
+    {
+        var parameters = new Dictionary<string, object> { ["entityType"] = entityType };
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(
+            Arg.Is<PartitionClientsByAddressCommand>(c => c.EntityTypes.Count == 1 && c.EntityTypes[0] == expected),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Execute_UnknownEntityType_ListsAllFour()
+    {
+        var parameters = new Dictionary<string, object> { ["entityType"] = "Kunde" };
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("All, Employee, ExternEmp, Customer");
+    }
+
+    [TestCase(0)]
+    [TestCase(101)]
+    public async Task Execute_ClusterShareOutOfRange_ReturnsError(int share)
+    {
+        var parameters = new Dictionary<string, object> { ["clusterSharePercent"] = share };
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("clusterSharePercent");
+        await _mediator.DidNotReceive().Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Execute_ClusterShareProvided_IsPassedThrough()
+    {
+        var parameters = new Dictionary<string, object> { ["clusterSharePercent"] = 25 };
+
+        await Skill().ExecuteAsync(Ctx(), parameters);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<PartitionClientsByAddressCommand>(c => c.ClusterSharePercent == 25), Arg.Any<CancellationToken>());
     }
 }

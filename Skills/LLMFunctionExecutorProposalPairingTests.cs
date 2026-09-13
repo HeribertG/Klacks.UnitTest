@@ -7,6 +7,7 @@
 /// drops the hint again. The pairing is read from the skill catalogue only — no user text is inspected.
 /// </summary>
 
+using System.Text.Json;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.UnitTest.TestHelpers;
@@ -21,6 +22,8 @@ public class LLMFunctionExecutorProposalPairingTests
     private const string ProposeSkillName = "propose_customer_grouping";
     private const string ApplySkillName = "apply_customer_grouping";
     private const string UnpairedSkillName = "list_groups";
+    private const string SelfPairedSkillName = "partition_clients_like_skill";
+    private const string ApplyParameterName = "apply";
 
     private static readonly TimeSpan ForceWindow =
         TimeSpan.FromSeconds(AutonomyDefaults.ConfirmationForceWindowSeconds);
@@ -48,7 +51,8 @@ public class LLMFunctionExecutorProposalPairingTests
             {
                 new() { Name = ProposeSkillName, PairedApplySkill = ApplySkillName },
                 new() { Name = ApplySkillName },
-                new() { Name = UnpairedSkillName }
+                new() { Name = UnpairedSkillName },
+                new() { Name = SelfPairedSkillName, PairedApplySkill = SelfPairedSkillName }
             });
 
         _executor = new LLMFunctionExecutor(
@@ -129,6 +133,63 @@ public class LLMFunctionExecutorProposalPairingTests
         _confirmationStore.PeekLatestForUser(_userId, ForceWindow).ShouldBeNull();
     }
 
+    [Test]
+    public async Task SelfPairedSkill_PreviewCallWithApplyFalse_CreatesHintForItself()
+    {
+        SetupBridgeResult(success: true);
+
+        await _executor.ProcessFunctionCallsAsync(
+            Context(), [Call(SelfPairedSkillName, new Dictionary<string, object> { [ApplyParameterName] = false })]);
+
+        var hint = _confirmationStore.PeekLatestForUser(
+            _userId, ForceWindow, PendingConfirmationPurposes.ProposalHint);
+
+        hint.ShouldNotBeNull();
+        hint!.SkillName.ShouldBe(SelfPairedSkillName);
+    }
+
+    [Test]
+    public async Task SelfPairedSkill_PreviewCallWithoutApplyParameter_CreatesHintForItself()
+    {
+        SetupBridgeResult(success: true);
+
+        await _executor.ProcessFunctionCallsAsync(Context(), [Call(SelfPairedSkillName)]);
+
+        var hint = _confirmationStore.PeekLatestForUser(
+            _userId, ForceWindow, PendingConfirmationPurposes.ProposalHint);
+
+        hint.ShouldNotBeNull();
+        hint!.SkillName.ShouldBe(SelfPairedSkillName);
+    }
+
+    [Test]
+    public async Task SelfPairedSkill_ApplyCall_DiscardsHint()
+    {
+        SetupBridgeResult(success: true);
+        _confirmationStore.CreateProposalHint(_userId, SelfPairedSkillName);
+
+        await _executor.ProcessFunctionCallsAsync(
+            Context(), [Call(SelfPairedSkillName, new Dictionary<string, object> { [ApplyParameterName] = true })]);
+
+        _confirmationStore.PeekLatestForUser(
+            _userId, ForceWindow, PendingConfirmationPurposes.ProposalHint).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SelfPairedSkill_ApplyCallWithJsonElementTrue_DiscardsHint()
+    {
+        SetupBridgeResult(success: true);
+        _confirmationStore.CreateProposalHint(_userId, SelfPairedSkillName);
+        using var applyDocument = JsonDocument.Parse("true");
+        var applyElement = applyDocument.RootElement.Clone();
+
+        await _executor.ProcessFunctionCallsAsync(
+            Context(), [Call(SelfPairedSkillName, new Dictionary<string, object> { [ApplyParameterName] = applyElement })]);
+
+        _confirmationStore.PeekLatestForUser(
+            _userId, ForceWindow, PendingConfirmationPurposes.ProposalHint).ShouldBeNull();
+    }
+
     private void SetupBridgeResult(bool success)
     {
         _skillBridge.ExecuteSkillFromLLMCallAsync(Arg.Any<LLMFunctionCall>(), Arg.Any<SkillExecutionContext>())
@@ -147,4 +208,7 @@ public class LLMFunctionExecutorProposalPairingTests
     };
 
     private static LLMFunctionCall Call(string functionName) => new() { FunctionName = functionName };
+
+    private static LLMFunctionCall Call(string functionName, Dictionary<string, object> parameters) =>
+        new() { FunctionName = functionName, Parameters = parameters };
 }

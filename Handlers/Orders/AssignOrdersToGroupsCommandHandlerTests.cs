@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for AssignOrdersToGroupsCommandHandler: the target group is derived from the customer's
-/// address in the fixed precedence city name, canton code, nearest coordinates and finally unassigned;
-/// the workplace address outranks the main address; a preview never touches a repository or the unit of
-/// work; an apply writes one link per order; and an order that already holds a link is skipped, which is
-/// the shape a second apply run takes.
+/// Unit tests for AssignOrdersToGroupsCommandHandler: the target group is derived from the customer's own
+/// group membership, then its address in the fixed precedence city name, state code, nearest coordinates
+/// and finally unassigned; the workplace address outranks the main address; a preview never touches a
+/// repository or the unit of work; an apply writes one link per order; and an order that already holds a
+/// link is skipped, which is the shape a second apply run takes.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Orders;
@@ -117,17 +117,17 @@ public class AssignOrdersToGroupsCommandHandlerTests
     }
 
     [Test]
-    public async Task FallsBackToTheCantonCode_WhenNoGroupCarriesTheCityName()
+    public async Task FallsBackToTheStateCode_WhenNoGroupCarriesTheCityName()
     {
-        var canton = NamedGroup("BE");
-        _groupRepository.List().Returns(new List<Group> { canton });
+        var state = NamedGroup("BE");
+        _groupRepository.List().Returns(new List<Group> { state });
         OpenOrders(OrderFor(Customer(Addr(city: "Worb", state: "BE"))));
 
         var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
 
         result.AssignedCount.ShouldBe(1);
-        result.AssignmentSample[0].GroupId.ShouldBe(canton.Id);
-        result.AssignmentSample[0].MatchReason.ShouldContain("canton code");
+        result.AssignmentSample[0].GroupId.ShouldBe(state.Id);
+        result.AssignmentSample[0].MatchReason.ShouldContain("state code");
     }
 
     [Test]
@@ -250,5 +250,97 @@ public class AssignOrdersToGroupsCommandHandlerTests
 
         result.SkippedAlreadyGroupedCount.ShouldBe(0);
         result.AssignedCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Handle_CustomerHoldsMembershipInGroupWithCoordinates_OrderTakesThatGroupBeforeCityName()
+    {
+        var cluster = NamedGroup("Zürich", 47.37, 8.54);
+        var cityNamed = NamedGroup("Uster");
+        var customer = Customer(Addr(city: "Uster", state: "ZH", latitude: 47.35, longitude: 8.72));
+        customer.GroupItems = new List<GroupItem>
+        {
+            new() { Id = Guid.NewGuid(), ClientId = customer.Id, GroupId = cluster.Id, Group = cluster, ValidFrom = CompanyToday.AddDays(-1) }
+        };
+        _groupRepository.List().Returns(new List<Group> { cluster, cityNamed });
+        OpenOrders(OrderFor(customer));
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.AssignmentSample.Single().GroupId.ShouldBe(cluster.Id);
+        result.AssignmentSample.Single().MatchReason.ShouldContain("membership");
+    }
+
+    [Test]
+    public async Task Handle_CustomerMembershipGroupWithoutCoordinates_IsIgnored_FallsBackToCityName()
+    {
+        var qualification = NamedGroup("Pflege");
+        var cityNamed = NamedGroup("Uster");
+        var customer = Customer(Addr(city: "Uster", state: "ZH"));
+        customer.GroupItems = new List<GroupItem>
+        {
+            new() { Id = Guid.NewGuid(), ClientId = customer.Id, GroupId = qualification.Id, Group = qualification }
+        };
+        _groupRepository.List().Returns(new List<Group> { qualification, cityNamed });
+        OpenOrders(OrderFor(customer));
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.AssignmentSample.Single().GroupId.ShouldBe(cityNamed.Id);
+    }
+
+    [Test]
+    public async Task Handle_ExpiredMembership_IsIgnored()
+    {
+        var cluster = NamedGroup("Zürich", 47.37, 8.54);
+        var cityNamed = NamedGroup("Uster");
+        var customer = Customer(Addr(city: "Uster", state: "ZH"));
+        customer.GroupItems = new List<GroupItem>
+        {
+            new() { Id = Guid.NewGuid(), ClientId = customer.Id, GroupId = cluster.Id, Group = cluster, ValidUntil = CompanyToday.AddDays(-1) }
+        };
+        _groupRepository.List().Returns(new List<Group> { cluster, cityNamed });
+        OpenOrders(OrderFor(customer));
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.AssignmentSample.Single().GroupId.ShouldBe(cityNamed.Id);
+    }
+
+    [Test]
+    public async Task Handle_ScenarioMembership_IsIgnored()
+    {
+        var cluster = NamedGroup("Zürich", 47.37, 8.54);
+        var cityNamed = NamedGroup("Uster");
+        var customer = Customer(Addr(city: "Uster", state: "ZH"));
+        customer.GroupItems = new List<GroupItem>
+        {
+            new() { Id = Guid.NewGuid(), ClientId = customer.Id, GroupId = cluster.Id, Group = cluster, AnalyseToken = Guid.NewGuid() }
+        };
+        _groupRepository.List().Returns(new List<Group> { cluster, cityNamed });
+        OpenOrders(OrderFor(customer));
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.AssignmentSample.Single().GroupId.ShouldBe(cityNamed.Id);
+    }
+
+    [Test]
+    public async Task Handle_TwoActiveCoordinateMemberships_PrefersMostRecentValidFrom()
+    {
+        var older = NamedGroup("Zürich", 47.37, 8.54);
+        var newer = NamedGroup("Winterthur", 47.50, 8.72);
+        var customer = Customer(Addr(city: "Uster", state: "ZH"));
+        customer.GroupItems = new List<GroupItem>
+        {
+            new() { Id = Guid.NewGuid(), ClientId = customer.Id, GroupId = older.Id, Group = older, ValidFrom = CompanyToday.AddDays(-10) },
+            new() { Id = Guid.NewGuid(), ClientId = customer.Id, GroupId = newer.Id, Group = newer, ValidFrom = CompanyToday.AddDays(-1) }
+        };
+        _groupRepository.List().Returns(new List<Group> { older, newer });
+        OpenOrders(OrderFor(customer));
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.AssignmentSample.Single().GroupId.ShouldBe(newer.Id);
     }
 }
