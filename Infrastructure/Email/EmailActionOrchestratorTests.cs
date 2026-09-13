@@ -32,8 +32,7 @@ namespace Klacks.UnitTest.Infrastructure.Email;
 [TestFixture]
 public class EmailActionOrchestratorTests
 {
-    private IAgentAutonomyPreferenceRepository _autonomyPreferences = null!;
-    private IPlanningAudienceResolver _audienceResolver = null!;
+    private IAdminAutonomyLevelAggregator _adminAutonomy = null!;
     private ISkillExecutor _skillExecutor = null!;
     private IGroupMembershipService _groupMembershipService = null!;
     private Klacks.Api.Application.Interfaces.IAbsenceRepository _absenceRepository = null!;
@@ -56,8 +55,7 @@ public class EmailActionOrchestratorTests
     [SetUp]
     public void SetUp()
     {
-        _autonomyPreferences = Substitute.For<IAgentAutonomyPreferenceRepository>();
-        _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        _adminAutonomy = Substitute.For<IAdminAutonomyLevelAggregator>();
         _skillExecutor = Substitute.For<ISkillExecutor>();
         _groupMembershipService = Substitute.For<IGroupMembershipService>();
         _absenceRepository = Substitute.For<Klacks.Api.Application.Interfaces.IAbsenceRepository>();
@@ -67,8 +65,6 @@ public class EmailActionOrchestratorTests
         _contractDataProvider = Substitute.For<IClientContractDataProvider>();
 
         SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0 });
-        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
-            .Returns(new HashSet<string> { AdminGuid.ToString() });
         _groupMembershipService.GetClientGroupsAsync(ClientId)
             .Returns([new Group { Id = GroupId, Name = "Bern" }]);
         _absenceRepository.List().Returns(
@@ -105,9 +101,11 @@ public class EmailActionOrchestratorTests
         _governanceResolver = Substitute.For<IProactiveGovernanceResolver>();
         _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
             .Returns(AutonomyLevel.FullyAutonomous);
+        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>())
+            .Returns(false);
 
         _orchestrator = new EmailActionOrchestrator(
-            _autonomyPreferences, _audienceResolver, _skillExecutor,
+            _adminAutonomy, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
             _capacityAdvisor,
@@ -131,8 +129,8 @@ public class EmailActionOrchestratorTests
 
     private void AdminLevel(AutonomyLevel level)
     {
-        _autonomyPreferences.GetAsync(AdminGuid.ToString(), Arg.Any<CancellationToken>())
-            .Returns(new AgentAutonomyPreferenceRow { UserId = AdminGuid.ToString(), Level = level });
+        _adminAutonomy.AggregateAsync(Arg.Any<AdminAutonomyMissingPreferencePolicy>(), Arg.Any<CancellationToken>())
+            .Returns(new AdminAutonomyAggregate(level, AdminGuid, null));
     }
 
     private void SetContract(EffectiveContractData contract)
@@ -363,11 +361,10 @@ public class EmailActionOrchestratorTests
     public async Task EffectiveLevel_IsMinimumOverAdmins()
     {
         var secondAdmin = Guid.NewGuid();
-        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
-            .Returns(new HashSet<string> { AdminGuid.ToString(), secondAdmin.ToString() });
-        AdminLevel(AutonomyLevel.FullyAutonomous);
-        _autonomyPreferences.GetAsync(secondAdmin.ToString(), Arg.Any<CancellationToken>())
-            .Returns(new AgentAutonomyPreferenceRow { UserId = secondAdmin.ToString(), Level = AutonomyLevel.Propose });
+        // The aggregator itself owns the MIN-over-admins walk; the orchestrator only consumes its
+        // result, so the test stubs the aggregate outcome directly instead of two per-admin rows.
+        _adminAutonomy.AggregateAsync(Arg.Any<AdminAutonomyMissingPreferencePolicy>(), Arg.Any<CancellationToken>())
+            .Returns(new AdminAutonomyAggregate(AutonomyLevel.Propose, secondAdmin, null));
 
         var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
 
@@ -378,8 +375,8 @@ public class EmailActionOrchestratorTests
     [Test]
     public async Task NoAdmins_OnlySuggests()
     {
-        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
-            .Returns(new HashSet<string>());
+        _adminAutonomy.AggregateAsync(Arg.Any<AdminAutonomyMissingPreferencePolicy>(), Arg.Any<CancellationToken>())
+            .Returns(new AdminAutonomyAggregate(null, null, null));
 
         var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
 
@@ -400,6 +397,23 @@ public class EmailActionOrchestratorTests
         // automatically, no matter what every single admin has chosen.
         outcome!.Executed.ShouldBeFalse();
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task KillSwitchActive_BlocksExecution_EvenWhenAllAdminsAllowIt()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+
+        // The global kill switch is the first brake, ahead of the per-admin aggregation: an active
+        // switch degrades the whole flow to suggest-only exactly like a global level of Propose.
+        outcome!.Executed.ShouldBeFalse();
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+        await _adminAutonomy.DidNotReceive().AggregateAsync(
+            Arg.Any<AdminAutonomyMissingPreferencePolicy>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -946,7 +960,7 @@ public class EmailActionOrchestratorTests
     {
         var serviceAccountId = Guid.NewGuid();
         var orchestrator = new EmailActionOrchestrator(
-            _autonomyPreferences, _audienceResolver, _skillExecutor,
+            _adminAutonomy, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
             _capacityAdvisor,

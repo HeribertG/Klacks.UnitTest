@@ -4,9 +4,12 @@
 /// Unit tests for NextPeriodSchedulingDueDetector — covers the autonomy gating branch (hint below
 /// Autonomous, automatic AutoWizard start from Autonomous upwards, MIN aggregation over admins),
 /// the Individual-interval skip, the email-backlog gate, the scenario-already-exists skip and the
-/// interrupted auto-commit an API restart leaves behind. The autonomy aggregation runs through the
-/// REAL NextPeriodAutonomyResolver rather than a substitute: it is the piece the detector shares with
-/// the auto-commit watcher, and stubbing it here would stop testing the rule the tests are named after.
+/// interrupted auto-commit an API restart leaves behind, plus the governance brakes the detector no
+/// longer checks itself (kind disabled, MaxAction below Prepare, MaxAction Prepare without a commit
+/// intent). The autonomy aggregation runs through the REAL NextPeriodAutonomyResolver and the REAL
+/// AdminAutonomyLevelAggregator rather than substitutes: they are the pieces the detector shares with
+/// the auto-commit watcher, and stubbing them here would stop testing the rule the tests are named
+/// after.
 /// </summary>
 
 using System.Text.Json;
@@ -14,6 +17,7 @@ using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Interfaces.Schedules.AutoWizard;
+using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Email;
@@ -97,7 +101,6 @@ public class NextPeriodSchedulingDueDetectorTests
             _autoCommitService,
             CreateAutonomyResolver(),
             _conditionRepository,
-            _governanceResolver,
             _settingsReader,
             _receivedEmailRepository,
             NullLogger<NextPeriodSchedulingDueDetector>.Instance,
@@ -106,16 +109,42 @@ public class NextPeriodSchedulingDueDetectorTests
     }
 
     private NextPeriodAutonomyResolver CreateAutonomyResolver() =>
-        new(_audienceResolver, _autonomyPreferences, _governanceResolver);
+        new(new AdminAutonomyLevelAggregator(_audienceResolver, _autonomyPreferences), _governanceResolver);
 
     private void StubKillSwitch(bool active)
     {
-        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(active);
+        StubGovernance(ProactiveMaxAction.Execute, enabled: true, killSwitchActive: active);
 
         // Default: no global cap, so the per-admin aggregation alone decides; a test that cares
         // overrides this with a lower level.
         _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
             .Returns(AutonomyLevel.FullyAutonomous);
+    }
+
+    /// <summary>
+    /// The governance row of this kind, shaped the way ProactiveGovernanceResolver would shape it: the
+    /// kill switch and a disabled kind pin EffectiveMaxAction to Hint. The global-level cap is NOT folded
+    /// in here - a test that lowers the global level asserts through the raw level instead, which is the
+    /// stricter of the two paths.
+    /// </summary>
+    private void StubGovernance(ProactiveMaxAction configuredMaxAction, bool enabled, bool killSwitchActive)
+    {
+        var effective = killSwitchActive || !enabled ? ProactiveMaxAction.Hint : configuredMaxAction;
+        _governanceResolver.ResolveAsync(
+                AgentTriggerKinds.NextPeriodSchedulingDue, null, Arg.Any<CancellationToken>())
+            .Returns(new ProactiveGovernanceDecision(
+                TriggerKind: AgentTriggerKinds.NextPeriodSchedulingDue,
+                GroupId: null,
+                EffectiveMaxAction: effective,
+                ConfiguredMaxAction: configuredMaxAction,
+                Enabled: enabled,
+                KillSwitchActive: killSwitchActive,
+                ResponsibleOwnerUserId: null,
+                DailyActionBudget: ProactiveGovernanceDefaults.DailyActionBudget,
+                WindowActionLimit: ProactiveGovernanceDefaults.WindowActionLimit,
+                WindowMinutes: ProactiveGovernanceDefaults.WindowMinutes,
+                IsStored: true,
+                GlobalAutonomyCap: ProactiveMaxAction.Execute));
     }
 
     private void StubWeekStart(DayOfWeek weekStartDay)
@@ -308,6 +337,56 @@ public class NextPeriodSchedulingDueDetectorTests
     }
 
     [Test]
+    public async Task DetectAsync_GovernanceMaxActionHint_FallsBackToHintEvenAtFullAutonomy()
+    {
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubAdmins((AdminId, AutonomyLevel.FullyAutonomous));
+        StubGovernance(ProactiveMaxAction.Hint, enabled: true, killSwitchActive: false);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        Assert.That(events[0], Is.TypeOf<NextPeriodSchedulingDueTriggerEvent>(),
+            "The hint branch is never gated - a governance row that forbids acting must still report.");
+        await _autoWizardJobRunner.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
+        _autoCommitService.DidNotReceiveWithAnyArgs().QueueAutoCommit(default, default, default!, default, default);
+    }
+
+    [Test]
+    public async Task DetectAsync_GovernanceKindDisabled_FallsBackToHintEvenAtFullAutonomy()
+    {
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubAdmins((AdminId, AutonomyLevel.FullyAutonomous));
+        StubGovernance(ProactiveMaxAction.Execute, enabled: false, killSwitchActive: false);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        Assert.That(events[0], Is.TypeOf<NextPeriodSchedulingDueTriggerEvent>());
+        await _autoWizardJobRunner.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
+    }
+
+    [Test]
+    public async Task DetectAsync_GovernanceMaxActionPrepare_StartsAutofillWithoutACommitIntent()
+    {
+        var group = MakeGroup(PaymentInterval.Monthly);
+        StubGroups(group);
+        StubAdmins((AdminId, AutonomyLevel.FullyAutonomous));
+        StubGovernance(ProactiveMaxAction.Prepare, enabled: true, killSwitchActive: false);
+        var jobId = Guid.NewGuid();
+        _autoWizardJobRunner.StartAsync(Arg.Any<StartAutoWizardRequest>(), Arg.Any<CancellationToken>())
+            .Returns(jobId);
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        var started = (NextPeriodAutofillStartedTriggerEvent)events[0];
+        Assert.That(started.AutoCommitIntended, Is.False,
+            "Prepare lays a draft in front of a human; governance may lower the admin consent, never raise it.");
+        _autoCommitService.DidNotReceiveWithAnyArgs().QueueAutoCommit(default, default, default!, default, default);
+    }
+
+    [Test]
     public async Task DetectAsync_MinAggregation_OneCautiousAdminBlocksAutoStart()
     {
         StubGroups(MakeGroup(PaymentInterval.Monthly));
@@ -462,7 +541,7 @@ public class NextPeriodSchedulingDueDetectorTests
         _sut = new NextPeriodSchedulingDueDetector(
             _groupRepository, _weekConfiguration, _scenarioRepository, _activityProbe,
             _autoWizardJobRunner, _clientRepository, _shiftScheduleRepository, _autoCommitService,
-            CreateAutonomyResolver(), _conditionRepository, _governanceResolver, _settingsReader,
+            CreateAutonomyResolver(), _conditionRepository, _settingsReader,
             _receivedEmailRepository, NullLogger<NextPeriodSchedulingDueDetector>.Instance, clock,
             _timeProvider);
 

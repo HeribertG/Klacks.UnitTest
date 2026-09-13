@@ -4,8 +4,9 @@
 /// Unit tests for GoalPlanExecutionService — the Phase 4 unattended-execution gate of the
 /// self-directed-goals roadmap. Covers every brake in isolation (feature flag off, candidate not
 /// approved, missing PlanId, confidence Low/Unknown, an admin below Autonomous, no admin at all, an
-/// admin without any stored autonomy level, and a missing/empty frozen permissions CSV) each proving
-/// execution is never started, plus the happy path
+/// admin without any stored autonomy level, a set global kill switch, an installation-wide autonomy
+/// level below Autonomous, and a missing/empty frozen permissions CSV) each proving execution is never
+/// started, plus the happy path
 /// proving the frozen owner permissions and the fixed audit user name reach the SkillExecutionContext
 /// handed to IPlanChatService.StartBackgroundExecution.
 /// </summary>
@@ -13,6 +14,7 @@
 namespace Klacks.UnitTest.Application.Services.Assistant.Reflection;
 
 using Klacks.Api.Application.Configuration;
+using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Services.Assistant.Planning;
 using Klacks.Api.Application.Services.Assistant.Reflection;
 using Klacks.Api.Domain.Constants;
@@ -32,6 +34,7 @@ public class GoalPlanExecutionServiceTests
     private IGoalCandidateRepository _goalCandidateRepository = null!;
     private IPlanningAudienceResolver _audienceResolver = null!;
     private IAgentAutonomyPreferenceRepository _autonomyRepository = null!;
+    private IProactiveGovernanceResolver _governanceResolver = null!;
     private IPlanChatService _planChatService = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
     private BackgroundServiceOptions _options = null!;
@@ -47,13 +50,23 @@ public class GoalPlanExecutionServiceTests
         _autonomyRepository = Substitute.For<IAgentAutonomyPreferenceRepository>();
         _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((AgentAutonomyPreferenceRow?)null);
+        _governanceResolver = Substitute.For<IProactiveGovernanceResolver>();
+        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(false);
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
+            .Returns(AutonomyLevel.FullyAutonomous);
         _planChatService = Substitute.For<IPlanChatService>();
         _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.Authorised }));
         _options = new BackgroundServiceOptions { GoalReflectionExecution = true };
+
+        // The MIN-over-admins aggregation runs through the REAL AdminAutonomyLevelAggregator: it is the
+        // rule this path shares with the next-period automation, and a substitute would stop testing it.
         _sut = new GoalPlanExecutionService(
-            _goalCandidateRepository, _audienceResolver, _autonomyRepository, _planChatService,
+            _goalCandidateRepository,
+            new AdminAutonomyLevelAggregator(_audienceResolver, _autonomyRepository),
+            _governanceResolver,
+            _planChatService,
             _tokenIssuer, Options.Create(_options), NullLogger<GoalPlanExecutionService>.Instance);
     }
 
@@ -252,6 +265,55 @@ public class GoalPlanExecutionServiceTests
                 c.UserPermissions.Contains("CanEditClients") &&
                 c.UserPermissions.Contains("CanEditShifts")),
             false);
+    }
+
+    [Test]
+    public async Task ExecuteForCandidateAsync_KillSwitchActive_DoesNotStartExecution()
+    {
+        var candidate = MakeCandidate();
+        _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _autonomyRepository.GetAsync(AdminAId, Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = AdminAId, Level = AutonomyLevel.FullyAutonomous });
+        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await _sut.ExecuteForCandidateAsync(candidate.Id, CancellationToken.None);
+
+        result.ShouldBeFalse();
+        _planChatService.DidNotReceiveWithAnyArgs().StartBackgroundExecution(default, default!, default);
+    }
+
+    [TestCase(AutonomyLevel.Propose)]
+    [TestCase(AutonomyLevel.Assisted)]
+    public async Task ExecuteForCandidateAsync_GlobalAutonomyLevelBelowAutonomous_DoesNotStartExecution(
+        AutonomyLevel globalLevel)
+    {
+        var candidate = MakeCandidate();
+        _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _autonomyRepository.GetAsync(AdminAId, Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = AdminAId, Level = AutonomyLevel.FullyAutonomous });
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>()).Returns(globalLevel);
+
+        var result = await _sut.ExecuteForCandidateAsync(candidate.Id, CancellationToken.None);
+
+        result.ShouldBeFalse();
+        _planChatService.DidNotReceiveWithAnyArgs().StartBackgroundExecution(default, default!, default);
+    }
+
+    [TestCase(AutonomyLevel.Autonomous)]
+    [TestCase(AutonomyLevel.FullyAutonomous)]
+    public async Task ExecuteForCandidateAsync_GlobalAutonomyLevelAtOrAboveAutonomous_StartsExecution(
+        AutonomyLevel globalLevel)
+    {
+        var candidate = MakeCandidate();
+        _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _autonomyRepository.GetAsync(AdminAId, Arg.Any<CancellationToken>())
+            .Returns(new AgentAutonomyPreferenceRow { UserId = AdminAId, Level = AutonomyLevel.Autonomous });
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>()).Returns(globalLevel);
+
+        var result = await _sut.ExecuteForCandidateAsync(candidate.Id, CancellationToken.None);
+
+        result.ShouldBeTrue();
+        _planChatService.ReceivedWithAnyArgs(1).StartBackgroundExecution(default, default!, default);
     }
 
     [Test]

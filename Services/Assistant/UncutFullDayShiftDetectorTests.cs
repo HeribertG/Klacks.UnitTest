@@ -4,10 +4,12 @@
 /// Unit tests for UncutFullDayShiftDetector -- covers empty-result, severity-by-proximity
 /// (High/Medium/Low, including an already-started duty), the SplitShift/unequal-times/already-
 /// ended/container-shift negative cases, scenario-clone exclusion, soft-delete exclusion,
-/// DedupKey stability, and that a large backlog of long-past duties cannot crowd a genuinely
-/// upcoming one out of the per-tick emission cap. The container-shift exclusion pins the design
-/// decision that "cut" is a task-level concept: a container with equal StartShift/EndShift is
-/// exclusively EmptyContainerDetector's concern, never this detector's.
+/// DedupKey stability, that a large backlog of long-past duties cannot crowd a genuinely upcoming
+/// one out of the per-tick emission cap, and the rotation that decides which candidates fill that
+/// cap when many of them tie on proximity to today -- never-opened candidates first, then the open
+/// ledger rows least recently observed. The container-shift exclusion pins the design decision that
+/// "cut" is a task-level concept: a container with equal StartShift/EndShift is exclusively
+/// EmptyContainerDetector's concern, never this detector's.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Triggers;
@@ -21,8 +23,13 @@ namespace Klacks.UnitTest.Services.Assistant;
 [TestFixture]
 public class UncutFullDayShiftDetectorTests
 {
+    private static readonly DateTime FirstTickInstant = new(2026, 9, 13, 6, 0, 0, DateTimeKind.Utc);
+
+    private const int RotationBacklogOverflow = 5;
+
     private IShiftRepository _shiftRepository = null!;
     private IShiftGroupScopeReader _groupScopeReader = null!;
+    private IAgentConditionRepository _agentConditionRepository = null!;
     private UncutFullDayShiftDetector _sut = null!;
 
     [SetUp]
@@ -30,8 +37,24 @@ public class UncutFullDayShiftDetectorTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
+        _agentConditionRepository = Substitute.For<IAgentConditionRepository>();
+        SetOpenLedgerRows();
         _sut = new UncutFullDayShiftDetector(
-            _shiftRepository, _groupScopeReader, new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<UncutFullDayShiftDetector>.Instance);
+            _shiftRepository, _groupScopeReader, _agentConditionRepository,
+            new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<UncutFullDayShiftDetector>.Instance);
+    }
+
+    /// <summary>
+    /// Stubs the ledger rows GetOpenByKindAsync returns for this detector's Kind -- an empty list by
+    /// default (nothing opened yet), or one row per (shiftId, lastSeenAtUtc) pair passed in, mirroring
+    /// what AgentConditionLedgerService.UpsertDetectedAsync leaves behind after a real tick.
+    /// </summary>
+    private void SetOpenLedgerRows(params (Guid ShiftId, DateTime LastSeenAtUtc)[] openRows)
+    {
+        _agentConditionRepository.GetOpenByKindAsync(AgentTriggerKinds.UncutFulldayShift, Arg.Any<CancellationToken>())
+            .Returns(openRows
+                .Select(row => new AgentCondition { EntityId = row.ShiftId, LastSeenAtUtc = row.LastSeenAtUtc })
+                .ToList());
     }
 
     private static Shift MakeUncutFullDayShift(
@@ -68,6 +91,9 @@ public class UncutFullDayShiftDetectorTests
     {
         _shiftRepository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts.ToList()));
     }
+
+    private async Task<List<Guid>> ReportedShiftIdsAsync() =>
+        (await _sut.DetectAsync()).Cast<UncutFullDayShiftTriggerEvent>().Select(e => e.ShiftId).ToList();
 
     [Test]
     public async Task DetectAsync_EmptyDatabase_ReturnsEmpty()
@@ -252,6 +278,89 @@ public class UncutFullDayShiftDetectorTests
     }
 
     [Test]
+    public async Task DetectAsync_BacklogSharesOneProximityAndLedgerIsEmpty_FirstTickFillsTheCap()
+    {
+        // Every candidate ties on |DaysUntil| -- the shape a bulk-created backlog actually has, and the
+        // one a plain proximity cap degenerates on. With nothing open in the ledger yet, every candidate
+        // is in the never-opened group, so the cap alone decides how many are reported.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var backlogSize = UncutFullDayShiftDetector.MaxFindingsPerTick + RotationBacklogOverflow;
+        var backlog = Enumerable.Range(0, backlogSize)
+            .Select(_ => MakeUncutFullDayShift(today.AddDays(100)))
+            .ToArray();
+        SetupQuery(backlog);
+
+        var reported = await ReportedShiftIdsAsync();
+
+        Assert.That(reported, Has.Count.EqualTo(UncutFullDayShiftDetector.MaxFindingsPerTick));
+        Assert.That(reported, Is.SubsetOf(backlog.Select(s => s.Id)));
+        Assert.That(reported.Distinct().Count(), Is.EqualTo(reported.Count));
+    }
+
+    [Test]
+    public async Task DetectAsync_AfterTheFirstTickWasObserved_SecondTickLeadsWithTheNeverReportedRest()
+    {
+        // What a fixed proximity slice could never do: once the first tick's findings carry an open
+        // ledger row, the rotation puts the candidates that were never opened at the front, and fills the
+        // rest of the cap with the longest-unobserved of the already reported ones -- so a recipient who
+        // was throttled on tick 1 is offered them again instead of losing them forever.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var backlogSize = UncutFullDayShiftDetector.MaxFindingsPerTick + RotationBacklogOverflow;
+        var backlog = Enumerable.Range(0, backlogSize)
+            .Select(_ => MakeUncutFullDayShift(today.AddDays(100)))
+            .ToArray();
+        var backlogIds = backlog.Select(s => s.Id).ToList();
+        SetupQuery(backlog);
+
+        var firstTick = await ReportedShiftIdsAsync();
+        SetOpenLedgerRows(firstTick.Select(id => (id, FirstTickInstant)).ToArray());
+        var starved = backlogIds.Except(firstTick).ToList();
+
+        var secondTick = await ReportedShiftIdsAsync();
+
+        Assert.That(starved, Has.Count.EqualTo(RotationBacklogOverflow));
+        Assert.That(secondTick, Has.Count.EqualTo(UncutFullDayShiftDetector.MaxFindingsPerTick));
+        Assert.That(secondTick.Take(RotationBacklogOverflow), Is.EquivalentTo(starved),
+            "the shifts no tick has ever opened a ledger row for must lead the second tick");
+        Assert.That(secondTick.Skip(RotationBacklogOverflow), Is.SubsetOf(firstTick));
+    }
+
+    [Test]
+    public async Task DetectAsync_EveryCandidateOpenWithStaggeredLastSeen_ReportsTheLongestUnobservedOnes()
+    {
+        // No never-opened candidates left at all: the whole selection is then the LastSeenAtUtc order,
+        // oldest observation first, which is what makes the backlog cycle instead of stalling.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var backlogSize = UncutFullDayShiftDetector.MaxFindingsPerTick + RotationBacklogOverflow;
+        var backlog = Enumerable.Range(0, backlogSize)
+            .Select(_ => MakeUncutFullDayShift(today.AddDays(100)))
+            .ToArray();
+        var backlogIds = backlog.Select(s => s.Id).ToList();
+        SetupQuery(backlog);
+        SetOpenLedgerRows(backlogIds
+            .Select((id, index) => (id, FirstTickInstant.AddMinutes(index)))
+            .ToArray());
+
+        var reported = await ReportedShiftIdsAsync();
+
+        Assert.That(reported, Is.EqualTo(backlogIds.Take(UncutFullDayShiftDetector.MaxFindingsPerTick).ToList()));
+    }
+
+    [Test]
+    public async Task DetectAsync_FewerCandidatesThanTheCap_ReportsAllOfThemInBusinessOrder()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var shifts = Enumerable.Range(0, 5)
+            .Select(offset => MakeUncutFullDayShift(today.AddDays(offset + 1)))
+            .ToList();
+        SetupQuery(shifts.AsEnumerable().Reverse().ToArray());
+
+        var reported = await ReportedShiftIdsAsync();
+
+        Assert.That(reported, Is.EqualTo(shifts.Select(s => s.Id).ToList()));
+    }
+
+    [Test]
     public async Task DetectAsync_ShiftInOneGroup_CarriesThatGroup_AndPreselectsItInTheActionParams()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -319,7 +428,8 @@ public class UncutFullDayShiftDetectorTests
             "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
-        _sut = new UncutFullDayShiftDetector(_shiftRepository, _groupScopeReader, clock, NullLogger<UncutFullDayShiftDetector>.Instance);
+        _sut = new UncutFullDayShiftDetector(
+            _shiftRepository, _groupScopeReader, _agentConditionRepository, clock, NullLogger<UncutFullDayShiftDetector>.Instance);
         var shift = MakeUncutFullDayShift(new DateOnly(2026, 6, 30));
         SetupQuery(shift);
 

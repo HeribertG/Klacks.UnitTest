@@ -44,7 +44,6 @@ public class NextPeriodAutoCommitServiceTests
     private IMediator _mediator = null!;
     private IAgentConditionLedgerService _ledgerService = null!;
     private IAgentTriggerService _triggerService = null!;
-    private IProactiveGovernanceResolver _governanceResolver = null!;
     private INextPeriodAutonomyResolver _autonomyResolver = null!;
     private IAutoWizardJobRunner _jobRunner = null!;
     private IServiceScopeFactory _scopeFactory = null!;
@@ -58,11 +57,8 @@ public class NextPeriodAutoCommitServiceTests
         _mediator = Substitute.For<IMediator>();
         _ledgerService = Substitute.For<IAgentConditionLedgerService>();
         _triggerService = Substitute.For<IAgentTriggerService>();
-        _governanceResolver = Substitute.For<IProactiveGovernanceResolver>();
-        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(false);
         _autonomyResolver = Substitute.For<INextPeriodAutonomyResolver>();
-        _autonomyResolver.ResolveAsync(Arg.Any<CancellationToken>())
-            .Returns(new NextPeriodAutonomyDecision(AutonomyLevel.FullyAutonomous, DecidingAdminId));
+        StubAutonomy(AutonomyLevel.FullyAutonomous, NextPeriodAutonomyBlockedBy.None);
         _jobRunner = Substitute.For<IAutoWizardJobRunner>();
         _timeProvider = new SettableTimeProvider(new DateTime(2026, 1, 28, 9, 0, 0, DateTimeKind.Utc));
 
@@ -76,7 +72,6 @@ public class NextPeriodAutoCommitServiceTests
         provider.GetService(typeof(IMediator)).Returns(_mediator);
         provider.GetService(typeof(IAgentConditionLedgerService)).Returns(_ledgerService);
         provider.GetService(typeof(IAgentTriggerService)).Returns(_triggerService);
-        provider.GetService(typeof(IProactiveGovernanceResolver)).Returns(_governanceResolver);
         provider.GetService(typeof(INextPeriodAutonomyResolver)).Returns(_autonomyResolver);
 
         var scope = Substitute.For<IServiceScope>();
@@ -95,6 +90,21 @@ public class NextPeriodAutoCommitServiceTests
             Substitute.For<IHostApplicationLifetime>(),
             _timeProvider,
             logger);
+
+    /// <summary>
+    /// The watcher reads its gate off the shared decision, so a test states the gate it wants rather
+    /// than the four inputs behind it; BlockedBy None is the only state in which CanCommit may be true.
+    /// </summary>
+    private void StubAutonomy(AutonomyLevel level, NextPeriodAutonomyBlockedBy blockedBy)
+    {
+        _autonomyResolver.ResolveAsync(Arg.Any<CancellationToken>())
+            .Returns(new NextPeriodAutonomyDecision(
+                level,
+                DecidingAdminId,
+                CanStartAutofill: blockedBy == NextPeriodAutonomyBlockedBy.None,
+                CanCommit: blockedBy == NextPeriodAutonomyBlockedBy.None,
+                BlockedBy: blockedBy));
+    }
 
     private void StubCompliance(params PeriodIssueDto[] newIssues)
     {
@@ -179,7 +189,7 @@ public class NextPeriodAutoCommitServiceTests
     [Test]
     public async Task CommitCompletedChain_KillSwitchActive_WithholdsAcceptAndReportsIt()
     {
-        _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(true);
+        StubAutonomy(AutonomyLevel.FullyAutonomous, NextPeriodAutonomyBlockedBy.KillSwitch);
         StubCompliance();
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
 
@@ -196,8 +206,7 @@ public class NextPeriodAutoCommitServiceTests
     public async Task CommitCompletedChain_AutonomyLoweredDuringTheWatch_WithholdsAcceptAndReportsIt()
     {
         StubCompliance();
-        _autonomyResolver.ResolveAsync(Arg.Any<CancellationToken>())
-            .Returns(new NextPeriodAutonomyDecision(AutonomyLevel.Autonomous, DecidingAdminId));
+        StubAutonomy(AutonomyLevel.Autonomous, NextPeriodAutonomyBlockedBy.AutonomyLevel);
 
         await CommitAsync();
 

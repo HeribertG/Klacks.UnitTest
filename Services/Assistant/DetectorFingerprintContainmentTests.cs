@@ -77,7 +77,15 @@ public class DetectorFingerprintContainmentTests
             .ToList();
         repository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts));
 
-        var sut = new UncutFullDayShiftDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<UncutFullDayShiftDetector>.Instance);
+        // Nothing open in the ledger yet -- every candidate is in the never-opened rotation group, so
+        // the rotation cap alone decides how many of them DetectAsync reports this tick.
+        var agentConditionRepository = Substitute.For<IAgentConditionRepository>();
+        agentConditionRepository.GetOpenByKindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentCondition>());
+
+        var sut = new UncutFullDayShiftDetector(
+            repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), agentConditionRepository,
+            FixedClock(), NullLogger<UncutFullDayShiftDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: UncutFullDayShiftDetector.MaxFindingsPerTick);
     }
