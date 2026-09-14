@@ -243,15 +243,37 @@ public class RecipeTriggerMatcherTests
         var match = "Füge Hans zur Gruppe Bern hinzu";
         var noMatch = "incorporar un empleado al grupo";
 
-        // Act & Assert — identical verdict to the 2-arg path in both directions
-        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, match),
+        // Act & Assert — identical verdict to the 2-arg path in both directions. The synonyms argument is
+        // named on purpose: with a positional null the (trigger, message, language) overload is the better
+        // match, so the message lands in `language` and Matches returns false regardless of the trigger.
+        // This test compares overload equivalence, so it has to bind the overload it means.
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, synonyms: null, message: match),
             Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, match)));
         Assert.That(RecipeTriggerMatcher.Matches(trigger, [], match),
             Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, match)));
-        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, noMatch),
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, synonyms: null, message: noMatch),
             Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, noMatch)));
         Assert.That(RecipeTriggerMatcher.Matches(trigger, [], noMatch),
             Is.EqualTo(RecipeTriggerMatcher.Matches(trigger, noMatch)));
+    }
+
+    [Test]
+    public void Positional_Null_Synonyms_Must_Evaluate_The_Message_Not_Bind_It_To_A_Language()
+    {
+        // Arrange — regression lock for the overload trap, and the one the named-argument tests above
+        // cannot provide: naming `synonyms:` is precisely what keeps those calls on the right overload, so
+        // they stay green even if the trap returns. With three positional arguments and a null in the
+        // second slot the call must reach the synonyms overload and evaluate the message. Should the short
+        // overload ever regain an optional parameter, this binds (message: null, language: text) instead
+        // and Matches returns false for every trigger - which is how the live regression guard for the
+        // 2026-07-16 company-rule incident was silently disarmed.
+        var trigger = AddClientToGroupTrigger();
+
+        // Act
+        var result = RecipeTriggerMatcher.Matches(trigger, null, "Füge Hans zur Gruppe Bern hinzu");
+
+        // Assert
+        Assert.That(result, Is.True);
     }
 
     [Test]
@@ -303,5 +325,170 @@ public class RecipeTriggerMatcherTests
         // Act & Assert
         Assert.That(RecipeTriggerMatcher.IsVetoed(null, "Füge den Dienst hinzu"), Is.False);
         Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "  "), Is.False);
+    }
+
+    // AnyWordStartByLocale exists because 'alle' is a German plural article but an Italian and Finnish
+    // preposition: the unanchored substring 'alle ' vetoed every Italian message naming a time range and
+    // every Finnish move-group synonym. The branch is skipped when no language is passed, so these are the
+    // only tests that prove it works - a gate calling the matcher language-agnostically cannot see it.
+    private static RecipeTrigger BulkMarkerTrigger() => new()
+    {
+        AllOf =
+        [
+            new RecipeCondition
+            {
+                AnyWordStartByLocale = new Dictionary<string, List<string>> { ["de"] = ["alle"] }
+            },
+            new RecipeCondition { AnySubstring = ["mitarbeiter"] }
+        ]
+    };
+
+    private static RecipeTrigger SingleRecipeVetoedByBulkMarkerTrigger() => new()
+    {
+        AllOf = [new RecipeCondition { AnySubstring = ["mitarbeiter"] }],
+        NoneOf =
+        [
+            new RecipeCondition
+            {
+                AnyWordStartByLocale = new Dictionary<string, List<string>> { ["de"] = ["alle"] }
+            }
+        ]
+    };
+
+    [Test]
+    public void Locale_Stem_Fires_When_The_Detected_Language_Matches_The_Key()
+    {
+        // Arrange
+        var trigger = BulkMarkerTrigger();
+
+        // Act
+        var result = RecipeTriggerMatcher.Matches(trigger, null, "alle Mitarbeiter zur Gruppe Bern", "de");
+
+        // Assert
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void Locale_Stem_Does_Not_Fire_For_Any_Other_Detected_Language()
+    {
+        // Arrange — identical surface form, but the message is not German
+        var trigger = BulkMarkerTrigger();
+
+        // Act & Assert
+        foreach (var language in new[] { "it", "fi", "fr", "en", "es" })
+        {
+            Assert.That(
+                RecipeTriggerMatcher.Matches(trigger, null, "alle Mitarbeiter zur Gruppe Bern", language),
+                Is.False,
+                $"a 'de'-scoped stem must not fire for detected language '{language}'");
+        }
+    }
+
+    [Test]
+    public void Locale_Stem_Is_Skipped_When_No_Language_Is_Detected()
+    {
+        // Arrange — the language-less overload is the backward-compatible path
+        var trigger = BulkMarkerTrigger();
+
+        // Act
+        var result = RecipeTriggerMatcher.Matches(trigger, "alle Mitarbeiter zur Gruppe Bern");
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void Locale_Key_Comparison_Is_Case_Insensitive()
+    {
+        // Arrange — the matcher compares keys OrdinalIgnoreCase, matching SynonymsFor's convention
+        var upperKey = new RecipeTrigger
+        {
+            AllOf =
+            [
+                new RecipeCondition
+                {
+                    AnyWordStartByLocale = new Dictionary<string, List<string>> { ["DE"] = ["alle"] }
+                }
+            ]
+        };
+        var lowerKey = new RecipeTrigger
+        {
+            AllOf =
+            [
+                new RecipeCondition
+                {
+                    AnyWordStartByLocale = new Dictionary<string, List<string>> { ["de"] = ["alle"] }
+                }
+            ]
+        };
+
+        // Act & Assert — either side may carry the casing
+        Assert.That(RecipeTriggerMatcher.Matches(upperKey, null, "alle Mitarbeiter", "de"), Is.True);
+        Assert.That(RecipeTriggerMatcher.Matches(lowerKey, null, "alle Mitarbeiter", "DE"), Is.True);
+    }
+
+    [Test]
+    public void Locale_Stem_Still_Anchors_At_A_Word_Boundary()
+    {
+        // Arrange — the locale list reuses MatchesWordStart, so it inherits the \b anchoring
+        var trigger = new RecipeTrigger
+        {
+            AllOf =
+            [
+                new RecipeCondition
+                {
+                    AnyWordStartByLocale = new Dictionary<string, List<string>> { ["de"] = ["alle"] }
+                }
+            ]
+        };
+
+        // Act & Assert — German inflections fire, a mid-word homograph does not
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "alle Mitarbeiter", "de"), Is.True);
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "allen Mitarbeitern", "de"), Is.True);
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "alles prüfen", "de"), Is.True);
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "die Falle prüfen", "de"), Is.False);
+    }
+
+    [Test]
+    public void Locale_Stem_Is_Or_Combined_With_Language_Neutral_AnyWordStart()
+    {
+        // Arrange — one condition carrying both lists
+        var trigger = new RecipeTrigger
+        {
+            AllOf =
+            [
+                new RecipeCondition
+                {
+                    AnyWordStart = ["gruppe"],
+                    AnyWordStartByLocale = new Dictionary<string, List<string>> { ["de"] = ["alle"] }
+                }
+            ]
+        };
+
+        // Act & Assert — the neutral stem fires for any language, and with no language at all
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "zur Gruppe Bern", "it"), Is.True);
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, "zur Gruppe Bern"), Is.True);
+
+        // ...while the locale stem still only fires for its own language
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "alle Mitarbeiter", "de"), Is.True);
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "alle Mitarbeiter", "it"), Is.False);
+    }
+
+    [Test]
+    public void Locale_Scoping_Stops_The_Italian_And_Finnish_Bulk_Marker_False_Veto()
+    {
+        // Arrange — the seeded shape: 'alle' vetoes the single recipe so a bulk request cannot start it
+        var trigger = SingleRecipeVetoedByBulkMarkerTrigger();
+
+        // Act & Assert — German still vetoes
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "alle Mitarbeiter anlegen", "de"), Is.True);
+
+        // The two homographs that used to veto through the unanchored 'alle ' substring no longer do.
+        // Italian time ranges are ubiquitous in shift planning; Finnish 'alle' means 'under'.
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "dalle 7 alle 15", "it"), Is.False);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "siirrä ryhmä alle viikon", "fi"), Is.False);
+
+        // And the recipe is reachable again for exactly those messages
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "dalle 7 alle 15 mitarbeiter", "it"), Is.True);
     }
 }

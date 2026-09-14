@@ -62,21 +62,6 @@ public class RecipeTriggerWholeWordCollisionTests
         ["typ "] =
             "Accepted, no debt. German-internal compound only (Personentyp); move/remove-absence are " +
             "deliberately vetoed by it. No plugin-language hit.",
-        ["alle "] =
-            "KNOWN DEBT, highest impact of the four. Italian 'dalle' matches mid-word and 'alle ' sits in " +
-            "the noneOf of 18 recipes, so any Italian message naming a time range ('dalle 7 alle 15', " +
-            "ubiquitous in shift planning) loses EVERY single recipe, and in the bulk allOf it fakes the " +
-            "bulk marker. Moving it to anyWordStart fixes 'dalle' and widens German to allen/aller/alles, " +
-            "but Italian 'alle' (a+le) is a standalone word and stays ambiguous - a complete fix needs an " +
-            "it-specific guard. Touches 18 recipes, so it needs a goldset run: see " +
-            "docs/knowledge/recipe-trigger-cross-language-collisions-2026-09-14.md.",
-        ["nos "] =
-            "KNOWN DEBT. Spanish/Portuguese 'externos' matches mid-word; 'nos ' sits in the noneOf of " +
-            "onboard-employee and add-extern-employee-to-nearest-group (so 'dar de alta a los empleados " +
-            "externos' is vetoed from onboarding) and in the allOf of both bulk nearest-group recipes (so " +
-            "it fakes the bulk marker). 'nos' is also Spanish for 'us', so the term is ambiguous outright. " +
-            "Proposed fix: drop it - French bulk is already covered by tous/toutes/chaque/plusieurs/notre. " +
-            "See docs/knowledge/recipe-trigger-cross-language-collisions-2026-09-14.md.",
     };
 
     /// <summary>
@@ -212,11 +197,30 @@ public class RecipeTriggerWholeWordCollisionTests
             {
                 terms.Add(term);
             }
+
+            // A veto term moved into anyWordStartByLocale still vetoes, for its own locale, so the parity
+            // check has to see it - otherwise migrating a customer term there would pass this gate
+            // silently while the veto is in fact still present but no longer counted.
+            if (condition.AnyWordStartByLocale != null)
+            {
+                foreach (var stems in condition.AnyWordStartByLocale.Values)
+                {
+                    foreach (var term in stems)
+                    {
+                        terms.Add(term);
+                    }
+                }
+            }
         }
 
         return terms;
     }
 
+    // Deliberately reads anySubstring ONLY. anyWordStart and anyWordStartByLocale both compile to
+    // \b(?:stem) via MatchesWordStart, so a term in either list cannot match mid-word by construction -
+    // feeding them to this gate could never produce a violation and would only suggest coverage that the
+    // anchored lists do not need. The locale list is covered where its semantics actually live: the
+    // language-scoped matcher tests, and the two vocabulary gates that build phrases from it.
     private static List<(string Term, List<string> Recipes, string Kinds)> LoadSpaceSuffixedSubstringTerms()
     {
         var byTerm = new Dictionary<string, (List<string> Recipes, HashSet<string> Kinds)>(StringComparer.Ordinal);

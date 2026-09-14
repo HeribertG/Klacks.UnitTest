@@ -144,9 +144,10 @@ public class SkillRecipeTriggerCrossQualityTests
                     continue;
                 }
 
+                var locales = ReferencedLocales(recipe.Trigger);
                 var hit = phrases.FirstOrDefault(p =>
                     CouldMatchAllConditions(recipe.Trigger, p)
-                    && RecipeTriggerMatcher.Matches(recipe.Trigger, null, p));
+                    && locales.Any(language => RecipeTriggerMatcher.Matches(recipe.Trigger, null, p, language)));
                 if (hit != null)
                 {
                     violations.Add($"skill '{skill.Name}' phrase '{hit}' matches recipe '{recipe.Name}'");
@@ -189,9 +190,10 @@ public class SkillRecipeTriggerCrossQualityTests
                     continue;
                 }
 
+                var locales = ReferencedLocales(recipe.Trigger);
                 var hit = phrases.FirstOrDefault(p =>
                     CouldMatchAllConditions(recipe.Trigger, p)
-                    && RecipeTriggerMatcher.Matches(recipe.Trigger, null, p));
+                    && locales.Any(language => RecipeTriggerMatcher.Matches(recipe.Trigger, null, p, language)));
                 if (hit != null)
                 {
                     violations.Add($"skill '{skill.Name}' synonym '{hit}' matches recipe '{recipe.Name}'");
@@ -258,7 +260,11 @@ public class SkillRecipeTriggerCrossQualityTests
         // noneOf company-rule exclusion vocabulary in recipe-seeds.json must keep vetoing it.
         var trigger = LoadRecipes().Single(r => r.Name == CreateShiftOrderRecipeName).Trigger;
 
-        RecipeTriggerMatcher.Matches(trigger, null, OriginalBugMessage).ShouldBeFalse(
+        // Named arguments are load-bearing here, not style: Matches has a (trigger, message, language)
+        // overload alongside (trigger, synonyms, message, language), so a positional null in the second
+        // slot binds message to null and language to the message - which makes Matches return false
+        // unconditionally and this regression guard pass no matter what happens to the noneOf vocabulary.
+        RecipeTriggerMatcher.Matches(trigger, synonyms: null, message: OriginalBugMessage).ShouldBeFalse(
             "the company-rule intake message must never start the create-shift-order recipe; the " +
             "noneOf guard with '" + CompanyRuleNoneOfMarker + "' vocabulary was removed or weakened");
     }
@@ -345,12 +351,46 @@ public class SkillRecipeTriggerCrossQualityTests
 
     // Cheap over-approximation of RecipeTriggerMatcher's per-condition semantics (plain substring
     // containment ignores word boundaries): a phrase that fails this can never match the trigger, so
-    // the expensive production matcher only runs on near-collisions.
+    // the expensive production matcher only runs on near-collisions. anyWordStartByLocale is folded in
+    // WITHOUT its locale restriction, which is the safe direction for an over-approximation: a condition
+    // whose only terms are locale-scoped would otherwise contribute an empty term set, fail this filter,
+    // and never reach the matcher at all.
     private static bool CouldMatchAllConditions(RecipeTrigger trigger, string phrase)
     {
         return trigger.AllOf.Count > 0 && trigger.AllOf.All(condition =>
-            (condition.AnyWordStart ?? []).Concat(condition.AnySubstring ?? []).Concat(condition.StartsWith ?? [])
+            (condition.AnyWordStart ?? [])
+            .Concat(condition.AnySubstring ?? [])
+            .Concat(condition.StartsWith ?? [])
+            .Concat(condition.AnyWordStartByLocale?.Values.SelectMany(stems => stems) ?? [])
             .Any(term => phrase.Contains(term, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    // The languages a trigger can behave differently under: no language at all (the backward-compatible
+    // path, where every anyWordStartByLocale condition is skipped) plus each locale the trigger scopes a
+    // stem to. A phrase is only cleared once it fails to match under every one of them, so this gate
+    // cannot be satisfied merely because the caller forgot to name a language.
+    private static List<string?> ReferencedLocales(RecipeTrigger trigger)
+    {
+        var locales = new List<string?> { null };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var condition in trigger.AllOf.Concat(trigger.NoneOf))
+        {
+            if (condition.AnyWordStartByLocale == null)
+            {
+                continue;
+            }
+
+            foreach (var locale in condition.AnyWordStartByLocale.Keys)
+            {
+                if (seen.Add(locale))
+                {
+                    locales.Add(locale);
+                }
+            }
+        }
+
+        return locales;
     }
 
     private static List<RecipeUnderTest> LoadRecipes()

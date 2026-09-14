@@ -382,13 +382,19 @@ public class RecipeSeedQualityTests
     public void RecipeTriggers_MustBeDisjoint_NoRealisticSentenceMatchesTwoRecipes()
     {
         var triggers = LoadRecipeTriggers();
+        var locales = ReferencedLocales(triggers.Select(t => t.Trigger));
         var violations = new List<string>();
         var reportedPairs = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var (name, trigger) in triggers)
         {
+            // Each phrase is offered under every language the seed set can behave differently under,
+            // because an anyWordStartByLocale stem only fires when the detected language matches its key.
+            // Checking phrases language-agnostically alone would let a locale-scoped stem hide from this
+            // gate entirely.
             var selfSatisfyingPhrases = GenerateCanonicalPhrases(trigger)
-                .Where(phrase => RecipeTriggerMatcher.Matches(trigger, null, phrase))
+                .SelectMany(phrase => locales, (phrase, language) => (Phrase: phrase, Language: language))
+                .Where(x => RecipeTriggerMatcher.Matches(trigger, null, x.Phrase, x.Language))
                 .ToList();
 
             foreach (var (otherName, otherTrigger) in triggers)
@@ -406,12 +412,15 @@ public class RecipeSeedQualityTests
                     continue;
                 }
 
-                var collidingPhrase = selfSatisfyingPhrases
-                    .FirstOrDefault(phrase => RecipeTriggerMatcher.Matches(otherTrigger, null, phrase));
-                if (collidingPhrase != null)
+                var collision = selfSatisfyingPhrases
+                    .FirstOrDefault(x => RecipeTriggerMatcher.Matches(otherTrigger, null, x.Phrase, x.Language));
+                if (collision.Phrase != null)
                 {
                     reportedPairs.Add(pairKey);
-                    violations.Add($"'{collidingPhrase}' matches both '{name}' and '{otherName}'");
+                    var language = collision.Language ?? "none";
+                    violations.Add(
+                        $"'{collision.Phrase}' (detected language '{language}') matches both " +
+                        $"'{name}' and '{otherName}'");
                 }
             }
         }
@@ -424,12 +433,47 @@ public class RecipeSeedQualityTests
             string.Join("; ", violations));
     }
 
+    // The languages the seed set can behave differently under: no language at all (the backward-compatible
+    // path, where every anyWordStartByLocale condition is skipped) plus each locale some trigger scopes a
+    // stem to.
+    private static List<string?> ReferencedLocales(IEnumerable<RecipeTrigger> triggers)
+    {
+        var locales = new List<string?> { null };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var trigger in triggers)
+        {
+            foreach (var condition in trigger.AllOf.Concat(trigger.NoneOf))
+            {
+                if (condition.AnyWordStartByLocale == null)
+                {
+                    continue;
+                }
+
+                foreach (var locale in condition.AnyWordStartByLocale.Keys)
+                {
+                    if (seen.Add(locale))
+                    {
+                        locales.Add(locale);
+                    }
+                }
+            }
+        }
+
+        return locales;
+    }
+
     private static List<string> GenerateCanonicalPhrases(RecipeTrigger trigger)
     {
+        // anyWordStartByLocale contributes its stems as plain vocabulary. Which language they fire under is
+        // the caller's concern (see ReferencedLocales); leaving them out here would drop the condition's
+        // only term for a locale-only condition and silently skip it in the cross product below.
         IEnumerable<string> ConditionTerms(RecipeCondition condition) =>
             (condition.AnyWordStart ?? new List<string>())
                 .Concat(condition.AnySubstring ?? new List<string>())
-                .Concat(condition.StartsWith ?? new List<string>());
+                .Concat(condition.StartsWith ?? new List<string>())
+                .Concat(condition.AnyWordStartByLocale?.Values.SelectMany(stems => stems)
+                        ?? new List<string>());
 
         IEnumerable<string> phrases = new[] { string.Empty };
         foreach (var condition in trigger.AllOf)
