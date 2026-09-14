@@ -187,16 +187,16 @@ public class RecipeTriggerWholeWordCollisionTests
         // Shaped like the live incident: a customer request that satisfies every allOf condition.
         // Before the customer veto existed, this started the external-employee recipe.
         RecipeTriggerMatcher.Matches(trigger, null,
-                "Ordne den Kunden Meier der nächstgelegenen externen Gruppe zu")
+                "Ordne den Kunden Meier der nächstgelegenen externen Gruppe zu", "de")
             .ShouldBeFalse("a customer request must not start the external-employee recipe");
 
         RecipeTriggerMatcher.Matches(trigger, null,
-                "Ordne den externen Mitarbeiter der nächstgelegenen Gruppe zu")
+                "Ordne den externen Mitarbeiter der nächstgelegenen Gruppe zu", "de")
             .ShouldBeTrue("the legitimate external-employee request must still fire");
 
         // The goldset phrase that owns this recipe must keep routing to it.
         RecipeTriggerMatcher.Matches(trigger, null,
-                "Add an external employee to the group geographically nearest to their address.")
+                "Add an external employee to the group geographically nearest to their address.", "en")
             .ShouldBeTrue("the seeded goal phrase must still fire");
     }
 

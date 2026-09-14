@@ -270,7 +270,7 @@ public class SkillRecipeTriggerCrossQualityTests
         // bug message again — otherwise the regression below would prove nothing.
         var preFixTrigger = BuildPreFixCreateShiftOrderTrigger();
 
-        RecipeTriggerMatcher.Matches(preFixTrigger, null, OriginalBugMessage).ShouldBeTrue(
+        RecipeTriggerMatcher.Matches(preFixTrigger, null, OriginalBugMessage, "de").ShouldBeTrue(
             "the pre-fix trigger (without the company-rule noneOf vocabulary) no longer reproduces " +
             "the original over-match; the regression setup is stale");
     }
