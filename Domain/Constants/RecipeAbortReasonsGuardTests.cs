@@ -6,6 +6,15 @@
 /// cap is not merely untidy - it is silently truncated into something nobody can filter on later.
 /// Reflection over the constants, not a hand-written list, so a new reason is covered by the act of
 /// being added.
+///
+/// Scope, stated plainly because it is narrower than the name suggests: this guards only the reasons in
+/// RecipeAbortReasons. Five further reasons are still inline literals in LLMService ("confirmation
+/// declined", "cancelled during ask step", "autonomy gate hold ended the recipe", "ambiguous customer
+/// match deactivated the cut recipe", "turn ended before the cut recipe completed") and are NOT covered
+/// here - they cannot be, being literals at their call sites. All five are far under the cap today.
+/// Migrating them is deliberate debt: it is a zero-behaviour-change rename across eight call sites in two
+/// chat loops, and landing that immediately before a goldset run would bury a real behaviour change in
+/// diff noise. Migrate them when the class is next touched for a substantive reason.
 /// </summary>
 
 using System.Reflection;
