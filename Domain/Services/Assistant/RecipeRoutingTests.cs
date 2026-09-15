@@ -35,6 +35,14 @@ public class RecipeRoutingTests
 
     private static List<RecipeSeedDefinition> _recipes = null!;
 
+    /// <summary>
+    /// The utterances in this fixture are German unless a test case says otherwise, so German is the
+    /// default rather than a value every call site repeats. It must stay an explicit parameter: since
+    /// the bulk marker "alle" is bound to de through anyWordStartByLocale, resolving without a language
+    /// is a different question than resolving as German, and conflating the two hid a regression.
+    /// </summary>
+    private const string German = "de";
+
     [OneTimeSetUp]
     public void LoadSeededRecipes()
     {
@@ -43,8 +51,8 @@ public class RecipeRoutingTests
         _recipes = seed!.Recipes.OrderBy(r => r.SortOrder).ToList();
     }
 
-    private static string? Resolve(string message)
-        => _recipes.FirstOrDefault(r => RecipeTriggerMatcher.Matches(r.Trigger, message))?.Name;
+    private static string? Resolve(string message, string? language = German)
+        => _recipes.FirstOrDefault(r => RecipeTriggerMatcher.Matches(r.Trigger, null, message, language))?.Name;
 
     [Test]
     [TestCase("Kannst du unsere Mitarbeiter auf die für sie besten Gruppen verteilen?")]
@@ -91,6 +99,25 @@ public class RecipeRoutingTests
         Assert.That(
             Resolve("Verteile alle Kunden auf die für sie nächsten Gruppen"),
             Is.EqualTo("bulk-add-customers-to-nearest-group"));
+    }
+
+    /// <summary>
+    /// Pins the hazard the de-bound bulk marker creates, so it stays a known contract instead of a
+    /// surprise. "alle" cannot be a language-neutral whole-word term: Italian "alle" (a+le, as in
+    /// "dalle 7 alle 15") and Finnish "alle" are real words, so anyWordStartByLocale fires it only for
+    /// a detected de. The price is that resolving WITHOUT a language loses the bulk marker - and it
+    /// degrades to the single-add recipe, not to nothing, which is the dangerous direction: a request
+    /// about every employee becomes a write about one. Both production entry points supply a language
+    /// (ChatController from the request, SlackOwnerBridgeService from the installation default); any
+    /// new one must too, and this test is what makes forgetting visible.
+    /// </summary>
+    [Test]
+    public void LocaleBoundBulkMarker_DegradesToTheSingleRecipeWithoutADetectedLanguage()
+    {
+        const string utterance = "Füge alle Mitarbeiter aus dem Kanton Bern zur Gruppe Zürich hinzu";
+
+        Assert.That(Resolve(utterance, German), Is.EqualTo("bulk-add-employees-to-group"));
+        Assert.That(Resolve(utterance, null), Is.EqualTo("add-employee-to-group"));
     }
 
     [Test]
