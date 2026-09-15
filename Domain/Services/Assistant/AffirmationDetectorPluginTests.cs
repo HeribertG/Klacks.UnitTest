@@ -65,4 +65,26 @@ public class AffirmationDetectorPluginTests
         AffirmationDetector.IsAffirmation("taktisch gesehen schlecht").ShouldBeFalse(
             "'tak' must only match as a whole token, not inside 'taktisch'");
     }
+
+    /// <summary>
+    /// Red before the QuestionMarks fix, green after. "はい" is a configured plugin affirmation and
+    /// nothing in these messages is a negation, so the only thing that can reject them is the question
+    /// mark — and IsAffirmation tested ASCII '?' only, which U+FF1F is not. The confirmation gate this
+    /// guards is reached in all 25 languages, so a CJK question was read as a go-ahead and the recipe
+    /// proceeded on the scope the user was still asking about.
+    /// </summary>
+    [TestCase("はい、全員？")]
+    [TestCase("実行してください？")]
+    [TestCase("네？")]
+    public void IsAffirmation_False_For_NonAsciiQuestionMarks(string message)
+    {
+        AffirmationDetector.IsAffirmation(message).ShouldBeFalse(message);
+    }
+
+    [Test]
+    public void TheSameGoAhead_WithoutAQuestionMark_StaysAnAffirmation()
+    {
+        AffirmationDetector.IsAffirmation("はい、全員").ShouldBeTrue(
+            "the question-mark test must reject the punctuation, not the language");
+    }
 }
