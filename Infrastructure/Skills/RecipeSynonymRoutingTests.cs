@@ -78,14 +78,14 @@ public class RecipeSynonymRoutingTests
 
             foreach (var phrase in recipe.Synonyms)
             {
-                var actual = Resolve(recipes, phrase);
+                var actual = Resolve(recipes, phrase, language);
                 if (string.Equals(actual, recipe.Name, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
                 offenders.Add(actual == null
-                    ? new Offender(SilentKind, recipe.Name, phrase, NoRecipeLabel, DiagnoseSilent(recipe, phrase))
+                    ? new Offender(SilentKind, recipe.Name, phrase, NoRecipeLabel, DiagnoseSilent(recipe, phrase, language))
                     : new Offender(HijackedKind, recipe.Name, phrase, actual, string.Empty));
             }
         }
@@ -95,19 +95,22 @@ public class RecipeSynonymRoutingTests
 
     /// <summary>
     /// Mirror of RecipeEngineService.MatchByTrigger: first recipe in resolution order whose trigger
-    /// (or own-language synonym list) matches the untouched message.
+    /// (or own-language synonym list) matches the untouched message. The language is threaded because
+    /// MatchByTrigger passes it (:189) and RecipeTriggerMatcher skips every anyWordStartByLocale
+    /// condition when it is null (:91) — a gate that omits the language cannot see locale-bound
+    /// vocabulary, so it would stay green while the routing it claims to mirror has changed.
     /// </summary>
-    private static string? Resolve(IReadOnlyList<RoutingRecipe> recipes, string message)
-        => recipes.FirstOrDefault(r => RecipeTriggerMatcher.Matches(r.Trigger, r.Synonyms, message))?.Name;
+    private static string? Resolve(IReadOnlyList<RoutingRecipe> recipes, string message, string language)
+        => recipes.FirstOrDefault(r => RecipeTriggerMatcher.Matches(r.Trigger, r.Synonyms, message, language))?.Name;
 
-    private static string DiagnoseSilent(RoutingRecipe owner, string phrase)
+    private static string DiagnoseSilent(RoutingRecipe owner, string phrase, string language)
     {
         if (string.IsNullOrWhiteSpace(phrase))
         {
             return BlankPhraseReason;
         }
 
-        return RecipeTriggerMatcher.IsVetoed(owner.Trigger, phrase)
+        return RecipeTriggerMatcher.IsVetoed(owner.Trigger, phrase, language)
             ? VetoedByOwnNoneOfReason
             : NoTriggerAndNoSynonymHitReason;
     }
