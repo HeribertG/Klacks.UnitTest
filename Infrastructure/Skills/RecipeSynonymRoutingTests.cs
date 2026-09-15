@@ -151,16 +151,18 @@ public class RecipeSynonymRoutingTests
             .Where(r => r.IsEnabled)
             .OrderBy(r => r.SortOrder)
             .ThenBy(r => r.Name, StringComparer.Ordinal)
-            .Select(r => new RoutingRecipe(r.Name, r.Trigger, SynonymsFor(pack, r.Name)))
+            .Select(r => new RoutingRecipe(r.Name, r.Trigger, PackPhrasesFor(pack, r.Name)))
             .ToList();
     }
 
     /// <summary>
-    /// Mirror of RecipeEngineService.SynonymsFor for a single language: the installer stores the pack
-    /// list verbatim under the folder code, and the engine looks the language up case-insensitively, so
-    /// building the recipe set per pack yields exactly the list the engine would see.
+    /// The phrases one pack contributes to one recipe. Not a mirror of anything in the engine: it matches
+    /// a RECIPE NAME against a pack dictionary, ordinally, whereas AgentRecipe.SynonymsFor matches a
+    /// LANGUAGE KEY against the installed column, case-insensitively. The two agree on the result only
+    /// because this test builds one recipe set per pack folder and the installer stores the pack list
+    /// verbatim under that folder's code.
     /// </summary>
-    private static IReadOnlyCollection<string>? SynonymsFor(Dictionary<string, List<string>> pack, string recipeName)
+    private static IReadOnlyCollection<string>? PackPhrasesFor(Dictionary<string, List<string>> pack, string recipeName)
         => pack.TryGetValue(recipeName, out var phrases) ? phrases : null;
 
     private static Dictionary<string, List<string>> LoadRecipeSynonymPack(string language)
