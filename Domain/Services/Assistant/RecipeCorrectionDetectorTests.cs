@@ -143,6 +143,31 @@ public class RecipeCorrectionDetectorTests
     }
 
     /// <summary>
+    /// Scripts written without word separators need their own floor. One shared Latin-calibrated floor left
+    /// the detector effectively off for zh and ja: a faithful Chinese rendering of the live incident is 39
+    /// characters and the Japanese one is 40, against a floor of 40. Both cases below carry a configured
+    /// cue, so the only thing separating them is the floor - which is what makes this a test of the floor
+    /// and not of gate A.
+    /// </summary>
+    [Test]
+    public void IsStrongCorrection_UsesALowerFloorForScriptsWithoutWordSeparators()
+    {
+        ImplicitCorrectionDetector.Configure(["不是", "不对", "違います"]);
+
+        RecipeCorrectionDetector
+            .IsStrongCorrection("不是王小明", EntityReferenceAsk())
+            .ShouldBeFalse("a cue plus a person's name is an ordinary answer, not a correction");
+
+        RecipeCorrectionDetector
+            .IsStrongCorrection("不对，你理解错了，我说的不是单个员工，而是所有的员工和外部人员", EntityReferenceAsk())
+            .ShouldBeTrue("a faithful Chinese rendering of the live incident must be recognized");
+
+        RecipeCorrectionDetector
+            .IsStrongCorrection("違います。単一の従業員ではなく、すべての従業員と外部人員です", EntityReferenceAsk())
+            .ShouldBeTrue("the same in Japanese");
+    }
+
+    /// <summary>
     /// The engine's own recovery path, and the reason the rewind flag is checked at all. An ambiguous
     /// capture rewinds the plan to this same ask slot and asks the user to be more specific; a
     /// disambiguation names two entities and therefore satisfies every gate. Aborting there would discard
