@@ -40,7 +40,7 @@ public class RecipeCorrectionDetectorTests
     /// Mirrors add-extern-employee-to-nearest-group: the ask slot is injected into a search step that
     /// captures an id, so the answer must resolve to exactly one entity.
     /// </summary>
-    private static RecipeExecutionPlan EntityReferenceAsk() => new(
+    private static RecipeExecutionPlan EntityReferenceAsk(bool captureRewindUsed = false) => new(
         "add-extern-employee-to-nearest-group",
         [
             new RecipeStep
@@ -63,7 +63,8 @@ public class RecipeCorrectionDetectorTests
                 Skill = "add_client_to_nearest_group",
                 Inject = new Dictionary<string, string> { ["clientId"] = "$clientId" }
             }
-        ]);
+        ],
+        captureRewindUsed: captureRewindUsed);
 
     /// <summary>
     /// A free-text slot: long, negation-bearing answers are ordinary here, so the detector must stay out.
@@ -142,6 +143,27 @@ public class RecipeCorrectionDetectorTests
     }
 
     /// <summary>
+    /// The engine's own recovery path, and the reason the rewind flag is checked at all. An ambiguous
+    /// capture rewinds the plan to this same ask slot and asks the user to be more specific; a
+    /// disambiguation names two entities and therefore satisfies every gate. Aborting there would discard
+    /// the slots already supplied and burn the one-shot rewind, turning the engine's two-attempt recovery
+    /// into no attempts at all.
+    /// </summary>
+    [Test]
+    public void IsStrongCorrection_False_WhileTheEngineIsDisambiguatingACapture()
+    {
+        const string disambiguation = "Nicht die Maria Meier aus Bern, ich meine die Maria Meier aus Zürich";
+
+        RecipeCorrectionDetector
+            .IsStrongCorrection(disambiguation, EntityReferenceAsk(captureRewindUsed: true))
+            .ShouldBeFalse("the rewind is the engine asking for exactly this kind of answer");
+
+        RecipeCorrectionDetector
+            .IsStrongCorrection(disambiguation, EntityReferenceAsk())
+            .ShouldBeTrue("control: without the rewind flag the same message reads as a correction, so the flag is what rejects it");
+    }
+
+    /// <summary>
     /// Sharpest false-positive class: legitimate answers to the SAME entity-reference ask step that
     /// happen to carry a negation. They are short, and that is the only thing distinguishing them.
     /// </summary>
@@ -158,9 +180,11 @@ public class RecipeCorrectionDetectorTests
     /// Second sharpest class: long, negation-bearing, and a perfectly ordinary answer - but to a slot
     /// that is not an entity reference. Gate C1 is what rejects these, and it has to, because the first
     /// of them is 49 characters against the 50-character English correction above.
+    /// Both cases must carry a correction cue, otherwise gate A rejects them first and the assertion
+    /// proves nothing about C1.
     /// </summary>
     [TestCase("nicht dasselbe wie letztes Jahr, alle zwei Wochen")]
-    [TestCase("Was Nachtschichten betrifft: verträgt keine, das ist seit Jahren so geregelt")]
+    [TestCase("nicht wie letztes Jahr, sondern alle zwei Wochen komplett neu planen")]
     public void IsStrongCorrection_False_ForLongNegationBearingFreeTextAnswers(string message)
     {
         RecipeCorrectionDetector.IsStrongCorrection(message, FreeTextAsk()).ShouldBeFalse(message);

@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Seam tests for the ask-step correction guard: proves the fourth branch in ResolveOrResumeRecipeAsync
-/// actually fires, books the abort against the right run, clears the pending recipe, and does not fill
-/// the slot. The detector's own gates are covered in RecipeCorrectionDetectorTests; what is covered here
-/// is the wiring, which is where the branch could be silently unreachable - wrong ordering against the
-/// cancellation and topic-switch checks, or a plan state the guard never admits.
+/// Seam tests for the ask-step correction guard: proves the branch in ResolveOrResumeRecipeAsync actually
+/// fires and books the abort against the right run, and proves the precedence it sits in. The detector's
+/// own gates are covered in RecipeCorrectionDetectorTests; what is covered here is the wiring, which is
+/// where the branch could be silently unreachable - wrong ordering against the cancellation and
+/// topic-switch checks, or a plan state the guard never admits.
 ///
 /// The re-resolve is asserted to return null on purpose. Resolving on the correction alone finds nothing
 /// when the message opens with a negation and carries no mutation verb, because the engine suppresses the
@@ -35,7 +35,9 @@ public class LLMServiceRecipeCorrectionTests
     private const string CancelledDuringAskStep = "cancelled during ask step";
 
     /// <summary>
-    /// The live incident message: 96 characters, opens with a negation, carries no mutation verb.
+    /// The live incident message: 95 characters, opens with a negation, carries no mutation verb and
+    /// contains no question mark, so neither the length floor nor the topic-switch precedence is what
+    /// admits it.
     /// </summary>
     private const string CorrectionMessage =
         "Nein du hast mich missverstanden, alle Mitarbeitern, Externen und Kunden. Plural nicht singular";
@@ -161,7 +163,32 @@ public class LLMServiceRecipeCorrectionTests
         await _recipeRunRecorder.Received(1).AbortRunningAsync(
             RecipeName, UserId, ConversationId, RecipeAbortReasons.CorrectedDuringAskStep, Arg.Any<CancellationToken>());
         _pendingRecipeStore.Received(1).Clear(UserId, ConversationId);
-        _pendingRecipeStore.DidNotReceiveWithAnyArgs().Save(default!);
+    }
+
+    /// <summary>
+    /// Precedence against the topic switch, which is why the correction branch sits after it. A message
+    /// satisfying both findings is far more likely an independent question, and the topic-switch path is
+    /// the recoverable one: it answers with the full toolset and re-asks the same slot on the next turn,
+    /// while the correction path discards the run and every slot in it.
+    /// The question has to be its own sentence - RecipeTopicSwitchDetector splits on .!?;\n and scans each
+    /// sentence for an interrogative lead, so a message opening with "Nein" and reaching the question only
+    /// after an em dash is not a topic switch at all and never was.
+    /// </summary>
+    [Test]
+    public async Task AMessageThatIsBothAQuestionAndACorrection_StaysATopicSwitch()
+    {
+        ResumeAtClientNameAskStep();
+
+        var plan = await Resolve(
+            "Nein, das stimmt so nicht. Wie finde ich heraus, welche Gruppen ein Mitarbeiter schon hat?");
+
+        plan.ShouldNotBeNull();
+        plan!.TopicSwitchThisTurn.ShouldBeTrue();
+        plan.CurrentIsAsk.ShouldBeTrue();
+        plan.Slots.ShouldNotContainKey(ClientNameSlot);
+        await _recipeRunRecorder.DidNotReceive().AbortRunningAsync(
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(),
+            RecipeAbortReasons.CorrectedDuringAskStep, Arg.Any<CancellationToken>());
     }
 
     /// <summary>
