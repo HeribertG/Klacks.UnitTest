@@ -1,18 +1,17 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Census of what RecipeExecutionPlan.CurrentAskSlotFeedsACapturingSearch admits, run against the real
+/// Census of what RecipeExecutionPlan.CurrentAskSlotExpectsAnEntityName admits, run against the real
 /// recipe-seeds.json instead of hand-built plans.
 ///
 /// The correction gate's entire precision rests on that predicate, and the predicate is a pure function of
 /// the seed file: a seed edit can widen or narrow it with no code change and nothing going red. Adding
 /// inject+capture to a chip slot - a perfectly reasonable improvement - would silently turn every
-/// negation-bearing chip reply into a recipe abort. Both directions are pinned here.
+/// negation-bearing chip reply into a recipe abort.
 ///
-/// The second test records the known gap (B1 in the 2026-09-15 hand-off) as an executable fact rather
-/// than prose: entity-reference slots resolved by name inside a mutate step are not admitted, so the
-/// correction guard covers the read paths and not the write paths. Fixing B1 must move entries from that
-/// list into the census above, which is the point of asserting it.
+/// Two directions are pinned. The admitted census catches an unintended widening. The negative cases catch
+/// the opposite and, because each one is first asserted to still exist as an ask step, they cannot rot into
+/// passing vacantly when a recipe is renamed or a slot disappears.
 /// </summary>
 
 using System.Text.Json;
@@ -29,26 +28,37 @@ public class RecipeCorrectionEntityReferenceCensusTests
     private const string RecipeSeedsFileName = "recipe-seeds.json";
 
     /// <summary>
-    /// Every (recipe, slot) pair the correction gate treats as an entity reference, in engine order
-    /// (sortOrder, then name). All 18 are *-name slots that a capturing search resolves to exactly one
-    /// row; no chip slot and no free-text slot is among them, which is the property the gate's precision
-    /// rests on. Change this list only together with the seed file or with the predicate - and read B1
-    /// below first.
+    /// Every (recipe, slot) pair the correction gate treats as an entity name, in engine order (sortOrder,
+    /// then name). Four of these are names of entities being CREATED rather than resolved
+    /// (onboard-employee/employeeName, user-onboarding/fullName, create-group/groupName,
+    /// create-shift-order/shiftName); they are admitted because a multi-clause sentence is not a plausible
+    /// value for them either, and raw-filling one would create the entity under that sentence as its name.
+    /// Change this list only together with the seed file or with the predicate.
     /// </summary>
-    private static readonly List<string> ExpectedAdmittedEntityReferenceSlots =
+    private static readonly List<string> ExpectedAdmittedEntityNameSlots =
     [
+        "onboard-employee::employeeName",
+        "onboard-employee::contractName",
+        "onboard-employee::groupName",
+        "user-onboarding::fullName",
         "record-employee-address-change::clientName",
         "offboard-employee::clientName",
         "add-employee-to-group::groupName",
         "add-employee-to-group::clientName",
+        "bulk-add-employees-to-group::groupName",
+        "add-selected-clients-to-group::groupName",
         "add-absence-for-employee::clientName",
         "remove-absence-for-employee::clientName",
         "move-absence-for-employee::clientName",
         "record-availability-for-employee::clientName",
         "clear-availability-for-employee::clientName",
+        "create-group::groupName",
         "create-group::calendarName",
+        "move-group::groupName",
+        "move-group::newParentName",
         "add-shift-to-group::shiftName",
         "add-shift-to-group::groupName",
+        "create-shift-order::shiftName",
         "create-shift-order::customerName",
         "create-shift-order::groupName",
         "add-task-to-container::containerName",
@@ -58,22 +68,18 @@ public class RecipeCorrectionEntityReferenceCensusTests
     ];
 
     /// <summary>
-    /// B1: entity-reference ask slots whose value is resolved by name inside a MUTATE step, so the
-    /// capturing-search predicate does not see them. A correction at one of these is raw-filled today and
-    /// reaches a name resolver whose fuzzy token-cover stage asks whether every word of the STORED name
-    /// appears in the QUERY - a longer query covers more likely, not less likely. move_group then writes.
-    /// The cheapest sound remedies are a schema marker on the ask step or an allowlist of name-resolving
-    /// skills; loosening the predicate to "any later step injects the slot" would also admit free-text
-    /// slots such as note -> create_shift_order and destroy the false-positive protection.
+    /// Chip and typed-scalar slots, whose offered replies include bare negations ("Nein, eigener Betrieb"
+    /// is one of setup-consultation's own chips). Admitting one of these would turn an ordinary answer
+    /// into a recipe abort, which is the false positive the detector exists to avoid.
     /// </summary>
-    private static readonly string[] KnownGapEntityReferenceSlotsInsideAMutateStep =
+    private static readonly string[] KnownNonEntityNameSlots =
     [
-        "move-group::groupName",
-        "move-group::newParentName",
-        "onboard-employee::contractName",
-        "onboard-employee::groupName",
-        "bulk-add-employees-to-group::groupName",
-        "add-selected-clients-to-group::groupName"
+        "setup-consultation::attribution",
+        "setup-consultation::orderSource",
+        "setup-consultation::nextStep",
+        "onboard-employee::startDate",
+        "record-employee-address-change::validFrom",
+        "offboard-employee::exitDate"
     ];
 
     private static readonly string[] DefinitionsRelativePath =
@@ -100,57 +106,59 @@ public class RecipeCorrectionEntityReferenceCensusTests
             .ToList();
     }
 
-    /// <summary>
-    /// Derived through the real predicate over the real steps, not restated from the design document.
-    /// </summary>
-    private static List<string> AdmittedEntityReferenceSlots()
+    private static IEnumerable<(RecipeSeedDefinition Recipe, RecipeStep Step, int Index)> AskSteps()
     {
-        var admitted = new List<string>();
         foreach (var recipe in _recipes)
         {
             for (var index = 0; index < recipe.Steps.Count; index++)
             {
                 var step = recipe.Steps[index];
-                if (!string.Equals(step.Kind, RecipeStepKinds.Ask, StringComparison.OrdinalIgnoreCase)
-                    || string.IsNullOrWhiteSpace(step.Slot))
+                if (string.Equals(step.Kind, RecipeStepKinds.Ask, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(step.Slot))
                 {
-                    continue;
-                }
-
-                var plan = new RecipeExecutionPlan(recipe.Name, recipe.Steps, stepIndex: index);
-                if (plan.CurrentAskSlotFeedsACapturingSearch())
-                {
-                    admitted.Add($"{recipe.Name}::{step.Slot}");
+                    yield return (recipe, step, index);
                 }
             }
         }
-
-        return admitted;
     }
 
+    /// <summary>
+    /// Derived through the real predicate over the real steps, not restated from the design document.
+    /// </summary>
+    private static List<string> AdmittedEntityNameSlots() =>
+        AskSteps()
+            .Where(ask => new RecipeExecutionPlan(ask.Recipe.Name, ask.Recipe.Steps, stepIndex: ask.Index)
+                .CurrentAskSlotExpectsAnEntityName())
+            .Select(ask => $"{ask.Recipe.Name}::{ask.Step.Slot}")
+            .ToList();
+
     [Test]
-    public void TheAdmittedEntityReferenceSlots_MatchTheAuditedCensus()
+    public void TheAdmittedEntityNameSlots_MatchTheAuditedCensus()
     {
-        var admitted = AdmittedEntityReferenceSlots();
+        var admitted = AdmittedEntityNameSlots();
 
         admitted.ShouldBe(
-            ExpectedAdmittedEntityReferenceSlots,
+            ExpectedAdmittedEntityNameSlots,
             "the correction gate admits a different set of ask slots than the audited census. If a seed " +
-            "change caused this, check whether the slot really must resolve to exactly one entity - a chip " +
-            "or free-text slot admitted here turns every negation-bearing answer into a recipe abort. " +
+            "change caused this, check whether the slot really expects an entity name - a chip or free-text " +
+            "slot admitted here turns every negation-bearing answer into a recipe abort. " +
             "Actual: " + string.Join(", ", admitted));
     }
 
     [Test]
-    public void KnownGap_SlotsResolvedByNameInsideAMutateStep_AreStillNotAdmitted()
+    public void ChipAndTypedSlots_AreNotAdmittedAsEntityNames()
     {
-        var admitted = AdmittedEntityReferenceSlots();
-        var nowCovered = KnownGapEntityReferenceSlotsInsideAMutateStep.Where(admitted.Contains).ToList();
+        var admitted = AdmittedEntityNameSlots();
+        var everyAskSlot = AskSteps().Select(ask => $"{ask.Recipe.Name}::{ask.Step.Slot}").ToList();
 
-        nowCovered.ShouldBeEmpty(
-            "these slots moved out of the B1 known gap, so the gap list above is stale. Move them into " +
-            "ExpectedAdmittedEntityReferenceSlots and update the hand-off - do not just delete them: " +
-            string.Join(", ", nowCovered));
+        foreach (var slot in KnownNonEntityNameSlots)
+        {
+            everyAskSlot.ShouldContain(
+                slot,
+                "this negative case no longer exists as an ask step in recipe-seeds.json, so asserting it " +
+                "is not admitted would pass vacantly. Replace it with a real chip or typed slot.");
+            admitted.ShouldNotContain(slot);
+        }
     }
 
     private static string LocateDefinitionsFile(string fileName)
