@@ -5,6 +5,12 @@
 /// conversation, overwrite on the next tool-calling turn, supersede without losing the record, the
 /// clarification pins, and the TTL. Substitute repositories are deliberately not used here - they
 /// cannot see the EF identity conflicts a read-modify-write inside one scope can produce.
+/// AssistantLastActionRepository's insert-vs-update race retry (two turns of one conversation hitting
+/// the unique index concurrently) is NOT covered here: the InMemory provider does not raise the
+/// Postgres-specific unique-violation the retry's exception filter checks for, and the two-step
+/// read-then-write UpsertAsync gives no hook to interleave a second write between its own read and its
+/// own write. That path is covered by the code's structure (the same IsUniqueViolation/DbUpdateException
+/// pattern already used by SkillPhraseRepository) and by the integration test suite.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -192,5 +198,32 @@ public class AssistantLastActionStoreTests
 
         var peeked = _store.Peek(_userId, ConversationId)!;
         peeked.Calls[0].SkillDisplayLabel!.Length.ShouldBe(GracefulCorrectionDefaults.SkillDisplayLabelMaxLength);
+    }
+
+    [Test]
+    public void Save_CapsAllFourBoundedFieldsInOneCall()
+    {
+        var action = Action(new string('u', GracefulCorrectionDefaults.UserMessageMaxLength + 500), "add_shift_to_group");
+        action.AssistantAnswerExcerpt = new string('e', GracefulCorrectionDefaults.AnswerExcerptMaxLength + 50);
+        action.Calls[0].SkillDisplayLabel = new string('l', GracefulCorrectionDefaults.SkillDisplayLabelMaxLength + 50);
+        action.Calls[0].ArgumentsJson = new string('a', GracefulCorrectionDefaults.CallJsonMaxLength + 50);
+        action.Calls[0].ResultDataJson = new string('r', GracefulCorrectionDefaults.CallJsonMaxLength + 50);
+
+        _store.Save(action);
+
+        var peeked = _store.Peek(_userId, ConversationId)!;
+        peeked.UserMessage.Length.ShouldBe(GracefulCorrectionDefaults.UserMessageMaxLength);
+        peeked.AssistantAnswerExcerpt.Length.ShouldBe(GracefulCorrectionDefaults.AnswerExcerptMaxLength);
+        peeked.Calls[0].SkillDisplayLabel!.Length.ShouldBe(GracefulCorrectionDefaults.SkillDisplayLabelMaxLength);
+        peeked.Calls[0].ArgumentsJson.Length.ShouldBe(GracefulCorrectionDefaults.CallJsonMaxLength);
+        peeked.Calls[0].ResultDataJson.Length.ShouldBe(GracefulCorrectionDefaults.CallJsonMaxLength);
+    }
+
+    [Test]
+    public void Peek_ForADifferentConversationOfTheSameUser_ReturnsNull()
+    {
+        _store.Save(Action("first", "add_shift_to_group"));
+
+        _store.Peek(_userId, "conv-2").ShouldBeNull();
     }
 }
