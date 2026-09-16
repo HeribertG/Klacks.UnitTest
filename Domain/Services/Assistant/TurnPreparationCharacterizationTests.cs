@@ -311,20 +311,22 @@ public class TurnPreparationCharacterizationTests
     {
         var saved = CaptureSave();
         var context = ContextWithToolset(Function(
-            "add_client_to_group", "Adds an employee to a group. Resolves the group by name."));
+            "add_client_to_group",
+            "Adds an employee to a group. Resolves the group by name.",
+            "Mitarbeitende einer Gruppe zuweisen"));
 
         Subject().RecordLastAction(
             context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
 
-        saved()!.Calls[0].SkillDisplayLabel.ShouldBe("Adds an employee to a group");
+        saved()!.Calls[0].SkillDisplayLabel.ShouldBe("Mitarbeitende einer Gruppe zuweisen");
     }
 
     [Test]
     public void RecordLastAction_TruncatesTheSkillLabelAtItsOwnCap()
     {
         var saved = CaptureSave();
-        var description = new string('a', GracefulCorrectionDefaults.SkillDisplayLabelMaxLength + 30);
-        var context = ContextWithToolset(Function("add_client_to_group", description));
+        var label = new string('a', GracefulCorrectionDefaults.SkillDisplayLabelMaxLength + 30);
+        var context = ContextWithToolset(Function("add_client_to_group", "Adds an employee to a group.", label));
 
         Subject().RecordLastAction(
             context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
@@ -348,8 +350,16 @@ public class TurnPreparationCharacterizationTests
         saved()!.Calls[0].SkillDisplayLabel.ShouldBeNull();
     }
 
-    private static LLMFunction Function(string name, string description) =>
-        new() { Name = name, Description = description };
+    // The stored label is an AUTHORED label of the toolset entry, resolved in the turn's language
+    // (the fixture runs in German), not the skill description any more.
+    private static LLMFunction Function(string name, string description, string? germanLabel = null) => new()
+    {
+        Name = name,
+        Description = description,
+        Labels = germanLabel == null
+            ? null
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["de"] = germanLabel }
+    };
 
     private LLMContext ContextWithToolset(params LLMFunction[] functions) => new()
     {

@@ -5,8 +5,8 @@
 /// question and with NO provider call at all - the one case in which the assistant asks before acting.
 /// Both chat paths are pinned here because a divergence between them is invisible in production: the same
 /// correction would then be answered deterministically in one client and by the model in the other.
-/// The fixture runs the turn in German although the interim rule only produces a question for English -
-/// which language the question exists in is decided by CorrectionOutcomeComposer and tested there, while
+/// The fixture runs the turn in German, which is now a language the question genuinely exists in -
+/// which language it can be asked in is decided by CorrectionOutcomeComposer and tested there, while
 /// LLMService has to relay whatever reply the context carries.
 /// </summary>
 

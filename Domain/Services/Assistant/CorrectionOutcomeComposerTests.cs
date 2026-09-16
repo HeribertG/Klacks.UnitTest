@@ -4,10 +4,12 @@
 /// The pure half of the correction completion: which candidates count, when the turn asks instead of
 /// acting, what the question may name, and in which language it may be asked at all. The ambiguity rule
 /// is the subject of five of these tests, because it is the one decision of this feature that is a
-/// judgement call rather than a lookup; the interim English-only gate is the subject of three more,
-/// because it is the one place where rule 4 is currently satisfied by refusing rather than by
-/// translating. The note's own wording is exercised through the service in
-/// TurnPreparationCorrectionPlanningTests, and the per-language catalogue in
+/// judgement call rather than a lookup; the language rule is the subject of four more, because the
+/// question is the one sentence of this feature no model renders. Since 2026-09-16 the three nouns the
+/// question puts into its frame are AUTHORED labels per skill and language (AgentSkill.Labels), not
+/// English skill descriptions, so the interim English-only gate is gone: the turn asks in the user's
+/// language or, when nobody authored a label for it, not at all. The note's own wording is exercised
+/// through the service in TurnPreparationCorrectionPlanningTests, and the per-language catalogue in
 /// GracefulCorrectionTextGuardTests - neither is repeated here.
 /// </summary>
 
@@ -31,16 +33,26 @@ public class CorrectionOutcomeComposerTests
     private const string CandidateB = "search_employees";
     private const string CandidateALabel = "Fills the group from a rule";
     private const string CandidateBLabel = "Searches for matching employees";
-    private const string SecondSentence = ". A second sentence that is never quoted.";
+    private const string CandidateAGerman = "Gruppe nach Regel füllen";
+    private const string CandidateBGerman = "Mitarbeitende suchen";
+    private const string CandidateASpanish = "Rellenar el grupo por regla";
+    private const string CandidateBSpanish = "Buscar empleados";
+    private const string CandidateATraditional = "依規則填滿群組";
+    private const string CandidateBTraditional = "搜尋員工";
     private const string UndoSkillName = "remove_shift_from_group";
     private const string UndoneSkill = "add_shift_to_group";
     private const string UndoneSkillLabel = "Assigns a shift to a group";
     private const string English = "en";
-    private const string RegionalEnglish = "en-GB";
     private const string German = "de";
     private const string Spanish = "es";
+    private const string Polish = "pl";
+    private const string TraditionalChinese = "zh-TW";
     private const string SpanishSentence =
         "Entendido — no {previousAction}. ¿Te refieres a {optionA} o a {optionB}?";
+    private const string TraditionalSentence =
+        "明白了——不是{previousAction}。您指的是{optionA}還是{optionB}？";
+    private const string PolishSentence =
+        "Rozumiem — nie {previousAction}. Chodzi o {optionA} czy o {optionB}?";
 
     /// <summary>
     /// The fixed head of the undo offer, up to its first placeholder: what the note carries when - and
@@ -80,9 +92,17 @@ public class CorrectionOutcomeComposerTests
     private static LLMFunction Function(string name, ToolsetSkillSource source, double? score = null) => new()
     {
         Name = name,
-        Description = (name == CandidateA ? CandidateALabel : CandidateBLabel) + SecondSentence,
+        Description = (name == CandidateA ? CandidateALabel : CandidateBLabel)
+                      + ". A second sentence that must never reach the user.",
         ToolsetSource = source,
-        RetrievalScore = score
+        RetrievalScore = score,
+        Labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["en"] = name == CandidateA ? CandidateALabel : CandidateBLabel,
+            ["de"] = name == CandidateA ? CandidateAGerman : CandidateBGerman,
+            ["es"] = name == CandidateA ? CandidateASpanish : CandidateBSpanish,
+            ["zh-TW"] = name == CandidateA ? CandidateATraditional : CandidateBTraditional
+        }
     };
 
     private static GracefulCorrectionOutcome Compose(
@@ -178,7 +198,7 @@ public class CorrectionOutcomeComposerTests
     }
 
     // Rule 1 applies to a question as well: it names the misunderstanding before it offers the options,
-    // and it never leaks an internal snake_case skill name while doing so.
+    // and it never leaks an internal snake_case skill name or a raw description while doing so.
     [Test]
     public void TheQuestion_NamesTheMisunderstandingByItsLabel_AndNeverASkillName()
     {
@@ -191,7 +211,7 @@ public class CorrectionOutcomeComposerTests
         outcome.ClarificationReply.ShouldNotContain(WrongSkill);
         outcome.ClarificationReply.ShouldNotContain(CandidateA);
         outcome.ClarificationReply.ShouldNotContain(CandidateB);
-        outcome.ClarificationReply.ShouldNotContain(SecondSentence);
+        outcome.ClarificationReply.ShouldNotContain("second sentence");
     }
 
     [Test]
@@ -251,26 +271,34 @@ public class CorrectionOutcomeComposerTests
         outcome.ClarificationSkillNames.ShouldBeEmpty();
     }
 
+    // An option that cannot be named in the turn's language is not offered. A skill without an authored
+    // label is the plugin case the 21 packs will close; until then the turn proceeds without a question
+    // rather than naming one option in a foreign language.
     [Test]
-    public void ACandidateWithoutADescription_AsksNothing()
+    public void ACandidateWithoutALabelInTheTurnsLanguage_AsksNothing()
     {
-        var nameless = Function(CandidateA, ToolsetSkillSource.Keyword);
-        nameless.Description = string.Empty;
+        var unlabelled = Function(CandidateA, ToolsetSkillSource.Keyword);
+        unlabelled.Labels = null;
 
-        var outcome = Compose([nameless, Function(CandidateB, ToolsetSkillSource.Keyword)]);
+        var outcome = Compose([unlabelled, Function(CandidateB, ToolsetSkillSource.Keyword)], German);
 
         outcome.ClarificationReply.ShouldBeNull();
     }
 
-    // Two CRUD skills can share a first sentence, and "do you mean X or X?" is a question the user cannot
-    // answer - the same defect as an option that cannot be named at all.
+    // Two CRUD skills can be given the same short label by two different authors, and "do you mean X or
+    // X?" is a question the user cannot answer - the same defect as an option that cannot be named at
+    // all. The seed guard makes this state unshippable; the composer still refuses it at runtime, because
+    // a language pack is authored outside that guard's reach.
     [Test]
     public void TwoCandidatesWithTheSameLabel_AskNothing()
     {
         var twin = Function(CandidateB, ToolsetSkillSource.Keyword);
-        twin.Description = CandidateALabel + SecondSentence;
+        twin.Labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = CandidateAGerman
+        };
 
-        var outcome = Compose([Function(CandidateA, ToolsetSkillSource.Keyword), twin]);
+        var outcome = Compose([Function(CandidateA, ToolsetSkillSource.Keyword), twin], German);
 
         outcome.ClarificationReply.ShouldBeNull();
     }
@@ -289,56 +317,14 @@ public class CorrectionOutcomeComposerTests
         outcome.ContextNote.ShouldContain(GracefulCorrectionNotes.UnnamedPreviousActionLabel);
     }
 
-    // The interim gate: the option labels are English skill descriptions, so a German question would be a
-    // German frame around English nouns - rule 4 broken in substance. Until the labels are localized the
-    // turn proceeds without a question instead.
-    [Test]
-    public void OutsideEnglish_AsksNothingWhileTheLabelsAreEnglish()
-    {
-        var outcome = Compose(
-            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
-            German);
-
-        outcome.ClarificationReply.ShouldBeNull();
-        outcome.ClarificationSkillNames.ShouldBeEmpty();
-        outcome.ContextNote.ShouldNotBeNullOrWhiteSpace();
-    }
-
-    // Fail closed, not open: a turn that carries no language at all cannot be shown to be English.
+    // Fail closed, not open: a turn that carries no language at all resolves no label, so there is
+    // nothing the question could name.
     [Test]
     public void WithoutALanguage_AsksNothing()
     {
         var outcome = Compose(
             [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
             language: null);
-
-        outcome.ClarificationReply.ShouldBeNull();
-    }
-
-    // The gate reads the base language, so a regional English installation is still English.
-    [Test]
-    public void RegionalEnglish_StillAsks()
-    {
-        var outcome = Compose(
-            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
-            RegionalEnglish);
-
-        outcome.ClarificationReply.ShouldNotBeNullOrWhiteSpace();
-    }
-
-    // The pack mechanism stays in place for the owner's final decision, but the interim gate sits in
-    // front of it: an installed plugin language asks nothing today even though its sentence resolves.
-    [Test]
-    public void AnInstalledPluginLanguage_AsksNothingUnderTheInterimGate()
-    {
-        GracefulCorrectionTexts.Configure(Spanish, new Dictionary<string, string>
-        {
-            [GracefulCorrectionTexts.ClarificationQuestion] = SpanishSentence
-        });
-
-        var outcome = Compose(
-            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
-            Spanish);
 
         outcome.ClarificationReply.ShouldBeNull();
     }
@@ -360,19 +346,88 @@ public class CorrectionOutcomeComposerTests
             .ShouldBe(new[] { CandidateA });
     }
 
-    // An abbreviation is not a sentence end: the label is cut at a terminator that whitespace or the end
-    // of the text follows AND that a whole word precedes, so neither "e.g." nor "z.B." truncates the
-    // label after a single letter the way a plain IndexOf('.') did.
-    [TestCase("Adds e.g. contracts to a group. A second sentence.", "Adds e.g. contracts to a group")]
-    [TestCase("Erstellt z.B. Auftraege. Zweiter Satz.", "Erstellt z.B. Auftraege")]
-    [TestCase("Fills the group from a rule", "Fills the group from a rule")]
-    public void AnAbbreviationInTheDescription_DoesNotCutTheLabelShort(string description, string expected)
+    // The core of the owner's rule 4: a German turn is asked in German, with German nouns inside the
+    // German frame. This is the case the interim gate used to suppress entirely.
+    [Test]
+    public void AGermanTurn_IsAskedInGermanWithGermanLabels()
     {
-        var abbreviated = Function(CandidateA, ToolsetSkillSource.Keyword);
-        abbreviated.Description = description;
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            German);
 
-        var outcome = Compose([abbreviated, Function(CandidateB, ToolsetSkillSource.Keyword)]);
+        outcome.ClarificationReply.ShouldNotBeNullOrWhiteSpace();
+        outcome.ClarificationReply.ShouldStartWith("Verstanden");
+        outcome.ClarificationReply.ShouldContain(CandidateAGerman);
+        outcome.ClarificationReply.ShouldContain(CandidateBGerman);
+        outcome.ClarificationReply.ShouldNotContain(CandidateALabel);
+        outcome.ClarificationSkillNames.ShouldBe(new[] { CandidateA, CandidateB });
+    }
 
-        outcome.ClarificationReply.ShouldContain(expected);
+    // An installed plugin language uses its own frame AND its own nouns. Neither half falls back.
+    [Test]
+    public void AnInstalledPluginLanguage_IsAskedInThatLanguage()
+    {
+        GracefulCorrectionTexts.Configure(Spanish, new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = SpanishSentence
+        });
+
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            Spanish);
+
+        outcome.ClarificationReply.ShouldStartWith("Entendido");
+        outcome.ClarificationReply.ShouldContain(CandidateASpanish);
+        outcome.ClarificationReply.ShouldContain(CandidateBSpanish);
+    }
+
+    // A regional pack tag reads its OWN labels, not those of the other script sharing its base language.
+    [Test]
+    public void ARegionalPackTag_ReadsItsOwnLabels()
+    {
+        GracefulCorrectionTexts.Configure(TraditionalChinese, new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = TraditionalSentence
+        });
+
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            TraditionalChinese);
+
+        outcome.ClarificationReply.ShouldContain(CandidateATraditional);
+        outcome.ClarificationReply.ShouldContain(CandidateBTraditional);
+    }
+
+    // The known, owner-accepted gap until the 21 pack label files exist: a language whose frame resolves
+    // but whose nouns nobody authored asks NOTHING. Never an English noun in a Polish sentence.
+    [Test]
+    public void AnInstalledLanguageWithoutAuthoredLabels_AsksNothing()
+    {
+        GracefulCorrectionTexts.Configure(Polish, new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = PolishSentence
+        });
+
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            Polish);
+
+        outcome.ClarificationReply.ShouldBeNull();
+        outcome.ContextNote.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    // The cap is the only thing left standing between a pack-authored label and the question, because no
+    // seed guard reaches a language pack. An over-long label is cut and the cut end is trimmed.
+    [Test]
+    public void AnOverlongAuthoredLabel_IsCappedAndTrimmed()
+    {
+        var overlong = Function(CandidateA, ToolsetSkillSource.Keyword);
+        var authored = new string('a', GracefulCorrectionDefaults.OptionLabelMaxLength - 1) + "   bb";
+        overlong.Labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["de"] = authored };
+
+        var outcome = Compose([overlong, Function(CandidateB, ToolsetSkillSource.Keyword)], German);
+
+        outcome.ClarificationReply.ShouldContain(new string('a', GracefulCorrectionDefaults.OptionLabelMaxLength - 1));
+        outcome.ClarificationReply.ShouldNotContain(authored);
     }
 }

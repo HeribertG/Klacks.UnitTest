@@ -292,8 +292,8 @@ public class GracefulCorrectionEntryPointWiringTests
 
     // The two options of a question just asked are pinned onto the anchor, so the turn that answers it has
     // both in its toolset no matter which one the user names. The write happens only when a question was
-    // actually asked: an ordinary correction turn, and every turn outside English while the interim rule
-    // holds, must leave the record untouched.
+    // actually asked: an ordinary correction turn, and every turn whose language has no authored labels,
+    // must leave the record untouched.
     private void TheCandidatesWerePinned() =>
         _lastActionStore.Received(1).SaveClarificationCandidates(
             Guid.Parse(UserId), ConversationId,
