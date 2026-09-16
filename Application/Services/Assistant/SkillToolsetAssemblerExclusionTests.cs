@@ -4,10 +4,13 @@
 /// The correction turn's toolset: the previous turn's skills are dropped, always-on skills and
 /// confirm_pending_action survive the exclusion (including when confirm_pending_action is itself
 /// configured non-always-on, isolating the explicit Remove of its name from the excluded set), a
-/// pinned candidate is guaranteed back in, a guaranteed skill carries its retrieval score, and the
-/// legacy overload behaves exactly as before. The last test is the positional-binding guard from
-/// 2026-09-14: called with every legacy parameter positional (no named cancellationToken), it must
-/// still resolve to the short overload and exclude nothing.
+/// RecipeStep-guaranteed skill survives the exclusion too (the recipe engine's step decision is more
+/// specific than the turn-level exclusion), a pinned candidate is guaranteed back in but only when the
+/// caller actually has the rights for it, an excluded skill stays out even when the co-required
+/// expansion tries to re-add it, a guaranteed skill carries its retrieval score, and the legacy overload
+/// behaves exactly as before. The last test is the positional-binding guard from 2026-09-14: called with
+/// every legacy parameter positional (no named cancellationToken), it must still resolve to the short
+/// overload and exclude nothing.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
@@ -35,7 +38,9 @@ public class SkillToolsetAssemblerExclusionTests
     private const string RightSkill = "search_employees";
     private const string PinnedSkill = "fill_group_by_criteria";
     private const string AlwaysOnSkill = "get_current_user";
+    private const string RestrictedSkill = "delete_group";
     private const string UserMessage = "Trag alle Mitarbeitenden in die Gruppe ein.";
+    private const string RecipeTriggerMessage = "Erstelle einen Dienst und teile ihn auf.";
 
     private ISkillCacheService _skillCache = null!;
     private IKnowledgeRetrievalService _retrieval = null!;
@@ -58,7 +63,8 @@ public class SkillToolsetAssemblerExclusionTests
                 Skill(RightSkill),
                 Skill(PinnedSkill),
                 Skill(AutonomyDefaults.ConfirmPendingActionSkillName, alwaysOn: true),
-                Skill(AlwaysOnSkill, alwaysOn: true)
+                Skill(AlwaysOnSkill, alwaysOn: true),
+                Skill(RestrictedSkill, requiredPermission: Permissions.CanDeleteGroups)
             });
 
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
@@ -97,12 +103,13 @@ public class SkillToolsetAssemblerExclusionTests
             scopeFactory, Substitute.For<IPendingRecipeStore>(), Substitute.For<ILogger<RecipeEngineService>>());
     }
 
-    private static AgentSkill Skill(string name, bool alwaysOn = false) => new()
+    private static AgentSkill Skill(string name, bool alwaysOn = false, string? requiredPermission = null) => new()
     {
         Name = name,
         Description = $"{name} description.",
         ParametersJson = "[]",
-        AlwaysOn = alwaysOn
+        AlwaysOn = alwaysOn,
+        RequiredPermission = requiredPermission
     };
 
     private static RetrievalCandidate Candidate(string skillName, double score) => new(
@@ -133,8 +140,15 @@ public class SkillToolsetAssemblerExclusionTests
 
     private Task<SkillToolsetResult> Assemble(
         IReadOnlyCollection<string>? excluded, IReadOnlyCollection<string>? pinned) =>
+        Assemble(UserMessage, new List<string>(), excluded, pinned);
+
+    private Task<SkillToolsetResult> Assemble(
+        string userMessage,
+        List<string> userRights,
+        IReadOnlyCollection<string>? excluded,
+        IReadOnlyCollection<string>? pinned) =>
         CreateAssembler().AssembleAsync(
-            _agent, new List<string>(), UserMessage, null, null, Guid.NewGuid().ToString(), "de",
+            _agent, userRights, userMessage, null, null, Guid.NewGuid().ToString(), "de",
             KnowledgeIndexConstants.MaxToolsForProvider, true, excluded, pinned, CancellationToken.None);
 
     [Test]
@@ -155,7 +169,7 @@ public class SkillToolsetAssemblerExclusionTests
     }
 
     [Test]
-    public async Task ConfirmPendingAction_SurvivesTheExclusion()
+    public async Task ConfirmPendingAction_SurvivesTheExclusion_ThroughTheAlwaysOnExemption()
     {
         var result = await Assemble([AutonomyDefaults.ConfirmPendingActionSkillName], null);
 
@@ -176,6 +190,35 @@ public class SkillToolsetAssemblerExclusionTests
             [AutonomyDefaults.ConfirmPendingActionSkillName]);
 
         result.Functions.ShouldContain(f => f.Name == AutonomyDefaults.ConfirmPendingActionSkillName);
+    }
+
+    [Test]
+    public async Task RecipeStepGuaranteedSkill_SurvivesTheExclusion()
+    {
+        var result = await Assemble(RecipeTriggerMessage, new List<string>(), [WrongSkill], null);
+
+        result.Functions.ShouldContain(f => f.Name == WrongSkill);
+    }
+
+    [Test]
+    public async Task ExcludedSkill_IsDroppedEvenWhenTheExpansionReAddsIt()
+    {
+        _expander.ExpandAsync(
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),
+                Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill> { Skill(WrongSkill) });
+
+        var result = await Assemble([WrongSkill], null);
+
+        result.Functions.ShouldNotContain(f => f.Name == WrongSkill);
+    }
+
+    [Test]
+    public async Task PinnedSkill_UserLacksRightsFor_IsNotAdded()
+    {
+        var result = await Assemble(null, [RestrictedSkill]);
+
+        result.Functions.ShouldNotContain(f => f.Name == RestrictedSkill);
     }
 
     [Test]
