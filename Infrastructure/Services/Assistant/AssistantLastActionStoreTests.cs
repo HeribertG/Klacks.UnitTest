@@ -11,6 +11,14 @@
 /// read-then-write UpsertAsync gives no hook to interleave a second write between its own read and its
 /// own write. That path is covered by the code's structure (the same IsUniqueViolation/DbUpdateException
 /// pattern already used by SkillPhraseRepository) and by the integration test suite.
+/// The same applies to PruneExpiredAsync's own concurrent-prune tolerance (every tool-calling turn of
+/// every user prunes globally, so two overlapping prunes can both select the same expired row): a query
+/// against the InMemory provider always reflects the CURRENT store, never a stale view, so a second
+/// context's delete lands before or after the first context's query ever runs - there is no way to make
+/// the first context's read observe the row and then have the row vanish underneath before that same
+/// context's SaveChanges, which is exactly the ordering DbUpdateConcurrencyException requires. Covered
+/// by the code's structure (a plain try/catch around one SaveChangesAsync call) and the integration
+/// test suite.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
