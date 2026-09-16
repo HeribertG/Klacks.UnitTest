@@ -43,6 +43,7 @@ public class TurnPreparationPendingConfirmationForceTests
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             slotExtractor: null!,
             lastActionStore: Substitute.For<IAssistantLastActionStore>(),
+            routeProbe: Substitute.For<IDeterministicRouteProbe>(),
             logger: Substitute.For<ILogger<TurnPreparationService>>());
     }
 

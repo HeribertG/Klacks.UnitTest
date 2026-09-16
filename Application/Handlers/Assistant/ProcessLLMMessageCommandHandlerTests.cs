@@ -131,7 +131,11 @@ public class ProcessLLMMessageCommandHandlerTests
             _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher,
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
-            new ContextBudgetPolicy());
+            new ContextBudgetPolicy(),
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IPendingRecipeStore>(),
+            Substitute.For<ITurnPreparationService>(),
+            Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
     private static AgentSkill CreateSkill(string name)
@@ -313,7 +317,11 @@ public class ProcessLLMMessageCommandHandlerTests
             _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher,
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
-            new ContextBudgetPolicy());
+            new ContextBudgetPolicy(),
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IPendingRecipeStore>(),
+            Substitute.For<ITurnPreparationService>(),
+            Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await handler.Handle(CreateCommand(null), CancellationToken.None);
 

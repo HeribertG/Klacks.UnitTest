@@ -39,7 +39,8 @@ public class LLMStreamingOrchestratorStatusTests
         _assembler.AssembleAsync(
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
-                Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 _assembleCalled = true;
@@ -68,6 +69,9 @@ public class LLMStreamingOrchestratorStatusTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             Substitute.For<IContextBudgetPolicy>(),
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IPendingRecipeStore>(),
+            Substitute.For<ITurnPreparationService>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
     }
 

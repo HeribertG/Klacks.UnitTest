@@ -112,6 +112,7 @@ public class TurnPreparationCharacterizationTests
         _runRecorder,
         new RecipeSlotExtractor(NullLogger<RecipeSlotExtractor>.Instance),
         _lastActionStore,
+        Substitute.For<IDeterministicRouteProbe>(),
         _logger);
 
     [Test]

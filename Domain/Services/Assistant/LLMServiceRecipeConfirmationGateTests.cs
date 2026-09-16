@@ -92,6 +92,7 @@ public class LLMServiceRecipeConfirmationGateTests
             Substitute.For<IRecipeRunRecorder>(),
             new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
             Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IDeterministicRouteProbe>(),
             Substitute.For<ILogger<TurnPreparationService>>());
 
         _service = new LLMService(

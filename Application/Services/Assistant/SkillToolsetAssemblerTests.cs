@@ -390,6 +390,9 @@ public class SkillToolsetAssemblerTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             budgetPolicy,
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IPendingRecipeStore>(),
+            Substitute.For<ITurnPreparationService>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
 
         LLMContext? nonStreamingContext = null;
@@ -401,7 +404,11 @@ public class SkillToolsetAssemblerTests
             Substitute.For<IPlanningScopeEnricher>(),
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
-            budgetPolicy);
+            budgetPolicy,
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IPendingRecipeStore>(),
+            Substitute.For<ITurnPreparationService>(),
+            Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await foreach (var _ in orchestrator.ProcessStreamAsync(
             new LLMStreamRequest { Message = UserMessage, UserId = UserId }, CancellationToken.None))
