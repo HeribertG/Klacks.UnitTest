@@ -29,12 +29,18 @@ public class CorrectionOutcomeComposerTests
     private const string PreviousMessage = "Put every employee into the Zurich group.";
     private const string WrongSkill = "find_customer_candidates";
     private const string WrongSkillLabel = "Searches for matching customers";
+    private const string WrongSkillGerman = "Passende Kundschaft suchen";
+    private const string WrongSkillFrench = "Rechercher des clients correspondants";
+    private const string WrongSkillSpanish = "Buscar clientes coincidentes";
+    private const string WrongSkillTraditional = "搜尋相符客戶";
     private const string CandidateA = "fill_group_by_criteria";
     private const string CandidateB = "search_employees";
     private const string CandidateALabel = "Fills the group from a rule";
     private const string CandidateBLabel = "Searches for matching employees";
     private const string CandidateAGerman = "Gruppe nach Regel füllen";
     private const string CandidateBGerman = "Mitarbeitende suchen";
+    private const string CandidateAFrench = "Remplir le groupe selon une règle";
+    private const string CandidateBFrench = "Rechercher des collaborateurs";
     private const string CandidateASpanish = "Rellenar el grupo por regla";
     private const string CandidateBSpanish = "Buscar empleados";
     private const string CandidateATraditional = "依規則填滿群組";
@@ -44,6 +50,7 @@ public class CorrectionOutcomeComposerTests
     private const string UndoneSkillLabel = "Assigns a shift to a group";
     private const string English = "en";
     private const string German = "de";
+    private const string French = "fr";
     private const string Spanish = "es";
     private const string Polish = "pl";
     private const string TraditionalChinese = "zh-TW";
@@ -65,7 +72,24 @@ public class CorrectionOutcomeComposerTests
     [TearDown]
     public void ResetConfiguredTexts() => GracefulCorrectionTexts.Reset();
 
-    private static GracefulCorrectionPlan Plan(string? previousLabel = WrongSkillLabel) => new(
+    /// <summary>
+    /// The authored labels of the corrected skill, as the previous turn stored them alongside the label
+    /// it resolved for itself. The QUESTION resolves its previous-action noun from these in the
+    /// CORRECTION turn's language, which is what keeps a German noun out of a French sentence when the
+    /// user switches language inside the two-minute window.
+    /// </summary>
+    private static readonly Dictionary<string, string> WrongSkillLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["en"] = WrongSkillLabel,
+        ["de"] = WrongSkillGerman,
+        ["fr"] = WrongSkillFrench,
+        ["es"] = WrongSkillSpanish,
+        ["zh-TW"] = WrongSkillTraditional
+    };
+
+    private static GracefulCorrectionPlan Plan(
+        string? previousLabel = WrongSkillLabel,
+        IReadOnlyDictionary<string, string>? previousLabels = null) => new(
         new AssistantLastAction
         {
             UserId = Guid.NewGuid(),
@@ -79,6 +103,7 @@ public class CorrectionOutcomeComposerTests
                 {
                     SkillName = WrongSkill,
                     SkillDisplayLabel = previousLabel,
+                    SkillLabels = previousLabels ?? (previousLabel == null ? null : WrongSkillLabels),
                     ArgumentsJson = "{\"searchString\":\"Zurich\"}",
                     IsReadOnly = true,
                     Success = true
@@ -100,6 +125,7 @@ public class CorrectionOutcomeComposerTests
         {
             ["en"] = name == CandidateA ? CandidateALabel : CandidateBLabel,
             ["de"] = name == CandidateA ? CandidateAGerman : CandidateBGerman,
+            ["fr"] = name == CandidateA ? CandidateAFrench : CandidateBFrench,
             ["es"] = name == CandidateA ? CandidateASpanish : CandidateBSpanish,
             ["zh-TW"] = name == CandidateA ? CandidateATraditional : CandidateBTraditional
         }
@@ -110,8 +136,10 @@ public class CorrectionOutcomeComposerTests
         string? language = English,
         string? previousLabel = WrongSkillLabel,
         SkillUndoInvocation? undo = null,
-        AssistantLastActionCall? undoneCall = null) =>
-        CorrectionOutcomeComposer.Compose(Plan(previousLabel), functions, language, undo, undoneCall);
+        AssistantLastActionCall? undoneCall = null,
+        IReadOnlyDictionary<string, string>? previousLabels = null) =>
+        CorrectionOutcomeComposer.Compose(
+            Plan(previousLabel, previousLabels), functions, language, undo, undoneCall);
 
     // The undo is resolved outside and handed in; what the composer decides is whether the offer is made
     // and how it is worded. Rule 3: one sentence, yes/no, in the language of the turn, and never a second
@@ -429,5 +457,81 @@ public class CorrectionOutcomeComposerTests
 
         outcome.ClarificationReply.ShouldContain(new string('a', GracefulCorrectionDefaults.OptionLabelMaxLength - 1));
         outcome.ClarificationReply.ShouldNotContain(authored);
+    }
+
+    /// <summary>
+    /// Rule 4 across a language switch inside the two-minute window. The previous turn ran in German and
+    /// stored the German noun it had resolved for itself; the correction arrives in French. All three
+    /// nouns of the French frame - the misunderstanding and both options - are resolved HERE, from the
+    /// authored labels the record carries, in the language of THIS turn. The stored German label is not
+    /// dead weight: the note is model-facing and keeps quoting what the assistant actually told the user.
+    /// </summary>
+    [Test]
+    public void AGermanActionCorrectedInFrench_NamesThePreviousActionInFrench()
+    {
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            French,
+            previousLabel: WrongSkillGerman);
+
+        outcome.ClarificationReply.ShouldStartWith("Compris");
+        outcome.ClarificationReply.ShouldContain(WrongSkillFrench);
+        outcome.ClarificationReply.ShouldNotContain(WrongSkillGerman);
+        outcome.ClarificationReply.ShouldContain(CandidateAFrench);
+        outcome.ClarificationReply.ShouldContain(CandidateBFrench);
+        outcome.ContextNote.ShouldContain(WrongSkillGerman);
+    }
+
+    // The same-language case is unchanged: the resolution simply lands on the entry the previous turn
+    // already resolved, so the question names exactly what the note names.
+    [Test]
+    public void AGermanActionCorrectedInGerman_NamesThePreviousActionInGerman()
+    {
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            German,
+            previousLabel: WrongSkillGerman);
+
+        outcome.ClarificationReply.ShouldStartWith("Verstanden");
+        outcome.ClarificationReply.ShouldContain(WrongSkillGerman);
+        outcome.ContextNote.ShouldContain(WrongSkillGerman);
+    }
+
+    // Fail closed on the previous-action slot too: both options can be named in the correction's
+    // language, but the misunderstanding cannot, and rule 1 obliges the question to name it.
+    [Test]
+    public void APreviousActionWithoutALabelInTheCorrectionsLanguage_AsksNothing()
+    {
+        GracefulCorrectionTexts.Configure(Spanish, new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = SpanishSentence
+        });
+
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            Spanish,
+            previousLabel: WrongSkillGerman,
+            previousLabels: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["de"] = WrongSkillGerman
+            });
+
+        outcome.ClarificationReply.ShouldBeNull();
+        outcome.ContextNote.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    // A record written before the previous turn could capture any authored label at all. The note still
+    // quotes its stand-in, the question is not asked.
+    [Test]
+    public void WithoutAnyAuthoredLabelsOnTheRecord_AsksNothing()
+    {
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            German,
+            previousLabel: WrongSkillGerman,
+            previousLabels: new Dictionary<string, string>());
+
+        outcome.ClarificationReply.ShouldBeNull();
+        outcome.ContextNote.ShouldContain(WrongSkillGerman);
     }
 }

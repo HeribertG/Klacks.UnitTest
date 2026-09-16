@@ -227,6 +227,55 @@ public class AssistantLastActionStoreTests
         peeked.Calls[0].ResultDataJson.Length.ShouldBe(GracefulCorrectionDefaults.CallJsonMaxLength);
     }
 
+    /// <summary>
+    /// CapCalls rebuilds every call field by field, so a property that is not listed there is dropped on
+    /// Save while every composer-level test still passes. This pins the authored labels the correction
+    /// turn resolves its question from: without them the question is bound to the language of the turn
+    /// that stored the record.
+    /// </summary>
+    [Test]
+    public void Save_ThenPeek_ReturnsTheAuthoredSkillLabels()
+    {
+        var action = Action("first", "add_shift_to_group");
+        action.Calls[0].SkillLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = "Schicht einer Gruppe zuweisen",
+            ["fr"] = "Affecter un service à un groupe"
+        };
+
+        _store.Save(action);
+
+        var peeked = _store.Peek(_userId, ConversationId)!;
+        peeked.Calls[0].SkillLabels.ShouldNotBeNull();
+        peeked.Calls[0].SkillLabels!["de"].ShouldBe("Schicht einer Gruppe zuweisen");
+        peeked.Calls[0].SkillLabels!["fr"].ShouldBe("Affecter un service à un groupe");
+    }
+
+    [Test]
+    public void Save_CapsEveryAuthoredSkillLabel()
+    {
+        var action = Action("first", "add_shift_to_group");
+        action.Calls[0].SkillLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = new string('d', GracefulCorrectionDefaults.SkillDisplayLabelMaxLength + 50),
+            ["fr"] = new string('f', GracefulCorrectionDefaults.SkillDisplayLabelMaxLength + 50)
+        };
+
+        _store.Save(action);
+
+        var peeked = _store.Peek(_userId, ConversationId)!;
+        peeked.Calls[0].SkillLabels!["de"].Length.ShouldBe(GracefulCorrectionDefaults.SkillDisplayLabelMaxLength);
+        peeked.Calls[0].SkillLabels!["fr"].Length.ShouldBe(GracefulCorrectionDefaults.SkillDisplayLabelMaxLength);
+    }
+
+    [Test]
+    public void Save_WithoutAuthoredLabels_PeeksBackNone()
+    {
+        _store.Save(Action("first", "add_shift_to_group"));
+
+        _store.Peek(_userId, ConversationId)!.Calls[0].SkillLabels.ShouldBeNull();
+    }
+
     [Test]
     public void Peek_ForADifferentConversationOfTheSameUser_ReturnsNull()
     {

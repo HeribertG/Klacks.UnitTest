@@ -98,4 +98,36 @@ public class SkillLabelResolverTests
 
         SkillLabelResolver.Resolve(labels, "de").ShouldBe("Gruppe füllen");
     }
+
+    [Test]
+    public void ARegionalTagWithSurroundingWhitespace_StillFindsItsBaseLanguage()
+    {
+        SkillLabelResolver.Resolve(Labels, "  de-CH  ").ShouldBe("Gruppe nach Regel füllen");
+    }
+
+    // The cap lives here rather than in each caller: both consumers of a label - the clarification's
+    // option slots and its previous-action slot - resolved and then capped with the same two lines.
+    // They keep their OWN constants, which are deliberately different lengths.
+    [Test]
+    public void AnOverlongLabel_IsCutAtTheCapAndTheCutEndIsTrimmed()
+    {
+        var labels = new Dictionary<string, string> { ["de"] = "Gruppe   nach Regel füllen" };
+
+        SkillLabelResolver.Resolve(labels, "de", maxLength: 9).ShouldBe("Gruppe");
+    }
+
+    [Test]
+    public void ALabelAtOrUnderTheCap_IsReturnedWhole()
+    {
+        var labels = new Dictionary<string, string> { ["de"] = "Gruppe füllen" };
+
+        SkillLabelResolver.Resolve(labels, "de", maxLength: 13).ShouldBe("Gruppe füllen");
+    }
+
+    [Test]
+    public void TheCappingOverload_ResolvesNothingWhenTheTwoArgumentOneDoesNot()
+    {
+        SkillLabelResolver.Resolve(Labels, "pl", maxLength: 80).ShouldBeNull();
+        SkillLabelResolver.Resolve(null, "de", maxLength: 80).ShouldBeNull();
+    }
 }

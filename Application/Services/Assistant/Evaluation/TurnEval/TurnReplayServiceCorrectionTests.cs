@@ -435,4 +435,29 @@ public class TurnReplayServiceCorrectionTests
         lastAction.ConversationId.ShouldBe(ItemId);
         lastAction.Calls.Single().SkillDisplayLabel.ShouldBe(PreviousLabel);
     }
+
+    /// <summary>
+    /// The clarification resolves the previous action from the authored label DICTIONARY in the
+    /// correction turn's language, and a goldset item carries only one label. Presenting it as the label
+    /// for the item's own locale is what keeps the question reachable in a replay at all - without it
+    /// every correction item would score as "no question asked" for a reason that exists nowhere in
+    /// production.
+    /// </summary>
+    [Test]
+    public void BuildReplayLastAction_PresentsTheGoldsetLabelAsTheLabelOfTheItemsLocale()
+    {
+        var labels = TurnReplayService.BuildReplayLastAction(Item(), UserId)!.Calls.Single().SkillLabels;
+
+        labels.ShouldNotBeNull();
+        labels![Locale].ShouldBe(PreviousLabel);
+    }
+
+    [Test]
+    public void BuildReplayLastAction_WithoutAGoldsetLabel_CarriesNoAuthoredLabels()
+    {
+        var item = Item();
+        item.PreviousTurn!.SkillDisplayLabel = null;
+
+        TurnReplayService.BuildReplayLastAction(item, UserId)!.Calls.Single().SkillLabels.ShouldBeNull();
+    }
 }

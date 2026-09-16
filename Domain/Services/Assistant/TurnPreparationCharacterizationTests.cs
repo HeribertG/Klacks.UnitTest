@@ -348,17 +348,69 @@ public class TurnPreparationCharacterizationTests
             context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
 
         saved()!.Calls[0].SkillDisplayLabel.ShouldBeNull();
+        saved()!.Calls[0].SkillLabels.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// The fail-closed half of the store path: the skill IS in this turn's toolset, but nobody authored a
+    /// label for the language the turn ran in. No label is stored rather than one in a foreign language
+    /// or the internal snake_case name.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_WithoutALabelInTheTurnsLanguage_StoresNoLabel()
+    {
+        var saved = CaptureSave();
+        var context = ContextWithToolset(Function(
+            "add_client_to_group",
+            "Adds an employee to a group.",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["fr"] = "Affecter à un groupe" }));
+
+        Subject().RecordLastAction(
+            context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
+
+        saved()!.Calls[0].SkillDisplayLabel.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// The authored labels travel with the record even when THIS turn's language is not among them, which
+    /// is what lets a correction turn in another language still name the misunderstanding. The resolved
+    /// label and the dictionary are not redundant: the first is the noun the assistant used in the answer
+    /// the user is correcting, the second is what a differently-languaged correction resolves from.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_StoresTheAuthoredLabelsOfTheToolsetEntry()
+    {
+        var saved = CaptureSave();
+        var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = "Mitarbeitende einer Gruppe zuweisen",
+            ["fr"] = "Affecter un collaborateur à un groupe"
+        };
+        var context = ContextWithToolset(Function("add_client_to_group", "Adds an employee to a group.", labels));
+
+        Subject().RecordLastAction(
+            context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
+
+        saved()!.Calls[0].SkillDisplayLabel.ShouldBe("Mitarbeitende einer Gruppe zuweisen");
+        saved()!.Calls[0].SkillLabels.ShouldBe(labels);
     }
 
     // The stored label is an AUTHORED label of the toolset entry, resolved in the turn's language
     // (the fixture runs in German), not the skill description any more.
-    private static LLMFunction Function(string name, string description, string? germanLabel = null) => new()
+    private static LLMFunction Function(string name, string description, string? germanLabel = null) =>
+        Function(
+            name,
+            description,
+            germanLabel == null
+                ? null
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["de"] = germanLabel });
+
+    private static LLMFunction Function(
+        string name, string description, IReadOnlyDictionary<string, string>? labels) => new()
     {
         Name = name,
         Description = description,
-        Labels = germanLabel == null
-            ? null
-            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["de"] = germanLabel }
+        Labels = labels
     };
 
     private LLMContext ContextWithToolset(params LLMFunction[] functions) => new()
