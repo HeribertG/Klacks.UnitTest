@@ -6,10 +6,13 @@
 /// explicit cancellation during an ask step, and a correction during an ask step re-resolving on the
 /// composite. These tests describe today's behaviour, not a wish - if one of them turns red during the
 /// move, the move changed behaviour and must be undone, not the test.
+///
+/// The previous-action record is new behaviour rather than moved behaviour, so its one test is stated
+/// as an expectation: it is keyed by the conversation id the caller resolved, never by the one the
+/// client sent, which is null on the first turn of every new conversation.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
-using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,6 +23,7 @@ namespace Klacks.UnitTest.Domain.Services.Assistant;
 public class TurnPreparationCharacterizationTests
 {
     private const string ConversationId = "conv-1";
+    private const string ResolvedConversationId = "conv-resolved-by-the-loop";
     private const string RecipeName = "add-employee-to-group";
     private const string AskSlot = "groupName";
 
@@ -29,11 +33,13 @@ public class TurnPreparationCharacterizationTests
     private IPendingConfirmationStore _confirmationStore = null!;
     private IRecipeRunRecorder _runRecorder = null!;
     private IAgentRecipeRepository _recipeRepository = null!;
+    private IAssistantLastActionStore _lastActionStore = null!;
     private RecipeEngineService _recipeEngine = null!;
 
     [SetUp]
     public void SetUp()
     {
+        _lastActionStore = Substitute.For<IAssistantLastActionStore>();
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
         _confirmationStore = Substitute.For<IPendingConfirmationStore>();
         _runRecorder = Substitute.For<IRecipeRunRecorder>();
@@ -102,7 +108,7 @@ public class TurnPreparationCharacterizationTests
         _recipeEngine,
         _runRecorder,
         new RecipeSlotExtractor(NullLogger<RecipeSlotExtractor>.Instance),
-        Substitute.For<IAssistantLastActionStore>(),
+        _lastActionStore,
         NullLogger<TurnPreparationService>.Instance);
 
     [Test]
@@ -183,5 +189,27 @@ public class TurnPreparationCharacterizationTests
             .Returns(new PendingConfirmationHandle("token-1", "delete_group"));
 
         Subject().ResolvePendingConfirmation(Context("lösch die Gruppe Bern")).Force.ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// The first turn of a new conversation: the client sent no id, so the context carries none, and the
+    /// id the loop resolved is the only one there is. Reading the context here would drop the anchor of
+    /// exactly the turn a user is most likely to correct.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_IsKeyedByTheResolvedConversationId_NotTheClientOne()
+    {
+        var context = Context("Trag Müller in die Gruppe Bern ein");
+        context.ConversationId = null;
+
+        Subject().RecordLastAction(
+            context,
+            ResolvedConversationId,
+            "Erledigt.",
+            [new LLMFunctionCall { FunctionName = "add_client_to_group", Success = true }],
+            recipePaused: false);
+
+        _lastActionStore.Received(1).Save(Arg.Is<AssistantLastAction>(
+            action => action.ConversationId == ResolvedConversationId && action.UserId == _userId));
     }
 }
