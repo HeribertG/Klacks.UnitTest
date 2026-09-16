@@ -5,6 +5,8 @@
 /// the id taken from the previous call's result, and the invariants that keep the older prose half
 /// intact - a __manual__ entry never yields an undo, no inverse is a read-only skill, and a structured
 /// entry never reclassifies its skill as Reversible, which would release it from the autonomy gate.
+/// It also keeps the three pairs the spec review rejected as not lossless out of the table: an undo is
+/// offered as a restoration of the previous state, so a pair that cannot restore it must not be there.
 /// </summary>
 
 using Klacks.Api.Application.Skills.Meta;
@@ -19,6 +21,31 @@ namespace Klacks.UnitTest.Skills;
 [TestFixture]
 public class InverseSkillRegistryStructuredTests
 {
+    private static readonly IReadOnlyDictionary<string, string> PairsRejectedAsNotLossless =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["add_client_to_group_by_name"] =
+                "the skill reports success as a no-op when the client already was in the group, so the "
+                + "undo would remove a membership the corrected turn never created",
+            ["assign_contract_by_name"] =
+                "removing the assignment does not restore whatever contract state the client had before",
+            ["set_shift_required_qualification"] =
+                "the call is a modify and may have replaced a previous qualification, which removal does "
+                + "not bring back"
+        };
+
+    [Test]
+    public void APairThatIsNotLossless_StaysOutOfTheRegistry()
+    {
+        foreach (var (skillName, reason) in PairsRejectedAsNotLossless)
+        {
+            InverseSkillRegistry.Map.Keys.ShouldNotContain(
+                skillName,
+                $"{skillName} was rejected by the spec review on 2026-09-16: {reason}. An entry here would "
+                + "offer that undo as if it restored the previous state.");
+        }
+    }
+
     [Test]
     public void CopiedArguments_AreTakenFromThePreviousCall()
     {
