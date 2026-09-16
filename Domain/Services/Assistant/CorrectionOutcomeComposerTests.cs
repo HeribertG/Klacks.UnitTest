@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// The pure half of the correction completion: which candidates count, when the turn asks instead of
@@ -41,6 +41,14 @@ public class CorrectionOutcomeComposerTests
     private const string Spanish = "es";
     private const string SpanishSentence =
         "Entendido — no {previousAction}. ¿Te refieres a {optionA} o a {optionB}?";
+
+    /// <summary>
+    /// The fixed head of the undo offer, up to its first placeholder: what the note carries when - and
+    /// only when - the offer is made. Derived from the template rather than copied, so a reworded offer
+    /// cannot leave these tests asserting on a sentence that no longer exists.
+    /// </summary>
+    private static readonly string UndoOfferPrefix =
+        GracefulCorrectionNotes.UndoOfferTemplate[..GracefulCorrectionNotes.UndoOfferTemplate.IndexOf('{')];
 
     [TearDown]
     public void ResetConfiguredTexts() => GracefulCorrectionTexts.Reset();
@@ -113,8 +121,8 @@ public class CorrectionOutcomeComposerTests
             System.Globalization.CultureInfo.InvariantCulture,
             GracefulCorrectionNotes.UndoOfferTemplate,
             UndoneSkillLabel,
-            UndoSkillName,
             CorrectionOutcomeComposer.AnswerLanguage(English)));
+        outcome.ContextNote.ShouldNotContain(UndoSkillName);
     }
 
     [Test]
@@ -128,7 +136,21 @@ public class CorrectionOutcomeComposerTests
         outcome.ClarificationReply.ShouldNotBeNullOrWhiteSpace();
         outcome.Undo.ShouldBeNull();
         outcome.UndoneSkillLabel.ShouldBeNull();
-        outcome.ContextNote.ShouldNotContain(UndoSkillName);
+        outcome.ContextNote.ShouldNotContain(UndoOfferPrefix);
+    }
+
+    // Zero candidates is the same situation once removed: the note already tells the model to ask for the
+    // missing detail, so an undo offer next to it would put a second yes/no into one answer. The user's
+    // "ja" would then be ambiguous, and the token it redeems carries a gate-bypassing write.
+    [Test]
+    public void AnUndoNextToAMissingCandidate_IsDropped_SoTheTurnAsksOnlyOneQuestion()
+    {
+        var outcome = Compose([], undo: Undo(), undoneCall: UndoneCall());
+
+        outcome.ContextNote.ShouldContain(GracefulCorrectionNotes.NoCandidateSuffix);
+        outcome.Undo.ShouldBeNull();
+        outcome.UndoneSkillLabel.ShouldBeNull();
+        outcome.ContextNote.ShouldNotContain(UndoOfferPrefix);
     }
 
     [Test]

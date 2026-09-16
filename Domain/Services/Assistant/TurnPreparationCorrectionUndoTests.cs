@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Rule 3 end to end, with the real SkillInverseResolver and the real registry behind it: a correction
@@ -9,6 +9,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
@@ -32,6 +33,9 @@ public class TurnPreparationCorrectionUndoTests
     private const string InverseSkillName = "remove_shift_from_group";
     private const string WriteArgumentsJson = """{"shiftId":"s-1","groupId":"g-1"}""";
     private const string UnmappedWriteSkillName = "update_client";
+
+    private static readonly string UndoOfferPrefix =
+        GracefulCorrectionNotes.UndoOfferTemplate[..GracefulCorrectionNotes.UndoOfferTemplate.IndexOf('{')];
 
     private IPendingConfirmationStore _confirmationStore = null!;
     private TurnPreparationService _service = null!;
@@ -142,7 +146,7 @@ public class TurnPreparationCorrectionUndoTests
         var outcome = await Complete(Anchor(Write(), Write()));
 
         outcome.Undo.ShouldNotBeNull();
-        outcome.ContextNote.Split(InverseSkillName).Length.ShouldBe(2);
+        outcome.ContextNote.Split(UndoOfferPrefix).Length.ShouldBe(2);
     }
 
     [Test]

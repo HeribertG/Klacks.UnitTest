@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Verifies that the SINGLE pending-confirmation store carries both purposes without the two mixing:
@@ -7,6 +7,9 @@
 /// maxAge is gone. The age test back-dates a row through the repository on purpose — CreateProposalHint
 /// always stamps a full ConfirmationTtlMinutes expiry so a hint cannot be aged through the store API,
 /// and PeekLatestForUser reconstructs the creation time from exactly that TTL.
+/// The third purpose, the correction undo, is here for one reason only: it must stay redeemable. Consume
+/// keys on the token ALONE and never reads the purpose column, which is what lets the undo token travel
+/// the ordinary confirm_pending_action replay path without a single change to that skill.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -24,6 +27,11 @@ public class PendingConfirmationStoreProposalHintTests
     private const string ApplySkillName = "apply_customer_grouping";
     private const string OtherApplySkillName = "apply_employee_grouping";
     private const string GatedSkillName = "delete_group";
+    private const string UndoParameterName = "groupId";
+    private const string UndoParameterValue = "g-1";
+
+    private static readonly IReadOnlyDictionary<string, object> UndoParameters =
+        new Dictionary<string, object> { [UndoParameterName] = UndoParameterValue };
 
     private static readonly TimeSpan ForceWindow =
         TimeSpan.FromSeconds(AutonomyDefaults.ConfirmationForceWindowSeconds);
@@ -152,6 +160,57 @@ public class PendingConfirmationStoreProposalHintTests
         }).GetAwaiter().GetResult();
 
         store.PeekLatestForUser(_userId, ForceWindow, PendingConfirmationPurposes.ProposalHint).ShouldNotBeNull();
+    }
+
+    [Test]
+    public void CorrectionUndoRow_IsVisibleOnlyToACorrectionUndoPeek_AndIsStillConsumable()
+    {
+        var store = PendingStoreTestFactory.CreateConfirmationStore();
+
+        var token = store.Create(
+            _userId, GatedSkillName, UndoParameters, PendingConfirmationPurposes.CorrectionUndo);
+
+        store.PeekLatestForUser(_userId, ForceWindow).ShouldBeNull();
+        store.PeekLatestForUser(_userId, ForceWindow, PendingConfirmationPurposes.ProposalHint).ShouldBeNull();
+
+        var undo = store.PeekLatestForUser(_userId, ForceWindow, PendingConfirmationPurposes.CorrectionUndo);
+        undo.ShouldNotBeNull();
+        undo!.SkillName.ShouldBe(GatedSkillName);
+
+        var consumed = store.Consume(token, _userId);
+        consumed.ShouldNotBeNull();
+        consumed!.SkillName.ShouldBe(GatedSkillName);
+        consumed.Parameters[UndoParameterName].ToString().ShouldBe(UndoParameterValue);
+    }
+
+    [Test]
+    public void DiscardCorrectionUndo_RemovesOnlyTheUndoRows()
+    {
+        var store = PendingStoreTestFactory.CreateConfirmationStore();
+
+        store.Create(_userId, GatedSkillName, UndoParameters, PendingConfirmationPurposes.CorrectionUndo);
+        store.Create(_userId, OtherApplySkillName, UndoParameters);
+        store.CreateProposalHint(_userId, ApplySkillName);
+
+        store.DiscardCorrectionUndo(_userId);
+
+        store.PeekLatestForUser(_userId, ForceWindow, PendingConfirmationPurposes.CorrectionUndo).ShouldBeNull();
+        store.PeekLatestForUser(_userId, ForceWindow).ShouldNotBeNull();
+        store.PeekLatestForUser(_userId, ForceWindow, PendingConfirmationPurposes.ProposalHint).ShouldNotBeNull();
+    }
+
+    [Test]
+    public void DiscardCorrectionUndo_LeavesAnotherUsersUndoAlone()
+    {
+        var store = PendingStoreTestFactory.CreateConfirmationStore();
+        var otherUserId = Guid.NewGuid();
+
+        store.Create(otherUserId, GatedSkillName, UndoParameters, PendingConfirmationPurposes.CorrectionUndo);
+
+        store.DiscardCorrectionUndo(_userId);
+
+        store.PeekLatestForUser(otherUserId, ForceWindow, PendingConfirmationPurposes.CorrectionUndo)
+            .ShouldNotBeNull();
     }
 
     [Test]

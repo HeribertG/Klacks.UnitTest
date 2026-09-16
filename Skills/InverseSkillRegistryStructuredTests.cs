@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// The structured half of InverseSkillRegistry, added for the correction undo offer: argument copying,
@@ -85,6 +85,35 @@ public class InverseSkillRegistryStructuredTests
     {
         InverseSkillRegistry.TryBuildUndo(
             "add_shift_to_group", """{"shiftId":"s-1"}""", "{}", out _).ShouldBeFalse();
+    }
+
+    // A JSON null is an absent value, not the four letters "null", and an object or array is not an
+    // argument value at all. Handing either on would put a literal "null" or a raw JSON fragment into a
+    // call that the user would then have to repair - rule 3 says silence instead.
+    [Test]
+    public void ANullResultId_YieldsNoUndo()
+    {
+        InverseSkillRegistry.TryBuildUndo(
+            "create_group", """{"name":"Zurich"}""", """{"GroupId":null}""", out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public void AStructuredArgumentValue_YieldsNoUndo()
+    {
+        InverseSkillRegistry.TryBuildUndo(
+            "add_shift_to_group",
+            """{"shiftId":{"id":"s-1"},"groupId":"g-1"}""",
+            "{}",
+            out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public void ANumericResultId_IsStillRead()
+    {
+        InverseSkillRegistry.TryBuildUndo(
+            "create_group", """{"name":"Zurich"}""", """{"GroupId":42}""", out var undo).ShouldBeTrue();
+
+        undo!.Arguments["groupId"].ShouldBe("42");
     }
 
     [Test]

@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Both chat entry points must prepare a correction identically: route the toolset assembly on the
@@ -13,6 +13,7 @@
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -487,15 +488,19 @@ public class GracefulCorrectionEntryPointWiringTests
                 UndoneSkillLabel));
     }
 
+    // Under its OWN purpose, not the gate's: an undo offer is answerable by the turn that immediately
+    // follows it and by no other, and only a purpose of its own lets the next turn tell the two apart.
     private void TheUndoWasHeldOnce() =>
         _pendingConfirmationStore.Received(1).Create(
             Guid.Parse(UserId), UndoSkillName,
             Arg.Is<IReadOnlyDictionary<string, object>>(
-                arguments => arguments.ContainsKey(UndoArgumentName)));
+                arguments => arguments.ContainsKey(UndoArgumentName)),
+            PendingConfirmationPurposes.CorrectionUndo);
 
     private void NoConfirmationWasHeld() =>
         _pendingConfirmationStore.DidNotReceiveWithAnyArgs().Create(
-            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>(),
+            Arg.Any<string>());
 
     [Test]
     public async Task NonStreaming_WithAnOfferedUndo_HoldsItAsExactlyOnePendingConfirmation()
@@ -565,7 +570,8 @@ public class GracefulCorrectionEntryPointWiringTests
         GivenAnUndoIsOffered();
         _pendingConfirmationStore
             .When(store => store.Create(
-                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>()))
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>(),
+                Arg.Any<string>()))
             .Do(_ => throw new InvalidOperationException("store down"));
 
         await CreateHandler().Handle(Command(), CancellationToken.None);
@@ -580,7 +586,8 @@ public class GracefulCorrectionEntryPointWiringTests
         GivenAnUndoIsOffered();
         _pendingConfirmationStore
             .When(store => store.Create(
-                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>()))
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>(),
+                Arg.Any<string>()))
             .Do(_ => throw new InvalidOperationException("store down"));
 
         await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));

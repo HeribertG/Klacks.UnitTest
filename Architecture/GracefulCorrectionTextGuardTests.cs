@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Guards the two text families of the correction path. The note templates must keep every placeholder
@@ -19,7 +19,7 @@ namespace Klacks.UnitTest.Architecture;
 public class GracefulCorrectionTextGuardTests
 {
     private const string LanguagePlaceholder = "{4}";
-    private const string UndoLanguagePlaceholder = "{2}";
+    private const string UndoLanguagePlaceholder = "{1}";
     private const string German = "de";
     private const string French = "fr";
     private const string Portuguese = "pt";
@@ -36,7 +36,7 @@ public class GracefulCorrectionTextGuardTests
     [TestCase(nameof(GracefulCorrectionNotes.CorrectionContextTemplate), 5)]
     [TestCase(nameof(GracefulCorrectionNotes.OpeningSentenceTemplate), 1)]
     [TestCase(nameof(GracefulCorrectionNotes.NamedLanguageTemplate), 1)]
-    [TestCase(nameof(GracefulCorrectionNotes.UndoOfferTemplate), 3)]
+    [TestCase(nameof(GracefulCorrectionNotes.UndoOfferTemplate), 2)]
     public void EveryNoteTemplate_CarriesAllItsPlaceholders(string constantName, int placeholderCount)
     {
         var template = (string)typeof(GracefulCorrectionNotes).GetField(constantName)!.GetRawConstantValue()!;
@@ -86,6 +86,7 @@ public class GracefulCorrectionTextGuardTests
         GracefulCorrectionNotes.UndoOfferTemplate.ShouldContain("in " + UndoLanguagePlaceholder);
         GracefulCorrectionNotes.UndoOfferTemplate.ShouldNotContain("'" + UndoLanguagePlaceholder + "'");
         GracefulCorrectionNotes.UndoOfferTemplate.ShouldContain("never as a separate");
+        GracefulCorrectionNotes.UndoOfferTemplate.ShouldNotContain("{2}");
     }
 
     [Test]

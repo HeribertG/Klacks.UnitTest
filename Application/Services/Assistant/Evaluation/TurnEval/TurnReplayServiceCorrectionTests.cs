@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// The turn-eval replay has to walk the same correction path production walks, or a goldset item measures
@@ -8,6 +8,7 @@
 /// - the class summary promises that the only persistence of a replay is the EvalRun of the runner.
 /// </summary>
 
+using System.Diagnostics;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
@@ -47,7 +48,8 @@ public class TurnReplayServiceCorrectionTests
     private const string ModelAnswer = "Die Mitarbeitenden sind eingetragen.";
     private const string Locale = "de";
     private const string MutatingCorrection = "Nein, erstelle stattdessen eine neue Gruppe.";
-    private const int AssemblyDelayMs = 30;
+    private const int AssemblyDelayMs = 5;
+    private const int SpinIterations = 64;
 
     private static readonly string UserId = Guid.NewGuid().ToString();
 
@@ -282,16 +284,31 @@ public class TurnReplayServiceCorrectionTests
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
                 Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>())
-            .Returns(async _ =>
+            .Returns(_ =>
             {
-                await Task.Delay(AssemblyDelayMs);
-                return new SkillToolsetResult();
+                SpinForAssemblyDelay();
+                return Task.FromResult(new SkillToolsetResult());
             });
 
         var result = await Replay(MutatingItem());
 
         result.LatencyMs.ShouldBeGreaterThanOrEqualTo(AssemblyDelayMs);
         result.ToolChoiceRequired.ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// Burns AssemblyDelayMs of the SAME clock the replay measures itself with. A Task.Delay here made
+    /// the assertion compare a timer against a stopwatch, which flaked; a spin on a Stopwatch that the
+    /// replay's own stopwatch already encloses is greater-or-equal by construction, so the delay can stay
+    /// small enough not to slow the suite down.
+    /// </summary>
+    private static void SpinForAssemblyDelay()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.ElapsedMilliseconds < AssemblyDelayMs)
+        {
+            Thread.SpinWait(SpinIterations);
+        }
     }
 
     // The anchor is rebuilt from the goldset item, not read from a table, and a replay never has a live

@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Unit tests for TurnPreparationService.ResolvePendingConfirmation (moved there out of LLMService on
@@ -9,6 +9,9 @@
 /// affirms AND restates the mutation ("ja, lösch den Benutzer"): it must still resurface the token,
 /// because a mutation-intent veto there made the model re-call the skill, which produced a fresh hold
 /// and left the user confirming the same action over and over.
+/// Since 2026-09-16 the same seam also carries the correction undo of rule 3, which is held as its own
+/// purpose precisely so it can expire differently: the offer is made once, so the token it leaves behind
+/// is answerable by the immediately following turn and by no other.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -26,6 +29,9 @@ public class TurnPreparationPendingConfirmationForceTests
     private const string PendingToken = "token-abc";
 
     private static readonly Guid UserId = Guid.NewGuid();
+
+    private static readonly TimeSpan ForceWindow =
+        TimeSpan.FromSeconds(AutonomyDefaults.ConfirmationForceWindowSeconds);
 
     private IPendingConfirmationStore _confirmationStore = null!;
     private TurnPreparationService _service = null!;
@@ -48,9 +54,9 @@ public class TurnPreparationPendingConfirmationForceTests
             logger: Substitute.For<ILogger<TurnPreparationService>>());
     }
 
-    private void SetPending() =>
+    private void SetPending(string purpose = PendingConfirmationPurposes.GateReplay) =>
         _confirmationStore
-            .PeekLatestForUser(UserId, Arg.Any<TimeSpan>(), Arg.Any<string>())
+            .PeekLatestForUser(UserId, Arg.Any<TimeSpan>(), purpose)
             .Returns(new PendingConfirmationHandle(PendingToken, PendingSkillName));
 
     private static LLMContext Context(string message) => new()
@@ -136,16 +142,89 @@ public class TurnPreparationPendingConfirmationForceTests
         Assert.That(force, Is.False);
     }
 
+    // A correction undo is the more recent offer by construction - it was written by the turn that just
+    // ended - so it is read first and a gate-replay row is only reached when there is none. Proposal hints
+    // are a different reader's rows and are never touched here.
     [Test]
-    public void ResolvePendingConfirmation_ReadsOnlyGateReplayRows()
+    public void ResolvePendingConfirmation_ReadsTheCorrectionUndoBeforeTheGateReplayRow()
     {
         SetPending();
 
         _service.ResolvePendingConfirmation(Context("ja"));
 
-        _confirmationStore.Received(1).PeekLatestForUser(
-            UserId,
-            TimeSpan.FromSeconds(AutonomyDefaults.ConfirmationForceWindowSeconds),
-            PendingConfirmationPurposes.GateReplay);
+        Received.InOrder(() =>
+        {
+            _confirmationStore.PeekLatestForUser(
+                UserId, ForceWindow, PendingConfirmationPurposes.CorrectionUndo);
+            _confirmationStore.PeekLatestForUser(
+                UserId, ForceWindow, PendingConfirmationPurposes.GateReplay);
+        });
+
+        _confirmationStore.DidNotReceive().PeekLatestForUser(
+            Arg.Any<Guid>(), Arg.Any<TimeSpan>(), PendingConfirmationPurposes.ProposalHint);
+    }
+
+    [Test]
+    public void ResolvePendingConfirmation_AnAffirmation_RedeemsAnOutstandingCorrectionUndo()
+    {
+        SetPending(PendingConfirmationPurposes.CorrectionUndo);
+
+        var (force, confirmFunction, note) = _service.ResolvePendingConfirmation(Context("ja"));
+
+        Assert.That(force, Is.True);
+        Assert.That(confirmFunction!.Name, Is.EqualTo(AutonomyDefaults.ConfirmPendingActionSkillName));
+        Assert.That(note, Does.Contain(PendingToken));
+    }
+
+    // Rule 3: the offer is made once and never as a separate dialogue. So the token answers the turn that
+    // immediately follows it and nothing else - a user who ignores the offer and then affirms something
+    // the model asked next must not have the undo carried out instead.
+    [Test]
+    [TestCase("nein, lass es")]
+    [TestCase("was kostet das?")]
+    public void ResolvePendingConfirmation_AMessageThatDoesNotAffirm_DiscardsTheCorrectionUndo(string message)
+    {
+        SetPending(PendingConfirmationPurposes.CorrectionUndo);
+
+        var (force, _, _) = _service.ResolvePendingConfirmation(Context(message));
+
+        Assert.That(force, Is.False);
+        _confirmationStore.Received(1).DiscardCorrectionUndo(UserId);
+    }
+
+    // The discard is scoped to the undo purpose alone: a gate-replay hold is answered whenever the user
+    // gets round to it, inside its own window, and an unrelated message must not silently drop it.
+    [Test]
+    public void ResolvePendingConfirmation_AMessageThatDoesNotAffirm_LeavesAGateReplayHoldAlone()
+    {
+        SetPending();
+
+        _service.ResolvePendingConfirmation(Context("was kostet das?"));
+
+        _confirmationStore.Received(1).DiscardCorrectionUndo(UserId);
+        _confirmationStore.DidNotReceiveWithAnyArgs().Consume(
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>());
+    }
+
+    [Test]
+    public void ResolvePendingConfirmation_AnAffirmation_DiscardsNothing()
+    {
+        SetPending();
+
+        _service.ResolvePendingConfirmation(Context("ja"));
+
+        _confirmationStore.DidNotReceiveWithAnyArgs().DiscardCorrectionUndo(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public void ResolvePendingConfirmation_AnUnparsableUserId_TouchesTheStoreNotAtAll()
+    {
+        var context = Context("was kostet das?");
+        context.UserId = "not-a-guid";
+
+        var (force, _, _) = _service.ResolvePendingConfirmation(context);
+
+        Assert.That(force, Is.False);
+        _confirmationStore.DidNotReceiveWithAnyArgs().DiscardCorrectionUndo(Arg.Any<Guid>());
     }
 }
