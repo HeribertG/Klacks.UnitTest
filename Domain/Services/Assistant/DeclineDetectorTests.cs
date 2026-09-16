@@ -143,4 +143,12 @@ public class DeclineDetectorTests
     {
         DeclineDetector.StripNegationLead("Zeig mir die offenen Schichten").ShouldBe("Zeig mir die offenen Schichten");
     }
+
+    [Test]
+    public void StripNegationLead_PluginNegationTokenWithFullwidthComma_RemovesTokenAndSeparator()
+    {
+        DeclineDetector.Configure(["不"], []);
+
+        DeclineDetector.StripNegationLead("不，所有员工。").ShouldBe("所有员工。");
+    }
 }

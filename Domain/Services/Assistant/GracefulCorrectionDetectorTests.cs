@@ -99,9 +99,9 @@ public class GracefulCorrectionDetectorTests
     }
 
     [Test]
-    public void G4_CorrectionWithoutAQuestion_PassesTheTopicSwitchGate()
+    public void G4_QuestionMarkWithoutAQuestionLeadAfterStripping_PassesTheTopicSwitchGate()
     {
-        Evaluate(Correction, Anchor()).ShouldBe(GracefulCorrectionGate.Passed);
+        Evaluate("Nein, alle Mitarbeitenden in die Gruppe, ok?", Anchor()).ShouldBe(GracefulCorrectionGate.Passed);
     }
 
     [Test]
