@@ -1,7 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for LLMService's recipe confirmation gate: ResolveOrResumeRecipeAsync resumes a recipe
+/// Unit tests for the recipe confirmation gate. The fixture keeps its LLMService name because it still
+/// drives the loop; the resolve it exercises lives in TurnPreparationService since 2026-09-16.
+/// ResolveOrResumeRecipeAsync resumes a recipe
 /// paused on the confirmation question by checking the next message for an affirmation (proceed) or
 /// anything else (discard the pending recipe and re-resolve fresh against the same message), while a
 /// keyword-matched recipe still starts directly and an ordinary ask-step resume is unaffected.

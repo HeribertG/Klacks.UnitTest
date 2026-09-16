@@ -15,6 +15,7 @@
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -34,12 +35,14 @@ public class TurnPreparationCharacterizationTests
     private IRecipeRunRecorder _runRecorder = null!;
     private IAgentRecipeRepository _recipeRepository = null!;
     private IAssistantLastActionStore _lastActionStore = null!;
+    private ILogger<TurnPreparationService> _logger = null!;
     private RecipeEngineService _recipeEngine = null!;
 
     [SetUp]
     public void SetUp()
     {
         _lastActionStore = Substitute.For<IAssistantLastActionStore>();
+        _logger = Substitute.For<ILogger<TurnPreparationService>>();
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
         _confirmationStore = Substitute.For<IPendingConfirmationStore>();
         _runRecorder = Substitute.For<IRecipeRunRecorder>();
@@ -109,7 +112,7 @@ public class TurnPreparationCharacterizationTests
         _runRecorder,
         new RecipeSlotExtractor(NullLogger<RecipeSlotExtractor>.Instance),
         _lastActionStore,
-        NullLogger<TurnPreparationService>.Instance);
+        _logger);
 
     [Test]
     public async Task ResumedAskStep_RawFillsTheSlotAndKeepsTheRecipe()
@@ -211,5 +214,176 @@ public class TurnPreparationCharacterizationTests
 
         _lastActionStore.Received(1).Save(Arg.Is<AssistantLastAction>(
             action => action.ConversationId == ResolvedConversationId && action.UserId == _userId));
+    }
+
+    /// <summary>
+    /// A call that ran and failed stays in the record. The user corrects what the assistant DID, and a
+    /// failed attempt is just as much an interpretation of their request as a successful one; dropping
+    /// it would leave the turn without an anchor exactly when the assistant got it wrong. Success is
+    /// carried so the undo path can offer a rollback only for a write that actually landed.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_KeepsAFailedCall_AndTheRecordStillAnchors()
+    {
+        var saved = CaptureSave();
+
+        Record(Call("add_client_to_group", success: false));
+
+        saved().ShouldNotBeNull();
+        saved()!.Calls.Count.ShouldBe(1);
+        saved()!.Calls[0].Success.ShouldBeFalse();
+        saved()!.CanAnchorCorrection(DateTime.UtcNow).ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// A recipe left waiting on an ask: the user's next message answers the recipe question, so this
+    /// turn must not be correctable. The record is devalued rather than replaced.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_APausedRecipe_SupersedesTheRecordAndSavesNothing()
+    {
+        Record(recipePaused: true, calls: Call("add_client_to_group"));
+
+        _lastActionStore.Received(1).MarkSuperseded(_userId, ResolvedConversationId);
+        _lastActionStore.DidNotReceiveWithAnyArgs().Save(default!);
+    }
+
+    [Test]
+    public void RecordLastAction_WithoutAnyCall_SupersedesInsteadOfReplacing()
+    {
+        Record();
+
+        _lastActionStore.Received(1).MarkSuperseded(_userId, ResolvedConversationId);
+        _lastActionStore.DidNotReceiveWithAnyArgs().Save(default!);
+    }
+
+    /// <summary>
+    /// Neither a rejected repeat nor a call held for confirmation ever reached a skill, so neither is
+    /// something the user could be correcting.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_RejectedRepeatsAndHeldCalls_AreNotRecorded()
+    {
+        var saved = CaptureSave();
+
+        Record(
+            Call("delete_group", rejectedRepeat: true),
+            Call("delete_client", requiresConfirmation: true),
+            Call("add_client_to_group"));
+
+        saved()!.Calls.Count.ShouldBe(1);
+        saved()!.Calls[0].SkillName.ShouldBe("add_client_to_group");
+    }
+
+    [Test]
+    public void RecordLastAction_OnlyRejectedOrHeldCalls_SupersedeInsteadOfReplacing()
+    {
+        Record(Call("delete_group", rejectedRepeat: true), Call("delete_client", requiresConfirmation: true));
+
+        _lastActionStore.Received(1).MarkSuperseded(_userId, ResolvedConversationId);
+        _lastActionStore.DidNotReceiveWithAnyArgs().Save(default!);
+    }
+
+    /// <summary>
+    /// A missing anchor costs one correction; a thrown store call would cost the answer the user is
+    /// already waiting for. The write is best-effort by design.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_AStoreFailure_IsSwallowedAndLogged()
+    {
+        _lastActionStore.When(store => store.Save(Arg.Any<AssistantLastAction>()))
+            .Do(_ => throw new InvalidOperationException("store is down"));
+
+        Should.NotThrow(() => Record(Call("add_client_to_group")));
+
+        _logger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    [Test]
+    public void RecordLastAction_TakesTheSkillLabelFromThisTurnsToolset()
+    {
+        var saved = CaptureSave();
+        var context = ContextWithToolset(Function(
+            "add_client_to_group", "Adds an employee to a group. Resolves the group by name."));
+
+        Subject().RecordLastAction(
+            context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
+
+        saved()!.Calls[0].SkillDisplayLabel.ShouldBe("Adds an employee to a group");
+    }
+
+    [Test]
+    public void RecordLastAction_TruncatesTheSkillLabelAtItsOwnCap()
+    {
+        var saved = CaptureSave();
+        var description = new string('a', GracefulCorrectionDefaults.SkillDisplayLabelMaxLength + 30);
+        var context = ContextWithToolset(Function("add_client_to_group", description));
+
+        Subject().RecordLastAction(
+            context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
+
+        saved()!.Calls[0].SkillDisplayLabel!.Length
+            .ShouldBe(GracefulCorrectionDefaults.SkillDisplayLabelMaxLength);
+    }
+
+    /// <summary>
+    /// No label rather than the internal snake_case name, which must never reach a user.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_WithoutTheSkillInTheToolset_StoresNoLabel()
+    {
+        var saved = CaptureSave();
+        var context = ContextWithToolset(Function("some_other_skill", "Does something else."));
+
+        Subject().RecordLastAction(
+            context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
+
+        saved()!.Calls[0].SkillDisplayLabel.ShouldBeNull();
+    }
+
+    private static LLMFunction Function(string name, string description) =>
+        new() { Name = name, Description = description };
+
+    private LLMContext ContextWithToolset(params LLMFunction[] functions) => new()
+    {
+        Message = "Trag Müller in die Gruppe Bern ein",
+        UserId = _userId.ToString(),
+        Language = "de",
+        AvailableFunctions = [.. functions]
+    };
+
+    private static LLMFunctionCall Call(
+        string name,
+        bool success = true,
+        bool rejectedRepeat = false,
+        bool requiresConfirmation = false) => new()
+        {
+            FunctionName = name,
+            Success = success,
+            IsRejectedRepeat = rejectedRepeat,
+            RequiresConfirmation = requiresConfirmation
+        };
+
+    private void Record(params LLMFunctionCall[] calls) => Record(false, calls);
+
+    private void Record(bool recipePaused, params LLMFunctionCall[] calls) =>
+        Subject().RecordLastAction(
+            Context("Trag Müller in die Gruppe Bern ein"),
+            ResolvedConversationId,
+            "Erledigt.",
+            calls,
+            recipePaused);
+
+    private Func<AssistantLastAction?> CaptureSave()
+    {
+        AssistantLastAction? saved = null;
+        _lastActionStore.When(store => store.Save(Arg.Any<AssistantLastAction>()))
+            .Do(call => saved = call.Arg<AssistantLastAction>());
+        return () => saved;
     }
 }

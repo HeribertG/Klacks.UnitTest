@@ -2,8 +2,8 @@
 
 /// <summary>
 /// Unit tests for TurnPreparationService.ResolvePendingConfirmation (moved there out of LLMService on
-/// 2026-09-16, assertions unchanged), the seam that resurfaces an outstanding
-/// autonomy-gate confirmation token in the turn after the gate asked for it. The token itself never
+/// 2026-09-16, assertions unchanged), the seam that resurfaces an outstanding autonomy-gate
+/// confirmation token in the turn after the gate asked for it. The token itself never
 /// survives in the conversation history (only user/assistant text is persisted), so this is the only
 /// path by which a held sensitive action can ever be confirmed. The load-bearing case is a reply that
 /// affirms AND restates the mutation ("ja, lösch den Benutzer"): it must still resurface the token,
@@ -20,7 +20,7 @@ using Microsoft.Extensions.Logging;
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
 [TestFixture]
-public class LLMServicePendingConfirmationForceTests
+public class TurnPreparationPendingConfirmationForceTests
 {
     private const string PendingSkillName = "delete_system_user";
     private const string PendingToken = "token-abc";

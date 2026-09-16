@@ -29,7 +29,7 @@ using Microsoft.Extensions.Logging;
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
 [TestFixture]
-public class LLMServiceRecipeCorrectionTests
+public class TurnPreparationRecipeCorrectionTests
 {
     private const string ConversationId = "conv-correction";
     private const string RecipeName = "add-extern-employee-to-nearest-group";
