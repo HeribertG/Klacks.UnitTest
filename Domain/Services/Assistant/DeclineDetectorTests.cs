@@ -131,4 +131,16 @@ public class DeclineDetectorTests
         DeclineDetector.LeadsWithNegation("Nein danke.").ShouldBeTrue();
         DeclineDetector.IsBareNegation("Nein").ShouldBeTrue();
     }
+
+    [Test]
+    public void StripNegationLead_LeadingNegation_RemovesTokenAndSeparator()
+    {
+        DeclineDetector.StripNegationLead("Nein, wie finde ich das heraus?").ShouldBe("wie finde ich das heraus?");
+    }
+
+    [Test]
+    public void StripNegationLead_NoLeadingNegation_ReturnsMessageUnchanged()
+    {
+        DeclineDetector.StripNegationLead("Zeig mir die offenen Schichten").ShouldBe("Zeig mir die offenen Schichten");
+    }
 }
