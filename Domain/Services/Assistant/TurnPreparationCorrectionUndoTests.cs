@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// Rule 3 end to end, with the real SkillInverseResolver and the real registry behind it: a correction

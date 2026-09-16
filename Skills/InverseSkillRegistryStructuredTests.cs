@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
 /// The structured half of InverseSkillRegistry, added for the correction undo offer: argument copying,
