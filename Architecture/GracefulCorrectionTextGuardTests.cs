@@ -19,6 +19,7 @@ namespace Klacks.UnitTest.Architecture;
 public class GracefulCorrectionTextGuardTests
 {
     private const string LanguagePlaceholder = "{4}";
+    private const string UndoLanguagePlaceholder = "{2}";
     private const string ChineseSimplified = "zh-CN";
 
     [TearDown]
@@ -74,7 +75,8 @@ public class GracefulCorrectionTextGuardTests
     public void UndoOfferTemplate_AsksForExactlyOneSentenceInAnExplicitLanguage()
     {
         GracefulCorrectionNotes.UndoOfferTemplate.ShouldContain("exactly ONE short");
-        GracefulCorrectionNotes.UndoOfferTemplate.ShouldContain("in language '{2}'");
+        GracefulCorrectionNotes.UndoOfferTemplate.ShouldContain("in " + UndoLanguagePlaceholder);
+        GracefulCorrectionNotes.UndoOfferTemplate.ShouldNotContain("'" + UndoLanguagePlaceholder + "'");
         GracefulCorrectionNotes.UndoOfferTemplate.ShouldContain("never as a separate");
     }
 

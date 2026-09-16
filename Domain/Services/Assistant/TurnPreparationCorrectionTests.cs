@@ -63,7 +63,7 @@ public class TurnPreparationCorrectionTests
     [TearDown]
     public void ResetConfiguredTexts() => GracefulCorrectionTexts.Reset();
 
-    private static AssistantLastAction Anchor() => new()
+    private static AssistantLastAction Anchor(string? displayLabel = WrongSkillLabel) => new()
     {
         UserId = Guid.Parse(UserId),
         ConversationId = "conv-1",
@@ -75,7 +75,7 @@ public class TurnPreparationCorrectionTests
             new AssistantLastActionCall
             {
                 SkillName = WrongSkill,
-                SkillDisplayLabel = WrongSkillLabel,
+                SkillDisplayLabel = displayLabel,
                 ArgumentsJson = "{\"searchString\":\"Zürich\"}",
                 IsReadOnly = true,
                 Success = true
@@ -83,9 +83,9 @@ public class TurnPreparationCorrectionTests
         ]
     };
 
-    private static GracefulCorrectionInput Input(string language = German) =>
+    private static GracefulCorrectionInput Input(string language, string? previousLabel) =>
         new(new Agent { Id = Guid.NewGuid(), Name = "Klacksy" },
-            new List<string>(), Correction, "conv-1", UserId, language, Anchor(), false);
+            new List<string>(), Correction, "conv-1", UserId, language, Anchor(previousLabel), false);
 
     private static LLMFunction Function(string name, ToolsetSkillSource source, double? score = null) => new()
     {
@@ -95,8 +95,9 @@ public class TurnPreparationCorrectionTests
         RetrievalScore = score
     };
 
-    private async Task<GracefulCorrectionPlan> PlanAsync(string language = German) =>
-        (await _service.PlanCorrectionAsync(Input(language)))!;
+    private async Task<GracefulCorrectionPlan> PlanAsync(
+        string language = German, string? previousLabel = WrongSkillLabel) =>
+        (await _service.PlanCorrectionAsync(Input(language, previousLabel)))!;
 
     [Test]
     public async Task TwoScoredCandidatesWithinTheTolerance_AskWithBothOptions()
@@ -223,6 +224,24 @@ public class TurnPreparationCorrectionTests
             plan, [Function(CandidateA, ToolsetSkillSource.Keyword), twin], German);
 
         outcome.ClarificationReply.ShouldBeNull();
+    }
+
+    // Rule 1 obliges the question to name the misunderstanding. Without a captured display label the only
+    // thing left is the English model-facing stand-in, which a user-facing question must never carry - in
+    // a non-English installation it would break the one-language rule on top of naming nothing useful.
+    [Test]
+    public async Task WithoutADisplayLabelForThePreviousAction_AsksNothing()
+    {
+        var plan = await PlanAsync(previousLabel: null);
+
+        var outcome = _service.CompleteCorrection(
+            plan,
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            German);
+
+        outcome.ClarificationReply.ShouldBeNull();
+        outcome.ClarificationSkillNames.ShouldBeEmpty();
+        outcome.ContextNote.ShouldContain(GracefulCorrectionNotes.UnnamedPreviousActionLabel);
     }
 
     [Test]
