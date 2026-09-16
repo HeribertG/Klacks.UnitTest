@@ -187,8 +187,8 @@ public class LLMServiceCorrectionClarificationTests
         TheBackgroundTasksRanWithAnEmptyCallList();
     }
 
-    // The previous-action record must NOT be touched: the entry point writes the two pinned candidates
-    // onto it for the turn that answers the question, and a zero-call turn would supersede it.
+    // This turn executed nothing, so there is nothing to record: the call is skipped because it would
+    // only redundantly mark the record superseded, not because the pins on it would be at risk.
     [Test]
     public async Task NonStreaming_WithAClarification_LeavesThePreviousActionRecordAlone()
     {
@@ -197,6 +197,20 @@ public class LLMServiceCorrectionClarificationTests
         _turnPreparation.DidNotReceiveWithAnyArgs().RecordLastAction(
             Arg.Any<LLMContext>(), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<IReadOnlyList<LLMFunctionCall>>(), Arg.Any<bool>());
+    }
+
+    // The question is fully computed before the turn ever reaches the store. Losing it to a storage
+    // outage would turn a recoverable persistence failure into a lost answer.
+    [Test]
+    public async Task NonStreaming_WhenThePersistenceFails_TheQuestionIsStillAnswered()
+    {
+        _repository.SaveMessageAsync(Arg.Any<RepositoryLLMMessage>())
+            .Returns<RepositoryLLMMessage>(_ => throw new InvalidOperationException("store down"));
+
+        var response = await _service.ProcessAsync(Context(Clarification));
+
+        response.Message.ShouldBe(Clarification);
+        response.ConversationId.ShouldBe(ConversationId);
     }
 
     [Test]
@@ -218,6 +232,23 @@ public class LLMServiceCorrectionClarificationTests
         chunks[^2].Type.ShouldBe(SseChunkType.Metadata);
         chunks[^1].Type.ShouldBe(SseChunkType.Done);
         await ProviderWasNotCalled();
+    }
+
+    // SseChunk.Metadata carries no message text by design - the answer has already streamed as Content -
+    // so the payload is pinned through the fields it does carry: a zero usage and an empty call list are
+    // the fingerprint of the clarification response, which no model turn of this fixture produces.
+    [Test]
+    public async Task Streaming_WithAClarification_TheMetadataCarriesTheClarificationPayload()
+    {
+        var chunks = await Stream(Context(Clarification));
+
+        var metadata = chunks.Single(c => c.Type == SseChunkType.Metadata);
+        metadata.Usage.ShouldNotBeNull();
+        metadata.Usage!.TotalTokens.ShouldBe(0);
+        metadata.Usage.Cost.ShouldBe(0);
+        metadata.ActionPerformed.ShouldBeFalse();
+        metadata.FunctionCalls.ShouldBeEmpty();
+        metadata.NavigateTo.ShouldBeNull();
     }
 
     [Test]

@@ -44,6 +44,8 @@ public class TurnReplayServiceCorrectionTests
         "I searched for customers. Did you mean adding clients to a group, or listing them?";
     private const string ModelAnswer = "Die Mitarbeitenden sind eingetragen.";
     private const string Locale = "de";
+    private const string MutatingCorrection = "Nein, erstelle stattdessen eine neue Gruppe.";
+    private const int AssemblyDelayMs = 30;
 
     private static readonly string UserId = Guid.NewGuid().ToString();
 
@@ -136,6 +138,13 @@ public class TurnReplayServiceCorrectionTests
         }
     };
 
+    private static TurnGoldsetItem MutatingItem()
+    {
+        var item = Item();
+        item.Message = MutatingCorrection;
+        return item;
+    }
+
     private void GivenACorrectionIsPlanned(string? clarificationReply)
     {
         _turnPreparation.PlanCorrectionAsync(Arg.Any<GracefulCorrectionInput>(), Arg.Any<CancellationToken>())
@@ -210,6 +219,30 @@ public class TurnReplayServiceCorrectionTests
         result.CorrectionApplied.ShouldBeTrue();
         result.CorrectionClarificationOffered.ShouldBeTrue();
         await _provider.DidNotReceiveWithAnyArgs().ProcessAsync(Arg.Any<LLMProviderRequest>());
+    }
+
+    // A clarification item is measured like any other: the work it did (assembly, planning, completion)
+    // is real time, and the tool-choice the turn would have forced is reported even though no provider
+    // call happened. Reporting zero would make correction items look free in every latency comparison.
+    [Test]
+    public async Task WithAClarification_TheReplayReportsItsOwnLatencyAndToolChoice()
+    {
+        GivenACorrectionIsPlanned(ClarificationReply);
+        _assembler.AssembleAsync(
+                Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+                Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+                Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Delay(AssemblyDelayMs);
+                return new SkillToolsetResult();
+            });
+
+        var result = await Replay(MutatingItem());
+
+        result.LatencyMs.ShouldBeGreaterThanOrEqualTo(AssemblyDelayMs);
+        result.ToolChoiceRequired.ShouldBeTrue();
     }
 
     // The anchor is rebuilt from the goldset item, not read from a table, and a replay never has a live

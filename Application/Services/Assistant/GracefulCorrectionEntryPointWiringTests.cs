@@ -313,6 +313,38 @@ public class GracefulCorrectionEntryPointWiringTests
         _capturedContext!.CorrectionClarificationReply.ShouldBe(ClarificationReply);
     }
 
+    // The pin is a convenience of the NEXT turn. A store outage may cost it, never the question this turn
+    // has already computed and is about to send.
+    [Test]
+    public async Task NonStreaming_WhenThePinWriteThrows_TheTurnStillRuns()
+    {
+        GivenAClarificationIsPlanned();
+        _lastActionStore
+            .When(store => store.SaveClarificationCandidates(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>()))
+            .Do(_ => throw new InvalidOperationException("store down"));
+
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CorrectionClarificationReply.ShouldBe(ClarificationReply);
+    }
+
+    [Test]
+    public async Task Streaming_WhenThePinWriteThrows_TheTurnStillRuns()
+    {
+        GivenAClarificationIsPlanned();
+        _lastActionStore
+            .When(store => store.SaveClarificationCandidates(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>()))
+            .Do(_ => throw new InvalidOperationException("store down"));
+
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CorrectionClarificationReply.ShouldBe(ClarificationReply);
+    }
+
     [Test]
     public async Task NonStreaming_WithACorrectionButNoClarification_PinsNothing()
     {
