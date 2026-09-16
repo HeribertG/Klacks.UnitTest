@@ -31,6 +31,11 @@ public class GracefulCorrectionEntryPointWiringTests
 
     private const string PinnedSkillName = "add_clients_to_group";
 
+    private const string ClarificationReply =
+        "I searched for customers. Did you mean adding clients to a group, or listing them?";
+    private const string FirstCandidate = "add_clients_to_group";
+    private const string SecondCandidate = "list_group_clients";
+
     private ISkillToolsetAssembler _assembler = null!;
     private ITurnPreparationService _turnPreparation = null!;
     private ILLMService _llmService = null!;
@@ -100,6 +105,20 @@ public class GracefulCorrectionEntryPointWiringTests
         _turnPreparation.CompleteCorrection(
                 Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
             .Returns(new GracefulCorrectionOutcome(ContextNote, null, []));
+    }
+
+    private void GivenAClarificationIsPlanned()
+    {
+        var lastAction = GivenAStoredAnchor();
+
+        _turnPreparation.PlanCorrectionAsync(Arg.Any<GracefulCorrectionInput>(), Arg.Any<CancellationToken>())
+            .Returns(new GracefulCorrectionPlan(
+                lastAction, CorrectionMessage, Composite, new[] { ExcludedSkillName }));
+
+        _turnPreparation.CompleteCorrection(
+                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
+            .Returns(new GracefulCorrectionOutcome(
+                ContextNote, ClarificationReply, [FirstCandidate, SecondCandidate]));
     }
 
     private ProcessLLMMessageCommandHandler CreateHandler()
@@ -254,6 +273,80 @@ public class GracefulCorrectionEntryPointWiringTests
         await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
 
         await AssemblerPinned(PinnedSkillName);
+    }
+
+    // The two options of a question just asked are pinned onto the anchor, so the turn that answers it has
+    // both in its toolset no matter which one the user names. The write happens only when a question was
+    // actually asked: an ordinary correction turn, and every turn outside English while the interim rule
+    // holds, must leave the record untouched.
+    private void TheCandidatesWerePinned() =>
+        _lastActionStore.Received(1).SaveClarificationCandidates(
+            Guid.Parse(UserId), ConversationId,
+            Arg.Is<IReadOnlyList<string>>(
+                names => names.Contains(FirstCandidate) && names.Contains(SecondCandidate)));
+
+    private void NothingWasPinned() =>
+        _lastActionStore.DidNotReceiveWithAnyArgs().SaveClarificationCandidates(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>());
+
+    [Test]
+    public async Task NonStreaming_WithAClarification_PinsTheTwoCandidates()
+    {
+        GivenAClarificationIsPlanned();
+
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        TheCandidatesWerePinned();
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CorrectionClarificationReply.ShouldBe(ClarificationReply);
+    }
+
+    [Test]
+    public async Task Streaming_WithAClarification_PinsTheTwoCandidates()
+    {
+        GivenAClarificationIsPlanned();
+
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        TheCandidatesWerePinned();
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CorrectionClarificationReply.ShouldBe(ClarificationReply);
+    }
+
+    [Test]
+    public async Task NonStreaming_WithACorrectionButNoClarification_PinsNothing()
+    {
+        GivenACorrectionIsPlanned();
+
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        NothingWasPinned();
+    }
+
+    [Test]
+    public async Task Streaming_WithACorrectionButNoClarification_PinsNothing()
+    {
+        GivenACorrectionIsPlanned();
+
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        NothingWasPinned();
+    }
+
+    [Test]
+    public async Task NonStreaming_WithoutACorrection_PinsNothing()
+    {
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        NothingWasPinned();
+    }
+
+    [Test]
+    public async Task Streaming_WithoutACorrection_PinsNothing()
+    {
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        NothingWasPinned();
     }
 
     // Gate G1 only matters once an anchor could carry a correction at all. Without one the pending-recipe
