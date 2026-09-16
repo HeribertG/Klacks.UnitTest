@@ -1,7 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Seam tests for the ask-step correction guard: proves the branch in ResolveOrResumeRecipeAsync actually
+/// Seam tests for the ask-step correction guard, which moved with ResolveOrResumeRecipeAsync out of
+/// LLMService into TurnPreparationService (2026-09-16); the assertions are unchanged. Proves the branch
+/// in ResolveOrResumeRecipeAsync actually
 /// fires and books the abort against the right run, and proves the precedence it sits in. The detector's
 /// own gates are covered in RecipeCorrectionDetectorTests; what is covered here is the wiring, which is
 /// where the branch could be silently unreachable - wrong ordering against the cancellation and
@@ -69,7 +71,7 @@ public class LLMServiceRecipeCorrectionTests
     private IAgentRecipeRepository _recipeRepository = null!;
     private IPendingRecipeStore _pendingRecipeStore = null!;
     private IRecipeRunRecorder _recipeRunRecorder = null!;
-    private LLMService _service = null!;
+    private TurnPreparationService _service = null!;
 
     [SetUp]
     public void SetUp()
@@ -100,30 +102,13 @@ public class LLMServiceRecipeCorrectionTests
         var recipeEngine = new RecipeEngineService(
             scopeFactory, _pendingRecipeStore, Substitute.For<ILogger<RecipeEngineService>>());
 
-        var agentRepository = Substitute.For<IAgentRepository>();
-        agentRepository.GetDefaultAgentAsync().Returns((Agent?)null);
-
-        _service = new LLMService(
-            logger: Substitute.For<ILogger<LLMService>>(),
-            providerOrchestrator: null!,
-            conversationManager: null!,
-            functionExecutor: new LLMFunctionExecutor(
-                Substitute.For<ILogger<LLMFunctionExecutor>>(),
-                Substitute.For<IAgentSkillRepository>(),
-                agentRepository,
-                Substitute.For<IPendingConfirmationStore>(),
-                Substitute.For<ILLMSkillBridge>()),
-            responseBuilder: null!,
-            promptBuilder: null!,
-            agentRepository: null!,
-            contextAssemblyPipeline: null!,
-            backgroundTaskService: null!,
-            pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
-            recipeEngine: recipeEngine,
-            recipeRunRecorder: _recipeRunRecorder,
-            slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
-            suggestionEntityNameReader: null!,
-            contextBudgetPolicy: null!);
+        _service = new TurnPreparationService(
+            Substitute.For<IPendingConfirmationStore>(),
+            recipeEngine,
+            _recipeRunRecorder,
+            new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<ILogger<TurnPreparationService>>());
     }
 
     private static LLMContext Context(string message, string? language = "de") => new()

@@ -44,6 +44,7 @@ public class LLMServiceRecipeConfirmationGateTests
     private IKnowledgeRetrievalService _retrieval = null!;
     private IPendingRecipeStore _pendingRecipeStore = null!;
     private LLMService _service = null!;
+    private TurnPreparationService _turnPreparation = null!;
 
     [SetUp]
     public void SetUp()
@@ -81,6 +82,16 @@ public class LLMServiceRecipeConfirmationGateTests
         // because ResolvePendingConfirmation (an unrelated, pre-existing gate) is consulted for every
         // message that both affirms and is not a mutation intent — a message shape this test does not
         // control for, so a null! store would risk an unrelated NullReferenceException.
+        // Both objects are needed since the resolve moved into TurnPreparationService (2026-09-16): the
+        // seam tests call it directly, the loop test reaches it through the LLMService that owns it.
+        _turnPreparation = new TurnPreparationService(
+            Substitute.For<IPendingConfirmationStore>(),
+            recipeEngine,
+            Substitute.For<IRecipeRunRecorder>(),
+            new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<ILogger<TurnPreparationService>>());
+
         _service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
             providerOrchestrator: null!,
@@ -91,12 +102,11 @@ public class LLMServiceRecipeConfirmationGateTests
             agentRepository: null!,
             contextAssemblyPipeline: null!,
             backgroundTaskService: null!,
-            pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
-            slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
             suggestionEntityNameReader: null!,
-            contextBudgetPolicy: null!);
+            contextBudgetPolicy: null!,
+            turnPreparation: _turnPreparation);
     }
 
     private static LLMContext Context(string message) => new()
@@ -121,7 +131,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         SetPendingConfirmation(_pendingRecipeStore);
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context("ja"), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
         plan.ShouldNotBeNull();
@@ -138,7 +148,7 @@ public class LLMServiceRecipeConfirmationGateTests
         _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
         plan.ShouldBeNull();
@@ -155,7 +165,7 @@ public class LLMServiceRecipeConfirmationGateTests
         _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
         plan.ShouldBeNull();
@@ -168,7 +178,7 @@ public class LLMServiceRecipeConfirmationGateTests
         _pendingRecipeStore.Peek(UserId, ConversationId).Returns((PendingRecipe?)null);
         var message = "Bitte onboard einen neuen Mitarbeiter";
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
         plan.ShouldNotBeNull();
@@ -186,7 +196,7 @@ public class LLMServiceRecipeConfirmationGateTests
                 new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "irrelevant" },
                 0.82)]));
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
         plan.ShouldNotBeNull();
@@ -219,7 +229,7 @@ public class LLMServiceRecipeConfirmationGateTests
             Slots = new Dictionary<string, string>()
         });
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context("Verträgt keine Nachtschichten"), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
         plan.ShouldNotBeNull();

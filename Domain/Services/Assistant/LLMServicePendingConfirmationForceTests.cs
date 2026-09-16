@@ -1,7 +1,8 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for LLMService.ResolvePendingConfirmation, the seam that resurfaces an outstanding
+/// Unit tests for TurnPreparationService.ResolvePendingConfirmation (moved there out of LLMService on
+/// 2026-09-16, assertions unchanged), the seam that resurfaces an outstanding
 /// autonomy-gate confirmation token in the turn after the gate asked for it. The token itself never
 /// survives in the conversation history (only user/assistant text is persisted), so this is the only
 /// path by which a held sensitive action can ever be confirmed. The load-bearing case is a reply that
@@ -27,7 +28,7 @@ public class LLMServicePendingConfirmationForceTests
     private static readonly Guid UserId = Guid.NewGuid();
 
     private IPendingConfirmationStore _confirmationStore = null!;
-    private LLMService _service = null!;
+    private TurnPreparationService _service = null!;
 
     [SetUp]
     public void SetUp()
@@ -36,22 +37,13 @@ public class LLMServicePendingConfirmationForceTests
 
         // Every other dependency is untouched by ResolvePendingConfirmation, which reads only the
         // context, the pending-confirmation store and AutonomyDefaults.
-        _service = new LLMService(
-            logger: Substitute.For<ILogger<LLMService>>(),
-            providerOrchestrator: null!,
-            conversationManager: null!,
-            functionExecutor: null!,
-            responseBuilder: null!,
-            promptBuilder: null!,
-            agentRepository: null!,
-            contextAssemblyPipeline: null!,
-            backgroundTaskService: null!,
-            pendingConfirmationStore: _confirmationStore,
+        _service = new TurnPreparationService(
+            _confirmationStore,
             recipeEngine: null!,
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             slotExtractor: null!,
-            suggestionEntityNameReader: null!,
-            contextBudgetPolicy: null!);
+            lastActionStore: Substitute.For<IAssistantLastActionStore>(),
+            logger: Substitute.For<ILogger<TurnPreparationService>>());
     }
 
     private void SetPending() =>

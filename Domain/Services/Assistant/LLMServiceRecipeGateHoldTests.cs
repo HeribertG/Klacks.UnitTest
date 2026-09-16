@@ -101,12 +101,17 @@ public class LLMServiceRecipeGateHoldTests
             agentRepository: null!,
             contextAssemblyPipeline: null!,
             backgroundTaskService: null!,
-            pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
-            slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
             suggestionEntityNameReader: null!,
-            contextBudgetPolicy: null!);
+            contextBudgetPolicy: null!,
+            turnPreparation: new TurnPreparationService(
+                Substitute.For<IPendingConfirmationStore>(),
+                recipeEngine,
+                Substitute.For<IRecipeRunRecorder>(),
+                new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
+                Substitute.For<IAssistantLastActionStore>(),
+                Substitute.For<ILogger<TurnPreparationService>>()));
     }
 
     private static MultiTurnContext BuildContext(ILLMProvider provider) => new(

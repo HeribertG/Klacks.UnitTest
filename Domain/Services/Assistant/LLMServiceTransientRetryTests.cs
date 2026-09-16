@@ -66,8 +66,8 @@ public class LLMServiceTransientRetryTests
         // ProcessWithTransientRetryAsync only touches the logger, and the multi-turn success path
         // exercised here breaks out of the loop before reaching the function executor or the
         // conversation manager (no function calls, no provider error) — null! keeps the test
-        // focused on the retry seam. IPendingConfirmationStore is a real substitute because
-        // ResolvePendingConfirmation runs for every message.
+        // focused on the retry seam. The turn preparation is real (over the same substitutes)
+        // because ExecuteMultiTurnLoopAsync prepares every turn through it.
         _service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
             providerOrchestrator: null!,
@@ -78,12 +78,17 @@ public class LLMServiceTransientRetryTests
             agentRepository: null!,
             contextAssemblyPipeline: null!,
             backgroundTaskService: null!,
-            pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
-            slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
             suggestionEntityNameReader: null!,
-            contextBudgetPolicy: null!);
+            contextBudgetPolicy: null!,
+            turnPreparation: new TurnPreparationService(
+                Substitute.For<IPendingConfirmationStore>(),
+                recipeEngine,
+                Substitute.For<IRecipeRunRecorder>(),
+                new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
+                Substitute.For<IAssistantLastActionStore>(),
+                Substitute.For<ILogger<TurnPreparationService>>()));
     }
 
     private static LLMProviderRequest Request() => new()

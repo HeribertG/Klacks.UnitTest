@@ -38,12 +38,11 @@ public class LLMServiceSuggestionGroundingTests
             agentRepository: null!,
             contextAssemblyPipeline: null!,
             backgroundTaskService: null!,
-            pendingConfirmationStore: null!,
             recipeEngine: null!,
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
-            slotExtractor: null!,
             suggestionEntityNameReader: _nameReader,
-            contextBudgetPolicy: null!);
+            contextBudgetPolicy: null!,
+            turnPreparation: null!);
     }
 
     [Test]

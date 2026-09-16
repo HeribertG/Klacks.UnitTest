@@ -61,6 +61,7 @@ public class LLMServiceRecipeTopicSwitchTests
     private IPendingRecipeStore _pendingRecipeStore = null!;
     private ILLMSkillBridge _skillBridge = null!;
     private LLMService _service = null!;
+    private TurnPreparationService _turnPreparation = null!;
 
     [SetUp]
     public void SetUp()
@@ -104,6 +105,16 @@ public class LLMServiceRecipeTopicSwitchTests
             Substitute.For<IPendingConfirmationStore>(),
             _skillBridge);
 
+        // Both objects are needed since the resolve moved into TurnPreparationService (2026-09-16): the
+        // seam tests call it directly, the loop tests reach it through the LLMService that owns it.
+        _turnPreparation = new TurnPreparationService(
+            Substitute.For<IPendingConfirmationStore>(),
+            recipeEngine,
+            Substitute.For<IRecipeRunRecorder>(),
+            new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<ILogger<TurnPreparationService>>());
+
         _service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
             providerOrchestrator: null!,
@@ -114,12 +125,11 @@ public class LLMServiceRecipeTopicSwitchTests
             agentRepository: null!,
             contextAssemblyPipeline: null!,
             backgroundTaskService: null!,
-            pendingConfirmationStore: Substitute.For<IPendingConfirmationStore>(),
             recipeEngine: recipeEngine,
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
-            slotExtractor: new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
             suggestionEntityNameReader: null!,
-            contextBudgetPolicy: null!);
+            contextBudgetPolicy: null!,
+            turnPreparation: _turnPreparation);
     }
 
     private static LLMContext Context(string message, string? language = "de") => new()
@@ -164,7 +174,7 @@ public class LLMServiceRecipeTopicSwitchTests
         ResumeAtTrackingAskStep();
         var message = "Ich habe eine xml Datei mit allen Bestellungen drin. Wie kann ich es einbinden?";
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
         plan.ShouldNotBeNull();
@@ -180,7 +190,7 @@ public class LLMServiceRecipeTopicSwitchTests
     {
         ResumeAtTrackingAskStep();
 
-        var plan = await _service.ResolveOrResumeRecipeAsync(
+        var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context("Wir sind ein Spital, also eher ohne Kunden"),
             Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
 
