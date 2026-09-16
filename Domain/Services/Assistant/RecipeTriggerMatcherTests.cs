@@ -491,4 +491,99 @@ public class RecipeTriggerMatcherTests
         // And the recipe is reachable again for exactly those messages
         Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "dalle 7 alle 15 mitarbeiter", "it"), Is.True);
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // W1b: the language-pack veto vocabulary. noneOf is core-language only, so a plugin-language
+    // message ran through the veto check correctly and found nothing to match. These cases pin the
+    // behaviour the pack column adds; the obligation that every pack carries the vocabulary lives in
+    // RecipeTriggerVetoQualityTests.
+    // ---------------------------------------------------------------------------------------------
+
+    private const string SpanishMutationSynonym = "incorporar un empleado al grupo";
+
+    private static RecipeTrigger TriggerWithNoNoneOf() => new()
+    {
+        AllOf = [new RecipeCondition { AnySubstring = ["gruppe"] }],
+        NoneOf = []
+    };
+
+    /// <summary>
+    /// The scenario W1b exists for. The first assertion is the precondition and the reason this test
+    /// cannot go vacuously green: without pack vocabulary the Spanish question DOES start the mutation
+    /// recipe, because the synonym shortcut fires and the core noneOf has no Spanish surface at all.
+    /// </summary>
+    [Test]
+    public void PackVetoes_StopAPluginLanguageQuestion_ThatTheCoreNoneOfCannotSee()
+    {
+        var trigger = TriggerWithNoNoneOf();
+        var synonyms = new[] { SpanishMutationSynonym };
+        var packVetoes = new[] { "cómo " };
+        const string question = "cómo incorporar un empleado al grupo";
+
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, synonyms, question, null, "es", null), Is.True,
+            "precondition: with no pack vocabulary the question starts the mutation recipe");
+
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, synonyms, question, null, "es", packVetoes), Is.False);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, question, null, "es", packVetoes), Is.True);
+    }
+
+    /// <summary>
+    /// The other direction: question vocabulary must not suppress an actual mutation request. A veto
+    /// that fires too eagerly is the 'alle '/'nos ' failure class and is worse than no veto, because it
+    /// fails silently and the user just sees nothing happen.
+    /// </summary>
+    [Test]
+    public void PackVetoes_DoNotStopAPlainMutationRequest()
+    {
+        var trigger = TriggerWithNoNoneOf();
+        var packVetoes = new[] { "cómo ", "qué ", "por qué ", "cuándo " };
+
+        Assert.That(
+            RecipeTriggerMatcher.Matches(
+                trigger, new[] { SpanishMutationSynonym }, "Quiero incorporar un empleado al grupo",
+                null, "es", packVetoes),
+            Is.True);
+    }
+
+    /// <summary>
+    /// The pack vocabulary is an independent veto surface, not an addition to noneOf: it has to work on
+    /// a recipe whose noneOf is empty and on no trigger at all, which is the plugin-language situation.
+    /// </summary>
+    [Test]
+    public void PackVetoes_WorkWithoutATriggerAndWithoutNoneOf()
+    {
+        Assert.That(RecipeTriggerMatcher.IsVetoed(null, "cómo voy", null, "es", new[] { "cómo " }), Is.True);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(TriggerWithNoNoneOf(), "cómo voy", null, "es", new[] { "cómo " }), Is.True);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(null, "cómo voy", null, "es", null), Is.False);
+    }
+
+    /// <summary>
+    /// A term written with a trailing space is a whole word, so it must not veto a longer word that
+    /// merely starts with it - the convention MatchesStartsWith already enforces for noneOf and the
+    /// reason the packs write "cómo " rather than "como".
+    /// </summary>
+    [Test]
+    public void PackVetoes_RespectTheWholeWordMarker()
+    {
+        var trigger = TriggerWithNoNoneOf();
+        var packVetoes = new[] { "cómo " };
+
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "cómodamente añadir gruppe", null, "es", packVetoes), Is.False);
+        Assert.That(RecipeTriggerMatcher.IsVetoed(trigger, "cómo añadir gruppe", null, "es", packVetoes), Is.True);
+    }
+
+    /// <summary>
+    /// Re-proves the 2026-09-14 lesson after adding the six-parameter form. A positional null at
+    /// argument 2 must still bind to `synonyms` and evaluate the message. The named-argument tests
+    /// elsewhere cannot catch a regression here - naming the argument is precisely what keeps them on
+    /// the intended overload.
+    /// </summary>
+    [Test]
+    public void Positional_Null_Synonyms_Still_Evaluates_The_Message_After_The_Six_Parameter_Overload()
+    {
+        var trigger = TriggerWithNoNoneOf();
+
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, null, "zur Gruppe hinzufügen"), Is.True);
+        Assert.That(RecipeTriggerMatcher.Matches(trigger, synonyms: null, message: "zur Gruppe hinzufügen"), Is.True);
+    }
 }
