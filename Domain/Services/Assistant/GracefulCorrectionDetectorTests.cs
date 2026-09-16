@@ -21,6 +21,13 @@ public class GracefulCorrectionDetectorTests
 {
     private const string Correction = "Nein, ich meinte alle Mitarbeitenden in die Gruppe.";
 
+    [TearDown]
+    public void ResetDetectors()
+    {
+        DeclineDetector.Reset();
+        ImplicitCorrectionDetector.Reset();
+    }
+
     private static AssistantLastAction Anchor(DateTime? createdAt = null, bool superseded = false) => new()
     {
         UserId = Guid.NewGuid(),
@@ -71,6 +78,16 @@ public class GracefulCorrectionDetectorTests
     public void G0_SupersededAnchor_IsRejectedByTheAnchorGate()
     {
         Evaluate(Correction, Anchor(superseded: true)).ShouldBe(GracefulCorrectionGate.Anchor);
+    }
+
+    [Test]
+    public void G0_AnchorExactlyAtTheWindowBoundary_StillAnchors()
+    {
+        var now = DateTime.UtcNow;
+        var anchor = Anchor(now.AddMinutes(-GracefulCorrectionDefaults.CorrectionWindowMinutes));
+
+        GracefulCorrectionDetector.Evaluate(Correction, anchor, false, false, now)
+            .ShouldBe(GracefulCorrectionGate.Passed);
     }
 
     [Test]
@@ -127,5 +144,20 @@ public class GracefulCorrectionDetectorTests
         ];
 
         GracefulCorrectionDetector.ExcludedSkillNames(anchor).ShouldBe(new[] { "add_shift_to_group" });
+    }
+
+    [Test]
+    public void ExcludedSkillNames_DedupesCaseInsensitively_AndDropsBlankNames()
+    {
+        var anchor = Anchor();
+        anchor.Calls =
+        [
+            new AssistantLastActionCall { SkillName = "Add_Shift_To_Group", Success = true },
+            new AssistantLastActionCall { SkillName = "add_shift_to_group", Success = true },
+            new AssistantLastActionCall { SkillName = "   ", Success = true },
+            new AssistantLastActionCall { SkillName = string.Empty, Success = true }
+        ];
+
+        GracefulCorrectionDetector.ExcludedSkillNames(anchor).ShouldBe(new[] { "Add_Shift_To_Group" });
     }
 }
