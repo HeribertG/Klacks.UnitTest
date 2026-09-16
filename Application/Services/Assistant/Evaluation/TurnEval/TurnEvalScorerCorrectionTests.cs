@@ -150,6 +150,22 @@ public class TurnEvalScorerCorrectionTests
     }
 
     [Test]
+    public void ExcludedItem_RecipeWouldForce_LeavesAllThreeCorrectionVerdictsUnmeasured()
+    {
+        var item = CorrectionItem();
+        item.ExpectedUndoSkill = UndoSkill;
+
+        var replay = Replay(ExpectedSkill, correctionApplied: true, undoSkill: UndoSkill);
+        replay.RecipeWouldForce = true;
+
+        var result = TurnEvalScorer.ScoreItem(item, replay);
+
+        result.CorrectionHit.ShouldBeNull();
+        result.FalseRepair.ShouldBeNull();
+        result.UndoOfferedWhenExpected.ShouldBeNull();
+    }
+
+    [Test]
     public void ClarificationItem_ToolReachedInsteadOfClarifying_IsAMiss()
     {
         var item = CorrectionItem();

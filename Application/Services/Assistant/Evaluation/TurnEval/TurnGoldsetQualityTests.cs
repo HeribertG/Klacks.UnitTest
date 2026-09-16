@@ -256,9 +256,9 @@ public class TurnGoldsetQualityTests
 
         foreach (var (fileName, document) in LoadGoldsets())
         {
-            foreach (var item in document.Items.Where(i => i.ExpectedTool != null))
+            foreach (var item in document.Items)
             {
-                if (!skills.ContainsKey(item.ExpectedTool!))
+                if (item.ExpectedTool != null && !skills.ContainsKey(item.ExpectedTool))
                 {
                     violations.Add($"{fileName}/{item.Id}: expectedTool '{item.ExpectedTool}' not found in {SkillSeedsFileName}");
                 }
@@ -266,7 +266,32 @@ public class TurnGoldsetQualityTests
                 violations.AddRange(item.AlternativeTools
                     .Where(alt => !skills.ContainsKey(alt))
                     .Select(alt => $"{fileName}/{item.Id}: alternativeTool '{alt}' not found in {SkillSeedsFileName}"));
+
+                if (item.PreviousTurn != null && !skills.ContainsKey(item.PreviousTurn.CalledSkill))
+                {
+                    violations.Add($"{fileName}/{item.Id}: previousTurn.calledSkill '{item.PreviousTurn.CalledSkill}' not found in {SkillSeedsFileName}");
+                }
+
+                if (item.ExpectedUndoSkill != null && !skills.ContainsKey(item.ExpectedUndoSkill))
+                {
+                    violations.Add($"{fileName}/{item.Id}: expectedUndoSkill '{item.ExpectedUndoSkill}' not found in {SkillSeedsFileName}");
+                }
             }
+        }
+
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void CorrectionGoldset_ClarificationItemsMustAlsoExpectCorrection()
+    {
+        var violations = new List<string>();
+
+        foreach (var (fileName, document) in LoadGoldsets())
+        {
+            violations.AddRange(document.Items
+                .Where(i => i.ExpectsClarification && !i.ExpectsCorrection)
+                .Select(i => $"{fileName}/{i.Id}: expectsClarification item must also declare expectsCorrection"));
         }
 
         violations.ShouldBeEmpty();
