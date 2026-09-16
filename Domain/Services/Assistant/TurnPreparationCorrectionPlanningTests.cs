@@ -80,7 +80,8 @@ public class TurnPreparationCorrectionPlanningTests
 
     private static GracefulCorrectionInput Input(
         AssistantLastAction? anchor, bool recipeIsActive = false, string message = Correction) =>
-        new(null, new List<string>(), message, "conv-1", UserId, "de", anchor, recipeIsActive);
+        new(new Agent { Id = Guid.NewGuid(), Name = "Klacksy" },
+            new List<string>(), message, "conv-1", UserId, "de", anchor, recipeIsActive);
 
     private static LLMFunction Candidate(string name, ToolsetSkillSource source, double? score = null) => new()
     {
@@ -177,27 +178,73 @@ public class TurnPreparationCorrectionPlanningTests
     }
 
     // The internal snake_case name must never reach the user, and a turn without a captured label is
-    // exactly the case in which it otherwise would.
+    // exactly the case in which it otherwise would. The stand-in is English, because the note it lands
+    // in is an English model-facing instruction and the user-facing redaction is German.
     [Test]
-    public async Task WithoutADisplayLabel_TheNoteUsesTheRedactionAndNeverTheSkillName()
+    public async Task WithoutADisplayLabel_TheNoteUsesTheEnglishStandInAndNeverTheSkillName()
     {
         var plan = await _service.PlanCorrectionAsync(Input(Anchor(displayLabel: null)));
 
         var outcome = _service.CompleteCorrection(
             plan!, [Candidate(CandidateSkillName, ToolsetSkillSource.Keyword)], "de");
 
-        outcome.ContextNote.ShouldContain(MutationGuardConstants.RedactedInternalIdentifier);
+        outcome.ContextNote.ShouldContain(GracefulCorrectionNotes.UnnamedPreviousActionLabel);
         outcome.ContextNote.ShouldNotContain(PreviousSkillName);
+        outcome.ContextNote.ShouldNotContain(MutationGuardConstants.RedactedInternalIdentifier);
     }
 
+    // Not a default tag: ordering English for a user writing German would break the one-language rule
+    // from the other side.
     [Test]
-    public async Task WithoutALanguage_TheNoteFallsBackToTheDefaultTag()
+    public async Task WithoutALanguage_TheNotePointsAtTheUsersOwnMessage()
     {
         var plan = await _service.PlanCorrectionAsync(Input(Anchor()));
 
         var outcome = _service.CompleteCorrection(plan!, [], null);
 
-        outcome.ContextNote.ShouldContain($"'{LanguageConfig.DefaultLanguageFallback}'");
+        outcome.ContextNote.ShouldContain(GracefulCorrectionNotes.LanguageOfTheUserMessage);
+        outcome.ContextNote.ShouldNotContain($"'{LanguageConfig.DefaultLanguageFallback}'");
+    }
+
+    [Test]
+    public async Task WithALanguage_TheNoteNamesThatLanguageAndNotTheFallbackWording()
+    {
+        var plan = await _service.PlanCorrectionAsync(Input(Anchor()));
+
+        var outcome = _service.CompleteCorrection(plan!, [], "fr");
+
+        outcome.ContextNote.ShouldContain("'fr'");
+        outcome.ContextNote.ShouldNotContain(GracefulCorrectionNotes.LanguageOfTheUserMessage);
+    }
+
+    // The correction is LIVE user input and, unlike the anchor's own fields, was never capped by the
+    // store, so an over-long paste would otherwise push the note past the budget it is measured against.
+    [Test]
+    public async Task AnOverLongCorrection_IsCappedInTheNote()
+    {
+        var overLong = "Nein, ich meinte " + new string('x', GracefulCorrectionDefaults.UserMessageMaxLength * 2);
+        var plan = await _service.PlanCorrectionAsync(Input(Anchor(), message: overLong));
+
+        var outcome = _service.CompleteCorrection(plan!, [], "de");
+
+        outcome.ContextNote.ShouldNotContain(overLong);
+        outcome.ContextNote.ShouldContain(overLong[..GracefulCorrectionDefaults.UserMessageMaxLength]);
+    }
+
+    // Without an agent the G5 probe has no skills to guarantee and would answer "does not route alone"
+    // for every message, i.e. open the correction path on exactly the turns that lost their toolset.
+    [Test]
+    public async Task WithoutAnAgent_PlansNoCorrection()
+    {
+        var input = new GracefulCorrectionInput(
+            null, new List<string>(), Correction, "conv-1", UserId, "de", Anchor(), false);
+
+        var plan = await _service.PlanCorrectionAsync(input);
+
+        plan.ShouldBeNull();
+        await _routeProbe.DidNotReceive().GuaranteedSkillNamesAsync(
+            Arg.Any<Agent?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
