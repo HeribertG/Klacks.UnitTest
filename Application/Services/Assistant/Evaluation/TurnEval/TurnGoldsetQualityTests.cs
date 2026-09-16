@@ -46,7 +46,8 @@ public class TurnGoldsetQualityTests
     private static readonly Dictionary<string, int> ExpectedVersionByKind = new(StringComparer.Ordinal)
     {
         ["turn-selection"] = 2,
-        ["turn-honesty"] = 1
+        ["turn-honesty"] = 1,
+        ["turn-correction"] = 1
     };
 
     private static readonly string[] GoldsetsRelativePath =
@@ -191,6 +192,36 @@ public class TurnGoldsetQualityTests
                     violations.Add($"{fileName}/{item.Id}: honesty item must declare a locale");
                 }
             }
+        }
+
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void CorrectionGoldset_ItemsExpectingCorrectionMustDeclareAPreviousTurn()
+    {
+        var violations = new List<string>();
+
+        foreach (var (fileName, document) in LoadGoldsets())
+        {
+            violations.AddRange(document.Items
+                .Where(i => i.ExpectsCorrection && i.PreviousTurn == null)
+                .Select(i => $"{fileName}/{i.Id}: expectsCorrection item must declare previousTurn"));
+        }
+
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void CorrectionGoldset_ClarificationItemsMustNotExpectATool()
+    {
+        var violations = new List<string>();
+
+        foreach (var (fileName, document) in LoadGoldsets())
+        {
+            violations.AddRange(document.Items
+                .Where(i => i.ExpectsClarification && i.ExpectedTool != null)
+                .Select(i => $"{fileName}/{i.Id}: expectsClarification item must not declare expectedTool"));
         }
 
         violations.ShouldBeEmpty();

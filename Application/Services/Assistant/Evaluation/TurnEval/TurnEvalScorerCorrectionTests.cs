@@ -3,7 +3,8 @@
 /// <summary>
 /// Scoring of the three graceful-correction verdicts: correctionHit (the corrected turn reached the
 /// expected skill), falseRepair (a normal follow-up was treated as a correction) and
-/// undoOfferedWhenExpected. Only items that declare a previousTurn are measured at all.
+/// undoOfferedWhenExpected. Only items that declare a previousTurn are measured at all, and only when
+/// the replay succeeded and the item was not excluded by a recipe hijack.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
@@ -34,9 +35,13 @@ public class TurnEvalScorerCorrectionTests
     };
 
     private static TurnReplayResult Replay(
-        string? chosenTool, bool correctionApplied, bool clarification = false, string? undoSkill = null) => new()
+        string? chosenTool,
+        bool correctionApplied,
+        bool clarification = false,
+        string? undoSkill = null,
+        bool success = true) => new()
     {
-        Success = true,
+        Success = success,
         ChosenTool = chosenTool,
         AvailableToolNames = [ExpectedSkill],
         CorrectionApplied = correctionApplied,
@@ -127,5 +132,84 @@ public class TurnEvalScorerCorrectionTests
         dimensions.CorrectionHit.ShouldBe(1.0);
         dimensions.FalseRepairRate.ShouldBe(1.0);
         dimensions.UndoOfferedWhenExpected.ShouldBeNull();
+    }
+
+    [Test]
+    public void FailedReplay_LeavesAllThreeCorrectionVerdictsUnmeasured()
+    {
+        var item = CorrectionItem();
+        item.ExpectedUndoSkill = UndoSkill;
+
+        var result = TurnEvalScorer.ScoreItem(
+            item, Replay(ExpectedSkill, correctionApplied: true, undoSkill: UndoSkill, success: false));
+
+        result.CorrectionHit.ShouldBeNull();
+        result.FalseRepair.ShouldBeNull();
+        result.UndoOfferedWhenExpected.ShouldBeNull();
+        result.Passed.ShouldBeFalse();
+    }
+
+    [Test]
+    public void ClarificationItem_ToolReachedInsteadOfClarifying_IsAMiss()
+    {
+        var item = CorrectionItem();
+        item.ExpectedTool = null;
+        item.ExpectsClarification = true;
+
+        var result = TurnEvalScorer.ScoreItem(
+            item, Replay(ExpectedSkill, correctionApplied: true, clarification: false));
+
+        result.CorrectionHit.ShouldBe(false);
+    }
+
+    [Test]
+    public void OrdinaryFollowUp_CorrectlyNotRepaired_PassesWithoutTool()
+    {
+        var item = CorrectionItem();
+        item.ExpectedTool = null;
+        item.ExpectsCorrection = false;
+
+        var result = TurnEvalScorer.ScoreItem(item, Replay(null, correctionApplied: false));
+
+        result.FalseRepair.ShouldBe(false);
+        result.Passed.ShouldBeTrue();
+    }
+
+    [Test]
+    public void UndoNotOfferedWhenExpected_ForcesTheItemToFail()
+    {
+        var item = CorrectionItem();
+        item.ExpectedUndoSkill = UndoSkill;
+
+        var result = TurnEvalScorer.ScoreItem(
+            item, Replay(ExpectedSkill, correctionApplied: true, undoSkill: null));
+
+        result.UndoOfferedWhenExpected.ShouldBe(false);
+        result.Passed.ShouldBeFalse();
+    }
+
+    [Test]
+    public void UndoComparison_IsCaseInsensitive()
+    {
+        var item = CorrectionItem();
+        item.ExpectedUndoSkill = UndoSkill;
+
+        var result = TurnEvalScorer.ScoreItem(
+            item, Replay(ExpectedSkill, correctionApplied: true, undoSkill: UndoSkill.ToUpperInvariant()));
+
+        result.UndoOfferedWhenExpected.ShouldBe(true);
+    }
+
+    [Test]
+    public void Aggregate_ReportsTheUndoDimensionWhenAnyItemMeasuresIt()
+    {
+        var item = CorrectionItem();
+        item.ExpectedUndoSkill = UndoSkill;
+        var hit = TurnEvalScorer.ScoreItem(
+            item, Replay(ExpectedSkill, correctionApplied: true, undoSkill: UndoSkill));
+
+        var dimensions = TurnEvalScorer.Aggregate([hit]);
+
+        dimensions.UndoOfferedWhenExpected.ShouldBe(1.0);
     }
 }

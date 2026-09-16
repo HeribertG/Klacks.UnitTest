@@ -13,6 +13,7 @@ public class FileTurnGoldsetLoaderTests
     private const string WrongKindGoldsetName = "turneval-test-wrong-kind";
     private const string EnumGoldsetName = "turneval-test-enum-parsing";
     private const string ParentDecoyGoldsetName = "turneval-test-parent-decoy";
+    private const string CorrectionKindGoldsetName = "turneval-test-correction-kind";
     private const string JsonExtension = ".json";
 
     private static readonly string[] GoldsetRelativePath = ["Application", "Skills", "Goldsets"];
@@ -49,6 +50,26 @@ public class FileTurnGoldsetLoaderTests
         }
         """;
 
+    private const string CorrectionKindJson = """
+        {
+          "version": 1,
+          "kind": "turn-correction",
+          "items": [
+            {
+              "id": "cr-001",
+              "message": "Nein, ich meinte alle Mitarbeitenden.",
+              "expectedTool": "search_employees",
+              "expectsCorrection": true,
+              "previousTurn": {
+                "message": "Trag alle Mitarbeitenden in die Gruppe Zürich ein.",
+                "calledSkill": "find_customer_candidates",
+                "assistantAnswerExcerpt": "Ich habe nach Kunden gesucht."
+              }
+            }
+          ]
+        }
+        """;
+
     private FileTurnGoldsetLoader _loader = null!;
     private readonly List<string> _tempFiles = new();
 
@@ -62,6 +83,7 @@ public class FileTurnGoldsetLoaderTests
         EnsureRealGoldsetPresent();
         WriteTempGoldset(Path.Combine(GoldsetDirectory, WrongKindGoldsetName + JsonExtension), WrongKindJson);
         WriteTempGoldset(Path.Combine(GoldsetDirectory, EnumGoldsetName + JsonExtension), EnumParsingJson);
+        WriteTempGoldset(Path.Combine(GoldsetDirectory, CorrectionKindGoldsetName + JsonExtension), CorrectionKindJson);
         WriteTempGoldset(
             Path.Combine(Directory.GetParent(GoldsetDirectory)!.FullName, ParentDecoyGoldsetName + JsonExtension),
             EnumParsingJson);
@@ -116,6 +138,17 @@ public class FileTurnGoldsetLoaderTests
     public void LoadAsync_PathTraversal_IsSanitizedAndNotFound()
     {
         Should.ThrowAsync<FileNotFoundException>(() => _loader.LoadAsync("../" + ParentDecoyGoldsetName));
+    }
+
+    [Test]
+    public async Task LoadAsync_CorrectionKind_LoadsItems()
+    {
+        var items = await _loader.LoadAsync(CorrectionKindGoldsetName);
+
+        items.Count.ShouldBe(1);
+        items[0].ExpectsCorrection.ShouldBeTrue();
+        items[0].PreviousTurn.ShouldNotBeNull();
+        items[0].PreviousTurn!.CalledSkill.ShouldBe("find_customer_candidates");
     }
 
     [Test]
