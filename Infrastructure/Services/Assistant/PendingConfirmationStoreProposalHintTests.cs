@@ -199,6 +199,22 @@ public class PendingConfirmationStoreProposalHintTests
         store.PeekLatestForUser(_userId, ForceWindow, PendingConfirmationPurposes.ProposalHint).ShouldNotBeNull();
     }
 
+    // The offering turn cannot drop its predecessor itself - it runs after the write - so a second
+    // correction inside the force window would otherwise leave two redeemable offers for one "ja".
+    [Test]
+    public void ASecondCorrectionUndo_ReplacesTheFirst()
+    {
+        var store = PendingStoreTestFactory.CreateConfirmationStore();
+
+        var first = store.Create(
+            _userId, GatedSkillName, UndoParameters, PendingConfirmationPurposes.CorrectionUndo);
+        var second = store.Create(
+            _userId, OtherApplySkillName, UndoParameters, PendingConfirmationPurposes.CorrectionUndo);
+
+        store.Consume(first, _userId).ShouldBeNull();
+        store.Consume(second, _userId).ShouldNotBeNull();
+    }
+
     [Test]
     public void DiscardCorrectionUndo_LeavesAnotherUsersUndoAlone()
     {

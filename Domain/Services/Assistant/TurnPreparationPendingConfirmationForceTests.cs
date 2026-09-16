@@ -59,10 +59,11 @@ public class TurnPreparationPendingConfirmationForceTests
             .PeekLatestForUser(UserId, Arg.Any<TimeSpan>(), purpose)
             .Returns(new PendingConfirmationHandle(PendingToken, PendingSkillName));
 
-    private static LLMContext Context(string message) => new()
+    private static LLMContext Context(string message, bool correctionApplied = false) => new()
     {
         Message = message,
         UserId = UserId.ToString(),
+        GracefulCorrectionApplied = correctionApplied,
         AvailableFunctions =
         [
             new LLMFunction { Name = AutonomyDefaults.ConfirmPendingActionSkillName }
@@ -214,6 +215,51 @@ public class TurnPreparationPendingConfirmationForceTests
         _service.ResolvePendingConfirmation(Context("ja"));
 
         _confirmationStore.DidNotReceiveWithAnyArgs().DiscardCorrectionUndo(Arg.Any<Guid>());
+    }
+
+    // The entry points write the undo token immediately before the model call this method runs inside, so
+    // on the offering turn the row in the store is the one this very turn just created. The correction
+    // message is not an affirmation, so without the exclusion the offer would be discarded before the
+    // user ever read it.
+    [Test]
+    public void ResolvePendingConfirmation_OnTheTurnThatMakesTheOffer_KeepsTheFreshUndo()
+    {
+        SetPending(PendingConfirmationPurposes.CorrectionUndo);
+
+        _service.ResolvePendingConfirmation(
+            Context("Nein, ich meinte alle Mitarbeitenden.", correctionApplied: true));
+
+        _confirmationStore.DidNotReceiveWithAnyArgs().DiscardCorrectionUndo(Arg.Any<Guid>());
+    }
+
+    // A correction may open with an affirmation ("ja, ich meinte ..."), which AffirmationDetector reads
+    // as one. The offering turn must not redeem its own fresh token, or the undo is carried out before it
+    // was ever offered.
+    [Test]
+    public void ResolvePendingConfirmation_OnTheTurnThatMakesTheOffer_DoesNotRedeemItsOwnUndo()
+    {
+        SetPending(PendingConfirmationPurposes.CorrectionUndo);
+
+        var (force, _, _) = _service.ResolvePendingConfirmation(
+            Context("ja, ich meinte alle Mitarbeitenden", correctionApplied: true));
+
+        Assert.That(AffirmationDetector.IsAffirmation("ja, ich meinte alle Mitarbeitenden"), Is.True,
+            "test would not cover the self-redemption if the correction carried no affirmation");
+        Assert.That(force, Is.False);
+    }
+
+    // The exclusion is scoped to the undo alone: a gate hold from an earlier turn is still answerable on
+    // a correction turn, exactly as it was before the undo existed.
+    [Test]
+    public void ResolvePendingConfirmation_OnACorrectionTurn_StillRedeemsAGateReplayHold()
+    {
+        SetPending();
+
+        var (force, _, note) = _service.ResolvePendingConfirmation(
+            Context("ja", correctionApplied: true));
+
+        Assert.That(force, Is.True);
+        Assert.That(note, Does.Contain(PendingToken));
     }
 
     [Test]
