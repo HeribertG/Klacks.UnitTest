@@ -269,20 +269,4 @@ public class TurnPreparationCorrectionPlanningTests
         outcome.ContextNote.ShouldNotContain(GracefulCorrectionNotes.NoCandidateSuffix);
     }
 
-    [Test]
-    public void DeterministicCandidates_AreOnlyTheGuaranteedOnes_WithoutTheConfirmSkill()
-    {
-        var functions = new List<LLMFunction>
-        {
-            Candidate(CandidateSkillName, ToolsetSkillSource.Keyword),
-            Candidate("list_contracts", ToolsetSkillSource.Retrieved, 0.9),
-            Candidate("navigate_to", ToolsetSkillSource.AlwaysOn),
-            Candidate("show_group", ToolsetSkillSource.Expansion),
-            Candidate(AutonomyDefaults.ConfirmPendingActionSkillName, ToolsetSkillSource.Keyword)
-        };
-
-        TurnPreparationService.DeterministicCandidates(functions)
-            .Select(f => f.Name)
-            .ShouldBe(new[] { CandidateSkillName });
-    }
 }

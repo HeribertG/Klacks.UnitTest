@@ -20,7 +20,15 @@ public class GracefulCorrectionTextGuardTests
 {
     private const string LanguagePlaceholder = "{4}";
     private const string UndoLanguagePlaceholder = "{2}";
+    private const string German = "de";
+    private const string French = "fr";
+    private const string Portuguese = "pt";
     private const string ChineseSimplified = "zh-CN";
+    private const string ChineseTraditional = "zh-TW";
+    private const string PortugueseSentence =
+        "Entendido — não {previousAction}. Refere-se a {optionA} ou a {optionB}?";
+    private const string ChineseSimplifiedSentence = "明白了——不是{previousAction}。{optionA}还是{optionB}？";
+    private const string ChineseTraditionalSentence = "明白了——不是{previousAction}。{optionA}還是{optionB}？";
 
     [TearDown]
     public void ResetConfiguredTexts() => GracefulCorrectionTexts.Reset();
@@ -97,6 +105,64 @@ public class GracefulCorrectionTextGuardTests
         }
     }
 
+    // The catalogue's key set and the list the pack coverage guard reads must be the same set, or a key
+    // could exist in code that no pack is ever required to ship - which is exactly how a language ends up
+    // with no sentence at all.
+    [Test]
+    public void TheRequiredKeys_AreExactlyTheKeysTheCatalogueCarries()
+    {
+        GracefulCorrectionTexts.Keys.ShouldNotBeEmpty();
+        GracefulCorrectionTexts.Keys.ShouldBe(GracefulCorrectionTexts.RequiredKeys, ignoreOrder: true);
+    }
+
+    // A regional tag is not an unknown language: an installation running de-CH must get the German
+    // sentence, not the English one. zh-CN and zh-TW keep their exact packs because those are matched
+    // before the base language is tried at all.
+    [TestCase("de-CH", German)]
+    [TestCase("fr-BE", French)]
+    public void ARegionalTagOfACoreLanguage_ResolvesToThatCoreLanguage(string tag, string baseLanguage)
+    {
+        GracefulCorrectionTexts.TryGetText(
+            GracefulCorrectionTexts.ClarificationQuestion, tag, out var text).ShouldBeTrue();
+
+        text.ShouldBe(GracefulCorrectionTexts.VariantsOf(
+            GracefulCorrectionTexts.ClarificationQuestion)[baseLanguage]);
+    }
+
+    [Test]
+    public void ARegionalTagOfAnInstalledPluginLanguage_ResolvesToThatPack()
+    {
+        GracefulCorrectionTexts.Configure(Portuguese, new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = PortugueseSentence
+        });
+
+        GracefulCorrectionTexts.TryGetText(
+            GracefulCorrectionTexts.ClarificationQuestion, "pt-BR", out var text).ShouldBeTrue();
+
+        text.ShouldBe(PortugueseSentence);
+    }
+
+    // The exact tag wins before any base-language retry, so a pack whose whole identity is its region
+    // keeps its own sentence.
+    [Test]
+    public void ARegionQualifiedPack_KeepsItsExactSentence()
+    {
+        GracefulCorrectionTexts.Configure(ChineseSimplified, new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = ChineseSimplifiedSentence
+        });
+        GracefulCorrectionTexts.Configure(ChineseTraditional, new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = ChineseTraditionalSentence
+        });
+
+        GracefulCorrectionTexts.TryGetText(
+            GracefulCorrectionTexts.ClarificationQuestion, ChineseTraditional, out var text).ShouldBeTrue();
+
+        text.ShouldBe(ChineseTraditionalSentence);
+    }
+
     [Test]
     public void UnknownLanguage_FallsBackToEnglish()
     {
@@ -112,13 +178,13 @@ public class GracefulCorrectionTextGuardTests
     {
         GracefulCorrectionTexts.Configure(ChineseSimplified, new Dictionary<string, string>
         {
-            [GracefulCorrectionTexts.ClarificationQuestion] = "明白了——不是{previousAction}。{optionA}还是{optionB}？"
+            [GracefulCorrectionTexts.ClarificationQuestion] = ChineseSimplifiedSentence
         });
 
         GracefulCorrectionTexts.TryGetText(
             GracefulCorrectionTexts.ClarificationQuestion, ChineseSimplified, out var text).ShouldBeTrue();
 
-        text.ShouldStartWith("明白了");
+        text.ShouldBe(ChineseSimplifiedSentence);
     }
 
     [Test]
