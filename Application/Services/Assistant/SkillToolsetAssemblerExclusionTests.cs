@@ -2,10 +2,12 @@
 
 /// <summary>
 /// The correction turn's toolset: the previous turn's skills are dropped, always-on skills and
-/// confirm_pending_action survive the exclusion, a pinned candidate is guaranteed back in, a guaranteed
-/// skill carries its retrieval score, and the legacy overload behaves exactly as before. The last test
-/// is the positional-null guard from 2026-09-14: the short overload must delegate with a null exclusion,
-/// never bind the cancellation token into the new parameter.
+/// confirm_pending_action survive the exclusion (including when confirm_pending_action is itself
+/// configured non-always-on, isolating the explicit Remove of its name from the excluded set), a
+/// pinned candidate is guaranteed back in, a guaranteed skill carries its retrieval score, and the
+/// legacy overload behaves exactly as before. The last test is the positional-binding guard from
+/// 2026-09-14: called with every legacy parameter positional (no named cancellationToken), it must
+/// still resolve to the short overload and exclude nothing.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
@@ -161,6 +163,22 @@ public class SkillToolsetAssemblerExclusionTests
     }
 
     [Test]
+    public async Task ConfirmPendingAction_SurvivesExclusion_EvenWhenConfiguredNotAlwaysOn()
+    {
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                Skill(AutonomyDefaults.ConfirmPendingActionSkillName, alwaysOn: false)
+            });
+
+        var result = await Assemble(
+            [AutonomyDefaults.ConfirmPendingActionSkillName],
+            [AutonomyDefaults.ConfirmPendingActionSkillName]);
+
+        result.Functions.ShouldContain(f => f.Name == AutonomyDefaults.ConfirmPendingActionSkillName);
+    }
+
+    [Test]
     public async Task PinnedSkill_IsGuaranteedEvenWhenRetrievalMissedIt()
     {
         var result = await Assemble(null, [PinnedSkill]);
@@ -197,7 +215,7 @@ public class SkillToolsetAssemblerExclusionTests
     {
         var result = await CreateAssembler().AssembleAsync(
             _agent, new List<string>(), UserMessage, null, null, Guid.NewGuid().ToString(), "de",
-            KnowledgeIndexConstants.MaxToolsForProvider, cancellationToken: CancellationToken.None);
+            KnowledgeIndexConstants.MaxToolsForProvider, true, CancellationToken.None);
 
         result.Functions.ShouldContain(f => f.Name == WrongSkill);
         result.Functions.ShouldContain(f => f.Name == RightSkill);
