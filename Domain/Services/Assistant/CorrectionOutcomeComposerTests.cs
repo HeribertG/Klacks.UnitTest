@@ -33,6 +33,7 @@ public class CorrectionOutcomeComposerTests
     private const string WrongSkillFrench = "Rechercher des clients correspondants";
     private const string WrongSkillSpanish = "Buscar clientes coincidentes";
     private const string WrongSkillTraditional = "搜尋相符客戶";
+    private const string WrongSkillPolish = "Wyszukiwanie odpowiadających klientów";
     private const string CandidateA = "fill_group_by_criteria";
     private const string CandidateB = "search_employees";
     private const string CandidateALabel = "Fills the group from a rule";
@@ -84,7 +85,8 @@ public class CorrectionOutcomeComposerTests
         ["de"] = WrongSkillGerman,
         ["fr"] = WrongSkillFrench,
         ["es"] = WrongSkillSpanish,
-        ["zh-TW"] = WrongSkillTraditional
+        ["zh-TW"] = WrongSkillTraditional,
+        ["pl"] = WrongSkillPolish
     };
 
     private static GracefulCorrectionPlan Plan(

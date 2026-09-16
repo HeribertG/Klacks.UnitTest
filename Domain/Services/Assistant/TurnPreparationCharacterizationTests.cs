@@ -353,11 +353,13 @@ public class TurnPreparationCharacterizationTests
 
     /// <summary>
     /// The fail-closed half of the store path: the skill IS in this turn's toolset, but nobody authored a
-    /// label for the language the turn ran in. No label is stored rather than one in a foreign language
-    /// or the internal snake_case name.
+    /// label for the language the turn ran in. THIS turn resolves no label rather than one in a foreign
+    /// language or the internal snake_case name - but the authored dictionary itself still travels with
+    /// the record, French entry included, because a later correction in French must still be able to
+    /// resolve it.
     /// </summary>
     [Test]
-    public void RecordLastAction_WithoutALabelInTheTurnsLanguage_StoresNoLabel()
+    public void RecordLastAction_WithoutALabelInTheTurnsLanguage_StoresNoResolvedLabel()
     {
         var saved = CaptureSave();
         var context = ContextWithToolset(Function(
@@ -369,6 +371,7 @@ public class TurnPreparationCharacterizationTests
             context, ResolvedConversationId, "Erledigt.", [Call("add_client_to_group")], recipePaused: false);
 
         saved()!.Calls[0].SkillDisplayLabel.ShouldBeNull();
+        saved()!.Calls[0].SkillLabels.ShouldNotBeNull();
     }
 
     /// <summary>
