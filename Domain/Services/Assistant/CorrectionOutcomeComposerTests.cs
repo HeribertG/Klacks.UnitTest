@@ -32,6 +32,9 @@ public class CorrectionOutcomeComposerTests
     private const string CandidateALabel = "Fills the group from a rule";
     private const string CandidateBLabel = "Searches for matching employees";
     private const string SecondSentence = ". A second sentence that is never quoted.";
+    private const string UndoSkillName = "remove_shift_from_group";
+    private const string UndoneSkill = "add_shift_to_group";
+    private const string UndoneSkillLabel = "Assigns a shift to a group";
     private const string English = "en";
     private const string RegionalEnglish = "en-GB";
     private const string German = "de";
@@ -75,8 +78,69 @@ public class CorrectionOutcomeComposerTests
     };
 
     private static GracefulCorrectionOutcome Compose(
-        IReadOnlyList<LLMFunction> functions, string? language = English, string? previousLabel = WrongSkillLabel) =>
-        CorrectionOutcomeComposer.Compose(Plan(previousLabel), functions, language);
+        IReadOnlyList<LLMFunction> functions,
+        string? language = English,
+        string? previousLabel = WrongSkillLabel,
+        SkillUndoInvocation? undo = null,
+        AssistantLastActionCall? undoneCall = null) =>
+        CorrectionOutcomeComposer.Compose(Plan(previousLabel), functions, language, undo, undoneCall);
+
+    // The undo is resolved outside and handed in; what the composer decides is whether the offer is made
+    // and how it is worded. Rule 3: one sentence, yes/no, in the language of the turn, and never a second
+    // question next to a clarification.
+    private static SkillUndoInvocation Undo() =>
+        new(UndoSkillName, new Dictionary<string, object> { ["shiftId"] = "shift-1" });
+
+    private static AssistantLastActionCall UndoneCall() => new()
+    {
+        SkillName = UndoneSkill,
+        SkillDisplayLabel = UndoneSkillLabel,
+        Success = true
+    };
+
+    [Test]
+    public void AnUndoWithoutAClarification_IsOfferedInTheNoteAndCarriedOut()
+    {
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword, 0.90), Function(CandidateB, ToolsetSkillSource.Keyword, 0.40)],
+            undo: Undo(),
+            undoneCall: UndoneCall());
+
+        outcome.Undo.ShouldNotBeNull();
+        outcome.Undo!.SkillName.ShouldBe(UndoSkillName);
+        outcome.UndoneSkillLabel.ShouldBe(UndoneSkillLabel);
+        outcome.ContextNote.ShouldContain(string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            GracefulCorrectionNotes.UndoOfferTemplate,
+            UndoneSkillLabel,
+            UndoSkillName,
+            CorrectionOutcomeComposer.AnswerLanguage(English)));
+    }
+
+    [Test]
+    public void AnUndoNextToAClarification_IsDropped_SoTheTurnAsksOnlyOneQuestion()
+    {
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword), Function(CandidateB, ToolsetSkillSource.Keyword)],
+            undo: Undo(),
+            undoneCall: UndoneCall());
+
+        outcome.ClarificationReply.ShouldNotBeNullOrWhiteSpace();
+        outcome.Undo.ShouldBeNull();
+        outcome.UndoneSkillLabel.ShouldBeNull();
+        outcome.ContextNote.ShouldNotContain(UndoSkillName);
+    }
+
+    [Test]
+    public void WithoutAnUndo_TheNoteCarriesNoOffer()
+    {
+        var outcome = Compose(
+            [Function(CandidateA, ToolsetSkillSource.Keyword, 0.90), Function(CandidateB, ToolsetSkillSource.Keyword, 0.40)]);
+
+        outcome.Undo.ShouldBeNull();
+        outcome.UndoneSkillLabel.ShouldBeNull();
+        outcome.ContextNote.ShouldNotContain(UndoSkillName);
+    }
 
     [Test]
     public void TwoScoredCandidatesWithinTheTolerance_AskWithBothOptions()

@@ -135,6 +135,7 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IPendingRecipeStore>(),
             Substitute.For<ITurnPreparationService>(),
+            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
@@ -321,6 +322,7 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IPendingRecipeStore>(),
             Substitute.For<ITurnPreparationService>(),
+            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await handler.Handle(CreateCommand(null), CancellationToken.None);

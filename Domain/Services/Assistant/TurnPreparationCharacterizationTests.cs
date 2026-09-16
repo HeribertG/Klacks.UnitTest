@@ -113,6 +113,7 @@ public class TurnPreparationCharacterizationTests
         new RecipeSlotExtractor(NullLogger<RecipeSlotExtractor>.Instance),
         _lastActionStore,
         Substitute.For<IDeterministicRouteProbe>(),
+        Substitute.For<ISkillInverseResolver>(),
         _logger);
 
     [Test]

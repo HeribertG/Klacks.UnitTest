@@ -114,6 +114,7 @@ public class LLMServiceRecipeTopicSwitchTests
             new RecipeSlotExtractor(Substitute.For<ILogger<RecipeSlotExtractor>>()),
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IDeterministicRouteProbe>(),
+            Substitute.For<ISkillInverseResolver>(),
             Substitute.For<ILogger<TurnPreparationService>>());
 
         _service = new LLMService(

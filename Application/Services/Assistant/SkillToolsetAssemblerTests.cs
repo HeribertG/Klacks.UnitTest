@@ -393,6 +393,7 @@ public class SkillToolsetAssemblerTests
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IPendingRecipeStore>(),
             Substitute.For<ITurnPreparationService>(),
+            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
 
         LLMContext? nonStreamingContext = null;
@@ -408,6 +409,7 @@ public class SkillToolsetAssemblerTests
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IPendingRecipeStore>(),
             Substitute.For<ITurnPreparationService>(),
+            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await foreach (var _ in orchestrator.ProcessStreamAsync(

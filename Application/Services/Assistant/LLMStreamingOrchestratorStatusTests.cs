@@ -72,6 +72,7 @@ public class LLMStreamingOrchestratorStatusTests
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IPendingRecipeStore>(),
             Substitute.For<ITurnPreparationService>(),
+            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
     }
 

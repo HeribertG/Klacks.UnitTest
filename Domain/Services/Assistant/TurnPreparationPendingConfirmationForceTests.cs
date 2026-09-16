@@ -44,6 +44,7 @@ public class TurnPreparationPendingConfirmationForceTests
             slotExtractor: null!,
             lastActionStore: Substitute.For<IAssistantLastActionStore>(),
             routeProbe: Substitute.For<IDeterministicRouteProbe>(),
+            inverseResolver: Substitute.For<ISkillInverseResolver>(),
             logger: Substitute.For<ILogger<TurnPreparationService>>());
     }
 

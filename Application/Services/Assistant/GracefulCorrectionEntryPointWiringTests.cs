@@ -4,7 +4,10 @@
 /// Both chat entry points must prepare a correction identically: route the toolset assembly on the
 /// composite of the corrected request and the correction, exclude the skills the corrected turn called,
 /// and carry the resulting note onto the context. A divergence here would make the streaming and the
-/// non-streaming chat answer the same correction differently, which is invisible in production.
+/// non-streaming chat answer the same correction differently, which is invisible in production. The
+/// undo offer is here for the same reason and for one more: its pending-confirmation token is the only
+/// side effect of a correction turn, and it must be written on both paths, once, and never without an
+/// offer in the note.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
@@ -36,12 +39,20 @@ public class GracefulCorrectionEntryPointWiringTests
     private const string FirstCandidate = "add_clients_to_group";
     private const string SecondCandidate = "list_group_clients";
 
+    private const string UndoSkillName = "remove_shift_from_group";
+    private const string UndoneSkillLabel = "Assigns a shift to a group";
+    private const string UndoArgumentName = "shiftId";
+
+    private static readonly IReadOnlyDictionary<string, object> UndoArguments =
+        new Dictionary<string, object> { [UndoArgumentName] = "shift-1", ["groupId"] = "group-1" };
+
     private ISkillToolsetAssembler _assembler = null!;
     private ITurnPreparationService _turnPreparation = null!;
     private ILLMService _llmService = null!;
     private ISkillCacheService _skillCache = null!;
     private IAssistantLastActionStore _lastActionStore = null!;
     private IPendingRecipeStore _pendingRecipeStore = null!;
+    private IPendingConfirmationStore _pendingConfirmationStore = null!;
     private LLMContext? _capturedContext;
 
     [SetUp]
@@ -50,6 +61,7 @@ public class GracefulCorrectionEntryPointWiringTests
         _capturedContext = null;
         _lastActionStore = Substitute.For<IAssistantLastActionStore>();
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
+        _pendingConfirmationStore = Substitute.For<IPendingConfirmationStore>();
 
         _assembler = Substitute.For<ISkillToolsetAssembler>();
         _assembler.AssembleAsync(
@@ -139,6 +151,7 @@ public class GracefulCorrectionEntryPointWiringTests
             _lastActionStore,
             _pendingRecipeStore,
             _turnPreparation,
+            _pendingConfirmationStore,
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
@@ -158,6 +171,7 @@ public class GracefulCorrectionEntryPointWiringTests
             _lastActionStore,
             _pendingRecipeStore,
             _turnPreparation,
+            _pendingConfirmationStore,
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
     }
 
@@ -451,6 +465,128 @@ public class GracefulCorrectionEntryPointWiringTests
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.CorrectionNote.ShouldBeNull();
         _capturedContext.GracefulCorrectionApplied.ShouldBeFalse();
+    }
+
+    // The undo offer of rule 3 is a yes/no question, so the invocation it offers has to be held as a
+    // pending confirmation the affirmation can redeem. That write belongs to a real chat turn and to
+    // these two entry points ALONE - the turn preparation resolves the undo as data, so the headless
+    // replay can score the same offer without leaving a redeemable token in a user's account.
+    private void GivenAnUndoIsOffered()
+    {
+        var lastAction = GivenAStoredAnchor();
+
+        _turnPreparation.PlanCorrectionAsync(Arg.Any<GracefulCorrectionInput>(), Arg.Any<CancellationToken>())
+            .Returns(new GracefulCorrectionPlan(
+                lastAction, CorrectionMessage, Composite, new[] { ExcludedSkillName }));
+
+        _turnPreparation.CompleteCorrection(
+                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
+            .Returns(new GracefulCorrectionOutcome(
+                ContextNote, null, [],
+                new SkillUndoInvocation(UndoSkillName, UndoArguments),
+                UndoneSkillLabel));
+    }
+
+    private void TheUndoWasHeldOnce() =>
+        _pendingConfirmationStore.Received(1).Create(
+            Guid.Parse(UserId), UndoSkillName,
+            Arg.Is<IReadOnlyDictionary<string, object>>(
+                arguments => arguments.ContainsKey(UndoArgumentName)));
+
+    private void NoConfirmationWasHeld() =>
+        _pendingConfirmationStore.DidNotReceiveWithAnyArgs().Create(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
+
+    [Test]
+    public async Task NonStreaming_WithAnOfferedUndo_HoldsItAsExactlyOnePendingConfirmation()
+    {
+        GivenAnUndoIsOffered();
+
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        TheUndoWasHeldOnce();
+    }
+
+    [Test]
+    public async Task Streaming_WithAnOfferedUndo_HoldsItAsExactlyOnePendingConfirmation()
+    {
+        GivenAnUndoIsOffered();
+
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        TheUndoWasHeldOnce();
+    }
+
+    [Test]
+    public async Task NonStreaming_WithAClarificationInsteadOfAnUndo_HoldsNothing()
+    {
+        GivenAClarificationIsPlanned();
+
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        NoConfirmationWasHeld();
+    }
+
+    [Test]
+    public async Task Streaming_WithAClarificationInsteadOfAnUndo_HoldsNothing()
+    {
+        GivenAClarificationIsPlanned();
+
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        NoConfirmationWasHeld();
+    }
+
+    [Test]
+    public async Task NonStreaming_WithoutAnUndo_HoldsNothing()
+    {
+        GivenACorrectionIsPlanned();
+
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        NoConfirmationWasHeld();
+    }
+
+    [Test]
+    public async Task Streaming_WithoutAnUndo_HoldsNothing()
+    {
+        GivenACorrectionIsPlanned();
+
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        NoConfirmationWasHeld();
+    }
+
+    // Same trade as the pin write: losing the token costs the user one convenient "yes", while a thrown
+    // store call would cost the answer the turn has already produced.
+    [Test]
+    public async Task NonStreaming_WhenTheUndoWriteThrows_TheTurnStillRuns()
+    {
+        GivenAnUndoIsOffered();
+        _pendingConfirmationStore
+            .When(store => store.Create(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>()))
+            .Do(_ => throw new InvalidOperationException("store down"));
+
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CorrectionNote.ShouldBe(ContextNote);
+    }
+
+    [Test]
+    public async Task Streaming_WhenTheUndoWriteThrows_TheTurnStillRuns()
+    {
+        GivenAnUndoIsOffered();
+        _pendingConfirmationStore
+            .When(store => store.Create(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>()))
+            .Do(_ => throw new InvalidOperationException("store down"));
+
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CorrectionNote.ShouldBe(ContextNote);
     }
 
     // The store reads sit in front of the planning on both paths; a store outage must degrade the turn

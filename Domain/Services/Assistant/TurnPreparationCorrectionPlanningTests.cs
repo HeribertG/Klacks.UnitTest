@@ -48,6 +48,7 @@ public class TurnPreparationCorrectionPlanningTests
             slotExtractor: null!,
             lastActionStore: Substitute.For<IAssistantLastActionStore>(),
             routeProbe: _routeProbe,
+            inverseResolver: Substitute.For<ISkillInverseResolver>(),
             logger: Substitute.For<ILogger<TurnPreparationService>>());
     }
 

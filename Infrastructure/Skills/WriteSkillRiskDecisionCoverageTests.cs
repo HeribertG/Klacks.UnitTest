@@ -11,7 +11,8 @@
 /// A skill may be in one collection AND in the InverseSkillRegistry - Sensitive and ScenarioGated
 /// deliberately outrank a registered inverse (close_period has one and is still Sensitive) - so the
 /// duplicate check spans the collections only, and the shadowing check covers the two classes an inverse
-/// really would swallow.
+/// really would swallow. An UndoOnly entry swallows nothing: Classify() skips it, so it exists purely to
+/// let the correction path build an undo and leaves the skill's class where its collection put it.
 /// The per-skill justification for the destructive entries lives in DestructiveSkillRiskDecisionGuardTests.
 /// </summary>
 
@@ -121,6 +122,7 @@ public class WriteSkillRiskDecisionCoverageTests
     private static bool HasEffectiveInverse(string skillName)
     {
         return InverseSkillRegistry.TryGet(skillName, out var inverse)
+               && !inverse.UndoOnly
                && !string.Equals(inverse.SkillName, ManualInverseMarker, StringComparison.Ordinal);
     }
 }
