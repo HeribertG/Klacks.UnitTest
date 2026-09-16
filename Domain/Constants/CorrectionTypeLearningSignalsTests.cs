@@ -58,6 +58,7 @@ public class CorrectionTypeLearningSignalsTests
         CorrectionTypeLearningSignals.Resolve(CorrectionTypes.WrongSkill).ShouldBe(SkillLearningSignals.WrongSkill);
         CorrectionTypeLearningSignals.Resolve(CorrectionTypes.NoneNeeded).ShouldBe(SkillLearningSignals.NoneNeeded);
         CorrectionTypeLearningSignals.Resolve(CorrectionTypes.Implicit).ShouldBe(SkillLearningSignals.Implicit);
+        CorrectionTypeLearningSignals.Resolve(CorrectionTypes.GracefulRerouted).ShouldBe(SkillLearningSignals.WrongSkill);
         CorrectionTypeLearningSignals.Resolve(CorrectionTypes.WrongParam).ShouldBeNull();
         CorrectionTypeLearningSignals.Resolve(CorrectionTypes.RepeatedRequest).ShouldBeNull();
         CorrectionTypeLearningSignals.Resolve(CorrectionTypes.None).ShouldBeNull();
