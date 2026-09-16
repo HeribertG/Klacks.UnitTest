@@ -38,6 +38,8 @@ public class TurnReplayServiceCorrectionTests
     private const string ReadOnlyPreviousSkill = "get_client_by_name";
     private const string WritePreviousSkill = "create_group";
     private const string PreviousLabel = "Searches for customers by name.";
+    private const string UndoneSkill = "add_shift_to_group";
+    private const string UndoSkill = "remove_shift_from_group";
     private const string Composite = "composite of both messages";
     private const string ContextNote = "CORRECTION - the previous turn searched for customers.";
     private const string ClarificationReply =
@@ -145,7 +147,53 @@ public class TurnReplayServiceCorrectionTests
         return item;
     }
 
-    private void GivenACorrectionIsPlanned(string? clarificationReply)
+    // The undo the harness scores (TurnEvalScorer.UndoOfferedWhenExpected) is built by the real resolver
+    // from the anchor this service rebuilds, so the two halves are asserted together: the anchor has to
+    // carry enough for an undo to exist at all, and the result has to report it.
+    private static TurnGoldsetItem UndoItem()
+    {
+        var item = Item(UndoneSkill);
+        item.PreviousTurn!.Arguments = new Dictionary<string, string>
+        {
+            ["shiftId"] = "6f0f1f7a-0000-4000-8000-000000000001",
+            ["groupId"] = "6f0f1f7a-0000-4000-8000-000000000002"
+        };
+
+        return item;
+    }
+
+    [Test]
+    public void TheRebuiltAnchor_CarriesWhatAnUndoNeeds()
+    {
+        var anchor = TurnReplayService.BuildReplayLastAction(UndoItem(), UserId);
+
+        anchor.ShouldNotBeNull();
+        new SkillInverseResolver().TryResolve(anchor!.Calls[0], out var undo).ShouldBeTrue();
+        undo!.SkillName.ShouldBe(UndoSkill);
+    }
+
+    [Test]
+    public async Task AnOfferedUndo_IsReportedOnTheResult()
+    {
+        GivenACorrectionIsPlanned(null, new SkillUndoInvocation(
+            UndoSkill, new Dictionary<string, object> { ["shiftId"] = "s-1" }));
+
+        var result = await Replay(UndoItem());
+
+        result.UndoOfferedSkill.ShouldBe(UndoSkill);
+    }
+
+    [Test]
+    public async Task WithoutAnUndo_TheResultReportsNone()
+    {
+        GivenACorrectionIsPlanned(null);
+
+        var result = await Replay(Item());
+
+        result.UndoOfferedSkill.ShouldBeNull();
+    }
+
+    private void GivenACorrectionIsPlanned(string? clarificationReply, SkillUndoInvocation? undo = null)
     {
         _turnPreparation.PlanCorrectionAsync(Arg.Any<GracefulCorrectionInput>(), Arg.Any<CancellationToken>())
             .Returns(call => new GracefulCorrectionPlan(
@@ -156,7 +204,8 @@ public class TurnReplayServiceCorrectionTests
                 Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
             .Returns(new GracefulCorrectionOutcome(
                 ContextNote, clarificationReply,
-                clarificationReply == null ? [] : ["add_clients_to_group", "list_group_clients"]));
+                clarificationReply == null ? [] : ["add_clients_to_group", "list_group_clients"],
+                undo));
     }
 
     private Task<TurnReplayResult> Replay(TurnGoldsetItem item) =>
