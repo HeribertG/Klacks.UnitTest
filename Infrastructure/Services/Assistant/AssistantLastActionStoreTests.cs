@@ -169,4 +169,28 @@ public class AssistantLastActionStoreTests
         peeked.UserMessage.Length.ShouldBe(GracefulCorrectionDefaults.UserMessageMaxLength);
         peeked.AssistantAnswerExcerpt.Length.ShouldBe(GracefulCorrectionDefaults.AnswerExcerptMaxLength);
     }
+
+    [Test]
+    public void Save_ThenPeek_ReturnsTheSkillDisplayLabel()
+    {
+        var action = Action("first", "add_shift_to_group");
+        action.Calls[0].SkillDisplayLabel = "Add shift to group";
+
+        _store.Save(action);
+
+        var peeked = _store.Peek(_userId, ConversationId)!;
+        peeked.Calls[0].SkillDisplayLabel.ShouldBe("Add shift to group");
+    }
+
+    [Test]
+    public void Save_CapsTheSkillDisplayLabel()
+    {
+        var action = Action("first", "add_shift_to_group");
+        action.Calls[0].SkillDisplayLabel = new string('z', GracefulCorrectionDefaults.SkillDisplayLabelMaxLength + 50);
+
+        _store.Save(action);
+
+        var peeked = _store.Peek(_userId, ConversationId)!;
+        peeked.Calls[0].SkillDisplayLabel!.Length.ShouldBe(GracefulCorrectionDefaults.SkillDisplayLabelMaxLength);
+    }
 }
