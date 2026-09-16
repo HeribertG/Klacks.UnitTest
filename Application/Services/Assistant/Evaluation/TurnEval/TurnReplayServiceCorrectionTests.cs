@@ -54,6 +54,7 @@ public class TurnReplayServiceCorrectionTests
     private static readonly string UserId = Guid.NewGuid().ToString();
 
     private ISkillToolsetAssembler _assembler = null!;
+    private LLMContext? _capturedContext;
     private ITurnPreparationService _turnPreparation = null!;
     private ILLMProvider _provider = null!;
     private TurnReplayService _service = null!;
@@ -110,10 +111,16 @@ public class TurnReplayServiceCorrectionTests
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
 
+        _capturedContext = null;
+        var planningScopeEnricher = Substitute.For<IPlanningScopeEnricher>();
+        planningScopeEnricher
+            .When(enricher => enricher.EnrichAsync(Arg.Any<LLMContext>(), Arg.Any<CancellationToken>()))
+            .Do(call => _capturedContext = call.Arg<LLMContext>());
+
         _service = new TurnReplayService(
             skillCache,
             _assembler,
-            Substitute.For<IPlanningScopeEnricher>(),
+            planningScopeEnricher,
             Substitute.For<IEntityCandidateGrounder>(),
             new LLMProviderOrchestrator(
                 Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, repository),
@@ -358,6 +365,35 @@ public class TurnReplayServiceCorrectionTests
         _turnPreparation.DidNotReceiveWithAnyArgs().RecordLastAction(
             Arg.Any<LLMContext>(), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<IReadOnlyList<LLMFunctionCall>>(), Arg.Any<bool>());
+    }
+
+    // Side-effect freedom on the context too. GracefulCorrectionApplied is the replay's own record that
+    // it corrected; CorrectionUndoOffered must stay false because the replay holds no token - claiming
+    // one would tell a following turn to leave an outstanding row unsettled.
+    [Test]
+    public async Task TheReplayContext_ReportsTheCorrectionButNeverAHeldUndo()
+    {
+        GivenACorrectionIsPlanned(null, new SkillUndoInvocation(
+            UndoSkill, new Dictionary<string, object> { ["shiftId"] = "s-1" }));
+
+        await Replay(UndoItem());
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.GracefulCorrectionApplied.ShouldBeTrue();
+        _capturedContext.CorrectionUndoOffered.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task TheReplayContext_WithoutACorrection_ReportsNoCorrectionAtAll()
+    {
+        _turnPreparation.PlanCorrectionAsync(Arg.Any<GracefulCorrectionInput>(), Arg.Any<CancellationToken>())
+            .Returns((GracefulCorrectionPlan?)null);
+
+        await Replay(Item());
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.GracefulCorrectionApplied.ShouldBeFalse();
+        _capturedContext.CorrectionUndoOffered.ShouldBeFalse();
     }
 
     [Test]

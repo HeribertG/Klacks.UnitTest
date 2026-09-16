@@ -27,6 +27,8 @@ public class TurnPreparationPendingConfirmationForceTests
 {
     private const string PendingSkillName = "delete_system_user";
     private const string PendingToken = "token-abc";
+    private const string UndoSkillName = "remove_shift_from_group";
+    private const string UndoToken = "token-undo";
 
     private static readonly Guid UserId = Guid.NewGuid();
 
@@ -59,11 +61,21 @@ public class TurnPreparationPendingConfirmationForceTests
             .PeekLatestForUser(UserId, Arg.Any<TimeSpan>(), purpose)
             .Returns(new PendingConfirmationHandle(PendingToken, PendingSkillName));
 
-    private static LLMContext Context(string message, bool correctionApplied = false) => new()
+    private void SetPendingUndo() =>
+        _confirmationStore
+            .PeekLatestForUser(UserId, Arg.Any<TimeSpan>(), PendingConfirmationPurposes.CorrectionUndo)
+            .Returns(new PendingConfirmationHandle(UndoToken, UndoSkillName));
+
+    // Two independent knobs on purpose: a correction turn can engage (GracefulCorrectionApplied) and
+    // still hold no token of its own (CorrectionUndoOffered), and only the narrower one may suppress
+    // the settlement of a predecessor's row.
+    private static LLMContext Context(
+        string message, bool correctionApplied = false, bool undoOffered = false) => new()
     {
         Message = message,
         UserId = UserId.ToString(),
         GracefulCorrectionApplied = correctionApplied,
+        CorrectionUndoOffered = undoOffered,
         AvailableFunctions =
         [
             new LLMFunction { Name = AutonomyDefaults.ConfirmPendingActionSkillName }
@@ -227,8 +239,63 @@ public class TurnPreparationPendingConfirmationForceTests
         SetPending(PendingConfirmationPurposes.CorrectionUndo);
 
         _service.ResolvePendingConfirmation(
-            Context("Nein, ich meinte alle Mitarbeitenden.", correctionApplied: true));
+            Context("Nein, ich meinte alle Mitarbeitenden.", correctionApplied: true, undoOffered: true));
 
+        _confirmationStore.DidNotReceiveWithAnyArgs().DiscardCorrectionUndo(Arg.Any<Guid>());
+    }
+
+    // The exclusion belongs to the turn that HELD a token, not to every correction turn. A correction
+    // that offers no undo (no inverse, zero candidates, a clarification, or a store write that threw)
+    // leaves no fresh row, so the row it finds is a predecessor's - and a predecessor's offer the user
+    // ignored must die here, or the next plain "ja" redeems a gate-bypassing write nobody asked for.
+    [Test]
+    [TestCase("nein, lass es")]
+    [TestCase("was kostet das?")]
+    public void ResolvePendingConfirmation_ACorrectionTurnWithoutAnOffer_DiscardsAPredecessorsUndo(
+        string message)
+    {
+        SetPendingUndo();
+
+        var (force, _, _) = _service.ResolvePendingConfirmation(
+            Context(message, correctionApplied: true, undoOffered: false));
+
+        Assert.That(force, Is.False);
+        _confirmationStore.Received(1).DiscardCorrectionUndo(UserId);
+    }
+
+    // The redeem half of the same gap: on a correction turn that held nothing, a predecessor's undo is
+    // still the offer the user is answering, so an affirmation has to reach it.
+    [Test]
+    public void ResolvePendingConfirmation_ACorrectionTurnWithoutAnOffer_StillRedeemsAPredecessorsUndo()
+    {
+        SetPendingUndo();
+
+        var (force, confirmFunction, note) = _service.ResolvePendingConfirmation(
+            Context("ja", correctionApplied: true, undoOffered: false));
+
+        Assert.That(force, Is.True);
+        Assert.That(confirmFunction!.Name, Is.EqualTo(AutonomyDefaults.ConfirmPendingActionSkillName));
+        Assert.That(note, Does.Contain(UndoToken));
+    }
+
+    // Both purposes outstanding at once. The undo is the more recent offer by construction, so it wins
+    // and the gate-replay row is not even read - and it stays: a gate hold is answerable inside its own
+    // window whenever the user gets round to it, and redeeming the undo is not an answer to the gate.
+    [Test]
+    public void ResolvePendingConfirmation_WithBothRowsOutstanding_RedeemsTheUndoAndLeavesTheGateHold()
+    {
+        SetPending();
+        SetPendingUndo();
+
+        var (force, _, note) = _service.ResolvePendingConfirmation(Context("ja"));
+
+        Assert.That(force, Is.True);
+        Assert.That(note, Does.Contain(UndoToken));
+        Assert.That(note, Does.Not.Contain(PendingToken));
+        _confirmationStore.DidNotReceive().PeekLatestForUser(
+            Arg.Any<Guid>(), Arg.Any<TimeSpan>(), PendingConfirmationPurposes.GateReplay);
+        _confirmationStore.DidNotReceiveWithAnyArgs().Consume(
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>());
         _confirmationStore.DidNotReceiveWithAnyArgs().DiscardCorrectionUndo(Arg.Any<Guid>());
     }
 
@@ -241,7 +308,7 @@ public class TurnPreparationPendingConfirmationForceTests
         SetPending(PendingConfirmationPurposes.CorrectionUndo);
 
         var (force, _, _) = _service.ResolvePendingConfirmation(
-            Context("ja, ich meinte alle Mitarbeitenden", correctionApplied: true));
+            Context("ja, ich meinte alle Mitarbeitenden", correctionApplied: true, undoOffered: true));
 
         Assert.That(AffirmationDetector.IsAffirmation("ja, ich meinte alle Mitarbeitenden"), Is.True,
             "test would not cover the self-redemption if the correction carried no affirmation");
@@ -256,7 +323,7 @@ public class TurnPreparationPendingConfirmationForceTests
         SetPending();
 
         var (force, _, note) = _service.ResolvePendingConfirmation(
-            Context("ja", correctionApplied: true));
+            Context("ja", correctionApplied: true, undoOffered: true));
 
         Assert.That(force, Is.True);
         Assert.That(note, Does.Contain(PendingToken));

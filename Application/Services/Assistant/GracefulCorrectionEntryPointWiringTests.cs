@@ -360,6 +360,10 @@ public class GracefulCorrectionEntryPointWiringTests
         _capturedContext!.CorrectionClarificationReply.ShouldBe(ClarificationReply);
     }
 
+    // A correction turn that holds no token of its own must NOT claim one. The two flags are separate
+    // precisely here: the turn corrected (GracefulCorrectionApplied, which no production code reads yet
+    // and which task 7 will read) but left nothing redeemable behind, so the next turn's settlement of a
+    // predecessor's row has to run as on any other turn.
     [Test]
     public async Task NonStreaming_WithACorrectionButNoClarification_PinsNothing()
     {
@@ -368,6 +372,8 @@ public class GracefulCorrectionEntryPointWiringTests
         await CreateHandler().Handle(Command(), CancellationToken.None);
 
         NothingWasPinned();
+        _capturedContext!.GracefulCorrectionApplied.ShouldBeTrue();
+        _capturedContext.CorrectionUndoOffered.ShouldBeFalse();
     }
 
     [Test]
@@ -378,6 +384,8 @@ public class GracefulCorrectionEntryPointWiringTests
         await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
 
         NothingWasPinned();
+        _capturedContext!.GracefulCorrectionApplied.ShouldBeTrue();
+        _capturedContext.CorrectionUndoOffered.ShouldBeFalse();
     }
 
     [Test]
@@ -510,6 +518,7 @@ public class GracefulCorrectionEntryPointWiringTests
         await CreateHandler().Handle(Command(), CancellationToken.None);
 
         TheUndoWasHeldOnce();
+        _capturedContext!.CorrectionUndoOffered.ShouldBeTrue();
     }
 
     [Test]
@@ -520,6 +529,7 @@ public class GracefulCorrectionEntryPointWiringTests
         await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
 
         TheUndoWasHeldOnce();
+        _capturedContext!.CorrectionUndoOffered.ShouldBeTrue();
     }
 
     [Test]
@@ -563,7 +573,8 @@ public class GracefulCorrectionEntryPointWiringTests
     }
 
     // Same trade as the pin write: losing the token costs the user one convenient "yes", while a thrown
-    // store call would cost the answer the turn has already produced.
+    // store call would cost the answer the turn has already produced. The flag follows the write, not the
+    // intent: nothing was held, so the next turn must settle whatever row is outstanding.
     [Test]
     public async Task NonStreaming_WhenTheUndoWriteThrows_TheTurnStillRuns()
     {
@@ -578,6 +589,7 @@ public class GracefulCorrectionEntryPointWiringTests
 
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.CorrectionNote.ShouldBe(ContextNote);
+        _capturedContext.CorrectionUndoOffered.ShouldBeFalse();
     }
 
     [Test]
@@ -594,6 +606,7 @@ public class GracefulCorrectionEntryPointWiringTests
 
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.CorrectionNote.ShouldBe(ContextNote);
+        _capturedContext.CorrectionUndoOffered.ShouldBeFalse();
     }
 
     // The store reads sit in front of the planning on both paths; a store outage must degrade the turn
