@@ -34,7 +34,7 @@ public class LanguagePluginSkillLabelInstallerTests
     private AgentSkill _unlisted = null!;
     private IAgentSkillRepository _skillRepository = null!;
     private IServiceScope _scope = null!;
-    private LanguagePluginContentInstaller _installer = null!;
+    private LanguagePluginSkillLabelInstaller _installer = null!;
 
     [SetUp]
     public void Setup()
@@ -61,7 +61,7 @@ public class LanguagePluginSkillLabelInstallerTests
         _scope = Substitute.For<IServiceScope>();
         _scope.ServiceProvider.Returns(provider);
 
-        _installer = new LanguagePluginContentInstaller(_pluginDirectory, NullLogger.Instance);
+        _installer = new LanguagePluginSkillLabelInstaller(_pluginDirectory, NullLogger.Instance);
     }
 
     [TearDown]
