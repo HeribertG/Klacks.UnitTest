@@ -61,18 +61,22 @@ public class LLMStreamingOrchestratorStatusTests
             Substitute.For<ILLMProviderFactory>(),
             Substitute.For<ILLMRepository>());
 
+        var correctionTurnPreparer = new CorrectionTurnPreparer(
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IPendingRecipeStore>(),
+            Substitute.For<ITurnPreparationService>(),
+            _assembler,
+            Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ILogger<CorrectionTurnPreparer>>());
+
         _orchestrator = new LLMStreamingOrchestrator(
             _llmService,
             _skillCache,
-            _assembler,
+            correctionTurnPreparer,
             Substitute.For<IPlanningScopeEnricher>(),
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             Substitute.For<IContextBudgetPolicy>(),
-            Substitute.For<IAssistantLastActionStore>(),
-            Substitute.For<IPendingRecipeStore>(),
-            Substitute.For<ITurnPreparationService>(),
-            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
     }
 

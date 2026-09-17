@@ -377,6 +377,13 @@ public class SkillToolsetAssemblerTests
         }
 
         var assembler = CreateAssembler();
+        var correctionTurnPreparer = new CorrectionTurnPreparer(
+            Substitute.For<IAssistantLastActionStore>(),
+            Substitute.For<IPendingRecipeStore>(),
+            Substitute.For<ITurnPreparationService>(),
+            assembler,
+            Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ILogger<CorrectionTurnPreparer>>());
         var providerOrchestrator = new LLMProviderOrchestrator(
             Substitute.For<ILogger<LLMProviderOrchestrator>>(),
             Substitute.For<ILLMProviderFactory>(),
@@ -389,15 +396,11 @@ public class SkillToolsetAssemblerTests
                 Arg.Do<LLMContext>(c => streamingContext = c), Arg.Any<CancellationToken>())
             .Returns(EmptyStream());
         var orchestrator = new LLMStreamingOrchestrator(
-            streamingLLMService, _skillCache, assembler,
+            streamingLLMService, _skillCache, correctionTurnPreparer,
             Substitute.For<IPlanningScopeEnricher>(),
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             budgetPolicy,
-            Substitute.For<IAssistantLastActionStore>(),
-            Substitute.For<IPendingRecipeStore>(),
-            Substitute.For<ITurnPreparationService>(),
-            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
 
         LLMContext? nonStreamingContext = null;
@@ -405,15 +408,11 @@ public class SkillToolsetAssemblerTests
         nonStreamingLLMService.ProcessAsync(Arg.Do<LLMContext>(c => nonStreamingContext = c))
             .Returns(new LLMResponse());
         var handler = new ProcessLLMMessageCommandHandler(
-            nonStreamingLLMService, Substitute.For<IAgentRepository>(), _skillCache, assembler,
+            nonStreamingLLMService, Substitute.For<IAgentRepository>(), _skillCache, correctionTurnPreparer,
             Substitute.For<IPlanningScopeEnricher>(),
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             budgetPolicy,
-            Substitute.For<IAssistantLastActionStore>(),
-            Substitute.For<IPendingRecipeStore>(),
-            Substitute.For<ITurnPreparationService>(),
-            Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await foreach (var _ in orchestrator.ProcessStreamAsync(

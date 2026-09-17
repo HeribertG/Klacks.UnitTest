@@ -131,15 +131,19 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<ILLMProviderFactory>(),
             Substitute.For<ILLMRepository>());
 
-        return new ProcessLLMMessageCommandHandler(
-            _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher,
-            Substitute.For<IEntityCandidateGrounder>(),
-            providerOrchestrator,
-            new ContextBudgetPolicy(),
+        var correctionTurnPreparer = new CorrectionTurnPreparer(
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IPendingRecipeStore>(),
             Substitute.For<ITurnPreparationService>(),
+            CreateAssembler(),
             Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ILogger<CorrectionTurnPreparer>>());
+
+        return new ProcessLLMMessageCommandHandler(
+            _llmService, _agentRepository, _skillCache, correctionTurnPreparer, _enricher,
+            Substitute.For<IEntityCandidateGrounder>(),
+            providerOrchestrator,
+            new ContextBudgetPolicy(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
@@ -318,15 +322,19 @@ public class ProcessLLMMessageCommandHandlerTests
         var providerOrchestrator = new LLMProviderOrchestrator(
             Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, llmRepository);
 
-        var handler = new ProcessLLMMessageCommandHandler(
-            _llmService, _agentRepository, _skillCache, CreateAssembler(), _enricher,
-            Substitute.For<IEntityCandidateGrounder>(),
-            providerOrchestrator,
-            new ContextBudgetPolicy(),
+        var correctionTurnPreparer = new CorrectionTurnPreparer(
             Substitute.For<IAssistantLastActionStore>(),
             Substitute.For<IPendingRecipeStore>(),
             Substitute.For<ITurnPreparationService>(),
+            CreateAssembler(),
             Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ILogger<CorrectionTurnPreparer>>());
+
+        var handler = new ProcessLLMMessageCommandHandler(
+            _llmService, _agentRepository, _skillCache, correctionTurnPreparer, _enricher,
+            Substitute.For<IEntityCandidateGrounder>(),
+            providerOrchestrator,
+            new ContextBudgetPolicy(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await handler.Handle(CreateCommand(null), CancellationToken.None);
