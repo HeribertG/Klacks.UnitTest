@@ -124,10 +124,12 @@ public class SkillToolsetAssemblerExclusionTests
 
     private SkillToolsetAssembler CreateAssembler() => new(
         _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
-        _pendingUserNoteRepository, _recipeEngine,
-        PendingStoreTestFactory.CreateConfirmationStore(),
-        PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
-        NoLearnedPhrases(),
+        new SkillToolsetGuaranteeResolver(
+            _pendingUserNoteRepository, _recipeEngine,
+            PendingStoreTestFactory.CreateConfirmationStore(),
+            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            NoLearnedPhrases(),
+            Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>()),
         Substitute.For<ILogger<SkillToolsetAssembler>>());
 
     private static ISkillPhraseRepository NoLearnedPhrases()

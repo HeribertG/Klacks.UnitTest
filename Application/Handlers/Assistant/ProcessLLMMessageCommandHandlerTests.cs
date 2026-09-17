@@ -103,12 +103,16 @@ public class ProcessLLMMessageCommandHandlerTests
 
     private ISkillToolsetAssembler CreateAssembler()
     {
-        return new SkillToolsetAssembler(
-            _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
+        var guaranteeResolver = new SkillToolsetGuaranteeResolver(
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             NoLearnedPhrases(),
+            Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
+
+        return new SkillToolsetAssembler(
+            _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
+            guaranteeResolver,
             Substitute.For<ILogger<SkillToolsetAssembler>>());
     }
 

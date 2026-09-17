@@ -54,9 +54,8 @@ public class SourceFileSizeGuardTests
     // Relative path -> its measured line count on the day it was allowlisted. See ShrinkOnlyHint.
     private static readonly IReadOnlyDictionary<string, int> FileCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs"] = 1394,
+        [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs"] = 1393,
         [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 886,
-        [@"Application\Services\Assistant\SkillToolsetAssembler.cs"] = 828,
         [@"Domain\Services\Assistant\LLMService.cs"] = 1667,
         [@"Domain\Services\RouteOptimization\ContainerAutofillService.cs"] = 859,
         [@"Infrastructure\Services\AnalyseScenarios\AnalyseScenarioService.cs"] = 991,
@@ -83,9 +82,8 @@ public class SourceFileSizeGuardTests
         [@"Infrastructure\Email\EmailTestService.cs::TestConnectionAsync"] = 219,
         [@"Infrastructure\Exceptions\ErrorHandlingMiddleware.cs::Invoke"] = 286,
         [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs::AddDomainServices"] = 161,
-        [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs::AddLLMCoreServices"] = 229,
+        [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs::AddLLMCoreServices"] = 228,
         [@"Application\Services\Assistant\LLMStreamingOrchestrator.cs::ProcessStreamAsync"] = 176,
-        [@"Application\Services\Assistant\SkillToolsetAssembler.cs::AssembleAsync"] = 337,
         [@"Domain\Services\Assistant\LLMService.cs::ProcessStreamAsync"] = 570,
         [@"Domain\Services\Assistant\LLMService.cs::HistoryBudgetFor"] = 369,
         [@"Infrastructure\Services\Assistant\LLMModelSyncService.cs::SyncProviderAsync"] = 174,

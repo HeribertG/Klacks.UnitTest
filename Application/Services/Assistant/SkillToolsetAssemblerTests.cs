@@ -163,12 +163,16 @@ public class SkillToolsetAssemblerTests
 
     private SkillToolsetAssembler CreateAssembler()
     {
-        return new SkillToolsetAssembler(
-            _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
+        var guaranteeResolver = new SkillToolsetGuaranteeResolver(
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
             _planningProfileDraftStore,
             _skillPhrases,
+            Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
+
+        return new SkillToolsetAssembler(
+            _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
+            guaranteeResolver,
             Substitute.For<ILogger<SkillToolsetAssembler>>());
     }
 
