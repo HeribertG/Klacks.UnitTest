@@ -2,13 +2,13 @@
 
 /// <summary>
 /// Every language pack that ships a skill-labels.json must cover every seeded skill with a well-formed
-/// label. Deliberately NOT "every pack ships the file": the 21 real files are generated later with the
-/// owner's paid generator key and are out of scope here, so a test demanding them would be red from the
-/// day it was written - and a red guard nobody can fix gets disabled, which is worse than no guard. What
-/// is guarded is what can be true today: a file that exists is complete, and the moment the generator
-/// lands its output is checked in full. Whoever ships those 21 files tightens this to demand them, in
-/// the commit that ships them. No Assert.Ignore anywhere - an empty set of packs passes because nothing
-/// is broken, not because the check was skipped.
+/// label - AND, as of the commit that shipped the 21 real files (2026-09-17), every pack directory that
+/// has a manifest.json MUST also have a skill-labels.json: deleting one now fails the build instead of
+/// silently passing. Before that commit, this class deliberately did not demand the file's presence -
+/// the 21 real files were generated later with the owner's paid generator key and were out of scope, so
+/// a presence test would have been red from the day it was written, and a red guard nobody can fix gets
+/// disabled, which is worse than no guard. No Assert.Ignore anywhere - an empty set of packs passes
+/// because nothing is broken, not because the check was skipped.
 /// </summary>
 
 using System.Text.Json;
@@ -118,6 +118,19 @@ public class SkillLabelPackCoverageTests
         }
 
         problems.ShouldBeEmpty(string.Join(Environment.NewLine, problems));
+    }
+
+    [Test]
+    public void EveryManifestBearingPackDirectory_HasASkillLabelsFile()
+    {
+        var missing = Directory.GetDirectories(Path.Combine(ApiRoot().FullName, "Plugins", "Languages"))
+            .Where(dir => File.Exists(Path.Combine(dir, LanguagePluginConstants.ManifestFileName)))
+            .Where(dir => !File.Exists(Path.Combine(dir, LanguagePluginConstants.SkillLabelsFileName)))
+            .Select(Path.GetFileName)
+            .OrderBy(code => code, StringComparer.Ordinal)
+            .ToList();
+
+        missing.ShouldBeEmpty($"Pack(s) without {LanguagePluginConstants.SkillLabelsFileName}: {string.Join(", ", missing)}");
     }
 
     [Test]
