@@ -4,6 +4,7 @@ namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 
 using System.Text.Json;
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
+using Klacks.Api.Domain.Constants;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -348,6 +349,22 @@ public class TurnEvalRunnerServiceTests
         row.ResponseText.ShouldBe(responseText);
         row.ToolSequenceJson.ShouldContain(lookupTool);
         row.ToolSequenceJson.ShouldContain(expectedTool);
+    }
+
+    [Test]
+    public async Task RunAsync_TruncatesAnOverlongResponseText()
+    {
+        var item = new TurnGoldsetItem { Id = "t-1", Message = "add a note", ExpectedTool = ToolName };
+        var replay = SuccessReplay(ToolName);
+        replay.Content = new string('x', TurnEvalDefaults.ResponseTextMaxLength + 500);
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(new List<TurnGoldsetItem> { item });
+        _replayService.ReplayWithLookupFollowUpAsync(item, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(replay);
+
+        await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        var row = _persistedItems.Single();
+        row.ResponseText!.Length.ShouldBe(TurnEvalDefaults.ResponseTextMaxLength);
     }
 
     private static TurnReplayResult SuccessReplay(string? tool, Dictionary<string, object>? parameters = null)
