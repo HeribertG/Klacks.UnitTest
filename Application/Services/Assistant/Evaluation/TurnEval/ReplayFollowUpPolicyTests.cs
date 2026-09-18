@@ -41,6 +41,13 @@ public class ReplayFollowUpPolicyTests
     }
 
     [Test]
+    public void ExplainLookupBeforeExpectedMutation_DoesNotQualify()
+    {
+        ReplayFollowUpPolicy.ShouldFollowUp(
+            Skill("explain_shift_rotation", SkillEffect.Explain), Skill(MutatingTool, SkillEffect.Mutate)).ShouldBeFalse();
+    }
+
+    [Test]
     public void ExpectedToolIsReadOnly_DoesNotQualify()
     {
         ReplayFollowUpPolicy.ShouldFollowUp(
