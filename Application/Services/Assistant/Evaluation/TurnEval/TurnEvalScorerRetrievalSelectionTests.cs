@@ -162,7 +162,7 @@ public class TurnEvalScorerRetrievalSelectionTests
     [Test]
     public void ScorerVersion_IsBumpedSoOlderRunsAreNeverUsedAsABaseline()
     {
-        TurnEvalScorer.ScorerVersion.ShouldBe(4);
+        TurnEvalScorer.ScorerVersion.ShouldBe(5);
     }
 
     [Test]
