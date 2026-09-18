@@ -61,9 +61,9 @@ public class TurnEvalRunnerServiceTests
             new() { Id = "t-2", Message = "hello" }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(ToolName));
-        _replayService.ReplayAsync(items[1], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[1], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(null));
 
         var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
@@ -90,7 +90,7 @@ public class TurnEvalRunnerServiceTests
             new() { Id = "t-1", Message = "add a note", ExpectedTool = ToolName }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(ToolName));
         _evalRunRepository.GetBestBaselineAsync(
                 GoldsetName, ModelId, 1, TurnEvalScorer.ScorerVersion, Arg.Any<CancellationToken>())
@@ -113,7 +113,7 @@ public class TurnEvalRunnerServiceTests
             new() { Id = "t-2", Message = "two", ExpectedTool = ToolName }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(ToolName));
 
         var result = await _service.RunAsync(GoldsetName, ModelId, 1, UserId, UserRights);
@@ -135,7 +135,7 @@ public class TurnEvalRunnerServiceTests
             new() { Id = "t-2", Message = "two", ExpectedTool = ToolName }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(ToolName));
 
         await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
@@ -152,7 +152,7 @@ public class TurnEvalRunnerServiceTests
             new() { Id = "t-1", Message = "hello" }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(null));
 
         var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
@@ -170,15 +170,15 @@ public class TurnEvalRunnerServiceTests
             new() { Id = "t-3", Message = "three" }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(null));
 
         var result = await _service.RunAsync(GoldsetName, ModelId, 1, UserId, UserRights);
 
         result.Run.ItemsTotal.ShouldBe(1);
-        await _replayService.Received(1).ReplayAsync(
+        await _replayService.Received(1).ReplayWithLookupFollowUpAsync(
             Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>());
-        await _replayService.Received(1).ReplayAsync(
+        await _replayService.Received(1).ReplayWithLookupFollowUpAsync(
             items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>());
     }
 
@@ -201,7 +201,7 @@ public class TurnEvalRunnerServiceTests
         };
         var replay = SuccessReplay(ToolName, new Dictionary<string, object> { ["lastName"] = "Muller" });
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(replay);
         _slotEntityResolver.ResolvesToExpectedEntityAsync(entity, replay.ToolParameters, Arg.Any<CancellationToken>())
             .Returns(true);
@@ -237,7 +237,7 @@ public class TurnEvalRunnerServiceTests
             }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(null));
 
         var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
@@ -256,9 +256,9 @@ public class TurnEvalRunnerServiceTests
             new() { Id = "t-2", Message = "hello", Locale = "en" }
         };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(ToolName));
-        _replayService.ReplayAsync(items[1], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[1], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(SuccessReplay(null));
 
         var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
@@ -279,7 +279,7 @@ public class TurnEvalRunnerServiceTests
         var replay = SuccessReplay("navigate_to");
         replay.AvailableToolNames = ["navigate_to", ToolName];
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(replay);
 
         await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
@@ -304,7 +304,7 @@ public class TurnEvalRunnerServiceTests
         var replay = SuccessReplay(ToolName);
         replay.AvailableToolNames = [ToolName];
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
-        _replayService.ReplayAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+        _replayService.ReplayWithLookupFollowUpAsync(items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
             .Returns(replay);
 
         var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
@@ -313,6 +313,41 @@ public class TurnEvalRunnerServiceTests
         dimensions.ShouldNotBeNull();
         dimensions!.RetrievalHit.ShouldBe(1.0);
         dimensions.SelectionHit.ShouldBe(1.0);
+    }
+
+    [Test]
+    public async Task RunAsync_PersistsTheReachedVerdictArgumentsResponseAndToolSequence()
+    {
+        const string expectedTool = "delete_client";
+        const string lookupTool = "search_employees";
+        const string responseText = "Ich suche die Person.";
+        var item = new TurnGoldsetItem { Id = "rh-row", Message = "Frau Amstutz ausbuchen.", ExpectedTool = expectedTool };
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>())
+            .Returns(new List<TurnGoldsetItem> { item });
+
+        var replay = new TurnReplayResult
+        {
+            Success = true,
+            ChosenTool = lookupTool,
+            ToolParameters = new Dictionary<string, object> { ["searchTerm"] = "Amstutz" },
+            Content = responseText,
+            AvailableToolNames = [lookupTool, expectedTool],
+            FollowUpAttempted = true
+        };
+        replay.Steps.Add(new TurnReplayStep { Tool = lookupTool, Content = responseText });
+        replay.Steps.Add(new TurnReplayStep { Tool = expectedTool });
+        _replayService.ReplayWithLookupFollowUpAsync(item, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(replay);
+
+        await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        var row = _persistedItems.Single();
+        row.SelectionHit.ShouldBe(false);
+        row.ReachedHit.ShouldBe(true);
+        row.ChosenArgsJson.ShouldContain("Amstutz");
+        row.ResponseText.ShouldBe(responseText);
+        row.ToolSequenceJson.ShouldContain(lookupTool);
+        row.ToolSequenceJson.ShouldContain(expectedTool);
     }
 
     private static TurnReplayResult SuccessReplay(string? tool, Dictionary<string, object>? parameters = null)
