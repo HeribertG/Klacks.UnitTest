@@ -172,7 +172,7 @@ public class TurnReplayServiceFollowUpTests
     }
 
     [Test]
-    public async Task SecondRequest_CarriesTheSyntheticResultInProductionFormat_AndIsNeverForced()
+    public async Task SecondRequest_CarriesTheSyntheticResultInsideTheToolResultBlock_AndIsNeverForced()
     {
         GivenProviderAnswers(ToolCall(LookupTool, FirstContent), ToolCall(ExpectedTool));
 
