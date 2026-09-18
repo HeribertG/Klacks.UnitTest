@@ -68,6 +68,7 @@ public class TurnEvalScorerCorrectionTests
 
         result.ReachedHit.ShouldBe(true);
         result.CorrectionHit.ShouldBe(true);
+        result.FalseRepair.ShouldBeNull();
         result.SelectionHit.ShouldBe(false);
         result.ToolHit.ShouldBe(false);
         result.Passed.ShouldBeFalse();
