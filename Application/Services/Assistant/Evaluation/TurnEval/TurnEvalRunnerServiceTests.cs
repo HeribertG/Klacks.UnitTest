@@ -19,6 +19,7 @@ public class TurnEvalRunnerServiceTests
     private const string ToolName = "add_client_note";
     private const string UserId = "test-user";
     private const string ProviderUnavailableError = "The provider for the selected model is not available.";
+    private const int SmallGoldsetItemCount = 4;
 
     private static readonly List<string> UserRights = ["Admin"];
 
@@ -449,10 +450,94 @@ public class TurnEvalRunnerServiceTests
             GoldsetName, ModelId, 4, TurnEvalScorer.ScorerVersion, Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task RunAsync_WhenEveryItemWasExcluded_IsNotBaselineEligible()
+    {
+        var items = BuildItems(SmallGoldsetItemCount);
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayWithLookupFollowUpAsync(
+                Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(ExcludedReplay());
+
+        var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        result.Run.ItemsTotal.ShouldBe(SmallGoldsetItemCount);
+        result.Run.IsPartial.ShouldBeTrue();
+        result.Run.RegressionVsBaseline.ShouldBeNull();
+        await _evalRunRepository.DidNotReceiveWithAnyArgs().GetBestBaselineAsync(
+            default!, default!, default, default, default);
+    }
+
+    [Test]
+    public async Task RunAsync_WhenAnExcludedItemSitsAmongTheLeadingErrors_StillAborts()
+    {
+        var items = BuildItems(TurnEvalDefaults.InitialErrorAbortThreshold + 5);
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayWithLookupFollowUpAsync(
+                Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(ErroredReplay());
+        _replayService.ReplayWithLookupFollowUpAsync(
+                items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(ExcludedReplay());
+
+        var thrown = await Should.ThrowAsync<InvalidOperationException>(
+            () => _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights));
+
+        thrown.Message.ShouldContain(ProviderUnavailableError);
+        await _evalRunRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        _persistedItems.ShouldBeEmpty();
+        await _replayService.Received(TurnEvalDefaults.InitialErrorAbortThreshold + 1)
+            .ReplayWithLookupFollowUpAsync(
+                Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_GoldsetSmallerThanTheAbortThreshold_AllErrored_PersistsAPartialRun()
+    {
+        SmallGoldsetItemCount.ShouldBeLessThan(TurnEvalDefaults.InitialErrorAbortThreshold);
+        var items = BuildItems(SmallGoldsetItemCount);
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayWithLookupFollowUpAsync(
+                Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(ErroredReplay());
+
+        var result = await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        result.Run.ItemsTotal.ShouldBe(SmallGoldsetItemCount);
+        result.Run.IsPartial.ShouldBeTrue();
+        await _evalRunRepository.Received(1).AddAsync(result.Run, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_MaxItemsBelowTheAbortThreshold_AllErrored_DoesNotAbort()
+    {
+        var items = BuildItems(TurnEvalDefaults.InitialErrorAbortThreshold + 5);
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayWithLookupFollowUpAsync(
+                Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(ErroredReplay());
+
+        var result = await _service.RunAsync(GoldsetName, ModelId, SmallGoldsetItemCount, UserId, UserRights);
+
+        result.Run.ItemsTotal.ShouldBe(SmallGoldsetItemCount);
+        result.Run.IsPartial.ShouldBeTrue();
+        await _replayService.Received(SmallGoldsetItemCount).ReplayWithLookupFollowUpAsync(
+            Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>());
+    }
+
     private static List<TurnGoldsetItem> BuildItems(int count) =>
         Enumerable.Range(1, count)
             .Select(i => new TurnGoldsetItem { Id = $"t-{i}", Message = "add a note", ExpectedTool = ToolName })
             .ToList();
+
+    private static TurnReplayResult ExcludedReplay() =>
+        new()
+        {
+            Success = true,
+            ChosenTool = ToolName,
+            RecipeWouldForce = true,
+            ProviderId = ProviderId
+        };
 
     private static TurnReplayResult ErroredReplay() =>
         new()

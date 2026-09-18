@@ -92,17 +92,51 @@ public class SettingsEncryptionServiceTests
         result.ShouldBe(string.Empty);
     }
 
+    [Test]
+    public void Decrypt_WhenTheDisposedCauseIsASiblingInsideAnAggregate_Rethrows()
+    {
+        var cipherText = $"{EncryptedPrefix}CfDJ8FJC5Stg7nGAExgfJad2dlw";
+        var aggregate = new AggregateException(
+            new CryptographicException("The provided payload could not be decrypted."),
+            new InvalidOperationException("factory", new ObjectDisposedException("LoggerFactory")));
+        _protector.Unprotect(Arg.Any<byte[]>()).Returns(_ => throw aggregate);
+
+        var thrown = Should.Throw<Exception>(() => _service.Decrypt(cipherText));
+
+        ChainContainsObjectDisposed(thrown).ShouldBeTrue();
+    }
+
+    [Test]
+    public void Decrypt_WhenAnAggregateHoldsNoDisposedCause_StillDegradesToEmpty()
+    {
+        var cipherText = $"{EncryptedPrefix}CfDJ8FJC5Stg7nGAExgfJad2dlw";
+        _protector.Unprotect(Arg.Any<byte[]>()).Returns(_ => throw new AggregateException(
+            new CryptographicException("The key {2f1a} was not found in the key ring."),
+            new FormatException("payload")));
+
+        var result = _service.Decrypt(cipherText);
+
+        result.ShouldBe(string.Empty);
+    }
+
+    // Walks InnerExceptions, not only InnerException: AggregateException.InnerException is merely the
+    // FIRST inner exception, so a linear walk would miss a disposed cause that sits in a later sibling
+    // and would report a correct rethrow as a failure.
     private static bool ChainContainsObjectDisposed(Exception? exception)
     {
-        for (var current = exception; current != null; current = current.InnerException)
+        if (exception == null)
         {
-            if (current is ObjectDisposedException)
-            {
-                return true;
-            }
+            return false;
         }
 
-        return false;
+        if (exception is ObjectDisposedException)
+        {
+            return true;
+        }
+
+        return exception is AggregateException aggregate
+            ? aggregate.InnerExceptions.Any(ChainContainsObjectDisposed)
+            : ChainContainsObjectDisposed(exception.InnerException);
     }
 
     [Test]

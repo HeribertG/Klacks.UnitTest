@@ -87,7 +87,35 @@ public class DatabaseInitializerSeedGuardTests
         await Should.ThrowAsync<Exception>(initializer.SeedDataAsync);
     }
 
-    private DatabaseInitializer CreateInitializer(string? regionFilePath)
+    [Test]
+    public async Task RunLegacySecretBackfillAsync_WhenTheBackfillThrows_DoesNotAbortTheBoot()
+    {
+        var backfill = Substitute.For<IIdentityProviderSecretBackfill>();
+        backfill.EncryptLegacySecretsAsync()
+            .Returns<Task>(_ => throw new ObjectDisposedException("IDataProtectionProvider"));
+        var initializer = CreateInitializer(regionFilePath: null, backfill);
+
+        await Should.NotThrowAsync(initializer.RunLegacySecretBackfillAsync);
+
+        await backfill.Received(1).EncryptLegacySecretsAsync();
+    }
+
+    [Test]
+    public async Task RunLegacySecretBackfillAsync_WhenTheBackfillSucceeds_RunsIt()
+    {
+        var backfill = Substitute.For<IIdentityProviderSecretBackfill>();
+        var initializer = CreateInitializer(regionFilePath: null, backfill);
+
+        await initializer.RunLegacySecretBackfillAsync();
+
+        await backfill.Received(1).EncryptLegacySecretsAsync();
+    }
+
+    private DatabaseInitializer CreateInitializer(string? regionFilePath) =>
+        CreateInitializer(regionFilePath, Substitute.For<IIdentityProviderSecretBackfill>());
+
+    private DatabaseInitializer CreateInitializer(
+        string? regionFilePath, IIdentityProviderSecretBackfill identityProviderSecretBackfill)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -101,7 +129,7 @@ public class DatabaseInitializerSeedGuardTests
             NullLogger<DatabaseInitializer>.Instance,
             configuration,
             Substitute.For<IStoredProcedureInitializer>(),
-            Substitute.For<IIdentityProviderSecretBackfill>(),
+            identityProviderSecretBackfill,
             _demoOrderSeedFileWriter);
     }
 }
