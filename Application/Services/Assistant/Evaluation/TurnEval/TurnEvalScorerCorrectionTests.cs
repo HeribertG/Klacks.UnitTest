@@ -21,6 +21,11 @@ public class TurnEvalScorerCorrectionTests
     private const string UndoSkill = "remove_shift_from_group";
     private const string LookupSkill = "list_groups";
 
+    // Mutate effect (unlike ExpectedSkill, which is Read): ReplayFollowUpPolicy only creates a
+    // follow-up step in front of a Mutate target, so the lookup-then-replay tests need this tool
+    // to stay a realistic scenario, not the shared ExpectedSkill constant the other tests rely on.
+    private const string MutateExpectedSkill = "fill_group_by_criteria";
+
     private static TurnGoldsetItem CorrectionItem() => new()
     {
         Id = "cr-test-1",
@@ -34,6 +39,13 @@ public class TurnEvalScorerCorrectionTests
             AssistantAnswerExcerpt = "Ich habe nach Kunden gesucht."
         }
     };
+
+    private static TurnGoldsetItem CorrectionItemWithMutateTarget()
+    {
+        var item = CorrectionItem();
+        item.ExpectedTool = MutateExpectedSkill;
+        return item;
+    }
 
     private static TurnReplayResult Replay(
         string? chosenTool,
@@ -50,10 +62,11 @@ public class TurnEvalScorerCorrectionTests
         UndoOfferedSkill = undoSkill
     };
 
-    private static TurnReplayResult LookupThenReplay(string? secondTool, bool followUpFailed = false)
+    private static TurnReplayResult LookupThenReplay(
+        string? secondTool, bool followUpFailed = false, bool correctionApplied = true)
     {
-        var replay = Replay(LookupSkill, correctionApplied: true);
-        replay.AvailableToolNames = [LookupSkill, ExpectedSkill];
+        var replay = Replay(LookupSkill, correctionApplied);
+        replay.AvailableToolNames = [LookupSkill, MutateExpectedSkill];
         replay.FollowUpAttempted = true;
         replay.FollowUpFailed = followUpFailed;
         replay.Steps.Add(new TurnReplayStep { Tool = LookupSkill });
@@ -64,7 +77,8 @@ public class TurnEvalScorerCorrectionTests
     [Test]
     public void CorrectionItem_ReachedTheExpectedSkillViaALookup_IsAHitButNeverASelectionHit()
     {
-        var result = TurnEvalScorer.ScoreItem(CorrectionItem(), LookupThenReplay(ExpectedSkill));
+        var result = TurnEvalScorer.ScoreItem(
+            CorrectionItemWithMutateTarget(), LookupThenReplay(MutateExpectedSkill));
 
         result.ReachedHit.ShouldBe(true);
         result.CorrectionHit.ShouldBe(true);
@@ -77,7 +91,7 @@ public class TurnEvalScorerCorrectionTests
     [Test]
     public void CorrectionItem_LookupThatNeverReachedTheExpectedSkill_StaysAMiss()
     {
-        var result = TurnEvalScorer.ScoreItem(CorrectionItem(), LookupThenReplay(LookupSkill));
+        var result = TurnEvalScorer.ScoreItem(CorrectionItemWithMutateTarget(), LookupThenReplay(LookupSkill));
 
         result.ReachedHit.ShouldBe(false);
         result.CorrectionHit.ShouldBe(false);
@@ -88,9 +102,33 @@ public class TurnEvalScorerCorrectionTests
     public void CorrectionItem_FailedFollowUpAfterALookup_LeavesCorrectionAMiss()
     {
         var result = TurnEvalScorer.ScoreItem(
-            CorrectionItem(), LookupThenReplay(secondTool: null, followUpFailed: true));
+            CorrectionItemWithMutateTarget(), LookupThenReplay(secondTool: null, followUpFailed: true));
 
         result.ReachedHit.ShouldBeNull();
+        result.CorrectionHit.ShouldBe(false);
+    }
+
+    [Test]
+    public void ClarificationItem_ReachedTheExpectedSkillInstead_StaysAMissDespiteReachedHit()
+    {
+        var item = CorrectionItemWithMutateTarget();
+        item.ExpectsClarification = true;
+
+        var result = TurnEvalScorer.ScoreItem(item, LookupThenReplay(MutateExpectedSkill));
+
+        result.ReachedHit.ShouldBe(true);
+        result.CorrectionHit.ShouldBe(false);
+        result.Passed.ShouldBeFalse();
+    }
+
+    [Test]
+    public void CorrectionItem_ReachedTheExpectedSkillButCorrectionWasNeverApplied_IsNotARepair()
+    {
+        var result = TurnEvalScorer.ScoreItem(
+            CorrectionItemWithMutateTarget(),
+            LookupThenReplay(MutateExpectedSkill, correctionApplied: false));
+
+        result.ReachedHit.ShouldBe(true);
         result.CorrectionHit.ShouldBe(false);
     }
 
