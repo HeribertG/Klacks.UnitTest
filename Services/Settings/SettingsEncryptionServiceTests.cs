@@ -41,6 +41,71 @@ public class SettingsEncryptionServiceTests
     }
 
     [Test]
+    public void Decrypt_WhenTheProtectorFailedBecauseADependencyWasDisposed_Rethrows()
+    {
+        var cipherText = $"{EncryptedPrefix}CfDJ8FJC5Stg7nGAExgfJad2dlw";
+        _protector.Unprotect(Arg.Any<byte[]>())
+            .Returns(_ => throw new ObjectDisposedException("LoggerFactory"));
+
+        var thrown = Should.Throw<Exception>(() => _service.Decrypt(cipherText));
+
+        ChainContainsObjectDisposed(thrown).ShouldBeTrue();
+    }
+
+    [Test]
+    public void Decrypt_WhenTheDisposedCauseIsBuriedDeeperInTheChain_Rethrows()
+    {
+        var cipherText = $"{EncryptedPrefix}CfDJ8FJC5Stg7nGAExgfJad2dlw";
+        var buried = new CryptographicException(
+            "The provided payload could not be decrypted.",
+            new InvalidOperationException("factory", new ObjectDisposedException("LoggerFactory")));
+        _protector.Unprotect(Arg.Any<byte[]>()).Returns(_ => throw buried);
+
+        var thrown = Should.Throw<Exception>(() => _service.Decrypt(cipherText));
+
+        ChainContainsObjectDisposed(thrown).ShouldBeTrue();
+    }
+
+    [Test]
+    public void ProcessForReading_WhenTheProtectorFailedBecauseADependencyWasDisposed_Rethrows()
+    {
+        var cipherText = $"{EncryptedPrefix}CfDJ8FJC5Stg7nGAExgfJad2dlw";
+        _protector.Unprotect(Arg.Any<byte[]>())
+            .Returns(_ => throw new ObjectDisposedException("LoggerFactory"));
+
+        var thrown = Should.Throw<Exception>(() => _service.ProcessForReading(SensitiveType, cipherText));
+
+        ChainContainsObjectDisposed(thrown).ShouldBeTrue();
+    }
+
+    [Test]
+    public void Decrypt_WhenTheKeyRingLostTheKey_StillDegradesToEmpty()
+    {
+        var cipherText = $"{EncryptedPrefix}CfDJ8FJC5Stg7nGAExgfJad2dlw";
+        _protector.Unprotect(Arg.Any<byte[]>())
+            .Returns(_ => throw new CryptographicException(
+                "The key {2f1a} was not found in the key ring.",
+                new FormatException("payload")));
+
+        var result = _service.Decrypt(cipherText);
+
+        result.ShouldBe(string.Empty);
+    }
+
+    private static bool ChainContainsObjectDisposed(Exception? exception)
+    {
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            if (current is ObjectDisposedException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [Test]
     public void Decrypt_WhenNotEncPrefixed_ReturnsValueUnchanged()
     {
         var legacyPlainText = "plain-legacy-password";
