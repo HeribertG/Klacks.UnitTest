@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Pins when a replay may ask the model a second time. Only a plain read-only lookup in front of an
-/// expected mutation qualifies; a navigation, a UI passthrough, a read-only expectation or an unknown
-/// skill never does, because rescuing those would turn real wrong choices into hits.
+/// Pins when a replay may ask the model a second time. Only a plain read-only lookup or an advisory
+/// skill in front of an expected mutation qualifies; a navigation, a UI passthrough, a read-only
+/// expectation or an unknown skill never does, because rescuing those would turn real wrong choices
+/// into hits.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
@@ -30,6 +31,13 @@ public class ReplayFollowUpPolicyTests
     {
         ReplayFollowUpPolicy.ShouldFollowUp(
             Skill(LookupTool, SkillEffect.Read), Skill(MutatingTool, SkillEffect.Mutate)).ShouldBeTrue();
+    }
+
+    [Test]
+    public void AdviseLookupBeforeExpectedMutation_Qualifies()
+    {
+        ReplayFollowUpPolicy.ShouldFollowUp(
+            Skill("evaluate_scenario", SkillEffect.Advise), Skill(MutatingTool, SkillEffect.Mutate)).ShouldBeTrue();
     }
 
     [Test]
