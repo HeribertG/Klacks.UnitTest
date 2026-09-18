@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// The synthetic lookup result must be unambiguous (exactly one hit), stable across runs and must echo
-/// what the model itself searched for, so the second replay step measures the model's next choice and
-/// not its reaction to implausible data.
+/// The synthetic lookup result must be unambiguous (exactly one hit), stable across runs, must echo
+/// what the model itself searched for, and must carry the same "{Message}\nData: {json}" shape every
+/// real skill result carries, so the second replay step measures the model's next choice and not its
+/// reaction to an unfamiliar payload shape.
 /// </summary>
 
 using System.Text.Json;
@@ -18,18 +19,26 @@ namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 public class SyntheticLookupResultFactoryTests
 {
     private const string SearchedName = "Amstutz";
+    private const string DataLabel = "\nData: ";
+
+    private static JsonElement ParseData(string result)
+    {
+        var dataIndex = result.IndexOf(DataLabel, StringComparison.Ordinal);
+        dataIndex.ShouldBeGreaterThanOrEqualTo(0);
+        using var document = JsonDocument.Parse(result[(dataIndex + DataLabel.Length)..]);
+        return document.RootElement.Clone();
+    }
 
     [Test]
     public void EchoesTheFirstNonEmptyStringArgument_AsTheSingleHit()
     {
-        var json = SyntheticLookupResultFactory.Build(new Dictionary<string, object>
+        var result = SyntheticLookupResultFactory.Build(new Dictionary<string, object>
         {
             ["includeInactive"] = false,
             ["searchTerm"] = SearchedName
         });
 
-        using var document = JsonDocument.Parse(json);
-        var root = document.RootElement;
+        var root = ParseData(result);
         root.GetProperty("success").GetBoolean().ShouldBeTrue();
         root.GetProperty("totalCount").GetInt32().ShouldBe(1);
         var items = root.GetProperty("items");
@@ -43,22 +52,20 @@ public class SyntheticLookupResultFactoryTests
     {
         using var source = JsonDocument.Parse($"\"{SearchedName}\"");
 
-        var json = SyntheticLookupResultFactory.Build(new Dictionary<string, object>
+        var result = SyntheticLookupResultFactory.Build(new Dictionary<string, object>
         {
             ["searchTerm"] = source.RootElement.Clone()
         });
 
-        using var document = JsonDocument.Parse(json);
-        document.RootElement.GetProperty("items")[0].GetProperty("name").GetString().ShouldBe(SearchedName);
+        ParseData(result).GetProperty("items")[0].GetProperty("name").GetString().ShouldBe(SearchedName);
     }
 
     [Test]
     public void WithoutAnyStringArgument_FallsBackToTheNeutralName()
     {
-        var json = SyntheticLookupResultFactory.Build(new Dictionary<string, object> { ["limit"] = 10 });
+        var result = SyntheticLookupResultFactory.Build(new Dictionary<string, object> { ["limit"] = 10 });
 
-        using var document = JsonDocument.Parse(json);
-        document.RootElement.GetProperty("items")[0].GetProperty("name").GetString()
+        ParseData(result).GetProperty("items")[0].GetProperty("name").GetString()
             .ShouldBe(TurnEvalDefaults.SyntheticLookupFallbackName);
     }
 
@@ -68,5 +75,16 @@ public class SyntheticLookupResultFactoryTests
         var parameters = new Dictionary<string, object> { ["searchTerm"] = SearchedName };
 
         SyntheticLookupResultFactory.Build(parameters).ShouldBe(SyntheticLookupResultFactory.Build(parameters));
+    }
+
+    [Test]
+    public void CarriesAMessageLineBeforeTheDataLabel_MatchingTheProductionShape()
+    {
+        var result = SyntheticLookupResultFactory.Build(new Dictionary<string, object> { ["searchTerm"] = SearchedName });
+
+        result.ShouldContain(DataLabel);
+        var message = result[..result.IndexOf(DataLabel, StringComparison.Ordinal)];
+        message.ShouldNotBeNullOrWhiteSpace();
+        message.ShouldContain(SearchedName);
     }
 }
