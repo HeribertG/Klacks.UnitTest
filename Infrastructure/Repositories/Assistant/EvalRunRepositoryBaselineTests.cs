@@ -113,6 +113,36 @@ public class EvalRunRepositoryBaselineTests
         baseline!.ItemsPassed.ShouldBe(201);
     }
 
+    [Test]
+    public async Task GetComparableCompositesAsync_ReturnsOnlyCompletedComparableRuns()
+    {
+        var deleted = Run(composite: 0.91m, passed: 300, at: BaseTime);
+        deleted.IsDeleted = true;
+        await SeedAsync(
+            Run(composite: 0.50m, passed: 170, at: BaseTime),
+            Run(composite: 0.55m, passed: 180, at: BaseTime.AddDays(1)),
+            Run(composite: 0.95m, passed: 320, at: BaseTime, isPartial: true),
+            Run(composite: 0.94m, passed: 60, at: BaseTime, itemsTotal: 60),
+            Run(composite: 0.93m, passed: 320, at: BaseTime, model: "gpt-54"),
+            Run(composite: 0.92m, passed: 320, at: BaseTime, goldset: "turn-selection-crud-v1"),
+            Run(composite: 0.96m, passed: 320, at: BaseTime, scorerVersion: 1),
+            deleted);
+
+        var composites = await NewRepository().GetComparableCompositesAsync(Goldset, Model, ItemsTotal, ScorerVersion);
+
+        composites.OrderBy(value => value).ShouldBe([0.50m, 0.55m]);
+    }
+
+    [Test]
+    public async Task GetComparableCompositesAsync_NoComparableRun_ReturnsEmpty()
+    {
+        await SeedAsync(Run(composite: 0.80m, passed: 300, at: BaseTime, scorerVersion: 1));
+
+        var composites = await NewRepository().GetComparableCompositesAsync(Goldset, Model, ItemsTotal, ScorerVersion);
+
+        composites.ShouldBeEmpty();
+    }
+
     // DataBaseContext stamps CreateTime with its own UtcNow per inserted entity, so the seeded value is
     // overwritten and the SEED ORDER is the chronological order these three tests assert against.
     [Test]
