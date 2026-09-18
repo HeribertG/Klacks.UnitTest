@@ -19,6 +19,7 @@ public class TurnEvalScorerCorrectionTests
     private const string PreviousSkill = "find_customer_candidates";
     private const string ExpectedSkill = "search_employees";
     private const string UndoSkill = "remove_shift_from_group";
+    private const string LookupSkill = "list_groups";
 
     private static TurnGoldsetItem CorrectionItem() => new()
     {
@@ -48,6 +49,49 @@ public class TurnEvalScorerCorrectionTests
         CorrectionClarificationOffered = clarification,
         UndoOfferedSkill = undoSkill
     };
+
+    private static TurnReplayResult LookupThenReplay(string? secondTool, bool followUpFailed = false)
+    {
+        var replay = Replay(LookupSkill, correctionApplied: true);
+        replay.AvailableToolNames = [LookupSkill, ExpectedSkill];
+        replay.FollowUpAttempted = true;
+        replay.FollowUpFailed = followUpFailed;
+        replay.Steps.Add(new TurnReplayStep { Tool = LookupSkill });
+        replay.Steps.Add(new TurnReplayStep { Tool = secondTool, Success = !followUpFailed });
+        return replay;
+    }
+
+    [Test]
+    public void CorrectionItem_ReachedTheExpectedSkillViaALookup_IsAHitButNeverASelectionHit()
+    {
+        var result = TurnEvalScorer.ScoreItem(CorrectionItem(), LookupThenReplay(ExpectedSkill));
+
+        result.ReachedHit.ShouldBe(true);
+        result.CorrectionHit.ShouldBe(true);
+        result.SelectionHit.ShouldBe(false);
+        result.ToolHit.ShouldBe(false);
+        result.Passed.ShouldBeFalse();
+    }
+
+    [Test]
+    public void CorrectionItem_LookupThatNeverReachedTheExpectedSkill_StaysAMiss()
+    {
+        var result = TurnEvalScorer.ScoreItem(CorrectionItem(), LookupThenReplay(LookupSkill));
+
+        result.ReachedHit.ShouldBe(false);
+        result.CorrectionHit.ShouldBe(false);
+        result.Passed.ShouldBeFalse();
+    }
+
+    [Test]
+    public void CorrectionItem_FailedFollowUpAfterALookup_LeavesCorrectionAMiss()
+    {
+        var result = TurnEvalScorer.ScoreItem(
+            CorrectionItem(), LookupThenReplay(secondTool: null, followUpFailed: true));
+
+        result.ReachedHit.ShouldBeNull();
+        result.CorrectionHit.ShouldBe(false);
+    }
 
     [Test]
     public void CorrectionItem_ReroutedToTheExpectedSkill_IsAHit()
