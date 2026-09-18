@@ -65,6 +65,10 @@ public class EvalRunItemMappingTests
         columns.ShouldContain("toolset_names_json");
         columns.ShouldContain("retrieval_hit");
         columns.ShouldContain("selection_hit");
+        columns.ShouldContain("reached_hit");
+        columns.ShouldContain("chosen_args_json");
+        columns.ShouldContain("response_text");
+        columns.ShouldContain("tool_sequence_json");
         columns.ShouldContain("passed");
         columns.ShouldContain("latency_ms");
         columns.ShouldContain("learning_consumed_at_utc");
