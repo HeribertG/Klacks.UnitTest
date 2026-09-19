@@ -7,6 +7,7 @@ using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using Klacks.Api.Domain.Constants;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 using Shouldly;
 
@@ -207,6 +208,50 @@ public class TurnEvalRunnerServiceTests
         await _replayService.Received(1).ReplayWithLookupFollowUpAsync(
             items[0], ModelId, UserId, UserRights, Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task RunAsync_MemoryProbeDisabled_LogsNoProbeLine()
+    {
+        await RunItemsAsync(3, new TurnEvalMemoryProbe(false, 2));
+
+        CountProbeLines().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task RunAsync_MemoryProbeEnabled_LogsItemOneAndEveryNthItem()
+    {
+        await RunItemsAsync(5, new TurnEvalMemoryProbe(true, 2));
+
+        var lines = ProbeLines();
+        lines.Count.ShouldBe(3);
+        lines[0].ShouldContain("item=1 ");
+        lines[1].ShouldContain("item=2 ");
+        lines[2].ShouldContain("item=4 ");
+    }
+
+    private async Task RunItemsAsync(int count, TurnEvalMemoryProbe probe)
+    {
+        var items = Enumerable.Range(1, count)
+            .Select(i => new TurnGoldsetItem { Id = $"t-{i}", Message = "hello" })
+            .ToList();
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+        _replayService.ReplayWithLookupFollowUpAsync(Arg.Any<TurnGoldsetItem>(), ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(SuccessReplay(null));
+        var service = new TurnEvalRunnerService(
+            _goldsetLoader, _replayService, _slotEntityResolver, _evalRunRepository,
+            _evalRunItemRepository, _logger, probe);
+
+        await service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+    }
+
+    private int CountProbeLines() => ProbeLines().Count;
+
+    private List<string> ProbeLines() =>
+        _logger.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments()[2]?.ToString() ?? string.Empty)
+            .Where(text => text.StartsWith(TurnEvalDefaults.MemoryProbeLogPrefix, StringComparison.Ordinal))
+            .ToList();
 
     [Test]
     public async Task RunAsync_ResolvedEntitySlot_CallsResolverWithToolParameters()
