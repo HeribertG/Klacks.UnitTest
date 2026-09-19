@@ -227,6 +227,12 @@ public class TurnEvalRunnerServiceTests
         lines[0].ShouldContain("item=1 ");
         lines[1].ShouldContain("item=2 ");
         lines[2].ShouldContain("item=4 ");
+        foreach (var line in lines)
+        {
+            CountOccurrences(line, "privateMB=").ShouldBe(2);
+            CountOccurrences(line, "threads=").ShouldBe(2);
+            CountOccurrences(line, "handles=").ShouldBe(2);
+        }
     }
 
     private async Task RunItemsAsync(int count, TurnEvalMemoryProbe probe)
@@ -245,6 +251,9 @@ public class TurnEvalRunnerServiceTests
     }
 
     private int CountProbeLines() => ProbeLines().Count;
+
+    private static int CountOccurrences(string text, string value) =>
+        text.Split(value, StringSplitOptions.None).Length - 1;
 
     private List<string> ProbeLines() =>
         _logger.ReceivedCalls()
