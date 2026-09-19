@@ -33,7 +33,7 @@ public class DeepSeekProviderStreamToolChoiceFallbackTests
         var provider = CreateProvider(handler);
 
         var chunks = new List<string>();
-        await foreach (var chunk in provider.ProcessStreamAsync(RequestWithToolChoice("required")))
+        await foreach (var chunk in provider.ProcessStreamAsync(RequestWithToolChoice("required", "deepseek-stream-test-retry")))
         {
             chunks.Add(chunk);
         }
@@ -54,7 +54,7 @@ public class DeepSeekProviderStreamToolChoiceFallbackTests
         var provider = CreateProvider(handler);
 
         var chunks = new List<string>();
-        await foreach (var chunk in provider.ProcessStreamAsync(RequestWithToolChoice("required")))
+        await foreach (var chunk in provider.ProcessStreamAsync(RequestWithToolChoice("required", "deepseek-stream-test-unrelated")))
         {
             chunks.Add(chunk);
         }
@@ -80,6 +80,29 @@ public class DeepSeekProviderStreamToolChoiceFallbackTests
         handler.RequestBodies.Count.ShouldBe(1);
     }
 
+    [Test]
+    public async Task ProcessStreamAsync_AfterRejection_SecondCallForSameModelSendsAutoDirectly()
+    {
+        const string model = "deepseek-stream-test-remembered";
+        var first = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = Json(ThinkingRejectionBody) },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = Sse(SuccessSse) });
+        await foreach (var _ in CreateProvider(first).ProcessStreamAsync(RequestWithToolChoice("required", model)))
+        {
+        }
+
+        var second = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Sse(SuccessSse) });
+        var chunks = new List<string>();
+        await foreach (var chunk in CreateProvider(second).ProcessStreamAsync(RequestWithToolChoice("required", model)))
+        {
+            chunks.Add(chunk);
+        }
+
+        second.RequestBodies.Count.ShouldBe(1);
+        second.RequestBodies[0].ShouldContain("\"tool_choice\":\"auto\"");
+        string.Concat(chunks).ShouldBe("ok");
+    }
+
     private static DeepSeekProvider CreateProvider(SequenceHandler handler)
     {
         var httpClient = new HttpClient(handler);
@@ -100,13 +123,13 @@ public class DeepSeekProviderStreamToolChoiceFallbackTests
         return provider;
     }
 
-    private static LLMProviderRequest RequestWithToolChoice(string? toolChoice)
+    private static LLMProviderRequest RequestWithToolChoice(string? toolChoice, string modelId = "deepseek-v4-pro")
     {
         return new LLMProviderRequest
         {
             Message = "Ändere die Telefonnummer von Frau Müller",
             SystemPrompt = "system",
-            ModelId = "deepseek-v4-pro",
+            ModelId = modelId,
             ToolChoice = toolChoice,
             AvailableFunctions =
             [

@@ -22,6 +22,13 @@ public class NonChatModelPatternsTests
     [TestCase("mistral-large-latest")]
     [TestCase("gpt-oss-120b")]
     [TestCase("llama-3.3-70b-versatile")]
+    [TestCase("claude-opus-4-7")]
+    [TestCase("deepseek-v4-pro")]
+    [TestCase("o1")]
+    [TestCase("o1-preview")]
+    [TestCase("o3-mini")]
+    [TestCase("llama-3.1-8b-instruct")]
+    [TestCase("mistral-small-latest")]
     public void IsLikelyNonChatModel_ChatModels_ReturnsFalse(string apiModelId)
     {
         NonChatModelPatterns.IsLikelyNonChatModel(apiModelId).ShouldBeFalse();
@@ -48,6 +55,16 @@ public class NonChatModelPatternsTests
     [TestCase("gpt-realtime")]
     [TestCase("davinci-002")]
     [TestCase("babbage-002")]
+    [TestCase("gpt-3.5-turbo-instruct")]
+    [TestCase("gpt-4o-search-preview")]
+    [TestCase("gpt-4o-mini-search-preview")]
+    [TestCase("mistral-ocr-latest")]
+    [TestCase("mistral-ocr-2505")]
+    [TestCase("labs-mistral-small-creative")]
+    [TestCase("canopylabs/orpheus-v1-english")]
+    [TestCase("o1-pro")]
+    [TestCase("o3-pro")]
+    [TestCase("o3-pro-2025-06-10")]
     public void IsLikelyNonChatModel_NonChatModels_ReturnsTrue(string apiModelId)
     {
         NonChatModelPatterns.IsLikelyNonChatModel(apiModelId).ShouldBeTrue();

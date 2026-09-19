@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Text;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.DeepSeek;
 using Klacks.Api.Domain.Services.Assistant.Providers;
@@ -32,7 +33,7 @@ public class DeepSeekProviderToolChoiceFallbackTests
             new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
         var provider = CreateProvider(handler);
 
-        var result = await provider.ProcessAsync(RequestWithToolChoice("required"));
+        var result = await provider.ProcessAsync(RequestWithToolChoice("required", "deepseek-test-retry-once"));
 
         result.Success.ShouldBeTrue(result.Error);
         result.Content.ShouldBe("ok");
@@ -67,13 +68,92 @@ public class DeepSeekProviderToolChoiceFallbackTests
         handler.RequestBodies.Count.ShouldBe(1);
     }
 
-    private static DeepSeekProvider CreateProvider(SequenceHandler handler)
+    [Test]
+    public async Task ProcessAsync_DefaultConfiguration_OmitsThinkingField()
+    {
+        var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        var provider = CreateProvider(handler);
+
+        var result = await provider.ProcessAsync(RequestWithToolChoice("required"));
+
+        result.Success.ShouldBeTrue(result.Error);
+        handler.RequestBodies[0].ShouldNotContain("\"thinking\"");
+    }
+
+    [Test]
+    public async Task ProcessAsync_DisableThinkingConfigured_SendsThinkingDisabled()
+    {
+        var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        var provider = CreateProvider(handler, disableThinking: true);
+
+        var result = await provider.ProcessAsync(RequestWithToolChoice("required"));
+
+        result.Success.ShouldBeTrue(result.Error);
+        handler.RequestBodies[0].ShouldContain("\"thinking\":{\"type\":\"disabled\"}");
+        handler.RequestBodies[0].ShouldContain("\"tool_choice\":\"required\"");
+    }
+
+    [Test]
+    public async Task ProcessAsync_AfterRejection_SecondCallForSameModelSendsAutoDirectly()
+    {
+        const string model = "deepseek-test-remembered";
+        var first = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = Json(ThinkingRejectionBody) },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        await CreateProvider(first).ProcessAsync(RequestWithToolChoice("required", model));
+
+        var second = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        var result = await CreateProvider(second).ProcessAsync(RequestWithToolChoice("required", model));
+
+        result.Success.ShouldBeTrue(result.Error);
+        second.RequestBodies.Count.ShouldBe(1);
+        second.RequestBodies[0].ShouldContain("\"tool_choice\":\"auto\"");
+    }
+
+    [Test]
+    public async Task ProcessAsync_AfterRejection_OtherModelStillSendsRequired()
+    {
+        var first = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = Json(ThinkingRejectionBody) },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        await CreateProvider(first).ProcessAsync(RequestWithToolChoice("required", "deepseek-test-isolated-a"));
+
+        var second = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        var result = await CreateProvider(second).ProcessAsync(RequestWithToolChoice("required", "deepseek-test-isolated-b"));
+
+        result.Success.ShouldBeTrue(result.Error);
+        second.RequestBodies.Count.ShouldBe(1);
+        second.RequestBodies[0].ShouldContain("\"tool_choice\":\"required\"");
+    }
+
+    [Test]
+    public async Task ProcessAsync_DisableThinkingConfigured_RejectionIsNotRemembered()
+    {
+        const string model = "deepseek-test-disable-thinking";
+        var first = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = Json(ThinkingRejectionBody) },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        await CreateProvider(first, disableThinking: true).ProcessAsync(RequestWithToolChoice("required", model));
+
+        var second = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        await CreateProvider(second, disableThinking: true).ProcessAsync(RequestWithToolChoice("required", model));
+
+        second.RequestBodies[0].ShouldContain("\"tool_choice\":\"required\"");
+    }
+
+    private static DeepSeekProvider CreateProvider(SequenceHandler handler, bool disableThinking = false)
     {
         var httpClient = new HttpClient(handler);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [DeepSeekProviderConfigKeys.DisableThinking] = disableThinking.ToString()
+            })
+            .Build();
         var provider = new DeepSeekProvider(
             httpClient,
             NullLogger<DeepSeekProvider>.Instance,
-            new ConfigurationBuilder().Build());
+            configuration);
 
         provider.Configure(new LLMProvider
         {
@@ -87,13 +167,13 @@ public class DeepSeekProviderToolChoiceFallbackTests
         return provider;
     }
 
-    private static LLMProviderRequest RequestWithToolChoice(string? toolChoice)
+    private static LLMProviderRequest RequestWithToolChoice(string? toolChoice, string modelId = "deepseek-v4-flash")
     {
         return new LLMProviderRequest
         {
             Message = "Ändere die Telefonnummer von Frau Müller",
             SystemPrompt = "system",
-            ModelId = "deepseek-v4-flash",
+            ModelId = modelId,
             ToolChoice = toolChoice,
             AvailableFunctions =
             [
