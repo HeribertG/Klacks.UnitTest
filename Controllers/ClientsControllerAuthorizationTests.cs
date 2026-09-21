@@ -5,8 +5,8 @@
 /// saves its notes through the client aggregate, so Put has to be reachable by a caller without any
 /// role (Planer) — which InputBaseController made impossible, because an attribute on an override is
 /// AND-combined with the base method's. The controller therefore derives from BaseController and
-/// declares its own verbs: Get and Put open to every authenticated caller, Post and Delete still
-/// Admin/Authorised. A caller with CanEditClients writes the whole client; a caller with only
+/// declares its own verbs: Get and Put open to every authenticated caller, Post still Admin/Authorised
+/// and Delete Admin-only. A caller with CanEditClients writes the whole client; a caller with only
 /// CanEditClientNotes reaches a command that can write nothing but the notes, so the rest of the sent
 /// resource is ignored instead of refused.
 /// </summary>
@@ -89,10 +89,19 @@ public class ClientsControllerAuthorizationTests
     }
 
     [Test]
-    public void PostAndDelete_StayRestrictedToAdminAndAuthorised()
+    public void Post_StaysRestrictedToAdminAndAuthorised()
     {
         AuthorizeOf(nameof(ClientsController.Post))!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}");
-        AuthorizeOf(nameof(ClientsController.Delete))!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}");
+    }
+
+    [Test]
+    public void Delete_IsAdminOnly()
+    {
+        AuthorizeOf(nameof(ClientsController.Delete))!.Roles.ShouldBe(
+            Roles.Admin,
+            "Deleting a person is administrative: Authorised holds no CanDelete* right, and the client " +
+            "list hides the delete behind CanDeleteClients, so the endpoint was wider than both the rights " +
+            "model and the only caller.");
     }
 
     [Test]

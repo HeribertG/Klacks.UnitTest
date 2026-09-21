@@ -88,6 +88,32 @@ public class PermissionsTests
         rights.ShouldNotContain(Permissions.CanDeleteClients);
     }
 
+    /// <summary>
+    /// Owner decision 2026-09-21: creating a group is a Supervisor right, deleting one and touching the
+    /// settings are not. Every group-creation path (create_group, the Groups POST endpoint, the Angular
+    /// button) resolves to CanCreateGroups, so the role expansion is where that decision lives.
+    /// </summary>
+    [Test]
+    public void ExpandRoles_Authorised_MayCreateGroupsButNotDeleteThem()
+    {
+        var rights = Permissions.ExpandRoles(new[] { Roles.Authorised });
+
+        rights.ShouldContain(Permissions.CanCreateGroups);
+        rights.ShouldContain(Permissions.CanEditGroups);
+        rights.ShouldNotContain(Permissions.CanDeleteGroups);
+        rights.ShouldNotContain(Permissions.CanEditSettings);
+    }
+
+    [Test]
+    public void ExpandRoles_NoRoles_MayNotCreateGroups()
+    {
+        var rights = Permissions.ExpandRoles(Array.Empty<string>());
+
+        rights.ShouldContain(Permissions.CanViewGroups);
+        rights.ShouldNotContain(Permissions.CanCreateGroups);
+        rights.ShouldNotContain(Permissions.CanEditGroups);
+    }
+
     [Test]
     public void ExpandRoles_MultipleRoles_DoesNotDuplicate()
     {

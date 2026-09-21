@@ -41,7 +41,7 @@ public class InputBaseControllerAuthorizationTests
     }
 
     [Test]
-    public void Delete_ShouldHaveAuthorizeAttributeWithAdminAndAuthorisedRoles()
+    public void Delete_ShouldHaveAuthorizeAttributeWithAdminRoleOnly()
     {
         // Arrange
         var methodInfo = typeof(InputBaseController<>)
@@ -52,7 +52,11 @@ public class InputBaseControllerAuthorizationTests
 
         // Assert
         authorizeAttribute.ShouldNotBeNull();
-        authorizeAttribute!.Roles.ShouldBe($"{Roles.Admin},{Roles.Authorised}");
+        authorizeAttribute!.Roles.ShouldBe(
+            Roles.Admin,
+            "Deleting a record is administrative: the Authorised role holds CanCreate*/CanEdit* but no " +
+            "CanDelete* right. A resource whose DELETE really is a supervisor action derives from " +
+            "SupervisorDeletableController, which GenericCrudDeleteRoleGuardTests keeps documented.");
     }
 
     [Test]

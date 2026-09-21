@@ -36,6 +36,7 @@ public class KnowledgeIndexSynchronizerTests
         _embeddings = Substitute.For<IEmbeddingProvider>();
         _embeddings.EmbeddingSpaceId.Returns("test-space");
         _repo = Substitute.For<IKnowledgeIndexRepository>();
+        GivenStoredGates();
         _phrases = Substitute.For<ISkillPhraseRepository>();
         _phrases.GetAllActiveAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<SkillPhrase>)new List<SkillPhrase>());
@@ -53,6 +54,31 @@ public class KnowledgeIndexSynchronizerTests
 
     private static byte[] HashFor(string spaceId, string embeddingText) =>
         SHA256.HashData(Encoding.UTF8.GetBytes(spaceId + "\n" + embeddingText));
+
+    /// <summary>
+    /// The permission and endpoint columns the index already holds, per skill source id. An entry left
+    /// out here stands for a row the index does not hold at all, which is the hash diff's business and
+    /// must never read as a drifted gate.
+    /// </summary>
+    /// <param name="gates">Stored (source id, required permission, exposed endpoint key) triples</param>
+    private void GivenStoredGates(
+        params (string SourceId, string? RequiredPermission, string? ExposedEndpointKey)[] gates) =>
+        _repo.GetAllRetrievalGatesAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyDictionary<(KnowledgeEntryKind, string), (string?, string?)>)
+                gates.ToDictionary(
+                    gate => (KnowledgeEntryKind.Skill, gate.SourceId),
+                    gate => (gate.RequiredPermission, gate.ExposedEndpointKey)));
+
+    private void GivenStoredHash(string sourceId, string embeddingText) =>
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>
+            {
+                { (KnowledgeEntryKind.Skill, sourceId), HashFor("test-space", embeddingText) }
+            });
+
+    private Task NoGateWasUpdated() =>
+        _repo.DidNotReceive().UpdateRetrievalGatesAsync(
+            Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>());
 
     private void GivenPhrases(params SkillPhrase[] phrases) =>
         _phrases.GetAllActiveAsync(Arg.Any<CancellationToken>())
@@ -534,6 +560,118 @@ public class KnowledgeIndexSynchronizerTests
         captured.Count.ShouldBe(2);
         captured.Single(e => e.SourceId == "A").Embedding.ShouldBe(vectorA);
         captured.Single(e => e.SourceId == "B").Embedding.ShouldBe(vectorB);
+    }
+
+    // A permission change leaves the embedding text - and with it the text hash - untouched, so before
+    // 2026-09-21 the stored row kept gating retrieval on the right the skill no longer asks for.
+    [Test]
+    public async Task SyncAsync_RequiredPermissionChangedWhileTheTextDidNot_UpdatesTheGateWithoutEmbedding()
+    {
+        var descriptor = new SkillDescriptor(
+            "create_group", "Desc", SkillCategory.Crud, [], [Permissions.CanCreateGroups], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenStoredHash("create_group", "create_group. Desc\nParameters: ");
+        GivenStoredGates(("create_group", Permissions.CanEditSettings, null));
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _embeddings.DidNotReceive().EmbedBatchAsync(
+            Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+        await _repo.DidNotReceive().UpsertAsync(
+            Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).UpdateRetrievalGatesAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                list.Count == 1 &&
+                list[0].SourceId == "create_group" &&
+                list[0].RequiredPermission == Permissions.CanCreateGroups),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SyncAsync_ExposedEndpointKeyDriftedWhileTheTextDidNot_UpdatesTheGate()
+    {
+        var descriptor = new SkillDescriptor(
+            "X", "Desc", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenStoredHash("X", "X. Desc\nParameters: ");
+        GivenStoredGates(("X", null, "groups.post"));
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _repo.Received(1).UpdateRetrievalGatesAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                list.Count == 1 && list[0].SourceId == "X" && list[0].ExposedEndpointKey == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SyncAsync_PermissionAndEndpointUnchanged_LeavesTheGateAlone()
+    {
+        var descriptor = new SkillDescriptor(
+            "X", "Desc", SkillCategory.System, [], [Permissions.CanViewGroups], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenStoredHash("X", "X. Desc\nParameters: ");
+        GivenStoredGates(("X", Permissions.CanViewGroups, null));
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await NoGateWasUpdated();
+        await _repo.DidNotReceive().UpsertAsync(
+            Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>());
+    }
+
+    // A row the index does not hold is the hash diff's business: it is embedded and upserted with the
+    // current permission. Reading its absence as a drifted gate would update a row that does not exist.
+    [Test]
+    public async Task SyncAsync_EntryWithoutAStoredRow_IsNotTreatedAsGateDrift()
+    {
+        var descriptor = new SkillDescriptor(
+            "X", "Desc", SkillCategory.System, [], [Permissions.CanViewGroups], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>());
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new float[][] { new float[384] });
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await NoGateWasUpdated();
+        await _repo.Received(1).UpsertAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                list.Count == 1 && list[0].RequiredPermission == Permissions.CanViewGroups),
+            Arg.Any<CancellationToken>());
+    }
+
+    // The upsert already writes both columns, so an entry whose text changed too must not be written a
+    // second time by the gate path.
+    [Test]
+    public async Task SyncAsync_TextAndPermissionBothChanged_IsOnlyUpserted()
+    {
+        var descriptor = new SkillDescriptor(
+            "X", "New description", SkillCategory.System, [], [Permissions.CanCreateGroups], [], null);
+        _skillRegistry.GetAllSkills().Returns([descriptor]);
+
+        GivenStoredHash("X", "X. Old description\nParameters: ");
+        GivenStoredGates(("X", Permissions.CanEditSettings, null));
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new float[][] { new float[384] });
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await NoGateWasUpdated();
+        await _repo.Received(1).UpsertAsync(
+            Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                list.Count == 1 && list[0].RequiredPermission == Permissions.CanCreateGroups),
+            Arg.Any<CancellationToken>());
     }
 
     private List<KnowledgeEntry> CaptureUpsertedEntries()

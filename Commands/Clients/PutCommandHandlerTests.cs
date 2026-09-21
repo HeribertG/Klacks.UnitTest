@@ -1,8 +1,10 @@
-﻿using Shouldly;
+using Shouldly;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.Handlers.Clients;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Events;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Exceptions;
@@ -26,6 +28,7 @@ public class PutCommandHandlerTests
     private IGroupVisibilityService _groupVisibilityService = null!;
     private IEmailClientAssignmentService _emailClientAssignmentService = null!;
     private IDomainEventDispatcher _eventDispatcher = null!;
+    private IUserService _userService = null!;
     private ILogger<PutCommandHandler> _logger = null!;
     private PutCommandHandler _handler = null!;
 
@@ -38,6 +41,11 @@ public class PutCommandHandlerTests
         _groupVisibilityService = Substitute.For<IGroupVisibilityService>();
         _emailClientAssignmentService = Substitute.For<IEmailClientAssignmentService>();
         _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
+        _userService = Substitute.For<IUserService>();
+
+        // The default caller is the Planer floor: every authenticated user holds it, and it carries
+        // CanViewContracts but not CanEditContracts, so the contract branch still refuses by default.
+        _userService.GetRights().Returns(Permissions.PlannerFloor);
         _logger = Substitute.For<ILogger<PutCommandHandler>>();
 
         _handler = new PutCommandHandler(
@@ -47,6 +55,7 @@ public class PutCommandHandlerTests
             _groupVisibilityService,
             _emailClientAssignmentService,
             _eventDispatcher,
+            _userService,
             _logger
         );
     }
@@ -148,10 +157,111 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit contracts");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    /// <summary>
+    /// The owner decision of 21.09.2026: assigning, re-dating and detaching a person's contract is
+    /// supervisor work. The supervisor is not an admin, so the old IsAdmin() gate refused them — and the
+    /// Ui offered the form all the same, which made the card a dead end for the role that is supposed to
+    /// use it.
+    /// </summary>
+    [Test]
+    public async Task Handle_NonAdminHoldingCanEditContracts_CanModifyClientContracts()
+    {
+        var clientId = Guid.NewGuid();
+        var contractId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.ClientContracts = new List<ClientContract>
+        {
+            new ClientContract
+            {
+                Id = contractId,
+                ContractId = Guid.NewGuid(),
+                IsActive = true,
+                FromDate = new DateOnly(2024, 1, 1),
+                UntilDate = null
+            }
+        };
+
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContractResource>
+            {
+                new ClientContractResource
+                {
+                    Id = contractId,
+                    ContractId = Guid.NewGuid(),
+                    IsActive = false,
+                    FromDate = new DateOnly(2024, 6, 1),
+                    UntilDate = new DateOnly(2024, 12, 31)
+                }
+            },
+            GroupItems = new List<ClientGroupItemResource>()
+        };
+
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
+        _userService.GetRights().Returns(Permissions.GetPermissionsForRole(Roles.Authorised));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+
+        var result = await _handler.Handle(new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        await _clientRepository.Received(1).Put(Arg.Any<Client>(), Arg.Any<Client>());
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    /// <summary>
+    /// The other half of the decision: group memberships were NOT opened. A supervisor changing contracts
+    /// in the same request must still be refused for the group items, so the widened contract gate cannot
+    /// be used as a way in.
+    /// </summary>
+    [Test]
+    public async Task Handle_NonAdminHoldingCanEditContracts_StillCannotModifyGroupItems()
+    {
+        var clientId = Guid.NewGuid();
+        var existingClient = new Client
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContract>(),
+            GroupItems = new List<GroupItem>()
+        };
+
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContractResource>(),
+            GroupItems = new List<ClientGroupItemResource>
+            {
+                new ClientGroupItemResource
+                {
+                    GroupId = Guid.NewGuid(),
+                    ClientId = clientId,
+                    ValidFrom = new DateTime(2024, 1, 1),
+                    ValidUntil = null
+                }
+            }
+        };
+
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
+        _userService.GetRights().Returns(Permissions.GetPermissionsForRole(Roles.Authorised));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+
+        Func<Task> act = async () => await _handler.Handle(
+            new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message
+            .ShouldContain("Only administrators can modify client groups");
+
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }
 
     [Test]
@@ -363,7 +473,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit contracts");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }
@@ -405,7 +515,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client contracts");
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("requires the right to edit contracts");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }

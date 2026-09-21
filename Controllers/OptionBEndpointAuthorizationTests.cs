@@ -27,6 +27,7 @@ public class OptionBEndpointAuthorizationTests
 
     [TestCase(typeof(WorksController), nameof(WorksController.ClosePeriod))]
     [TestCase(typeof(WorksController), nameof(WorksController.ReopenPeriod))]
+    [TestCase(typeof(GroupsController), nameof(GroupsController.DeleteSubtree))]
     [TestCase(typeof(SchedulingRulesController), nameof(SchedulingRulesController.CreateHolidayWorkExemption))]
     [TestCase(typeof(SchedulingRulesController), nameof(SchedulingRulesController.DeleteHolidayWorkExemption))]
     [TestCase(typeof(SchedulingRulesController), nameof(SchedulingRulesController.MigrateContracts))]

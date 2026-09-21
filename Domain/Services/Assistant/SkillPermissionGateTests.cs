@@ -54,6 +54,43 @@ public class SkillPermissionGateTests
         Assert.That(await _sut.HoldsAsync(user, [SkillOnlyPermission]), Is.False);
     }
 
+    /// <summary>
+    /// Owner decision 2026-09-21: an Admin and a Supervisor may create groups, a caller without a role
+    /// may not, and deleting one stays with the Admin. The gate is what decides it for every skill path,
+    /// so the three cases are pinned here rather than only in the seed file.
+    /// </summary>
+    [Test]
+    public async Task Supervisor_MayCreateGroups()
+    {
+        var user = GivenUser(Roles.Authorised);
+
+        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanCreateGroups]), Is.True);
+    }
+
+    [Test]
+    public async Task Admin_MayCreateGroups()
+    {
+        var user = GivenUser(Roles.Admin);
+
+        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanCreateGroups]), Is.True);
+    }
+
+    [Test]
+    public async Task CallerWithoutARole_MayNotCreateGroups()
+    {
+        var user = GivenUser();
+
+        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanCreateGroups]), Is.False);
+    }
+
+    [Test]
+    public async Task Supervisor_MayNotReachASettingsGatedSkill()
+    {
+        var user = GivenUser(Roles.Authorised);
+
+        Assert.That(await _sut.HoldsAsync(user, [Permissions.CanEditSettings]), Is.False);
+    }
+
     [Test]
     public async Task Admin_PassesRegardlessOfTheRequiredPermissions()
     {
