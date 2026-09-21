@@ -30,7 +30,7 @@ public class ShiftSeedStatementSnapshotTests
         Matches(script, OrderRowPattern).ShouldBe(220);
         Matches(script, OriginalShiftRowPattern).ShouldBe(190);
         Matches(script, SplitRowPattern).ShouldBe(80);
-        shiftIds.Count.ShouldBe(430);
+        shiftIds.Count.ShouldBe(490);
     }
 
     [Test]
@@ -87,6 +87,23 @@ public class ShiftSeedStatementSnapshotTests
         var script = ShiftSeed.GenerateInsertScriptForShiftGroupItems(shiftIds);
 
         Count(script, "INSERT INTO public.group_item").ShouldBeGreaterThanOrEqualTo(shiftIds.Count);
+    }
+
+    [Test]
+    public void GenerateInsertScriptForShiftGroupItems_CoversEveryShiftThatHasTrackedGroups()
+    {
+        var (_, shiftIds) = ShiftSeed.GenerateInsertScriptForShifts();
+        var trackedIds = ShiftSeed.ShiftGroupMappings.Keys.ToList();
+
+        var script = ShiftSeed.GenerateInsertScriptForShiftGroupItems(shiftIds);
+
+        trackedIds.ShouldNotBeEmpty();
+        shiftIds.Distinct().Count().ShouldBe(shiftIds.Count);
+        trackedIds.Except(shiftIds).ShouldBeEmpty();
+        foreach (var trackedId in trackedIds)
+        {
+            script.ShouldContain($"'{trackedId}'");
+        }
     }
 
     [Test]

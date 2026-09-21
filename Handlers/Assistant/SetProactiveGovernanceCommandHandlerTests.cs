@@ -10,6 +10,7 @@
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Services.Assistant.Conditions;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
@@ -49,7 +50,7 @@ public class SetProactiveGovernanceCommandHandlerTests
             .Returns(new List<ProactiveGovernanceDecision>());
 
         _sut = new SetProactiveGovernanceCommandHandler(
-            _repository, _settingsRepository, _unitOfWork, _resolver);
+            _repository, _settingsRepository, _unitOfWork, _resolver, new ConditionRemediationRegistry());
     }
 
     private static SetProactiveGovernanceCommand Command(
@@ -158,6 +159,46 @@ public class SetProactiveGovernanceCommandHandlerTests
         // The stage-only settings repository and the self-committing governance repository must not be
         // mixed unguarded; the transaction is what keeps the combined write atomic.
         await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+    }
+
+    /// <summary>
+    /// The write answers with the same picture the read does, because both run through
+    /// ProactiveGovernanceDtoMapper: a Prepare stored on a kind whose remediation cannot be staged as a
+    /// scenario is accepted and stored as asked, but reported back as Hint - that is the level the
+    /// dispatching tick will obey. The answer telling the caller Prepare was the dishonest part, not the
+    /// storing.
+    /// </summary>
+    [Test]
+    public async Task Handle_StoredPrepareOnAKindWhoseRemediationCannotBeStaged_AnswersWithHintAsEffective()
+    {
+        // Arrange
+        _resolver.ResolveAllAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<ProactiveGovernanceDecision>
+            {
+                new(TriggerKind: AgentTriggerKinds.EmptyContainer,
+                    GroupId: null,
+                    EffectiveMaxAction: ProactiveMaxAction.Prepare,
+                    ConfiguredMaxAction: ProactiveMaxAction.Prepare,
+                    Enabled: true,
+                    KillSwitchActive: false,
+                    DailyActionBudget: 5,
+                    WindowActionLimit: 3,
+                    WindowMinutes: 60,
+                    IsStored: true,
+                    GlobalAutonomyCap: ProactiveGovernanceDefaults.MapAutonomyLevel(AutonomyLevel.Autonomous))
+            });
+
+        // Act
+        var dto = await _sut.Handle(
+            Command(triggerKind: AgentTriggerKinds.EmptyContainer, maxAction: ProactiveMaxAction.Prepare),
+            CancellationToken.None);
+
+        // Assert
+        dto.Rules[0].EffectiveMaxAction.ShouldBe((int)ProactiveMaxAction.Hint);
+        dto.Rules[0].MaxAction.ShouldBe((int)ProactiveMaxAction.Prepare);
+        await _repository.Received(1).UpsertAsync(
+            Arg.Is<AgentTriggerGovernance>(rule => rule.MaxAction == ProactiveMaxAction.Prepare),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

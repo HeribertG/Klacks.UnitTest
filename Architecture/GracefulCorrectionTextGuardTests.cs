@@ -98,7 +98,7 @@ public class GracefulCorrectionTextGuardTests
             foreach (var language in GracefulCorrectionTexts.CoreLanguages)
             {
                 variants.ShouldContainKey(language);
-                foreach (var placeholder in GracefulCorrectionTexts.RequiredPlaceholders)
+                foreach (var placeholder in GracefulCorrectionTexts.PlaceholdersFor(key))
                 {
                     variants[language].ShouldContain(placeholder, customMessage: $"{key}/{language}");
                 }

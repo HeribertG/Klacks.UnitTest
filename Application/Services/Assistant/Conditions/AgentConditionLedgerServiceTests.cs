@@ -38,6 +38,8 @@ public class AgentConditionLedgerServiceTests
 
     private static readonly DateTime StartUtc = new(2026, 8, 24, 6, 0, 0, DateTimeKind.Utc);
 
+    private static readonly IReadOnlySet<Guid> NoGroups = new HashSet<Guid>();
+
     private static readonly (AgentConditionStatus From, AgentConditionStatus To)[] LegalTransitions =
     [
         (AgentConditionStatus.Detected, AgentConditionStatus.Reported),
@@ -212,7 +214,7 @@ public class AgentConditionLedgerServiceTests
     public async Task UpsertDetected_FirstSightingOpensARowWithItsDetectionEvent()
     {
         var (condition, isNew) = await _service.UpsertDetectedAsync(
-            Kind, "fp-new", Guid.NewGuid(), Guid.NewGuid(), Severity, Payload);
+            Kind, "fp-new", Guid.NewGuid(), new HashSet<Guid> { Guid.NewGuid() }, Severity, Payload);
 
         isNew.ShouldBeTrue();
         condition.Status.ShouldBe(AgentConditionStatus.Detected);
@@ -222,13 +224,88 @@ public class AgentConditionLedgerServiceTests
         _repository.EventsFor(condition.Id).Single().EventType.ShouldBe(AgentConditionStatus.Detected.ToString());
     }
 
+    /// <summary>
+    /// A shift belongs to several groups at once, so the ledger must store all of them - that set is what
+    /// decides which planners can find the finding. GroupId keeps only the smallest as the row's primary
+    /// group, because the per-group budget and the governance decision are counted in it and must not
+    /// move between ticks.
+    /// </summary>
+    [Test]
+    public async Task UpsertDetected_MultiGroupFinding_StoresEveryGroup_AndTakesTheSmallestAsPrimary()
+    {
+        var firstGroupId = new Guid("00000000-0000-0000-0000-000000000001");
+        var secondGroupId = new Guid("00000000-0000-0000-0000-000000000002");
+
+        var (condition, _) = await _service.UpsertDetectedAsync(
+            Kind,
+            "fp-multi",
+            Guid.NewGuid(),
+            new HashSet<Guid> { secondGroupId, firstGroupId },
+            Severity,
+            Payload);
+
+        condition.GroupId.ShouldBe(firstGroupId);
+
+        _repository.Stored(condition.Id).Groups
+            .Select(group => group.GroupId)
+            .ShouldBe(new[] { firstGroupId, secondGroupId }, ignoreOrder: true);
+    }
+
+    /// <summary>
+    /// A shift that changed groups between two ticks: the visibility set follows, so the planners of the
+    /// new group find the finding and those of the old one stop seeing it. GroupId deliberately stays put,
+    /// which is why the primary group is asserted to be the OLD one here.
+    /// </summary>
+    [Test]
+    public async Task UpsertDetected_SecondSightingWithAChangedGroupSet_RewritesTheSet_ButNotThePrimaryGroup()
+    {
+        var oldGroupId = new Guid("00000000-0000-0000-0000-000000000001");
+        var newGroupId = new Guid("00000000-0000-0000-0000-000000000009");
+
+        var (first, _) = await _service.UpsertDetectedAsync(
+            Kind, "fp-regrouped", null, new HashSet<Guid> { oldGroupId }, Severity, Payload);
+
+        _timeProvider.Now = StartUtc.AddMinutes(5);
+        var (second, isNew) = await _service.UpsertDetectedAsync(
+            Kind, "fp-regrouped", null, new HashSet<Guid> { newGroupId }, Severity, Payload);
+
+        isNew.ShouldBeFalse();
+        second.Id.ShouldBe(first.Id);
+
+        var stored = _repository.Stored(first.Id);
+        stored.Groups.Select(group => group.GroupId).ShouldBe(new[] { newGroupId });
+        stored.GroupId.ShouldBe(oldGroupId, "The budget bucket must not move between ticks.");
+        second.Groups.Select(group => group.GroupId).ShouldBe(new[] { newGroupId });
+    }
+
+    /// <summary>
+    /// A tick re-observes every open row and virtually none of them change groups, so the unchanged case
+    /// must not spend a write. Proven through the fake's return value, which is false exactly when it
+    /// wrote nothing.
+    /// </summary>
+    [Test]
+    public async Task UpsertDetected_SecondSightingWithAnUnchangedGroupSet_WritesNothingToTheGroupSet()
+    {
+        var groupId = Guid.NewGuid();
+        var groupIds = new HashSet<Guid> { groupId };
+
+        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-samegroups", null, groupIds, Severity, Payload);
+
+        _timeProvider.Now = StartUtc.AddMinutes(5);
+        await _service.UpsertDetectedAsync(Kind, "fp-samegroups", null, groupIds, Severity, Payload);
+
+        (await _repository.SyncGroupsAsync(first.Id, groupIds)).ShouldBeFalse(
+            "The set the second sighting left behind must already be the reported one, so a further sync has nothing to do.");
+        _repository.Stored(first.Id).Groups.Select(group => group.GroupId).ShouldBe(new[] { groupId });
+    }
+
     [Test]
     public async Task UpsertDetected_StoresTheFingerprintVerbatim_ItIsTheDetectorsToBuild()
     {
         const string fingerprint = "empty_container:11111111-1111-1111-1111-111111111111:2026-09-01";
 
         var (condition, _) = await _service.UpsertDetectedAsync(
-            Kind, fingerprint, null, null, Severity, Payload);
+            Kind, fingerprint, null, NoGroups, Severity, Payload);
 
         condition.Fingerprint.ShouldBe(fingerprint);
         _repository.Stored(condition.Id).Fingerprint.ShouldBe(fingerprint);
@@ -237,10 +314,10 @@ public class AgentConditionLedgerServiceTests
     [Test]
     public async Task UpsertDetected_SecondSightingWithAnUnchangedPayload_MovesLastSeenOnly()
     {
-        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-again", null, null, Severity, Payload);
+        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-again", null, NoGroups, Severity, Payload);
 
         _timeProvider.Now = StartUtc.AddMinutes(5);
-        var (second, isNew) = await _service.UpsertDetectedAsync(Kind, "fp-again", null, null, Severity, Payload);
+        var (second, isNew) = await _service.UpsertDetectedAsync(Kind, "fp-again", null, NoGroups, Severity, Payload);
 
         isNew.ShouldBeFalse();
         second.Id.ShouldBe(first.Id);
@@ -268,7 +345,7 @@ public class AgentConditionLedgerServiceTests
 
         _timeProvider.Now = StartUtc.AddMinutes(5);
         var (condition, isNew) = await _service.UpsertDetectedAsync(
-            Kind, "fp-refresh", null, null, Severity, RefreshedPayload);
+            Kind, "fp-refresh", null, NoGroups, Severity, RefreshedPayload);
 
         isNew.ShouldBeFalse();
         condition.Id.ShouldBe(seeded.Id);
@@ -299,7 +376,7 @@ public class AgentConditionLedgerServiceTests
         seeded.PayloadJson = StalePayload;
 
         var (_, isNew) = await _service.UpsertDetectedAsync(
-            Kind, "fp-sameclock", null, null, Severity, RefreshedPayload);
+            Kind, "fp-sameclock", null, NoGroups, Severity, RefreshedPayload);
 
         isNew.ShouldBeFalse();
         _repository.Stored(seeded.Id).PayloadJson.ShouldBe(RefreshedPayload);
@@ -313,7 +390,7 @@ public class AgentConditionLedgerServiceTests
         seeded.PayloadJson = RefreshedPayload;
 
         _timeProvider.Now = StartUtc.AddMinutes(5);
-        await _service.UpsertDetectedAsync(Kind, "fp-empty", null, null, Severity, "{}");
+        await _service.UpsertDetectedAsync(Kind, "fp-empty", null, NoGroups, Severity, "{}");
 
         _repository.Stored(seeded.Id).PayloadJson.ShouldBe(RefreshedPayload);
     }
@@ -326,12 +403,12 @@ public class AgentConditionLedgerServiceTests
     [Test]
     public async Task UpsertDetected_ChangedPayloadAfterTheRowWentTerminal_LeavesTheHistoryRowUntouched()
     {
-        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-terminal", null, null, Severity, StalePayload);
+        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-terminal", null, NoGroups, Severity, StalePayload);
         await _service.TryTransitionAsync(first.Id, AgentConditionStatus.Detected, AgentConditionStatus.Resolved);
 
         _timeProvider.Now = StartUtc.AddHours(1);
         var (second, isNew) = await _service.UpsertDetectedAsync(
-            Kind, "fp-terminal", null, null, Severity, RefreshedPayload);
+            Kind, "fp-terminal", null, NoGroups, Severity, RefreshedPayload);
 
         isNew.ShouldBeTrue();
         second.Id.ShouldNotBe(first.Id);
@@ -357,7 +434,7 @@ public class AgentConditionLedgerServiceTests
         _repository.LoseNextInsertTo(winner);
 
         _timeProvider.Now = StartUtc.AddMinutes(1);
-        var (condition, isNew) = await _service.UpsertDetectedAsync(Kind, "fp-race", null, null, Severity, Payload);
+        var (condition, isNew) = await _service.UpsertDetectedAsync(Kind, "fp-race", null, NoGroups, Severity, Payload);
 
         isNew.ShouldBeFalse();
         condition.Id.ShouldBe(winner.Id);
@@ -368,11 +445,11 @@ public class AgentConditionLedgerServiceTests
     [Test]
     public async Task UpsertDetected_AfterResolved_ReArmsIntoANewRowAndKeepsTheResolvedOneAsHistory()
     {
-        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-rearm", null, null, Severity, Payload);
+        var (first, _) = await _service.UpsertDetectedAsync(Kind, "fp-rearm", null, NoGroups, Severity, Payload);
         await _service.TryTransitionAsync(first.Id, AgentConditionStatus.Detected, AgentConditionStatus.Resolved);
 
         _timeProvider.Now = StartUtc.AddHours(1);
-        var (second, isNew) = await _service.UpsertDetectedAsync(Kind, "fp-rearm", null, null, Severity, Payload);
+        var (second, isNew) = await _service.UpsertDetectedAsync(Kind, "fp-rearm", null, NoGroups, Severity, Payload);
 
         isNew.ShouldBeTrue();
         second.Id.ShouldNotBe(first.Id);

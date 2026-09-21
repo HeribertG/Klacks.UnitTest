@@ -3,6 +3,7 @@
 using System.Net;
 using System.Text;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.DeepSeek;
 using Klacks.Api.Domain.Services.Assistant.Providers;
@@ -74,10 +75,70 @@ public class DeepSeekProviderToolChoiceFallbackTests
         var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
         var provider = CreateProvider(handler);
 
-        var result = await provider.ProcessAsync(RequestWithToolChoice("required"));
+        var result = await provider.ProcessAsync(RequestWithToolChoice(null));
 
         result.Success.ShouldBeTrue(result.Error);
         handler.RequestBodies[0].ShouldNotContain("\"thinking\"");
+    }
+
+    // The declaration this provider makes, honoured on the wire: a request that forces a tool call turns
+    // thinking off by itself, which is the combination the API accepts. Without it the forcing is refused
+    // and the retry falls back to auto, where a thinking model answers in prose and the step never runs.
+    [Test]
+    public async Task ProcessAsync_ForcedToolChoice_SendsThinkingDisabledWithoutAnyConfiguration()
+    {
+        var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        var provider = CreateProvider(handler);
+
+        var result = await provider.ProcessAsync(
+            RequestWithToolChoice("required", "deepseek-test-forced-thinking-off"));
+
+        result.Success.ShouldBeTrue(result.Error);
+        handler.RequestBodies.Count.ShouldBe(1);
+        handler.RequestBodies[0].ShouldContain("\"thinking\":{\"type\":\"disabled\"}");
+        handler.RequestBodies[0].ShouldContain("\"tool_choice\":\"required\"");
+    }
+
+    [Test]
+    public async Task ProcessAsync_UnforcedToolChoice_LeavesThinkingUntouched()
+    {
+        var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        var provider = CreateProvider(handler);
+
+        var result = await provider.ProcessAsync(RequestWithToolChoice("auto"));
+
+        result.Success.ShouldBeTrue(result.Error);
+        handler.RequestBodies[0].ShouldNotContain("\"thinking\"");
+    }
+
+    [Test]
+    public void ResolveForcedToolChoiceSupport_DeclaresThatForcingNeedsThinkingOff()
+    {
+        var provider = CreateProvider(
+            new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) }));
+
+        provider.ResolveForcedToolChoiceSupport(RequestWithToolChoice("required"))
+            .ShouldBe(ForcedToolChoiceSupport.RequiresThinkingDisabled);
+    }
+
+    // The retry still sends the original intent, so thinking stays off on it too: the downgrade to auto
+    // answers a refusal that was NOT about thinking, and re-enabling thinking there would change two
+    // things at once.
+    [Test]
+    public async Task ProcessAsync_ForcedToolChoiceRejectedAnyway_KeepsThinkingDisabledOnTheRetry()
+    {
+        var handler = new SequenceHandler(
+            new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = Json(ThinkingRejectionBody) },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = Json(SuccessBody) });
+        var provider = CreateProvider(handler);
+
+        var result = await provider.ProcessAsync(
+            RequestWithToolChoice("required", "deepseek-test-forced-retry-thinking"));
+
+        result.Success.ShouldBeTrue(result.Error);
+        handler.RequestBodies.Count.ShouldBe(2);
+        handler.RequestBodies[1].ShouldContain("\"thinking\":{\"type\":\"disabled\"}");
+        handler.RequestBodies[1].ShouldContain("\"tool_choice\":\"auto\"");
     }
 
     [Test]

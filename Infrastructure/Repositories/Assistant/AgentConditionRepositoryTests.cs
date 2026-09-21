@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Assistant;
 using Microsoft.AspNetCore.Http;
@@ -56,24 +57,53 @@ public class AgentConditionRepositoryTests
 
     private DataBaseContext CreateContext() => new(_options, _httpAccessor);
 
+    /// <param name="groupId">The row's primary group. Also becomes its single agent_condition_groups row,
+    /// because that is the pair detection produces and the scope reads now gate on the join table.</param>
     private static AgentCondition Condition(
         string triggerKind,
         string fingerprint,
         AgentConditionStatus status,
         DateTime detectedAtUtc,
         string severity = AgentTriggerSeverity.Low,
-        Guid? groupId = null) => new()
+        Guid? groupId = null) =>
+        MultiGroupCondition(
+            triggerKind,
+            fingerprint,
+            status,
+            detectedAtUtc,
+            severity,
+            groupId.HasValue ? new HashSet<Guid> { groupId.Value } : new HashSet<Guid>());
+
+    /// <summary>
+    /// A row that concerns SEVERAL groups, the shape a shift-borne finding has: GroupId keeps the smallest
+    /// as the primary group, and every group gets its agent_condition_groups row.
+    /// </summary>
+    private static AgentCondition MultiGroupCondition(
+        string triggerKind,
+        string fingerprint,
+        AgentConditionStatus status,
+        DateTime detectedAtUtc,
+        string severity,
+        IReadOnlySet<Guid> groupIds)
     {
-        Id = Guid.NewGuid(),
-        TriggerKind = triggerKind,
-        Fingerprint = fingerprint,
-        Severity = severity,
-        Status = status,
-        DetectedAtUtc = detectedAtUtc,
-        LastSeenAtUtc = detectedAtUtc,
-        GroupId = groupId,
-        PayloadJson = "{}"
-    };
+        var id = Guid.NewGuid();
+
+        return new AgentCondition
+        {
+            Id = id,
+            TriggerKind = triggerKind,
+            Fingerprint = fingerprint,
+            Severity = severity,
+            Status = status,
+            DetectedAtUtc = detectedAtUtc,
+            LastSeenAtUtc = detectedAtUtc,
+            GroupId = AgentConditionLedgerPolicy.PrimaryGroupIdFor(groupIds),
+            Groups = groupIds
+                .Select(groupId => new AgentConditionGroup { ConditionId = id, GroupId = groupId })
+                .ToList(),
+            PayloadJson = "{}"
+        };
+    }
 
     private static Group GroupRow(Guid id, Guid? root, Guid? parent) => new()
     {
@@ -171,7 +201,7 @@ public class AgentConditionRepositoryTests
         var condition = Condition(Kind, "fp-insert", AgentConditionStatus.Detected, StartUtc);
 
         var inserted = await new AgentConditionRepository(context)
-            .InsertAsync(condition, DetectionEvent(condition.Id, StartUtc));
+            .InsertAsync(condition, DetectionEvent(condition.Id, StartUtc), new HashSet<Guid>());
 
         inserted.ShouldNotBeNull();
 
@@ -180,6 +210,210 @@ public class AgentConditionRepositoryTests
         var storedEvent = await verify.AgentConditionEvents.SingleAsync();
         storedEvent.ConditionId.ShouldBe(condition.Id);
         storedEvent.EventType.ShouldBe(AgentConditionStatus.Detected.ToString());
+    }
+
+    /// <summary>
+    /// The group set is persisted in the SAME SaveChangesAsync as the condition and its detection event.
+    /// A row whose groups arrived in a second write could be read by another instance's scoped query in
+    /// between and be withheld from planners it belongs to.
+    /// </summary>
+    [Test]
+    public async Task Insert_PersistsTheWholeGroupSet_NotOnlyThePrimaryGroup()
+    {
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+
+        using var context = CreateContext();
+        var condition = Condition(Kind, "fp-insert-groups", AgentConditionStatus.Detected, StartUtc);
+        condition.GroupId = firstGroupId;
+
+        await new AgentConditionRepository(context).InsertAsync(
+            condition,
+            DetectionEvent(condition.Id, StartUtc),
+            new HashSet<Guid> { firstGroupId, secondGroupId });
+
+        using var verify = CreateContext();
+        var stored = await verify.AgentConditionGroups
+            .Where(g => g.ConditionId == condition.Id)
+            .Select(g => g.GroupId)
+            .ToListAsync();
+
+        stored.ShouldBe(new[] { firstGroupId, secondGroupId }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task SyncGroups_AddsTheMissingGroups_AndDropsTheOnesNoLongerReported()
+    {
+        var keptGroupId = Guid.NewGuid();
+        var droppedGroupId = Guid.NewGuid();
+        var addedGroupId = Guid.NewGuid();
+
+        using var context = CreateContext();
+        var condition = MultiGroupCondition(
+            Kind,
+            "fp-sync",
+            AgentConditionStatus.Reported,
+            StartUtc,
+            AgentTriggerSeverity.Low,
+            new HashSet<Guid> { keptGroupId, droppedGroupId });
+        context.AgentConditions.Add(condition);
+        await context.SaveChangesAsync();
+
+        var changed = await new AgentConditionRepository(context)
+            .SyncGroupsAsync(condition.Id, new HashSet<Guid> { keptGroupId, addedGroupId });
+
+        changed.ShouldBeTrue();
+
+        using var verify = CreateContext();
+        var stored = await verify.AgentConditionGroups
+            .Where(g => g.ConditionId == condition.Id)
+            .Select(g => g.GroupId)
+            .ToListAsync();
+
+        stored.ShouldBe(new[] { keptGroupId, addedGroupId }, ignoreOrder: true);
+    }
+
+    /// <summary>
+    /// A tick re-observes every open row - thousands of them - and virtually none change groups, so the
+    /// unchanged case must cost no write at all. The false return is what the ledger service's own test
+    /// asserts that rule through.
+    /// </summary>
+    [Test]
+    public async Task SyncGroups_WithAnUnchangedSet_ReportsNoWrite()
+    {
+        var firstGroupId = Guid.NewGuid();
+        var secondGroupId = Guid.NewGuid();
+        var groupIds = new HashSet<Guid> { firstGroupId, secondGroupId };
+
+        using var context = CreateContext();
+        var condition = MultiGroupCondition(
+            Kind, "fp-sync-noop", AgentConditionStatus.Reported, StartUtc, AgentTriggerSeverity.Low, groupIds);
+        context.AgentConditions.Add(condition);
+        await context.SaveChangesAsync();
+
+        var changed = await new AgentConditionRepository(context).SyncGroupsAsync(condition.Id, groupIds);
+
+        changed.ShouldBeFalse();
+
+        using var verify = CreateContext();
+        (await verify.AgentConditionGroups.CountAsync(g => g.ConditionId == condition.Id)).ShouldBe(2);
+    }
+
+    /// <summary>
+    /// THE MULTI-GROUP BUG ITSELF. A shift belongs to several groups at once, so a finding about it
+    /// concerns all of them; AgentCondition.GroupId can name only one, and while the scoped reads gated on
+    /// that column the planners of every other group could not find the finding at all - not through
+    /// list_open_findings, not through the chat context block, not through the digest - although the live
+    /// push had correctly reached them. Each group is deliberately a DIFFERENT Nested Set root here, so a
+    /// fix that merely widened the subtree comparison would not pass.
+    /// </summary>
+    [Test]
+    public async Task GetOpenForScope_MultiGroupFinding_IsVisibleToAPlannerOfEveryOneOfItsGroups()
+    {
+        using var context = CreateContext();
+        var firstRoot = Guid.NewGuid();
+        var secondRoot = Guid.NewGuid();
+        var secondChild = Guid.NewGuid();
+        var foreignRoot = Guid.NewGuid();
+        context.Group.AddRange(
+            GroupRow(firstRoot, root: firstRoot, parent: null),
+            GroupRow(secondRoot, root: secondRoot, parent: null),
+            GroupRow(secondChild, root: secondRoot, parent: secondRoot),
+            GroupRow(foreignRoot, root: foreignRoot, parent: null));
+
+        // The second group is a CHILD, so its planner is only reachable through the root fallback - the
+        // join table must be resolved the same way the single-group column was.
+        var multiGroup = MultiGroupCondition(
+            Kind,
+            "fp-multi-group",
+            AgentConditionStatus.Reported,
+            StartUtc,
+            AgentTriggerSeverity.High,
+            new HashSet<Guid> { firstRoot, secondChild });
+        context.AgentConditions.Add(multiGroup);
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+        var firstPlanner = await repository.GetOpenForScopeAsync(
+            isUnrestricted: false, visibleRootIds: new HashSet<Guid> { firstRoot }, take: 20);
+        var secondPlanner = await repository.GetOpenForScopeAsync(
+            isUnrestricted: false, visibleRootIds: new HashSet<Guid> { secondRoot }, take: 20);
+        var foreignPlanner = await repository.GetOpenForScopeAsync(
+            isUnrestricted: false, visibleRootIds: new HashSet<Guid> { foreignRoot }, take: 20);
+
+        firstPlanner.Select(c => c.Id).ShouldContain(multiGroup.Id);
+        secondPlanner.Select(c => c.Id).ShouldContain(
+            multiGroup.Id,
+            "The planner of the second group must find the finding too - that is the whole point of the join table.");
+        foreignPlanner.Select(c => c.Id).ShouldNotContain(multiGroup.Id);
+
+        (await repository.CountOpenForScopeAsync(isUnrestricted: false, visibleRootIds: new HashSet<Guid> { secondRoot }))
+            .ShouldBe(1);
+    }
+
+    /// <summary>
+    /// Same finding, same second group, through the other two entry points on the shared scope fragment:
+    /// the per-turn chat context block and the single-row read Etappe 4e delegation resolves through. Only
+    /// checking GetOpenForScopeAsync would let either of them keep the old narrowing.
+    /// </summary>
+    [Test]
+    public async Task GetTopForContextAndById_MultiGroupFinding_AreVisibleToTheSecondGroupsPlanner()
+    {
+        using var context = CreateContext();
+        var firstRoot = Guid.NewGuid();
+        var secondRoot = Guid.NewGuid();
+        context.Group.AddRange(
+            GroupRow(firstRoot, root: firstRoot, parent: null),
+            GroupRow(secondRoot, root: secondRoot, parent: null));
+
+        var multiGroup = MultiGroupCondition(
+            Kind,
+            "fp-multi-group-context",
+            AgentConditionStatus.Reported,
+            StartUtc,
+            AgentTriggerSeverity.High,
+            new HashSet<Guid> { firstRoot, secondRoot });
+        context.AgentConditions.Add(multiGroup);
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+        var scope = new HashSet<Guid> { secondRoot };
+
+        var contextBlock = await repository.GetTopForContextAsync(
+            isUnrestricted: false, visibleRootIds: scope, preferredGroupId: null, take: 20);
+        var single = await repository.GetOpenForScopeByIdAsync(multiGroup.Id, isUnrestricted: false, scope);
+
+        contextBlock.Select(c => c.Id).ShouldContain(multiGroup.Id);
+        single.ShouldNotBeNull();
+    }
+
+    /// <summary>
+    /// A row whose primary GroupId is set but whose join rows are missing - a row written before the
+    /// backfill, or one whose backfill did not run - must fall back to Admins, exactly where a row of a
+    /// group-scoped kind with no group at all already falls. The one thing it must not do is become
+    /// visible to every planner.
+    /// </summary>
+    [Test]
+    public async Task GetOpenForScope_NonAdmin_DoesNotSeeARowWhoseGroupSetIsMissing()
+    {
+        using var context = CreateContext();
+        var ownRoot = Guid.NewGuid();
+        context.Group.Add(GroupRow(ownRoot, root: ownRoot, parent: null));
+
+        var withoutJoinRows = Condition(
+            Kind, "fp-no-join-rows", AgentConditionStatus.Reported, StartUtc, groupId: ownRoot);
+        withoutJoinRows.Groups.Clear();
+        context.AgentConditions.Add(withoutJoinRows);
+        await context.SaveChangesAsync();
+
+        var repository = new AgentConditionRepository(context);
+        var planner = await repository.GetOpenForScopeAsync(
+            isUnrestricted: false, visibleRootIds: new HashSet<Guid> { ownRoot }, take: 20);
+        var admin = await repository.GetOpenForScopeAsync(
+            isUnrestricted: true, visibleRootIds: new HashSet<Guid>(), take: 20);
+
+        planner.Select(c => c.Id).ShouldNotContain(withoutJoinRows.Id);
+        admin.Select(c => c.Id).ShouldContain(withoutJoinRows.Id);
     }
 
     [Test]

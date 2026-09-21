@@ -55,6 +55,12 @@ public class CompanyClockCaptiveDependencyGuardTests
     private static readonly string[] RegistrationFileRelativePaths =
     [
         "Infrastructure/Extensions/ServiceCollectionExtensions.cs",
+        "Infrastructure/Extensions/DomainServiceCollectionExtensions.cs",
+        "Infrastructure/Extensions/LLMCoreServiceCollectionExtensions.cs",
+        "Infrastructure/Extensions/RepositoryServiceCollectionExtensions.cs",
+        "Infrastructure/Extensions/KnowledgeIndexServiceCollectionExtensions.cs",
+        "Infrastructure/Extensions/EscalationServiceCollectionExtensions.cs",
+        "Infrastructure/Extensions/SkillToolsetServiceCollectionExtensions.cs",
         "Infrastructure/Extensions/ErpImportServiceCollectionExtensions.cs",
         "Infrastructure/Extensions/AssistantExtensions.cs",
         "Infrastructure/Extensions/KlacksBotServiceCollectionExtensions.cs",

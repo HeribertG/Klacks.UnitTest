@@ -68,7 +68,7 @@ public class EscalationChainServiceAcknowledgeChainTests
 
         var acknowledged = await _sut.AcknowledgeChainAsync(chainId, "planner-a");
 
-        Assert.That(acknowledged, Is.True);
+        Assert.That(acknowledged, Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
         Assert.That(_repository.GetChain(chainId).Status, Is.EqualTo(EscalationChainStatus.Acknowledged));
         Assert.That(_repository.GetChain(chainId).AcknowledgedByUserId, Is.EqualTo("planner-a"));
         Assert.That(_repository.GetStage(chainId, "planner-a").Status, Is.EqualTo(EscalationStageStatus.Acknowledged));
@@ -83,17 +83,17 @@ public class EscalationChainServiceAcknowledgeChainTests
     }
 
     [Test]
-    public async Task AcknowledgeChainAsync_UnknownChainId_ReturnsFalse()
+    public async Task AcknowledgeChainAsync_UnknownChainId_ReportsNoNotifiedStage()
     {
         await StartChain(Guid.NewGuid(), ShiftStartUtc);
 
         var acknowledged = await _sut.AcknowledgeChainAsync(Guid.NewGuid(), "planner-a");
 
-        Assert.That(acknowledged, Is.False);
+        Assert.That(acknowledged, Is.EqualTo(EscalationAcknowledgeOutcome.NoNotifiedStage));
     }
 
     [Test]
-    public async Task AcknowledgeChainAsync_UserHasNoNotifiedStageOnThisChain_ReturnsFalse()
+    public async Task AcknowledgeChainAsync_UserHasNoNotifiedStageOnThisChain_ReportsNoNotifiedStage()
     {
         var chainId = await StartChain(Guid.NewGuid(), ShiftStartUtc);
 
@@ -102,7 +102,7 @@ public class EscalationChainServiceAcknowledgeChainTests
 
         var acknowledged = await _sut.AcknowledgeChainAsync(chainId, "planner-b");
 
-        Assert.That(acknowledged, Is.False);
+        Assert.That(acknowledged, Is.EqualTo(EscalationAcknowledgeOutcome.NoNotifiedStage));
         Assert.That(_repository.GetChain(chainId).Status, Is.EqualTo(EscalationChainStatus.Running));
         Assert.That(_repository.GetStage(chainId, "planner-b").Status, Is.EqualTo(EscalationStageStatus.Pending));
     }
@@ -126,7 +126,7 @@ public class EscalationChainServiceAcknowledgeChainTests
 
         var acknowledged = await _sut.AcknowledgeChainAsync(chainAId, "planner-a");
 
-        Assert.That(acknowledged, Is.True);
+        Assert.That(acknowledged, Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
         Assert.That(_repository.GetChain(chainAId).Status, Is.EqualTo(EscalationChainStatus.Acknowledged),
             "Chain A must be the one acknowledged - it is the chain the caller asked for.");
         Assert.That(_repository.GetChain(chainBId).Status, Is.EqualTo(EscalationChainStatus.Running),

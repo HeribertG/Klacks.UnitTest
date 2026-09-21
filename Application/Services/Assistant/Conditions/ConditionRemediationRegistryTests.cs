@@ -9,6 +9,10 @@
 /// Etappe 5b added the first entry (empty_container). The kinds below are the ones that are still
 /// deliberately absent - open_order and uncut_fullday_shift, whose remediations were never built - plus
 /// a synthetic unknown kind, so the general case keeps being covered as further kinds gain entries.
+///
+/// Since 2026-09-21 a second invariant is pinned here: a registered kind whose remediation is not
+/// scenario-capable caps a configured Prepare at Hint too. Execute is deliberately left alone, so the
+/// two loop tests below hold for every future entry without being edited.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Conditions;
@@ -92,6 +96,45 @@ public class ConditionRemediationRegistryTests
         var effective = _sut.TryGetEffectiveMaxAction(AgentTriggerKinds.EmptyContainer, ProactiveMaxAction.Execute);
 
         Assert.That(effective, Is.EqualTo(ProactiveMaxAction.Execute));
+    }
+
+    [Test]
+    public void EmptyContainer_ConfiguredPrepare_CapsAtHint_BecauseItsRemediationIsNotScenarioCapable()
+    {
+        var effective = _sut.TryGetEffectiveMaxAction(AgentTriggerKinds.EmptyContainer, ProactiveMaxAction.Prepare);
+
+        Assert.That(
+            effective,
+            Is.EqualTo(ProactiveMaxAction.Hint),
+            "Prepare on a kind whose remediation cannot be staged as a scenario was inert but reported as "
+            + "Prepare; the cap makes the reported ceiling match what the tick can actually do.");
+    }
+
+    [Test]
+    public void EveryRegisteredKind_ConfiguredPrepare_IsCappedAtHintUnlessItsEntryIsScenarioCapable()
+    {
+        foreach (var kind in _sut.RegisteredKinds)
+        {
+            _sut.TryGetEntry(kind, out var entry);
+            var expected = entry!.IsScenarioCapable ? ProactiveMaxAction.Prepare : ProactiveMaxAction.Hint;
+
+            Assert.That(
+                _sut.TryGetEffectiveMaxAction(kind, ProactiveMaxAction.Prepare),
+                Is.EqualTo(expected),
+                $"'{kind}' must not advertise a Prepare rung it cannot carry out.");
+        }
+    }
+
+    [Test]
+    public void EveryRegisteredKind_ConfiguredExecute_IsNeverCapped()
+    {
+        foreach (var kind in _sut.RegisteredKinds)
+        {
+            Assert.That(
+                _sut.TryGetEffectiveMaxAction(kind, ProactiveMaxAction.Execute),
+                Is.EqualTo(ProactiveMaxAction.Execute),
+                $"'{kind}' has a remediation, so Execute stays Execute - the scenario capability governs Prepare only.");
+        }
     }
 
     [Test]

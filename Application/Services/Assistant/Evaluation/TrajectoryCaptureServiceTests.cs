@@ -646,6 +646,11 @@ public class TrajectoryCaptureServiceTests
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
     }
 
+    // A reply that redirects the conversation instead of refusing the recipe is its own outcome, not a
+    // decline: the engine abandons the run either way, but this turn says nothing about whether the
+    // trigger was right, so it must leave RecipeDeclineClusterPolicy's input untouched. It is not a
+    // correction either - the user corrected the assistant's question, not its skill choice. Before the
+    // redirected outcome existed the gate simply stayed pending for good.
     [Test]
     public async Task ANegationCorrectingCourseAfterAConfirmationPrompt_IsNeitherDeclineNorCorrection()
     {
@@ -653,15 +658,124 @@ public class TrajectoryCaptureServiceTests
 
         await _service.CaptureAsync(
             _agentId,
-            new LLMContext { Message = "Nein, zeig mir stattdessen die Kunden", UserId = "user-1" },
+            new LLMContext
+            {
+                Message = "Nein, zeig mir stattdessen die Kunden",
+                UserId = "user-1",
+                RecipeConfirmationDeclined = true
+            },
             "Hier sind die Kunden.",
             []);
 
-        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Pending);
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Redirected);
         previous.WasCorrected.ShouldBeFalse();
-        await _repository.DidNotReceive().UpdateAsync(previous);
+        await _repository.Received(1).UpdateAsync(previous);
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    // A bare refusal reaching the same branch keeps the outcome AND the learning signal it always had.
+    // The engine's flag only decides that the gate is over, never which verdict it carries.
+    [Test]
+    public async Task AnAbandonedGateAnsweredByABareNegation_IsStillRecordedAsARecipeDecline()
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Nein", UserId = "user-1", RecipeConfirmationDeclined = true },
+            "Alles klar.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Declined);
+        await _repository.Received(1).UpdateAsync(previous);
+        await _caseCollector.Received(1).CollectRecipeDeclineAsync(
+            Arg.Is<SkillLearningRecipeDecline>(d =>
+                d.AgentId == _agentId
+                && d.ClusterKey == previous.UserMessageHash
+                && d.RecipeName == "setup-consultation"
+                && d.TrajectoryId == previous.Id),
+            Arg.Any<CancellationToken>());
+    }
+
+    // Same reason the confirmed gate resolves before the window: the flag is the engine's own record, not
+    // an attribution, and the pending recipe outlives the correction window by far.
+    [Test]
+    public async Task AnAbandonedGate_IsResolvedOutsideTheCorrectionWindow()
+    {
+        var previous = GivenPendingConfirmation();
+        previous.CreateTime = DateTime.UtcNow.AddMinutes(-5);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext
+            {
+                Message = "Nein, zeig mir stattdessen die Kunden",
+                UserId = "user-1",
+                RecipeConfirmationDeclined = true
+            },
+            "Hier sind die Kunden.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Redirected);
+        await _repository.Received(1).UpdateAsync(previous);
+    }
+
+    // The flag resolves a GATE, nothing else. A preceding turn that never asked a confirmation question
+    // carries no pending outcome, and overwriting it would invent a gate that never existed.
+    [Test]
+    public async Task AnAbandonedGate_LeavesATurnWithoutAPendingOutcomeUntouched()
+    {
+        var previous = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = _agentId,
+            UserId = "user-1",
+            LlmChosenSkill = "list_clients",
+            WasCorrected = false,
+            RecipeOutcome = null,
+            CreateTime = DateTime.UtcNow.AddSeconds(-30),
+        };
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext
+            {
+                Message = "Zeig mir stattdessen die Kunden",
+                UserId = "user-1",
+                RecipeConfirmationDeclined = true
+            },
+            "Hier sind die Kunden.",
+            []);
+
+        previous.RecipeOutcome.ShouldBeNull();
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceive().UpdateAsync(previous);
+    }
+
+    // The flag alone is the admission ticket: a redirecting reply carries neither a correction signal nor
+    // a bare negation nor a resumed recipe, so without the flag in the gate condition the lookup would
+    // never happen and the outcome would stay pending.
+    [Test]
+    public async Task AnAbandonedGateWithoutAnyOtherSignal_StillReachesTheLookup()
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext
+            {
+                Message = "Zeig mir stattdessen die Kunden",
+                UserId = "user-1",
+                RecipeConfirmationDeclined = true
+            },
+            "Hier sind die Kunden.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Redirected);
+        await _repository.Received(1).UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
     }
 
     // "Nö" is a refusal the correction vocabulary does not know. Before the gate admitted bare
@@ -759,6 +873,70 @@ public class TrajectoryCaptureServiceTests
         previous.WasCorrected.ShouldBeFalse();
         await _repository.DidNotReceive().UpdateAsync(previous);
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
+    }
+
+    // The engine's own decision, not an inference from the message: TurnPreparationService sets the flag
+    // where it clears the gate. ActiveRecipeName is left empty here on purpose, so nothing but the flag
+    // can resolve the gate - that is what the old affirmation-plus-same-name inference needed.
+    [Test]
+    public async Task AnEngineConfirmedGate_IsResolvedAsConfirmed()
+    {
+        var previous = GivenPendingConfirmation();
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "ok", UserId = "user-1", RecipeConfirmationAccepted = true },
+            "Ich starte die Einrichtung.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Confirmed);
+        await _repository.Received(1).UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectRecipeDeclineAsync(default!, default);
+    }
+
+    // The correction window bounds a heuristic attribution; a gate the engine cleared is a fact, and the
+    // pending recipe outlives that window by far (PendingRecipeTtlMinutes). A user who reads the
+    // question and answers three minutes later resumes the recipe, so the gate must resolve too.
+    [Test]
+    public async Task AnEngineConfirmedGate_IsResolvedOutsideTheCorrectionWindow()
+    {
+        var previous = GivenPendingConfirmation();
+        previous.CreateTime = DateTime.UtcNow.AddMinutes(-5);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "ok", UserId = "user-1", RecipeConfirmationAccepted = true },
+            "Ich starte die Einrichtung.",
+            []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Confirmed);
+        await _repository.Received(1).UpdateAsync(previous);
+    }
+
+    [Test]
+    public async Task AnEngineConfirmedGate_LeavesATurnWithoutAPendingOutcomeUntouched()
+    {
+        var previous = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = _agentId,
+            UserId = "user-1",
+            LlmChosenSkill = "list_clients",
+            WasCorrected = false,
+            RecipeOutcome = null,
+            CreateTime = DateTime.UtcNow.AddSeconds(-30),
+        };
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "ok", UserId = "user-1", RecipeConfirmationAccepted = true },
+            "Ich starte die Einrichtung.",
+            []);
+
+        previous.RecipeOutcome.ShouldBeNull();
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceive().UpdateAsync(previous);
     }
 
     private SkillSelectionTrajectory GivenPendingConfirmation()

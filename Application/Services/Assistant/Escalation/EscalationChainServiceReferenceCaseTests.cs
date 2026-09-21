@@ -109,7 +109,7 @@ public class EscalationChainServiceReferenceCaseTests
         _timeProvider.Now = ReportedAtUtc.AddMinutes(26);
         var acknowledged = await _sut.AcknowledgeAsync("planner-b");
 
-        Assert.That(acknowledged, Is.True);
+        Assert.That(acknowledged, Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
         Assert.That(_repository.GetChain(chainId).Status, Is.EqualTo(EscalationChainStatus.Acknowledged));
         Assert.That(_repository.GetChain(chainId).AcknowledgedByUserId, Is.EqualTo("planner-b"));
         Assert.That(_repository.GetStage(chainId, "planner-b").Status, Is.EqualTo(EscalationStageStatus.Acknowledged));

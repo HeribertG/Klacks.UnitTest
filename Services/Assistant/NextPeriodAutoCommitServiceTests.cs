@@ -63,7 +63,7 @@ public class NextPeriodAutoCommitServiceTests
         _timeProvider = new SettableTimeProvider(new DateTime(2026, 1, 28, 9, 0, 0, DateTimeKind.Utc));
 
         _ledgerService.UpsertDetectedAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlySet<Guid>>(),
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((new AgentCondition { Id = Guid.NewGuid(), Status = AgentConditionStatus.Detected }, true));
 
@@ -267,9 +267,12 @@ public class NextPeriodAutoCommitServiceTests
 
         await CommitAsync();
 
+        // The group reaches the ledger as a SET now, so the assertion has to be on the set containing the
+        // group - a next-period event concerns exactly one group, but the ledger takes every kind's groups
+        // through the same parameter.
         await _ledgerService.Received(1).UpsertDetectedAsync(
             AgentTriggerKinds.NextPeriodSchedulingDue,
-            Arg.Any<string>(), Arg.Any<Guid?>(), GroupId,
+            Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Is<IReadOnlySet<Guid>>(groupIds => groupIds.SetEquals(new[] { GroupId })),
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 

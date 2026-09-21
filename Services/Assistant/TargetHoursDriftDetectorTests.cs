@@ -104,6 +104,30 @@ public class TargetHoursDriftDetectorTests
     }
 
     [Test]
+    public async Task DetectAsync_MoreThanTenDrifting_CapsThePayloadClientListButKeepsTheTrueCount()
+    {
+        var clients = Enumerable.Range(0, ProactiveNameListRenderer.MaxListedNames + 2)
+            .Select(i => MakeClient($"Anna{i}"))
+            .ToArray();
+        SetupClients(clients);
+        _workRepository.GetPeriodHoursForClients(
+            Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(clients.ToDictionary(
+                client => client.Id,
+                _ => new PeriodHoursResource { Hours = 130, GuaranteedHours = 160 }));
+
+        var events = await _sut.DetectAsync();
+
+        var drift = (TargetHoursDriftTriggerEvent)events.Single();
+        Assert.That(drift.Payload["count"], Is.EqualTo(clients.Length));
+        Assert.That(
+            (IReadOnlyList<TargetHoursDriftAffectedClient>)drift.Payload["clients"]!,
+            Has.Count.EqualTo(ProactiveNameListRenderer.MaxListedNames));
+        Assert.That(drift.AffectedClients, Has.Count.EqualTo(clients.Length),
+            "The event still carries everybody; only the payload copy is capped.");
+    }
+
+    [Test]
     public async Task DetectAsync_CustomerWithDrift_Skips()
     {
         var customer = MakeClient("Clara", EntityTypeEnum.Customer);

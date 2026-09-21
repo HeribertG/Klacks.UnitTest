@@ -7,14 +7,12 @@
 /// Reflection over the constants, not a hand-written list, so a new reason is covered by the act of
 /// being added.
 ///
-/// Scope, stated plainly because it is narrower than the name suggests: this guards only the reasons in
-/// RecipeAbortReasons. Five further reasons are still inline literals in LLMService ("confirmation
-/// declined", "cancelled during ask step", "autonomy gate hold ended the recipe", "ambiguous customer
-/// match deactivated the cut recipe", "turn ended before the cut recipe completed") and are NOT covered
-/// here - they cannot be, being literals at their call sites. All five are far under the cap today.
-/// Migrating them is deliberate debt: it is a zero-behaviour-change rename across eight call sites in two
-/// chat loops, and landing that immediately before a goldset run would bury a real behaviour change in
-/// diff noise. Migrate them when the class is next touched for a substantive reason.
+/// Scope: the four reasons that used to be inline literals in LLMService and TurnPreparationService
+/// ("cancelled during ask step", "autonomy gate hold ended the recipe", "ambiguous customer match
+/// deactivated the cut recipe", "turn ended before the cut recipe completed") were migrated into
+/// RecipeAbortReasons on 2026-09-21, when the recipe bookkeeping of both chat loops moved into
+/// RecipeTurnState - the "substantive reason" the earlier version of this comment was waiting for. Every
+/// abort reason the chat loops record now goes through this class and is therefore covered here.
 /// </summary>
 
 using System.Reflection;

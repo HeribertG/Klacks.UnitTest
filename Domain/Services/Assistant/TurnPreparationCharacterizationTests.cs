@@ -101,7 +101,7 @@ public class TurnPreparationCharacterizationTests
     private Task<RecipeExecutionPlan?> Resolve(string message) =>
         Subject().ResolveOrResumeRecipeAsync(
             Context(message), Substitute.For<ILLMProvider>(), new LLMModel { ApiModelId = "m" },
-            ConversationId, CancellationToken.None);
+            ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
     // The single seam of this fixture. Before the move it returned the LLMService; now it returns the
     // service the block lives in. Every assertion above is unchanged, which is the proof that the move

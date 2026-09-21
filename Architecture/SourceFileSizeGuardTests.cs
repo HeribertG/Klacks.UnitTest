@@ -54,9 +54,8 @@ public class SourceFileSizeGuardTests
     // Relative path -> its measured line count on the day it was allowlisted. See ShrinkOnlyHint.
     private static readonly IReadOnlyDictionary<string, int> FileCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs"] = 1393,
         [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 886,
-        [@"Domain\Services\Assistant\LLMService.cs"] = 1667,
+        [@"Domain\Services\Assistant\LLMService.cs"] = 1336,
         [@"Domain\Services\RouteOptimization\ContainerAutofillService.cs"] = 859,
         [@"Infrastructure\Services\AnalyseScenarios\AnalyseScenarioService.cs"] = 991,
         [@"Infrastructure\Services\Plugins\FeaturePluginService.cs"] = 805,
@@ -67,6 +66,15 @@ public class SourceFileSizeGuardTests
     };
 
     // "RelativePath::MethodName" -> its measured body length on the day it was allowlisted.
+    //
+    // LLMService.cs::HistoryBudgetFor is the clearest example of "the ceiling encodes what the brace
+    // counter measured": HistoryBudgetFor is expression-bodied, but its "=>" sits on the line AFTER the
+    // signature, so the skip check above does not fire. The walk therefore starts at that signature, finds
+    // no brace until the NEXT member, and closes on that member's body - which is ExecuteMultiTurnLoopAsync.
+    // The number is the two of them together, and ExecuteMultiTurnLoopAsync consequently has no key of its
+    // own. Shrinking this entry means shrinking that loop. Pulling the "=>" onto the signature line would
+    // make the guard honest, but it also makes ExecuteMultiTurnLoopAsync visible at its own size, which is
+    // above the default limit - so that correction only lands together with splitting the loop.
     private static readonly IReadOnlyDictionary<string, int> MethodCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
         [@"Application\Skills\BundleNearbyTimeRangeShiftsIntoContainerSkill.cs::ExecuteAsync"] = 279,
@@ -81,11 +89,9 @@ public class SourceFileSizeGuardTests
         [@"Application\Skills\UpdateContractSkill.cs::ExecuteAsync"] = 179,
         [@"Infrastructure\Email\EmailTestService.cs::TestConnectionAsync"] = 219,
         [@"Infrastructure\Exceptions\ErrorHandlingMiddleware.cs::Invoke"] = 286,
-        [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs::AddDomainServices"] = 161,
-        [@"Infrastructure\Extensions\ServiceCollectionExtensions.cs::AddLLMCoreServices"] = 228,
         [@"Application\Services\Assistant\LLMStreamingOrchestrator.cs::ProcessStreamAsync"] = 176,
-        [@"Domain\Services\Assistant\LLMService.cs::ProcessStreamAsync"] = 570,
-        [@"Domain\Services\Assistant\LLMService.cs::HistoryBudgetFor"] = 369,
+        [@"Domain\Services\Assistant\LLMService.cs::ProcessStreamAsync"] = 367,
+        [@"Domain\Services\Assistant\LLMService.cs::HistoryBudgetFor"] = 241,
         [@"Infrastructure\Services\Assistant\LLMModelSyncService.cs::SyncProviderAsync"] = 174,
         [@"Infrastructure\Services\Schedules\HarmonizerJobRunner.cs::RunJobAsync"] = 181,
         [@"Infrastructure\Services\Schedules\WizardJobRunner.cs::RunJobAsync"] = 206,

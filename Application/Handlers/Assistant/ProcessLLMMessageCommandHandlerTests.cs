@@ -137,6 +137,8 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<ITurnPreparationService>(),
             CreateAssembler(),
             Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ISkillRegistry>(),
+            Substitute.For<ISkillPermissionGate>(),
             Substitute.For<ILogger<CorrectionTurnPreparer>>());
 
         return new ProcessLLMMessageCommandHandler(
@@ -328,6 +330,8 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<ITurnPreparationService>(),
             CreateAssembler(),
             Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ISkillRegistry>(),
+            Substitute.For<ISkillPermissionGate>(),
             Substitute.For<ILogger<CorrectionTurnPreparer>>());
 
         var handler = new ProcessLLMMessageCommandHandler(

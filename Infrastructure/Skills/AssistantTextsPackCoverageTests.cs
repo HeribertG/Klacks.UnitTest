@@ -97,7 +97,7 @@ public class AssistantTextsPackCoverageTests
                     continue;
                 }
 
-                foreach (var placeholder in GracefulCorrectionTexts.RequiredPlaceholders)
+                foreach (var placeholder in GracefulCorrectionTexts.PlaceholdersFor(key))
                 {
                     if (!text.Contains(placeholder, StringComparison.Ordinal))
                     {

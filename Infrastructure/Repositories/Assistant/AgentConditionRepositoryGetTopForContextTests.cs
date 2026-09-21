@@ -42,19 +42,30 @@ public class AgentConditionRepositoryGetTopForContextTests
 
     private DataBaseContext CreateContext() => new(_options, _httpAccessor);
 
+    /// <param name="groupId">The row's primary group, which also becomes its single
+    /// agent_condition_groups row - that is the pair detection produces, and the scoped reads resolve
+    /// visibility through the join table rather than through the column.</param>
     private static AgentCondition Condition(
-        string kind, AgentConditionStatus status, string severity, DateTime detectedAtUtc, Guid? groupId = null) => new()
+        string kind, AgentConditionStatus status, string severity, DateTime detectedAtUtc, Guid? groupId = null)
     {
-        Id = Guid.NewGuid(),
-        TriggerKind = kind,
-        Fingerprint = $"{kind}:{Guid.NewGuid()}",
-        Severity = severity,
-        Status = status,
-        GroupId = groupId,
-        DetectedAtUtc = detectedAtUtc,
-        LastSeenAtUtc = detectedAtUtc,
-        PayloadJson = "{}"
-    };
+        var id = Guid.NewGuid();
+
+        return new AgentCondition
+        {
+            Id = id,
+            TriggerKind = kind,
+            Fingerprint = $"{kind}:{Guid.NewGuid()}",
+            Severity = severity,
+            Status = status,
+            GroupId = groupId,
+            Groups = groupId.HasValue
+                ? [new AgentConditionGroup { ConditionId = id, GroupId = groupId.Value }]
+                : [],
+            DetectedAtUtc = detectedAtUtc,
+            LastSeenAtUtc = detectedAtUtc,
+            PayloadJson = "{}"
+        };
+    }
 
     [Test]
     public async Task CapsAtTake_WhenMoreCandidatesExist()

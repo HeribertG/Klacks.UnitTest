@@ -7,6 +7,10 @@
 /// ExecuteUpdateAsync, and this repository has no SQLite/Postgres harness). Mirrors the real
 /// repository's "only transition when the expected prior status still holds" behaviour so
 /// EscalationChainService's orchestration logic runs against realistic single-threaded semantics.
+/// Not sealed, and TryAcknowledgeStageAsync is virtual, for one reason: being single-threaded, this
+/// double can never on its own produce the interleaving where a stage acknowledgement wins and the
+/// chain-level compare-and-swap then loses. A test that needs that race overrides the one method and
+/// resolves the chain between the two calls, which is far less code than a full delegating decorator.
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
@@ -15,7 +19,7 @@ using Klacks.Api.Domain.Models.Assistant.Escalation;
 
 namespace Klacks.UnitTest.TestHelpers;
 
-public sealed class FakeEscalationChainRepository : IEscalationChainRepository
+public class FakeEscalationChainRepository : IEscalationChainRepository
 {
     private readonly Dictionary<Guid, EscalationChain> _chains = new();
     private readonly HashSet<Guid> _deletedBreakIds = new();
@@ -43,6 +47,9 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
 
     public Task<EscalationChain?> GetByIdWithStagesAsync(Guid chainId, CancellationToken cancellationToken = default) =>
         Task.FromResult(_chains.GetValueOrDefault(chainId));
+
+    public Task<EscalationChainStatus?> GetStatusAsync(Guid chainId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_chains.TryGetValue(chainId, out var chain) ? chain.Status : (EscalationChainStatus?)null);
 
     public Task<IReadOnlyList<EscalationStage>> GetStagesByChainAsync(Guid chainId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<EscalationStage>>(
@@ -113,11 +120,17 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
     public Task<bool> TryExpireStageAsync(Guid stageId, CancellationToken cancellationToken = default) =>
         Task.FromResult(TryTransitionStage(stageId, EscalationStageStatus.Notified, stage => stage.Status = EscalationStageStatus.Expired));
 
-    public Task<bool> TryAcknowledgeStageAsync(Guid stageId, DateTime respondedAtUtc, CancellationToken cancellationToken = default) =>
+    public virtual Task<bool> TryAcknowledgeStageAsync(Guid stageId, DateTime respondedAtUtc, CancellationToken cancellationToken = default) =>
         Task.FromResult(TryTransitionStage(stageId, EscalationStageStatus.Notified, stage =>
         {
+            if (_chains.GetValueOrDefault(stage.EscalationChainId)?.Status != EscalationChainStatus.Running)
+            {
+                return false;
+            }
+
             stage.Status = EscalationStageStatus.Acknowledged;
             stage.RespondedAtUtc = respondedAtUtc;
+            return true;
         }));
 
     public Task<bool> TryAcknowledgeChainAsync(
@@ -155,12 +168,29 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
         return Task.FromResult(affected);
     }
 
-    public Task<bool> TryExhaustChainAsync(Guid chainId, string outcomeReason, CancellationToken cancellationToken = default) =>
-        Task.FromResult(TryTransitionChain(chainId, EscalationChainStatus.Running, chain =>
+    public async Task<EscalationChainExhaustResult> TryExhaustChainAsync(
+        Guid chainId, string outcomeReason, CancellationToken cancellationToken = default)
+    {
+        var won = TryTransitionChain(chainId, EscalationChainStatus.Running, chain =>
         {
             chain.Status = EscalationChainStatus.Exhausted;
             chain.OutcomeReason = outcomeReason;
-        }));
+        });
+
+        if (!won)
+        {
+            return EscalationChainExhaustResult.Lost;
+        }
+
+        await CancelRemainingStagesAsync(chainId, Guid.Empty, cancellationToken);
+
+        var cancelledNotifiedStages = _chains[chainId].Stages
+            .Where(s => s.Status == EscalationStageStatus.Cancelled && s.NotifiedAtUtc != null)
+            .OrderBy(s => s.Rank)
+            .ToList();
+
+        return new EscalationChainExhaustResult(true, cancelledNotifiedStages);
+    }
 
     public Task<bool> TrySupersedeChainAsync(Guid chainId, string outcomeReason, CancellationToken cancellationToken = default) =>
         Task.FromResult(TryTransitionChain(chainId, EscalationChainStatus.Running, chain =>
@@ -184,7 +214,14 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
 
     private IEnumerable<EscalationStage> AllStages() => _chains.Values.SelectMany(c => c.Stages);
 
-    private bool TryTransitionStage(Guid stageId, EscalationStageStatus expected, Action<EscalationStage> apply)
+    private bool TryTransitionStage(Guid stageId, EscalationStageStatus expected, Action<EscalationStage> apply) =>
+        TryTransitionStage(stageId, expected, stage =>
+        {
+            apply(stage);
+            return true;
+        });
+
+    private bool TryTransitionStage(Guid stageId, EscalationStageStatus expected, Func<EscalationStage, bool> apply)
     {
         var stage = AllStages().FirstOrDefault(s => s.Id == stageId);
         if (stage is null || stage.Status != expected)
@@ -192,8 +229,7 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
             return false;
         }
 
-        apply(stage);
-        return true;
+        return apply(stage);
     }
 
     private bool TryTransitionChain(Guid chainId, EscalationChainStatus expected, Action<EscalationChain> apply)

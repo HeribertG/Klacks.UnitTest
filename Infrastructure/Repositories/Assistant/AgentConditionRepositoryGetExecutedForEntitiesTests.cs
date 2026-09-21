@@ -47,25 +47,36 @@ public class AgentConditionRepositoryGetExecutedForEntitiesTests
 
     private DataBaseContext CreateContext() => new(_options, _httpAccessor);
 
+    /// <param name="groupId">The row's primary group, which also becomes its single
+    /// agent_condition_groups row - that is the pair detection produces, and ApplyGroupScope resolves
+    /// visibility through the join table rather than through the column.</param>
     private static AgentCondition Condition(
         string kind,
         AgentConditionStatus status,
         Guid? entityId,
         DateTime? handledAtUtc = null,
-        Guid? groupId = null) => new()
+        Guid? groupId = null)
     {
-        Id = Guid.NewGuid(),
-        TriggerKind = kind,
-        Fingerprint = $"{kind}:{Guid.NewGuid()}",
-        Severity = AgentTriggerSeverity.High,
-        Status = status,
-        EntityId = entityId,
-        GroupId = groupId,
-        HandledAtUtc = handledAtUtc,
-        DetectedAtUtc = StartUtc,
-        LastSeenAtUtc = StartUtc,
-        PayloadJson = "{}"
-    };
+        var id = Guid.NewGuid();
+
+        return new AgentCondition
+        {
+            Id = id,
+            TriggerKind = kind,
+            Fingerprint = $"{kind}:{Guid.NewGuid()}",
+            Severity = AgentTriggerSeverity.High,
+            Status = status,
+            EntityId = entityId,
+            GroupId = groupId,
+            Groups = groupId.HasValue
+                ? [new AgentConditionGroup { ConditionId = id, GroupId = groupId.Value }]
+                : [],
+            HandledAtUtc = handledAtUtc,
+            DetectedAtUtc = StartUtc,
+            LastSeenAtUtc = StartUtc,
+            PayloadJson = "{}"
+        };
+    }
 
     [Test]
     public async Task ReturnsExecutedRow_TheGuardAgainstReusingScopedPlannerRelevantQuery()

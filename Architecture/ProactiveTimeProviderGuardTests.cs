@@ -62,6 +62,13 @@ public class ProactiveTimeProviderGuardTests
         // Joined the guarded set with package F (B5): the reminder sweep stamps reminded-at and the
         // next due date from the injected TimeProvider.
         "Application/Services/Assistant/Triggers/ProactiveReminderService.cs",
+        // Joined the guarded set with the standing approval (2026-09-21): a grant's expiry decides
+        // whether Klacksy may act without asking anybody, and the gate judges it against the tick's own
+        // "now". A system-clock read here would let a grant expire at a different instant than the rest
+        // of the tick sees, and the grant and revocation stamps would stop being testable at all.
+        "Application/Services/Assistant/Conditions/ConditionStandingApprovalGate.cs",
+        "Application/Handlers/Assistant/GrantStandingApprovalCommandHandler.cs",
+        "Application/Handlers/Assistant/RevokeStandingApprovalCommandHandler.cs",
     ];
 
     [Test]

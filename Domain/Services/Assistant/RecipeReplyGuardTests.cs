@@ -7,6 +7,7 @@
 /// available) or the localized ask question (falling back to the raw ask prompt without translations).
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -277,5 +278,103 @@ public class RecipeReplyGuardTests
         var result = RecipeReplyGuard.SafeConfirmation("Erledigt.", Goal, null, "de", null);
 
         result.ShouldContain(Goal);
+    }
+
+    [TearDown]
+    public void ResetConfiguredTexts() => GracefulCorrectionTexts.Reset();
+
+    [TestCase("de", "Ja", "Nein")]
+    [TestCase("en", "Yes", "No")]
+    [TestCase("fr", "Oui", "Non")]
+    [TestCase("it", "Sì", "No")]
+    [TestCase("de-CH", "Ja", "Nein")]
+    public void WithConfirmationChip_CoreLanguage_AppendsLocalizedYesNoChip(string language, string yes, string no)
+    {
+        var result = RecipeReplyGuard.WithConfirmationChip("Möchtest du das starten?", null, language);
+
+        result.ShouldBe($"Möchtest du das starten? [REPLIES:single \"{yes}=yes\" | \"{no}=no\"]");
+    }
+
+    [Test]
+    public void WithConfirmationChip_PackLanguage_UsesPackLabels()
+    {
+        GracefulCorrectionTexts.Configure("es", new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.RecipeConfirmYes] = "Sí",
+            [GracefulCorrectionTexts.RecipeConfirmNo] = "No",
+        });
+
+        var result = RecipeReplyGuard.WithConfirmationChip("¿Quieres empezar?", null, "es");
+
+        result.ShouldEndWith("[REPLIES:single \"Sí=yes\" | \"No=no\"]");
+    }
+
+    [Test]
+    public void WithConfirmationChip_ChipIsParsedByTheRepliesBlockParser()
+    {
+        var result = RecipeReplyGuard.WithConfirmationChip("Möchtest du das starten?", null, "de");
+
+        var match = LLMResponseBuilder.RepliesBlockRegex.Match(result);
+
+        match.Success.ShouldBeTrue();
+        match.Groups[1].Value.ShouldBe("single");
+        match.Groups[3].Value.ShouldContain("\"Ja=yes\"");
+        match.Groups[3].Value.ShouldContain("\"Nein=no\"");
+    }
+
+    [Test]
+    public void WithConfirmationChip_TextAlreadyCarriesRepliesBlock_IsNotAppendedTwice()
+    {
+        var once = RecipeReplyGuard.WithConfirmationChip("Möchtest du das starten?", null, "de");
+
+        RecipeReplyGuard.WithConfirmationChip(once, null, "de").ShouldBe(once);
+        RecipeReplyGuard.WithConfirmationChip("Start? [REPLIES:single \"A\" | \"B\"]", null, "de")
+            .ShouldBe("Start? [REPLIES:single \"A\" | \"B\"]");
+    }
+
+    [Test]
+    public void WithConfirmationChip_AlternativeGoal_LeavesTheWhichOneQuestionUntouched()
+    {
+        const string question = "Welche meinst du – oder keine?";
+
+        RecipeReplyGuard.WithConfirmationChip(question, AlternativeGoal, "de").ShouldBe(question);
+    }
+
+    [Test]
+    public void WithConfirmationChip_InstalledLanguageWithoutLabels_LeavesTextUntouched()
+    {
+        GracefulCorrectionTexts.Configure("xx", new Dictionary<string, string>
+        {
+            [GracefulCorrectionTexts.ClarificationQuestion] = "{previousAction} {optionA} {optionB}",
+        });
+        const string question = "Start?";
+
+        RecipeReplyGuard.WithConfirmationChip(question, null, "xx").ShouldBe(question);
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    public void WithConfirmationChip_EmptyText_ReturnsItUnchanged(string? text)
+    {
+        RecipeReplyGuard.WithConfirmationChip(text!, null, "de").ShouldBe(text);
+    }
+
+    [Test]
+    public void WithConfirmationChip_DeterministicFallbackText_CarriesTheChip()
+    {
+        var fallback = RecipeReplyGuard.SafeConfirmation("Erledigt.", Goal, null, "de", GoalTranslations);
+
+        var result = RecipeReplyGuard.WithConfirmationChip(fallback, null, "de");
+
+        result.ShouldStartWith(fallback);
+        result.ShouldEndWith("[REPLIES:single \"Ja=yes\" | \"Nein=no\"]");
+    }
+
+    [Test]
+    public void WithConfirmationChip_UnknownLanguage_FallsBackToEnglishLabels()
+    {
+        RecipeReplyGuard.WithConfirmationChip("Start?", null, "zz")
+            .ShouldEndWith("[REPLIES:single \"Yes=yes\" | \"No=no\"]");
     }
 }

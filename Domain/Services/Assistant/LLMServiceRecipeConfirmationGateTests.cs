@@ -13,6 +13,7 @@
 /// </summary>
 
 using System.Diagnostics;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
@@ -136,7 +137,7 @@ public class LLMServiceRecipeConfirmationGateTests
         SetPendingConfirmation(_pendingRecipeStore);
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
-            Context("ja"), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context("ja"), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldNotBeNull();
         plan!.NeedsConfirmation.ShouldBeFalse();
@@ -153,7 +154,7 @@ public class LLMServiceRecipeConfirmationGateTests
             .Returns(new RetrievalResult([]));
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
-            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldBeNull();
         _pendingRecipeStore.Received(1).Clear(UserId, ConversationId);
@@ -170,7 +171,7 @@ public class LLMServiceRecipeConfirmationGateTests
             .Returns(new RetrievalResult([]));
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
-            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldBeNull();
         _pendingRecipeStore.Received(1).Clear(UserId, ConversationId);
@@ -183,7 +184,7 @@ public class LLMServiceRecipeConfirmationGateTests
         var message = "Bitte onboard einen neuen Mitarbeiter";
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
-            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldNotBeNull();
         plan!.NeedsConfirmation.ShouldBeFalse();
@@ -201,7 +202,7 @@ public class LLMServiceRecipeConfirmationGateTests
                 0.82)]));
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
-            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldNotBeNull();
         plan!.NeedsConfirmation.ShouldBeTrue();
@@ -234,7 +235,7 @@ public class LLMServiceRecipeConfirmationGateTests
         });
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
-            Context("Verträgt keine Nachtschichten"), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context("Verträgt keine Nachtschichten"), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldNotBeNull();
         plan!.NeedsConfirmation.ShouldBeFalse();
@@ -276,7 +277,8 @@ public class LLMServiceRecipeConfirmationGateTests
         var (responseContent, _, iterationsUsed, allFunctionCalls, _) =
             await _service.ExecuteMultiTurnLoopAsync(BuildContext(context, provider));
 
-        responseContent.ShouldBe("Soll ich den Mitarbeiter anlegen?");
+        responseContent.ShouldStartWith("Soll ich den Mitarbeiter anlegen?");
+        responseContent.ShouldContain(LlmRepliesFormat.BlockPrefix);
         allFunctionCalls.ShouldBeEmpty();
         iterationsUsed.ShouldBe(1);
         _pendingRecipeStore.Received(1).Save(Arg.Is<PendingRecipe>(p =>

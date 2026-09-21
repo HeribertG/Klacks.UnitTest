@@ -134,7 +134,7 @@ public class TurnPreparationRecipeCorrectionTests
 
     private Task<RecipeExecutionPlan?> Resolve(string message) =>
         _service.ResolveOrResumeRecipeAsync(
-            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
     [Test]
     public async Task Correction_AbortsTheRun_ClearsThePendingRecipe_AndDoesNotFillTheSlot()

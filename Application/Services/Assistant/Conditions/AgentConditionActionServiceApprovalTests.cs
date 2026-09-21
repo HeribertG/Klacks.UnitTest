@@ -335,6 +335,7 @@ public class AgentConditionActionServiceApprovalTests
             _skillExecutor,
             _reporter,
             _approvalStarter,
+            Substitute.For<IStandingApprovalRepository>(),
             _timeProvider,
             _companyClock,
             NullLogger<AgentConditionActionService>.Instance)

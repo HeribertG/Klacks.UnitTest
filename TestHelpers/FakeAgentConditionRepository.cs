@@ -18,6 +18,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Assistant;
 
 namespace Klacks.UnitTest.TestHelpers;
 
@@ -37,21 +38,33 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
     public IReadOnlyList<AgentConditionEvent> EventsFor(Guid conditionId) =>
         _events.Where(e => e.ConditionId == conditionId).ToList();
 
+    /// <param name="groupIds">
+    /// The row's full group set, mirroring what the real repository stores in agent_condition_groups.
+    /// Default empty, which together with the default null GroupId is the "concerns no group" shape the
+    /// existing ledger tests rely on. Passing groups also stamps the primary GroupId the way detection
+    /// does, so a seeded row can never carry the inconsistent pair no production path produces.
+    /// </param>
     public AgentCondition Seed(
         string triggerKind,
         string fingerprint,
         AgentConditionStatus status,
-        DateTime detectedAtUtc)
+        DateTime detectedAtUtc,
+        IReadOnlySet<Guid>? groupIds = null)
     {
+        var groups = groupIds ?? new HashSet<Guid>();
+        var id = Guid.NewGuid();
+
         var condition = new AgentCondition
         {
-            Id = Guid.NewGuid(),
+            Id = id,
             TriggerKind = triggerKind,
             Fingerprint = fingerprint,
             Severity = "low",
             Status = status,
             DetectedAtUtc = detectedAtUtc,
             LastSeenAtUtc = detectedAtUtc,
+            GroupId = AgentConditionLedgerPolicy.PrimaryGroupIdFor(groups),
+            Groups = GroupRows(id, groups),
             PayloadJson = "{}"
         };
 
@@ -104,6 +117,18 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         var match = _conditions.FirstOrDefault(c => c.Id == id);
 
         return Task.FromResult(match == null ? null : Copy(match));
+    }
+
+    public Task<List<AgentCondition>> GetByIdsAsync(
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var matches = _conditions
+            .Where(c => ids.Contains(c.Id))
+            .Select(Copy)
+            .ToList();
+
+        return Task.FromResult(matches);
     }
 
     public Task<AgentCondition?> FindByScenarioIdAsync(Guid scenarioId, CancellationToken cancellationToken = default)
@@ -182,11 +207,14 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
     }
 
     /// <summary>
-    /// Simplification vs. the real repository: this fake has no Group table to resolve a GroupId's
-    /// Nested Set root through, so it compares GroupId directly against visibleRootIds instead of via a
-    /// root join. Sufficient for the ledger-service tests built on this fake, none of which exercise
-    /// group scoping; the real scope-filtering behaviour (root comparison, not flattened membership) is
-    /// proven in AgentConditionRepositoryTests against a real EF InMemory-backed AgentConditionRepository.
+    /// Simplification vs. the real repository: this fake has no Group table to resolve a group id's
+    /// Nested Set root through, so it compares the group ids directly against visibleRootIds instead of
+    /// via a root join. The rule itself is mirrored faithfully - a row is admitted when ANY of its groups
+    /// matches, not when its primary GroupId does - so the fake cannot make the multi-group case look
+    /// solved when it is not. Sufficient for the ledger-service tests built on this fake, none of which
+    /// exercise group scoping; the real scope-filtering behaviour (root comparison, not flattened
+    /// membership) is proven in AgentConditionRepositoryTests against a real EF InMemory-backed
+    /// AgentConditionRepository.
     /// </summary>
     private IEnumerable<AgentCondition> ScopedPlannerRelevant(bool isUnrestricted, IReadOnlySet<Guid> visibleRootIds)
     {
@@ -203,14 +231,18 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return isUnrestricted
             ? conditions
             : conditions.Where(c => c.GroupId.HasValue
-                ? visibleRootIds.Contains(c.GroupId.Value)
+                ? c.Groups.Any(group => visibleRootIds.Contains(group.GroupId))
                 : !AgentTriggerGroupScopedKinds.Values.Contains(c.TriggerKind));
     }
 
     private static int SeverityRank(AgentCondition condition) =>
         condition.Severity == AgentTriggerSeverity.High ? 0 : condition.Severity == AgentTriggerSeverity.Medium ? 1 : 2;
 
-    public Task<AgentCondition?> InsertAsync(AgentCondition condition, AgentConditionEvent detectionEvent, CancellationToken cancellationToken = default)
+    public Task<AgentCondition?> InsertAsync(
+        AgentCondition condition,
+        AgentConditionEvent detectionEvent,
+        IReadOnlySet<Guid> groupIds,
+        CancellationToken cancellationToken = default)
     {
         if (_insertRaceWinner != null)
         {
@@ -227,12 +259,45 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
             return Task.FromResult<AgentCondition?>(null);
         }
 
+        condition.Groups = GroupRows(condition.Id, groupIds);
+
         _conditions.Add(condition);
         detectionEvent.ConditionId = condition.Id;
         _events.Add(detectionEvent);
 
         return Task.FromResult<AgentCondition?>(Copy(condition));
     }
+
+    /// <summary>
+    /// Mirrors the real repository's diff: nothing is written and false is returned when the stored set
+    /// already equals the requested one. The return value is what the ledger-service tests assert the
+    /// "no write on an unchanged set" rule against, so a fake that always reported true would make that
+    /// rule untestable.
+    /// </summary>
+    public Task<bool> SyncGroupsAsync(
+        Guid conditionId,
+        IReadOnlySet<Guid> groupIds,
+        CancellationToken cancellationToken = default)
+    {
+        var stored = _conditions.FirstOrDefault(c => c.Id == conditionId);
+        if (stored == null)
+        {
+            return Task.FromResult(false);
+        }
+
+        if (stored.Groups.Select(group => group.GroupId).ToHashSet().SetEquals(groupIds))
+        {
+            return Task.FromResult(false);
+        }
+
+        stored.Groups = GroupRows(conditionId, groupIds);
+        return Task.FromResult(true);
+    }
+
+    private static List<AgentConditionGroup> GroupRows(Guid conditionId, IEnumerable<Guid> groupIds) =>
+        groupIds
+            .Select(groupId => new AgentConditionGroup { ConditionId = conditionId, GroupId = groupId })
+            .ToList();
 
     public Task<bool> TryTransitionAsync(
         Guid id,
@@ -470,6 +535,31 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return Task.FromResult(conditionEvent);
     }
 
+    public Task<(int Conditions, int Events)> SoftDeleteExpiredAsync(
+        DateTime shortLivedCutoffUtc,
+        DateTime longLivedCutoffUtc,
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var eligible = AgentLedgerRetentionPolicy.ConditionEligible(shortLivedCutoffUtc, longLivedCutoffUtc).Compile();
+        var expired = _conditions.Where(c => !c.IsDeleted && eligible(c)).ToList();
+        var expiredIds = expired.Select(c => c.Id).ToHashSet();
+
+        var events = _events.Where(e => !e.IsDeleted && expiredIds.Contains(e.ConditionId)).ToList();
+        foreach (var conditionEvent in events)
+        {
+            conditionEvent.IsDeleted = true;
+            conditionEvent.DeletedTime = nowUtc;
+        }
+
+        foreach (var condition in expired)
+        {
+            condition.IsDeleted = true;
+            condition.DeletedTime = nowUtc;
+        }
+
+        return Task.FromResult((expired.Count, events.Count));
+    }
     private static AgentCondition Copy(AgentCondition source) => new()
     {
         Id = source.Id,
@@ -495,6 +585,7 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         CausedByConditionId = source.CausedByConditionId,
         DelegatedMaxAction = source.DelegatedMaxAction,
         DelegatedByUserId = source.DelegatedByUserId,
-        PayloadJson = source.PayloadJson
+        PayloadJson = source.PayloadJson,
+        Groups = GroupRows(source.Id, source.Groups.Select(group => group.GroupId))
     };
 }

@@ -383,6 +383,8 @@ public class SkillToolsetAssemblerTests
             Substitute.For<ITurnPreparationService>(),
             assembler,
             Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ISkillRegistry>(),
+            Substitute.For<ISkillPermissionGate>(),
             Substitute.For<ILogger<CorrectionTurnPreparer>>());
         var providerOrchestrator = new LLMProviderOrchestrator(
             Substitute.For<ILogger<LLMProviderOrchestrator>>(),

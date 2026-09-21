@@ -28,6 +28,8 @@ public class AgentConditionActionRoutesTests
     [TestCase(AgentTriggerKinds.AvailabilityGap)]
     [TestCase(AgentTriggerKinds.PeriodOverdue)]
     [TestCase(AgentTriggerKinds.ClientMissingCoreData)]
+    [TestCase(AgentTriggerKinds.UngroupedWorkforce)]
+    [TestCase(AgentTriggerKinds.UngroupedShifts)]
     public void For_EveryLedgerTrackedKind_ReturnsANonNullRoute(string kind)
     {
         AgentConditionActionRoutes.For(kind).ShouldNotBeNull();

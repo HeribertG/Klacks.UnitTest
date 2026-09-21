@@ -177,7 +177,7 @@ public class LLMServiceRecipeTopicSwitchTests
         var message = "Ich habe eine xml Datei mit allen Bestellungen drin. Wie kann ich es einbinden?";
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
-            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Context(message), Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldNotBeNull();
         plan!.TopicSwitchThisTurn.ShouldBeTrue();
@@ -194,7 +194,7 @@ public class LLMServiceRecipeTopicSwitchTests
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
             Context("Wir sind ein Spital, also eher ohne Kunden"),
-            Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, CancellationToken.None);
+            Substitute.For<ILLMProvider>(), new LLMModel(), ConversationId, pendingConfirmationForced: false, CancellationToken.None);
 
         plan.ShouldNotBeNull();
         plan!.TopicSwitchThisTurn.ShouldBeFalse();

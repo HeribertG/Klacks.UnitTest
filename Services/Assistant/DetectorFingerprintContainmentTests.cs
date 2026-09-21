@@ -19,10 +19,15 @@
 /// database, only that they agree over the same in-memory candidate set. A predicate that EF Core
 /// translates differently in the two shapes would slip through. The IntegrationTest suite is the place
 /// for that, and it does not cover it today.
+///
+/// Uncapped detectors cannot appear here at all: with no cap, DetectAsync and the fingerprint scan
+/// return the same number of findings, so "fingerprints.Count > events.Count" is unsatisfiable. That is
+/// why TargetHoursDriftDetector is absent, and why AvailabilityGapDetector and
+/// ClientMissingCoreDataDetector left this file when they became aggregates. Their lockstep is pinned
+/// as set EQUALITY inside their own fixtures instead - a stronger assertion than containment.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Triggers;
-using Klacks.Api.Domain.DTOs.Assistant;
 using Klacks.Api.Domain.DTOs.Filter;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
@@ -164,51 +169,6 @@ public class DetectorFingerprintContainmentTests
         var sut = new UnstaffedShift7dDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<UnstaffedShift7dDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: cappedShiftCount);
-    }
-
-    [Test]
-    public async Task AvailabilityGapDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
-    {
-        var repository = Substitute.For<IClientAvailabilityReadRepository>();
-        repository.AnyAvailabilityEntriesExistAsync(Arg.Any<CancellationToken>()).Returns(true);
-
-        var clients = Enumerable.Range(0, AvailabilityGapDetector.MaxFindingsPerTick + 12)
-            .Select(index => new PlannableClientInfo(Guid.NewGuid(), "First" + index, "Last" + index))
-            .ToList();
-
-        repository.GetPlannableClientsWithoutAvailabilityAsync(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => clients.Take(call.ArgAt<int>(2)).ToList());
-
-        var sut = new AvailabilityGapDetector(
-            repository, NullLogger<AvailabilityGapDetector>.Instance, FixedClock());
-
-        await AssertContainmentAsync(sut, sut, expectedCappedCount: AvailabilityGapDetector.MaxFindingsPerTick);
-    }
-
-    [Test]
-    public async Task ClientMissingCoreDataDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
-    {
-        var repository = Substitute.For<IClientCoreDataReadRepository>();
-
-        var statuses = Enumerable.Range(0, ClientMissingCoreDataDetector.MaxFindingsPerTick + 12)
-            .Select(index => new ClientCoreDataStatus(Guid.NewGuid(), "First" + index, "Last" + index, false, false))
-            .ToList();
-
-        repository.GetActiveClientsWithMissingCoreDataAsync(
-                Arg.Any<DateOnly>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => statuses.Take(call.ArgAt<int>(1)).ToList());
-
-        var sut = new ClientMissingCoreDataDetector(
-            repository, NullLogger<ClientMissingCoreDataDetector>.Instance, FixedClock());
-
-        var fingerprints = await AssertContainmentAsync(
-            sut, sut, expectedCappedCount: ClientMissingCoreDataDetector.MaxFindingsPerTick);
-
-        fingerprints.Count.ShouldBe(
-            statuses.Count * 2,
-            "Each seeded client is missing BOTH core data fields, so the uncapped scan must spell out two "
-            + "fingerprints per client exactly as DetectAsync emits two events per client.");
     }
 
     [Test]

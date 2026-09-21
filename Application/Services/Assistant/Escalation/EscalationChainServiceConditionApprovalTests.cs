@@ -193,7 +193,7 @@ public class EscalationChainServiceConditionApprovalTests
 
         var acknowledged = await _sut.AcknowledgeChainAsync(chainId, "planner-group");
 
-        Assert.That(acknowledged, Is.True);
+        Assert.That(acknowledged, Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
         Assert.That(_repository.GetChain(chainId).Status, Is.EqualTo(EscalationChainStatus.Acknowledged));
         Assert.That(_repository.GetChain(chainId).AcknowledgedByUserId, Is.EqualTo("planner-group"));
         Assert.That(_repository.GetStage(chainId, "admin-1").Status, Is.EqualTo(EscalationStageStatus.Cancelled));
@@ -202,13 +202,21 @@ public class EscalationChainServiceConditionApprovalTests
     }
 
     [Test]
-    public async Task SecondAcknowledgementOnResolvedChain_ReturnsFalse()
+    public async Task SecondAcknowledgementOnResolvedChain_ReportsChainAlreadyResolved()
     {
         var chainId = (await _sut.StartConditionApprovalChainAsync(Request()))!.Value;
 
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, "planner-last"), Is.True);
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, "planner-last"), Is.False);
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, "planner-group"), Is.False);
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, "planner-last"),
+            Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, "planner-last"),
+            Is.EqualTo(EscalationAcknowledgeOutcome.ChainAlreadyResolved),
+            "The chain left Running with the first acknowledgement, so every later answer to it is too late - "
+            + "including the first responder's own replay.");
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, "planner-group"),
+            Is.EqualTo(EscalationAcknowledgeOutcome.ChainAlreadyResolved));
     }
 
     [Test]
@@ -217,8 +225,13 @@ public class EscalationChainServiceConditionApprovalTests
         var approver = Guid.NewGuid();
         var chainId = (await _sut.StartConditionApprovalChainAsync(Request(roster: GuidRoster(approver))))!.Value;
 
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, approver.ToString()), Is.True);
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, approver.ToString()), Is.False, "The chain CAS makes the replay a no-op.");
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, approver.ToString()),
+            Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, approver.ToString()),
+            Is.EqualTo(EscalationAcknowledgeOutcome.ChainAlreadyResolved),
+            "The replay is refused before the ledger is reached, so the stamp cannot be written twice.");
 
         await _ledger.Received(1).TryApproveAsync(ConditionId, approver, Arg.Any<CancellationToken>());
         await _ledger.DidNotReceiveWithAnyArgs().TryTransitionAsync(default, default, default, default, default, default, default);
@@ -230,7 +243,9 @@ public class EscalationChainServiceConditionApprovalTests
         var approver = Guid.NewGuid();
         await _sut.StartConditionApprovalChainAsync(Request(roster: GuidRoster(approver)));
 
-        Assert.That(await _sut.AcknowledgeAsync(approver.ToString()), Is.True);
+        Assert.That(
+            await _sut.AcknowledgeAsync(approver.ToString()),
+            Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
 
         await _ledger.Received(1).TryApproveAsync(ConditionId, approver, Arg.Any<CancellationToken>());
     }
@@ -243,7 +258,9 @@ public class EscalationChainServiceConditionApprovalTests
         var chainId = (await _sut.StartChainAsync(new StartEscalationChainRequest(
             Guid.NewGuid(), GroupId, Guid.NewGuid(), "Absent Employee", StartedAtUtc.AddHours(3), AbsenceBreakId: null)))!.Value;
 
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, responder.ToString()), Is.True);
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, responder.ToString()),
+            Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
 
         await _ledger.DidNotReceiveWithAnyArgs().TryApproveAsync(default, default, default);
     }
@@ -255,7 +272,9 @@ public class EscalationChainServiceConditionApprovalTests
         _ledger.TryApproveAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(false);
         var chainId = (await _sut.StartConditionApprovalChainAsync(Request(roster: GuidRoster(approver))))!.Value;
 
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, approver.ToString()), Is.True);
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, approver.ToString()),
+            Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
         Assert.That(_repository.GetChain(chainId).Status, Is.EqualTo(EscalationChainStatus.Acknowledged));
     }
 

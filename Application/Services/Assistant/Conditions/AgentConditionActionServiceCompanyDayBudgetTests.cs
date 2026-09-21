@@ -213,6 +213,7 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
             _skillExecutor,
             _reporter,
             Substitute.For<IConditionApprovalChainStarter>(),
+            Substitute.For<IStandingApprovalRepository>(),
             timeProvider,
             companyClock,
             NullLogger<AgentConditionActionService>.Instance)

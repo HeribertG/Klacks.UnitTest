@@ -12,6 +12,7 @@
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging;
@@ -42,15 +43,27 @@ public class CorrectionTurnPreparerTests
     private const string UndoSkillName = "remove_shift_from_group";
     private const string UndoneSkillLabel = "Assigns a shift to a group";
     private const string UndoArgumentName = "shiftId";
+    private const string InversePermission = Permissions.CanEditSettings;
 
     private static readonly IReadOnlyDictionary<string, object> UndoArguments =
         new Dictionary<string, object> { [UndoArgumentName] = "shift-1", ["groupId"] = "group-1" };
+
+    private static readonly SkillDescriptor InverseDescriptor = new(
+        UndoSkillName,
+        "Removes a shift from a group",
+        SkillCategory.Crud,
+        Array.Empty<SkillParameter>(),
+        new[] { InversePermission },
+        Array.Empty<LLMCapability>(),
+        null);
 
     private ISkillToolsetAssembler _assembler = null!;
     private ITurnPreparationService _turnPreparation = null!;
     private IAssistantLastActionStore _lastActionStore = null!;
     private IPendingRecipeStore _pendingRecipeStore = null!;
     private IPendingConfirmationStore _pendingConfirmationStore = null!;
+    private ISkillRegistry _skillRegistry = null!;
+    private ISkillPermissionGate _permissionGate = null!;
 
     [SetUp]
     public void SetUp()
@@ -58,6 +71,8 @@ public class CorrectionTurnPreparerTests
         _lastActionStore = Substitute.For<IAssistantLastActionStore>();
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
         _pendingConfirmationStore = Substitute.For<IPendingConfirmationStore>();
+        _skillRegistry = Substitute.For<ISkillRegistry>();
+        _permissionGate = Substitute.For<ISkillPermissionGate>();
 
         _assembler = Substitute.For<ISkillToolsetAssembler>();
         _assembler.AssembleAsync(
@@ -95,7 +110,8 @@ public class CorrectionTurnPreparerTests
                 lastAction, CorrectionMessage, Composite, new[] { ExcludedSkillName }));
 
         _turnPreparation.CompleteCorrection(
-                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
+                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>(),
+                Arg.Any<bool>())
             .Returns(new GracefulCorrectionOutcome(ContextNote, null, []));
     }
 
@@ -108,11 +124,18 @@ public class CorrectionTurnPreparerTests
                 lastAction, CorrectionMessage, Composite, new[] { ExcludedSkillName }));
 
         _turnPreparation.CompleteCorrection(
-                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
+                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>(),
+                Arg.Any<bool>())
             .Returns(new GracefulCorrectionOutcome(
                 ContextNote, ClarificationReply, [FirstCandidate, SecondCandidate]));
     }
 
+    /// <summary>
+    /// An undo the real service would resolve, with the registry and the gate answering as they do for a
+    /// caller who holds the inverse skill's right. The completion stub honours undoIsPermitted the same
+    /// way TurnPreparationService does, so a suppressed offer is visible in the outcome and not only in
+    /// the argument the preparer passed.
+    /// </summary>
     private void GivenAnUndoIsOffered()
     {
         var lastAction = GivenAStoredAnchor();
@@ -121,16 +144,25 @@ public class CorrectionTurnPreparerTests
             .Returns(new GracefulCorrectionPlan(
                 lastAction, CorrectionMessage, Composite, new[] { ExcludedSkillName }));
 
+        _turnPreparation.PeekUndo(Arg.Any<GracefulCorrectionPlan>())
+            .Returns(new SkillUndoInvocation(UndoSkillName, UndoArguments));
+        _skillRegistry.GetSkillByName(UndoSkillName).Returns(InverseDescriptor);
+        _permissionGate.HoldsAsync(UserId, Arg.Any<IReadOnlyCollection<string>>()).Returns(true);
+
         _turnPreparation.CompleteCorrection(
-                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
-            .Returns(new GracefulCorrectionOutcome(
-                ContextNote, null, [],
-                new SkillUndoInvocation(UndoSkillName, UndoArguments),
-                UndoneSkillLabel));
+                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>(),
+                Arg.Any<bool>())
+            .Returns(call => call.ArgAt<bool>(3)
+                ? new GracefulCorrectionOutcome(
+                    ContextNote, null, [],
+                    new SkillUndoInvocation(UndoSkillName, UndoArguments),
+                    UndoneSkillLabel)
+                : new GracefulCorrectionOutcome(ContextNote, null, []));
     }
 
     private CorrectionTurnPreparer CreatePreparer() => new(
         _lastActionStore, _pendingRecipeStore, _turnPreparation, _assembler, _pendingConfirmationStore,
+        _skillRegistry, _permissionGate,
         Substitute.For<ILogger<CorrectionTurnPreparer>>());
 
     private Task<CorrectionTurnPreparation> Prepare(string message = CorrectionMessage) =>
@@ -284,7 +316,8 @@ public class CorrectionTurnPreparerTests
     {
         GivenACorrectionIsPlanned();
         _turnPreparation.CompleteCorrection(
-                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>())
+                Arg.Any<GracefulCorrectionPlan>(), Arg.Any<IReadOnlyList<LLMFunction>>(), Arg.Any<string?>(),
+                Arg.Any<bool>())
             .Returns<GracefulCorrectionOutcome>(_ => throw new InvalidOperationException("note build failed"));
 
         var result = await Prepare();
@@ -342,6 +375,67 @@ public class CorrectionTurnPreparerTests
 
         result.Correction!.ContextNote.ShouldBe(ContextNote);
         result.UndoWasHeld.ShouldBeFalse();
+    }
+
+    // The redemption runs SkillExecutorService.ValidatePermissions before the autonomy gate, so an undo
+    // the caller may not release is refused after it was promised. create_group is reversed by
+    // delete_group, which stays Admin-only: a Supervisor was offered an undo Klacksy then denied.
+    [Test]
+    public async Task WithAnUndoTheCallerMayNotRelease_OffersNothingAndHoldsNothing()
+    {
+        GivenAnUndoIsOffered();
+        _permissionGate.HoldsAsync(UserId, Arg.Any<IReadOnlyCollection<string>>()).Returns(false);
+
+        var result = await Prepare();
+
+        NoConfirmationWasHeld();
+        result.UndoWasHeld.ShouldBeFalse();
+        result.Correction!.Undo.ShouldBeNull();
+        result.Correction!.ContextNote.ShouldBe(ContextNote);
+    }
+
+    [Test]
+    public async Task TheUndoOffer_IsCheckedAgainstTheInverseSkillsOwnRights()
+    {
+        GivenAnUndoIsOffered();
+
+        await Prepare();
+
+        await _permissionGate.Received(1).HoldsAsync(
+            UserId,
+            Arg.Is<IReadOnlyCollection<string>>(permissions => permissions.Contains(InversePermission)));
+    }
+
+    // An inverse the registry no longer knows would answer "skill not found" on redemption, so it is
+    // not an offer either.
+    [Test]
+    public async Task WithAnUnregisteredInverseSkill_OffersNoUndo()
+    {
+        GivenAnUndoIsOffered();
+        _skillRegistry.GetSkillByName(UndoSkillName).Returns((SkillDescriptor?)null);
+
+        var result = await Prepare();
+
+        NoConfirmationWasHeld();
+        result.Correction!.Undo.ShouldBeNull();
+        await _permissionGate.DidNotReceive().HoldsAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>());
+    }
+
+    // Fails closed: a right that cannot be read is not a right that is held, and the correction itself
+    // must still reach the user.
+    [Test]
+    public async Task WhenThePermissionCheckThrows_OffersNoUndoAndTheTurnStillRuns()
+    {
+        GivenAnUndoIsOffered();
+        _permissionGate.HoldsAsync(UserId, Arg.Any<IReadOnlyCollection<string>>())
+            .Returns<Task<bool>>(_ => throw new InvalidOperationException("identity store down"));
+
+        var result = await Prepare();
+
+        NoConfirmationWasHeld();
+        result.Correction!.ContextNote.ShouldBe(ContextNote);
+        result.Correction!.Undo.ShouldBeNull();
     }
 
     // The store reads sit in front of the planning; a store outage must degrade the turn to an ordinary

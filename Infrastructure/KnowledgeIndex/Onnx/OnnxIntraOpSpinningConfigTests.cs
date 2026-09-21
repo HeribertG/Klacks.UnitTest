@@ -41,7 +41,7 @@ public class OnnxIntraOpSpinningConfigTests
     public void Unset_ResolvesToSpinningOff()
     {
         // Arrange & Act
-        var allow = ServiceCollectionExtensions.ResolveOnnxAllowIntraOpSpinning(Configuration(null));
+        var allow = KnowledgeIndexServiceCollectionExtensions.ResolveOnnxAllowIntraOpSpinning(Configuration(null));
 
         // Assert
         allow.ShouldBeFalse();
@@ -54,7 +54,7 @@ public class OnnxIntraOpSpinningConfigTests
     public void ParsableValue_IsHonoured(string configured, bool expected)
     {
         // Arrange & Act
-        var allow = ServiceCollectionExtensions.ResolveOnnxAllowIntraOpSpinning(Configuration(configured));
+        var allow = KnowledgeIndexServiceCollectionExtensions.ResolveOnnxAllowIntraOpSpinning(Configuration(configured));
 
         // Assert
         allow.ShouldBe(expected);
@@ -65,7 +65,7 @@ public class OnnxIntraOpSpinningConfigTests
     public void UnparsableValue_FallsBackToTheDefault()
     {
         // Arrange & Act
-        var allow = ServiceCollectionExtensions.ResolveOnnxAllowIntraOpSpinning(Configuration("yes"));
+        var allow = KnowledgeIndexServiceCollectionExtensions.ResolveOnnxAllowIntraOpSpinning(Configuration("yes"));
 
         // Assert
         allow.ShouldBe(KnowledgeIndexConstants.DefaultOnnxAllowIntraOpSpinning);

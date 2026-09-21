@@ -98,7 +98,7 @@ public class TurnPreparationCorrectionUndoTests
         Calls = calls
     };
 
-    private async Task<GracefulCorrectionOutcome> Complete(AssistantLastAction anchor)
+    private async Task<GracefulCorrectionPlan> Plan(AssistantLastAction anchor)
     {
         var plan = await _service.PlanCorrectionAsync(
             new GracefulCorrectionInput(
@@ -108,10 +108,17 @@ public class TurnPreparationCorrectionUndoTests
 
         plan.ShouldNotBeNull();
 
+        return plan!;
+    }
+
+    private async Task<GracefulCorrectionOutcome> Complete(
+        AssistantLastAction anchor, bool undoIsPermitted = true)
+    {
         return _service.CompleteCorrection(
-            plan!,
+            await Plan(anchor),
             [new LLMFunction { Name = "fill_group_by_criteria", Description = "Fills a group.", ToolsetSource = ToolsetSkillSource.Keyword }],
-            "de");
+            "de",
+            undoIsPermitted);
     }
 
     [Test]
@@ -181,5 +188,47 @@ public class TurnPreparationCorrectionUndoTests
 
         _confirmationStore.DidNotReceiveWithAnyArgs().Create(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
+    }
+
+    // The caller decides whether the account behind the turn may release the inverse skill. A refusal
+    // has to cost the whole offer: the sentence in the note is the promise the user reads, and leaving
+    // it in while dropping the invocation would ask a yes/no question nothing can redeem.
+    [Test]
+    public async Task AnUndoTheCallerMayNotRelease_IsNeitherOfferedNorNamedInTheNote()
+    {
+        var outcome = await Complete(Anchor(Write()), undoIsPermitted: false);
+
+        outcome.Undo.ShouldBeNull();
+        outcome.UndoneSkillLabel.ShouldBeNull();
+        outcome.ContextNote.ShouldNotContain(UndoOfferPrefix);
+        outcome.ClarificationReply.ShouldBeNull();
+    }
+
+    // The permitted turn is the control case for the one above: the same anchor, the same toolset, and
+    // the sentence IS in the note.
+    [Test]
+    public async Task AnUndoTheCallerMayRelease_IsNamedInTheNote()
+    {
+        var outcome = await Complete(Anchor(Write()));
+
+        outcome.ContextNote.ShouldContain(UndoOfferPrefix);
+    }
+
+    // What the caller inspects before it answers the permission question must be what the offer would
+    // name, or the check would gate a different skill than the one the user is promised.
+    [Test]
+    public async Task PeekUndo_ReturnsTheSameInverseTheOfferWouldName()
+    {
+        var plan = await Plan(Anchor(Read(), Write()));
+
+        _service.PeekUndo(plan)!.SkillName.ShouldBe(InverseSkillName);
+    }
+
+    [Test]
+    public async Task PeekUndo_WithoutADeclaredInverse_ReturnsNothing()
+    {
+        var plan = await Plan(Anchor(Write(skillName: UnmappedWriteSkillName)));
+
+        _service.PeekUndo(plan).ShouldBeNull();
     }
 }

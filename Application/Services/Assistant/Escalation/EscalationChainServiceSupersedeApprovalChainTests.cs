@@ -105,7 +105,9 @@ public class EscalationChainServiceSupersedeApprovalChainTests
     public async Task AlreadyAcknowledgedChain_IsLeftAlone()
     {
         var chainId = await GivenRunningApprovalChainAsync();
-        Assert.That(await _sut.AcknowledgeChainAsync(chainId, Roster[0].UserId), Is.True);
+        Assert.That(
+            await _sut.AcknowledgeChainAsync(chainId, Roster[0].UserId),
+            Is.EqualTo(EscalationAcknowledgeOutcome.Acknowledged));
 
         var superseded = await _sut.SupersedeConditionApprovalChainAsync(ConditionId, Reason);
 

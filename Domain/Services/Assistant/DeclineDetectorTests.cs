@@ -101,12 +101,31 @@ public class DeclineDetectorTests
         DeclineDetector.IsBareNegation("Nie.").ShouldBeTrue();
     }
 
+    // A multi-word plugin phrase used to be unmatchable here, because a phrase has no token boundary to
+    // test against. It is matched as a prefix now, but only when nothing that carries a word follows it -
+    // otherwise a refusal that states a different wish would count as an answer to the yes/no question.
     [Test]
-    public void IsBareNegation_MultiWordPluginNegation_ReturnsFalse()
+    public void IsBareNegation_MultiWordPluginNegation_ReturnsTrue()
     {
         DeclineDetector.Configure(["ahora no"], []);
 
-        DeclineDetector.IsBareNegation("Ahora no").ShouldBeFalse();
+        DeclineDetector.IsBareNegation("Ahora no").ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsBareNegation_MultiWordPluginNegationFollowedByAWish_ReturnsFalse()
+    {
+        DeclineDetector.Configure(["ahora no"], []);
+
+        DeclineDetector.IsBareNegation("Ahora no, muéstrame los clientes").ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsBareNegation_PluginDeclinePhrase_ReturnsTrue()
+    {
+        DeclineDetector.Configure([], ["mas tarde"]);
+
+        DeclineDetector.IsBareNegation("Mas tarde.").ShouldBeTrue();
     }
 
     [Test]

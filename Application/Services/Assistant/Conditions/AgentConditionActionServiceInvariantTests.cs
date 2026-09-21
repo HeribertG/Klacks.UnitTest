@@ -318,6 +318,7 @@ public class AgentConditionActionServiceInvariantTests
             skillExecutor,
             reporter,
             Substitute.For<IConditionApprovalChainStarter>(),
+            Substitute.For<IStandingApprovalRepository>(),
             timeProvider,
             companyClock,
             NullLogger<AgentConditionActionService>.Instance)

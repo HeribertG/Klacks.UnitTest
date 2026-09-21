@@ -1480,23 +1480,36 @@ public class OperationalTriggerEventDedupKeyTests
         }
     }
 
+    /// <summary>
+    /// The primary group AgentCondition.GroupId keeps is the SMALLEST id, not the first one enumerated,
+    /// because the per-group action budget and the governance decision are counted in it and must not move
+    /// between ticks. It is not the row's audience - that is the whole set, which
+    /// LedgerGroupIdsFor hands to the ledger unnarrowed and agent_condition_groups stores.
+    /// </summary>
     [Test]
-    public void LedgerGroupIdFor_TakesTheFirstOfSeveralGroups_AndNullWhenThereIsNone()
+    public void LedgerGroupIds_KeepEveryGroup_WhilePrimaryGroupIdTakesTheSmallest()
     {
-        // AgentCondition has one GroupId column. The representative it stores is a reporting attribute
-        // only; the dispatch audience is recomputed from the full GroupIds set every time.
-        var firstGroupId = Guid.NewGuid();
-        var secondGroupId = Guid.NewGuid();
+        var firstGroupId = new Guid("00000000-0000-0000-0000-000000000001");
+        var secondGroupId = new Guid("00000000-0000-0000-0000-000000000002");
 
         var twoGroups = new UnstaffedShiftTriggerEvent(
-            Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { firstGroupId, secondGroupId });
+            Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { secondGroupId, firstGroupId });
         var noGroup = new UnstaffedShiftTriggerEvent(
             Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
         var singleGroupKind = new PeriodCloseDueTriggerEvent(firstGroupId, "GE", new DateOnly(2026, 6, 30), 3);
 
-        Assert.That(AgentConditionLedgerPolicy.LedgerGroupIdFor(twoGroups), Is.EqualTo(firstGroupId));
-        Assert.That(AgentConditionLedgerPolicy.LedgerGroupIdFor(noGroup), Is.Null);
-        Assert.That(AgentConditionLedgerPolicy.LedgerGroupIdFor(singleGroupKind), Is.EqualTo(firstGroupId));
+        var twoGroupIds = AgentConditionLedgerPolicy.LedgerGroupIdsFor(twoGroups);
+
+        Assert.That(twoGroupIds, Is.EquivalentTo(new[] { firstGroupId, secondGroupId }));
+        Assert.That(AgentConditionLedgerPolicy.LedgerGroupIdsFor(noGroup), Is.Empty);
+        Assert.That(
+            AgentConditionLedgerPolicy.LedgerGroupIdsFor(singleGroupKind),
+            Is.EquivalentTo(new[] { firstGroupId }));
+
+        Assert.That(AgentConditionLedgerPolicy.PrimaryGroupIdFor(twoGroupIds), Is.EqualTo(firstGroupId));
+        Assert.That(
+            AgentConditionLedgerPolicy.PrimaryGroupIdFor(AgentConditionLedgerPolicy.LedgerGroupIdsFor(noGroup)),
+            Is.Null);
     }
 
     [Test]
