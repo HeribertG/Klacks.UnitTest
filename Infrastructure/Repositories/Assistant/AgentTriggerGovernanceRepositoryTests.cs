@@ -76,11 +76,9 @@ public class AgentTriggerGovernanceRepositoryTests
 
         using var context = CreateContext();
         var sut = new AgentTriggerGovernanceRepository(context);
-        var ownerUserId = Guid.NewGuid();
         var update = Rule(TriggerKind);
         update.MaxAction = ProactiveMaxAction.Execute;
         update.Enabled = false;
-        update.ResponsibleOwnerUserId = ownerUserId;
         update.DailyActionBudget = 9;
         update.WindowActionLimit = 4;
         update.WindowMinutes = 30;
@@ -93,7 +91,6 @@ public class AgentTriggerGovernanceRepositoryTests
         stored.ShouldHaveSingleItem();
         stored[0].MaxAction.ShouldBe(ProactiveMaxAction.Execute);
         stored[0].Enabled.ShouldBeFalse();
-        stored[0].ResponsibleOwnerUserId.ShouldBe(ownerUserId);
         stored[0].DailyActionBudget.ShouldBe(9);
         stored[0].WindowActionLimit.ShouldBe(4);
         stored[0].WindowMinutes.ShouldBe(30);

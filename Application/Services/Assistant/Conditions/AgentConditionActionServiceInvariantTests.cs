@@ -19,9 +19,11 @@
 ///
 /// The world is otherwise kept clean on purpose: the skill executor always succeeds, the identity
 /// provider always resolves, and no payload is ever rewritten mid-claim, so RecordFailureAsync and the
-/// stale-reclaim path never fire. That is deliberate - what is varied here is exactly the §5 generator's
-/// list (level, per-kind governance, kill switch, budget), not the unrelated failure paths several other
-/// fixtures in this directory already pin.
+/// stale-reclaim path never fire. Most seeded rows carry a fresh approval stamp from one of the world's
+/// planners, because Execute means execute AFTER approval and an unstamped row only ever gets a chain
+/// asked for it. That is deliberate - what is varied here is exactly the §5 generator's list (level,
+/// per-kind governance, kill switch, budget), not the unrelated failure paths several other fixtures in
+/// this directory already pin.
 ///
 /// The other five §5 invariants are out of scope per the coordinator's instructions: #1/#6 are covered by
 /// ProactiveGovernanceResolverTests' 48-cell resolver matrix, #3 by Az3
@@ -45,6 +47,8 @@ public class AgentConditionActionServiceInvariantTests
     private const int RunsPerInvariant = 200;
     private const int Invariant2SeedBase = 202608300;
     private const int Invariant7SeedBase = 202608700;
+    private const double ApprovalProbability = 0.85;
+    private const int MinimumApprovalAgeMinutes = 1;
 
     private static readonly DateTime NowUtc = new(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc);
     private static readonly string[] Severities =
@@ -231,9 +235,6 @@ public class AgentConditionActionServiceInvariantTests
             var dailyBudget = random.Next(0, 9);
             var windowLimit = random.Next(0, 9);
             var windowMinutes = WindowMinuteChoices[random.Next(WindowMinuteChoices.Length)];
-            var ownerUserId = planners.Count > 0 && random.NextDouble() < 0.85
-                ? planners[random.Next(planners.Count)]
-                : (Guid?)null;
 
             var levelCapped = configuredMaxAction < globalCap ? configuredMaxAction : globalCap;
             var effectiveMaxAction = killSwitch || !enabled ? ProactiveMaxAction.Hint : levelCapped;
@@ -247,7 +248,6 @@ public class AgentConditionActionServiceInvariantTests
                     ConfiguredMaxAction: configuredMaxAction,
                     Enabled: enabled,
                     KillSwitchActive: killSwitch,
-                    ResponsibleOwnerUserId: ownerUserId,
                     DailyActionBudget: dailyBudget,
                     WindowActionLimit: windowLimit,
                     WindowMinutes: windowMinutes,
@@ -265,6 +265,13 @@ public class AgentConditionActionServiceInvariantTests
             condition.EntityId = Guid.NewGuid();
             condition.PayloadJson = "{}";
 
+            if (planners.Count > 0 && random.NextDouble() < ApprovalProbability)
+            {
+                condition.ApprovedByUserId = planners[random.Next(planners.Count)];
+                condition.ApprovedAtUtc = NowUtc.AddMinutes(
+                    -random.Next(MinimumApprovalAgeMinutes, AgentConditionActionDefaults.ApprovalExecutionWindowMinutes));
+            }
+
             // Stands in for the real Detected -> Reported transition event a full ledger tick would have
             // written before this test's tick ever runs - see the class summary.
             await repository.InsertEventAsync(new AgentConditionEvent
@@ -281,11 +288,11 @@ public class AgentConditionActionServiceInvariantTests
 
         var identityProvider = Substitute.For<IProactiveActionIdentityProvider>();
         identityProvider
-            .ResolveForSkillAsync(Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ResolveForSkillAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => ProactiveActionIdentity.Resolved(
                 new SkillExecutionContext
                 {
-                    UserId = callInfo.ArgAt<Guid?>(0) ?? Guid.NewGuid(),
+                    UserId = callInfo.ArgAt<Guid>(0),
                     TenantId = Guid.Empty,
                     UserName = KlacksyIdentity.SystemUserName,
                     UserPermissions = ["some.permission"],
@@ -310,6 +317,7 @@ public class AgentConditionActionServiceInvariantTests
             identityProvider,
             skillExecutor,
             reporter,
+            Substitute.For<IConditionApprovalChainStarter>(),
             timeProvider,
             companyClock,
             NullLogger<AgentConditionActionService>.Instance)
@@ -323,13 +331,14 @@ public class AgentConditionActionServiceInvariantTests
     {
         public List<ReportEntry> Reports { get; } = new();
 
-        public Task<bool> ReportAsync(Guid recipientUserId, string message, CancellationToken cancellationToken = default)
+        public Task<int> ReportToApprovalAudienceAsync(
+            Guid? approverUserId, Guid? groupId, string message, CancellationToken cancellationToken = default)
         {
-            Reports.Add(new ReportEntry(recipientUserId, message));
-            return Task.FromResult(true);
+            Reports.Add(new ReportEntry(approverUserId, groupId, message));
+            return Task.FromResult(1);
         }
 
-        public sealed record ReportEntry(Guid RecipientUserId, string Message);
+        public sealed record ReportEntry(Guid? ApproverUserId, Guid? GroupId, string Message);
     }
 
     /// <summary>

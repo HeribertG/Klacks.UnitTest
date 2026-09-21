@@ -48,7 +48,7 @@ public class EscalationChainServiceUrgencyGateTests
         _settingsReader.GetSetting(Arg.Any<string>()).Returns((SettingsEntity?)null);
 
         _sut = new EscalationChainService(
-            _repository, _rosterService, _notifier, _settingsReader, _timeProvider, Substitute.For<ILogger<EscalationChainService>>());
+            _repository, _rosterService, _notifier, _settingsReader, Substitute.For<IAgentConditionLedgerService>(), _timeProvider, Substitute.For<ILogger<EscalationChainService>>());
     }
 
     [Test]

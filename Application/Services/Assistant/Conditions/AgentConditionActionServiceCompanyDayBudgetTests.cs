@@ -28,7 +28,7 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
     // 2026-01-14T11:30:00Z is 2026-01-15T00:30 in Pacific/Auckland (NZDT, UTC+13) - thirty minutes into
     // the company's new day, but still firmly inside 2026-01-14 by the UTC calendar.
     private static readonly DateTime NowUtc = new(2026, 1, 14, 11, 30, 0, DateTimeKind.Utc);
-    private static readonly Guid OwnerUserId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    private static readonly Guid ApproverUserId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     private static readonly TimeZoneInfo Auckland = TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland");
     private static readonly TimeZoneInfo NewYork = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
 
@@ -55,7 +55,6 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
                 ConfiguredMaxAction: ProactiveMaxAction.Execute,
                 Enabled: true,
                 KillSwitchActive: false,
-                ResponsibleOwnerUserId: OwnerUserId,
                 DailyActionBudget: 1,
                 WindowActionLimit: 50,
                 WindowMinutes: 60,
@@ -66,11 +65,11 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
 
         _identityProvider = Substitute.For<IProactiveActionIdentityProvider>();
         _identityProvider
-            .ResolveForSkillAsync(Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ResolveForSkillAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ProactiveActionIdentity.Resolved(
                 new SkillExecutionContext
                 {
-                    UserId = OwnerUserId,
+                    UserId = ApproverUserId,
                     TenantId = Guid.Empty,
                     UserName = KlacksyIdentity.SystemUserName,
                     UserPermissions = ["some.permission"],
@@ -84,7 +83,9 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
             .Returns(SkillResult.SuccessResult(null, "Template created."));
 
         _reporter = Substitute.For<IProactiveActionReporter>();
-        _reporter.ReportAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        _reporter
+            .ReportToApprovalAudienceAsync(Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(1);
 
         _registry = new SingleKindRemediationRegistry();
     }
@@ -92,9 +93,7 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
     [Test]
     public async Task ClaimFromLateOnTheCompanysPreviousDay_DoesNotCountAgainstTodaysBudget()
     {
-        var condition = _repository.Seed(Kind, Guid.NewGuid().ToString(), AgentConditionStatus.Reported, NowUtc.AddHours(-6));
-        condition.EntityId = Guid.NewGuid();
-        condition.PayloadJson = "{}";
+        var condition = GivenApprovedCondition(_repository, NowUtc);
 
         // 2026-01-14T10:00Z is 2026-01-14T23:00 in Auckland - the company's PREVIOUS day, even though it
         // shares the UTC calendar day with NowUtc.
@@ -135,9 +134,7 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
         // already rolled over to 06-15.
         var nowUtc = new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Utc);
         var repository = new FakeAgentConditionRepository();
-        var condition = repository.Seed(Kind, Guid.NewGuid().ToString(), AgentConditionStatus.Reported, nowUtc.AddHours(-6));
-        condition.EntityId = Guid.NewGuid();
-        condition.PayloadJson = "{}";
+        var condition = GivenApprovedCondition(repository, nowUtc);
 
         // 2026-06-15T02:00Z is 2026-06-14T22:00 in America/New_York - the company's PREVIOUS day, even
         // though it shares the UTC calendar day (06-15) with nowUtc.
@@ -171,9 +168,7 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
         // still 06-14, even though nowUtc's own UTC calendar day is already 06-15.
         var nowUtc = new DateTime(2026, 6, 15, 2, 0, 0, DateTimeKind.Utc);
         var repository = new FakeAgentConditionRepository();
-        var condition = repository.Seed(Kind, Guid.NewGuid().ToString(), AgentConditionStatus.Reported, nowUtc.AddHours(-6));
-        condition.EntityId = Guid.NewGuid();
-        condition.PayloadJson = "{}";
+        var condition = GivenApprovedCondition(repository, nowUtc);
 
         // 2026-06-14T20:00Z is 2026-06-14T16:00 in America/New_York - still the company's CURRENT day,
         // even though it is the UTC calendar day before nowUtc's own (06-15).
@@ -217,10 +212,26 @@ public class AgentConditionActionServiceCompanyDayBudgetTests
             _identityProvider,
             _skillExecutor,
             _reporter,
+            Substitute.For<IConditionApprovalChainStarter>(),
             timeProvider,
             companyClock,
             NullLogger<AgentConditionActionService>.Instance)
             .RunAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// A Reported row the approver released a minute before the tick, so the only thing that can keep it
+    /// from executing is the budget count under test.
+    /// </summary>
+    private static AgentCondition GivenApprovedCondition(FakeAgentConditionRepository repository, DateTime nowUtc)
+    {
+        var condition = repository.Seed(Kind, Guid.NewGuid().ToString(), AgentConditionStatus.Reported, nowUtc.AddHours(-6));
+        condition.EntityId = Guid.NewGuid();
+        condition.PayloadJson = "{}";
+        condition.ApprovedByUserId = ApproverUserId;
+        condition.ApprovedAtUtc = nowUtc.AddMinutes(-1);
+
+        return condition;
     }
 
     private sealed class SingleKindRemediationRegistry : IConditionRemediationRegistry

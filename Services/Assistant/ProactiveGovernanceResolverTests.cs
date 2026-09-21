@@ -100,8 +100,7 @@ public class ProactiveGovernanceResolverTests
         GivenStoredRule(new AgentTriggerGovernance
         {
             TriggerKind = TriggerKind,
-            MaxAction = ProactiveMaxAction.Execute,
-            ResponsibleOwnerUserId = Guid.NewGuid()
+            MaxAction = ProactiveMaxAction.Execute
         });
 
         // Act

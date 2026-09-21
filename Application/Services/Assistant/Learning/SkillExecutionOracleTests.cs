@@ -240,7 +240,7 @@ public class SkillExecutionOracleTests
     public async Task AnUnavailableIdentity_IsInconclusiveRatherThanRejected()
     {
         _identityProvider
-            .ResolveForSkillAsync(Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ResolveForSkillAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ProactiveActionIdentity.Refused(
                 ProactiveActionIdentityRefusal.TokenRefused, "The owner's token was refused."));
 
@@ -259,7 +259,7 @@ public class SkillExecutionOracleTests
 
         probe.Verdict.ShouldBe(SkillExecutionVerdict.Passed);
         await _identityProvider.DidNotReceive().ResolveForSkillAsync(
-            Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // The provider mints its context for the unattended action path, which bypasses the gate. A probe
@@ -406,7 +406,7 @@ public class SkillExecutionOracleTests
 
     private void GivenIdentity() =>
         _identityProvider
-            .ResolveForSkillAsync(Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ResolveForSkillAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ProactiveActionIdentity.Resolved(
                 new SkillExecutionContext
                 {

@@ -60,7 +60,6 @@ public class NextPeriodAutonomyResolverTests
                 ConfiguredMaxAction: configuredMaxAction,
                 Enabled: enabled,
                 KillSwitchActive: killSwitchActive,
-                ResponsibleOwnerUserId: null,
                 DailyActionBudget: ProactiveGovernanceDefaults.DailyActionBudget,
                 WindowActionLimit: ProactiveGovernanceDefaults.WindowActionLimit,
                 WindowMinutes: ProactiveGovernanceDefaults.WindowMinutes,

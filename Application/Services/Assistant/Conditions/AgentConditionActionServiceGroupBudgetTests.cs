@@ -9,12 +9,12 @@
 /// Deliberately a sibling fixture rather than more cases in AgentConditionActionServiceTests: that
 /// fixture answers EVERY scope from one catch-all stub, ResolveAsync(Kind, Arg.Any&lt;Guid?&gt;(), ...), which
 /// is exactly why the defect could not surface there - every group got the same budget and the same
-/// owner, so a pooled counter and a per-group counter produced identical numbers. Here every scope is
-/// stubbed separately with its OWN budget and its OWN responsible owner, and a scope nobody stubbed
-/// fails loudly instead of silently inheriting a default.
+/// approver, so a pooled counter and a per-group counter produced identical numbers. Here every scope is
+/// stubbed separately with its OWN budget, every row carries the approval stamp of its OWN group's
+/// approver, and a scope nobody stubbed fails loudly instead of silently inheriting a default.
 ///
-/// The reporter assertions are addressed to a specific owner id on purpose: they are the proof that the
-/// per-group stubs really discriminated, not merely that some report went out.
+/// The reporter assertions are addressed to a specific approver id AND group id on purpose: they are the
+/// proof that the per-group stubs really discriminated, not merely that some report went out.
 /// </summary>
 
 using System.Globalization;
@@ -43,10 +43,10 @@ public class AgentConditionActionServiceGroupBudgetTests
     private static readonly Guid BusyGroupId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid QuietGroupId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static readonly Guid SecondBusyGroupId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
-    private static readonly Guid BusyOwnerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid QuietOwnerId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private static readonly Guid InstallationOwnerId = Guid.Parse("33333333-3333-3333-3333-333333333333");
-    private static readonly Guid SecondBusyOwnerId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+    private static readonly Guid BusyApproverId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid QuietApproverId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid InstallationApproverId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private static readonly Guid SecondBusyApproverId = Guid.Parse("44444444-4444-4444-4444-444444444444");
 
     private FakeAgentConditionRepository _repository = null!;
     private SettableTimeProvider _timeProvider = null!;
@@ -75,11 +75,11 @@ public class AgentConditionActionServiceGroupBudgetTests
 
         _identityProvider = Substitute.For<IProactiveActionIdentityProvider>();
         _identityProvider
-            .ResolveForSkillAsync(Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProactiveActionIdentity.Resolved(
+            .ResolveForSkillAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => ProactiveActionIdentity.Resolved(
                 new SkillExecutionContext
                 {
-                    UserId = InstallationOwnerId,
+                    UserId = callInfo.ArgAt<Guid>(0),
                     TenantId = Guid.Empty,
                     UserName = KlacksyIdentity.SystemUserName,
                     UserPermissions = ["some.permission"],
@@ -93,7 +93,9 @@ public class AgentConditionActionServiceGroupBudgetTests
             .Returns(SkillResult.SuccessResult(null, "Template created."));
 
         _reporter = Substitute.For<IProactiveActionReporter>();
-        _reporter.ReportAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        _reporter
+            .ReportToApprovalAudienceAsync(Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(1);
 
         _registry = new PayloadAwareRemediationRegistry();
     }
@@ -107,12 +109,12 @@ public class AgentConditionActionServiceGroupBudgetTests
     [Test]
     public async Task AGroupThatSpentItsBudget_NeitherBlocksNorSilencesAGroupThatHasNot()
     {
-        GivenGovernance(BusyGroupId, BusyOwnerId, dailyActionBudget: 1);
-        GivenGovernance(QuietGroupId, QuietOwnerId, dailyActionBudget: 2);
+        GivenGovernance(BusyGroupId, dailyActionBudget: 1);
+        GivenGovernance(QuietGroupId, dailyActionBudget: 2);
 
-        var busy = GivenCondition(BusyGroupId, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
+        var busy = GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
         GivenSpentClaims(busy, count: 2);
-        var quiet = GivenCondition(QuietGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
+        var quiet = GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
 
         var result = await RunAsync();
 
@@ -129,8 +131,8 @@ public class AgentConditionActionServiceGroupBudgetTests
             Assert.That(result.LeftForBudget, Is.EqualTo(1));
         });
 
-        await _reporter.Received(1).ReportAsync(
-            QuietOwnerId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            QuietApproverId, QuietGroupId, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -141,12 +143,12 @@ public class AgentConditionActionServiceGroupBudgetTests
     [Test]
     public async Task ACircuitBreakerTrippedInOneGroup_LeavesTheOtherGroupActing()
     {
-        GivenGovernance(BusyGroupId, BusyOwnerId, windowActionLimit: 1);
-        GivenGovernance(QuietGroupId, QuietOwnerId, windowActionLimit: 1);
+        GivenGovernance(BusyGroupId, windowActionLimit: 1);
+        GivenGovernance(QuietGroupId, windowActionLimit: 1);
 
-        var busy = GivenCondition(BusyGroupId, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
+        var busy = GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
         GivenSpentClaims(busy, count: 1, atUtc: NowUtc.AddMinutes(-10));
-        var quiet = GivenCondition(QuietGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
+        var quiet = GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
 
         var result = await RunAsync();
 
@@ -160,19 +162,19 @@ public class AgentConditionActionServiceGroupBudgetTests
 
     /// <summary>
     /// Walking on after a block means the same exhausted group is met again on every remaining candidate.
-    /// The owner must hear about it once, not once per finding.
+    /// The approver and the group must hear about it once, not once per finding.
     /// </summary>
     [Test]
     public async Task AnExhaustedGroup_ReportsItsBudgetStopExactlyOnce()
     {
-        GivenGovernance(QuietGroupId, QuietOwnerId);
-        GivenGovernance(BusyGroupId, BusyOwnerId, dailyActionBudget: 1);
+        GivenGovernance(QuietGroupId);
+        GivenGovernance(BusyGroupId, dailyActionBudget: 1);
 
-        var quiet = GivenCondition(QuietGroupId, AgentTriggerSeverity.High, NowUtc.AddHours(-5));
-        var firstBusy = GivenCondition(BusyGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-4));
+        var quiet = GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.High, NowUtc.AddHours(-5));
+        var firstBusy = GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-4));
         GivenSpentClaims(firstBusy, count: 1);
-        GivenCondition(BusyGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-3));
-        GivenCondition(BusyGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-2));
+        GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-3));
+        GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-2));
 
         var result = await RunAsync();
 
@@ -187,26 +189,26 @@ public class AgentConditionActionServiceGroupBudgetTests
             Assert.That(result.LeftForBudget, Is.EqualTo(3));
         });
 
-        await _reporter.Received(1).ReportAsync(
-            BusyOwnerId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            BusyApproverId, BusyGroupId, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
     /// "Report once" is once per GROUP, not once per tick. Two exhausted groups usually have two
-    /// different responsible owners, and a single tick-wide flag would leave the second owner never
-    /// hearing that their group stopped - a silence indistinguishable from "nothing was found".
+    /// different approvers and audiences, and a single tick-wide flag would leave the second group never
+    /// hearing that it stopped - a silence indistinguishable from "nothing was found".
     /// </summary>
     [Test]
-    public async Task TwoExhaustedGroups_EachReportToTheirOwnOwner()
+    public async Task TwoExhaustedGroups_EachReportToTheirOwnApproverAndGroup()
     {
-        GivenGovernance(QuietGroupId, QuietOwnerId);
-        GivenGovernance(BusyGroupId, BusyOwnerId, dailyActionBudget: 1);
-        GivenGovernance(SecondBusyGroupId, SecondBusyOwnerId, dailyActionBudget: 1);
+        GivenGovernance(QuietGroupId);
+        GivenGovernance(BusyGroupId, dailyActionBudget: 1);
+        GivenGovernance(SecondBusyGroupId, dailyActionBudget: 1);
 
-        GivenCondition(QuietGroupId, AgentTriggerSeverity.High, NowUtc.AddHours(-5));
-        var firstBusy = GivenCondition(BusyGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-4));
+        GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.High, NowUtc.AddHours(-5));
+        var firstBusy = GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-4));
         GivenSpentClaims(firstBusy, count: 1);
-        var secondBusy = GivenCondition(SecondBusyGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-3));
+        var secondBusy = GivenCondition(SecondBusyGroupId, SecondBusyApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-3));
         GivenSpentClaims(secondBusy, count: 1);
 
         var result = await RunAsync();
@@ -217,30 +219,31 @@ public class AgentConditionActionServiceGroupBudgetTests
             Assert.That(result.LeftForBudget, Is.EqualTo(2));
         });
 
-        await _reporter.Received(1).ReportAsync(
-            BusyOwnerId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            BusyApproverId, BusyGroupId, Arg.Any<string>(), Arg.Any<CancellationToken>());
 
-        await _reporter.Received(1).ReportAsync(
-            SecondBusyOwnerId,
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            SecondBusyApproverId,
+            SecondBusyGroupId,
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
     }
 
     /// <summary>
-    /// The number in the report is what the owner reads as "this much of my work is waiting". Counting
+    /// The number in the report is what the approver reads as "this much of my work is waiting". Counting
     /// every remaining candidate would charge one group with another group's backlog.
     /// </summary>
     [Test]
     public async Task TheBudgetReport_CountsOnlyTheFindingsOfItsOwnGroupAsLeftOpen()
     {
-        GivenGovernance(QuietGroupId, QuietOwnerId);
-        GivenGovernance(BusyGroupId, BusyOwnerId, dailyActionBudget: 1);
+        GivenGovernance(QuietGroupId);
+        GivenGovernance(BusyGroupId, dailyActionBudget: 1);
 
-        GivenCondition(QuietGroupId, AgentTriggerSeverity.High, NowUtc.AddHours(-5));
-        var firstBusy = GivenCondition(BusyGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-4));
+        GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.High, NowUtc.AddHours(-5));
+        var firstBusy = GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-4));
         GivenSpentClaims(firstBusy, count: 1);
-        var secondQuiet = GivenCondition(QuietGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-3));
-        GivenCondition(BusyGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-2));
+        var secondQuiet = GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-3));
+        GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-2));
 
         var result = await RunAsync();
 
@@ -257,8 +260,9 @@ public class AgentConditionActionServiceGroupBudgetTests
         var expectedRemaining = string.Format(
             CultureInfo.InvariantCulture, RemainingFindingsFormat, 2);
 
-        await _reporter.Received(1).ReportAsync(
-            BusyOwnerId,
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            BusyApproverId,
+            BusyGroupId,
             Arg.Is<string>(message => message.Contains(expectedRemaining, StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
     }
@@ -271,12 +275,12 @@ public class AgentConditionActionServiceGroupBudgetTests
     [Test]
     public async Task AGroupsSpentBudget_NeverBlocksTheInstallationWideBucket()
     {
-        GivenGovernance(BusyGroupId, BusyOwnerId, dailyActionBudget: 1);
-        GivenGovernance(groupId: null, InstallationOwnerId, dailyActionBudget: 1);
+        GivenGovernance(BusyGroupId, dailyActionBudget: 1);
+        GivenGovernance(groupId: null, dailyActionBudget: 1);
 
-        var busy = GivenCondition(BusyGroupId, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
+        var busy = GivenCondition(BusyGroupId, BusyApproverId, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
         GivenSpentClaims(busy, count: 2);
-        var installationWide = GivenCondition(groupId: null, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
+        var installationWide = GivenCondition(groupId: null, InstallationApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
 
         var result = await RunAsync();
 
@@ -297,12 +301,12 @@ public class AgentConditionActionServiceGroupBudgetTests
     [Test]
     public async Task TheInstallationWideSpentBudget_NeverBlocksAGroup()
     {
-        GivenGovernance(groupId: null, InstallationOwnerId, dailyActionBudget: 1);
-        GivenGovernance(QuietGroupId, QuietOwnerId, dailyActionBudget: 2);
+        GivenGovernance(groupId: null, dailyActionBudget: 1);
+        GivenGovernance(QuietGroupId, dailyActionBudget: 2);
 
-        var installationWide = GivenCondition(groupId: null, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
+        var installationWide = GivenCondition(groupId: null, InstallationApproverId, AgentTriggerSeverity.High, NowUtc.AddHours(-3));
         GivenSpentClaims(installationWide, count: 2);
-        var quiet = GivenCondition(QuietGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
+        var quiet = GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
 
         var result = await RunAsync();
 
@@ -324,8 +328,8 @@ public class AgentConditionActionServiceGroupBudgetTests
     [Test]
     public async Task AConditionThatStopsBindingAfterTheClaim_ReportsTheFailedAttempt()
     {
-        GivenGovernance(QuietGroupId, QuietOwnerId);
-        var condition = GivenCondition(QuietGroupId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
+        GivenGovernance(QuietGroupId);
+        var condition = GivenCondition(QuietGroupId, QuietApproverId, AgentTriggerSeverity.Medium, NowUtc.AddHours(-1));
         _repository.RefreshPayloadOnNextTransitionFor(condition.Id, UnbindablePayloadJson);
 
         var result = await RunAsync();
@@ -347,8 +351,9 @@ public class AgentConditionActionServiceGroupBudgetTests
         await _skillExecutor.DidNotReceive().ExecuteAsync(
             Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
 
-        await _reporter.Received(1).ReportAsync(
-            QuietOwnerId,
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            QuietApproverId,
+            QuietGroupId,
             Arg.Is<string>(message => message.Contains(FailedReportMarker, StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
     }
@@ -363,6 +368,7 @@ public class AgentConditionActionServiceGroupBudgetTests
             _identityProvider,
             _skillExecutor,
             _reporter,
+            Substitute.For<IConditionApprovalChainStarter>(),
             _timeProvider,
             _companyClock,
             NullLogger<AgentConditionActionService>.Instance)
@@ -370,12 +376,11 @@ public class AgentConditionActionServiceGroupBudgetTests
 
     /// <summary>
     /// One governance answer for ONE scope. No catch-all: a scope this fixture forgot to stub returns no
-    /// decision at all and the run fails loudly, rather than quietly borrowing another scope's budget and
-    /// owner - which is the shape of stubbing that hid the pooled counter in the first place.
+    /// decision at all and the run fails loudly, rather than quietly borrowing another scope's budget -
+    /// which is the shape of stubbing that hid the pooled counter in the first place.
     /// </summary>
     private void GivenGovernance(
         Guid? groupId,
-        Guid ownerUserId,
         int dailyActionBudget = GenerousBudget,
         int windowActionLimit = GenerousBudget,
         int windowMinutes = DefaultWindowMinutes)
@@ -389,14 +394,17 @@ public class AgentConditionActionServiceGroupBudgetTests
                 ConfiguredMaxAction: ProactiveMaxAction.Execute,
                 Enabled: true,
                 KillSwitchActive: false,
-                ResponsibleOwnerUserId: ownerUserId,
                 DailyActionBudget: dailyActionBudget,
                 WindowActionLimit: windowActionLimit,
                 WindowMinutes: windowMinutes,
                 IsStored: true));
     }
 
-    private AgentCondition GivenCondition(Guid? groupId, string severity, DateTime detectedAtUtc)
+    /// <summary>
+    /// A Reported row already released by its group's approver: the stamp is what puts the row into the
+    /// action branch at all, and it is what addresses the row's reports.
+    /// </summary>
+    private AgentCondition GivenCondition(Guid? groupId, Guid approverUserId, string severity, DateTime detectedAtUtc)
     {
         var condition = _repository.Seed(
             Kind, Guid.NewGuid().ToString(), AgentConditionStatus.Reported, detectedAtUtc);
@@ -404,6 +412,8 @@ public class AgentConditionActionServiceGroupBudgetTests
         condition.GroupId = groupId;
         condition.EntityId = Guid.NewGuid();
         condition.PayloadJson = BindablePayloadJson;
+        condition.ApprovedByUserId = approverUserId;
+        condition.ApprovedAtUtc = NowUtc.AddMinutes(-1);
 
         return condition;
     }

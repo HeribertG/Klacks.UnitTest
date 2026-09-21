@@ -31,7 +31,7 @@ public class AgentConditionActionServiceTests
     private const string SkillName = "test_remediation_skill";
 
     private static readonly DateTime NowUtc = new(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc);
-    private static readonly Guid OwnerUserId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid ApproverUserId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     private FakeAgentConditionRepository _repository = null!;
     private SettableTimeProvider _timeProvider = null!;
@@ -42,11 +42,17 @@ public class AgentConditionActionServiceTests
     private IProactiveActionIdentityProvider _identityProvider = null!;
     private ISkillExecutor _skillExecutor = null!;
     private IProactiveActionReporter _reporter = null!;
+    private IConditionApprovalChainStarter _approvalStarter = null!;
     private TestRemediationRegistry _registry = null!;
 
     [SetUp]
     public void SetUp()
     {
+        _approvalStarter = Substitute.For<IConditionApprovalChainStarter>();
+        _approvalStarter
+            .TryStartAsync(Arg.Any<AgentCondition>(), Arg.Any<ConditionRemediationEntry>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ConditionApprovalStartOutcome.Started);
+
         _repository = new FakeAgentConditionRepository();
         _timeProvider = new SettableTimeProvider(NowUtc);
         _companyClock = new FixedCompanyClock(NowUtc);
@@ -66,7 +72,9 @@ public class AgentConditionActionServiceTests
         GivenSkillSucceeds();
 
         _reporter = Substitute.For<IProactiveActionReporter>();
-        _reporter.ReportAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        _reporter
+            .ReportToApprovalAudienceAsync(Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(1);
 
         _registry = new TestRemediationRegistry();
     }
@@ -74,7 +82,7 @@ public class AgentConditionActionServiceTests
     [Test]
     public async Task AReportedCondition_IsClaimedExecutedAndReported()
     {
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
 
         var result = await RunAsync();
 
@@ -88,13 +96,14 @@ public class AgentConditionActionServiceTests
             Assert.That(stored.LastAttemptAtUtc, Is.EqualTo(NowUtc));
         });
 
-        await _reporter.Received(1).ReportAsync(OwnerUserId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            ApproverUserId, null, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task AConditionAlreadyMarkedAsCausedByKlacksy_IsNeverAutoHandled()
     {
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
         _repository.Stored(condition.Id).CausedByConditionId = Guid.NewGuid();
 
         var result = await RunAsync();
@@ -118,8 +127,7 @@ public class AgentConditionActionServiceTests
         var cause = GivenCondition(AgentConditionStatus.Executed, entityId: targetEntityId);
         _repository.Stored(cause.Id).HandledAtUtc = NowUtc.AddMinutes(-5);
 
-        var follower = GivenCondition(
-            AgentConditionStatus.Reported, entityId: targetEntityId, detectedAtUtc: NowUtc.AddMinutes(-2));
+        var follower = GivenApprovedCondition(entityId: targetEntityId, detectedAtUtc: NowUtc.AddMinutes(-2));
 
         var result = await RunAsync();
 
@@ -142,8 +150,7 @@ public class AgentConditionActionServiceTests
         var earlier = GivenCondition(AgentConditionStatus.Executed, entityId: targetEntityId);
         _repository.Stored(earlier.Id).HandledAtUtc = NowUtc.AddMinutes(-5);
 
-        GivenCondition(
-            AgentConditionStatus.Reported, entityId: targetEntityId, detectedAtUtc: NowUtc.AddMinutes(-30));
+        GivenApprovedCondition(entityId: targetEntityId, detectedAtUtc: NowUtc.AddMinutes(-30));
 
         var result = await RunAsync();
 
@@ -156,7 +163,7 @@ public class AgentConditionActionServiceTests
     [Test]
     public async Task AConditionAttemptedThreeTimes_IsEscalatedInsteadOfRetried()
     {
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
         _repository.Stored(condition.Id).AttemptCount = AgentConditionActionDefaults.MaxAttemptsBeforeEscalation;
 
         var result = await RunAsync();
@@ -168,7 +175,8 @@ public class AgentConditionActionServiceTests
             Assert.That(_repository.Stored(condition.Id).EscalatedAtUtc, Is.EqualTo(NowUtc));
         });
 
-        await _reporter.Received(1).ReportAsync(OwnerUserId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _reporter.Received(1).ReportToApprovalAudienceAsync(
+            ApproverUserId, null, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _skillExecutor.DidNotReceive().ExecuteAsync(
             Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
     }
@@ -176,7 +184,7 @@ public class AgentConditionActionServiceTests
     [Test]
     public async Task AnEscalationAnotherInstanceWon_IsNotCountedTwice()
     {
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
         _repository.Stored(condition.Id).AttemptCount = AgentConditionActionDefaults.MaxAttemptsBeforeEscalation;
         _repository.LoseNextTransitionFor(condition.Id);
 
@@ -188,31 +196,27 @@ public class AgentConditionActionServiceTests
             "Escalated is the number a planner reads to spot a stuck kind. Counting a lost "
             + "compare-and-swap would report an escalation this instance never made.");
 
-        await _reporter.DidNotReceive().ReportAsync(
-            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _reporter.DidNotReceiveWithAnyArgs().ReportToApprovalAudienceAsync(default, default, default!, default);
     }
 
     [Test]
     public async Task ABudgetAlreadySpentOnAnEarlierTick_IsLoggedButNotReportedAgain()
     {
         GivenGovernance(ProactiveMaxAction.Execute, dailyActionBudget: 1);
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
         GivenClaimEventToday(condition.Id);
 
         var result = await RunAsync();
 
         Assert.That(result.LeftForBudget, Is.EqualTo(1));
 
-        await _reporter.DidNotReceive().ReportAsync(
-            Arg.Any<Guid>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
+        await _reporter.DidNotReceiveWithAnyArgs().ReportToApprovalAudienceAsync(default, default, default!, default);
     }
 
     [Test]
     public async Task AQuietWindow_SkipsWithoutCountingAnAttempt()
     {
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
         _quietWindow.IsQuietForAsync(Arg.Any<AgentCondition>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await RunAsync();
@@ -233,8 +237,8 @@ public class AgentConditionActionServiceTests
     public async Task AnExhaustedDailyBudget_LeavesTheRestOpenAndSaysSo()
     {
         GivenGovernance(ProactiveMaxAction.Execute, dailyActionBudget: 1);
-        GivenCondition(AgentConditionStatus.Reported, severity: AgentTriggerSeverity.High);
-        var second = GivenCondition(AgentConditionStatus.Reported, severity: AgentTriggerSeverity.Medium);
+        GivenApprovedCondition(severity: AgentTriggerSeverity.High);
+        var second = GivenApprovedCondition(severity: AgentTriggerSeverity.Medium);
 
         var result = await RunAsync();
 
@@ -245,8 +249,9 @@ public class AgentConditionActionServiceTests
             Assert.That(_repository.Stored(second.Id).Status, Is.EqualTo(AgentConditionStatus.Reported));
         });
 
-        await _reporter.Received().ReportAsync(
-            OwnerUserId,
+        await _reporter.Received().ReportToApprovalAudienceAsync(
+            ApproverUserId,
+            null,
             Arg.Is<string>(message => message.Contains("stay open")),
             Arg.Any<CancellationToken>());
     }
@@ -255,8 +260,8 @@ public class AgentConditionActionServiceTests
     public async Task TheCircuitBreaker_StopsTheKindWithinItsWindow()
     {
         GivenGovernance(ProactiveMaxAction.Execute, windowActionLimit: 1);
-        GivenCondition(AgentConditionStatus.Reported, severity: AgentTriggerSeverity.High);
-        GivenCondition(AgentConditionStatus.Reported, severity: AgentTriggerSeverity.Medium);
+        GivenApprovedCondition(severity: AgentTriggerSeverity.High);
+        GivenApprovedCondition(severity: AgentTriggerSeverity.Medium);
 
         var result = await RunAsync();
 
@@ -274,7 +279,7 @@ public class AgentConditionActionServiceTests
         GivenGovernance(ProactiveMaxAction.Execute, dailyActionBudget: 1000, windowActionLimit: 1000);
         for (var index = 0; index < overCap; index++)
         {
-            GivenCondition(AgentConditionStatus.Reported);
+            GivenApprovedCondition();
         }
 
         var result = await RunAsync();
@@ -290,12 +295,9 @@ public class AgentConditionActionServiceTests
     public async Task UnderScarcity_TheOldestOfTheMostSevereFindingsIsServedFirst()
     {
         GivenGovernance(ProactiveMaxAction.Execute, dailyActionBudget: 1);
-        GivenCondition(
-            AgentConditionStatus.Reported, severity: AgentTriggerSeverity.Medium, detectedAtUtc: NowUtc.AddDays(-9));
-        var oldHigh = GivenCondition(
-            AgentConditionStatus.Reported, severity: AgentTriggerSeverity.High, detectedAtUtc: NowUtc.AddDays(-3));
-        GivenCondition(
-            AgentConditionStatus.Reported, severity: AgentTriggerSeverity.High, detectedAtUtc: NowUtc.AddDays(-1));
+        GivenApprovedCondition(severity: AgentTriggerSeverity.Medium, detectedAtUtc: NowUtc.AddDays(-9));
+        var oldHigh = GivenApprovedCondition(severity: AgentTriggerSeverity.High, detectedAtUtc: NowUtc.AddDays(-3));
+        GivenApprovedCondition(severity: AgentTriggerSeverity.High, detectedAtUtc: NowUtc.AddDays(-1));
 
         await RunAsync();
 
@@ -309,8 +311,8 @@ public class AgentConditionActionServiceTests
     public async Task ADelegation_RaisesASingleConditionAboveTheKindsGovernance()
     {
         GivenGovernance(ProactiveMaxAction.Hint);
-        var plain = GivenCondition(AgentConditionStatus.Reported);
-        var delegated = GivenCondition(AgentConditionStatus.Reported);
+        var plain = GivenApprovedCondition();
+        var delegated = GivenApprovedCondition();
         _repository.Stored(delegated.Id).DelegatedMaxAction = ProactiveMaxAction.Execute;
 
         var result = await RunAsync();
@@ -327,7 +329,7 @@ public class AgentConditionActionServiceTests
     public async Task ADelegation_NeverSurvivesTheKillSwitch()
     {
         GivenGovernance(ProactiveMaxAction.Execute, killSwitchActive: true);
-        var delegated = GivenCondition(AgentConditionStatus.Reported);
+        var delegated = GivenApprovedCondition();
         _repository.Stored(delegated.Id).DelegatedMaxAction = ProactiveMaxAction.Execute;
 
         var result = await RunAsync();
@@ -347,7 +349,7 @@ public class AgentConditionActionServiceTests
     public async Task ADelegation_NeverSurvivesADisabledKind()
     {
         GivenGovernance(ProactiveMaxAction.Execute, enabled: false);
-        var delegated = GivenCondition(AgentConditionStatus.Reported);
+        var delegated = GivenApprovedCondition();
         _repository.Stored(delegated.Id).DelegatedMaxAction = ProactiveMaxAction.Execute;
 
         var result = await RunAsync();
@@ -362,7 +364,7 @@ public class AgentConditionActionServiceTests
         // and a disabled kind do: a human's earlier "you handle this one" grant does not survive an
         // admin holding the installation at Prepare.
         GivenGovernance(ProactiveMaxAction.Hint, globalAutonomyCap: ProactiveMaxAction.Prepare);
-        var delegated = GivenCondition(AgentConditionStatus.Reported);
+        var delegated = GivenApprovedCondition();
         _repository.Stored(delegated.Id).DelegatedMaxAction = ProactiveMaxAction.Execute;
 
         var result = await RunAsync();
@@ -380,7 +382,7 @@ public class AgentConditionActionServiceTests
     public async Task ADelegation_UpToTheGlobalAutonomyLevelStillExecutes()
     {
         GivenGovernance(ProactiveMaxAction.Hint, globalAutonomyCap: ProactiveMaxAction.Execute);
-        var delegated = GivenCondition(AgentConditionStatus.Reported);
+        var delegated = GivenApprovedCondition();
         _repository.Stored(delegated.Id).DelegatedMaxAction = ProactiveMaxAction.Execute;
 
         var result = await RunAsync();
@@ -417,7 +419,7 @@ public class AgentConditionActionServiceTests
         // must therefore behave like Hint here - report and wait - not stage a scenario nobody can ever
         // accept back out.
         GivenGovernance(ProactiveMaxAction.Prepare);
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
 
         var result = await RunAsync();
 
@@ -431,25 +433,31 @@ public class AgentConditionActionServiceTests
     }
 
     [Test]
-    public async Task AnIdentityRefusal_NeverExecutesAndCountsAsAFailedAttempt()
+    public async Task AnIdentityRefusalOnAResumedClaim_NeverExecutesAndCountsAsAFailedAttempt()
     {
+        // A FRESH approval is checked before the claim and withdrawn on refusal without spending an
+        // attempt (see AgentConditionActionServiceApprovalTests). A resumed claim has already been paid
+        // for, so a refusal there must stay a failed attempt that carries the row towards escalation.
         _identityProvider
-            .ResolveForSkillAsync(Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ResolveForSkillAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ProactiveActionIdentity.Refused(
                 ProactiveActionIdentityRefusal.PolicyRefused,
                 "Skill is classified as irreversible and never runs unattended on the proactive path."));
 
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition(AgentConditionStatus.Prepared);
+        var stored = _repository.Stored(condition.Id);
+        stored.AttemptCount = 1;
+        stored.LastAttemptAtUtc = NowUtc.AddMinutes(-AgentConditionActionDefaults.StaleClaimMinutes - 1);
 
         var result = await RunAsync();
 
-        var stored = _repository.Stored(condition.Id);
         Assert.Multiple(() =>
         {
             Assert.That(result.Failed, Is.EqualTo(1));
             Assert.That(result.Executed, Is.Zero);
+            Assert.That(result.ApprovalsWithdrawn, Is.Zero);
             Assert.That(stored.Status, Is.EqualTo(AgentConditionStatus.Prepared));
-            Assert.That(stored.AttemptCount, Is.EqualTo(1));
+            Assert.That(stored.AttemptCount, Is.EqualTo(2));
         });
 
         await _skillExecutor.DidNotReceive().ExecuteAsync(
@@ -466,8 +474,8 @@ public class AgentConditionActionServiceTests
     public async Task ALostClaim_SkipsTheRowWithoutEverRunningTheRemediation()
     {
         GivenGovernance(ProactiveMaxAction.Execute, dailyActionBudget: 2);
-        var contested = GivenCondition(AgentConditionStatus.Reported, severity: AgentTriggerSeverity.High);
-        var second = GivenCondition(AgentConditionStatus.Reported, severity: AgentTriggerSeverity.Medium);
+        var contested = GivenApprovedCondition(severity: AgentTriggerSeverity.High);
+        var second = GivenApprovedCondition(severity: AgentTriggerSeverity.Medium);
         _repository.LoseNextTransitionFor(contested.Id);
 
         var result = await RunAsync();
@@ -487,7 +495,7 @@ public class AgentConditionActionServiceTests
     [Test]
     public async Task AnAbandonedClaim_IsResumedOnceItHasGoneStale()
     {
-        var condition = GivenCondition(AgentConditionStatus.Prepared);
+        var condition = GivenApprovedCondition(AgentConditionStatus.Prepared);
         var stored = _repository.Stored(condition.Id);
         stored.AttemptCount = 1;
         stored.LastAttemptAtUtc = NowUtc.AddMinutes(-AgentConditionActionDefaults.StaleClaimMinutes - 1);
@@ -508,7 +516,7 @@ public class AgentConditionActionServiceTests
     [Test]
     public async Task AClaimThatIsStillFresh_IsLeftToWhoeverHoldsIt()
     {
-        var condition = GivenCondition(AgentConditionStatus.Prepared);
+        var condition = GivenApprovedCondition(AgentConditionStatus.Prepared);
         var stored = _repository.Stored(condition.Id);
         stored.AttemptCount = 1;
         stored.LastAttemptAtUtc = NowUtc.AddMinutes(-1);
@@ -530,7 +538,7 @@ public class AgentConditionActionServiceTests
             .ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("the API was unreachable"));
 
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
 
         var result = await RunAsync();
 
@@ -555,7 +563,7 @@ public class AgentConditionActionServiceTests
     public async Task AnUnbindablePayload_CostsNeitherAnAttemptNorBudget()
     {
         _registry.BindsNothing = true;
-        var condition = GivenCondition(AgentConditionStatus.Reported);
+        var condition = GivenApprovedCondition();
 
         var result = await RunAsync();
 
@@ -569,18 +577,47 @@ public class AgentConditionActionServiceTests
     }
 
     [Test]
-    public async Task AKindWithoutAResponsibleOwner_NeverActs()
+    public async Task AnUnapprovedReportedRow_AsksForApprovalInsteadOfActing()
     {
-        GivenGovernance(ProactiveMaxAction.Execute, withResponsibleOwner: false);
+        // Execute means execute AFTER approval: a Reported row nobody has stamped has no identity to run
+        // under, so it is handed to the approval chain - unclaimed and unattempted - and nothing else.
         var condition = GivenCondition(AgentConditionStatus.Reported);
 
         var result = await RunAsync();
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.SkippedNoOwner, Is.EqualTo(1));
+            Assert.That(result.ApprovalsRequested, Is.EqualTo(1));
+            Assert.That(result.Executed, Is.Zero);
             Assert.That(_repository.Stored(condition.Id).AttemptCount, Is.Zero);
+            Assert.That(_repository.Stored(condition.Id).Status, Is.EqualTo(AgentConditionStatus.Reported));
         });
+
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        await _identityProvider.DidNotReceiveWithAnyArgs().ResolveForSkillAsync(default, default, default!, default);
+    }
+
+    [Test]
+    public async Task AClaimedRowWithoutAnApprovalStamp_IsNeitherResumedNorAskedFor()
+    {
+        var condition = GivenCondition(AgentConditionStatus.Prepared);
+        var stored = _repository.Stored(condition.Id);
+        stored.AttemptCount = 1;
+        stored.LastAttemptAtUtc = NowUtc.AddMinutes(-AgentConditionActionDefaults.StaleClaimMinutes - 1);
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SkippedNoApprover, Is.EqualTo(1));
+            Assert.That(result.Executed, Is.Zero);
+            Assert.That(result.ApprovalsRequested, Is.Zero);
+            Assert.That(stored.Status, Is.EqualTo(AgentConditionStatus.Prepared));
+            Assert.That(stored.AttemptCount, Is.EqualTo(1), "There is no approval to resume the claim under, so no attempt is spent.");
+        });
+
+        await _approvalStarter.DidNotReceiveWithAnyArgs().TryStartAsync(default!, default!, default, default);
     }
 
     private Task<AgentConditionActionTickResult> RunAsync() =>
@@ -593,6 +630,7 @@ public class AgentConditionActionServiceTests
             _identityProvider,
             _skillExecutor,
             _reporter,
+            _approvalStarter,
             _timeProvider,
             _companyClock,
             NullLogger<AgentConditionActionService>.Instance)
@@ -602,7 +640,6 @@ public class AgentConditionActionServiceTests
         ProactiveMaxAction maxAction,
         bool enabled = true,
         bool killSwitchActive = false,
-        bool withResponsibleOwner = true,
         int dailyActionBudget = 50,
         int windowActionLimit = 50,
         int windowMinutes = 60,
@@ -616,7 +653,6 @@ public class AgentConditionActionServiceTests
             ConfiguredMaxAction: maxAction,
             Enabled: enabled,
             KillSwitchActive: killSwitchActive,
-            ResponsibleOwnerUserId: withResponsibleOwner ? OwnerUserId : null,
             DailyActionBudget: dailyActionBudget,
             WindowActionLimit: windowActionLimit,
             WindowMinutes: windowMinutes,
@@ -631,11 +667,11 @@ public class AgentConditionActionServiceTests
     private void GivenIdentityResolves()
     {
         _identityProvider
-            .ResolveForSkillAsync(Arg.Any<Guid?>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ResolveForSkillAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ProactiveActionIdentity.Resolved(
                 new SkillExecutionContext
                 {
-                    UserId = OwnerUserId,
+                    UserId = ApproverUserId,
                     TenantId = Guid.Empty,
                     UserName = KlacksyIdentity.SystemUserName,
                     UserPermissions = ["some.permission"],
@@ -676,6 +712,24 @@ public class AgentConditionActionServiceTests
         condition.Severity = severity;
         condition.EntityId = entityId ?? Guid.NewGuid();
         condition.PayloadJson = "{}";
+
+        return condition;
+    }
+
+    /// <summary>
+    /// A condition somebody has released: the approval stamp is what puts a row into the action branch
+    /// at all, since Execute means execute AFTER approval. Stamped one minute ago by default, well inside
+    /// AgentConditionActionDefaults.ApprovalExecutionWindowMinutes.
+    /// </summary>
+    private AgentCondition GivenApprovedCondition(
+        AgentConditionStatus status = AgentConditionStatus.Reported,
+        string severity = AgentTriggerSeverity.Medium,
+        Guid? entityId = null,
+        DateTime? detectedAtUtc = null)
+    {
+        var condition = GivenCondition(status, severity, entityId, detectedAtUtc);
+        condition.ApprovedByUserId = ApproverUserId;
+        condition.ApprovedAtUtc = NowUtc.AddMinutes(-1);
 
         return condition;
     }

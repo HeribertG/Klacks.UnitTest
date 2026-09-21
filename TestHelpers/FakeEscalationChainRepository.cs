@@ -29,7 +29,10 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
 
     public Task<bool> AddAsync(EscalationChain chain, CancellationToken cancellationToken = default)
     {
-        if (_chains.Values.Any(c => c.WorkId == chain.WorkId && c.Status == EscalationChainStatus.Running))
+        var running = _chains.Values.Where(c => c.Status == EscalationChainStatus.Running).ToList();
+        var workKeyTaken = chain.WorkId is not null && running.Any(c => c.WorkId == chain.WorkId);
+        var conditionKeyTaken = chain.ConditionId is not null && running.Any(c => c.ConditionId == chain.ConditionId);
+        if (workKeyTaken || conditionKeyTaken)
         {
             return Task.FromResult(false);
         }
@@ -63,6 +66,12 @@ public sealed class FakeEscalationChainRepository : IEscalationChainRepository
 
     public Task<bool> IsBreakDeletedAsync(Guid breakId, CancellationToken cancellationToken = default) =>
         Task.FromResult(_deletedBreakIds.Contains(breakId));
+
+    public Task<EscalationChain?> GetLatestChainForConditionAsync(Guid conditionId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_chains.Values
+            .Where(c => c.ConditionId == conditionId)
+            .OrderByDescending(c => c.CreateTime)
+            .FirstOrDefault());
 
     public Task<EscalationStage?> FindNotifiedStageForUserAsync(string userId, CancellationToken cancellationToken = default)
     {

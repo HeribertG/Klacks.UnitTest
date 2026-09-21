@@ -58,7 +58,7 @@ public class EscalationChainServiceAcknowledgeChainTests
             .Returns(new EscalationNotificationResult(OfflineMessengerDeliveryOutcome.Sent, Guid.NewGuid(), "Messenger"));
 
         _sut = new EscalationChainService(
-            _repository, _rosterService, _notifier, _settingsReader, _timeProvider, Substitute.For<ILogger<EscalationChainService>>());
+            _repository, _rosterService, _notifier, _settingsReader, Substitute.For<IAgentConditionLedgerService>(), _timeProvider, Substitute.For<ILogger<EscalationChainService>>());
     }
 
     [Test]

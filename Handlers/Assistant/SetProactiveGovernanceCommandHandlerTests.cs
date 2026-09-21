@@ -1,12 +1,10 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for SetProactiveGovernanceCommandHandler. The centre of gravity is the rule that from
-/// MaxAction Prepare upwards a responsible owner must be named: it is checked against the MERGED row,
-/// so raising MaxAction on an ownerless row and clearing the owner of a row that already sits at
-/// Prepare both have to fail. Also covers patch semantics (an unsupplied field keeps its stored
-/// value), the kill switch reaching the plain settings row, rejection of ungoverned kinds, and the
-/// refusal of an owner id that resolves to no user.
+/// Tests for SetProactiveGovernanceCommandHandler. A rule names no person - who releases an Execute
+/// rule's remediation is decided per finding by the approval chain - so raising MaxAction needs nothing
+/// but the level itself. Also covers patch semantics (an unsupplied field keeps its stored value), the
+/// kill switch and the autonomy level reaching the plain settings row, and rejection of ungoverned kinds.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
@@ -18,10 +16,6 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
-using Klacks.Api.Domain.Models.Authentification;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -38,7 +32,6 @@ public class SetProactiveGovernanceCommandHandlerTests
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IProactiveGovernanceResolver _resolver = null!;
-    private UserManager<AppUser> _userManager = null!;
     private SetProactiveGovernanceCommandHandler _sut = null!;
 
     [SetUp]
@@ -52,128 +45,37 @@ public class SetProactiveGovernanceCommandHandlerTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
             .Returns(callInfo => callInfo.Arg<Func<Task<bool>>>()());
 
-        var userStore = Substitute.For<IUserStore<AppUser>>();
-        var identityOptions = Substitute.For<IOptions<IdentityOptions>>();
-        var passwordHasher = Substitute.For<IPasswordHasher<AppUser>>();
-        var userValidators = new List<IUserValidator<AppUser>>();
-        var passwordValidators = new List<IPasswordValidator<AppUser>>();
-        var keyNormalizer = Substitute.For<ILookupNormalizer>();
-        var errors = Substitute.For<IdentityErrorDescriber>();
-        var services = Substitute.For<IServiceProvider>();
-        var logger = Substitute.For<ILogger<UserManager<AppUser>>>();
-
-        _userManager = Substitute.For<UserManager<AppUser>>(
-            userStore, identityOptions, passwordHasher, userValidators, passwordValidators,
-            keyNormalizer, errors, services, logger);
-
         _resolver.ResolveAllAsync(Arg.Any<CancellationToken>())
             .Returns(new List<ProactiveGovernanceDecision>());
 
         _sut = new SetProactiveGovernanceCommandHandler(
-            _repository, _settingsRepository, _unitOfWork, _resolver, _userManager);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _userManager.Dispose();
+            _repository, _settingsRepository, _unitOfWork, _resolver);
     }
 
     private static SetProactiveGovernanceCommand Command(
         string? triggerKind = GovernedKind,
         ProactiveMaxAction? maxAction = null,
         bool? enabled = null,
-        Guid? responsibleOwnerUserId = null,
-        bool clearResponsibleOwner = false,
         int? dailyActionBudget = null,
         int? windowActionLimit = null,
         int? windowMinutes = null,
         bool? killSwitch = null,
         AutonomyLevel? autonomyLevel = null)
         => new(
-            triggerKind, null, maxAction, enabled, responsibleOwnerUserId, clearResponsibleOwner,
+            triggerKind, null, maxAction, enabled,
             dailyActionBudget, windowActionLimit, windowMinutes, killSwitch, autonomyLevel);
 
     private void GivenExistingRule(AgentTriggerGovernance rule)
         => _repository.FindAsync(rule.TriggerKind, rule.GroupId, Arg.Any<CancellationToken>())
             .Returns(rule);
 
-    private void GivenOwnerExists(Guid ownerUserId)
-        => _userManager.FindByIdAsync(ownerUserId.ToString()).Returns(new AppUser());
-
-    [Test]
-    public async Task Handle_RaisingMaxActionToPrepareWithoutAnOwner_Throws()
+    [TestCase(ProactiveMaxAction.Hint)]
+    [TestCase(ProactiveMaxAction.Prepare)]
+    [TestCase(ProactiveMaxAction.Execute)]
+    public async Task Handle_RaisingMaxAction_IsAccepted(ProactiveMaxAction maxAction)
     {
         // Arrange
-        var command = Command(maxAction: ProactiveMaxAction.Prepare);
-
-        // Act
-        var act = async () => await _sut.Handle(command, CancellationToken.None);
-
-        // Assert
-        var exception = await Should.ThrowAsync<InvalidRequestException>(act);
-        exception.Message.ShouldContain("responsible owner");
-        await _repository.DidNotReceive()
-            .UpsertAsync(Arg.Any<AgentTriggerGovernance>(), Arg.Any<CancellationToken>());
-    }
-
-    [Test]
-    public async Task Handle_RaisingMaxActionToExecuteWithoutAnOwner_Throws()
-    {
-        // Arrange
-        var command = Command(maxAction: ProactiveMaxAction.Execute);
-
-        // Act
-        var act = async () => await _sut.Handle(command, CancellationToken.None);
-
-        // Assert
-        await Should.ThrowAsync<InvalidRequestException>(act);
-    }
-
-    [Test]
-    public async Task Handle_ClearingTheOwnerOfAStoredPrepareRule_Throws()
-    {
-        // Arrange
-        GivenExistingRule(new AgentTriggerGovernance
-        {
-            TriggerKind = GovernedKind,
-            MaxAction = ProactiveMaxAction.Prepare,
-            ResponsibleOwnerUserId = Guid.NewGuid()
-        });
-        var command = Command(clearResponsibleOwner: true);
-
-        // Act
-        var act = async () => await _sut.Handle(command, CancellationToken.None);
-
-        // Assert
-        await Should.ThrowAsync<InvalidRequestException>(act);
-        await _repository.DidNotReceive()
-            .UpsertAsync(Arg.Any<AgentTriggerGovernance>(), Arg.Any<CancellationToken>());
-    }
-
-    [Test]
-    public async Task Handle_PrepareWithAnOwnerThatDoesNotExist_Throws()
-    {
-        // Arrange
-        var ownerUserId = Guid.NewGuid();
-        _userManager.FindByIdAsync(ownerUserId.ToString()).Returns((AppUser?)null);
-        var command = Command(maxAction: ProactiveMaxAction.Prepare, responsibleOwnerUserId: ownerUserId);
-
-        // Act
-        var act = async () => await _sut.Handle(command, CancellationToken.None);
-
-        // Assert
-        var exception = await Should.ThrowAsync<InvalidRequestException>(act);
-        exception.Message.ShouldContain("does not exist");
-    }
-
-    [Test]
-    public async Task Handle_PrepareWithAnExistingOwner_IsStored()
-    {
-        // Arrange
-        var ownerUserId = Guid.NewGuid();
-        GivenOwnerExists(ownerUserId);
-        var command = Command(maxAction: ProactiveMaxAction.Prepare, responsibleOwnerUserId: ownerUserId);
+        var command = Command(maxAction: maxAction);
 
         // Act
         await _sut.Handle(command, CancellationToken.None);
@@ -181,24 +83,7 @@ public class SetProactiveGovernanceCommandHandlerTests
         // Assert
         await _repository.Received(1).UpsertAsync(
             Arg.Is<AgentTriggerGovernance>(rule =>
-                rule.TriggerKind == GovernedKind
-                && rule.MaxAction == ProactiveMaxAction.Prepare
-                && rule.ResponsibleOwnerUserId == ownerUserId),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Test]
-    public async Task Handle_HintNeedsNoOwner()
-    {
-        // Arrange
-        var command = Command(maxAction: ProactiveMaxAction.Hint);
-
-        // Act
-        await _sut.Handle(command, CancellationToken.None);
-
-        // Assert
-        await _repository.Received(1).UpsertAsync(
-            Arg.Is<AgentTriggerGovernance>(rule => rule.ResponsibleOwnerUserId == null),
+                rule.TriggerKind == GovernedKind && rule.MaxAction == maxAction),
             Arg.Any<CancellationToken>());
     }
 
@@ -206,13 +91,11 @@ public class SetProactiveGovernanceCommandHandlerTests
     public async Task Handle_UnsuppliedFields_KeepTheirStoredValues()
     {
         // Arrange
-        var ownerUserId = Guid.NewGuid();
         GivenExistingRule(new AgentTriggerGovernance
         {
             TriggerKind = GovernedKind,
             MaxAction = ProactiveMaxAction.Hint,
             Enabled = false,
-            ResponsibleOwnerUserId = ownerUserId,
             DailyActionBudget = 7,
             WindowActionLimit = 2,
             WindowMinutes = 15
@@ -227,7 +110,7 @@ public class SetProactiveGovernanceCommandHandlerTests
             Arg.Is<AgentTriggerGovernance>(rule =>
                 rule.DailyActionBudget == 11
                 && rule.Enabled == false
-                && rule.ResponsibleOwnerUserId == ownerUserId
+                && rule.MaxAction == ProactiveMaxAction.Hint
                 && rule.WindowActionLimit == 2
                 && rule.WindowMinutes == 15),
             Arg.Any<CancellationToken>());

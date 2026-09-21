@@ -54,7 +54,7 @@ public class LanguagePluginSkillLabelInstallerTests
         _unlisted = new AgentSkill { Id = Guid.NewGuid(), Name = UnlistedSkill };
 
         _skillRepository = Substitute.For<IAgentSkillRepository>();
-        _skillRepository.GetAllEnabledAsync().Returns(new List<AgentSkill> { _matching, _unlisted });
+        _skillRepository.GetAllEnabledTrackedAsync().Returns(new List<AgentSkill> { _matching, _unlisted });
 
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);

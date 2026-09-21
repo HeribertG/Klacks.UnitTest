@@ -48,7 +48,6 @@ public class GetProactiveGovernanceQueryHandlerTests
                     ConfiguredMaxAction: ProactiveMaxAction.Execute,
                     Enabled: true,
                     KillSwitchActive: false,
-                    ResponsibleOwnerUserId: null,
                     DailyActionBudget: 5,
                     WindowActionLimit: 3,
                     WindowMinutes: 60,

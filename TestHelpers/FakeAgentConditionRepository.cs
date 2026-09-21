@@ -303,6 +303,33 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         return Task.FromResult(true);
     }
 
+    public Task<bool> TryStampApprovalAsync(
+        Guid id, Guid approverUserId, DateTime approvedAtUtc, CancellationToken cancellationToken = default)
+    {
+        var stored = _conditions.FirstOrDefault(c => c.Id == id);
+        if (stored == null || stored.Status != AgentConditionStatus.Reported || stored.ApprovedByUserId != null)
+        {
+            return Task.FromResult(false);
+        }
+
+        stored.ApprovedByUserId = approverUserId;
+        stored.ApprovedAtUtc = approvedAtUtc;
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TryClearApprovalAsync(Guid id, Guid approverUserId, CancellationToken cancellationToken = default)
+    {
+        var stored = _conditions.FirstOrDefault(c => c.Id == id);
+        if (stored == null || stored.Status != AgentConditionStatus.Reported || stored.ApprovedByUserId != approverUserId)
+        {
+            return Task.FromResult(false);
+        }
+
+        stored.ApprovedByUserId = null;
+        stored.ApprovedAtUtc = null;
+        return Task.FromResult(true);
+    }
+
     public Task<bool> TrySetCausedByAsync(Guid id, Guid causedByConditionId, CancellationToken cancellationToken = default)
     {
         var stored = _conditions.FirstOrDefault(c => c.Id == id);
@@ -463,6 +490,8 @@ public sealed class FakeAgentConditionRepository : IAgentConditionRepository
         EscalatedAtUtc = source.EscalatedAtUtc,
         RejectReason = source.RejectReason,
         RejectedByUserId = source.RejectedByUserId,
+        ApprovedByUserId = source.ApprovedByUserId,
+        ApprovedAtUtc = source.ApprovedAtUtc,
         CausedByConditionId = source.CausedByConditionId,
         DelegatedMaxAction = source.DelegatedMaxAction,
         DelegatedByUserId = source.DelegatedByUserId,
