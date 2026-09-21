@@ -121,7 +121,8 @@ public class GroupRepositoryCacheInvalidationTests
 
         var mockLogger = Substitute.For<ILogger<Group>>();
         _groupRepository = new GroupRepository(
-            _context, _mockGroupServiceFacade, _groupCacheService, mockLogger, new FixedCompanyClock(DateTimeOffset.UtcNow));
+            _context, _mockGroupServiceFacade, _groupCacheService, mockLogger, new FixedCompanyClock(DateTimeOffset.UtcNow),
+            Substitute.For<IGroupVisibilityPreservationService>());
     }
 
     [TearDown]

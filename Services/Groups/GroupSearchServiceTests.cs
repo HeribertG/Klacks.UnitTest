@@ -161,7 +161,7 @@ public class GroupSearchServiceTests
         var mockGroupCacheService = Substitute.For<IGroupCacheService>();
         _groupRepository = new GroupRepository(
             _context, mockGroupServiceFacade, mockGroupCacheService, Substitute.For<ILogger<Group>>(),
-            new FixedCompanyClock(DateTimeOffset.UtcNow));
+            new FixedCompanyClock(DateTimeOffset.UtcNow), Substitute.For<IGroupVisibilityPreservationService>());
 
         CreateTestData();
     }

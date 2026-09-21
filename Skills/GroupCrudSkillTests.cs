@@ -29,6 +29,7 @@ public class GroupCrudSkillTests
     private ICalendarSelectionRepository _calendarSelectionRepository = null!;
     private FakeSelfApi _api = null!;
     private ICompanyClock _companyClock = null!;
+    private IGroupVisibilityPreservationService _visibilityPreservation = null!;
     private Group? _persistedGroup;
 
     [SetUp]
@@ -36,6 +37,7 @@ public class GroupCrudSkillTests
     {
         _groupRepository = Substitute.For<IGroupRepository>();
         _calendarSelectionRepository = Substitute.For<ICalendarSelectionRepository>();
+        _visibilityPreservation = Substitute.For<IGroupVisibilityPreservationService>();
         _companyClock = new FixedCompanyClock(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         _api = new FakeSelfApi();
         _api.Respond(HttpMethod.Post, "api/backend/Groups", new GroupResource());
@@ -50,6 +52,10 @@ public class GroupCrudSkillTests
         new(_groupRepository, guard, _calendarSelectionRepository, new GroupMapper(), _api.Client,
             _companyClock);
 
+    private CreateGroupSkill CreateSkill(IGroupScopeGuard guard) =>
+        new(_groupRepository, guard, _calendarSelectionRepository, new GroupMapper(), _api.Client,
+            _companyClock, _visibilityPreservation);
+
     private Group WireGroup(Guid id, Group group)
     {
         _groupRepository.Get(id).Returns(group);
@@ -62,7 +68,7 @@ public class GroupCrudSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditSettings", "CanViewSettings" },
+        UserPermissions = new List<string> { "CanCreateGroups", "CanEditSettings", "CanViewSettings" },
         AccessToken = new BearerToken("caller-jwt")
     };
 
@@ -72,7 +78,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_ReturnsError_WhenParentNotFound()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
         var parentId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns((Group?)null);
         var parameters = new Dictionary<string, object>
@@ -90,7 +96,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_AtRoot_AddsGroupAndCompletes()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
         var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
@@ -100,10 +106,57 @@ public class GroupCrudSkillTests
     }
 
 
+    // The id a create_group result reports has to be the one the row actually carries. The skill used to
+    // mint a Guid client-side and report that, while Groups/PostCommandHandler overwrites the id of every
+    // posted resource with a fresh one - so every id the assistant passed on afterwards (as a parentId,
+    // in a follow-up skill, to the user) addressed a row that does not exist, and the next call answered
+    // "Parent group ... not found" or 404. Ids are the server's to hand out; the skill reads back what it
+    // handed out.
+    [Test]
+    public async Task CreateGroup_ReportsTheIdTheServerAssigned_NotOneMintedInTheSkill()
+    {
+        var persistedId = Guid.NewGuid();
+        _api.Respond(HttpMethod.Post, "api/backend/Groups", new GroupResource { Id = persistedId });
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["name"] = "Bern" });
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(GroupIdOf(result), Is.EqualTo(persistedId));
+    }
+
+    // The other half of the same rule: nothing in the posted body may carry an id the skill invented.
+    [Test]
+    public async Task CreateGroup_PostsNoClientSideId()
+    {
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
+
+        await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["name"] = "Bern" });
+
+        Assert.That(_api.BodyOf<GroupResource>()!.Id, Is.EqualTo(Guid.Empty));
+    }
+
+    // A 200 with no body means the write cannot be confirmed. Reporting the request's own (empty) id there
+    // would reintroduce exactly the defect above, so the skill fails instead.
+    [Test]
+    public async Task CreateGroup_WhenTheApiAnswersWithoutABody_Fails()
+    {
+        _api.Respond(HttpMethod.Post, "api/backend/Groups", body: null);
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["name"] = "Bern" });
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("no result"));
+    }
+
+    private static Guid GroupIdOf(SkillResult result) =>
+        (Guid)result.Data!.GetType().GetProperty("GroupId")!.GetValue(result.Data)!;
+
     [Test]
     public async Task CreateGroup_SuccessMessage_CarriesVerifiedMarker()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
         var parameters = new Dictionary<string, object> { ["name"] = "Bern" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
@@ -295,9 +348,7 @@ public class GroupCrudSkillTests
     public async Task CreateGroup_ReturnsScopeError_ForRootLevelCreation_WhenUserIsScoped()
     {
         var scopedRootId = Guid.NewGuid();
-        var skill = new CreateGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"),
-            _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+        var skill = CreateSkill(TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"));
         var parameters = new Dictionary<string, object> { ["name"] = "Neue Wurzel" };
 
         var result = await skill.ExecuteAsync(Ctx(), parameters);
@@ -354,9 +405,7 @@ public class GroupCrudSkillTests
     public async Task CreateGroup_Succeeds_UnderParentInsideUserScope()
     {
         var scopedRootId = Guid.NewGuid();
-        var skill = new CreateGroupSkill(
-            _groupRepository, TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"),
-            _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+        var skill = CreateSkill(TestGroupScopeGuard.Restricted(new[] { scopedRootId }, "Verkauf"));
         var parentId = Guid.NewGuid();
         _groupRepository.Get(parentId).Returns(new Group { Id = parentId, Name = "Verkauf Nord", Root = scopedRootId });
         var parameters = new Dictionary<string, object>
@@ -374,7 +423,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_RelativeValidFromWord_ResolvesAgainstTheCompanyDay()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -391,7 +440,7 @@ public class GroupCrudSkillTests
     [Test]
     public async Task CreateGroup_UnreadableValidFrom_IsRejected_InsteadOfSilentlyUsingToday()
     {
-        var skill = new CreateGroupSkill(_groupRepository, TestGroupScopeGuard.Unrestricted(), _calendarSelectionRepository, new GroupMapper(), _api.Client, _companyClock);
+        var skill = CreateSkill(TestGroupScopeGuard.Unrestricted());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

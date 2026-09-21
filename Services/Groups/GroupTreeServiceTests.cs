@@ -280,7 +280,8 @@ public class GroupTreeServiceTests
 
         var mockGroupCacheService = Substitute.For<IGroupCacheService>();
         _groupRepository = new GroupRepository(
-            _context, mockGroupServiceFacade, mockGroupCacheService, _mockLogger, new FixedCompanyClock(DateTimeOffset.UtcNow));
+            _context, mockGroupServiceFacade, mockGroupCacheService, _mockLogger, new FixedCompanyClock(DateTimeOffset.UtcNow),
+            Substitute.For<IGroupVisibilityPreservationService>());
 
         CreateTestData();
     }

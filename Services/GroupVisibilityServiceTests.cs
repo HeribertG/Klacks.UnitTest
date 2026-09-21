@@ -245,6 +245,56 @@ internal class GroupVisibilityServiceTests
         result.ShouldContain(gv => gv.AppUserId == adminUserId && gv.GroupId == rootGroupId);
     }
 
+    [Test]
+    public async Task AnyGroupsExistAsync_IgnoresSoftDeletedGroups()
+    {
+        var deletedGroupId = Guid.NewGuid();
+        _dbContext.Group.Add(new Group
+        {
+            Id = deletedGroupId,
+            Name = "Old Root",
+            ValidFrom = DateTime.UtcNow,
+            IsDeleted = true
+        });
+        await _dbContext.SaveChangesAsync();
+
+        (await _groupVisibilityService.AnyGroupsExistAsync()).ShouldBeFalse();
+
+        _dbContext.Group.Add(new Group { Id = Guid.NewGuid(), Name = "Bern", ValidFrom = DateTime.UtcNow });
+        await _dbContext.SaveChangesAsync();
+
+        (await _groupVisibilityService.AnyGroupsExistAsync()).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task GetVisibilityScopeAsync_WithEveryRootPreserved_StillShowsEveryGroupToANonAdmin()
+    {
+        var userId = "planner-user-id";
+        var firstRootId = Guid.NewGuid();
+        var secondRootId = Guid.NewGuid();
+        var childId = Guid.NewGuid();
+
+        _dbContext.Group.AddRange(
+            new Group { Id = firstRootId, Name = "Bern", ValidFrom = DateTime.UtcNow },
+            new Group { Id = secondRootId, Name = "Zuerich", ValidFrom = DateTime.UtcNow },
+            new Group { Id = childId, Name = "Bern Nord", ValidFrom = DateTime.UtcNow, Parent = firstRootId, Root = firstRootId });
+        _dbContext.GroupVisibility.AddRange(
+            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userId, GroupId = firstRootId },
+            new GroupVisibility { Id = Guid.NewGuid(), AppUserId = userId, GroupId = secondRootId });
+        await _dbContext.SaveChangesAsync();
+
+        _userService.IsAdmin().Returns(Task.FromResult(false));
+        _userService.GetIdString().Returns(userId);
+
+        var scope = await _groupVisibilityService.GetVisibilityScopeAsync();
+
+        scope.IsUnrestricted.ShouldBeFalse();
+        scope.VisibleGroupIds.Count.ShouldBe(3);
+        scope.VisibleGroupIds.ShouldContain(firstRootId);
+        scope.VisibleGroupIds.ShouldContain(secondRootId);
+        scope.VisibleGroupIds.ShouldContain(childId);
+    }
+
     [SetUp]
     public void Setup()
     {

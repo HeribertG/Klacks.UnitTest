@@ -141,7 +141,8 @@ internal class GoupTests
 
         var mockGroupCacheService = Substitute.For<IGroupCacheService>();
         var groupRepository = new GroupRepository(
-            dbContext, mockGroupServiceFacade, mockGroupCacheService, _groupLogger, new FixedCompanyClock(DateTimeOffset.UtcNow));
+            dbContext, mockGroupServiceFacade, mockGroupCacheService, _groupLogger, new FixedCompanyClock(DateTimeOffset.UtcNow),
+            Substitute.For<IGroupVisibilityPreservationService>());
         var unitOfWork = new UnitOfWork(dbContext, _unitOfWorkLogger);
         var group = await CreateGroupAsync(1, clientRepository, clientFilterRepository);
         var command = new PostCommand<GroupResource>(group);

@@ -51,7 +51,8 @@ public class PartitionClientsByAddressSkillTests
                     cmd.Apply ? 1 : 0, cmd.Apply ? 1 : 0, 0,
                     new List<PartitionGroupSummary> { new("BE", null, false, null, 1) },
                     new List<Klacks.Api.Application.DTOs.Grouping.UnassignablePartitionClient>(),
-                    new List<string>()));
+                    new List<string>(),
+                    0));
             });
     }
 
@@ -135,13 +136,41 @@ public class PartitionClientsByAddressSkillTests
                     new("BE", "Deutschschweiz Mitte", false, Guid.NewGuid(), 2)
                 },
                 new List<Klacks.Api.Application.DTOs.Grouping.UnassignablePartitionClient>(),
-                new List<string>())));
+                new List<string>(),
+                0)));
 
         var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["apply"] = true });
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldContain("1 new");
         result.Message.ShouldContain("1 reused");
+    }
+
+    [Test]
+    public async Task Preview_WarnsHowManyUsersKeepFullVisibility_WhenThisIsTheFirstGroup()
+    {
+        _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new PartitionClientsByAddressResult(
+                false, "State", "Employee", 2, 0, 0, 0, 0, 0,
+                new List<PartitionGroupSummary> { new("BE", null, false, null, 2) },
+                new List<Klacks.Api.Application.DTOs.Grouping.UnassignablePartitionClient>(),
+                new List<string>(),
+                4)));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("first group");
+        result.Message.ShouldContain("4 user(s) keep access to everything");
+    }
+
+    [Test]
+    public async Task Preview_SaysNothingAboutVisibility_WhenGroupsAlreadyExist()
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldNotContain("keep access to everything");
     }
 
     [Test]

@@ -37,6 +37,7 @@ public class PartitionClientsByAddressCommandHandlerTests
     private ICountryResolver _countryResolver = null!;
     private IStateRepository _stateRepository = null!;
     private ISettingsReader _settingsReader = null!;
+    private IGroupVisibilityPreservationService _visibilityPreservation = null!;
     private PartitionClientsByAddressCommandHandler _handler = null!;
 
     [SetUp]
@@ -63,9 +64,11 @@ public class PartitionClientsByAddressCommandHandlerTests
         _settingsReader = Substitute.For<ISettingsReader>();
         _settingsReader.GetSetting(SettingKeys.DefaultLanguage).Returns(new Settings { Value = "fr" });
 
+        _visibilityPreservation = Substitute.For<IGroupVisibilityPreservationService>();
+
         _handler = new PartitionClientsByAddressCommandHandler(
             _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock,
-            _regionProvider, _countryResolver, _stateRepository, _settingsReader);
+            _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation);
 
         _groupRepository.List().Returns(new List<Group>());
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<PartitionApplyOutcome>>>())
