@@ -39,6 +39,7 @@ public class MessagingServiceInboundIngestTests
     private IOwnerMessengerReader _ownerMessengerReader = null!;
     private IUserMessengerContactRepository _userMessengerContactRepository = null!;
     private IInboundMessengerObserver _inboundObserver = null!;
+    private IInboundClientMessengerObserver _clientMessengerObserver = null!;
     private IPluginUnitOfWork _unitOfWork = null!;
     private MemoryCache _logSuppressionCache = null!;
     private RecordingLogger<MessagingService> _logger = null!;
@@ -68,19 +69,28 @@ public class MessagingServiceInboundIngestTests
 
         _userMessengerContactRepository = Substitute.For<IUserMessengerContactRepository>();
         _inboundObserver = Substitute.For<IInboundMessengerObserver>();
+        _clientMessengerObserver = Substitute.For<IInboundClientMessengerObserver>();
 
         _unitOfWork = Substitute.For<IPluginUnitOfWork>();
         _logSuppressionCache = new MemoryCache(new MemoryCacheOptions());
         _logger = new RecordingLogger<MessagingService>();
 
-        _sut = new MessagingService(
+        _sut = BuildService(new[] { _inboundObserver }, new[] { _clientMessengerObserver });
+    }
+
+    private MessagingService BuildService(
+        IEnumerable<IInboundMessengerObserver> inboundObservers,
+        IEnumerable<IInboundClientMessengerObserver> clientMessengerObservers)
+    {
+        return new MessagingService(
             _providerRepository,
             _messageRepository,
             _messengerContactRepository,
             _ownerMessengerReader,
             _userMessengerContactRepository,
             Substitute.For<IAppUserDirectoryReader>(),
-            new[] { _inboundObserver },
+            inboundObservers,
+            clientMessengerObservers,
             _logSuppressionCache,
             Substitute.For<IClientGroupReader>(),
             Substitute.For<IClientIdNumberReader>(),
@@ -342,6 +352,65 @@ public class MessagingServiceInboundIngestTests
 
         var result = await _sut.IngestInboundMessageAsync(
             ProviderName, new IncomingMessage(ExternalId, PlannerAlias, PlannerAlias, "ich uebernehme"));
+
+        result.ShouldNotBeNull();
+        await _messageRepository.Received(1).AddAsync(Arg.Any<Message>());
+    }
+
+    /// <summary>
+    /// The client-side counterpart to the user-observer tests above: a message resolved to a
+    /// MessengerContact (known client) must reach IInboundClientMessengerObserver, never
+    /// IInboundMessengerObserver, which only fires for a paired app user.
+    /// </summary>
+    [Test]
+    public async Task IngestInboundMessageAsync_KnownContact_NotifiesClientObservers()
+    {
+        _messageRepository.InboundExistsAsync(_provider.Id, ExternalId, Arg.Any<CancellationToken>()).Returns(false);
+        var clientId = Guid.NewGuid();
+        GiveKnownContact(OwnerSlackAlias, clientId);
+
+        var result = await _sut.IngestInboundMessageAsync(
+            ProviderName, new IncomingMessage(ExternalId, OwnerSlackAlias, OwnerSlackAlias, "Wie weit bist du"));
+
+        await _clientMessengerObserver.Received(1).OnInboundMessageAsync(
+            Arg.Is<InboundClientMessengerMessage>(m =>
+                m.MessageId == result!.Id
+                && m.ClientId == clientId
+                && m.Sender == OwnerSlackAlias
+                && m.Content == "Wie weit bist du"
+                && m.Channel == MessengerType.Slack.ToString()),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task IngestInboundMessageAsync_OwnerSender_DoesNotNotifyClientObservers()
+    {
+        _messageRepository.InboundExistsAsync(_provider.Id, ExternalId, Arg.Any<CancellationToken>()).Returns(false);
+        GiveOwnerMessengers(new OwnerMessengerEntry { Type = MessengerType.Slack, Value = OwnerSlackAlias });
+
+        await _sut.IngestInboundMessageAsync(
+            ProviderName, new IncomingMessage(ExternalId, OwnerSlackAlias, OwnerSlackAlias, "Wie weit bist du"));
+
+        await _clientMessengerObserver.DidNotReceive().OnInboundMessageAsync(
+            Arg.Any<InboundClientMessengerMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Mirrors IngestInboundMessageAsync_ThrowingObserver_StillReturnsTheStoredMessage for the
+    /// client-side observer: a throwing client observer must not turn an already-persisted message
+    /// into a failed ingest.
+    /// </summary>
+    [Test]
+    public async Task IngestInboundMessageAsync_ThrowingClientObserver_StillReturnsTheStoredMessage()
+    {
+        _messageRepository.InboundExistsAsync(_provider.Id, ExternalId, Arg.Any<CancellationToken>()).Returns(false);
+        GiveKnownContact(OwnerSlackAlias, Guid.NewGuid());
+        _clientMessengerObserver
+            .OnInboundMessageAsync(Arg.Any<InboundClientMessengerMessage>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("observer is broken"));
+
+        var result = await _sut.IngestInboundMessageAsync(
+            ProviderName, new IncomingMessage(ExternalId, OwnerSlackAlias, OwnerSlackAlias, "Wie weit bist du"));
 
         result.ShouldNotBeNull();
         await _messageRepository.Received(1).AddAsync(Arg.Any<Message>());

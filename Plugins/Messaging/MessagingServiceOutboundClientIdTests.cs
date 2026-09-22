@@ -62,6 +62,7 @@ public class MessagingServiceOutboundClientIdTests
             Substitute.For<IUserMessengerContactRepository>(),
             Substitute.For<IAppUserDirectoryReader>(),
             Array.Empty<IInboundMessengerObserver>(),
+            Array.Empty<IInboundClientMessengerObserver>(),
             _logSuppressionCache,
             Substitute.For<IClientGroupReader>(),
             Substitute.For<IClientIdNumberReader>(),
