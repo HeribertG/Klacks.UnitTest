@@ -65,7 +65,7 @@ public class InboundActionOrchestratorTests
         _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
         _contractDataProvider = Substitute.For<IClientContractDataProvider>();
 
-        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0 });
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0, PerformsShiftWork = true });
         _groupMembershipService.GetClientGroupsAsync(ClientId)
             .Returns([new Group { Id = GroupId, Name = "Bern" }]);
         _absenceRepository.List().Returns(
@@ -645,6 +645,120 @@ public class InboundActionOrchestratorTests
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("no active contract");
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [TestCase("EARLY")]
+    [TestCase("-EARLY")]
+    [TestCase("LATE")]
+    [TestCase("-LATE")]
+    [TestCase("NIGHT")]
+    [TestCase("-NIGHT")]
+    public async Task ShiftPreference_NoShiftWorkContract_OnlySuggests_AndPointsToAvailability(string keyword)
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0, PerformsShiftWork = false });
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), keyword));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("shift work");
+        outcome.Description.ShouldContain("set_client_availability");
+        outcome.Description.ShouldContain("add_schedule_commands_range");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+        await _contractDataProvider.Received(1).GetEffectiveContractDataAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<int?>());
+    }
+
+    [Test]
+    public async Task ShiftPreference_ShiftWorkContract_StillExecutes()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0, PerformsShiftWork = true });
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "-EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        invocations[0].SkillName.ShouldBe("add_schedule_commands_range");
+        invocations[0].Parameters["commandKeyword"].ShouldBe("-EARLY");
+        await _contractDataProvider.Received(1).GetEffectiveContractDataAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<int?>());
+    }
+
+    [Test]
+    public async Task ShiftPreference_NoShiftWorkAndGuaranteedHours_ZeroHourGateReportsFirst()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20, PerformsShiftWork = false });
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("guaranteed");
+        outcome.Description.ShouldNotContain("set_client_availability");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+        await _contractDataProvider.Received(1).GetEffectiveContractDataAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<int?>());
+    }
+
+    [Test]
+    public async Task ShiftPreference_NoActiveContractAndNoShiftWork_ReportsOnlyTheMissingContract()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = false, PerformsShiftWork = false });
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("no active contract");
+        outcome.Description.ShouldNotContain("set_client_availability");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_NoShiftWorkContractAndAlreadyPlanned_ContractGateReportsFirst()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0, PerformsShiftWork = false });
+        _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("set_client_availability");
+        outcome.Description.ShouldNotContain("already has scheduled shifts");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+        await _workRepository.DidNotReceive().GetByClientAndDateRangeAsync(
+            Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ShiftPreference_GuaranteedHoursAndAlreadyPlanned_ContractGateReportsFirst()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20, PerformsShiftWork = true });
+        _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("guaranteed");
+        outcome.Description.ShouldNotContain("already has scheduled shifts");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+        await _workRepository.DidNotReceive().GetByClientAndDateRangeAsync(
+            Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
