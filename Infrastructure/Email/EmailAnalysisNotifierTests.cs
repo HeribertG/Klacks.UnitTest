@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Email;
+using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Email;
 using Microsoft.Extensions.Logging;
 
@@ -65,7 +66,7 @@ public class EmailAnalysisNotifierTests
         Subject = "Krankmeldung"
     };
 
-    private static EmailAnalysis Analysis() => new()
+    private static InboundAnalysis Analysis() => new()
     {
         Intent = EmailIntent.WorkCancellation,
         Summary = "Mitarbeiter meldet sich für morgen krank.",

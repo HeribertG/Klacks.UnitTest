@@ -14,8 +14,10 @@ using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Email;
+using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Email;
+using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -25,14 +27,14 @@ public class InboxEmailSkillTests
 {
     private IMediator _mediator = null!;
     private IEmailFolderRepository _folderRepository = null!;
-    private IEmailAnalysisRepository _analysisRepository = null!;
+    private IInboundAnalysisRepository _analysisRepository = null!;
 
     [SetUp]
     public void Setup()
     {
         _mediator = Substitute.For<IMediator>();
         _folderRepository = Substitute.For<IEmailFolderRepository>();
-        _analysisRepository = Substitute.For<IEmailAnalysisRepository>();
+        _analysisRepository = Substitute.For<IInboundAnalysisRepository>();
         _folderRepository.GetImapNameBySpecialUseAsync(FolderSpecialUse.Trash).Returns("Deleted Items");
         _folderRepository.GetImapNameBySpecialUseAsync(FolderSpecialUse.Junk).Returns("Spam");
         _folderRepository.GetImapNameBySpecialUseAsync(FolderSpecialUse.Inbox).Returns("INBOX");
@@ -252,10 +254,12 @@ public class InboxEmailSkillTests
         var id = Guid.NewGuid();
         _mediator.Send(Arg.Any<GetReceivedEmailQuery>(), Arg.Any<CancellationToken>())
             .Returns(Email(id));
-        _analysisRepository.GetByReceivedEmailIdAsync(id, Arg.Any<CancellationToken>())
-            .Returns(new EmailAnalysis
+        _analysisRepository.GetBySourceAsync(InboundSourceKind.Email, id, Arg.Any<CancellationToken>())
+            .Returns(new InboundAnalysis
             {
-                ReceivedEmailId = id,
+                SourceKind = InboundSourceKind.Email,
+                SourceId = id,
+                Channel = "Email",
                 Intent = EmailIntent.VacationRequest,
                 Summary = "Anna is sick this week.",
                 AnalyzedAt = new DateTime(2026, 7, 10, 6, 0, 0, DateTimeKind.Utc)
@@ -275,8 +279,8 @@ public class InboxEmailSkillTests
         var id = Guid.NewGuid();
         _mediator.Send(Arg.Any<GetReceivedEmailQuery>(), Arg.Any<CancellationToken>())
             .Returns(Email(id));
-        _analysisRepository.GetByReceivedEmailIdAsync(id, Arg.Any<CancellationToken>())
-            .Returns((EmailAnalysis?)null);
+        _analysisRepository.GetBySourceAsync(InboundSourceKind.Email, id, Arg.Any<CancellationToken>())
+            .Returns((InboundAnalysis?)null);
         var skill = new GetEmailAnalysisSkill(_mediator, _analysisRepository);
 
         var result = await skill.ExecuteAsync(Ctx(), P(id));

@@ -14,6 +14,7 @@ using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Email;
+using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.UnitTest.TestHelpers;
@@ -115,7 +116,9 @@ public class EmailIntentAnalysisServiceTests
         var result = await _service.AnalyzeAsync(email);
 
         result.ShouldNotBeNull();
-        result!.ReceivedEmailId.ShouldBe(email.Id);
+        result!.SourceKind.ShouldBe(InboundSourceKind.Email);
+        result.SourceId.ShouldBe(email.Id);
+        result.Channel.ShouldBe("Email");
         result.ClientId.ShouldBe(ClientId);
         result.ClientType.ShouldBe(EntityTypeEnum.Employee);
         result.Intent.ShouldBe(EmailIntent.WorkCancellation);

@@ -8,7 +8,9 @@
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Email;
+using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Email;
+using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Email;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -25,7 +27,7 @@ public class EmailPollingBackgroundServiceTests
     private ISpamFilterService _spamFilterService = null!;
     private IEmailClientAssignmentService _clientAssignmentService = null!;
     private IEmailIntentAnalysisService _intentAnalysisService = null!;
-    private IEmailAnalysisRepository _analysisRepository = null!;
+    private IInboundAnalysisRepository _analysisRepository = null!;
     private IEmailActionOrchestrator _actionOrchestrator = null!;
     private IEmailPeriodLoadService _periodLoadService = null!;
     private IEmailAnalysisNotifier _analysisNotifier = null!;
@@ -42,7 +44,7 @@ public class EmailPollingBackgroundServiceTests
         _spamFilterService = Substitute.For<ISpamFilterService>();
         _clientAssignmentService = Substitute.For<IEmailClientAssignmentService>();
         _intentAnalysisService = Substitute.For<IEmailIntentAnalysisService>();
-        _analysisRepository = Substitute.For<IEmailAnalysisRepository>();
+        _analysisRepository = Substitute.For<IInboundAnalysisRepository>();
         _actionOrchestrator = Substitute.For<IEmailActionOrchestrator>();
         _periodLoadService = Substitute.For<IEmailPeriodLoadService>();
         _analysisNotifier = Substitute.For<IEmailAnalysisNotifier>();
@@ -52,7 +54,7 @@ public class EmailPollingBackgroundServiceTests
         _spamFilterService.ClassifyAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
             .Returns(new SpamFilterResult { IsSpam = false });
         _intentAnalysisService.AnalyzeAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
-            .Returns((EmailAnalysis?)null);
+            .Returns((InboundAnalysis?)null);
 
         var services = new ServiceCollection();
         services.AddSingleton(_imapEmailService);
@@ -87,7 +89,7 @@ public class EmailPollingBackgroundServiceTests
         FromAddress = "sender@example.com",
     };
 
-    private static EmailAnalysis Analysis(
+    private static InboundAnalysis Analysis(
         EntityTypeEnum clientType = EntityTypeEnum.Employee,
         Guid? clientId = null,
         DateOnly? fromDate = null,
@@ -152,9 +154,9 @@ public class EmailPollingBackgroundServiceTests
 
         email.ProcessedAt.ShouldNotBeNull();
         await _unitOfWork.Received(1).CompleteAsync();
-        await _analysisRepository.DidNotReceive().AddAsync(Arg.Any<EmailAnalysis>(), Arg.Any<CancellationToken>());
+        await _analysisRepository.DidNotReceive().AddAsync(Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
         await _actionOrchestrator.DidNotReceive().ExecuteAsync(
-            Arg.Any<ReceivedEmail>(), Arg.Any<EmailAnalysis>(), Arg.Any<CancellationToken>());
+            Arg.Any<ReceivedEmail>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -250,7 +252,7 @@ public class EmailPollingBackgroundServiceTests
     {
         var email = Email(InboxFolder);
         _intentAnalysisService.AnalyzeAsync(email, Arg.Any<CancellationToken>())
-            .Returns<EmailAnalysis?>(_ => throw new InvalidOperationException("intent service down"));
+            .Returns<InboundAnalysis?>(_ => throw new InvalidOperationException("intent service down"));
 
         await ProcessAsync(email);
 

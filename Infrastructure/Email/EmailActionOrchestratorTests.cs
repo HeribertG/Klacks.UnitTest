@@ -18,6 +18,7 @@ using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Email;
+using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.UnitTest.TestHelpers;
@@ -147,7 +148,7 @@ public class EmailActionOrchestratorTests
 
     private static ReceivedEmail Email() => new() { Id = Guid.NewGuid(), Subject = "Test" };
 
-    private static EmailAnalysis Analysis(EmailIntent intent, EntityTypeEnum type = EntityTypeEnum.Employee) => new()
+    private static InboundAnalysis Analysis(EmailIntent intent, EntityTypeEnum type = EntityTypeEnum.Employee) => new()
     {
         ClientId = ClientId,
         ClientType = type,
@@ -157,7 +158,7 @@ public class EmailActionOrchestratorTests
         UntilDate = new DateOnly(2026, 7, 12)
     };
 
-    private static EmailAnalysis AvailabilityAnalysis(
+    private static InboundAnalysis AvailabilityAnalysis(
         DateOnly fromDate, DateOnly untilDate, int? startHour = null, int? endHour = null, string? weekdays = null) => new()
     {
         ClientId = ClientId,
@@ -171,7 +172,7 @@ public class EmailActionOrchestratorTests
         Weekdays = weekdays
     };
 
-    private static EmailAnalysis ShiftPreferenceAnalysis(
+    private static InboundAnalysis ShiftPreferenceAnalysis(
         DateOnly fromDate, DateOnly untilDate, string? scheduleCommands, string? weekdays = null) => new()
     {
         ClientId = ClientId,
