@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for EmailAnalysisNotifier — verifies planner/admin audience union, live delivery
+/// Unit tests for InboundAnalysisNotifier — verifies planner/admin audience union, live delivery
 /// to connected users, durable PendingUserNote stashing before every send, acknowledgement of
 /// exactly that note after a successful live send (no double relay), retention of the note when
 /// the send fails despite a positive presence report, and that a missing default agent or a
@@ -11,21 +11,20 @@
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
-using Klacks.Api.Domain.Models.Email;
 using Klacks.Api.Domain.Models.Inbound;
-using Klacks.Api.Infrastructure.Email;
+using Klacks.Api.Infrastructure.Inbound;
 using Microsoft.Extensions.Logging;
 
-namespace Klacks.UnitTest.Infrastructure.Email;
+namespace Klacks.UnitTest.Infrastructure.Inbound;
 
 [TestFixture]
-public class EmailAnalysisNotifierTests
+public class InboundAnalysisNotifierTests
 {
     private IPlanningAudienceResolver _audienceResolver = null!;
     private IAssistantNotificationService _notificationService = null!;
     private IPendingUserNoteRepository _pendingNotes = null!;
     private IAgentRepository _agentRepository = null!;
-    private EmailAnalysisNotifier _notifier = null!;
+    private InboundAnalysisNotifier _notifier = null!;
     private List<PendingUserNote> _stashedNotes = null!;
 
     private static readonly Guid PlannerGuid = Guid.NewGuid();
@@ -53,18 +52,14 @@ public class EmailAnalysisNotifierTests
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>())
             .Returns(new Agent { Id = AgentGuid, Name = "Klacksy" });
 
-        _notifier = new EmailAnalysisNotifier(
+        _notifier = new InboundAnalysisNotifier(
             _audienceResolver, _notificationService, _pendingNotes, _agentRepository,
-            Substitute.For<ILogger<EmailAnalysisNotifier>>());
+            Substitute.For<ILogger<InboundAnalysisNotifier>>());
     }
 
-    private static ReceivedEmail Email() => new()
-    {
-        Id = Guid.NewGuid(),
-        FromAddress = "worker@example.com",
-        FromName = "Max Muster",
-        Subject = "Krankmeldung"
-    };
+    private static InboundSource Source() => new(
+        Guid.NewGuid(), InboundSourceKind.Email, "Email",
+        "Max Muster (worker@example.com)", "Krankmeldung", "body", DateTime.UtcNow);
 
     private static InboundAnalysis Analysis() => new()
     {
@@ -79,7 +74,7 @@ public class EmailAnalysisNotifierTests
     {
         _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
 
-        await _notifier.NotifyAsync(Email(), Analysis());
+        await _notifier.NotifyAsync(Source(), Analysis());
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("Krankmeldung")), null, null);
@@ -95,7 +90,7 @@ public class EmailAnalysisNotifierTests
         _notificationService.SendProactiveMessageAsync(Planner, Arg.Any<string>(), null, null)
             .Returns<Task>(_ => throw new InvalidOperationException("stale presence, no live connection"));
 
-        await _notifier.NotifyAsync(Email(), Analysis());
+        await _notifier.NotifyAsync(Source(), Analysis());
 
         var plannerNotes = _stashedNotes.Where(n => n.UserId == PlannerGuid).ToList();
         plannerNotes.Count.ShouldBe(1);
@@ -109,7 +104,7 @@ public class EmailAnalysisNotifierTests
     {
         _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
 
-        await _notifier.NotifyAsync(Email(), Analysis());
+        await _notifier.NotifyAsync(Source(), Analysis());
 
         var plannerNote = _stashedNotes.Single(n => n.UserId == PlannerGuid);
         plannerNote.Id.ShouldNotBe(Guid.Empty);
@@ -126,7 +121,7 @@ public class EmailAnalysisNotifierTests
         _notificationService.IsUserConnectedAsync(Planner).Returns(false);
         _notificationService.IsUserConnectedAsync(Admin).Returns(true);
 
-        await _notifier.NotifyAsync(Email(), Analysis());
+        await _notifier.NotifyAsync(Source(), Analysis());
 
         await _pendingNotes.Received(1).AddAsync(
             Arg.Is<PendingUserNote>(n =>
@@ -146,7 +141,7 @@ public class EmailAnalysisNotifierTests
             .Returns(new HashSet<string> { Planner });
         _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
 
-        await _notifier.NotifyAsync(Email(), Analysis());
+        await _notifier.NotifyAsync(Source(), Analysis());
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Any<string>(), null, null);
@@ -158,7 +153,7 @@ public class EmailAnalysisNotifierTests
         _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(false);
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns((Agent?)null);
 
-        await _notifier.NotifyAsync(Email(), Analysis());
+        await _notifier.NotifyAsync(Source(), Analysis());
 
         await _pendingNotes.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
     }
@@ -170,7 +165,7 @@ public class EmailAnalysisNotifierTests
         _notificationService.SendProactiveMessageAsync(Planner, Arg.Any<string>(), null, null)
             .Returns<Task>(_ => throw new InvalidOperationException("hub down"));
 
-        await _notifier.NotifyAsync(Email(), Analysis());
+        await _notifier.NotifyAsync(Source(), Analysis());
 
         await _notificationService.Received(1).SendProactiveMessageAsync(Admin, Arg.Any<string>(), null, null);
     }
@@ -182,7 +177,7 @@ public class EmailAnalysisNotifierTests
         var analysis = Analysis();
         analysis.UntilDate = new DateOnly(2026, 7, 12);
 
-        await _notifier.NotifyAsync(Email(), analysis);
+        await _notifier.NotifyAsync(Source(), analysis);
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("2026-07-09") && m.Contains("2026-07-12")), null, null);
@@ -195,7 +190,7 @@ public class EmailAnalysisNotifierTests
         var analysis = Analysis();
         analysis.Intent = EmailIntent.AvailabilityAnnouncement;
 
-        await _notifier.NotifyAsync(Email(), analysis);
+        await _notifier.NotifyAsync(Source(), analysis);
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("Availability announcement")), null, null);
@@ -211,7 +206,7 @@ public class EmailAnalysisNotifierTests
         analysis.EndHour = 16;
         analysis.Weekdays = "1,2";
 
-        await _notifier.NotifyAsync(Email(), analysis);
+        await _notifier.NotifyAsync(Source(), analysis);
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner,
@@ -226,7 +221,7 @@ public class EmailAnalysisNotifierTests
         var analysis = Analysis();
         analysis.Intent = EmailIntent.ShiftPreference;
 
-        await _notifier.NotifyAsync(Email(), analysis);
+        await _notifier.NotifyAsync(Source(), analysis);
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("Shift preference")), null, null);
@@ -240,7 +235,7 @@ public class EmailAnalysisNotifierTests
         analysis.Intent = EmailIntent.ShiftPreference;
         analysis.ScheduleCommands = "EARLY,-NIGHT";
 
-        await _notifier.NotifyAsync(Email(), analysis);
+        await _notifier.NotifyAsync(Source(), analysis);
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("Planning commands: EARLY, -NIGHT")), null, null);
