@@ -2,11 +2,14 @@
 
 /// <summary>
 /// Unit tests for EmailPollingBackgroundService — verifies the per-email orchestration
-/// (ProcessEmailAsync: spam-classify -> junk move OR client assignment -> intent analysis ->
-/// persist -> action orchestration -> notify) and the batched reclassification pagination
-/// (ClassifyFolderBatchedAsync).
+/// (ProcessEmailAsync: spam-classify -> junk move OR client assignment -> feature-gate ->
+/// sender resolution -> intent analysis -> persist -> action orchestration -> notify) and the
+/// batched reclassification pagination (ClassifyFolderBatchedAsync).
 /// </summary>
 
+using AppSettings = Klacks.Api.Application.Constants.Settings;
+using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Email;
@@ -26,7 +29,8 @@ public class EmailPollingBackgroundServiceTests
     private IImapEmailService _imapEmailService = null!;
     private ISpamFilterService _spamFilterService = null!;
     private IEmailClientAssignmentService _clientAssignmentService = null!;
-    private IEmailIntentAnalysisService _intentAnalysisService = null!;
+    private ISettingsRepository _settingsRepository = null!;
+    private IInboundIntentAnalysisService _intentAnalysisService = null!;
     private IInboundAnalysisRepository _analysisRepository = null!;
     private IEmailActionOrchestrator _actionOrchestrator = null!;
     private IEmailPeriodLoadService _periodLoadService = null!;
@@ -43,7 +47,8 @@ public class EmailPollingBackgroundServiceTests
         _imapEmailService = Substitute.For<IImapEmailService>();
         _spamFilterService = Substitute.For<ISpamFilterService>();
         _clientAssignmentService = Substitute.For<IEmailClientAssignmentService>();
-        _intentAnalysisService = Substitute.For<IEmailIntentAnalysisService>();
+        _settingsRepository = Substitute.For<ISettingsRepository>();
+        _intentAnalysisService = Substitute.For<IInboundIntentAnalysisService>();
         _analysisRepository = Substitute.For<IInboundAnalysisRepository>();
         _actionOrchestrator = Substitute.For<IEmailActionOrchestrator>();
         _periodLoadService = Substitute.For<IEmailPeriodLoadService>();
@@ -53,13 +58,16 @@ public class EmailPollingBackgroundServiceTests
 
         _spamFilterService.ClassifyAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
             .Returns(new SpamFilterResult { IsSpam = false });
-        _intentAnalysisService.AnalyzeAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
-            .Returns((InboundAnalysis?)null);
+        _settingsRepository.GetSetting(AppSettings.EMAIL_ANALYSIS_ENABLED)
+            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Value = "true" });
+        _clientAssignmentService.ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
+            .Returns((Guid.NewGuid(), EntityTypeEnum.Employee));
 
         var services = new ServiceCollection();
         services.AddSingleton(_imapEmailService);
         services.AddSingleton(_spamFilterService);
         services.AddSingleton(_clientAssignmentService);
+        services.AddSingleton(_settingsRepository);
         services.AddSingleton(_intentAnalysisService);
         services.AddSingleton(_analysisRepository);
         services.AddSingleton(_actionOrchestrator);
@@ -101,6 +109,11 @@ public class EmailPollingBackgroundServiceTests
         UntilDate = untilDate,
     };
 
+    private void AnalysisServiceReturns(InboundAnalysis analysis) =>
+        _intentAnalysisService.AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>())
+            .Returns(analysis);
+
     private Task ProcessAsync(ReceivedEmail email, CancellationToken cancellationToken = default) =>
         _service.ProcessEmailAsync(_scope, _unitOfWork, email, InboxFolder, JunkFolder, cancellationToken);
 
@@ -117,7 +130,8 @@ public class EmailPollingBackgroundServiceTests
         await _imapEmailService.Received(1).MoveEmailOnImapAsync(
             email.ImapUid, InboxFolder, JunkFolder, Arg.Any<CancellationToken>());
         await _clientAssignmentService.DidNotReceive().AssignNewEmailAsync(Arg.Any<ReceivedEmail>());
-        await _intentAnalysisService.DidNotReceive().AnalyzeAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>());
+        await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
         email.ProcessedAt.ShouldNotBeNull();
     }
 
@@ -142,13 +156,16 @@ public class EmailPollingBackgroundServiceTests
         email.ProcessedAt.ShouldNotBeNull();
         await _unitOfWork.Received(1).CompleteAsync();
         await _spamFilterService.DidNotReceiveWithAnyArgs().ClassifyAsync(default!, default);
-        await _intentAnalysisService.DidNotReceive().AnalyzeAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>());
+        await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task NoSpam_AnalysisReturnsNull_MarksProcessed_SkipsPersistenceAndOrchestration()
+    public async Task NoSpam_UnknownSender_MarksProcessed_SkipsPersistenceAndOrchestration()
     {
         var email = Email(InboxFolder);
+        _clientAssignmentService.ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
+            .Returns(((Guid ClientId, EntityTypeEnum ClientType)?)null);
 
         await ProcessAsync(email);
 
@@ -164,7 +181,7 @@ public class EmailPollingBackgroundServiceTests
     {
         var email = Email(InboxFolder);
         var analysis = Analysis(clientType: EntityTypeEnum.Customer);
-        _intentAnalysisService.AnalyzeAsync(email, Arg.Any<CancellationToken>()).Returns(analysis);
+        AnalysisServiceReturns(analysis);
         var outcome = new EmailActionOutcome(true, "done");
         _actionOrchestrator.ExecuteAsync(email, analysis, Arg.Any<CancellationToken>()).Returns(outcome);
 
@@ -188,7 +205,7 @@ public class EmailPollingBackgroundServiceTests
         var fromDate = new DateOnly(2026, 8, 1);
         var untilDate = new DateOnly(2026, 8, 5);
         var analysis = Analysis(EntityTypeEnum.Employee, clientId, fromDate, untilDate);
-        _intentAnalysisService.AnalyzeAsync(email, Arg.Any<CancellationToken>()).Returns(analysis);
+        AnalysisServiceReturns(analysis);
         _periodLoadService.BuildSummaryAsync(clientId, fromDate, untilDate, Arg.Any<CancellationToken>())
             .Returns("3 shifts planned");
 
@@ -206,7 +223,7 @@ public class EmailPollingBackgroundServiceTests
         var clientId = Guid.NewGuid();
         var fromDate = new DateOnly(2026, 8, 1);
         var analysis = Analysis(EntityTypeEnum.Employee, clientId, fromDate, untilDate: null);
-        _intentAnalysisService.AnalyzeAsync(email, Arg.Any<CancellationToken>()).Returns(analysis);
+        AnalysisServiceReturns(analysis);
 
         await ProcessAsync(email);
 
@@ -218,7 +235,7 @@ public class EmailPollingBackgroundServiceTests
     {
         var email = Email(InboxFolder);
         var analysis = Analysis(EntityTypeEnum.Customer, Guid.NewGuid(), new DateOnly(2026, 8, 1));
-        _intentAnalysisService.AnalyzeAsync(email, Arg.Any<CancellationToken>()).Returns(analysis);
+        AnalysisServiceReturns(analysis);
 
         await ProcessAsync(email);
 
@@ -251,8 +268,9 @@ public class EmailPollingBackgroundServiceTests
     public async Task AnalyzeAsyncThrows_IsLoggedOnly_ProcessedAtStaysNull()
     {
         var email = Email(InboxFolder);
-        _intentAnalysisService.AnalyzeAsync(email, Arg.Any<CancellationToken>())
-            .Returns<InboundAnalysis?>(_ => throw new InvalidOperationException("intent service down"));
+        _intentAnalysisService.AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>())
+            .Returns<InboundAnalysis>(_ => throw new InvalidOperationException("intent service down"));
 
         await ProcessAsync(email);
 
@@ -264,19 +282,46 @@ public class EmailPollingBackgroundServiceTests
     {
         var email = Email(InboxFolder);
         var analysis = Analysis(EntityTypeEnum.Customer);
-        _intentAnalysisService.AnalyzeAsync(email, Arg.Any<CancellationToken>()).Returns(analysis);
+        AnalysisServiceReturns(analysis);
         _actionOrchestrator.ExecuteAsync(email, analysis, Arg.Any<CancellationToken>())
             .Returns<EmailActionOutcome?>(_ => throw new InvalidOperationException("orchestrator down"));
 
         await ProcessAsync(email);
 
-        // ProcessedAt is set right after AnalyzeAsync returns (before AddAsync/CompleteAsync/ExecuteAsync),
+        // ProcessedAt is set right after the analysis step (before AddAsync/CompleteAsync/ExecuteAsync),
         // so a failure downstream of that point leaves it non-null - unlike an AnalyzeAsync failure. This
         // means the class-level XML doc's blanket "leaves ProcessedAt null so it retries" guarantee only
-        // holds for failures at or before AnalyzeAsync, not for failures in orchestration or notification.
+        // holds for failures at or before the analysis step, not for failures in orchestration or notification.
         email.ProcessedAt.ShouldNotBeNull();
         await _analysisNotifier.DidNotReceiveWithAnyArgs().NotifyAsync(
             default!, default!, default, default, default);
+    }
+
+    [Test]
+    public async Task ProcessEmailAsync_EmailAnalysisDisabled_SkipsClientResolutionAndAnalysis()
+    {
+        _settingsRepository.GetSetting(AppSettings.EMAIL_ANALYSIS_ENABLED)
+            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Value = "false" });
+
+        await ProcessAsync(Email(InboxFolder));
+
+        await _clientAssignmentService.DidNotReceive().ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>());
+        await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ProcessEmailAsync_UnknownSender_SkipsAnalysisButStillMarksProcessed()
+    {
+        _clientAssignmentService.ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
+            .Returns(((Guid ClientId, EntityTypeEnum ClientType)?)null);
+        var email = Email(InboxFolder);
+
+        await ProcessAsync(email);
+
+        await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+        email.ProcessedAt.ShouldNotBeNull();
     }
 
     [Test]

@@ -1,70 +1,46 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for EmailIntentAnalysisService — verifies the feature gate, the sender resolution
-/// gate, customer-fixed intent, LLM JSON parsing (clean, embedded and broken replies) and that
-/// an LLM failure degrades to a recorded failure instead of an exception.
+/// Unit tests for InboundIntentAnalysisService — verifies customer-fixed intent, LLM JSON parsing
+/// (clean, embedded and broken replies) and that an LLM failure degrades to a recorded failure
+/// instead of an exception. Client resolution and the enabled/disabled feature gate are the caller's
+/// responsibility and are exercised in EmailPollingBackgroundServiceTests instead.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
-using AppSettings = Klacks.Api.Application.Constants.Settings;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
-using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
-using Klacks.Api.Domain.Models.Email;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Domain.Models.Schedules;
-using Klacks.Api.Infrastructure.Email;
+using Klacks.Api.Infrastructure.Inbound;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
-namespace Klacks.UnitTest.Infrastructure.Email;
+namespace Klacks.UnitTest.Infrastructure.Inbound;
 
 [TestFixture]
-public class EmailIntentAnalysisServiceTests
+public class InboundIntentAnalysisServiceTests
 {
     private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
-    private IEmailClientAssignmentService _assignmentService = null!;
     private ILLMService _llmService = null!;
-    private ISettingsRepository _settingsRepository = null!;
     private IScheduleCommandKeywordProvider _keywordProvider = null!;
-    private EmailIntentAnalysisService _service = null!;
+    private InboundIntentAnalysisService _service = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
 
     [SetUp]
     public void SetUp()
     {
-        _assignmentService = Substitute.For<IEmailClientAssignmentService>();
         _llmService = Substitute.For<ILLMService>();
-        _settingsRepository = Substitute.For<ISettingsRepository>();
         _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
-        EnableFeature(true);
-
-        _service = new EmailIntentAnalysisService(
-            _assignmentService, Substitute.For<IPlanningAudienceResolver>(), _llmService, _settingsRepository,
-            _keywordProvider, Substitute.For<ILogger<EmailIntentAnalysisService>>());
-    }
-
-    private void EnableFeature(bool enabled)
-    {
-        _settingsRepository.GetSetting(AppSettings.EMAIL_ANALYSIS_ENABLED)
-            .Returns(new Klacks.Api.Domain.Models.Settings.Settings
-            {
-                Type = AppSettings.EMAIL_ANALYSIS_ENABLED,
-                Value = enabled ? "true" : "false"
-            });
-    }
-
-    private void ResolvesTo(EntityTypeEnum type)
-    {
-        _assignmentService.ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
-            .Returns((ClientId, type));
+        _service = new InboundIntentAnalysisService(
+            Substitute.For<IPlanningAudienceResolver>(), _llmService,
+            _keywordProvider, Substitute.For<ILogger<InboundIntentAnalysisService>>());
     }
 
     private void LlmReplies(string message)
@@ -73,51 +49,21 @@ public class EmailIntentAnalysisServiceTests
             .Returns(new LLMResponse { Message = message });
     }
 
-    private static ReceivedEmail Email() => new()
-    {
-        Id = Guid.NewGuid(),
-        FromAddress = "worker@example.com",
-        Subject = "Krankmeldung",
-        BodyText = "Ich bin krank und kann morgen nicht arbeiten.",
-        ReceivedDate = new DateTime(2026, 7, 8, 8, 0, 0, DateTimeKind.Utc)
-    };
-
-    [Test]
-    public async Task FeatureDisabled_ReturnsNull_WithoutResolvingOrLlm()
-    {
-        EnableFeature(false);
-
-        var result = await _service.AnalyzeAsync(Email());
-
-        result.ShouldBeNull();
-        await _assignmentService.DidNotReceiveWithAnyArgs().ResolveClientAsync(default!, default);
-        await _llmService.DidNotReceiveWithAnyArgs().ProcessAsync(default!);
-    }
-
-    [Test]
-    public async Task UnknownSender_ReturnsNull_WithoutLlmCall()
-    {
-        _assignmentService.ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
-            .Returns(((Guid, EntityTypeEnum)?)null);
-
-        var result = await _service.AnalyzeAsync(Email());
-
-        result.ShouldBeNull();
-        await _llmService.DidNotReceiveWithAnyArgs().ProcessAsync(default!);
-    }
+    private static InboundSource Source() => new(
+        Guid.NewGuid(), InboundSourceKind.Email, "Email", "worker@example.com", "Krankmeldung",
+        "Ich bin krank und kann morgen nicht arbeiten.", new DateTime(2026, 7, 8, 8, 0, 0, DateTimeKind.Utc));
 
     [Test]
     public async Task EmployeeWorkCancellation_ParsesIntentSummaryAndDates()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"WorkCancellation","summary":"Mitarbeiter meldet sich krank.","fromDate":"2026-07-09","untilDate":"2026-07-10"}""");
 
-        var email = Email();
-        var result = await _service.AnalyzeAsync(email);
+        var source = Source();
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, source);
 
         result.ShouldNotBeNull();
-        result!.SourceKind.ShouldBe(InboundSourceKind.Email);
-        result.SourceId.ShouldBe(email.Id);
+        result.SourceKind.ShouldBe(InboundSourceKind.Email);
+        result.SourceId.ShouldBe(source.SourceId);
         result.Channel.ShouldBe("Email");
         result.ClientId.ShouldBe(ClientId);
         result.ClientType.ShouldBe(EntityTypeEnum.Employee);
@@ -131,26 +77,22 @@ public class EmailIntentAnalysisServiceTests
     [Test]
     public async Task JsonEmbeddedInProse_IsStillParsed()
     {
-        ResolvesTo(EntityTypeEnum.ExternEmp);
         LlmReplies("""Here is the analysis: {"intent":"VacationRequest","summary":"Ferien im August.","fromDate":"2026-08-03","untilDate":"2026-08-14"} Done.""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.ExternEmp, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.VacationRequest);
+        result.Intent.ShouldBe(EmailIntent.VacationRequest);
         result.FromDate.ShouldBe(new DateOnly(2026, 8, 3));
     }
 
     [Test]
     public async Task NullDates_MapToNull()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"DayOffWish","summary":"Wunsch nach freien Tagen.","fromDate":null,"untilDate":null}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.DayOffWish);
+        result.Intent.ShouldBe(EmailIntent.DayOffWish);
         result.FromDate.ShouldBeNull();
         result.UntilDate.ShouldBeNull();
     }
@@ -158,68 +100,58 @@ public class EmailIntentAnalysisServiceTests
     [Test]
     public async Task Customer_AlwaysCustomerMessage_EvenIfLlmSaysOtherwise()
     {
-        ResolvesTo(EntityTypeEnum.Customer);
         LlmReplies("""{"intent":"WorkCancellation","summary":"Kunde schreibt etwas.","fromDate":null,"untilDate":null}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Customer, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.CustomerMessage);
+        result.Intent.ShouldBe(EmailIntent.CustomerMessage);
         result.Summary.ShouldBe("Kunde schreibt etwas.");
     }
 
     [Test]
     public async Task UnparsableReply_DegradesToOther_WithFailureReason()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("Sorry, I cannot help with that.");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.Other);
+        result.Intent.ShouldBe(EmailIntent.Other);
         result.FailureReason.ShouldNotBeNull();
     }
 
     [Test]
     public async Task LlmThrows_DegradesToFailureAnalysis_NoException()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         _llmService.ProcessAsync(Arg.Any<LLMContext>())
             .Returns<LLMResponse>(_ => throw new InvalidOperationException("provider down"));
 
-        var email = Email();
-        var result = await _service.AnalyzeAsync(email);
+        var source = Source();
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, source);
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.Other);
-        result.Summary.ShouldBe(email.Subject);
+        result.Intent.ShouldBe(EmailIntent.Other);
+        result.Summary.ShouldBe(source.Subject);
         result.FailureReason.ShouldBe("provider down");
     }
 
     [Test]
     public async Task UnknownIntentString_MapsToOther()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"SomethingNew","summary":"Unklar.","fromDate":null,"untilDate":null}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.Other);
+        result.Intent.ShouldBe(EmailIntent.Other);
         result.FailureReason.ShouldBeNull();
     }
 
     [Test]
     public async Task AvailabilityAnnouncement_MapsIntentHourWindowAndWeekdays()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar im August.","fromDate":"2026-08-03","untilDate":"2026-08-28","startHour":8,"endHour":16,"weekdays":"2,1"}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.AvailabilityAnnouncement);
+        result.Intent.ShouldBe(EmailIntent.AvailabilityAnnouncement);
         result.FromDate.ShouldBe(new DateOnly(2026, 8, 3));
         result.UntilDate.ShouldBe(new DateOnly(2026, 8, 28));
         result.StartHour.ShouldBe(8);
@@ -231,64 +163,54 @@ public class EmailIntentAnalysisServiceTests
     [TestCase(16, 8)]
     public async Task InvalidHourWindow_MapsBothHoursToNull(int startHour, int endHour)
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies($$"""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":{{startHour}},"endHour":{{endHour}},"weekdays":null}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.StartHour.ShouldBeNull();
+        result.StartHour.ShouldBeNull();
         result.EndHour.ShouldBeNull();
     }
 
     [Test]
     public async Task Weekdays_AreDeduplicatedSortedAndInvalidTokensDropped()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-28","startHour":null,"endHour":null,"weekdays":" 5, 1, 1, 9, x "}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Weekdays.ShouldBe("1,5");
+        result.Weekdays.ShouldBe("1,5");
     }
 
     [Test]
     public async Task HoursAsJsonStrings_AreParsed()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":"8","endHour":"16","weekdays":null}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.StartHour.ShouldBe(8);
+        result.StartHour.ShouldBe(8);
         result.EndHour.ShouldBe(16);
     }
 
     [Test]
     public async Task ShiftPreference_MapsIntentAndNormalizesScheduleCommands()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"ShiftPreference","summary":"Kann nur früh arbeiten.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":null,"endHour":null,"weekdays":null,"scheduleCommands":" early, -night, early, FOO "}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.ShiftPreference);
+        result.Intent.ShouldBe(EmailIntent.ShiftPreference);
         result.ScheduleCommands.ShouldBe("EARLY,-NIGHT");
     }
 
     [Test]
     public async Task ScheduleCommandsWithoutValidKeywords_MapToNull()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"ShiftPreference","summary":"Unklare Präferenz.","fromDate":"2026-08-03","untilDate":"2026-08-07","startHour":null,"endHour":null,"weekdays":null,"scheduleCommands":"MORNING, FOO, "}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Intent.ShouldBe(EmailIntent.ShiftPreference);
+        result.Intent.ShouldBe(EmailIntent.ShiftPreference);
         result.ScheduleCommands.ShouldBeNull();
     }
 
@@ -296,34 +218,30 @@ public class EmailIntentAnalysisServiceTests
     public async Task ConfiguredKeyword_IsAcceptedAndPreservedInScheduleCommands()
     {
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords with { EarlyToken = "FRUEHDIENST" });
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"ShiftPreference","summary":"Kann nur früh arbeiten.","fromDate":"2026-08-03","untilDate":"2026-08-07","scheduleCommands":"fruehdienst"}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.ScheduleCommands.ShouldBe("FRUEHDIENST");
+        result.ScheduleCommands.ShouldBe("FRUEHDIENST");
     }
 
     [Test]
     public async Task EnglishDefaultKeyword_IsDropped_WhenKeywordWasRenamed()
     {
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords with { EarlyToken = "FRUEHDIENST" });
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"ShiftPreference","summary":"Kann nur früh arbeiten.","fromDate":"2026-08-03","untilDate":"2026-08-07","scheduleCommands":"EARLY"}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.ScheduleCommands.ShouldBeNull();
+        result.ScheduleCommands.ShouldBeNull();
     }
 
     [Test]
-    public async Task Prompt_EmbedsCurrentlyConfiguredKeywordTokens()
+    public void Prompt_EmbedsCurrentlyConfiguredKeywordTokens()
     {
         var keywords = DefaultKeywords with { FreeToken = "URLAUB", NegNightToken = "KEINE_NACHT" };
 
-        var prompt = EmailIntentAnalysisService.BuildPrompt(Email(), EntityTypeEnum.Employee, "body", keywords);
+        var prompt = InboundIntentAnalysisService.BuildPrompt(Source(), EntityTypeEnum.Employee, "body", keywords);
 
         prompt.ShouldContain("URLAUB");
         prompt.ShouldContain("KEINE_NACHT");
@@ -334,61 +252,51 @@ public class EmailIntentAnalysisServiceTests
     [TestCase("HIGH", EmailConfidence.High)]
     public async Task Confidence_IsMappedFromLlmReply(string confidence, EmailConfidence expected)
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies($$"""{"intent":"AvailabilityAnnouncement","confidence":"{{confidence}}","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07"}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Confidence.ShouldBe(expected);
+        result.Confidence.ShouldBe(expected);
     }
 
     [Test]
     public async Task MissingConfidence_MapsToUnknown_NeverSilentlyHigh()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("""{"intent":"AvailabilityAnnouncement","summary":"Verfügbar.","fromDate":"2026-08-03","untilDate":"2026-08-07"}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Confidence.ShouldBe(EmailConfidence.Unknown);
+        result.Confidence.ShouldBe(EmailConfidence.Unknown);
     }
 
     [Test]
     public async Task Customer_AlwaysHighConfidence_EvenIfLlmSaysLow()
     {
-        ResolvesTo(EntityTypeEnum.Customer);
         LlmReplies("""{"intent":"CustomerMessage","confidence":"low","summary":"Kunde schreibt etwas.","fromDate":null,"untilDate":null}""");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Customer, Source());
 
-        result.ShouldNotBeNull();
-        result!.Confidence.ShouldBe(EmailConfidence.High);
+        result.Confidence.ShouldBe(EmailConfidence.High);
     }
 
     [Test]
     public async Task UnparsableReply_DegradesToLowConfidence()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         LlmReplies("Sorry, I cannot help with that.");
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Confidence.ShouldBe(EmailConfidence.Low);
+        result.Confidence.ShouldBe(EmailConfidence.Low);
     }
 
     [Test]
     public async Task LlmThrows_DegradesToLowConfidence()
     {
-        ResolvesTo(EntityTypeEnum.Employee);
         _llmService.ProcessAsync(Arg.Any<LLMContext>())
             .Returns<LLMResponse>(_ => throw new InvalidOperationException("provider down"));
 
-        var result = await _service.AnalyzeAsync(Email());
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
-        result.ShouldNotBeNull();
-        result!.Confidence.ShouldBe(EmailConfidence.Low);
+        result.Confidence.ShouldBe(EmailConfidence.Low);
     }
 }
