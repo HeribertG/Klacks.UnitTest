@@ -8,11 +8,11 @@
 
 using AppSettings = Klacks.Api.Application.Constants.Settings;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Inbound;
-using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Plugins;
 using Klacks.Plugin.Contracts;
 using Microsoft.Extensions.Logging;
@@ -53,12 +53,12 @@ public class MessengerIntentObserverTests
             Substitute.For<ILogger<MessengerIntentObserver>>());
     }
 
-    private static InboundClientMessengerMessage Message(Guid? clientId = null) => new(
+    private static InboundClientMessengerMessage Message(Guid? clientId = null, string? senderDisplayName = "Jane Doe") => new(
         MessageId: Guid.NewGuid(),
         ClientId: clientId ?? Guid.NewGuid(),
         Channel: "Telegram",
         Sender: "12345",
-        SenderDisplayName: "Jane Doe",
+        SenderDisplayName: senderDisplayName,
         Content: "I'm sick today",
         ReceivedAt: DateTime.UtcNow);
 
@@ -74,7 +74,7 @@ public class MessengerIntentObserverTests
 
         await _observer.OnInboundMessageAsync(message);
 
-        await _clientRepository.DidNotReceive().GetNoTracking(Arg.Any<Guid>());
+        await _clientRepository.DidNotReceive().GetTypeAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
             Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
         await _analysisRepository.DidNotReceive().AddAsync(Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
@@ -90,12 +90,11 @@ public class MessengerIntentObserverTests
         SettingIs("true");
         var clientId = Guid.NewGuid();
         var message = Message(clientId);
-        var client = new Client { Id = clientId, Type = EntityTypeEnum.Employee };
         var analysis = new InboundAnalysis { ClientId = clientId, ClientType = EntityTypeEnum.Employee };
         var actionOutcome = new InboundActionOutcome(true, "Sick leave recorded");
 
         InboundSource? capturedSource = null;
-        _clientRepository.GetNoTracking(clientId).Returns(client);
+        _clientRepository.GetTypeAsync(clientId, Arg.Any<CancellationToken>()).Returns(EntityTypeEnum.Employee);
         _intentAnalysisService.AnalyzeAsync(
             clientId, EntityTypeEnum.Employee, Arg.Do<InboundSource>(s => capturedSource = s), Arg.Any<CancellationToken>())
             .Returns(analysis);
@@ -124,10 +123,30 @@ public class MessengerIntentObserverTests
 
         Assert.That(capturedSource, Is.Not.Null);
         Assert.That(capturedSource!.SourceKind, Is.EqualTo(InboundSourceKind.Messenger));
-        Assert.That(capturedSource.Channel, Is.EqualTo("Messenger:Telegram"));
+        Assert.That(capturedSource.Channel, Is.EqualTo($"{MessengerConstants.InboundChannelPrefix}Telegram"));
         Assert.That(capturedSource.Subject, Is.Null);
         Assert.That(capturedSource.Body, Is.EqualTo(message.Content));
         Assert.That(capturedSource.SenderDisplay, Is.EqualTo(message.SenderDisplayName));
+    }
+
+    [Test]
+    public async Task Enabled_MissingSenderDisplayName_FallsBackToSender()
+    {
+        SettingIs("true");
+        var clientId = Guid.NewGuid();
+        var message = Message(clientId, senderDisplayName: "   ");
+        var analysis = new InboundAnalysis { ClientId = clientId, ClientType = EntityTypeEnum.Employee };
+
+        InboundSource? capturedSource = null;
+        _clientRepository.GetTypeAsync(clientId, Arg.Any<CancellationToken>()).Returns(EntityTypeEnum.Employee);
+        _intentAnalysisService.AnalyzeAsync(
+            clientId, EntityTypeEnum.Employee, Arg.Do<InboundSource>(s => capturedSource = s), Arg.Any<CancellationToken>())
+            .Returns(analysis);
+
+        await _observer.OnInboundMessageAsync(message);
+
+        Assert.That(capturedSource, Is.Not.Null);
+        Assert.That(capturedSource!.SenderDisplay, Is.EqualTo(message.Sender));
     }
 
     [Test]
@@ -135,7 +154,7 @@ public class MessengerIntentObserverTests
     {
         SettingIs("true");
         var message = Message();
-        _clientRepository.GetNoTracking(message.ClientId).Returns((Client?)null);
+        _clientRepository.GetTypeAsync(message.ClientId, Arg.Any<CancellationToken>()).Returns((EntityTypeEnum?)null);
 
         await _observer.OnInboundMessageAsync(message);
 
