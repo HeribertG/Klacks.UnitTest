@@ -240,4 +240,28 @@ public class InboundAnalysisNotifierTests
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("Planning commands: EARLY, -NIGHT")), null, null);
     }
+
+    [Test]
+    public async Task MessengerSource_UsesChatBubbleIcon_NotEmailIcon()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+        var source = Source() with { SourceKind = InboundSourceKind.Messenger, Channel = "Messenger:Telegram" };
+
+        await _notifier.NotifyAsync(source, Analysis());
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.Contains("💬") && !m.Contains("📧")), null, null);
+    }
+
+    [Test]
+    public async Task EmptySubject_OmitsSubjectLineFromMessage()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+        var source = Source() with { Subject = null };
+
+        await _notifier.NotifyAsync(source, Analysis());
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => !m.Contains("Subject:")), null, null);
+    }
 }
