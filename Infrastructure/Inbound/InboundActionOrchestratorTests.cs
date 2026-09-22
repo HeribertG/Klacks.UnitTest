@@ -793,6 +793,38 @@ public class InboundActionOrchestratorTests
     }
 
     [Test]
+    public async Task DayOffWish_NoShiftWorkContract_StillExecutes()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0, PerformsShiftWork = false });
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        invocations[0].SkillName.ShouldBe("add_schedule_commands_range");
+        invocations[0].Parameters["commandKeyword"].ShouldBe("FREE");
+    }
+
+    [Test]
+    public async Task Availability_NoShiftWorkContract_StillExecutes()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 0, PerformsShiftWork = false });
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), startHour: 8, endHour: 16));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        invocations.Count.ShouldBe(1);
+        invocations[0].SkillName.ShouldBe("set_client_availability");
+    }
+
+    [Test]
     public async Task ShiftPreference_ContradictingKeywords_OnlySuggests()
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
