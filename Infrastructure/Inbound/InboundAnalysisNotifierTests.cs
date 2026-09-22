@@ -4,8 +4,9 @@
 /// Unit tests for InboundAnalysisNotifier — verifies planner/admin audience union, live delivery
 /// to connected users, durable PendingUserNote stashing before every send, acknowledgement of
 /// exactly that note after a successful live send (no double relay), retention of the note when
-/// the send fails despite a positive presence report, and that a missing default agent or a
-/// per-user failure never aborts the batch.
+/// the send fails despite a positive presence report, that a missing default agent or a
+/// per-user failure never aborts the batch, and the channel-neutral message rendering (chat-bubble
+/// icon for non-email sources, omitted Subject line when the source carries no subject).
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
@@ -116,7 +117,7 @@ public class InboundAnalysisNotifierTests
     }
 
     [Test]
-    public async Task OfflineRecipient_GetsPendingNote_WithEmailAnalysisTopic()
+    public async Task OfflineRecipient_GetsPendingNote_WithInboundAnalysisTopic()
     {
         _notificationService.IsUserConnectedAsync(Planner).Returns(false);
         _notificationService.IsUserConnectedAsync(Admin).Returns(true);
@@ -126,7 +127,7 @@ public class InboundAnalysisNotifierTests
         await _pendingNotes.Received(1).AddAsync(
             Arg.Is<PendingUserNote>(n =>
                 n.UserId == PlannerGuid &&
-                n.Topic == "email-analysis" &&
+                n.Topic == "inbound-analysis" &&
                 n.Content.Contains("Mitarbeiter meldet sich")),
             Arg.Any<CancellationToken>());
         await _notificationService.Received(1).SendProactiveMessageAsync(Admin, Arg.Any<string>(), null, null);
@@ -253,11 +254,13 @@ public class InboundAnalysisNotifierTests
             Planner, Arg.Is<string>(m => m.Contains("💬") && !m.Contains("📧")), null, null);
     }
 
-    [Test]
-    public async Task EmptySubject_OmitsSubjectLineFromMessage()
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    public async Task BlankSubject_OmitsSubjectLineFromMessage(string? subject)
     {
         _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
-        var source = Source() with { Subject = null };
+        var source = Source() with { Subject = subject };
 
         await _notifier.NotifyAsync(source, Analysis());
 
