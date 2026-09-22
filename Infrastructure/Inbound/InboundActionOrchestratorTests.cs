@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Unit tests for EmailActionOrchestrator — verifies the email-flow autonomy mapping fixed by the
+/// Unit tests for InboundActionOrchestrator — verifies the inbound-flow autonomy mapping fixed by the
 /// user (FullyAutonomous executes everything, Autonomous executes only the cover scenario, lower
 /// levels only suggest), the minimum-over-admins level resolution, and that ambiguous groups or
 /// absence types degrade to a suggestion instead of a wrong automatic write.
@@ -20,7 +20,7 @@ using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Email;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Domain.Models.Schedules;
-using Klacks.Api.Infrastructure.Email;
+using Klacks.Api.Infrastructure.Inbound;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
@@ -28,10 +28,10 @@ using Microsoft.Extensions.Options;
 
 using Klacks.Api.Application.Configuration;
 
-namespace Klacks.UnitTest.Infrastructure.Email;
+namespace Klacks.UnitTest.Infrastructure.Inbound;
 
 [TestFixture]
-public class EmailActionOrchestratorTests
+public class InboundActionOrchestratorTests
 {
     private IAdminAutonomyLevelAggregator _adminAutonomy = null!;
     private ISkillExecutor _skillExecutor = null!;
@@ -45,7 +45,7 @@ public class EmailActionOrchestratorTests
     private IInternalTokenIssuer _tokenIssuer = null!;
     private ISkillRegistry _skillRegistry = null!;
     private IProactiveGovernanceResolver _governanceResolver = null!;
-    private EmailActionOrchestrator _orchestrator = null!;
+    private InboundActionOrchestrator _orchestrator = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid AdminGuid = Guid.NewGuid();
@@ -105,7 +105,7 @@ public class EmailActionOrchestratorTests
         _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>())
             .Returns(false);
 
-        _orchestrator = new EmailActionOrchestrator(
+        _orchestrator = new InboundActionOrchestrator(
             _adminAutonomy, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
@@ -114,7 +114,7 @@ public class EmailActionOrchestratorTests
             new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
             _governanceResolver,
             Options.Create(new EmailAutomationOptions()),
-            Substitute.For<ILogger<EmailActionOrchestrator>>());
+            Substitute.For<ILogger<InboundActionOrchestrator>>());
     }
 
     private static SkillDescriptor Descriptor(string name) => new(
@@ -146,7 +146,8 @@ public class EmailActionOrchestratorTests
         Name = new MultiLanguage { De = de, En = en }
     };
 
-    private static ReceivedEmail Email() => new() { Id = Guid.NewGuid(), Subject = "Test" };
+    private static InboundSource Source(string subject = "Test") => new(
+        Guid.NewGuid(), InboundSourceKind.Email, "Email", "sender@example.com", subject, "Body", DateTime.UtcNow);
 
     private static InboundAnalysis Analysis(EmailIntent intent, EntityTypeEnum type = EntityTypeEnum.Employee) => new()
     {
@@ -204,7 +205,7 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.CustomerMessage, EntityTypeEnum.Customer));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.CustomerMessage, EntityTypeEnum.Customer));
 
         outcome.ShouldBeNull();
     }
@@ -215,7 +216,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         CapacityGap();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest));
 
         // Recording the placeholder is what consumes the reserve, so a gap must never be written
         // automatically - the planner decides whether the team can carry it.
@@ -230,7 +231,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         CapacityGap("Capacity reserve for group 'Bern' is not sufficient: 3 time window(s) exceed the 80% ceiling.");
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest));
 
         outcome!.Description.ShouldContain("not sufficient");
         outcome.Description.ShouldContain("80% ceiling");
@@ -244,7 +245,7 @@ public class EmailActionOrchestratorTests
                 Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
             .Returns(new EmailCapacityVerdict(true, false, "Capacity reserve holds: peak utilization 55% stays within the 80% ceiling."));
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest));
 
         // The figure is what lets a planner judge the suggestion; withholding it below FullyAutonomous
         // would make the capacity check useless in exactly the setup most installations run.
@@ -260,10 +261,9 @@ public class EmailActionOrchestratorTests
         _absenceRepository.List().Returns([AbsenceType("Ferien", "Vacation"), training]);
         var captured = CaptureSkillInvocations();
 
-        var email = Email();
-        email.Subject = "Anmeldung Schulung Erste Hilfe";
+        var source = Source("Anmeldung Schulung Erste Hilfe");
 
-        var outcome = await _orchestrator.ExecuteAsync(email, Analysis(EmailIntent.VacationRequest));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, source, Analysis(EmailIntent.VacationRequest));
 
         outcome!.Executed.ShouldBeTrue();
         captured.ShouldContain(i => i.SkillName == "add_break_placeholder"
@@ -278,10 +278,9 @@ public class EmailActionOrchestratorTests
         _absenceRepository.List().Returns([vacation, AbsenceType("Schulung", "Training")]);
         var captured = CaptureSkillInvocations();
 
-        var email = Email();
-        email.Subject = "Ferienwunsch Juli";
+        var source = Source("Ferienwunsch Juli");
 
-        var outcome = await _orchestrator.ExecuteAsync(email, Analysis(EmailIntent.VacationRequest));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, source, Analysis(EmailIntent.VacationRequest));
 
         outcome!.Executed.ShouldBeTrue();
         captured.ShouldContain(i => i.SkillName == "add_break_placeholder"
@@ -295,7 +294,7 @@ public class EmailActionOrchestratorTests
         var analysis = Analysis(EmailIntent.VacationRequest);
         analysis.FromDate = null;
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -310,7 +309,7 @@ public class EmailActionOrchestratorTests
 
         foreach (var intent in new[] { EmailIntent.WorkCancellation, EmailIntent.VacationRequest, EmailIntent.DayOffWish })
         {
-            var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(intent));
+            var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(intent));
             outcome.ShouldNotBeNull();
             outcome!.Executed.ShouldBeFalse(intent.ToString());
         }
@@ -323,13 +322,13 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.Autonomous);
 
-        var cancellation = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var cancellation = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
         cancellation!.Executed.ShouldBeTrue();
 
-        var vacation = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+        var vacation = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest));
         vacation!.Executed.ShouldBeFalse();
 
-        var dayOff = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+        var dayOff = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
         dayOff!.Executed.ShouldBeFalse();
 
         await _skillExecutor.Received(1).ExecuteAsync(
@@ -342,9 +341,9 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
 
-        (await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation)))!.Executed.ShouldBeTrue();
-        (await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest)))!.Executed.ShouldBeTrue();
-        (await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish)))!.Executed.ShouldBeTrue();
+        (await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation)))!.Executed.ShouldBeTrue();
+        (await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest)))!.Executed.ShouldBeTrue();
+        (await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish)))!.Executed.ShouldBeTrue();
 
         await _skillExecutor.Received(1).ExecuteAsync(
             Arg.Is<SkillInvocation>(i => i.SkillName == "cover_absence"),
@@ -367,7 +366,7 @@ public class EmailActionOrchestratorTests
         _adminAutonomy.AggregateAsync(Arg.Any<AdminAutonomyMissingPreferencePolicy>(), Arg.Any<CancellationToken>())
             .Returns(new AdminAutonomyAggregate(AutonomyLevel.Propose, secondAdmin, null));
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
 
         outcome!.Executed.ShouldBeFalse();
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
@@ -379,7 +378,7 @@ public class EmailActionOrchestratorTests
         _adminAutonomy.AggregateAsync(Arg.Any<AdminAutonomyMissingPreferencePolicy>(), Arg.Any<CancellationToken>())
             .Returns(new AdminAutonomyAggregate(null, null, null));
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
 
         outcome!.Executed.ShouldBeFalse();
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
@@ -392,7 +391,7 @@ public class EmailActionOrchestratorTests
         _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>())
             .Returns(AutonomyLevel.Propose);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
 
         // The installation-wide cap throttles the whole flow: at global level 0 nothing executes
         // automatically, no matter what every single admin has chosen.
@@ -407,7 +406,7 @@ public class EmailActionOrchestratorTests
         _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>())
             .Returns(true);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
 
         // The global kill switch is the first brake, ahead of the per-admin aggregation: an active
         // switch degrades the whole flow to suggest-only exactly like a global level of Propose.
@@ -424,7 +423,7 @@ public class EmailActionOrchestratorTests
         _groupMembershipService.GetClientGroupsAsync(ClientId)
             .Returns([new Group { Id = GroupId, Name = "Bern" }, new Group { Id = Guid.NewGuid(), Name = "Basel" }]);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
 
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("2 groups");
@@ -440,7 +439,7 @@ public class EmailActionOrchestratorTests
             AbsenceType("Ferien unbezahlt", "Unpaid vacation")
         ]);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest));
 
         outcome!.Executed.ShouldBeFalse();
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
@@ -453,7 +452,7 @@ public class EmailActionOrchestratorTests
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.Error("db down"));
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
 
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("db down");
@@ -470,11 +469,11 @@ public class EmailActionOrchestratorTests
                 Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "done"));
 
-        await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+        await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
 
         captured.ShouldNotBeNull();
         captured!.UserId.ShouldBe(AdminGuid);
-        captured.UserName.ShouldBe("Klacksy email-analysis");
+        captured.UserName.ShouldBe("Klacksy Email analysis");
         captured.BypassAutonomyGate.ShouldBeTrue();
     }
 
@@ -484,7 +483,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         var invocations = CaptureSkillInvocations();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 12), startHour: 8, endHour: 16));
 
         outcome.ShouldNotBeNull();
@@ -507,7 +506,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         var invocations = CaptureSkillInvocations();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 19), weekdays: "1,2,3,4,5"));
 
         outcome.ShouldNotBeNull();
@@ -526,7 +525,7 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.Autonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), startHour: 8, endHour: 16));
 
         outcome.ShouldNotBeNull();
@@ -540,7 +539,7 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 10), new DateOnly(2026, 10, 10)));
 
         outcome.ShouldNotBeNull();
@@ -554,7 +553,7 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 13), weekdays: "7"));
 
         outcome.ShouldNotBeNull();
@@ -569,7 +568,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         var invocations = CaptureSkillInvocations();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "-NIGHT"));
 
         outcome.ShouldNotBeNull();
@@ -589,7 +588,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         var invocations = CaptureSkillInvocations();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-NIGHT"));
 
         outcome.ShouldNotBeNull();
@@ -605,7 +604,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         var invocations = CaptureSkillInvocations();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 19), "EARLY", weekdays: "1,2,3"));
 
         outcome.ShouldNotBeNull();
@@ -623,7 +622,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20 });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
 
         outcome.ShouldNotBeNull();
@@ -639,7 +638,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         SetContract(new EffectiveContractData { HasActiveContract = false });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
 
         outcome.ShouldNotBeNull();
@@ -654,7 +653,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20 });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -669,7 +668,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         SetContract(new EffectiveContractData { HasActiveContract = true, GuaranteedHours = 20 });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17)));
 
         outcome.ShouldNotBeNull();
@@ -684,7 +683,7 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-EARLY"));
 
         outcome.ShouldNotBeNull();
@@ -698,7 +697,7 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.Autonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
 
         outcome.ShouldNotBeNull();
@@ -712,7 +711,7 @@ public class EmailActionOrchestratorTests
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), null));
 
         outcome.ShouldNotBeNull();
@@ -730,7 +729,7 @@ public class EmailActionOrchestratorTests
         var analysis = Analysis(intent);
         analysis.Confidence = EmailConfidence.Low;
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -745,7 +744,7 @@ public class EmailActionOrchestratorTests
         var analysis = Analysis(EmailIntent.DayOffWish);
         analysis.Confidence = EmailConfidence.Unknown;
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -759,7 +758,7 @@ public class EmailActionOrchestratorTests
         var analysis = AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), startHour: 8, endHour: 16);
         analysis.Confidence = EmailConfidence.Low;
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -774,7 +773,7 @@ public class EmailActionOrchestratorTests
         var analysis = ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY");
         analysis.Confidence = EmailConfidence.Low;
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -790,7 +789,7 @@ public class EmailActionOrchestratorTests
                 Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), ClientId, Arg.Any<CancellationToken>())
             .Returns(DateOnly.FromDateTime(DateTime.Today));
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -805,7 +804,7 @@ public class EmailActionOrchestratorTests
         _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.WorkCancellation));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.WorkCancellation));
 
         outcome!.Executed.ShouldBeTrue();
     }
@@ -818,7 +817,7 @@ public class EmailActionOrchestratorTests
         _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(intent));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(intent));
 
         outcome.ShouldNotBeNull();
         outcome!.Executed.ShouldBeFalse();
@@ -833,7 +832,7 @@ public class EmailActionOrchestratorTests
         _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17)));
 
         outcome.ShouldNotBeNull();
@@ -849,7 +848,7 @@ public class EmailActionOrchestratorTests
         _workRepository.GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(new List<Klacks.Api.Domain.Models.Schedules.Work> { new() { ClientId = ClientId } });
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY"));
 
         outcome.ShouldNotBeNull();
@@ -864,7 +863,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         var invocations = CaptureSkillInvocations();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
 
         outcome!.Executed.ShouldBeTrue();
         invocations[0].Parameters["commandKeyword"].ShouldBe("FREE");
@@ -878,7 +877,7 @@ public class EmailActionOrchestratorTests
         var analysis = Analysis(EmailIntent.DayOffWish);
         analysis.ScheduleCommands = "-FREE";
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome!.Executed.ShouldBeTrue();
         invocations[0].Parameters["commandKeyword"].ShouldBe("-FREE");
@@ -891,7 +890,7 @@ public class EmailActionOrchestratorTests
         var analysis = Analysis(EmailIntent.DayOffWish);
         analysis.ScheduleCommands = "FREE,-FREE";
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("contradict");
@@ -905,7 +904,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         var invocations = CaptureSkillInvocations();
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.DayOffWish));
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
 
         outcome!.Executed.ShouldBeTrue();
         invocations[0].Parameters["commandKeyword"].ShouldBe("URLAUB");
@@ -918,7 +917,7 @@ public class EmailActionOrchestratorTests
             .Returns(DefaultKeywords with { EarlyToken = "FRUEH", NegEarlyToken = "KEIN_FRUEH" });
         AdminLevel(AutonomyLevel.FullyAutonomous);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "FRUEH,KEIN_FRUEH"));
 
         outcome!.Executed.ShouldBeFalse();
@@ -933,7 +932,7 @@ public class EmailActionOrchestratorTests
         var invocations = CaptureSkillInvocations();
         var analysis = ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,FREE");
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome!.Executed.ShouldBeTrue();
         invocations.Count.ShouldBe(1);
@@ -948,7 +947,7 @@ public class EmailActionOrchestratorTests
         analysis.FromDate = new DateOnly(2026, 1, 1);
         analysis.UntilDate = new DateOnly(2026, 12, 31);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(), analysis);
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
 
         outcome!.Executed.ShouldBeFalse();
         outcome.Description.ShouldContain("maximum");
@@ -960,7 +959,7 @@ public class EmailActionOrchestratorTests
     public async Task Execution_UsesTheConfiguredServiceAccount_NotTheResolvedAdmin()
     {
         var serviceAccountId = Guid.NewGuid();
-        var orchestrator = new EmailActionOrchestrator(
+        var orchestrator = new InboundActionOrchestrator(
             _adminAutonomy, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
             _sealedDayRepository, _keywordProvider, _contractDataProvider,
@@ -969,12 +968,12 @@ public class EmailActionOrchestratorTests
             new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
             _governanceResolver,
             Options.Create(new EmailAutomationOptions { ServiceAccountId = serviceAccountId.ToString() }),
-            Substitute.For<ILogger<EmailActionOrchestrator>>());
+            Substitute.For<ILogger<InboundActionOrchestrator>>());
 
         AdminLevel(AutonomyLevel.FullyAutonomous);
         _absenceRepository.List().Returns([AbsenceType("Ferien", "Vacation")]);
 
-        await orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+        await orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest));
 
         await _tokenIssuer.Received().IssueForOwnerAsync(
             serviceAccountId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
@@ -988,7 +987,7 @@ public class EmailActionOrchestratorTests
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(InternalTokenResult.Refused("the owner account holds no role"));
 
-        await _orchestrator.ExecuteAsync(Email(), Analysis(EmailIntent.VacationRequest));
+        await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.VacationRequest));
 
         (await ExecutedSkillCallsAsync()).ShouldBe(0);
     }
@@ -1002,7 +1001,7 @@ public class EmailActionOrchestratorTests
         AdminLevel(AutonomyLevel.FullyAutonomous);
         _skillRegistry.GetSkillByName("set_client_availability").Returns((SkillDescriptor?)null);
 
-        var outcome = await _orchestrator.ExecuteAsync(Email(),
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
             AvailabilityAnalysis(new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 12), startHour: 8, endHour: 16));
 
         outcome.ShouldNotBeNull();

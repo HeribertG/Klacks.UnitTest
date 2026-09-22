@@ -32,7 +32,7 @@ public class EmailPollingBackgroundServiceTests
     private ISettingsRepository _settingsRepository = null!;
     private IInboundIntentAnalysisService _intentAnalysisService = null!;
     private IInboundAnalysisRepository _analysisRepository = null!;
-    private IEmailActionOrchestrator _actionOrchestrator = null!;
+    private IInboundActionOrchestrator _actionOrchestrator = null!;
     private IEmailPeriodLoadService _periodLoadService = null!;
     private IEmailAnalysisNotifier _analysisNotifier = null!;
     private IReceivedEmailRepository _receivedEmailRepository = null!;
@@ -50,7 +50,7 @@ public class EmailPollingBackgroundServiceTests
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _intentAnalysisService = Substitute.For<IInboundIntentAnalysisService>();
         _analysisRepository = Substitute.For<IInboundAnalysisRepository>();
-        _actionOrchestrator = Substitute.For<IEmailActionOrchestrator>();
+        _actionOrchestrator = Substitute.For<IInboundActionOrchestrator>();
         _periodLoadService = Substitute.For<IEmailPeriodLoadService>();
         _analysisNotifier = Substitute.For<IEmailAnalysisNotifier>();
         _receivedEmailRepository = Substitute.For<IReceivedEmailRepository>();
@@ -173,7 +173,7 @@ public class EmailPollingBackgroundServiceTests
         await _unitOfWork.Received(1).CompleteAsync();
         await _analysisRepository.DidNotReceive().AddAsync(Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
         await _actionOrchestrator.DidNotReceive().ExecuteAsync(
-            Arg.Any<ReceivedEmail>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -182,8 +182,10 @@ public class EmailPollingBackgroundServiceTests
         var email = Email(InboxFolder);
         var analysis = Analysis(clientType: EntityTypeEnum.Customer);
         AnalysisServiceReturns(analysis);
+        var orchestratorOutcome = new InboundActionOutcome(true, "done");
         var outcome = new EmailActionOutcome(true, "done");
-        _actionOrchestrator.ExecuteAsync(email, analysis, Arg.Any<CancellationToken>()).Returns(outcome);
+        _actionOrchestrator.ExecuteAsync(Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>())
+            .Returns(orchestratorOutcome);
 
         await ProcessAsync(email);
 
@@ -191,7 +193,7 @@ public class EmailPollingBackgroundServiceTests
         {
             _analysisRepository.AddAsync(analysis, Arg.Any<CancellationToken>());
             _unitOfWork.CompleteAsync();
-            _actionOrchestrator.ExecuteAsync(email, analysis, Arg.Any<CancellationToken>());
+            _actionOrchestrator.ExecuteAsync(Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>());
             _analysisNotifier.NotifyAsync(
                 email, analysis, outcome, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         });
@@ -283,8 +285,8 @@ public class EmailPollingBackgroundServiceTests
         var email = Email(InboxFolder);
         var analysis = Analysis(EntityTypeEnum.Customer);
         AnalysisServiceReturns(analysis);
-        _actionOrchestrator.ExecuteAsync(email, analysis, Arg.Any<CancellationToken>())
-            .Returns<EmailActionOutcome?>(_ => throw new InvalidOperationException("orchestrator down"));
+        _actionOrchestrator.ExecuteAsync(Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>())
+            .Returns<InboundActionOutcome?>(_ => throw new InvalidOperationException("orchestrator down"));
 
         await ProcessAsync(email);
 
