@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for MessengerIntentObserver — verifies the MESSENGER_ANALYSIS_ENABLED feature gate,
 /// the full analyze/persist/execute/notify pipeline for a known client, and the silent skip for an
-/// unknown or soft-deleted client.
+/// unknown or soft-deleted client. The collaborators are served from a real ServiceCollection because
+/// the observer resolves them per message from its own scope (see the DI-cycle guard test below).
 /// </summary>
 
 using AppSettings = Klacks.Api.Application.Constants.Settings;
@@ -15,6 +16,7 @@ using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Plugins;
 using Klacks.Plugin.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Infrastructure.Plugins;
@@ -29,6 +31,7 @@ public class MessengerIntentObserverTests
     private IInboundAnalysisRepository _analysisRepository = null!;
     private IInboundAnalysisNotifier _analysisNotifier = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ServiceProvider _serviceProvider = null!;
     private MessengerIntentObserver _observer = null!;
 
     [SetUp]
@@ -42,15 +45,35 @@ public class MessengerIntentObserverTests
         _analysisNotifier = Substitute.For<IInboundAnalysisNotifier>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
+        var services = new ServiceCollection();
+        services.AddScoped(_ => _clientRepository);
+        services.AddScoped(_ => _settingsRepository);
+        services.AddScoped(_ => _intentAnalysisService);
+        services.AddScoped(_ => _actionOrchestrator);
+        services.AddScoped(_ => _analysisRepository);
+        services.AddScoped(_ => _analysisNotifier);
+        services.AddScoped(_ => _unitOfWork);
+        _serviceProvider = services.BuildServiceProvider();
+
         _observer = new MessengerIntentObserver(
-            _clientRepository,
-            _settingsRepository,
-            _intentAnalysisService,
-            _actionOrchestrator,
-            _analysisRepository,
-            _analysisNotifier,
-            _unitOfWork,
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             Substitute.For<ILogger<MessengerIntentObserver>>());
+    }
+
+    [TearDown]
+    public void TearDown() => _serviceProvider.Dispose();
+
+    [Test]
+    public void Constructor_TakesNoKernelServices_SoMessagingServiceCannotCloseADiCycle()
+    {
+        var parameterTypes = typeof(MessengerIntentObserver).GetConstructors().Single()
+            .GetParameters().Select(p => p.ParameterType).ToList();
+
+        Assert.That(parameterTypes, Is.EquivalentTo(new[]
+        {
+            typeof(IServiceScopeFactory),
+            typeof(ILogger<MessengerIntentObserver>)
+        }));
     }
 
     private static InboundClientMessengerMessage Message(Guid? clientId = null, string? senderDisplayName = "Jane Doe") => new(
