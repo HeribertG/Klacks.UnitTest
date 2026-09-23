@@ -6,10 +6,16 @@
 /// MinimumTermsPerLanguage lower-case, trimmed terms per language, minimum term lengths per match mode
 /// (word-start and compound terms at least four characters, substring terms of the scripts without word
 /// boundaries at least two), match-mode sets that only name listed languages, and no generic "sick" word
-/// that would block the intended attendance question. A new language pack without health terms fails here
-/// instead of silently letting health questions through.
+/// that would block the intended attendance question. The allowed absence phrases, the harmless word parts and
+/// the whole-word terms are lower case, trimmed and NFC-normalised as well (whole-word terms are letters
+/// only and at least three characters), every harmless word part must still neutralise a listed stem (it
+/// contains one, or overlaps one by at least four characters at its start or end), and no month, genitive
+/// month or day name (full or abbreviated) of a shipped culture may contain a health term. A new language
+/// pack without health terms fails here instead of silently letting health questions through.
 /// </summary>
 
+using System.Globalization;
+using System.Text;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Inbound;
@@ -25,6 +31,11 @@ public class ClarificationHealthTermsCoverageGuardTests
     private const int MinimumTermsPerLanguage = 12;
     private const int MinimumWordStartTermLength = 4;
     private const int MinimumSubstringTermLength = 2;
+    private const int MinimumWholeWordTermLength = 3;
+    private const int MinimumHarmlessPartStemOverlap = 4;
+    private const string IcuProbeCulture = "pt";
+    private const int IcuProbeMonthIndex = 1;
+    private const string IcuProbeMonthName = "fevereiro";
 
     private static readonly string[] AllowedAttendanceQuestions =
     [
@@ -85,11 +96,45 @@ public class ClarificationHealthTermsCoverageGuardTests
                 ? MinimumSubstringTermLength
                 : MinimumWordStartTermLength;
             offenders.AddRange(terms
-                .Where(term => term != term.Trim() || term != term.ToLowerInvariant() || term.Length < minimumLength)
+                .Where(term => !IsCanonical(term) || term.Length < minimumLength)
                 .Select(term => $"{language}:'{term}'"));
         }
 
         offenders.ShouldBeEmpty(string.Join(", ", offenders));
+    }
+
+    [Test]
+    public void EveryAbsencePhraseHarmlessPartAndWholeWord_IsCanonical()
+    {
+        var offenders = ClarificationHealthTerms.AllowedAbsencePhrases
+            .Concat(ClarificationHealthTerms.HarmlessWordParts)
+            .Concat(ClarificationHealthTerms.WholeWordTerms)
+            .Where(entry => !IsCanonical(entry))
+            .ToList();
+
+        offenders.ShouldBeEmpty(string.Join(", ", offenders));
+    }
+
+    [Test]
+    public void EveryWholeWordTerm_IsASingleWordOfAtLeastThreeLetters()
+    {
+        var offenders = ClarificationHealthTerms.WholeWordTerms
+            .Where(term => term.Length < MinimumWholeWordTermLength || !term.All(char.IsLetter))
+            .ToList();
+
+        offenders.ShouldBeEmpty(string.Join(", ", offenders));
+    }
+
+    [Test]
+    public void EveryHarmlessWordPart_StillNeutralisesAListedStem()
+    {
+        var stems = ClarificationHealthTerms.ByLanguage.Values.SelectMany(terms => terms).ToList();
+
+        var unneeded = ClarificationHealthTerms.HarmlessWordParts
+            .Where(part => !stems.Any(stem => CutsStem(part, stem)))
+            .ToList();
+
+        unneeded.ShouldBeEmpty($"Harmless word parts that no longer cut any health stem: {string.Join(", ", unneeded)}");
     }
 
     [Test]
@@ -112,6 +157,81 @@ public class ClarificationHealthTermsCoverageGuardTests
         foreach (var question in AllowedAttendanceQuestions)
         {
             ClarificationQuestionGuard.FindHealthTerm(question.ToLowerInvariant()).ShouldBeNull(question);
+        }
+    }
+
+    [Test]
+    public void CalendarNamesOfEveryShippedCulture_ContainNoHealthTerm()
+    {
+        EnsureIcuCultureDataIsAvailable();
+
+        var offenders = new List<string>();
+        foreach (var language in ShippedLanguages())
+        {
+            var format = new CultureInfo(language).DateTimeFormat;
+            var names = format.MonthNames
+                .Concat(format.MonthGenitiveNames)
+                .Concat(format.AbbreviatedMonthNames)
+                .Concat(format.AbbreviatedMonthGenitiveNames)
+                .Concat(format.DayNames)
+                .Concat(format.AbbreviatedDayNames)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name.ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal);
+            foreach (var name in names)
+            {
+                var term = ClarificationQuestionGuard.FindHealthTerm(name);
+                if (term != null)
+                {
+                    offenders.Add($"{language}:'{name}' -> '{term}'");
+                }
+            }
+        }
+
+        offenders.ShouldBeEmpty(string.Join(", ", offenders));
+    }
+
+    private static bool IsCanonical(string entry)
+        => entry == entry.Trim()
+            && entry == entry.ToLowerInvariant()
+            && entry == entry.Normalize(NormalizationForm.FormC);
+
+    private static bool CutsStem(string part, string stem)
+    {
+        if (part.Contains(stem, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var longestOverlap = Math.Min(part.Length, stem.Length) - 1;
+        for (var overlap = MinimumHarmlessPartStemOverlap; overlap <= longestOverlap; overlap++)
+        {
+            if (part.EndsWith(stem[..overlap], StringComparison.Ordinal)
+                || part.StartsWith(stem[^overlap..], StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void EnsureIcuCultureDataIsAvailable()
+    {
+        string? probe;
+        try
+        {
+            probe = new CultureInfo(IcuProbeCulture).DateTimeFormat.MonthNames[IcuProbeMonthIndex];
+        }
+        catch (CultureNotFoundException)
+        {
+            probe = null;
+        }
+
+        if (!string.Equals(probe, IcuProbeMonthName, StringComparison.Ordinal))
+        {
+            Assert.Inconclusive(
+                $"ICU culture data is not available (culture '{IcuProbeCulture}' month {IcuProbeMonthIndex} is '{probe}', expected '{IcuProbeMonthName}'); the calendar-name guard cannot run.");
         }
     }
 }

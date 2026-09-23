@@ -221,6 +221,91 @@ public class ClarificationQuestionGuardTests
         violation.ShouldBe(ClarificationQuestionGuard.NotAQuestionViolation);
     }
 
+    [TestCase("de", "Willst du die Schicht unterbrechen?")]
+    [TestCase("de", "Hast du die Schicht unterbrochen?")]
+    [TestCase("pt", "Podes trabalhar no turno de 3 de fevereiro?")]
+    [TestCase("en", "Will you join the hospitality team tomorrow?")]
+    [TestCase("es", "¿Puedes cubrir el turno de hospitalidad mañana?")]
+    [TestCase("it", "Puoi coprire il turno di ospitalità domani?")]
+    [TestCase("fi", "Voitko tehdä vuoron vanhusten palvelutalossa huomenna?")]
+    [TestCase("pt", "Entendes a gravidade da falta de pessoal amanhã?")]
+    [TestCase("es", "¿Es embarazoso para ti cambiar el turno mañana?")]
+    [TestCase("id", "Apakah kamu bisa bekerja di bagian operasional besok?")]
+    [TestCase("he", "האם תהיה באירופא מחר?")]
+    [TestCase("cs", "Nehodí se ti směna v pondělí?")]
+    [TestCase("ar", "هل ستعمل في فرع ألمانيا غدًا؟")]
+    [TestCase("ko", "의사소통 교육에 참석할 수 있나요?")]
+    [TestCase("ko", "설사 늦더라도 오늘 근무할 수 있나요?")]
+    [TestCase("id", "Apakah kamu bisa ikut rapat operasi gudang besok?")]
+    [TestCase("ms", "Bolehkah anda hadir ke program loyalti esok?")]
+    [TestCase("nl", "Is dit een ziektemelding?")]
+    [TestCase("nl", "Is morgen een ziektedag voor jou?")]
+    [TestCase("en", "Are you on medical leave tomorrow?")]
+    [TestCase("da", "Har du sygdomsfravær i morgen?")]
+    [TestCase("fi", "Onko sinulla sairauspäivä huomenna?")]
+    [TestCase("de", "Ist morgen ein Krankheitstag für dich?")]
+    [TestCase("pt", "Podes vir depressa amanhã?")]
+    public void HarmlessWordOrAbsencePhrase_IsAccepted(string language, string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue($"{language}: {violation}");
+    }
+
+    [TestCase("de", "Hast du erbrochen?")]
+    [TestCase("de", "Musstest du dich erbrechen?")]
+    [TestCase("en", "Do you have the flu?")]
+    [TestCase("en", "Are you in pain?")]
+    [TestCase("en", "Do you still have pains?")]
+    [TestCase("en", "Is your knee painful?")]
+    [TestCase("en", "Did you take a painkiller?")]
+    [TestCase("es", "¿Tienes tos?")]
+    [TestCase("pt", "Estás com dor?")]
+    [TestCase("fi", "Oletko menossa leikkaukseen?")]
+    [TestCase("pl", "Czy odczuwasz ból?")]
+    [TestCase("pl", "Czy czujesz ból?")]
+    [TestCase("vi", "Bạn có sốt không?")]
+    [TestCase("vi", "Bạn có đau không?")]
+    [TestCase("cs", "Měl jsi nehodu?")]
+    [TestCase("ar", "هل تشعر بألم في ظهرك؟")]
+    [TestCase("ko", "의사에게 다녀왔나요?")]
+    [TestCase("ko", "설사를 했나요?")]
+    [TestCase("id", "Apakah kamu akan dioperasi?")]
+    [TestCase("ms", "Adakah anda rasa loya?")]
+    [TestCase("es", "¿Fuiste al doctor?")]
+    [TestCase("es", "¿Estuviste en el hospital?")]
+    [TestCase("ro", "Ai fost la doctor?")]
+    [TestCase("ro", "Ai fost la medic?")]
+    [TestCase("fr", "Es-tu déprimé ?")]
+    [TestCase("es", "¿Estás deprimido?")]
+    [TestCase("pt", "Estás deprimida?")]
+    [TestCase("es", "¿Has tenido embarazos?")]
+    public void NarrowedOrAddedHealthTerm_IsStillRejected(string language, string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse(language);
+        violation.ShouldStartWith(ClarificationQuestionGuard.HealthTermViolationPrefix, customMessage: language);
+    }
+
+    [Test]
+    public void DecomposedUnicodeQuestion_IsNormalisedBeforeTheHealthTermCheck()
+    {
+        ClarificationQuestionGuard.IsAcceptable("Hast du U\u0308belkeit?", out var violation).ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.HealthTermViolationPrefix + "übelkeit");
+    }
+
+    [Test]
+    public void DecomposedUnicodeContext_IsNormalisedBeforeItsWordsAreIgnored()
+    {
+        ClarificationQuestionGuard.IsAcceptable(
+            "Kannst du morgen im Ärztehaus Nord arbeiten?",
+            "Fru\u0308hdienst A\u0308rztehaus Nord",
+            out var violation).ShouldBeTrue(violation);
+    }
+
+    [Test]
+    public void DecomposedUnicodeText_IsNormalisedByFindHealthTerm()
+    {
+        ClarificationQuestionGuard.FindHealthTerm("hast du u\u0308belkeit?").ShouldBe("übelkeit");
+    }
+
     [Test]
     public void CoreLanguages_HaveAtLeastTwelveTermsEach()
     {
