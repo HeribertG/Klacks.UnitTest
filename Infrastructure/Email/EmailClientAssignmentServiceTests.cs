@@ -406,4 +406,15 @@ public class EmailClientAssignmentServiceTests
 
         stored.ShouldBeNull();
     }
+
+    [Test]
+    public async Task GetStoredAddressAsync_AddressSharedByTwoClients_ReturnsNull()
+    {
+        var (clientA, _) = await AddClientWithCommunicationAsync("shared@example.com");
+        await AddClientWithCommunicationAsync("shared@example.com");
+
+        var stored = await _service.GetStoredAddressAsync(clientA.Id, "shared@example.com", CancellationToken.None);
+
+        stored.ShouldBeNull();
+    }
 }

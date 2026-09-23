@@ -66,6 +66,14 @@ public class EmailWrapperReplyTests
             Wrapper().BuildReplyMessage("anna@example.com;evil@example.org", "Re:", "Frage?", new Dictionary<string, string>()));
     }
 
+    [TestCase("anna@example.com, evil@example.org")]
+    [TestCase("anna@example.com evil@example.org")]
+    public void BuildReplyMessage_RecipientListWithCommaOrSpace_IsRejected(string strTo)
+    {
+        Should.Throw<FormatException>(() =>
+            Wrapper().BuildReplyMessage(strTo, "Re:", "Frage?", new Dictionary<string, string>()));
+    }
+
     [TestCase("\r\nBcc: evil@example.org")]
     [TestCase("\nBcc: evil@example.org")]
     [TestCase("\rBcc: evil@example.org")]

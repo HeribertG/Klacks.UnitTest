@@ -100,6 +100,36 @@ public class ClarificationQuestionGuardTests
         violation.ShouldBe(ClarificationQuestionGuard.LinkViolation);
     }
 
+    [TestCase("Siehe https://example.com")]
+    [TestCase("Siehe HTTPS://EXAMPLE.COM")]
+    [TestCase("Siehe www.example.com")]
+    public void ContainsLink_LinkMarker_ReturnsTrue(string text)
+    {
+        ClarificationQuestionGuard.ContainsLink(text).ShouldBeTrue();
+    }
+
+    [TestCase("Kommst du heute?")]
+    [TestCase(null)]
+    [TestCase("")]
+    public void ContainsLink_NoLinkMarker_ReturnsFalse(string? text)
+    {
+        ClarificationQuestionGuard.ContainsLink(text).ShouldBeFalse();
+    }
+
+    [TestCase("Ruf mich an unter 076 123 45 67")]
+    [TestCase("+41 76 123 45 67")]
+    public void ContainsPhoneNumberLikeDigitRun_PhoneNumber_ReturnsTrue(string text)
+    {
+        ClarificationQuestionGuard.ContainsPhoneNumberLikeDigitRun(text).ShouldBeTrue();
+    }
+
+    [TestCase("Kommst du am 24.09.2026 um 14:00?")]
+    [TestCase("Kommst du heute?")]
+    public void ContainsPhoneNumberLikeDigitRun_DateOrTimeOrNoDigits_ReturnsFalse(string text)
+    {
+        ClarificationQuestionGuard.ContainsPhoneNumberLikeDigitRun(text).ShouldBeFalse();
+    }
+
     [TestCase("Hast du Fieber?")]
     [TestCase("Welche Symptome hast du?")]
     [TestCase("Warst du schon beim Arzt?")]
