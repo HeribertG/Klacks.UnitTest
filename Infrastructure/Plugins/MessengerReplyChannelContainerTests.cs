@@ -12,7 +12,12 @@
 /// never connects. Unrelated descriptors that need more host configuration are ignored; a failure that
 /// names one of the chain types is not, so a missing registration on the chain cannot hide a cycle
 /// behind it. A positive control registers an observer that takes the reply senders and proves the
-/// check sees the resulting cycle. Not covered: registrations made only in Program.cs.
+/// check sees the resulting cycle. Not covered: registrations made only in Program.cs, and provider
+/// adapters resolved at runtime through MessagingProviderAdapterFactory (a switch over the provider
+/// type string calling IServiceProvider.GetRequiredService per concrete provider class, e.g.
+/// TelegramMessagingProvider) - ValidateOnBuild only walks constructor dependencies of registered
+/// service DESCRIPTORS, it never calls Create(), so a missing registration or a dependency cycle inside
+/// one specific provider adapter would only surface the first time that adapter is actually created.
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Inbound;

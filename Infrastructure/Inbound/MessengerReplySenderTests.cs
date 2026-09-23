@@ -31,7 +31,14 @@ public class MessengerReplySenderTests
     private static ClarificationRequest Request() => new(
         ClientId: ClientId,
         ClientType: EntityTypeEnum.Employee,
-        Source: new InboundSource(Guid.NewGuid(), InboundSourceKind.Messenger, "Messenger:Slack", "Anna Muster", null, "Mir geht's nicht gut", DateTime.UtcNow),
+        Source: new InboundSource(
+            SourceId: Guid.NewGuid(),
+            SourceKind: InboundSourceKind.Messenger,
+            Channel: "Messenger:Slack",
+            SenderDisplay: "Anna Muster",
+            Subject: null,
+            Body: "Mir geht's nicht gut",
+            ReceivedAt: DateTime.UtcNow),
         ReplyChannel: "Slack",
         SenderAddress: "C024BE91L",
         EmailThread: null);
@@ -79,6 +86,7 @@ public class MessengerReplySenderTests
         var result = await _sender.SendAsync(Request(), new InboundReplyTarget("U0BLRED0TK2", null, null, null), "Frage?");
 
         result.Success.ShouldBeTrue();
+        await _replyChannel.Received(1).SendAsync("Slack", "U0BLRED0TK2", "Frage?", Arg.Any<CancellationToken>());
         await _replyChannel.DidNotReceive().SendAsync(Arg.Any<string>(), "C024BE91L", Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }

@@ -5,8 +5,11 @@
 /// reach an employee's stored personal messenger contact: resolves the contact of the same messenger
 /// type, only returns it when the enabled provider's adapter classifies it as a personal address (a
 /// provider without that capability counts as "no"), matches the channel name to the provider type
-/// case-insensitively (Line vs LINE), sends through MessagingService as "Klacksy", maps every failure
-/// to a result value, and keeps its constructor free of kernel services (DI leaf).
+/// case-insensitively (Line vs LINE), requires exactly one enabled provider of that type (fail-closed
+/// on zero or several), sends through MessagingService using the resolved provider's NAME (never the
+/// raw channel string, so a differently-named provider cannot silently receive the message), re-checks
+/// the classifier on every send, maps every failure to a result value, and keeps its constructor free
+/// of kernel services (DI leaf).
 /// </summary>
 
 using Klacks.Api.Infrastructure.Plugins;
@@ -139,6 +142,28 @@ public class MessagingPluginClientReplyChannelTests
     }
 
     [Test]
+    public async Task UndefinedNumericChannel_IsRejectedEvenThoughEnumTryParseAcceptsIntegers()
+    {
+        (await _channel.ResolvePersonalRecipientAsync(ClientId, "99")).ShouldBeNull();
+
+        await _contactRepository.DidNotReceiveWithAnyArgs()
+            .GetByClientAndTypeAsync(default, default, default);
+    }
+
+    [Test]
+    public async Task DuplicateEnabledProvidersOfTheSameType_ResolveReturnsNull()
+    {
+        ContactIs(MessengerType.Telegram, "123456789");
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>
+        {
+            new() { Id = Guid.NewGuid(), Name = "telegram-a", ProviderType = "Telegram", IsEnabled = true },
+            new() { Id = Guid.NewGuid(), Name = "telegram-b", ProviderType = "Telegram", IsEnabled = true }
+        });
+
+        (await _channel.ResolvePersonalRecipientAsync(ClientId, "Telegram")).ShouldBeNull();
+    }
+
+    [Test]
     public async Task PluginDisabled_ReturnsNullAndSendFails()
     {
         _pluginStateChecker.IsEnabled(MessagingConstants.PluginName).Returns(false);
@@ -158,16 +183,16 @@ public class MessagingPluginClientReplyChannelTests
     }
 
     [Test]
-    public async Task Send_GoesThroughMessagingServiceAsKlacksy()
+    public async Task Send_GoesThroughMessagingServiceAsKlacksy_UsingTheResolvedProviderName()
     {
-        _messagingService.SendMessageAsync("Telegram", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+        _messagingService.SendMessageAsync("telegram", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SendMessageResult(true, "42"));
 
         var result = await _channel.SendAsync("Telegram", "123456789", "Heißt das, du kannst heute nicht arbeiten?");
 
         result.Success.ShouldBeTrue();
         await _messagingService.Received(1).SendMessageAsync(
-            "Telegram",
+            "telegram",
             Arg.Is<SendMessageRequest>(r => r.Recipient == "123456789"
                                             && r.Content == "Heißt das, du kannst heute nicht arbeiten?"
                                             && r.SenderDisplayName == MessagingConstants.KlacksySenderDisplayName),
@@ -175,9 +200,79 @@ public class MessagingPluginClientReplyChannelTests
     }
 
     [Test]
+    public async Task Send_ProviderNameDiffersFromChannelString_UsesTheClassifiedProviderNameNotTheChannel()
+    {
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>
+        {
+            new() { Id = Guid.NewGuid(), Name = "Telegram", ProviderType = "Slack", IsEnabled = true },
+            new() { Id = Guid.NewGuid(), Name = "tg-main", ProviderType = "Telegram", IsEnabled = true }
+        });
+        _adapterFactory.Create("Telegram").Returns(_classifyingAdapter);
+        _messagingService.SendMessageAsync("tg-main", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new SendMessageResult(true, "42"));
+
+        var result = await _channel.SendAsync("Telegram", "123456789", "Frage?");
+
+        result.Success.ShouldBeTrue();
+        await _messagingService.Received(1).SendMessageAsync("tg-main", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>());
+        await _messagingService.DidNotReceive().SendMessageAsync("Telegram", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Send_ADisabledProviderRowNeverShadowsTheEnabledOne()
+    {
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>
+        {
+            new() { Id = Guid.NewGuid(), Name = "Telegram", ProviderType = "Telegram", IsEnabled = false },
+            new() { Id = Guid.NewGuid(), Name = "tg-main", ProviderType = "Telegram", IsEnabled = true }
+        });
+        _adapterFactory.Create("Telegram").Returns(_classifyingAdapter);
+        _messagingService.SendMessageAsync("tg-main", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new SendMessageResult(true, "42"));
+
+        var result = await _channel.SendAsync("Telegram", "123456789", "Frage?");
+
+        result.Success.ShouldBeTrue();
+        await _messagingService.Received(1).SendMessageAsync("tg-main", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Send_ClassifierRejectsTheRecipient_FailsWithoutSending()
+    {
+        var result = await _channel.SendAsync("Telegram", "-100200", "Frage?");
+
+        result.Success.ShouldBeFalse();
+        await _messagingService.DidNotReceiveWithAnyArgs().SendMessageAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task Send_DuplicateEnabledProvidersOfTheSameType_FailsWithoutSending()
+    {
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>
+        {
+            new() { Id = Guid.NewGuid(), Name = "telegram-a", ProviderType = "Telegram", IsEnabled = true },
+            new() { Id = Guid.NewGuid(), Name = "telegram-b", ProviderType = "Telegram", IsEnabled = true }
+        });
+
+        var result = await _channel.SendAsync("Telegram", "123456789", "Frage?");
+
+        result.Success.ShouldBeFalse();
+        await _messagingService.DidNotReceiveWithAnyArgs().SendMessageAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task Send_UnknownChannel_FailsWithoutSending()
+    {
+        var result = await _channel.SendAsync("CarrierPigeon", "123456789", "Frage?");
+
+        result.Success.ShouldBeFalse();
+        await _messagingService.DidNotReceiveWithAnyArgs().SendMessageAsync(default!, default!, default);
+    }
+
+    [Test]
     public async Task Send_ProviderError_IsAFailedResult()
     {
-        _messagingService.SendMessageAsync("Telegram", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+        _messagingService.SendMessageAsync("telegram", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SendMessageResult(false, ErrorMessage: "chat not found"));
 
         var result = await _channel.SendAsync("Telegram", "123456789", "Frage?");
@@ -189,7 +284,7 @@ public class MessagingPluginClientReplyChannelTests
     [Test]
     public async Task Send_Throws_IsAFailedResult()
     {
-        _messagingService.SendMessageAsync("Telegram", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+        _messagingService.SendMessageAsync("telegram", Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns<SendMessageResult>(_ => throw new HttpRequestException("timeout"));
 
         var result = await _channel.SendAsync("Telegram", "123456789", "Frage?");
