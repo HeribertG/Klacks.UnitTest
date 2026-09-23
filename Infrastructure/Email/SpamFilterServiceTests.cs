@@ -18,8 +18,7 @@ public class SpamFilterServiceTests
 {
     private ISpamRuleRepository _spamRuleRepository = null!;
     private ISettingsRepository _settingsRepository = null!;
-    private ILLMService _llmService = null!;
-    private IPlanningAudienceResolver _audienceResolver = null!;
+    private IOneShotCompletionService _completionService = null!;
     private SpamFilterService _service = null!;
 
     [SetUp]
@@ -27,15 +26,12 @@ public class SpamFilterServiceTests
     {
         _spamRuleRepository = Substitute.For<ISpamRuleRepository>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
-        _llmService = Substitute.For<ILLMService>();
-        _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        _completionService = Substitute.For<IOneShotCompletionService>();
 
         _spamRuleRepository.GetAllActiveAsync().Returns(new List<SpamRule>());
-        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
-            .Returns((IReadOnlySet<string>)new HashSet<string> { Guid.NewGuid().ToString() });
 
         _service = new SpamFilterService(
-            _spamRuleRepository, _settingsRepository, _llmService, _audienceResolver,
+            _spamRuleRepository, _settingsRepository, _completionService,
             Substitute.For<ILogger<SpamFilterService>>());
     }
 
@@ -45,8 +41,14 @@ public class SpamFilterServiceTests
     private void SetSetting(string key, string? value) =>
         _settingsRepository.GetSetting(key).Returns(value == null ? null : new SettingsModel { Type = key, Value = value });
 
-    private void LlmReplies(string message) =>
-        _llmService.ProcessAsync(Arg.Any<LLMContext>()).Returns(new LLMResponse { Message = message });
+    private void LlmReplies(string message) => CompletionReturns(OneShotCompletionResult.Succeeded(message));
+
+    private void CompletionReturns(OneShotCompletionResult result) =>
+        _completionService.CompleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(result);
+
+    private Task CompletionWasNotCalled() =>
+        _completionService.DidNotReceiveWithAnyArgs().CompleteAsync(default!, default!, default, default);
 
     private static SpamRule Rule(SpamRuleType type, string pattern) =>
         new() { RuleType = type, Pattern = pattern, IsActive = true };
@@ -78,7 +80,7 @@ public class SpamFilterServiceTests
         result.IsSpam.ShouldBeTrue();
         result.UsedLlm.ShouldBeFalse();
         result.Reason.ShouldBe("Matched rule: SubjectContains with pattern 'viagra'");
-        await _llmService.DidNotReceiveWithAnyArgs().ProcessAsync(default!);
+        await CompletionWasNotCalled();
     }
 
     [Test]
@@ -105,7 +107,7 @@ public class SpamFilterServiceTests
 
         result.IsSpam.ShouldBeTrue();
         result.UsedLlm.ShouldBeFalse();
-        await _llmService.DidNotReceiveWithAnyArgs().ProcessAsync(default!);
+        await CompletionWasNotCalled();
     }
 
     [Test]
@@ -117,7 +119,7 @@ public class SpamFilterServiceTests
 
         result.IsSpam.ShouldBeFalse();
         result.UsedLlm.ShouldBeFalse();
-        await _llmService.DidNotReceiveWithAnyArgs().ProcessAsync(default!);
+        await CompletionWasNotCalled();
     }
 
     [Test]
@@ -131,7 +133,7 @@ public class SpamFilterServiceTests
         result.Score.ShouldBe(0.0f);
         result.IsSpam.ShouldBeFalse();
         result.UsedLlm.ShouldBeFalse();
-        await _llmService.DidNotReceiveWithAnyArgs().ProcessAsync(default!);
+        await CompletionWasNotCalled();
     }
 
     [Test]
@@ -177,7 +179,8 @@ public class SpamFilterServiceTests
         result.UsedLlm.ShouldBeTrue();
         result.IsSpam.ShouldBeTrue();
         result.Score.ShouldBe(0.9f);
-        await _llmService.Received(1).ProcessAsync(Arg.Any<LLMContext>());
+        await _completionService.Received(1).CompleteAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -186,8 +189,8 @@ public class SpamFilterServiceTests
         Rules(Rule(SpamRuleType.SubjectContains, "viagra"));
         SetSetting(AppSettings.SPAM_FILTER_SPAM_THRESHOLD, "1.1");
         SetSetting(AppSettings.SPAM_FILTER_LLM_ENABLED, "true");
-        _llmService.ProcessAsync(Arg.Any<LLMContext>())
-            .Returns<LLMResponse>(_ => throw new InvalidOperationException("provider down"));
+        _completionService.CompleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns<OneShotCompletionResult>(_ => throw new InvalidOperationException("provider down"));
 
         var result = await _service.ClassifyAsync(Email(subject: "Viagra deal"));
 
@@ -301,6 +304,83 @@ public class SpamFilterServiceTests
 
         result.IsSpam.ShouldBeFalse();
         result.UsedLlm.ShouldBeFalse();
-        await _llmService.DidNotReceiveWithAnyArgs().ProcessAsync(default!);
+        await CompletionWasNotCalled();
+    }
+
+    [Test]
+    public async Task LlmCallFailed_FallsBackToRuleResult_InsteadOfConfidentHam()
+    {
+        SetSetting(AppSettings.SPAM_FILTER_UNCERTAIN_THRESHOLD, "-0.1");
+        SetSetting(AppSettings.SPAM_FILTER_LLM_ENABLED, "true");
+        CompletionReturns(OneShotCompletionResult.Failed("Invalid API key"));
+
+        var result = await _service.ClassifyAsync(Email());
+
+        result.UsedLlm.ShouldBeFalse();
+        result.IsSpam.ShouldBeFalse();
+        result.Score.ShouldBe(0.0f);
+        result.Reason.ShouldBe("No rule matched (LLM fallback failed)");
+    }
+
+    [Test]
+    public async Task LlmCallFailed_ForMatchedRule_KeepsRuleSpamVerdict()
+    {
+        Rules(Rule(SpamRuleType.SubjectContains, "viagra"));
+        SetSetting(AppSettings.SPAM_FILTER_SPAM_THRESHOLD, "1.1");
+        SetSetting(AppSettings.SPAM_FILTER_LLM_ENABLED, "true");
+        CompletionReturns(OneShotCompletionResult.Failed("503 Service Unavailable"));
+
+        var result = await _service.ClassifyAsync(Email(subject: "Viagra deal"));
+
+        result.UsedLlm.ShouldBeFalse();
+        result.IsSpam.ShouldBeTrue();
+        result.Score.ShouldBe(1.0f);
+        result.Reason.ShouldBe("Matched rule: SubjectContains with pattern 'viagra' (LLM fallback failed)");
+    }
+
+    [Test]
+    public async Task LlmReturnsEmptyContent_FallsBackToRuleResult()
+    {
+        SetSetting(AppSettings.SPAM_FILTER_UNCERTAIN_THRESHOLD, "-0.1");
+        SetSetting(AppSettings.SPAM_FILTER_LLM_ENABLED, "true");
+        LlmReplies("   ");
+
+        var result = await _service.ClassifyAsync(Email());
+
+        result.UsedLlm.ShouldBeFalse();
+        result.Reason.ShouldBe("No rule matched (LLM fallback failed)");
+    }
+
+    [Test]
+    public async Task LlmCall_SendsInstructionsAsSystemPrompt_AndTheMailAsUserMessage()
+    {
+        SetSetting(AppSettings.SPAM_FILTER_UNCERTAIN_THRESHOLD, "-0.1");
+        SetSetting(AppSettings.SPAM_FILTER_LLM_ENABLED, "true");
+        string? capturedSystemPrompt = null;
+        string? capturedUserMessage = null;
+        _completionService.CompleteAsync(
+                Arg.Do<string>(sp => capturedSystemPrompt = sp), Arg.Do<string>(um => capturedUserMessage = um),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(OneShotCompletionResult.Succeeded("HAM"));
+
+        await _service.ClassifyAsync(Email(subject: "Meeting tomorrow"));
+
+        capturedSystemPrompt.ShouldNotBeNull();
+        capturedSystemPrompt!.ShouldContain("SPAM or HAM");
+        capturedUserMessage.ShouldNotBeNull();
+        capturedUserMessage!.ShouldContain("Subject: Meeting tomorrow");
+        capturedUserMessage.ShouldNotContain("Classify");
+    }
+
+    [Test]
+    public void Constructor_DoesNotTakeILLMService_BecauseTheChatPipelineRanRecipesAndMemoryOnForeignText()
+    {
+        var parameterTypes = typeof(SpamFilterService).GetConstructors()
+            .SelectMany(c => c.GetParameters())
+            .Select(p => p.ParameterType)
+            .ToList();
+
+        parameterTypes.ShouldNotContain(typeof(ILLMService));
+        parameterTypes.ShouldContain(typeof(IOneShotCompletionService));
     }
 }

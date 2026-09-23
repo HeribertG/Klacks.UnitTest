@@ -2,12 +2,12 @@
 
 /// <summary>
 /// Unit tests for InboundIntentAnalysisService — verifies customer-fixed intent, LLM JSON parsing
-/// (clean, embedded and broken replies) and that an LLM failure degrades to a recorded failure
-/// instead of an exception. Client resolution and the enabled/disabled feature gate are the caller's
-/// responsibility and are exercised in EmailPollingBackgroundServiceTests instead.
+/// (clean, embedded and broken replies), the system/user prompt split, the company-local Date line,
+/// and that an LLM failure (provider error or exception) degrades to a recorded failure instead of an
+/// exception. Client resolution and the enabled/disabled feature gate are the caller's responsibility
+/// and are exercised in EmailPollingBackgroundServiceTests / MessengerIntentProcessorTests instead.
 /// </summary>
 
-using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -25,8 +25,9 @@ public class InboundIntentAnalysisServiceTests
 {
     private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
-    private ILLMService _llmService = null!;
+    private IOneShotCompletionService _completionService = null!;
     private IScheduleCommandKeywordProvider _keywordProvider = null!;
+    private FixedCompanyClock _companyClock = null!;
     private InboundIntentAnalysisService _service = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -34,19 +35,30 @@ public class InboundIntentAnalysisServiceTests
     [SetUp]
     public void SetUp()
     {
-        _llmService = Substitute.For<ILLMService>();
+        _completionService = Substitute.For<IOneShotCompletionService>();
         _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
+        _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
 
         _service = new InboundIntentAnalysisService(
-            Substitute.For<IPlanningAudienceResolver>(), _llmService,
-            _keywordProvider, Substitute.For<ILogger<InboundIntentAnalysisService>>());
+            _completionService, _keywordProvider, _companyClock,
+            Substitute.For<ILogger<InboundIntentAnalysisService>>());
     }
 
-    private void LlmReplies(string message)
+    private void LlmReplies(string message) => CompletionReturns(OneShotCompletionResult.Succeeded(message));
+
+    private void CompletionReturns(OneShotCompletionResult result) =>
+        _completionService.CompleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(result);
+
+    private void CompletionThrows(Exception exception) =>
+        _completionService.CompleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns<OneShotCompletionResult>(_ => throw exception);
+
+    private static TimeZoneInfo FixedOffsetZone(int offsetHours)
     {
-        _llmService.ProcessAsync(Arg.Any<LLMContext>())
-            .Returns(new LLMResponse { Message = message });
+        var id = $"Test{offsetHours:+0;-0;0}";
+        return TimeZoneInfo.CreateCustomTimeZone(id, TimeSpan.FromHours(offsetHours), id, id);
     }
 
     private static InboundSource Source() => new(
@@ -122,8 +134,7 @@ public class InboundIntentAnalysisServiceTests
     [Test]
     public async Task LlmThrows_DegradesToFailureAnalysis_NoException()
     {
-        _llmService.ProcessAsync(Arg.Any<LLMContext>())
-            .Returns<LLMResponse>(_ => throw new InvalidOperationException("provider down"));
+        CompletionThrows(new InvalidOperationException("provider down"));
 
         var source = Source();
         var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, source);
@@ -241,10 +252,11 @@ public class InboundIntentAnalysisServiceTests
     {
         var keywords = DefaultKeywords with { FreeToken = "URLAUB", NegNightToken = "KEINE_NACHT" };
 
-        var prompt = InboundIntentAnalysisService.BuildPrompt(Source(), EntityTypeEnum.Employee, "body", keywords);
+        var prompt = InboundIntentAnalysisService.BuildPrompt(
+            Source(), EntityTypeEnum.Employee, "body", new DateOnly(2026, 7, 8), keywords);
 
-        prompt.ShouldContain("URLAUB");
-        prompt.ShouldContain("KEINE_NACHT");
+        prompt.SystemPrompt.ShouldContain("URLAUB");
+        prompt.SystemPrompt.ShouldContain("KEINE_NACHT");
     }
 
     [TestCase("high", EmailConfidence.High)]
@@ -292,11 +304,150 @@ public class InboundIntentAnalysisServiceTests
     [Test]
     public async Task LlmThrows_DegradesToLowConfidence()
     {
-        _llmService.ProcessAsync(Arg.Any<LLMContext>())
-            .Returns<LLMResponse>(_ => throw new InvalidOperationException("provider down"));
+        CompletionThrows(new InvalidOperationException("provider down"));
 
         var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
 
         result.Confidence.ShouldBe(EmailConfidence.Low);
+    }
+
+    [Test]
+    public void Prompt_PutsInstructionsIntoSystemPrompt_AndOnlyTheMessageDataIntoTheUserMessage()
+    {
+        var source = Source();
+
+        var prompt = InboundIntentAnalysisService.BuildPrompt(
+            source, EntityTypeEnum.Employee, source.Body, new DateOnly(2026, 7, 8), DefaultKeywords);
+
+        prompt.SystemPrompt.ShouldContain("exactly one JSON object");
+        prompt.SystemPrompt.ShouldContain("\"intent\"");
+        prompt.SystemPrompt.ShouldContain("Rules:");
+        prompt.SystemPrompt.ShouldNotContain(source.Body);
+        prompt.SystemPrompt.ShouldNotContain("add any text");
+        prompt.UserMessage.ShouldBe(
+            $"From: {source.SenderDisplay}\nDate: 2026-07-08 (Wednesday)\nSubject: {source.Subject}\nBody: {source.Body}");
+    }
+
+    [Test]
+    public void Prompt_WithoutSubject_OmitsTheSubjectLine()
+    {
+        var source = Source() with { Subject = null };
+
+        var prompt = InboundIntentAnalysisService.BuildPrompt(
+            source, EntityTypeEnum.Employee, source.Body, new DateOnly(2026, 7, 8), DefaultKeywords);
+
+        prompt.UserMessage.ShouldNotContain("Subject:");
+    }
+
+    [Test]
+    public void Prompt_InstructsToResolveRelativeDatesAgainstTheDateLine()
+    {
+        var prompt = InboundIntentAnalysisService.BuildPrompt(
+            Source(), EntityTypeEnum.Employee, "body", new DateOnly(2026, 7, 8), DefaultKeywords);
+
+        prompt.SystemPrompt.ShouldContain("Resolve relative date expressions");
+        prompt.SystemPrompt.ShouldContain("local time zone");
+    }
+
+    [Test]
+    public async Task Analyze_SendsSystemPromptAndUserMessageToTheOneShotCompletion()
+    {
+        string? capturedSystemPrompt = null;
+        string? capturedUserMessage = null;
+        _completionService.CompleteAsync(
+                Arg.Do<string>(s => capturedSystemPrompt = s), Arg.Do<string>(u => capturedUserMessage = u),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(OneShotCompletionResult.Succeeded("""{"intent":"Other","confidence":"low","summary":"x"}"""));
+
+        await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        capturedSystemPrompt.ShouldNotBeNull();
+        capturedSystemPrompt!.ShouldContain("exactly one JSON object");
+        capturedUserMessage.ShouldNotBeNull();
+        capturedUserMessage!.ShouldContain("Body: Ich bin krank und kann morgen nicht arbeiten.");
+        await _completionService.Received(1).CompleteAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Is<string?>(modelId => modelId == null), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(2, 2026, 9, 22, 22, 30, "2026-09-23 (Wednesday)")]
+    [TestCase(-5, 2026, 9, 23, 3, 30, "2026-09-22 (Tuesday)")]
+    [TestCase(0, 2026, 9, 22, 22, 30, "2026-09-22 (Tuesday)")]
+    public async Task DateLine_UsesTheCompanyLocalDay_NotTheUtcDay(
+        int offsetHours, int year, int month, int day, int hour, int minute, string expectedDateLine)
+    {
+        _companyClock.TimeZone = FixedOffsetZone(offsetHours);
+        string? capturedUserMessage = null;
+        _completionService.CompleteAsync(
+                Arg.Any<string>(), Arg.Do<string>(u => capturedUserMessage = u),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(OneShotCompletionResult.Succeeded("""{"intent":"Other","confidence":"low","summary":"x"}"""));
+        var source = Source() with { ReceivedAt = new DateTime(year, month, day, hour, minute, 0, DateTimeKind.Utc) };
+
+        await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, source);
+
+        capturedUserMessage.ShouldNotBeNull();
+        capturedUserMessage!.ShouldContain($"Date: {expectedDateLine}\n");
+    }
+
+    [Test]
+    public void ToCompanyLocalDate_TreatsUnspecifiedKindAsUtc()
+    {
+        var unspecified = new DateTime(2026, 9, 22, 22, 30, 0, DateTimeKind.Unspecified);
+
+        var localDate = InboundIntentAnalysisService.ToCompanyLocalDate(unspecified, FixedOffsetZone(2));
+
+        localDate.ShouldBe(new DateOnly(2026, 9, 23));
+    }
+
+    [Test]
+    public async Task ProviderFailure_RecordsLlmCallFailedReason_WithoutRetrying()
+    {
+        CompletionReturns(OneShotCompletionResult.Failed("Invalid API key"));
+        var source = Source();
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, source);
+
+        result.Intent.ShouldBe(EmailIntent.Other);
+        result.Confidence.ShouldBe(EmailConfidence.Low);
+        result.Summary.ShouldBe(source.Subject);
+        result.FailureReason.ShouldBe("LLM call failed: Invalid API key");
+        await _completionService.Received(1).CompleteAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ProviderFailure_ForCustomer_StaysCustomerMessageWithHighConfidence()
+    {
+        CompletionReturns(OneShotCompletionResult.Failed("503 Service Unavailable"));
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Customer, Source());
+
+        result.Intent.ShouldBe(EmailIntent.CustomerMessage);
+        result.Confidence.ShouldBe(EmailConfidence.High);
+        result.FailureReason.ShouldBe("LLM call failed: 503 Service Unavailable");
+    }
+
+    [Test]
+    public async Task UnparsableReply_IsRetriedOnce_ThenRecordedAsNotParsable()
+    {
+        LlmReplies("Sorry, I cannot help with that.");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.FailureReason.ShouldBe("LLM reply was not parsable JSON after 2 attempts");
+        await _completionService.Received(2).CompleteAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public void Constructor_DoesNotTakeILLMService_BecauseTheChatPipelineRanRecipesAndMemoryOnForeignText()
+    {
+        var parameterTypes = typeof(InboundIntentAnalysisService).GetConstructors()
+            .SelectMany(c => c.GetParameters())
+            .Select(p => p.ParameterType)
+            .ToList();
+
+        parameterTypes.ShouldNotContain(typeof(ILLMService));
+        parameterTypes.ShouldContain(typeof(IOneShotCompletionService));
     }
 }

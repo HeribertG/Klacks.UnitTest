@@ -198,6 +198,95 @@ public class LanguagePluginSkillPhraseInstallerTests
         _matching.Synonyms[Code].ShouldBe(["recznie dodane"]);
     }
 
+    // A skill seeded after the pack was installed carries only its core-language synonyms; the startup
+    // backfill has to give it the same jsonb mirror and skill_phrase rows a fresh install would.
+    [Test]
+    public async Task Backfill_WritesSkillWithoutThatLanguage_LikeAFreshInstall()
+    {
+        _matching.Synonyms = new Dictionary<string, List<string>> { ["de"] = ["mitarbeiter zur gruppe"] };
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe([Term]);
+        _matching.Synonyms["de"].ShouldBe(["mitarbeiter zur gruppe"]);
+        await _skillRepository.Received(1).UpdateAsync(_matching, Arg.Any<CancellationToken>());
+
+        var rows = await _context.SkillPhrases.AsNoTracking().ToListAsync();
+
+        rows.Count.ShouldBe(1);
+        rows[0].OwnerName.ShouldBe(MatchingSkill);
+        rows[0].Language.ShouldBe(Code);
+        rows[0].Source.ShouldBe(SkillPhraseSources.LanguagePack);
+        rows[0].Kind.ShouldBe(SkillPhraseKinds.Synonym);
+        rows[0].Phrase.ShouldBe(Term);
+    }
+
+    [Test]
+    public async Task Backfill_WritesSkillWhoseLanguageEntryIsEmpty()
+    {
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = [] };
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe([Term]);
+        await _skillRepository.Received(1).UpdateAsync(_matching, Arg.Any<CancellationToken>());
+    }
+
+    // The backfill runs on every boot: a skill that already carries the language must cost no write,
+    // otherwise every restart rewrites every skill of every installed pack.
+    [Test]
+    public async Task Backfill_LeavesSkillThatAlreadyHasTheLanguageUntouched()
+    {
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = ["recznie dodane"] };
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe(["recznie dodane"]);
+        await _skillRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+        (await _context.SkillPhrases.AsNoTracking().CountAsync()).ShouldBe(0);
+    }
+
+    // zh-CN was stored in two spellings on existing installations; a key that differs only in case must
+    // count as present, or the backfill would add a second key for the same language.
+    [Test]
+    public async Task Backfill_TreatsAKeyInOtherCasingAsPresent()
+    {
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code.ToUpperInvariant()] = ["recznie dodane"] };
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms.ContainsKey(Code).ShouldBeFalse();
+        await _skillRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Backfill_LeavesSkillThatIsNotInThePackUntouched()
+    {
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _unlisted.Synonyms.ShouldBeNull();
+        await _skillRepository.DidNotReceive().UpdateAsync(_unlisted, Arg.Any<CancellationToken>());
+
+        var rows = await _context.SkillPhrases.AsNoTracking().ToListAsync();
+
+        rows.ShouldAllBe(row => row.OwnerName == MatchingSkill);
+    }
+
+    // An empty pack list would write an empty key, which reads as "missing" again on the next boot and
+    // would turn into a rewrite on every restart.
+    [Test]
+    public async Task Backfill_SkipsSkillWhosePackListIsEmpty()
+    {
+        File.WriteAllText(
+            Path.Combine(_pluginDirectory, Code, "skill-synonyms.json"),
+            $"{{\"{MatchingSkill}\": []}}");
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms.ShouldBeNull();
+        await _skillRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
     private async Task GivenPhraseAsync(string language, string source, string phrase)
     {
         _context.SkillPhrases.Add(new SkillPhrase
