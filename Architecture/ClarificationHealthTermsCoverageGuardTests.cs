@@ -9,7 +9,7 @@
 /// that would block the intended attendance question. The allowed absence phrases, the harmless word parts and
 /// the whole-word terms are lower case, trimmed and NFC-normalised as well (whole-word terms are letters
 /// only and at least three characters), every harmless word part must still neutralise a listed stem (it
-/// contains one, or overlaps one by at least four characters at its start or end), and no month, genitive
+/// contains one, or its end overlaps the start of one by at least four characters), and no month, genitive
 /// month or day name (full or abbreviated) of a shipped culture may contain a health term. A new language
 /// pack without health terms fails here instead of silently letting health questions through.
 /// </summary>
@@ -206,8 +206,7 @@ public class ClarificationHealthTermsCoverageGuardTests
         var longestOverlap = Math.Min(part.Length, stem.Length) - 1;
         for (var overlap = MinimumHarmlessPartStemOverlap; overlap <= longestOverlap; overlap++)
         {
-            if (part.EndsWith(stem[..overlap], StringComparison.Ordinal)
-                || part.StartsWith(stem[^overlap..], StringComparison.Ordinal))
+            if (part.EndsWith(stem[..overlap], StringComparison.Ordinal))
             {
                 return true;
             }
