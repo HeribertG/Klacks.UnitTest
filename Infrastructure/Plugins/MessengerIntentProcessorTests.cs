@@ -486,8 +486,8 @@ public class MessengerIntentProcessorTests
         var clientId = Guid.NewGuid();
         var message = Message(clientId);
         ClientIs(clientId, EntityTypeEnum.Employee);
-        _analysisRepository.GetBySourceAsync(InboundSourceKind.Messenger, message.MessageId, Arg.Any<CancellationToken>())
-            .Returns(new InboundAnalysis { SourceKind = InboundSourceKind.Messenger, SourceId = message.MessageId });
+        _analysisRepository.ExistsBySourceAsync(InboundSourceKind.Messenger, message.MessageId, Arg.Any<CancellationToken>())
+            .Returns(true);
         var sut = CreateSut();
 
         await sut.ProcessAsync(message, CancellationToken.None);

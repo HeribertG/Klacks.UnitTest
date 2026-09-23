@@ -3,8 +3,10 @@
 /// <summary>
 /// Unit tests for EmailPollingBackgroundService — verifies the per-email orchestration
 /// (ProcessEmailAsync: spam-classify -> junk move OR client assignment -> feature-gate ->
-/// sender resolution -> intent analysis -> persist -> action orchestration -> notify) and the
-/// batched reclassification pagination (ClassifyFolderBatchedAsync).
+/// sender resolution -> intent analysis -> persist -> action orchestration -> notify), the
+/// batched reclassification pagination (ClassifyFolderBatchedAsync), and the per-mail scope
+/// isolation of ProcessBatchAsync (a poisoned unit of work for one mail must not affect the
+/// next mail's own commit).
 /// </summary>
 
 using AppSettings = Klacks.Api.Application.Constants.Settings;
@@ -139,6 +141,8 @@ public class EmailPollingBackgroundServiceTests
         await _clientAssignmentService.DidNotReceive().AssignNewEmailAsync(Arg.Any<ReceivedEmail>());
         await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
             Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().BeforeAnalysisAsync(default!, default);
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().AfterAnalysisAsync(default!, default!, default);
         email.ProcessedAt.ShouldNotBeNull();
     }
 
@@ -165,6 +169,8 @@ public class EmailPollingBackgroundServiceTests
         await _spamFilterService.DidNotReceiveWithAnyArgs().ClassifyAsync(default!, default);
         await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
             Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().BeforeAnalysisAsync(default!, default);
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().AfterAnalysisAsync(default!, default!, default);
     }
 
     [Test]
@@ -181,6 +187,8 @@ public class EmailPollingBackgroundServiceTests
         await _analysisRepository.DidNotReceive().AddAsync(Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
         await _actionOrchestrator.DidNotReceive().ExecuteAsync(
             Arg.Any<Guid>(), Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().BeforeAnalysisAsync(default!, default);
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().AfterAnalysisAsync(default!, default!, default);
     }
 
     [Test]
@@ -319,6 +327,8 @@ public class EmailPollingBackgroundServiceTests
         await _clientAssignmentService.DidNotReceive().ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>());
         await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
             Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().BeforeAnalysisAsync(default!, default);
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().AfterAnalysisAsync(default!, default!, default);
     }
 
     [Test]
@@ -332,6 +342,8 @@ public class EmailPollingBackgroundServiceTests
 
         await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
             Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().BeforeAnalysisAsync(default!, default);
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().AfterAnalysisAsync(default!, default!, default);
         email.ProcessedAt.ShouldNotBeNull();
     }
 
@@ -345,6 +357,7 @@ public class EmailPollingBackgroundServiceTests
 
         Received.InOrder(() =>
         {
+            _clientAssignmentService.AssignNewEmailAsync(email);
             _unitOfWork.CompleteAsync();
             _clarificationCoordinator.BeforeAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<CancellationToken>());
             _analysisRepository.AddAsync(Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
@@ -468,8 +481,8 @@ public class EmailPollingBackgroundServiceTests
     public async Task EmailAlreadyAnalysed_IsMarkedProcessed_WithoutClarificationCheckOrLlmCall()
     {
         var email = Email(InboxFolder);
-        _analysisRepository.GetBySourceAsync(InboundSourceKind.Email, email.Id, Arg.Any<CancellationToken>())
-            .Returns(Analysis());
+        _analysisRepository.ExistsBySourceAsync(InboundSourceKind.Email, email.Id, Arg.Any<CancellationToken>())
+            .Returns(true);
 
         await ProcessAsync(email);
 
@@ -635,5 +648,54 @@ public class EmailPollingBackgroundServiceTests
 
         moved.ShouldBe(0);
         await _receivedEmailRepository.DidNotReceiveWithAnyArgs().GetListByFolderAsync(default!, default, default);
+    }
+
+    [Test]
+    public async Task ProcessBatchAsync_FailingMailDoesNotPoisonTheNextMailsCommit()
+    {
+        var email1 = Email(InboxFolder);
+        var email2 = Email(InboxFolder);
+        var analysis2 = Analysis();
+        _intentAnalysisService.AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Is<InboundSource>(s => s.SourceId == email2.Id), Arg.Any<CancellationToken>())
+            .Returns(analysis2);
+
+        var mailRepository = Substitute.For<IReceivedEmailRepository>();
+        mailRepository.GetByIdAsync(email1.Id).Returns(email1);
+        mailRepository.GetByIdAsync(email2.Id).Returns(email2);
+
+        var failingUnitOfWork = Substitute.For<IUnitOfWork>();
+        failingUnitOfWork.CompleteAsync().Returns<Task>(_ => throw new InvalidOperationException("poisoned change tracker"));
+        var healthyUnitOfWork = Substitute.For<IUnitOfWork>();
+        var unitOfWorkPerScope = new Queue<IUnitOfWork>([failingUnitOfWork, healthyUnitOfWork]);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(_imapEmailService);
+        services.AddSingleton(_spamFilterService);
+        services.AddSingleton(_clientAssignmentService);
+        services.AddSingleton(_settingsRepository);
+        services.AddSingleton(_intentAnalysisService);
+        services.AddSingleton(_analysisRepository);
+        services.AddSingleton(_actionOrchestrator);
+        services.AddSingleton(_periodLoadService);
+        services.AddSingleton(_analysisNotifier);
+        services.AddSingleton(_clarificationCoordinator);
+        services.AddSingleton(mailRepository);
+        services.AddScoped(_ => unitOfWorkPerScope.Dequeue());
+        using var batchProvider = services.BuildServiceProvider();
+        using var batchService = new EmailPollingBackgroundService(
+            batchProvider.GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<ILogger<EmailPollingBackgroundService>>());
+
+        await batchService.ProcessBatchAsync([email1, email2], InboxFolder, JunkFolder, CancellationToken.None);
+
+        await mailRepository.Received(1).GetByIdAsync(email1.Id);
+        await mailRepository.Received(1).GetByIdAsync(email2.Id);
+        email1.ProcessedAt.ShouldBeNull();
+        email2.ProcessedAt.ShouldNotBeNull();
+        await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Is<InboundSource>(s => s.SourceId == email1.Id), Arg.Any<CancellationToken>());
+        await _actionOrchestrator.Received(1).ExecuteAsync(
+            Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis2, Arg.Any<CancellationToken>());
     }
 }
