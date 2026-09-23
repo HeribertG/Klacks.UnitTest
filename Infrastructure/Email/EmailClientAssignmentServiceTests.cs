@@ -355,4 +355,55 @@ public class EmailClientAssignmentServiceTests
         var reloaded = await _context.ReceivedEmails.SingleAsync();
         reloaded.Folder.ShouldBe(EmailConstants.ClientAssignedFolder);
     }
+
+    [Test]
+    public async Task GetStoredAddressAsync_ReturnsTheStoredSpellingOfTheClientsMatchingAddress()
+    {
+        var (client, _) = await AddClientWithCommunicationAsync("Anna.Muster@Example.com");
+
+        var stored = await _service.GetStoredAddressAsync(client.Id, "anna.muster@example.com", CancellationToken.None);
+
+        stored.ShouldBe("Anna.Muster@Example.com");
+    }
+
+    [Test]
+    public async Task GetStoredAddressAsync_AddressOfAnotherClient_ReturnsNull()
+    {
+        await AddClientWithCommunicationAsync("anna@example.com");
+
+        var stored = await _service.GetStoredAddressAsync(Guid.NewGuid(), "anna@example.com", CancellationToken.None);
+
+        stored.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetStoredAddressAsync_DeletedCommunication_ReturnsNull()
+    {
+        var (client, _) = await AddClientWithCommunicationAsync("anna@example.com", communicationDeleted: true);
+
+        var stored = await _service.GetStoredAddressAsync(client.Id, "anna@example.com", CancellationToken.None);
+
+        stored.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetStoredAddressAsync_DeletedClient_ReturnsNull()
+    {
+        var (client, _) = await AddClientWithCommunicationAsync("anna@example.com", clientDeleted: true);
+
+        var stored = await _service.GetStoredAddressAsync(client.Id, "anna@example.com", CancellationToken.None);
+
+        stored.ShouldBeNull();
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    public async Task GetStoredAddressAsync_BlankSenderAddress_ReturnsNull(string senderAddress)
+    {
+        var (client, _) = await AddClientWithCommunicationAsync("anna@example.com");
+
+        var stored = await _service.GetStoredAddressAsync(client.Id, senderAddress, CancellationToken.None);
+
+        stored.ShouldBeNull();
+    }
 }
