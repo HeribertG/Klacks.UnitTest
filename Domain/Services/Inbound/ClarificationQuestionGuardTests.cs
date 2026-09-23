@@ -202,6 +202,14 @@ public class ClarificationQuestionGuardTests
         violation.ShouldBe(ClarificationQuestionGuard.HealthTermViolationPrefix + "fieber");
     }
 
+    [TestCase("As-tu mal de tête ?", "Service de nuit 22:00–06:00", "mal de tête")]
+    [TestCase("Hai mal di testa?", "Turno di notte 22:00–06:00", "mal di testa")]
+    public void ContextFunctionWords_DoNotSplitMultiWordHealthTerms(string question, string context, string term)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, context, out var violation).ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.HealthTermViolationPrefix + term);
+    }
+
     [Test]
     public void ContextDoesNotRelaxTheOtherRules()
     {
