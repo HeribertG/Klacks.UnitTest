@@ -698,4 +698,44 @@ public class EmailPollingBackgroundServiceTests
         await _actionOrchestrator.Received(1).ExecuteAsync(
             Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis2, Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task ProcessBatchAsync_ReloadFailsForOneMail_NextMailStillProcessed()
+    {
+        var email1 = Email(InboxFolder);
+        var email2 = Email(InboxFolder);
+        var analysis2 = Analysis();
+        _intentAnalysisService.AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Is<InboundSource>(s => s.SourceId == email2.Id), Arg.Any<CancellationToken>())
+            .Returns(analysis2);
+
+        var mailRepository = Substitute.For<IReceivedEmailRepository>();
+        mailRepository.GetByIdAsync(email1.Id).Returns<ReceivedEmail?>(_ => throw new InvalidOperationException("db hiccup"));
+        mailRepository.GetByIdAsync(email2.Id).Returns(email2);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(_imapEmailService);
+        services.AddSingleton(_spamFilterService);
+        services.AddSingleton(_clientAssignmentService);
+        services.AddSingleton(_settingsRepository);
+        services.AddSingleton(_intentAnalysisService);
+        services.AddSingleton(_analysisRepository);
+        services.AddSingleton(_actionOrchestrator);
+        services.AddSingleton(_periodLoadService);
+        services.AddSingleton(_analysisNotifier);
+        services.AddSingleton(_clarificationCoordinator);
+        services.AddSingleton(mailRepository);
+        services.AddScoped(_ => Substitute.For<IUnitOfWork>());
+        using var batchProvider = services.BuildServiceProvider();
+        using var batchService = new EmailPollingBackgroundService(
+            batchProvider.GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<ILogger<EmailPollingBackgroundService>>());
+
+        await batchService.ProcessBatchAsync([email1, email2], InboxFolder, JunkFolder, CancellationToken.None);
+
+        email1.ProcessedAt.ShouldBeNull();
+        email2.ProcessedAt.ShouldNotBeNull();
+        await _actionOrchestrator.Received(1).ExecuteAsync(
+            Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis2, Arg.Any<CancellationToken>());
+    }
 }
