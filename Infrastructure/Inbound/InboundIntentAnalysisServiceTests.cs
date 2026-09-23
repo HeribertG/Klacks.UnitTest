@@ -8,6 +8,7 @@
 /// and are exercised in EmailPollingBackgroundServiceTests / MessengerIntentProcessorTests instead.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -599,5 +600,76 @@ public class InboundIntentAnalysisServiceTests
         result.Intent.ShouldBe(EmailIntent.Other);
         result.FailureReason.ShouldNotBeNull();
         result.FailureReason.ShouldContain("provider down");
+    }
+
+    [Test]
+    public async Task AnalyzeAnswerAsync_StillUnclear_ForcesLowConfidence()
+    {
+        LlmReplies("""{"intent":"WorkCancellation","confidence":"high","summary":"Immer noch unklar.","fromDate":"2026-07-08","untilDate":"2026-07-08","needsClarification":true,"clarificationQuestion":"Meinst du heute oder morgen?"}""");
+
+        var result = await _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, AnswerSource(), History());
+
+        result.NeedsClarification.ShouldBeTrue();
+        result.Confidence.ShouldBe(EmailConfidence.Low);
+    }
+
+    [Test]
+    public async Task AnalyzeAnswerAsync_NeverKeepsAQuestion()
+    {
+        LlmReplies("""{"intent":"WorkCancellation","confidence":"high","summary":"Immer noch unklar.","fromDate":"2026-07-08","untilDate":"2026-07-08","needsClarification":true,"clarificationQuestion":"Meinst du heute oder morgen?"}""");
+
+        var result = await _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, AnswerSource(), History());
+
+        result.ClarificationQuestion.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task AnalyzeAnswerAsync_ClearAnswer_KeepsHighConfidenceAndNullQuestion()
+    {
+        LlmReplies("""{"intent":"WorkCancellation","confidence":"high","summary":"Kann heute nicht.","fromDate":"2026-07-08","untilDate":"2026-07-08","needsClarification":false,"clarificationQuestion":null}""");
+
+        var result = await _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, AnswerSource(), History());
+
+        result.NeedsClarification.ShouldBeFalse();
+        result.Confidence.ShouldBe(EmailConfidence.High);
+        result.ClarificationQuestion.ShouldBeNull();
+    }
+
+    [TestCase("2026-07-10", "2026-07-08", "2026-07-10")]
+    [TestCase("2026-07-06", "2026-07-08", "2026-07-08")]
+    public async Task UndatedWorkCancellation_WithUntilOnly_KeepsALaterStatedUntilDate_ElseFallsBackToDefaultDay(
+        string untilDate, string expectedFrom, string expectedUntil)
+    {
+        LlmReplies($$"""{"intent":"WorkCancellation","confidence":"high","summary":"Krank bis Freitag.","fromDate":null,"untilDate":"{{untilDate}}"}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.FromDate.ShouldBe(DateOnly.Parse(expectedFrom));
+        result.UntilDate.ShouldBe(DateOnly.Parse(expectedUntil));
+        result.Confidence.ShouldBe(EmailConfidence.Low);
+    }
+
+    [Test]
+    public async Task ClarificationQuestion_LongerThanMax_IsTruncated()
+    {
+        var longQuestion = new string('x', InboundClarificationConstants.MaxDraftQuestionLength + 50);
+        LlmReplies($$"""{"intent":"Other","confidence":"low","summary":"x","needsClarification":true,"clarificationQuestion":"{{longQuestion}}"}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.ClarificationQuestion.ShouldNotBeNull();
+        result.ClarificationQuestion!.Length.ShouldBe(InboundClarificationConstants.MaxDraftQuestionLength);
+    }
+
+    [TestCase("yes")]
+    [TestCase("1")]
+    public async Task NonBooleanFlagValues_AreReadAsFalse(string flagValue)
+    {
+        LlmReplies($$"""{"intent":"Other","confidence":"low","summary":"x","needsClarification":"{{flagValue}}","clarificationQuestion":"Frage?"}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.NeedsClarification.ShouldBeFalse();
+        result.ClarificationQuestion.ShouldBeNull();
     }
 }
