@@ -267,6 +267,7 @@ public class SkillRiskClassifierTests
     // therefore gated; they are allow-listed explicitly now, while the plugin's writer stays Sensitive.
     [TestCase("read_messages")]
     [TestCase("list_messaging_providers")]
+    [TestCase("diagnose_messaging_setup")]
     public void Classify_MessagingPluginReads_ReturnsReadOnly(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name, SkillCategory.Action)), Is.EqualTo(SkillRiskClass.ReadOnly));

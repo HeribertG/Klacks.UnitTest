@@ -70,6 +70,7 @@ public class MessagingServiceOutboundClientIdTests
             _unitOfWork,
             Substitute.For<IPluginSettingsReader>(),
             _scope.ServiceProvider.GetRequiredService<MessagingProviderAdapterFactory>(),
+            Substitute.For<IMessagingInboundActivityTracker>(),
             NullLogger<MessagingService>.Instance);
     }
 

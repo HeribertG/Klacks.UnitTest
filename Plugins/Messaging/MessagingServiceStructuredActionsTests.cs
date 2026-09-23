@@ -77,6 +77,7 @@ public class MessagingServiceStructuredActionsTests
             _unitOfWork,
             Substitute.For<IPluginSettingsReader>(),
             _scope.ServiceProvider.GetRequiredService<MessagingProviderAdapterFactory>(),
+            Substitute.For<IMessagingInboundActivityTracker>(),
             NullLogger<MessagingService>.Instance);
     }
 

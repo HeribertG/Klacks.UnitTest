@@ -9,6 +9,7 @@
 /// the Slack owner bridge dies with it.
 /// </summary>
 using Klacks.Plugin.Contracts;
+using Klacks.Plugin.Messaging;
 using Klacks.Plugin.Messaging.Application.Interfaces;
 using Klacks.Plugin.Messaging.Domain.Enums;
 using Klacks.Plugin.Messaging.Domain.Interfaces;
@@ -16,6 +17,8 @@ using Klacks.Plugin.Messaging.Domain.Models;
 using Klacks.Plugin.Messaging.Infrastructure.Services;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -32,6 +35,8 @@ public class MessagingServiceInboundIngestTests
     private const string StrangerAlias = "U9STRANGER";
     private const string PlannerAlias = "U4PLANNER";
     private const string PlannerUserId = "8f2c1d44-0b7e-4a1c-9d33-6c5a0e1b7f90";
+    private const string TelegramSecretHeader = "X-Telegram-Bot-Api-Secret-Token";
+    private const string WebhookSecret = "shh-secret";
 
     private IMessagingProviderRepository _providerRepository = null!;
     private IMessageRepository _messageRepository = null!;
@@ -41,8 +46,11 @@ public class MessagingServiceInboundIngestTests
     private IInboundMessengerObserver _inboundObserver = null!;
     private IInboundClientMessengerObserver _clientMessengerObserver = null!;
     private IPluginUnitOfWork _unitOfWork = null!;
+    private IMessagingInboundActivityTracker _activityTracker = null!;
     private MemoryCache _logSuppressionCache = null!;
     private RecordingLogger<MessagingService> _logger = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private IServiceScope _scope = null!;
     private MessagingService _sut = null!;
     private MessagingProvider _provider = null!;
 
@@ -72,8 +80,15 @@ public class MessagingServiceInboundIngestTests
         _clientMessengerObserver = Substitute.For<IInboundClientMessengerObserver>();
 
         _unitOfWork = Substitute.For<IPluginUnitOfWork>();
+        _activityTracker = Substitute.For<IMessagingInboundActivityTracker>();
         _logSuppressionCache = new MemoryCache(new MemoryCacheOptions());
         _logger = new RecordingLogger<MessagingService>();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        new MessagingPluginRegistrar().RegisterServices(services, new ConfigurationBuilder().Build());
+        _serviceProvider = services.BuildServiceProvider();
+        _scope = _serviceProvider.CreateScope();
 
         _sut = BuildService(new[] { _inboundObserver }, new[] { _clientMessengerObserver });
     }
@@ -97,7 +112,8 @@ public class MessagingServiceInboundIngestTests
             Substitute.For<IClientPhoneReader>(),
             _unitOfWork,
             Substitute.For<IPluginSettingsReader>(),
-            null!,
+            _scope.ServiceProvider.GetRequiredService<MessagingProviderAdapterFactory>(),
+            _activityTracker,
             _logger);
     }
 
@@ -105,6 +121,8 @@ public class MessagingServiceInboundIngestTests
     public void TearDown()
     {
         _logSuppressionCache.Dispose();
+        _scope.Dispose();
+        _serviceProvider.Dispose();
     }
 
     [Test]
@@ -135,6 +153,9 @@ public class MessagingServiceInboundIngestTests
         result.ShouldBeNull();
         await _messageRepository.DidNotReceive().AddAsync(Arg.Any<Message>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
+        _activityTracker.DidNotReceive().RecordUnknownSender(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>());
+        _activityTracker.DidNotReceive().RecordWebhookHit(Arg.Any<Guid>());
+        _activityTracker.DidNotReceive().RecordSignatureRejection(Arg.Any<Guid>());
     }
 
     [Test]
@@ -176,6 +197,21 @@ public class MessagingServiceInboundIngestTests
     }
 
     /// <summary>
+    /// Feeds the setup diagnosis its "arrived from an unknown sender" signal: without this, a
+    /// discarded stranger leaves no trace anywhere the diagnosis can read.
+    /// </summary>
+    [Test]
+    public async Task IngestInboundMessageAsync_UnknownSender_RecordsInActivityTracker()
+    {
+        _messageRepository.InboundExistsAsync(_provider.Id, ExternalId, Arg.Any<CancellationToken>()).Returns(false);
+
+        await _sut.IngestInboundMessageAsync(
+            ProviderName, new IncomingMessage(ExternalId, StrangerAlias, StrangerAlias, "wer bist du"));
+
+        _activityTracker.Received(1).RecordUnknownSender(_provider.Id, StrangerAlias, StrangerAlias);
+    }
+
+    /// <summary>
     /// The regression guard for the Slack owner bridge. The owner is known through
     /// APP_OWNER_MESSENGERS only - MessengerContact.ClientId is a non-nullable FK to Client, so the
     /// owner cannot have a row there. Without this allowlist the bridge would go silent for good.
@@ -194,6 +230,7 @@ public class MessagingServiceInboundIngestTests
         result.ClientId.ShouldBeNull();
         await _messageRepository.Received(1).AddAsync(Arg.Any<Message>());
         await _unitOfWork.Received(1).CompleteAsync();
+        _activityTracker.DidNotReceive().RecordUnknownSender(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>());
     }
 
     [Test]
@@ -414,6 +451,148 @@ public class MessagingServiceInboundIngestTests
 
         result.ShouldNotBeNull();
         await _messageRepository.Received(1).AddAsync(Arg.Any<Message>());
+    }
+
+    /// <summary>
+    /// The setup diagnosis tells "never arrived" from "arrived, but rejected/discarded" apart only
+    /// because a hit is recorded before the adapter even validates the signature or parses a payload.
+    /// </summary>
+    [Test]
+    public async Task ProcessIncomingMessageAsync_EnabledProvider_RecordsWebhookHit()
+    {
+        _provider.ProviderType = "Telegram";
+        _provider.WebhookSecret = WebhookSecret;
+        var headers = new Dictionary<string, string> { [TelegramSecretHeader] = WebhookSecret };
+
+        await _sut.ProcessIncomingMessageAsync(ProviderName, "{}", headers);
+
+        _activityTracker.Received(1).RecordWebhookHit(_provider.Id);
+    }
+
+    /// <summary>
+    /// A hit is only recorded for a webhook delivery that actually authenticated. A signature
+    /// rejection must never also count as a hit, or the setup diagnosis could report "receiving
+    /// traffic" for a provider that is only ever being probed with a wrong secret.
+    /// </summary>
+    [Test]
+    public async Task ProcessIncomingMessageAsync_InvalidSignature_RecordsSignatureRejectionButNoHit()
+    {
+        _provider.ProviderType = "Telegram";
+        _provider.WebhookSecret = WebhookSecret;
+        var headers = new Dictionary<string, string> { [TelegramSecretHeader] = "wrong-secret" };
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => _sut.ProcessIncomingMessageAsync(ProviderName, "{}", headers));
+
+        _activityTracker.Received(1).RecordSignatureRejection(_provider.Id);
+        _activityTracker.DidNotReceive().RecordWebhookHit(_provider.Id);
+    }
+
+    [Test]
+    public async Task ProcessIncomingMessageAsync_DisabledProvider_NeverRecordsWebhookHit()
+    {
+        _provider.ProviderType = "Telegram";
+        _provider.WebhookSecret = WebhookSecret;
+        _provider.IsEnabled = false;
+        var headers = new Dictionary<string, string> { [TelegramSecretHeader] = WebhookSecret };
+
+        await Should.ThrowAsync<UnauthorizedAccessException>(
+            () => _sut.ProcessIncomingMessageAsync(ProviderName, "{}", headers));
+
+        _activityTracker.DidNotReceive().RecordWebhookHit(Arg.Any<Guid>());
+        _activityTracker.DidNotReceive().RecordSignatureRejection(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task VerifySubscriptionChallengeAsync_WrongVerifyToken_RecordsSignatureRejectionButNoHit()
+    {
+        _provider.ProviderType = "WhatsApp";
+        _provider.ConfigJson = "{\"VerifyToken\":\"correct-token\"}";
+
+        var response = await _sut.VerifySubscriptionChallengeAsync(ProviderName, "wrong-token", "challenge-value");
+
+        response.ShouldBeNull();
+        _activityTracker.Received(1).RecordSignatureRejection(_provider.Id);
+        _activityTracker.DidNotReceive().RecordWebhookHit(_provider.Id);
+    }
+
+    [Test]
+    public async Task VerifySubscriptionChallengeAsync_CorrectVerifyToken_RecordsWebhookHit()
+    {
+        _provider.ProviderType = "WhatsApp";
+        _provider.ConfigJson = "{\"VerifyToken\":\"correct-token\"}";
+
+        var response = await _sut.VerifySubscriptionChallengeAsync(ProviderName, "correct-token", "challenge-value");
+
+        response.ShouldBe("challenge-value");
+        _activityTracker.Received(1).RecordWebhookHit(_provider.Id);
+        _activityTracker.DidNotReceive().RecordSignatureRejection(_provider.Id);
+    }
+
+    /// <summary>
+    /// C-1: the webhook route is always "telegram" while the provider has its own name. Authentication
+    /// must resolve the provider the same way ProcessIncomingMessageAsync does, or every onboarding
+    /// /start is rejected.
+    /// </summary>
+    [Test]
+    public async Task AuthenticateWebhookAsync_ProviderNamedDifferentlyThanRoute_ResolvesByTypeAndRecordsHit()
+    {
+        const string route = "telegram";
+        _provider.Name = "klacks-bot";
+        _provider.ProviderType = "Telegram";
+        _provider.WebhookSecret = WebhookSecret;
+        _providerRepository.GetByNameAsync(route).Returns((MessagingProvider?)null);
+        _providerRepository.GetEnabledAsync().Returns(new[] { _provider });
+        var headers = new Dictionary<string, string> { [TelegramSecretHeader] = WebhookSecret };
+
+        var authenticated = await _sut.AuthenticateWebhookAsync(route, "{}", headers);
+
+        authenticated.ShouldBeTrue();
+        _activityTracker.Received(1).RecordWebhookHit(_provider.Id);
+        _activityTracker.DidNotReceive().RecordSignatureRejection(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task AuthenticateWebhookAsync_WrongSecret_ReturnsFalseAndRecordsRejection()
+    {
+        _provider.ProviderType = "Telegram";
+        _provider.WebhookSecret = WebhookSecret;
+        var headers = new Dictionary<string, string> { [TelegramSecretHeader] = "wrong-secret" };
+
+        var authenticated = await _sut.AuthenticateWebhookAsync(ProviderName, "{}", headers);
+
+        authenticated.ShouldBeFalse();
+        _activityTracker.Received(1).RecordSignatureRejection(_provider.Id);
+        _activityTracker.DidNotReceive().RecordWebhookHit(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task AuthenticateWebhookAsync_DisabledProvider_ReturnsFalseWithoutRecording()
+    {
+        _provider.ProviderType = "Telegram";
+        _provider.WebhookSecret = WebhookSecret;
+        _provider.IsEnabled = false;
+        var headers = new Dictionary<string, string> { [TelegramSecretHeader] = WebhookSecret };
+
+        var authenticated = await _sut.AuthenticateWebhookAsync(ProviderName, "{}", headers);
+
+        authenticated.ShouldBeFalse();
+        _activityTracker.DidNotReceive().RecordWebhookHit(Arg.Any<Guid>());
+        _activityTracker.DidNotReceive().RecordSignatureRejection(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task AuthenticateWebhookAsync_UnknownProvider_ReturnsFalseWithoutRecording()
+    {
+        _providerRepository.GetByNameAsync("telegram").Returns((MessagingProvider?)null);
+        _providerRepository.GetEnabledAsync().Returns(Array.Empty<MessagingProvider>());
+        var headers = new Dictionary<string, string> { [TelegramSecretHeader] = WebhookSecret };
+
+        var authenticated = await _sut.AuthenticateWebhookAsync("telegram", "{}", headers);
+
+        authenticated.ShouldBeFalse();
+        _activityTracker.DidNotReceive().RecordWebhookHit(Arg.Any<Guid>());
+        _activityTracker.DidNotReceive().RecordSignatureRejection(Arg.Any<Guid>());
     }
 
     private void GivePairedUser(string value, string userId)

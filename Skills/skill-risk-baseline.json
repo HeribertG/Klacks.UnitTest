@@ -236,6 +236,7 @@
   "get_group_details": "ReadOnly",
   "get_group_hours_balance": "ReadOnly",
   "get_imap_settings": "ReadOnly",
+  "get_messenger_analysis": "ReadOnly",
   "get_openroute_settings": "ReadOnly",
   "get_overtime_settings": "ReadOnly",
   "get_owner_address": "ReadOnly",

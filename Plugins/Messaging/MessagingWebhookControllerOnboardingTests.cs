@@ -29,6 +29,8 @@ public class MessagingWebhookControllerOnboardingTests
 {
     private const string OnboardingToken = "abc123";
     private const string ChatId = "999111";
+    private const string TelegramSecretHeader = "X-Telegram-Bot-Api-Secret-Token";
+    private const string ValidWebhookSecret = "onboarding-secret";
 
     private static readonly string StartCommandPayload =
         "{\"message\":{\"message_id\":7,\"text\":\"/start " + OnboardingToken + "\",\"chat\":{\"id\":" + ChatId + "}}}";
@@ -41,6 +43,7 @@ public class MessagingWebhookControllerOnboardingTests
     private IPluginEventBus _eventBus = null!;
     private ITelegramOnboardingRedemptionService _redemptionService = null!;
     private IUserMessengerPairingService _pairingService = null!;
+    private MessagingProvider _provider = null!;
     private MessagingWebhookController _sut = null!;
 
     [SetUp]
@@ -51,6 +54,30 @@ public class MessagingWebhookControllerOnboardingTests
         _eventBus = Substitute.For<IPluginEventBus>();
         _redemptionService = Substitute.For<ITelegramOnboardingRedemptionService>();
         _pairingService = Substitute.For<IUserMessengerPairingService>();
+
+        _provider = new MessagingProvider
+        {
+            Id = Guid.NewGuid(),
+            Name = MessagingConstants.ProviderTelegram,
+            DisplayName = "Telegram",
+            ProviderType = MessagingConstants.ProviderTelegram,
+            IsEnabled = true,
+            WebhookSecret = ValidWebhookSecret
+        };
+        _providerRepository.GetByNameAsync(MessagingConstants.ProviderTelegram).Returns(_provider);
+
+        _messagingService
+            .AuthenticateWebhookAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyDictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var headers = callInfo.Arg<IReadOnlyDictionary<string, string>>();
+                return headers.TryGetValue(TelegramSecretHeader, out var secret)
+                    && string.Equals(secret, ValidWebhookSecret, StringComparison.Ordinal);
+            });
 
         _redemptionService
             .RedeemAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -195,6 +222,49 @@ public class MessagingWebhookControllerOnboardingTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// The security guard for E64: the /start branch returns before ProcessIncomingMessageAsync, so it
+    /// must authenticate itself instead of skipping the Telegram secret-token check entirely.
+    /// </summary>
+    [Test]
+    public async Task ReceiveWebhook_StartCommand_WrongSecret_ReturnsUnauthorizedAndNeverRedeems()
+    {
+        GiveRequestBody(StartCommandPayload, telegramSecret: "wrong-secret");
+
+        var result = await _sut.ReceiveWebhook(MessagingConstants.ProviderTelegram);
+
+        result.ShouldBeOfType<UnauthorizedResult>();
+        await _redemptionService.DidNotReceive().RedeemAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _pairingService.DidNotReceive().RedeemAsync(
+            Arg.Any<string>(), Arg.Any<MessengerType>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReceiveWebhook_StartCommand_MissingSecretHeader_ReturnsUnauthorized()
+    {
+        GiveRequestBody(StartCommandPayload, telegramSecret: null);
+
+        var result = await _sut.ReceiveWebhook(MessagingConstants.ProviderTelegram);
+
+        result.ShouldBeOfType<UnauthorizedResult>();
+        await _redemptionService.DidNotReceive().RedeemAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReceiveWebhook_StartCommand_IsAuthenticatedByTheMessagingServiceWithTheRouteName()
+    {
+        GiveRequestBody(StartCommandPayload);
+
+        var result = await _sut.ReceiveWebhook(MessagingConstants.ProviderTelegram);
+
+        result.ShouldBeOfType<OkResult>();
+        await _messagingService.Received(1).AuthenticateWebhookAsync(
+            MessagingConstants.ProviderTelegram,
+            StartCommandPayload,
+            Arg.Any<IReadOnlyDictionary<string, string>>(),
+            Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task ReceiveWebhook_PlainMessage_IsOfferedToNeitherRedeemer()
     {
@@ -209,10 +279,12 @@ public class MessagingWebhookControllerOnboardingTests
             Arg.Any<CancellationToken>());
     }
 
-    private void GiveRequestBody(string body)
+    private void GiveRequestBody(string body, string? telegramSecret = ValidWebhookSecret)
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+        if (telegramSecret != null)
+            httpContext.Request.Headers[TelegramSecretHeader] = telegramSecret;
 
         _sut.ControllerContext = new ControllerContext { HttpContext = httpContext };
     }
