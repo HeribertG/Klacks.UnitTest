@@ -354,6 +354,80 @@ public class SlackMessagingProviderTests
         result.ShouldBeNull();
     }
 
+    [Test]
+    public void ParseWebhookPayload_Maps_Direct_Message_Event()
+    {
+        // Arrange
+        var body = "{\"type\":\"event_callback\",\"event_id\":\"Ev0PV52K21\",\"event\":{\"type\":\"message\",\"channel_type\":\"im\",\"channel\":\"D024BE91L\",\"user\":\"U0BLRED0TK2\",\"text\":\"Ja, ich kann heute nicht\",\"ts\":\"1727078400.000200\"}}";
+
+        // Act
+        var result = _sut.ParseWebhookPayload(body);
+
+        // Assert
+        result.ShouldNotBeNull();
+        result!.Sender.ShouldBe("U0BLRED0TK2");
+        result.Content.ShouldBe("Ja, ich kann heute nicht");
+        result.ExternalMessageId.ShouldBe("1727078400.000200");
+    }
+
+    [Test]
+    public void ParseWebhookPayload_Ignores_The_Bots_Own_Direct_Message()
+    {
+        // Arrange
+        var body = "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\",\"channel_type\":\"im\",\"channel\":\"D024BE91L\",\"bot_id\":\"B0BOT\",\"user\":\"U0BOTUSER\",\"text\":\"Heißt das, du kannst heute nicht arbeiten?\",\"ts\":\"1727078400.000300\"}}";
+
+        // Act
+        var result = _sut.ParseWebhookPayload(body);
+
+        // Assert
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public void ParseWebhookPayload_Retried_Event_Keeps_The_Same_Dedupe_Key()
+    {
+        // Arrange
+        var body = "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\",\"channel_type\":\"im\",\"channel\":\"D024BE91L\",\"user\":\"U0BLRED0TK2\",\"text\":\"Ja\",\"ts\":\"1727078400.000400\"}}";
+
+        // Act
+        var first = _sut.ParseWebhookPayload(body);
+        var retry = _sut.ParseWebhookPayload(body);
+
+        // Assert
+        first!.ExternalMessageId.ShouldBe(retry!.ExternalMessageId);
+    }
+
+    [Test]
+    public void ValidateWebhook_Accepts_A_Signed_Direct_Message_Event()
+    {
+        // Arrange
+        var body = "{\"type\":\"event_callback\",\"event\":{\"type\":\"message\",\"channel_type\":\"im\",\"channel\":\"D024BE91L\",\"user\":\"U0BLRED0TK2\",\"text\":\"Ja\",\"ts\":\"1727078400.000500\"}}";
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var signature = ComputeSlackSignature(TestSigningSecret, timestamp, body);
+
+        // Act
+        var result = _sut.ValidateWebhook(BuildContext(body, signature, timestamp, ConfigWithSigningSecret));
+
+        // Assert
+        result.IsValid.ShouldBeTrue();
+        result.ChallengeResponse.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SendAsync_To_A_User_Id_Posts_A_Direct_Message()
+    {
+        // Arrange
+        _handler.Response = JsonResponse("{\"ok\":true,\"channel\":\"D024BE91L\",\"ts\":\"1727078400.000600\"}");
+
+        // Act
+        var result = await _sut.SendAsync(new SendMessageRequest("U0BLRED0TK2", "Heißt das, du kannst heute nicht arbeiten?"), ConfigWithToken);
+
+        // Assert
+        result.Success.ShouldBeTrue();
+        var payload = JsonSerializer.Deserialize<JsonElement>(_handler.LastRequestBody!);
+        payload.GetProperty("channel").GetString().ShouldBe("U0BLRED0TK2");
+    }
+
     private static HttpResponseMessage JsonResponse(string json)
     {
         return new HttpResponseMessage(HttpStatusCode.OK)
