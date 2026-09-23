@@ -37,7 +37,7 @@ public class InboundShiftContextReaderTests
     [TearDown]
     public void TearDown() => _context.Dispose();
 
-    private void AddWork(Guid clientId, DateOnly date, int startHour, int endHour, Guid? shiftId = null, Guid? analyseToken = null, bool isDeleted = false)
+    private void AddWork(Guid clientId, DateOnly date, int startHour, int endHour, Guid? shiftId = null, Guid? analyseToken = null, bool isDeleted = false, Guid? parentWorkId = null)
     {
         if (shiftId is null)
         {
@@ -54,7 +54,8 @@ public class InboundShiftContextReaderTests
             StartTime = new TimeOnly(startHour, 0),
             EndTime = new TimeOnly(endHour, 0),
             AnalyseToken = analyseToken,
-            IsDeleted = isDeleted
+            IsDeleted = isDeleted,
+            ParentWorkId = parentWorkId
         });
     }
 
@@ -90,5 +91,30 @@ public class InboundShiftContextReaderTests
         var shifts = await _reader.GetShiftsAsync(ClientId, Day, Day.AddDays(1), 2);
 
         shifts.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task ExcludesContainerSubRows()
+    {
+        var parentId = Guid.NewGuid();
+        AddWork(ClientId, Day, 6, 14, parentWorkId: parentId);
+        await _context.SaveChangesAsync();
+
+        var shifts = await _reader.GetShiftsAsync(ClientId, Day, Day.AddDays(1), 10);
+
+        shifts.Count.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ExcludesWorkWhoseShiftIsSoftDeleted()
+    {
+        var shiftId = Guid.NewGuid();
+        _context.Shift.Add(new Shift { Id = shiftId, Name = "Deleted Shift", Abbreviation = "X", IsDeleted = true });
+        AddWork(ClientId, Day, 6, 14, shiftId);
+        await _context.SaveChangesAsync();
+
+        var shifts = await _reader.GetShiftsAsync(ClientId, Day, Day.AddDays(1), 10);
+
+        shifts.Count.ShouldBe(0);
     }
 }
