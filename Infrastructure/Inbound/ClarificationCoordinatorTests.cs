@@ -97,11 +97,12 @@ public class ClarificationCoordinatorTests
         _settingsReader.GetSetting(AppSettings.INBOUND_CLARIFICATION_ENABLED)
             .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Value = value });
 
-    private static ClarificationRequest MessengerRequest(Guid? sourceId = null, EntityTypeEnum clientType = EntityTypeEnum.Employee) => new(
+    private static ClarificationRequest MessengerRequest(
+        Guid? sourceId = null, EntityTypeEnum clientType = EntityTypeEnum.Employee, DateTime? receivedAt = null) => new(
         ClientId: ClientId,
         ClientType: clientType,
         Source: new InboundSource(sourceId ?? Guid.NewGuid(), InboundSourceKind.Messenger, "Messenger:Telegram", "Anna Muster", null,
-            "Ich fühle mich nicht gut.", NowUtc),
+            "Ich fühle mich nicht gut.", receivedAt ?? NowUtc),
         ReplyChannel: "Telegram",
         SenderAddress: "123456789",
         EmailThread: null);
@@ -164,6 +165,16 @@ public class ClarificationCoordinatorTests
     }
 
     [Test]
+    public async Task After_Customer_Continues_NoAsk()
+    {
+        var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(clientType: EntityTypeEnum.Customer), UnclearAnalysis());
+
+        result.ShouldBe(ClarificationPostAnalysis.Continue);
+        await _composer.DidNotReceiveWithAnyArgs().ComposeAsync(default!, default!, default);
+        await _messengerSender.DidNotReceiveWithAnyArgs().SendAsync(default!, default!, default!, default);
+    }
+
+    [Test]
     public async Task After_Ask_PersistsOpenClarification_SendsPrivately_AndInformsPlanners()
     {
         var analysis = UnclearAnalysis();
@@ -190,6 +201,52 @@ public class ClarificationCoordinatorTests
         await _notifier.Received(1).NotifyMessageAsync(
             Arg.Is<string>(m => m.Contains("Clarification requested") && m.Contains(Question) && m.Contains("2026-09-23 09:00")),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task After_Ask_ReceivedAtOfKindLocal_IsConvertedViaToUniversalTime()
+    {
+        var localReceivedAt = DateTime.SpecifyKind(NowUtc, DateTimeKind.Local);
+        var expectedUtc = localReceivedAt.ToUniversalTime();
+        var request = MessengerRequest(receivedAt: localReceivedAt);
+
+        await _coordinator.AfterAnalysisAsync(request, UnclearAnalysis());
+
+        await _repository.Received(1).TryAddOpenAsync(
+            Arg.Is<InboundClarification>(c => c.OriginalReceivedAt == expectedUtc), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task After_Ask_NotifierThrowsOnTheStartNotice_StillReturnsSent()
+    {
+        _notifier.NotifyMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("smtp down")));
+
+        var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(), UnclearAnalysis());
+
+        result.ShouldBe(ClarificationPostAnalysis.Sent);
+    }
+
+    [Test]
+    public async Task After_NoSenderRegisteredForTheChannel_ContinuesWithHint()
+    {
+        _coordinator = new ClarificationCoordinator(
+            _settingsReader,
+            _governanceResolver,
+            _repository,
+            _composer,
+            new[] { _emailSender },
+            _analysisService,
+            _notifier,
+            new FixedCompanyClock(new DateTimeOffset(NowUtc), FixedOffsetZone(2)),
+            Substitute.For<ILogger<ClarificationCoordinator>>());
+
+        var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(), UnclearAnalysis());
+
+        result.QuestionSent.ShouldBeFalse();
+        result.NotifierContext.ShouldNotBeNull();
+        result.NotifierContext.ShouldContain("cannot ask back");
+        await _composer.DidNotReceiveWithAnyArgs().ComposeAsync(default!, default!, default);
     }
 
     [Test]
@@ -351,7 +408,7 @@ public class ClarificationCoordinatorTests
         result.QuestionSent.ShouldBeFalse();
         result.NotifierContext.ShouldNotBeNull();
         result.NotifierContext.ShouldContain("could not be sent");
-        result.NotifierContext.ShouldContain("chat not found");
+        result.NotifierContext.ShouldNotContain("chat not found");
         await _repository.Received(1).TryResolveAsync(
             Arg.Any<Guid>(),
             InboundClarificationStatus.Unresolved,
@@ -397,6 +454,18 @@ public class ClarificationCoordinatorTests
 
         result.ShouldBe(ClarificationPostAnalysis.Continue);
         await _composer.DidNotReceiveWithAnyArgs().ComposeAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task After_ARoundEndedRecentlyWithinTheRateLimitWindow_Skips_NoSecondQuestion()
+    {
+        _repository.CountAskedSinceAsync(ClientId, NowUtc.AddMinutes(-60), Arg.Any<CancellationToken>()).Returns(1);
+
+        var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(), UnclearAnalysis());
+
+        result.ShouldBe(ClarificationPostAnalysis.Continue);
+        await _composer.DidNotReceiveWithAnyArgs().ComposeAsync(default!, default!, default);
+        await _messengerSender.DidNotReceiveWithAnyArgs().SendAsync(default!, default!, default!, default);
     }
 
     [Test]
@@ -629,6 +698,23 @@ public class ClarificationCoordinatorTests
         var result = await _coordinator.BeforeAnalysisAsync(request);
 
         result.ShouldBe(ClarificationPreAnalysis.None);
+        await _repository.Received(1).GetLatestExpiredByClientSinceAsync(ClientId, NowUtc.AddHours(-24), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Before_TakenOverPredecessor_OnlyFoundWhenTheThreadIdsMatch()
+    {
+        var takenOver = OpenClarification();
+        takenOver.Status = InboundClarificationStatus.TakenOver;
+        _repository.GetLatestByEmailMessageIdsAsync(ClientId, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(takenOver);
+        var requestWithoutThreadRefs = EmailRequest(new ClarificationEmailThread("answer-3@example.com", null, null, false));
+
+        var result = await _coordinator.BeforeAnalysisAsync(requestWithoutThreadRefs);
+
+        result.ShouldBe(ClarificationPreAnalysis.None);
+        await _repository.DidNotReceiveWithAnyArgs().GetLatestByEmailMessageIdsAsync(default, default!, default);
+        await _repository.Received(1).GetLatestExpiredByClientSinceAsync(ClientId, NowUtc.AddHours(-24), Arg.Any<CancellationToken>());
     }
 
     [Test]
