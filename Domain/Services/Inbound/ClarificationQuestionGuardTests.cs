@@ -351,4 +351,22 @@ public class ClarificationQuestionGuardTests
     {
         ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue(violation);
     }
+
+    [TestCase("Can you work on 23 September 2026 14:00-22:00?")]
+    [TestCase("Kannst du am 23/09/2026 14:00 arbeiten?")]
+    [TestCase("Can you work 09/23/2026 2:00 PM?")]
+    [TestCase("Peux-tu travailler le 23/09/2026 de 14:00 à 22:00 ?")]
+    public void NonIsoDateOrTimePhrasing_IsNotTreatedAsAPhoneNumber(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue(violation);
+    }
+
+    [TestCase("Call me at 079 123 45 67?")]
+    [TestCase("+41 79 123 45 67?")]
+    [TestCase("06.12.34.56.78?")]
+    public void PhoneNumberLikeDigitRun_StaysRejected_DespiteTheWidenedDateExemption(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.PhoneNumberViolation);
+    }
 }

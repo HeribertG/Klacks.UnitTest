@@ -326,4 +326,21 @@ public class InboundAnalysisNotifierTests
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => m.Contains("Period: 2026-07-09") && !m.Contains("assumed")), null, null);
     }
+
+    [Test]
+    public async Task AssumedDate_RangePeriod_MarksOnlyTheStartAsAssumed()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+        var analysis = Analysis();
+        analysis.FromDate = new DateOnly(2026, 7, 8);
+        analysis.UntilDate = new DateOnly(2026, 7, 10);
+        analysis.DateAssumed = true;
+
+        await _notifier.NotifyAsync(Source(), analysis);
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner,
+            Arg.Is<string>(m => m.Contains("Period: 2026-07-08 – 2026-07-10 (start assumed: received day)")),
+            null, null);
+    }
 }

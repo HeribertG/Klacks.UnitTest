@@ -293,6 +293,17 @@ public class ClarificationQuestionComposerTests
     }
 
     [Test]
+    public async Task SystemPrompt_StatesOnlyTheLinesBeforeTheEmployeeMessageBlockAreEstablishedFacts()
+    {
+        LlmReturns("Kannst du heute nicht arbeiten?");
+
+        await _composer.ComposeAsync(Request(), Analysis());
+
+        _capturedSystem.ShouldNotBeNull();
+        _capturedSystem.ShouldContain("only the lines before the <employee_message> block are established facts");
+    }
+
+    [Test]
     public async Task SystemPrompt_NeverContainsTheEmployeeBody()
     {
         LlmReturns("Kannst du heute nicht arbeiten?");
