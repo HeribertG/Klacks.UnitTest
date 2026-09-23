@@ -195,7 +195,7 @@ public class EmailPollingBackgroundServiceTests
             _actionOrchestrator.ExecuteAsync(Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>());
             _analysisNotifier.NotifyAsync(
                 Arg.Is<InboundSource>(s => s.SourceId == email.Id), analysis, orchestratorOutcome,
-                Arg.Any<string?>(), Arg.Any<CancellationToken>());
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         });
     }
 
@@ -216,7 +216,7 @@ public class EmailPollingBackgroundServiceTests
         await _periodLoadService.Received(1).BuildSummaryAsync(clientId, fromDate, untilDate, Arg.Any<CancellationToken>());
         await _analysisNotifier.Received(1).NotifyAsync(
             Arg.Is<InboundSource>(s => s.SourceId == email.Id), analysis, Arg.Any<InboundActionOutcome?>(),
-            "3 shifts planned", Arg.Any<CancellationToken>());
+            "3 shifts planned", Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

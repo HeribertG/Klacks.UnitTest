@@ -122,7 +122,7 @@ public class MessengerIntentProcessorTests
         await _actionOrchestrator.DidNotReceive().ExecuteAsync(
             Arg.Any<Guid>(), Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
         await _analysisNotifier.DidNotReceive().NotifyAsync(
-            Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<InboundActionOutcome?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<InboundActionOutcome?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -151,7 +151,7 @@ public class MessengerIntentProcessorTests
         await _unitOfWork.Received(1).CompleteAsync();
         await _actionOrchestrator.Received(1).ExecuteAsync(clientId, Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>());
         await _analysisNotifier.Received(1).NotifyAsync(
-            Arg.Any<InboundSource>(), analysis, actionOutcome, null, Arg.Any<CancellationToken>());
+            Arg.Any<InboundSource>(), analysis, actionOutcome, Arg.Is<string?>(s => s == null), Arg.Is<string?>(s => s == null), Arg.Any<CancellationToken>());
 
         Received.InOrder(async () =>
         {
@@ -161,7 +161,7 @@ public class MessengerIntentProcessorTests
             await _unitOfWork.CompleteAsync();
             await _actionOrchestrator.ExecuteAsync(clientId, Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>());
             await _analysisNotifier.NotifyAsync(
-                Arg.Any<InboundSource>(), analysis, actionOutcome, null, Arg.Any<CancellationToken>());
+                Arg.Any<InboundSource>(), analysis, actionOutcome, Arg.Is<string?>(s => s == null), Arg.Is<string?>(s => s == null), Arg.Any<CancellationToken>());
         });
 
         Assert.That(capturedSource, Is.Not.Null);
@@ -231,7 +231,7 @@ public class MessengerIntentProcessorTests
         await _actionOrchestrator.DidNotReceive().ExecuteAsync(
             Arg.Any<Guid>(), Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
         await _analysisNotifier.DidNotReceive().NotifyAsync(
-            Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<InboundActionOutcome?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<InboundSource>(), Arg.Any<InboundAnalysis>(), Arg.Any<InboundActionOutcome?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -257,7 +257,7 @@ public class MessengerIntentProcessorTests
 
         await _periodLoadService.Received(1).BuildSummaryAsync(clientId, fromDate, untilDate, Arg.Any<CancellationToken>());
         await _analysisNotifier.Received(1).NotifyAsync(
-            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), PeriodLoadDigest, Arg.Any<CancellationToken>());
+            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), PeriodLoadDigest, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -281,7 +281,7 @@ public class MessengerIntentProcessorTests
 
         await _periodLoadService.Received(1).BuildSummaryAsync(clientId, fromDate, fromDate, Arg.Any<CancellationToken>());
         await _analysisNotifier.Received(1).NotifyAsync(
-            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), PeriodLoadDigest, Arg.Any<CancellationToken>());
+            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), PeriodLoadDigest, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -301,7 +301,7 @@ public class MessengerIntentProcessorTests
         await sut.ProcessAsync(Message(clientId), CancellationToken.None);
 
         await _analysisNotifier.Received(1).NotifyAsync(
-            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), null, Arg.Any<CancellationToken>());
+            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), Arg.Is<string?>(s => s == null), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -321,6 +321,6 @@ public class MessengerIntentProcessorTests
         await sut.ProcessAsync(Message(clientId), CancellationToken.None);
 
         await _analysisNotifier.Received(1).NotifyAsync(
-            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), null, Arg.Any<CancellationToken>());
+            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), Arg.Is<string?>(s => s == null), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 }

@@ -267,4 +267,39 @@ public class InboundAnalysisNotifierTests
         await _notificationService.Received(1).SendProactiveMessageAsync(
             Planner, Arg.Is<string>(m => !m.Contains("Subject:")), null, null);
     }
+
+    [Test]
+    public async Task ClarificationContext_IsAppendedAtTheEnd()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyAsync(Source(), Analysis(), clarificationContext: "💬 Answer to Klacksy's question");
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.EndsWith("💬 Answer to Klacksy's question")), null, null);
+    }
+
+    [Test]
+    public async Task NotifyMessageAsync_StashesAndDeliversTheTextToPlannersAndAdmins()
+    {
+        _notificationService.IsUserConnectedAsync(Planner).Returns(true);
+        _notificationService.IsUserConnectedAsync(Admin).Returns(false);
+
+        await _notifier.NotifyMessageAsync("⏰ **Question unanswered** — Anna Muster");
+
+        _stashedNotes.Count.ShouldBe(2);
+        _stashedNotes.ShouldAllBe(n => n.Content == "⏰ **Question unanswered** — Anna Muster" && n.Topic == "inbound-analysis");
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, "⏰ **Question unanswered** — Anna Muster", null, null);
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(
+            Admin, "⏰ **Question unanswered** — Anna Muster", null, null);
+    }
+
+    [Test]
+    public async Task NotifyMessageAsync_BlankText_DoesNothing()
+    {
+        await _notifier.NotifyMessageAsync("   ");
+
+        await _pendingNotes.DidNotReceive().AddAsync(Arg.Any<PendingUserNote>(), Arg.Any<CancellationToken>());
+    }
 }
