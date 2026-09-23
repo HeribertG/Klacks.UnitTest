@@ -28,6 +28,7 @@ public class InboxEmailSkillTests
     private IMediator _mediator = null!;
     private IEmailFolderRepository _folderRepository = null!;
     private IInboundAnalysisRepository _analysisRepository = null!;
+    private IInboundClarificationRepository _clarificationRepository = null!;
 
     [SetUp]
     public void Setup()
@@ -35,6 +36,7 @@ public class InboxEmailSkillTests
         _mediator = Substitute.For<IMediator>();
         _folderRepository = Substitute.For<IEmailFolderRepository>();
         _analysisRepository = Substitute.For<IInboundAnalysisRepository>();
+        _clarificationRepository = Substitute.For<IInboundClarificationRepository>();
         _folderRepository.GetImapNameBySpecialUseAsync(FolderSpecialUse.Trash).Returns("Deleted Items");
         _folderRepository.GetImapNameBySpecialUseAsync(FolderSpecialUse.Junk).Returns("Spam");
         _folderRepository.GetImapNameBySpecialUseAsync(FolderSpecialUse.Inbox).Returns("INBOX");
@@ -264,7 +266,7 @@ public class InboxEmailSkillTests
                 Summary = "Anna is sick this week.",
                 AnalyzedAt = new DateTime(2026, 7, 10, 6, 0, 0, DateTimeKind.Utc)
             });
-        var skill = new GetEmailAnalysisSkill(_mediator, _analysisRepository);
+        var skill = new GetEmailAnalysisSkill(_mediator, _analysisRepository, _clarificationRepository);
 
         var result = await skill.ExecuteAsync(Ctx(), P(id));
 
@@ -281,7 +283,7 @@ public class InboxEmailSkillTests
             .Returns(Email(id));
         _analysisRepository.GetBySourceAsync(InboundSourceKind.Email, id, Arg.Any<CancellationToken>())
             .Returns((InboundAnalysis?)null);
-        var skill = new GetEmailAnalysisSkill(_mediator, _analysisRepository);
+        var skill = new GetEmailAnalysisSkill(_mediator, _analysisRepository, _clarificationRepository);
 
         var result = await skill.ExecuteAsync(Ctx(), P(id));
 
