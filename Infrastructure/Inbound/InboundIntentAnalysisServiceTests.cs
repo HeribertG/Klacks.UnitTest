@@ -450,4 +450,154 @@ public class InboundIntentAnalysisServiceTests
         parameterTypes.ShouldNotContain(typeof(ILLMService));
         parameterTypes.ShouldContain(typeof(IOneShotCompletionService));
     }
+
+    private static ClarificationHistory History() => new(
+        "Ich fühle mich nicht gut.",
+        new DateTime(2026, 7, 8, 5, 30, 0, DateTimeKind.Utc),
+        "Heißt das, du kannst heute deinen Spätdienst (14:00-22:00) nicht antreten?",
+        new DateTime(2026, 7, 8, 5, 31, 0, DateTimeKind.Utc));
+
+    private static InboundSource AnswerSource() => new(
+        Guid.NewGuid(), InboundSourceKind.Messenger, "Messenger:Telegram", "Anna Muster", null,
+        "Ja, leider.", new DateTime(2026, 7, 8, 5, 40, 0, DateTimeKind.Utc));
+
+    [Test]
+    public async Task NeedsClarificationTrue_SetsFlagAndQuestion()
+    {
+        LlmReplies("""{"intent":"Other","confidence":"low","summary":"Fühlt sich nicht gut.","fromDate":null,"untilDate":null,"needsClarification":true,"clarificationQuestion":"Kannst du heute arbeiten?"}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.NeedsClarification.ShouldBeTrue();
+        result.ClarificationQuestion.ShouldBe("Kannst du heute arbeiten?");
+    }
+
+    [Test]
+    public async Task NeedsClarificationAsString_IsReadLeniently()
+    {
+        LlmReplies("""{"intent":"Other","confidence":"low","summary":"x","needsClarification":"true","clarificationQuestion":"Kommst du heute?"}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.NeedsClarification.ShouldBeTrue();
+        result.FailureReason.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task NeedsClarificationFalse_DropsTheQuestion()
+    {
+        LlmReplies("""{"intent":"VacationRequest","confidence":"high","summary":"Ferien","fromDate":"2026-08-03","untilDate":"2026-08-14","needsClarification":false,"clarificationQuestion":"Wirklich?"}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.NeedsClarification.ShouldBeFalse();
+        result.ClarificationQuestion.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Customer_NeverNeedsClarification()
+    {
+        LlmReplies("""{"intent":"CustomerMessage","summary":"Kunde","needsClarification":true,"clarificationQuestion":"Was meinen Sie?"}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Customer, Source());
+
+        result.NeedsClarification.ShouldBeFalse();
+        result.ClarificationQuestion.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task UndatedWorkCancellation_DefaultsToCompanyLocalReceivedDay_WithLowConfidence()
+    {
+        _companyClock.TimeZone = FixedOffsetZone(2);
+        LlmReplies("""{"intent":"WorkCancellation","confidence":"high","summary":"Ich bin krank.","fromDate":null,"untilDate":null}""");
+        var source = Source() with { ReceivedAt = new DateTime(2026, 7, 8, 23, 30, 0, DateTimeKind.Utc) };
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, source);
+
+        result.FromDate.ShouldBe(new DateOnly(2026, 7, 9));
+        result.UntilDate.ShouldBe(new DateOnly(2026, 7, 9));
+        result.Confidence.ShouldBe(EmailConfidence.Low);
+    }
+
+    [Test]
+    public async Task UndatedDayOffWish_KeepsNullDates()
+    {
+        LlmReplies("""{"intent":"DayOffWish","confidence":"high","summary":"Frei","fromDate":null,"untilDate":null}""");
+
+        var result = await _service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
+
+        result.FromDate.ShouldBeNull();
+        result.Confidence.ShouldBe(EmailConfidence.High);
+    }
+
+    [Test]
+    public void SystemPrompt_AsksForTheClarificationFields()
+    {
+        var prompt = InboundIntentAnalysisService.BuildPrompt(
+            Source(), EntityTypeEnum.Employee, "body", new DateOnly(2026, 7, 8), DefaultKeywords);
+
+        prompt.SystemPrompt.ShouldContain("\"needsClarification\"");
+        prompt.SystemPrompt.ShouldContain("\"clarificationQuestion\"");
+        prompt.SystemPrompt.ShouldContain("never ask about symptoms");
+    }
+
+    [Test]
+    public async Task AnalyzeAnswerAsync_SendsOriginalQuestionAndAnswer_WithOriginalDateLine()
+    {
+        string? capturedSystem = null;
+        string? capturedUser = null;
+        _completionService.CompleteAsync(
+                Arg.Do<string>(s => capturedSystem = s), Arg.Do<string>(u => capturedUser = u),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(OneShotCompletionResult.Succeeded(
+                """{"intent":"WorkCancellation","confidence":"high","summary":"Kann heute nicht.","fromDate":"2026-07-08","untilDate":"2026-07-08","needsClarification":false}"""));
+
+        await _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, AnswerSource(), History());
+
+        capturedUser.ShouldNotBeNull();
+        capturedUser.ShouldContain("Original message (Date: 2026-07-08 (Wednesday)): Ich fühle mich nicht gut.");
+        capturedUser.ShouldContain("Question from the planning assistant: Heißt das, du kannst heute deinen Spätdienst (14:00-22:00) nicht antreten?");
+        capturedUser.ShouldContain("Answer (Date: 2026-07-08 (Wednesday)): Ja, leider.");
+        capturedSystem.ShouldNotBeNull();
+        capturedSystem.ShouldContain("no further question will be sent");
+    }
+
+    [Test]
+    public async Task AnalyzeAnswerAsync_ResultBelongsToTheAnswerSource()
+    {
+        LlmReplies("""{"intent":"WorkCancellation","confidence":"high","summary":"Kann heute nicht.","fromDate":"2026-07-08","untilDate":"2026-07-08","needsClarification":false}""");
+        var answer = AnswerSource();
+
+        var result = await _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, answer, History());
+
+        result.SourceKind.ShouldBe(InboundSourceKind.Messenger);
+        result.SourceId.ShouldBe(answer.SourceId);
+        result.Intent.ShouldBe(EmailIntent.WorkCancellation);
+        result.NeedsClarification.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task AnalyzeAnswerAsync_UndatedCancellation_DefaultsToTheOriginalDay()
+    {
+        _companyClock.TimeZone = FixedOffsetZone(2);
+        LlmReplies("""{"intent":"WorkCancellation","confidence":"high","summary":"Ja.","fromDate":null,"untilDate":null,"needsClarification":false}""");
+        var lateAnswer = AnswerSource() with { ReceivedAt = new DateTime(2026, 7, 8, 23, 0, 0, DateTimeKind.Utc) };
+
+        var result = await _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, lateAnswer, History());
+
+        result.FromDate.ShouldBe(new DateOnly(2026, 7, 8));
+        result.Confidence.ShouldBe(EmailConfidence.Low);
+    }
+
+    [Test]
+    public async Task AnalyzeAnswerAsync_LlmCallFails_DegradesWithoutException()
+    {
+        CompletionReturns(OneShotCompletionResult.Failed("provider down"));
+
+        var result = await _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, AnswerSource(), History());
+
+        result.Intent.ShouldBe(EmailIntent.Other);
+        result.FailureReason.ShouldNotBeNull();
+        result.FailureReason.ShouldContain("provider down");
+    }
 }
