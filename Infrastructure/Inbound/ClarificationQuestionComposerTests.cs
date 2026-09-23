@@ -459,4 +459,50 @@ public class ClarificationQuestionComposerTests
 
         await Should.ThrowAsync<OperationCanceledException>(() => _composer.ComposeAsync(Request(), Analysis(), cts.Token));
     }
+
+    [Test]
+    public async Task AssumedReceivedDay_SearchesYesterdayThroughTomorrow_AndReportsNoAnalysedPeriod()
+    {
+        LlmReturns("Kannst du heute nicht arbeiten?");
+        var analysis = Analysis(Today, Today);
+        analysis.DateAssumed = true;
+
+        await _composer.ComposeAsync(Request(), analysis);
+
+        await _shiftReader.Received(1).GetShiftsAsync(ClientId, Yesterday, Tomorrow, 10, Arg.Any<CancellationToken>());
+        _capturedUser.ShouldNotBeNull();
+        _capturedUser.ShouldContain("Analysed period: none");
+    }
+
+    [Test]
+    public async Task AssumedReceivedDay_LateEvening_FindsTomorrowsEarlyShift()
+    {
+        _companyClock.Now = new DateTimeOffset(new DateTime(2026, 9, 23, 21, 0, 0, DateTimeKind.Utc));
+        _shiftReader.GetShiftsAsync(ClientId, Yesterday, Tomorrow, 10, Arg.Any<CancellationToken>())
+            .Returns(new[] { new ClarificationShift(Tomorrow, new TimeOnly(6, 0), new TimeOnly(14, 0), "Frühdienst") });
+        LlmReturns("Heißt das, du kannst deinen Frühdienst morgen (06:00–14:00) nicht antreten?");
+        var analysis = Analysis(Today, Today);
+        analysis.DateAssumed = true;
+
+        var result = await _composer.ComposeAsync(Request("ich bin krank"), analysis);
+
+        result.ShouldNotBeNull();
+        result.ShiftContext.ShouldBe("Frühdienst 2026-09-24 06:00-14:00");
+        result.ShiftStartUtc.ShouldBe(new DateTime(2026, 9, 24, 4, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task AssumedStartWithStatedLaterUntil_SearchesThroughTheUntilDate_AndMarksTheStartAssumed()
+    {
+        LlmReturns("Kannst du bis Samstag nicht arbeiten?");
+        var until = new DateOnly(2026, 9, 26);
+        var analysis = Analysis(Today, until);
+        analysis.DateAssumed = true;
+
+        await _composer.ComposeAsync(Request(), analysis);
+
+        await _shiftReader.Received(1).GetShiftsAsync(ClientId, Yesterday, until, 10, Arg.Any<CancellationToken>());
+        _capturedUser.ShouldNotBeNull();
+        _capturedUser.ShouldContain("Analysed period: 2026-09-23..2026-09-26 (start assumed: received day)");
+    }
 }

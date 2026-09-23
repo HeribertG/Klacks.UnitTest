@@ -85,6 +85,7 @@ public class InboundIntentAnalysisServiceTests
         result.FromDate.ShouldBe(new DateOnly(2026, 7, 9));
         result.UntilDate.ShouldBe(new DateOnly(2026, 7, 10));
         result.FailureReason.ShouldBeNull();
+        result.DateAssumed.ShouldBeFalse();
     }
 
     [Test]
@@ -518,6 +519,7 @@ public class InboundIntentAnalysisServiceTests
         result.FromDate.ShouldBe(new DateOnly(2026, 7, 9));
         result.UntilDate.ShouldBe(new DateOnly(2026, 7, 9));
         result.Confidence.ShouldBe(EmailConfidence.Low);
+        result.DateAssumed.ShouldBeTrue();
     }
 
     [Test]
@@ -529,6 +531,7 @@ public class InboundIntentAnalysisServiceTests
 
         result.FromDate.ShouldBeNull();
         result.Confidence.ShouldBe(EmailConfidence.High);
+        result.DateAssumed.ShouldBeFalse();
     }
 
     [Test]
@@ -588,6 +591,7 @@ public class InboundIntentAnalysisServiceTests
 
         result.FromDate.ShouldBe(new DateOnly(2026, 7, 8));
         result.Confidence.ShouldBe(EmailConfidence.Low);
+        result.DateAssumed.ShouldBeTrue();
     }
 
     [Test]
@@ -633,6 +637,7 @@ public class InboundIntentAnalysisServiceTests
         result.NeedsClarification.ShouldBeFalse();
         result.Confidence.ShouldBe(EmailConfidence.High);
         result.ClarificationQuestion.ShouldBeNull();
+        result.DateAssumed.ShouldBeFalse();
     }
 
     [TestCase("2026-07-10", "2026-07-08", "2026-07-10")]
@@ -647,6 +652,7 @@ public class InboundIntentAnalysisServiceTests
         result.FromDate.ShouldBe(DateOnly.Parse(expectedFrom));
         result.UntilDate.ShouldBe(DateOnly.Parse(expectedUntil));
         result.Confidence.ShouldBe(EmailConfidence.Low);
+        result.DateAssumed.ShouldBeTrue();
     }
 
     [Test]

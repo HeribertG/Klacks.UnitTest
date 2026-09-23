@@ -302,4 +302,28 @@ public class InboundAnalysisNotifierTests
 
         await _pendingNotes.DidNotReceive().AddAsync(Arg.Any<PendingUserNote>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task AssumedDate_PeriodLineIsMarkedAsAssumed()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+        var analysis = Analysis();
+        analysis.DateAssumed = true;
+
+        await _notifier.NotifyAsync(Source(), analysis);
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.Contains("Period: 2026-07-09 (assumed: received day)")), null, null);
+    }
+
+    [Test]
+    public async Task StatedDate_PeriodLineCarriesNoAssumedMarker()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyAsync(Source(), Analysis());
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.Contains("Period: 2026-07-09") && !m.Contains("assumed")), null, null);
+    }
 }
