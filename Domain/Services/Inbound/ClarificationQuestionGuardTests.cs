@@ -245,6 +245,8 @@ public class ClarificationQuestionGuardTests
     [TestCase("fi", "Onko sinulla sairauspäivä huomenna?")]
     [TestCase("de", "Ist morgen ein Krankheitstag für dich?")]
     [TestCase("pt", "Podes vir depressa amanhã?")]
+    [TestCase("ko", "참여 의사가 있나요?")]
+    [TestCase("ar", "هل تتحدث الألمانية؟")]
     public void HarmlessWordOrAbsencePhrase_IsAccepted(string language, string question)
     {
         ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue($"{language}: {violation}");

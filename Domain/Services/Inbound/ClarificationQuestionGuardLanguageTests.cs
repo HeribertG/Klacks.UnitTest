@@ -198,6 +198,9 @@ public class ClarificationQuestionGuardLanguageTests
     [TestCase("zh-TW", "你發燒了嗎？")]
     [TestCase("zh-TW", "你去看醫生了嗎？")]
     [TestCase("zh-TW", "你疼嗎？")]
+    [TestCase("ar", "هل لديك ألم؟")]
+    [TestCase("ar", "هل تشعر بالألم؟")]
+    [TestCase("ko", "의사가 뭐라고 했나요?")]
     public void HealthQuestion_IsRejected(string language, string question)
     {
         ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse(language);
