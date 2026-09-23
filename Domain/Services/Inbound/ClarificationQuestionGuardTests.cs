@@ -345,6 +345,8 @@ public class ClarificationQuestionGuardTests
     [TestCase("Kannst du die Schicht 14.00-22.00 Uhr übernehmen?")]
     [TestCase("Kannst du die Frühschicht 06.00 - 14.00 übernehmen?")]
     [TestCase("Kannst du vom 24.09. - 26.09. arbeiten?")]
+    [TestCase("Kannst du deinen Spätdienst am 2026-09-23 14:00-22:00 antreten?")]
+    [TestCase("Kannst du am 23.09.2026 14:00 kommen?")]
     public void DateOrTimeDigitRun_IsNotTreatedAsAPhoneNumber(string question)
     {
         ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue(violation);
