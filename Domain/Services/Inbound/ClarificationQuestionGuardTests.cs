@@ -5,7 +5,8 @@
 /// an employee: length, at most two sentences (a time like 14.00, a date like 24.09. and an abbreviation
 /// like z. B. are not sentence ends), must end with a question mark, no links, and no health term in any
 /// language (German stems match inside compounds, word-start match for other spaced scripts, substring
-/// match for Japanese, Thai and Chinese). Generic "sick" words and sick-leave phrasings stay allowed on
+/// match for Japanese, Thai and Chinese; the other 21 languages are covered in
+/// ClarificationQuestionGuardLanguageTests). Generic "sick" words and sick-leave phrasings stay allowed on
 /// purpose, and words of the system-inserted shift context (station or shift names) are ignored by the
 /// health-term check.
 /// </summary>
