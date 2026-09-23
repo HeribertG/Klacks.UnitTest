@@ -316,4 +316,37 @@ public class ClarificationQuestionGuardTests
             ClarificationHealthTerms.ByLanguage[language].Count.ShouldBeGreaterThanOrEqualTo(12, language);
         }
     }
+
+    [TestCase("Kannst du mir unter anna@example.com antworten?")]
+    [TestCase("Schreib mir auf a.b@firma.de, danke?")]
+    public void EmailAddress_IsRejected(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.EmailAddressViolation);
+    }
+
+    [TestCase("Ruf mich unter 0041 79 123 45 67 an, ok?")]
+    [TestCase("Kannst du mich unter 079-123-45-67 zurückrufen?")]
+    [TestCase("Ist deine Nummer noch 1234567?")]
+    [TestCase("Ruf mich unter 06.12.34.56.78 an?")]
+    [TestCase("Ruf mich unter 0041 79 123 45 67 an?")]
+    public void PhoneNumberLikeDigitRun_IsRejected(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.PhoneNumberViolation);
+    }
+
+    [TestCase("Kannst du vom 24.09. bis 26.09. arbeiten?")]
+    [TestCase("Does that mean you cannot work your late shift today (14:00-22:00)?")]
+    [TestCase("Kommst du morgen um 14.00 Uhr zum Frühdienst?")]
+    [TestCase("Bist du zur Übergabe um 06:30 da?")]
+    [TestCase("Kannst du am 23.09.2026 arbeiten?")]
+    [TestCase("Bist du am 2026-09-23 im Dienst?")]
+    [TestCase("Kannst du die Schicht 14.00-22.00 Uhr übernehmen?")]
+    [TestCase("Kannst du die Frühschicht 06.00 - 14.00 übernehmen?")]
+    [TestCase("Kannst du vom 24.09. - 26.09. arbeiten?")]
+    public void DateOrTimeDigitRun_IsNotTreatedAsAPhoneNumber(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue(violation);
+    }
 }
