@@ -2,7 +2,7 @@
 
 /// <summary>
 /// The read-only prefix list is the single source shared by the LLM loop's repeat guard
-/// (LLMService.RejectRepeatedWriteCalls) and SkillRiskClassifier's name fallback. Before the merge the
+/// (RepeatedWriteCallGuard) and SkillRiskClassifier's name fallback. Before the merge the
 /// two carried different lists and drifted apart. These tests pin the merged contract: every declared
 /// prefix constant is part of All, matching is case-insensitive, and a name without a read-only prefix
 /// is not accepted — so a future write skill cannot slip through by name alone.

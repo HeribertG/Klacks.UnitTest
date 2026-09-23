@@ -6,7 +6,8 @@
 /// tool-call deltas and the end marker are accumulated but never yielded (yielding them would put NUL
 /// sentinels on the user's screen); a transient failure before the first content token is retried; and a
 /// transient failure AFTER content already reached the caller is NOT retried, because a retry would
-/// duplicate the visible answer.
+/// duplicate the visible answer. Content that is nothing but an echo of the loop's tool-call stand-in text
+/// is held back and dropped, because the chat client keeps whatever was streamed as the final message.
 /// </summary>
 
 using System.Runtime.CompilerServices;
@@ -174,5 +175,78 @@ public class ProviderStreamReaderTests
 
         yielded.ShouldBe(new[] { "still streaming" });
         reader.Failed.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task EchoedLegacyPlaceholder_IsDroppedAndNeverYielded()
+    {
+        var provider = new ScriptedProvider(() => Tokens(new[] { "[Exec", "uting function", " calls]", "\n" }));
+        var reader = NewReader();
+
+        var yielded = await Read(reader, provider);
+
+        yielded.ShouldBeEmpty();
+        reader.Accumulator.AccumulatedContent.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EchoedToolCallHistoryNote_IsDroppedAndNeverYielded()
+    {
+        var provider = new ScriptedProvider(() => Tokens(new[] { "(Called to", "ols: get_employee.", " Their results follow.)" }));
+        var reader = NewReader();
+
+        var yielded = await Read(reader, provider);
+
+        yielded.ShouldBeEmpty();
+        reader.Accumulator.AccumulatedContent.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EchoFollowedByARealAnswer_YieldsOnlyTheAnswer()
+    {
+        var provider = new ScriptedProvider(() => Tokens(new[] { "[Executing function calls]", "\n", "Anna works ", "today." }));
+        var reader = NewReader();
+
+        var yielded = await Read(reader, provider);
+
+        string.Concat(yielded).ShouldBe("Anna works today.");
+        reader.Accumulator.AccumulatedContent.ShouldBe("Anna works today.");
+    }
+
+    [Test]
+    public async Task AnswerThatOnlyStartsLikeAPlaceholder_IsReleasedUnchangedOnceItDiverges()
+    {
+        var provider = new ScriptedProvider(() => Tokens(new[] { "[", "REPLIES:", "yes|no]" }));
+        var reader = NewReader();
+
+        var yielded = await Read(reader, provider);
+
+        yielded.ShouldBe(new[] { "[REPLIES:", "yes|no]" });
+        reader.Accumulator.AccumulatedContent.ShouldBe("[REPLIES:yes|no]");
+    }
+
+    [Test]
+    public async Task ShortAnswerThatIsAPlaceholderPrefix_IsReleasedWhenTheCallEnds()
+    {
+        var provider = new ScriptedProvider(() => Tokens(new[] { "(" }));
+        var reader = NewReader();
+
+        var yielded = await Read(reader, provider);
+
+        yielded.ShouldBe(new[] { "(" });
+    }
+
+    [Test]
+    public async Task TransientFailureWhileOnlyAnEchoWasHeldBack_IsRetried()
+    {
+        var provider = new ScriptedProvider(
+            () => Tokens(new[] { "[Executing" }, TransientError),
+            () => Tokens(new[] { "second attempt" }));
+        var reader = NewReader();
+
+        var yielded = await Read(reader, provider);
+
+        provider.Attempts.ShouldBe(2);
+        yielded.ShouldBe(new[] { "second attempt" });
     }
 }

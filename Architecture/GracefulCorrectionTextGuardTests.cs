@@ -130,6 +130,29 @@ public class GracefulCorrectionTextGuardTests
             GracefulCorrectionTexts.ClarificationQuestion)[baseLanguage]);
     }
 
+    // The empty-answer notice is a second catalogue key, not a second resolution mechanism, but a
+    // regional tag has to land on the right sentence for it too - the mechanism is shared, the coverage
+    // is not, so this key needs its own probe.
+    [Test]
+    public void EmptyAnswerFallbackNotice_RegionalGermanTag_ResolvesToGerman()
+    {
+        GracefulCorrectionTexts.TryGetText(
+            GracefulCorrectionTexts.EmptyAnswerFallbackNotice, "de-CH", out var text).ShouldBeTrue();
+
+        text.ShouldBe(GracefulCorrectionTexts.VariantsOf(
+            GracefulCorrectionTexts.EmptyAnswerFallbackNotice)[German]);
+    }
+
+    [Test]
+    public void EmptyAnswerFallbackNotice_UnknownLanguage_FallsBackToEnglish()
+    {
+        GracefulCorrectionTexts.TryGetText(
+            GracefulCorrectionTexts.EmptyAnswerFallbackNotice, "xx-XX", out var text).ShouldBeTrue();
+
+        text.ShouldBe(GracefulCorrectionTexts.VariantsOf(
+            GracefulCorrectionTexts.EmptyAnswerFallbackNotice)[LanguageConfig.DefaultLanguageFallback]);
+    }
+
     [Test]
     public void ARegionalTagOfAnInstalledPluginLanguage_ResolvesToThatPack()
     {

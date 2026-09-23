@@ -91,4 +91,18 @@ public class McpToolCatalogTests
 
         _skillRegistry.Received(1).GetSkillsForUser(permissions);
     }
+
+    [Test]
+    public void GetToolsForUser_SetsTheOpenWorldHintOnlyForUntrustedOutputSkills()
+    {
+        var untrusted = McpTestData.Descriptor("web_search");
+        var trusted = McpTestData.Descriptor("list_groups");
+        _skillRegistry.GetSkillsForUser(Arg.Any<IReadOnlyList<string>>())
+            .Returns(new List<SkillDescriptor> { untrusted, trusted });
+
+        var tools = _sut.GetToolsForUser(new List<string>());
+
+        Assert.That(tools.Single(tool => tool.Name == "web_search").Annotations!.OpenWorldHint, Is.True);
+        Assert.That(tools.Single(tool => tool.Name == "list_groups").Annotations!.OpenWorldHint, Is.Null);
+    }
 }

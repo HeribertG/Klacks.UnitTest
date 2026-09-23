@@ -4,7 +4,7 @@
 /// Guards the one place where Klacks decides "read-only" twice and could drift. SkillRiskClassifier is
 /// category-first: a write category (Crud/Action) beats a read-only name prefix, so a write skill cannot
 /// buy itself an un-gated run by being called check_something. Two other consumers are prefix-only -
-/// LLMService.RejectRepeatedWriteCalls, which lets a read-only call repeat inside one turn, and
+/// RepeatedWriteCallGuard, which lets a read-only call repeat inside one turn, and
 /// AssistantLastActionCall.IsReadOnly, which the correction path's undo offer reads. Every skill whose
 /// seeded category is a write category while its name carries a read-only prefix is a skill those two
 /// read as harmless and the classifier does not.
@@ -52,7 +52,7 @@ public class ReadOnlyPrefixWriteCategoryGuardTests
 
         undeclared.ShouldBeEmpty(
             "These skills are seeded in a write category but named with a read-only prefix, so " +
-            "SkillRiskClassifier treats them as writes while RejectRepeatedWriteCalls and " +
+            "SkillRiskClassifier treats them as writes while RepeatedWriteCallGuard and " +
             "AssistantLastActionCall.IsReadOnly treat them as reads. Decide which is true: rename the " +
             "skill, change its seeded category, add it to SkillRiskClassifier.ReadOnlyExtras if it really " +
             "only reads, or add it to AcceptedPrefixDivergences with the reason. Undeclared: " +

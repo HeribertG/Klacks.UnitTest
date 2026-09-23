@@ -190,13 +190,14 @@ public class TurnReplayServiceFollowUpTests
     }
 
     [Test]
-    public async Task EmptyFirstContent_UsesTheProductionPlaceholderAsAssistantTurn()
+    public async Task EmptyFirstContent_UsesTheProductionToolCallNoteAsAssistantTurn()
     {
         GivenProviderAnswers(ToolCall(LookupTool), ToolCall(ExpectedTool));
 
         await _service.ReplayWithLookupFollowUpAsync(Item(), ModelId, UserId, new List<string>());
 
-        _requests[1].ConversationHistory[^1].Content.ShouldBe(LLMLoopConstants.ExecutingFunctionCallsPlaceholder);
+        _requests[1].ConversationHistory[^1].Content.ShouldBe(
+            LLMLoopConstants.ToolCallHistoryNotePrefix + LookupTool + LLMLoopConstants.ToolCallHistoryNoteSuffix);
     }
 
     [Test]

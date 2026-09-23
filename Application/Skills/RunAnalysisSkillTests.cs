@@ -65,4 +65,19 @@ public class RunAnalysisSkillTests
         Should.ThrowAsync<ArgumentException>(() =>
             _skill.ExecuteAsync(Context(), new Dictionary<string, object>()));
     }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task ExecuteAsync_CarriesTheResearchTaintOntoTheSkillResult(bool containsExternalContent)
+    {
+        _researchService.ResearchAsync(Arg.Any<string>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(new ReadOnlyResearchResult(
+                "synthesis", 1, 1, new List<string> { "web_search" }, ModelAvailable: true,
+                ContainsExternalContent: containsExternalContent));
+
+        var result = await _skill.ExecuteAsync(
+            Context(), new Dictionary<string, object> { [QuestionParameter] = "what does the web say" });
+
+        result.ContainsExternalContent.ShouldBe(containsExternalContent);
+    }
 }

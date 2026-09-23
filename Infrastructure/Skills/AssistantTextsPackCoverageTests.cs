@@ -147,4 +147,37 @@ public class AssistantTextsPackCoverageTests
 
         failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
     }
+
+    // Same closing of the load-then-resolve gap as the test above, for the empty-answer fallback notice
+    // rather than the clarification question. Kept as its own test rather than folded into a loop over
+    // RequiredKeys: the plain Yes/No button labels legitimately equal their English core text in some
+    // packs (e.g. Spanish "No"), so that generic loop would misreport a correctly-shared word as an
+    // unloaded pack.
+    [Test]
+    public void TheStartupLoader_ResolvesEveryPacksEmptyAnswerNoticeInItsOwnLanguage()
+    {
+        var failures = new List<string>();
+        var english = GracefulCorrectionTexts.VariantsOf(
+            GracefulCorrectionTexts.EmptyAnswerFallbackNotice)[LanguageConfig.DefaultLanguageFallback];
+
+        AssistantTextsPluginLoader.Load(ApiRoot(), (file, ex) => failures.Add($"{file}: {ex.Message}"));
+
+        foreach (var dir in PackDirectories())
+        {
+            var code = Path.GetFileName(dir);
+            if (!GracefulCorrectionTexts.TryGetText(
+                    GracefulCorrectionTexts.EmptyAnswerFallbackNotice, code, out var text))
+            {
+                failures.Add($"{code}: the loaded catalogue has no empty-answer fallback notice");
+                continue;
+            }
+
+            if (string.Equals(text, english, StringComparison.Ordinal))
+            {
+                failures.Add($"{code}: resolved to the English core text");
+            }
+        }
+
+        failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
+    }
 }

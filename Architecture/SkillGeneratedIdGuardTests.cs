@@ -103,11 +103,13 @@ public class SkillGeneratedIdGuardTests
 
     private static string NormalizeSeparators(string path) => path.Replace('/', '\\');
 
+    private static string ToPlatformPath(string relative) => relative.Replace('\\', Path.DirectorySeparatorChar);
+
     [Test]
     public void NoSkill_MintsMoreEntityIdsThanItsAllowlistedCount()
     {
         var root = ApiRoot();
-        var skills = Path.Combine(root, SkillsRelativeDirectory);
+        var skills = Path.Combine(root, ToPlatformPath(SkillsRelativeDirectory));
         var offenders = new List<string>();
 
         foreach (var path in Directory.EnumerateFiles(skills, "*.cs", SearchOption.AllDirectories))
@@ -138,7 +140,7 @@ public class SkillGeneratedIdGuardTests
 
         foreach (var (relative, ceiling) in Allowed)
         {
-            var path = Path.Combine(root, relative);
+            var path = Path.Combine(root, ToPlatformPath(relative));
             var count = File.Exists(path)
                 ? File.ReadAllLines(path).Count(line => line.Contains(GeneratedIdCall, StringComparison.Ordinal))
                 : 0;
