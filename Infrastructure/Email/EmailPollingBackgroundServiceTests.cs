@@ -35,6 +35,7 @@ public class EmailPollingBackgroundServiceTests
     private IInboundActionOrchestrator _actionOrchestrator = null!;
     private IEmailPeriodLoadService _periodLoadService = null!;
     private IInboundAnalysisNotifier _analysisNotifier = null!;
+    private IClarificationCoordinator _clarificationCoordinator = null!;
     private IReceivedEmailRepository _receivedEmailRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ServiceProvider _provider = null!;
@@ -62,6 +63,11 @@ public class EmailPollingBackgroundServiceTests
             .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Value = "true" });
         _clientAssignmentService.ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
             .Returns((Guid.NewGuid(), EntityTypeEnum.Employee));
+        _clarificationCoordinator = Substitute.For<IClarificationCoordinator>();
+        _clarificationCoordinator.BeforeAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ClarificationPreAnalysis.None);
+        _clarificationCoordinator.AfterAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>())
+            .Returns(ClarificationPostAnalysis.Continue);
 
         var services = new ServiceCollection();
         services.AddSingleton(_imapEmailService);
@@ -73,6 +79,7 @@ public class EmailPollingBackgroundServiceTests
         services.AddSingleton(_actionOrchestrator);
         services.AddSingleton(_periodLoadService);
         services.AddSingleton(_analysisNotifier);
+        services.AddSingleton(_clarificationCoordinator);
         _provider = services.BuildServiceProvider();
         _scope = _provider.CreateScope();
 
@@ -190,6 +197,7 @@ public class EmailPollingBackgroundServiceTests
 
         Received.InOrder(() =>
         {
+            _unitOfWork.CompleteAsync();
             _analysisRepository.AddAsync(analysis, Arg.Any<CancellationToken>());
             _unitOfWork.CompleteAsync();
             _actionOrchestrator.ExecuteAsync(Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>());
@@ -325,6 +333,208 @@ public class EmailPollingBackgroundServiceTests
         await _intentAnalysisService.DidNotReceive().AnalyzeAsync(
             Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
         email.ProcessedAt.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task StagedAssignmentChanges_AreCommittedBeforeTheClarificationCheck()
+    {
+        var email = Email(InboxFolder);
+        AnalysisServiceReturns(Analysis());
+
+        await ProcessAsync(email);
+
+        Received.InOrder(() =>
+        {
+            _unitOfWork.CompleteAsync();
+            _clarificationCoordinator.BeforeAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<CancellationToken>());
+            _analysisRepository.AddAsync(Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>());
+            _unitOfWork.CompleteAsync();
+        });
+    }
+
+    [Test]
+    public async Task RegularAnalysis_IsCommittedBeforeThePostAnalysisCheck_WithTheSameInstance()
+    {
+        var email = Email(InboxFolder);
+        var analysis = Analysis();
+        AnalysisServiceReturns(analysis);
+
+        await ProcessAsync(email);
+
+        Received.InOrder(() =>
+        {
+            _unitOfWork.CompleteAsync();
+            _analysisRepository.AddAsync(analysis, Arg.Any<CancellationToken>());
+            _unitOfWork.CompleteAsync();
+            _clarificationCoordinator.AfterAnalysisAsync(
+                Arg.Any<ClarificationRequest>(), Arg.Is<InboundAnalysis>(a => ReferenceEquals(a, analysis)), Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task ClarificationQuestionSent_SkipsOrchestratorAndNotifier_ButMarksProcessed()
+    {
+        var email = Email(InboxFolder);
+        var analysis = Analysis();
+        AnalysisServiceReturns(analysis);
+        _clarificationCoordinator.AfterAnalysisAsync(Arg.Any<ClarificationRequest>(), analysis, Arg.Any<CancellationToken>())
+            .Returns(ClarificationPostAnalysis.Sent);
+
+        await ProcessAsync(email);
+
+        email.ProcessedAt.ShouldNotBeNull();
+        await _analysisRepository.Received(1).AddAsync(analysis, Arg.Any<CancellationToken>());
+        await _actionOrchestrator.DidNotReceiveWithAnyArgs().ExecuteAsync(default, default!, default!, default);
+        await _periodLoadService.DidNotReceiveWithAnyArgs().BuildSummaryAsync(default, default, default, default);
+        await _analysisNotifier.DidNotReceiveWithAnyArgs().NotifyAsync(default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task AnswerAnalysis_ReplacesTheRegularAnalysis()
+    {
+        var email = Email(InboxFolder);
+        var answerAnalysis = Analysis();
+        answerAnalysis.Id = Guid.NewGuid();
+        var answerAnalysisId = answerAnalysis.Id;
+        _clarificationCoordinator.BeforeAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ClarificationPreAnalysis.Answer(answerAnalysis, "💬 Answer to Klacksy's question"));
+
+        await ProcessAsync(email);
+
+        email.ProcessedAt.ShouldNotBeNull();
+        await _intentAnalysisService.DidNotReceiveWithAnyArgs().AnalyzeAsync(default, default, default!, default);
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().AfterAnalysisAsync(default!, default!, default);
+        await _analysisRepository.Received(1).AddAsync(
+            Arg.Is<InboundAnalysis>(a => ReferenceEquals(a, answerAnalysis)), Arg.Any<CancellationToken>());
+        answerAnalysis.Id.ShouldBe(answerAnalysisId);
+        await _actionOrchestrator.Received(1).ExecuteAsync(
+            Arg.Any<Guid>(), Arg.Any<InboundSource>(), answerAnalysis, Arg.Any<CancellationToken>());
+        await _analysisNotifier.Received(1).NotifyAsync(
+            Arg.Is<InboundSource>(s => s.SourceId == email.Id), answerAnalysis, Arg.Any<InboundActionOutcome?>(),
+            Arg.Any<string?>(), "💬 Answer to Klacksy's question", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task BothClarificationContexts_AreJoinedForTheNotifier()
+    {
+        var email = Email(InboxFolder);
+        var analysis = Analysis();
+        AnalysisServiceReturns(analysis);
+        _clarificationCoordinator.BeforeAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ClarificationPreAnalysis.Context("ℹ️ expired before"));
+        _clarificationCoordinator.AfterAnalysisAsync(Arg.Any<ClarificationRequest>(), analysis, Arg.Any<CancellationToken>())
+            .Returns(ClarificationPostAnalysis.ContinueWith("💡 Klacksy would ask back"));
+
+        await ProcessAsync(email);
+
+        await _analysisNotifier.Received(1).NotifyAsync(
+            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), Arg.Any<string?>(),
+            Arg.Is<string?>(c => c != null && c.Contains("ℹ️ expired before") && c.Contains("💡 Klacksy would ask back")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClarificationRequest_CarriesTheThreadHeaders()
+    {
+        var email = Email(InboxFolder);
+        email.MessageId = "answer-1@example.com";
+        email.InReplyTo = "question-1@klacks.example";
+        email.ThreadReferences = "original-1@example.com question-1@klacks.example";
+        email.IsAutoGenerated = true;
+        var clientId = Guid.NewGuid();
+        _clientAssignmentService.ResolveClientAsync(Arg.Any<ReceivedEmail>(), Arg.Any<CancellationToken>())
+            .Returns((clientId, EntityTypeEnum.ExternEmp));
+        AnalysisServiceReturns(Analysis());
+        ClarificationRequest? captured = null;
+        _clarificationCoordinator.BeforeAnalysisAsync(Arg.Do<ClarificationRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(ClarificationPreAnalysis.None);
+
+        await ProcessAsync(email);
+
+        captured.ShouldNotBeNull();
+        captured.ClientId.ShouldBe(clientId);
+        captured.ClientType.ShouldBe(EntityTypeEnum.ExternEmp);
+        captured.Source.SourceId.ShouldBe(email.Id);
+        captured.ReplyChannel.ShouldBe("Email");
+        captured.SenderAddress.ShouldBe("sender@example.com");
+        captured.EmailThread.ShouldNotBeNull();
+        captured.EmailThread.MessageId.ShouldBe("answer-1@example.com");
+        captured.EmailThread.InReplyTo.ShouldBe("question-1@klacks.example");
+        captured.EmailThread.ThreadReferences.ShouldBe("original-1@example.com question-1@klacks.example");
+        captured.EmailThread.IsAutoGenerated.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task EmailAlreadyAnalysed_IsMarkedProcessed_WithoutClarificationCheckOrLlmCall()
+    {
+        var email = Email(InboxFolder);
+        _analysisRepository.GetBySourceAsync(InboundSourceKind.Email, email.Id, Arg.Any<CancellationToken>())
+            .Returns(Analysis());
+
+        await ProcessAsync(email);
+
+        email.ProcessedAt.ShouldNotBeNull();
+        await _unitOfWork.Received(1).CompleteAsync();
+        await _clientAssignmentService.DidNotReceiveWithAnyArgs().ResolveClientAsync(default!, default);
+        await _clarificationCoordinator.DidNotReceiveWithAnyArgs().BeforeAnalysisAsync(default!, default);
+        await _intentAnalysisService.DidNotReceiveWithAnyArgs().AnalyzeAsync(default, default, default!, default);
+        await _analysisRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _analysisNotifier.DidNotReceiveWithAnyArgs().NotifyAsync(default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task ClarificationAnswerCheckThrows_TheEmailIsAnalysedAndNotifiedNormally()
+    {
+        var email = Email(InboxFolder);
+        var analysis = Analysis();
+        AnalysisServiceReturns(analysis);
+        _clarificationCoordinator.BeforeAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<CancellationToken>())
+            .Returns<ClarificationPreAnalysis>(_ => throw new InvalidOperationException("boom"));
+
+        await ProcessAsync(email);
+
+        email.ProcessedAt.ShouldNotBeNull();
+        await _intentAnalysisService.Received(1).AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+        await _analysisNotifier.Received(1).NotifyAsync(
+            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PostAnalysisClarificationCheckThrows_TheEmailStaysOnTheRegularPath()
+    {
+        var email = Email(InboxFolder);
+        var analysis = Analysis();
+        AnalysisServiceReturns(analysis);
+        _clarificationCoordinator.AfterAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<InboundAnalysis>(), Arg.Any<CancellationToken>())
+            .Returns<ClarificationPostAnalysis>(_ => throw new InvalidOperationException("boom"));
+
+        await ProcessAsync(email);
+
+        email.ProcessedAt.ShouldNotBeNull();
+        await _actionOrchestrator.Received(1).ExecuteAsync(
+            Arg.Any<Guid>(), Arg.Any<InboundSource>(), analysis, Arg.Any<CancellationToken>());
+        await _analysisNotifier.Received(1).NotifyAsync(
+            Arg.Any<InboundSource>(), analysis, Arg.Any<InboundActionOutcome?>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CancellationDuringTheClarificationCheck_IsNotSwallowed()
+    {
+        var email = Email(InboxFolder);
+        using var cts = new CancellationTokenSource();
+        _clarificationCoordinator.BeforeAnalysisAsync(Arg.Any<ClarificationRequest>(), Arg.Any<CancellationToken>())
+            .Returns<ClarificationPreAnalysis>(_ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        await Should.ThrowAsync<OperationCanceledException>(() => ProcessAsync(email, cts.Token));
+
+        email.ProcessedAt.ShouldBeNull();
     }
 
     [Test]
