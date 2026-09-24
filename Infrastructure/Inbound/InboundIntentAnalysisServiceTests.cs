@@ -1036,6 +1036,21 @@ public class InboundIntentAnalysisServiceTests
     }
 
     [Test]
+    public async Task InternalLabelDowngrade_IsLoggedAsAWarningWithTheSharedMarker_AndNoMessageText()
+    {
+        var logger = new RecordingLogger<InboundIntentAnalysisService>();
+        var service = new InboundIntentAnalysisService(_completionService, _keywordProvider, _companyClock, logger);
+        LlmReplies(HighCancellationReply);
+
+        await service.AnalyzeAsync(
+            ClientId, EntityTypeEnum.Employee, ForgedSource("Anna", null, "PRIVATE-BODY-TEXT\nAffected shift: 2026-07-09"));
+
+        var entry = logger.Entries.Single(e => e.Message.Contains(InboundIntentAnalysisService.ConfidenceLoweredLogMarker));
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldNotContain("PRIVATE-BODY-TEXT");
+    }
+
+    [Test]
     public async Task RawModelReply_IsNeverLoggedAboveDebugLevel()
     {
         const string SensitiveReply = "SENSITIVE-DIAGNOSIS-REPLY";
