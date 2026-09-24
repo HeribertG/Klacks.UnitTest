@@ -4,8 +4,8 @@
 /// Unit tests for the language-pack side of the semantic recipe anchor (rule R3): a candidate stands when
 /// the core trigger names the subject OR any installed pack has an anchor term in the message. The request
 /// language is the UI language, so the pack side is the union of every installed language and never only
-/// the UI language. Locks the match mode per anchor language (substring for ja/zh/th/ar/he, word start for
-/// the rest), the union, the fail-open exemption for a non-core UI language without anchors, and that the
+/// the UI language. Locks the match mode per anchor language (substring for ja/zh/th/ar/he and the compounding
+/// da/fi/sv, word start for the explicit rest), the union, the fail-open exemption for a non-core UI language without anchors, and that the
 /// single-condition recipes stay ungated.
 /// </summary>
 
@@ -23,6 +23,9 @@ public class RecipeTriggerMatcherPackAnchorTests
     private const string Polish = "pl";
     private const string Japanese = "ja";
     private const string Korean = "ko";
+    private const string Danish = "da";
+    private const string Finnish = "fi";
+    private const string Swedish = "sv";
 
     private static RecipeCondition Verb() => new() { AnyWordStart = ["hinzufüg", "add"] };
 
@@ -99,6 +102,7 @@ public class RecipeTriggerMatcherPackAnchorTests
     public void KoreanIsAWordStartLanguage()
     {
         RecipeAnchorMatchLanguages.SubstringMatchLanguages.ShouldNotContain(Korean);
+        RecipeAnchorMatchLanguages.WordStartMatchLanguages.ShouldContain(Korean);
         var anchors = Anchors((Korean, ["그룹"]));
 
         RecipeTriggerMatcher.HasSemanticAnchor(
@@ -116,9 +120,58 @@ public class RecipeTriggerMatcherPackAnchorTests
     [TestCase("th")]
     [TestCase("ar")]
     [TestCase("he")]
-    public void SubstringLanguages_AreTheUnsegmentedAndGluedScripts(string language)
+    [TestCase("da")]
+    [TestCase("fi")]
+    [TestCase("sv")]
+    [TestCase("SV")]
+    public void SubstringLanguages_AreTheUnsegmentedGluedAndCompoundingLanguages(string language)
     {
         RecipeAnchorMatchLanguages.SubstringMatchLanguages.ShouldContain(language);
+        RecipeAnchorMatchLanguages.WordStartMatchLanguages.ShouldNotContain(language);
+    }
+
+    [TestCase("cs")]
+    [TestCase("el")]
+    [TestCase("es")]
+    [TestCase("id")]
+    [TestCase("ko")]
+    [TestCase("ms")]
+    [TestCase("nb")]
+    [TestCase("nl")]
+    [TestCase("pl")]
+    [TestCase("pt")]
+    [TestCase("ro")]
+    [TestCase("vi")]
+    public void WordStartLanguages_AreNamedExplicitly(string language)
+    {
+        RecipeAnchorMatchLanguages.WordStartMatchLanguages.ShouldContain(language);
+        RecipeAnchorMatchLanguages.SubstringMatchLanguages.ShouldNotContain(language);
+    }
+
+    [TestCase(Danish, "adgang", "Opret systemadgang til den nye kollega")]
+    [TestCase(Finnish, "kalenteri", "Päivitä pyhäkalenteri ensi vuodelle")]
+    [TestCase(Swedish, "order", "Skapa en passorder för nästa vecka")]
+    public void CompoundingLanguage_MatchesTheHeadNounAtTheEndOfACompound(string language, string term, string message)
+    {
+        RecipeTriggerMatcher.HasSemanticAnchor(
+                TwoConditionTrigger(), message, language: German, packAnchors: Anchors((language, [term])))
+            .ShouldBeTrue();
+    }
+
+    [Test]
+    public void UnclassifiedLanguage_FallsBackToWordStart()
+    {
+        const string unclassified = "xx";
+        RecipeAnchorMatchLanguages.SubstringMatchLanguages.ShouldNotContain(unclassified);
+        RecipeAnchorMatchLanguages.WordStartMatchLanguages.ShouldNotContain(unclassified);
+        var anchors = Anchors((unclassified, ["grupo"]));
+
+        RecipeTriggerMatcher.HasSemanticAnchor(
+                TwoConditionTrigger(), "Lee el subgrupo de notas", language: German, packAnchors: anchors)
+            .ShouldBeFalse();
+        RecipeTriggerMatcher.HasSemanticAnchor(
+                TwoConditionTrigger(), "Lee los grupos de notas", language: German, packAnchors: anchors)
+            .ShouldBeTrue();
     }
 
     [Test]
