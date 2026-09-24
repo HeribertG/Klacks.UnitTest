@@ -12,6 +12,7 @@
 /// failures, an unavailable mail service or exceptions map to a failed result, never an exception.
 /// </summary>
 
+using System.Diagnostics;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Models.Inbound;
@@ -24,6 +25,10 @@ namespace Klacks.UnitTest.Infrastructure.Inbound;
 [TestFixture]
 public class EmailReplySenderTests
 {
+    private const int PathologicalShortRepeats = 20;
+    private const int PathologicalLongRepeats = 40;
+    private const int HugeSubjectLength = 1_000_000;
+
     private static readonly Guid ClientId = Guid.NewGuid();
 
     private IEmailClientAssignmentService _assignmentService = null!;
@@ -240,6 +245,63 @@ public class EmailReplySenderTests
         untruncated.ShouldStartWith(subject);
         subject.ShouldNotEndWith(" ");
         untruncated[subject.Length].ShouldBe(' ');
+    }
+
+    [Test]
+    public void BuildSubject_OverlappingDateTokensFollowedByAnInvalidTime_DoesNotBlockAndFallsBackToNeutralSubject()
+    {
+        var original = string.Concat(Enumerable.Repeat("23.09.2026 ", PathologicalShortRepeats)) + "1:99";
+        var stopwatch = Stopwatch.StartNew();
+
+        var subject = EmailReplySender.BuildSubject(original);
+
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
+        subject.ShouldBe(InboundClarificationConstants.NeutralReplySubject);
+    }
+
+    [Test]
+    public void BuildSubject_PathologicalDateRunBeyondTheInspectionBound_DoesNotBlockAndStaysWithinMaxLength()
+    {
+        var original = string.Concat(Enumerable.Repeat("23.09.2026 ", PathologicalLongRepeats)) + "1:99";
+        var stopwatch = Stopwatch.StartNew();
+
+        var subject = EmailReplySender.BuildSubject(original);
+
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
+        subject.Length.ShouldBeLessThanOrEqualTo(InboundClarificationConstants.MaxReplySubjectLength);
+        subject.ShouldNotContain("1:99");
+    }
+
+    [Test]
+    public void BuildSubject_HugeSubject_IsBoundedBeforeInspection()
+    {
+        var original = new string('1', HugeSubjectLength) + " ";
+        var stopwatch = Stopwatch.StartNew();
+
+        var subject = EmailReplySender.BuildSubject(original);
+
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
+        subject.ShouldBe(InboundClarificationConstants.NeutralReplySubject);
+    }
+
+    [Test]
+    public void BuildSubject_SuspiciousContentBeyondTheSentPart_IsNeverSent()
+    {
+        var original = string.Join(' ', Enumerable.Repeat("Wort", 100)) + " https://evil.example";
+
+        var subject = EmailReplySender.BuildSubject(original);
+
+        subject.Length.ShouldBeLessThanOrEqualTo(InboundClarificationConstants.MaxReplySubjectLength);
+        subject.ShouldNotContain("evil");
+        subject.ShouldNotContain("://");
+    }
+
+    [Test]
+    public void BuildSubject_SuspiciousContentInsideTheSentPart_StillFallsBackWhenTheSubjectIsLong()
+    {
+        var original = "Ruf mich an 076 123 45 67 " + string.Join(' ', Enumerable.Repeat("Wort", 100));
+
+        EmailReplySender.BuildSubject(original).ShouldBe(InboundClarificationConstants.NeutralReplySubject);
     }
 
     [Test]

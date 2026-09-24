@@ -11,6 +11,7 @@
 /// health-term check.
 /// </summary>
 
+using System.Diagnostics;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Inbound;
 
@@ -20,6 +21,8 @@ namespace Klacks.UnitTest.Domain.Services.Inbound;
 public class ClarificationQuestionGuardTests
 {
     private const string GreekQuestionMark = "\u037E";
+    private const int PathologicalDateTokenRepeats = 40;
+    private const int PathologicalQuestionDateTokenRepeats = 24;
 
     [TestCase("Heißt das, du kannst deinen Spätdienst heute (14:00–22:00) nicht antreten?")]
     [TestCase("Heißt das, du bist heute krank und kannst den Spätdienst nicht antreten?")]
@@ -451,5 +454,56 @@ public class ClarificationQuestionGuardTests
     {
         ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse();
         violation.ShouldBe(ClarificationQuestionGuard.PhoneNumberViolation);
+    }
+
+    [TestCase("Kannst du am 23. - 25. 9. 2026 arbeiten?")]
+    [TestCase("Kannst du am 23.09.2026 14:00:30 kommen?")]
+    public void UnsupportedDateAndTimeForms_AreDeliberatelyRejectedFailClosed(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.PhoneNumberViolation);
+    }
+
+    [TestCase("Kannst du am 23.–25. 9. 2026 arbeiten?")]
+    [TestCase("Kommst du um 14:00:30 Uhr?")]
+    public void UnsupportedDateAndTimeForms_ThatFallBelowTheDigitThreshold_AreNotFlagged(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue(violation);
+    }
+
+    [Test]
+    public void OverlappingDateTokens_FollowedByAnInvalidTime_DoNotBacktrackCatastrophically()
+    {
+        var run = string.Concat(Enumerable.Repeat("23.09.2026 ", PathologicalDateTokenRepeats)) + "1:99";
+        var questionRun = string.Concat(Enumerable.Repeat("23.09.2026 ", PathologicalQuestionDateTokenRepeats)) + "1:99";
+        var stopwatch = Stopwatch.StartNew();
+
+        var isPhoneLike = ClarificationQuestionGuard.ContainsPhoneNumberLikeDigitRun(run);
+        var accepted = ClarificationQuestionGuard.IsAcceptable(questionRun + "?", out var violation);
+
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
+        isPhoneLike.ShouldBeTrue();
+        accepted.ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.PhoneNumberViolation);
+    }
+
+    [Test]
+    public void OverlappingSpacedDateTokens_FollowedByAnInvalidTime_DoNotBacktrackCatastrophically()
+    {
+        var run = string.Concat(Enumerable.Repeat("23. 9. 2026 ", PathologicalDateTokenRepeats)) + "1:99";
+        var stopwatch = Stopwatch.StartNew();
+
+        var isPhoneLike = ClarificationQuestionGuard.ContainsPhoneNumberLikeDigitRun(run);
+
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
+        isPhoneLike.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ManyValidDateTokens_AreStillRecognisedAsADateRun()
+    {
+        var run = string.Concat(Enumerable.Repeat("23.09.2026 ", PathologicalDateTokenRepeats)).TrimEnd();
+
+        ClarificationQuestionGuard.ContainsPhoneNumberLikeDigitRun(run).ShouldBeFalse();
     }
 }
