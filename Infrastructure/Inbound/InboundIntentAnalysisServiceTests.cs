@@ -803,6 +803,28 @@ public class InboundIntentAnalysisServiceTests
     }
 
     [Test]
+    public void FirstAnalysisSystemPrompt_RequiresAnExplicitStatementForAHighConfidenceCancellation()
+    {
+        var prompt = InboundIntentAnalysisService.BuildPrompt(
+            Source(), EntityTypeEnum.Employee, "body", new DateOnly(2026, 7, 8), DefaultKeywords);
+
+        prompt.SystemPrompt.ShouldContain("never WorkCancellation with high confidence");
+        prompt.SystemPrompt.ShouldContain("explicitly says");
+        prompt.SystemPrompt.ShouldContain("even if a shift, date or time is mentioned");
+        prompt.SystemPrompt.ShouldContain("mentioning a shift alone is not a cancellation");
+    }
+
+    [Test]
+    public async Task AnswerSystemPrompt_DoesNotCarryTheFirstAnalysisCancellationRule()
+    {
+        var (system, _) = await CapturePromptAsync(
+            () => _service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, AnswerSource(), History()));
+
+        system.ShouldNotContain("never WorkCancellation with high confidence");
+        system.ShouldNotContain("mentioning a shift alone");
+    }
+
+    [Test]
     public async Task AnswerSystemPrompt_NamesOnlyTagsThatTheAnswerMessageContains()
     {
         var (system, user) = await CapturePromptAsync(
