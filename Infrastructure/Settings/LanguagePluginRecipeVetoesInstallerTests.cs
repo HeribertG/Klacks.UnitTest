@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// Tests for the recipe-vetoes half of the language plugin content installer, run against a real
+/// Tests for the recipe-vetoes half of LanguagePluginRecipeVocabularyInstaller, run against a real
 /// DbContext rather than a substitute repository. The substitute fixtures beside this one cannot see
 /// the failure these cases pin: every installer in InstallPluginAsync shares ONE scope, and the recipe
 /// repository reads with AsNoTracking but writes with Update. A second installer touching the same
@@ -37,6 +37,7 @@ public class LanguagePluginRecipeVetoesInstallerTests
     private DataBaseContext _context = null!;
     private IServiceScope _scope = null!;
     private LanguagePluginContentInstaller _installer = null!;
+    private LanguagePluginRecipeVocabularyInstaller _vocabularyInstaller = null!;
 
     [SetUp]
     public void Setup()
@@ -63,6 +64,7 @@ public class LanguagePluginRecipeVetoesInstallerTests
         _scope.ServiceProvider.Returns(provider);
 
         _installer = new LanguagePluginContentInstaller(_pluginDirectory, NullLogger.Instance);
+        _vocabularyInstaller = new LanguagePluginRecipeVocabularyInstaller(_pluginDirectory, NullLogger.Instance);
     }
 
     [TearDown]
@@ -80,7 +82,7 @@ public class LanguagePluginRecipeVetoesInstallerTests
     public async Task Install_AfterTheSynonymInstallerInTheSameScope_PersistsTheVetoes()
     {
         await _installer.InstallRecipeSynonymsAsync(_scope, Spanish);
-        await _installer.InstallRecipeVetoesAsync(_scope, Spanish);
+        await _vocabularyInstaller.InstallRecipeVetoesAsync(_scope, Spanish);
 
         var stored = ReadBack();
         Assert.That(stored.Synonyms?[Spanish], Does.Contain(SpanishSynonym));
@@ -92,8 +94,8 @@ public class LanguagePluginRecipeVetoesInstallerTests
     [Test]
     public async Task Install_TwoLanguagesInTheSameScope_PersistsBoth()
     {
-        await _installer.InstallRecipeVetoesAsync(_scope, Spanish);
-        await _installer.InstallRecipeVetoesAsync(_scope, Polish);
+        await _vocabularyInstaller.InstallRecipeVetoesAsync(_scope, Spanish);
+        await _vocabularyInstaller.InstallRecipeVetoesAsync(_scope, Polish);
 
         var stored = ReadBack();
         Assert.That(stored.Vetoes, Is.Not.Null);
@@ -104,10 +106,10 @@ public class LanguagePluginRecipeVetoesInstallerTests
     [Test]
     public async Task Install_IsIdempotent_AndDoesNotRewriteAnUnchangedRecipe()
     {
-        await _installer.InstallRecipeVetoesAsync(_scope, Spanish);
+        await _vocabularyInstaller.InstallRecipeVetoesAsync(_scope, Spanish);
         var firstStamp = ReadBack().UpdateTime;
 
-        await _installer.InstallRecipeVetoesAsync(_scope, Spanish);
+        await _vocabularyInstaller.InstallRecipeVetoesAsync(_scope, Spanish);
 
         var stored = ReadBack();
         Assert.That(stored.Vetoes![Spanish], Is.EqualTo(new[] { SpanishVeto }));
@@ -119,11 +121,11 @@ public class LanguagePluginRecipeVetoesInstallerTests
     public async Task Uninstall_AfterTheSynonymUninstallerInTheSameScope_RemovesOnlyThatLanguage()
     {
         await _installer.InstallRecipeSynonymsAsync(_scope, Spanish);
-        await _installer.InstallRecipeVetoesAsync(_scope, Spanish);
-        await _installer.InstallRecipeVetoesAsync(_scope, Polish);
+        await _vocabularyInstaller.InstallRecipeVetoesAsync(_scope, Spanish);
+        await _vocabularyInstaller.InstallRecipeVetoesAsync(_scope, Polish);
 
         await _installer.UninstallRecipeSynonymsAsync(_scope, Spanish);
-        await _installer.UninstallRecipeVetoesAsync(_scope, Spanish);
+        await _vocabularyInstaller.UninstallRecipeVetoesAsync(_scope, Spanish);
 
         var stored = ReadBack();
         Assert.That(stored.Vetoes, Is.Not.Null);

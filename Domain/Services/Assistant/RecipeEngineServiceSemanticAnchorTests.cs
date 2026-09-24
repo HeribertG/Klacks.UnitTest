@@ -5,8 +5,9 @@
 /// recipe-seeds.json so a hand-copied recipe cannot drift from what ships. Regression class 2026-09-24:
 /// "read my deferred notes" style messages ranked above the semantic floor against the writing recipe
 /// bulk-add-externs-to-nearest-group and reached its confirmation gate. An embedding hit must now be
-/// backed by the message hitting at least one non-verb allOf condition of the recipe; a language outside
-/// the core set is exempt because the allOf vocabulary only exists for de/en/fr/it.
+/// backed by the message hitting at least one non-verb allOf condition of the recipe OR a language-pack
+/// anchor (recipe-anchors.json) of any installed language, whatever the UI language. A UI language outside
+/// the core set stays exempt while the recipe carries no pack anchors for it.
 /// </summary>
 
 using System.Text.Json;
@@ -41,9 +42,25 @@ public class RecipeEngineServiceSemanticAnchorTests
     private const double TopScore = 0.72;
     private const double RunnerUpScore = 0.70;
 
+    private const string RecipeAnchorsFileName = "recipe-anchors.json";
+    private const string RecipeVetoesFileName = "recipe-vetoes.json";
+    private const string SpanishExternsMessage = "asigna a los subcontratados al grupo más cercano";
+    private const string SpanishWhyVeto = "por qué ";
+
     private static readonly string[] DefinitionsRelativePath =
     [
         "Klacks.Api", "Application", "Skills", "Definitions"
+    ];
+
+    private static readonly string[] PluginsLanguagesRelativePath =
+    [
+        "Klacks.Api", "Plugins", "Languages"
+    ];
+
+    private static readonly string[] AllPackLanguages =
+    [
+        "ar", "cs", "da", "el", "es", "fi", "he", "id", "ja", "ko", "ms",
+        "nb", "nl", "pl", "pt", "ro", "sv", "th", "vi", "zh-CN", "zh-TW"
     ];
 
     private static readonly JsonSerializerOptions JsonReadOptions = new()
@@ -224,6 +241,185 @@ public class RecipeEngineServiceSemanticAnchorTests
         plan.ShouldNotBeNull();
         plan!.Name.ShouldBe(ExternsRecipe);
         plan.NeedsConfirmation.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task PackLanguage_WithItsPackAnchorsInstalled_IsAnchorGated()
+    {
+        const string message = "Lee bitte mis notas aplazadas.";
+        UseRecipesWithPackAnchors(Spanish);
+        StubRetrieval(message, (ExternsRecipe, StrongScore));
+
+        var plan = await _service.ResolveAsync(message, Spanish);
+
+        plan.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SpanishMessageUnderGermanUi_ResolvesThroughTheSpanishPackAnchors()
+    {
+        UseRecipesWithPackAnchors(Spanish);
+        StubRetrieval(SpanishExternsMessage, (ExternsRecipe, StrongScore));
+
+        var plan = await _service.ResolveAsync(SpanishExternsMessage, German);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe(ExternsRecipe);
+        plan.NeedsConfirmation.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task SpanishMessageUnderGermanUi_WithoutPackAnchors_IsRejected()
+    {
+        StubRetrieval(SpanishExternsMessage, (ExternsRecipe, StrongScore));
+
+        var plan = await _service.ResolveAsync(SpanishExternsMessage, German);
+
+        plan.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task PackAnchoredRunnerUp_IsSurfacedAsAlternative()
+    {
+        const string message = "Nuevo empleado para el grupo, por favor.";
+        UseRecipesWithPackAnchors(Spanish);
+        StubRetrieval(message, (OnboardRecipe, TopScore), (AddToGroupRecipe, RunnerUpScore));
+
+        var plan = await _service.ResolveAsync(message, German);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe(OnboardRecipe);
+        plan.AlternativeGoal.ShouldBe(SeededGoal(AddToGroupRecipe));
+    }
+
+    [Test]
+    [TestCase("Lies bitte meine zurückgestellten Notizen vor.")]
+    [TestCase("Hast du noch offene Hinweise für mich?")]
+    [TestCase("Zurückgestellte Notizen verwalten, bitte.")]
+    public async Task DeferredNotesMessage_WithAllPackAnchorsInstalled_DoesNotResolve(string message)
+    {
+        UseRecipesWithPackAnchors(AllPackLanguages);
+        StubRetrieval(message, (ExternsRecipe, StrongScore));
+
+        var plan = await _service.ResolveAsync(message, German);
+
+        plan.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// The semantic path vetoes with the same scope it anchors with: anchors are the union of every
+    /// installed language, and so are the pack vetoes (AgentRecipe.AllVetoTerms). A Spanish information
+    /// question from a German UI passes the Spanish anchor and must then meet the Spanish question-word veto
+    /// - before the fix it reached the confirmation gate of the writing recipe. "Por qué …" is the case
+    /// that matters in production: its first token "por" is no question lead of any pack, so
+    /// MutationIntentDetector.IsInformationQuestion does not suppress the fallback ahead of the veto.
+    /// Each case asserts the retrieval ran, so the null cannot come from the fallback being skipped, and a
+    /// control without vetoes proves the veto - not the anchor - is what stops the message.
+    /// </summary>
+    [TestCase("Cómo añado un empleado al grupo")]
+    [TestCase("Por qué no está Ana en el grupo de noche")]
+    [TestCase("¿Por qué no está Ana en el grupo de noche?")]
+    public async Task SpanishQuestionUnderGermanUi_IsVetoedByTheSpanishPackVeto(string message)
+    {
+        var recipes = UseRecipesWithPackAnchors(Spanish);
+        AddPackVetoes(recipes, Spanish);
+        StubRetrieval(message, (AddToGroupRecipe, StrongScore));
+
+        var underGermanUi = await _service.ResolveAsync(message, German);
+        var underSpanishUi = await _service.ResolveAsync(message, Spanish);
+
+        underGermanUi.ShouldBeNull();
+        underSpanishUi.ShouldBeNull();
+        await _retrieval.ReceivedWithAnyArgs(2).RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [TestCase("Cómo añado un empleado al grupo")]
+    [TestCase("Por qué no está Ana en el grupo de noche")]
+    public async Task SpanishQuestionUnderGermanUi_WithoutPackVetoes_PassesTheSpanishAnchor(string message)
+    {
+        UseRecipesWithPackAnchors(Spanish);
+        StubRetrieval(message, (AddToGroupRecipe, StrongScore));
+
+        var plan = await _service.ResolveAsync(message, German);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe(AddToGroupRecipe);
+        plan.NeedsConfirmation.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task PackVetoOfAnotherLanguage_AlsoVetoesTheSemanticAlternative()
+    {
+        const string message = "Por qué no está el nuevo empleado en el grupo";
+        var recipes = UseRecipesWithPackAnchors(Spanish);
+        var addToGroup = recipes.Single(r => r.Name == AddToGroupRecipe);
+        addToGroup.Vetoes = new Dictionary<string, List<string>> { [Spanish] = [SpanishWhyVeto] };
+        StubRetrieval(message, (OnboardRecipe, TopScore), (AddToGroupRecipe, RunnerUpScore));
+
+        var plan = await _service.ResolveAsync(message, German);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe(OnboardRecipe);
+        plan.AlternativeGoal.ShouldBeNull();
+    }
+
+    private static void AddPackVetoes(List<AgentRecipe> recipes, string language)
+    {
+        var vetoes = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(
+            File.ReadAllText(LocatePackFile(language, RecipeVetoesFileName)), JsonReadOptions)!;
+        foreach (var recipe in recipes.Where(r => vetoes.ContainsKey(r.Name)))
+        {
+            recipe.Vetoes = new Dictionary<string, List<string>> { [language] = vetoes[recipe.Name] };
+        }
+    }
+
+    private List<AgentRecipe> UseRecipesWithPackAnchors(params string[] languages)
+    {
+        var packs = languages.ToDictionary(
+            language => language,
+            language => JsonSerializer.Deserialize<Dictionary<string, List<string>>>(
+                File.ReadAllText(LocatePackFile(language, RecipeAnchorsFileName)), JsonReadOptions)!);
+
+        var recipes = _seededRecipes
+            .Select(r => new AgentRecipe
+            {
+                Id = r.Id,
+                Name = r.Name,
+                Goal = r.Goal,
+                TriggerJson = r.TriggerJson,
+                StepsJson = r.StepsJson,
+                IsEnabled = r.IsEnabled,
+                SortOrder = r.SortOrder,
+                Anchors = packs
+                    .Where(pack => pack.Value.ContainsKey(r.Name))
+                    .ToDictionary(pack => pack.Key, pack => pack.Value[r.Name])
+            })
+            .ToList();
+
+        _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(recipes);
+        return recipes;
+    }
+
+    private static string LocatePackFile(string language, string fileName)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            var segments = new List<string> { dir.FullName };
+            segments.AddRange(PluginsLanguagesRelativePath);
+            segments.Add(language);
+            segments.Add(fileName);
+            var candidate = Path.Combine(segments.ToArray());
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new FileNotFoundException($"Could not locate {language}/{fileName} from {AppContext.BaseDirectory}");
     }
 
     [Test]

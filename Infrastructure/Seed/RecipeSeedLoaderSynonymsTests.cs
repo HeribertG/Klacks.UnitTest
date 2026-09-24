@@ -7,6 +7,7 @@
 /// every recipe reseed without re-installing the plugin.
 /// The W1b Vetoes column is locked by the same argument and therefore by the same fixture: it is pack
 /// vocabulary too, and ApplyDefinition rewriting trigger_json wholesale is exactly what would erase it.
+/// The Anchors column (recipe-anchors.json) is pack vocabulary for the same reason.
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -109,6 +110,37 @@ public class RecipeSeedLoaderSynonymsTests
             "installed pack vetoes must survive the reseed - this is why they are their own column and " +
             "not merged into trigger_json, which ApplyDefinition rewrites wholesale");
         Assert.That(updated.Vetoes!["es"], Does.Contain("cómo "));
+    }
+
+    [Test]
+    public async Task VersionBumpReseed_PreservesInstalledAnchors()
+    {
+        var existing = new AgentRecipe
+        {
+            Name = RecipeName,
+            Goal = "old goal",
+            Version = 1,
+            Anchors = new Dictionary<string, List<string>>
+            {
+                ["zh-CN"] = ["小组"]
+            }
+        };
+        _repository.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe> { existing });
+
+        AgentRecipe? updated = null;
+        await _repository.UpdateAsync(Arg.Do<AgentRecipe>(r => updated = r), Arg.Any<CancellationToken>());
+
+        var environment = Substitute.For<IWebHostEnvironment>();
+        environment.ContentRootPath.Returns(_contentRoot);
+        var loader = new RecipeSeedLoader(_repository, Substitute.For<ISkillPhraseRepository>(), environment, NullLogger<RecipeSeedLoader>.Instance);
+
+        await loader.LoadAsync();
+
+        await _repository.Received(1).UpdateAsync(Arg.Any<AgentRecipe>(), Arg.Any<CancellationToken>());
+        Assert.That(updated, Is.Not.Null);
+        Assert.That(updated!.Version, Is.EqualTo(2), "the version bump must be applied");
+        Assert.That(updated.Anchors, Is.Not.Null, "installed pack anchors must survive the reseed");
+        Assert.That(updated.Anchors!["zh-CN"], Does.Contain("小组"));
     }
 
     private static string SeedJson(int version) =>

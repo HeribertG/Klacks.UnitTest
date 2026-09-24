@@ -156,4 +156,114 @@ public class AgentRecipeSynonymsForTests
         recipe.VetoesFor("zh-CN")!.ShouldContain(ChineseQuestionVeto);
         recipe.SynonymsFor("zh-CN").ShouldBeNull();
     }
+
+    private const string SpanishAnchor = "grupo";
+    private const string ChineseAnchor = "小组";
+
+    [TestCase("es")]
+    [TestCase("ES")]
+    public void AnchorsResolveTheLanguageKeyCaseInsensitively(string language)
+    {
+        var recipe = new AgentRecipe
+        {
+            Name = "move-group",
+            Anchors = new Dictionary<string, List<string>> { ["es"] = [SpanishAnchor] }
+        };
+
+        recipe.AnchorsFor(language)!.ShouldContain(SpanishAnchor);
+    }
+
+    [TestCase("zh-cn")]
+    [TestCase("ZH-CN")]
+    public void AnchorsResolveARegionQualifiedCodeRegardlessOfCasing(string language)
+    {
+        var recipe = new AgentRecipe
+        {
+            Name = "move-group",
+            Anchors = new Dictionary<string, List<string>> { ["zh-CN"] = [ChineseAnchor] }
+        };
+
+        recipe.AnchorsFor(language)!.ShouldContain(ChineseAnchor);
+        recipe.AnchorsFor("zh-TW").ShouldBeNull();
+    }
+
+    [Test]
+    public void AnchorsDoNotReadTheOtherPackColumns()
+    {
+        var recipe = new AgentRecipe
+        {
+            Name = "move-group",
+            Synonyms = new Dictionary<string, List<string>> { ["es"] = [SpanishPhrase] },
+            Vetoes = new Dictionary<string, List<string>> { ["es"] = [SpanishQuestionVeto] }
+        };
+
+        recipe.AnchorsFor("es").ShouldBeNull();
+        recipe.AllAnchors().ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AllAnchorsReturnsEveryInstalledLanguage()
+    {
+        var recipe = new AgentRecipe
+        {
+            Name = "move-group",
+            Anchors = new Dictionary<string, List<string>> { ["es"] = [SpanishAnchor], ["zh-CN"] = [ChineseAnchor] }
+        };
+
+        recipe.AllAnchors().Keys.ShouldBe(new[] { "es", "zh-CN" }, ignoreOrder: true);
+    }
+
+    [Test]
+    public void AllVetoTermsIsTheDistinctUnionOfEveryInstalledLanguage()
+    {
+        var recipe = new AgentRecipe
+        {
+            Name = "move-group",
+            Vetoes = new Dictionary<string, List<string>>
+            {
+                ["es"] = [SpanishQuestionVeto, "qué "],
+                ["pt"] = ["como ", "qué "],
+                ["zh-CN"] = [ChineseQuestionVeto]
+            }
+        };
+
+        recipe.AllVetoTerms().ShouldBe(
+            new[] { SpanishQuestionVeto, "qué ", "como ", ChineseQuestionVeto }, ignoreOrder: true);
+    }
+
+    [Test]
+    public void AllVetoTermsKeepsTheWholeWordMarkerAsADistinctTerm()
+    {
+        var recipe = new AgentRecipe
+        {
+            Name = "move-group",
+            Vetoes = new Dictionary<string, List<string>> { ["es"] = ["cómo "], ["pt"] = ["cómo", "CÓMO "] }
+        };
+
+        recipe.AllVetoTerms().ShouldBe(new[] { "cómo ", "cómo" }, ignoreOrder: true);
+    }
+
+    [Test]
+    public void AllVetoTermsIsEmptyNotNullWithoutVetoesAndSkipsBlankTerms()
+    {
+        new AgentRecipe { Name = "move-group" }.AllVetoTerms().ShouldBeEmpty();
+        new AgentRecipe
+        {
+            Name = "move-group",
+            Vetoes = new Dictionary<string, List<string>> { ["es"] = ["", "  "] }
+        }.AllVetoTerms().ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AllVetoTermsDoesNotReadTheOtherPackColumns()
+    {
+        var recipe = new AgentRecipe
+        {
+            Name = "move-group",
+            Synonyms = new Dictionary<string, List<string>> { ["es"] = [SpanishPhrase] },
+            Anchors = new Dictionary<string, List<string>> { ["es"] = [SpanishAnchor] }
+        };
+
+        recipe.AllVetoTerms().ShouldBeEmpty();
+    }
 }

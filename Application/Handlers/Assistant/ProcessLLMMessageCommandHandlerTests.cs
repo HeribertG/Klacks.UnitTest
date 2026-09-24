@@ -8,6 +8,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
+using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Enums;
