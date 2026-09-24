@@ -391,6 +391,59 @@ public class ClarificationQuestionGuardTests
         ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue(violation);
     }
 
+    [TestCase("cs", "Budete dnes 23. 9. 2026 moci nastoupit na směnu od 14:00 do 22:00?")]
+    [TestCase("cs", "Budete 23. 9. 2026 k dispozici pro směnu od 14:00 do 22:00?")]
+    [TestCase("cs", "Můžeš 23. 9. 2026 od 14:00 do 22:00 pracovat?")]
+    [TestCase("cs", "Můžeš 23. 9. od 14:00 pracovat?")]
+    [TestCase("cs", "Můžeš 14:00-22:00 23. 9. pracovat?")]
+    [TestCase("cs", "Můžeš pracovat 23. 9. - 25. 9. 2026?")]
+    [TestCase("sk", "Môžeš pracovať 23. 9. 2026?")]
+    [TestCase("hu", "Be tudsz jönni 2026. 09. 23. 14:00-22:00?")]
+    [TestCase("hu", "Be tudsz jönni 2026. 09. 23. 14:00?")]
+    [TestCase("de", "Kannst du am 23.09.2026 14:00–22:00 arbeiten?")]
+    [TestCase("de", "Kannst du am 24.09. 14:00-22:00 arbeiten?")]
+    [TestCase("en", "Can you work on 23 September 2026 14:00-22:00?")]
+    [TestCase("en", "Can you work 09/23/2026 2:00 PM?")]
+    [TestCase("en", "Can you work 09-23-2026 14:00?")]
+    [TestCase("fr", "Peux-tu travailler le 23 septembre 2026 de 14h00 à 22h00 ?")]
+    [TestCase("it", "Puoi lavorare il 23/09/2026 14:00?")]
+    [TestCase("pt", "Podes trabalhar no turno de 10 de fevereiro de 2027?")]
+    [TestCase("es", "¿Puedes trabajar el 23/09/2026 de 14:00 a 22:00?")]
+    [TestCase("iso", "Can you work the shift 2027-02-10 06:00-14:00?")]
+    [TestCase("ja", "2026年9月23日 14:00〜22:00に勤務できますか？")]
+    [TestCase("zh", "你可以在2026年9月23日 14:00-22:00上班吗？")]
+    [TestCase("ko", "2026년 9월 23일 14:00~22:00에 근무할 수 있나요?")]
+    [TestCase("ru", "Ты можешь выйти 23.09.2026 с 14:00 до 22:00?")]
+    [TestCase("uk", "Ти можеш вийти 23.09.2026 з 14:00 до 22:00?")]
+    [TestCase("pl", "Czy możesz przyjść 23.09.2026 od 14:00 do 22:00?")]
+    [TestCase("nl", "Kun je op 23-09-2026 14:00 werken?")]
+    [TestCase("sv", "Kan du jobba 2026-09-23 14:00-22:00?")]
+    [TestCase("da", "Kan du arbejde 23.09.2026 14:00-22:00?")]
+    [TestCase("nb", "Kan du jobbe 23.09.2026 14:00-22:00?")]
+    [TestCase("fi", "Voitko tulla töihin 23.9.2026 klo 14.00–22.00?")]
+    [TestCase("tr", "23.09.2026 14:00-22:00 arası çalışabilir misin?")]
+    public void RegionalDateAndTimeFormats_AreNotTreatedAsAPhoneNumber(string language, string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeTrue($"{language}: {violation}");
+    }
+
+    [TestCase("Ruf mich unter +41 79 123 45 67 an?")]
+    [TestCase("Ruf mich unter 079 123 45 67 an?")]
+    [TestCase("Ruf mich unter +49 170 1234567 an?")]
+    [TestCase("Call me on (555) 123-4567?")]
+    [TestCase("Call me on +1 555 123 4567?")]
+    [TestCase("Ruf mich unter 06. 12. 34. 56. 78 an?")]
+    [TestCase("Ruf mich unter 06-12-34-56-78 an?")]
+    [TestCase("Ruf mich unter 01.02.03.04.05 an?")]
+    [TestCase("Ruf mich unter 12. 34. 56. 78 an?")]
+    [TestCase("Ruf mich unter 0170-1234567 an?")]
+    [TestCase("Call me on 555/123/4567?")]
+    public void PhoneNumbers_StayRejected_WithTheSpacedAndRegionalDateFormats(string question)
+    {
+        ClarificationQuestionGuard.IsAcceptable(question, out var violation).ShouldBeFalse();
+        violation.ShouldBe(ClarificationQuestionGuard.PhoneNumberViolation);
+    }
+
     [TestCase("Call me at 079 123 45 67?")]
     [TestCase("+41 79 123 45 67?")]
     [TestCase("06.12.34.56.78?")]
