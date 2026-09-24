@@ -161,4 +161,28 @@ public class ClarificationExpirySweepTests
 
         await Should.ThrowAsync<OperationCanceledException>(() => _sweep.RunCycleAsync(cancellation.Token));
     }
+
+    [TestCase(0, 0)]
+    [TestCase(-5, -5)]
+    public async Task ExecuteAsync_NonPositiveCadenceFromConfiguration_IsClampedInsteadOfCrashingTheService(int startupDelaySeconds, int intervalSeconds)
+    {
+        using var sweep = new ClarificationExpirySweep(
+            _serviceProvider,
+            TimeProvider.System,
+            Options.Create(new BackgroundServiceOptions
+            {
+                InboundClarificationSweep = true,
+                InboundClarificationSweepStartupDelaySeconds = startupDelaySeconds,
+                InboundClarificationSweepIntervalSeconds = intervalSeconds
+            }),
+            NullLogger<ClarificationExpirySweep>.Instance);
+
+        await sweep.StartAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+
+        sweep.ExecuteTask.ShouldNotBeNull();
+        sweep.ExecuteTask.IsFaulted.ShouldBeFalse();
+        await sweep.StopAsync(CancellationToken.None);
+        sweep.ExecuteTask.IsFaulted.ShouldBeFalse();
+    }
 }

@@ -18,6 +18,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Inbound;
+using Klacks.Api.Domain.Services.Inbound;
 using Klacks.Api.Infrastructure.Inbound;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
@@ -515,5 +516,20 @@ public class ClarificationQuestionComposerTests
         await _shiftReader.Received(1).GetShiftsAsync(ClientId, Yesterday, until, 10, Arg.Any<CancellationToken>());
         _capturedUser.ShouldNotBeNull();
         _capturedUser.ShouldContain("Analysed period: 2026-09-23..2026-09-26 (start assumed: received day)");
+    }
+
+    [Test]
+    public async Task HealthTermViolation_LogsOnlyTheCategory_NeverTheTermOrTheQuestion()
+    {
+        var logger = new RecordingLogger<ClarificationQuestionComposer>();
+        var composer = new ClarificationQuestionComposer(_completionService, _shiftReader, _companyClock, logger);
+        LlmReturns("Hast du Fieber?");
+
+        (await composer.ComposeAsync(Request(), Analysis())).ShouldBeNull();
+
+        var warning = logger.Entries.Single(e => e.Level == LogLevel.Warning);
+        warning.Message.ShouldContain(ClarificationQuestionGuard.HealthTermViolationCategory);
+        warning.Message.ShouldNotContain("fieber", Case.Insensitive);
+        warning.Message.ShouldNotContain("Hast du");
     }
 }

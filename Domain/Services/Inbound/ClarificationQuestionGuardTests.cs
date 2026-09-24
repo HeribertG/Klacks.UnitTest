@@ -506,4 +506,22 @@ public class ClarificationQuestionGuardTests
 
         ClarificationQuestionGuard.ContainsPhoneNumberLikeDigitRun(run).ShouldBeFalse();
     }
+
+    [Test]
+    public void ToLoggableCategory_DropsTheHealthTerm()
+    {
+        ClarificationQuestionGuard.IsAcceptable("Hast du Fieber?", out var violation).ShouldBeFalse();
+
+        var category = ClarificationQuestionGuard.ToLoggableCategory(violation);
+
+        category.ShouldBe(ClarificationQuestionGuard.HealthTermViolationCategory);
+        category.ShouldNotContain("fieber", Case.Insensitive);
+    }
+
+    [Test]
+    public void ToLoggableCategory_KeepsTheOtherViolationsUnchanged()
+    {
+        ClarificationQuestionGuard.ToLoggableCategory(ClarificationQuestionGuard.LinkViolation)
+            .ShouldBe(ClarificationQuestionGuard.LinkViolation);
+    }
 }
