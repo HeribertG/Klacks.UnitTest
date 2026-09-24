@@ -9,9 +9,11 @@
 /// </summary>
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Services.Assistant;
 using NUnit.Framework;
 using Shouldly;
 
@@ -24,6 +26,8 @@ public class AssistantTextsPackCoverageTests
     private const string PluginsDirectory = "Plugins";
     private const string LanguagesDirectory = "Languages";
     private const int ExpectedPluginPacks = 21;
+    private const string CompletionClaimsProperty = "completionClaims";
+    private const string LetterRunPattern = @"\p{L}+";
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -180,4 +184,68 @@ public class AssistantTextsPackCoverageTests
 
         failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
     }
+
+    [Test]
+    public void TheStartupLoader_ResolvesEveryPacksNoActionNoticeInItsOwnLanguage()
+    {
+        var failures = new List<string>();
+        var english = GracefulCorrectionTexts.VariantsOf(
+            GracefulCorrectionTexts.EmptyAnswerNoActionNotice)[LanguageConfig.DefaultLanguageFallback];
+
+        AssistantTextsPluginLoader.Load(ApiRoot(), (file, ex) => failures.Add($"{file}: {ex.Message}"));
+
+        foreach (var dir in PackDirectories())
+        {
+            var code = Path.GetFileName(dir);
+            if (!GracefulCorrectionTexts.TryGetText(
+                    GracefulCorrectionTexts.EmptyAnswerNoActionNotice, code, out var text))
+            {
+                failures.Add($"{code}: the loaded catalogue has no empty-answer no-action notice");
+                continue;
+            }
+
+            if (string.Equals(text, english, StringComparison.Ordinal))
+            {
+                failures.Add($"{code}: resolved to the English core text");
+            }
+        }
+
+        failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
+    }
+
+    // The no-action notice ends a turn in which nothing ran. If it read as a completion claim - to the core
+    // detector or to any pack's completion-claim.json, all of which are loaded together at startup - the
+    // streaming path would append the separate no-action correction below it and the non-streaming path
+    // would treat it as the false claim it is meant to replace.
+    [Test]
+    public void TheNoActionNotice_ReadsAsACompletionClaimInNoLanguage()
+    {
+        var packEntries = PluginPhraseMatcher.Merge([], PackDirectories()
+            .Select(dir => Path.Combine(dir, LanguagePluginConstants.CompletionClaimFileName))
+            .Where(File.Exists)
+            .SelectMany(file => JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(file), JsonOptions)
+                ?.GetValueOrDefault(CompletionClaimsProperty) ?? []));
+        packEntries.ShouldNotBeEmpty();
+
+        var notices = GracefulCorrectionTexts.VariantsOf(GracefulCorrectionTexts.EmptyAnswerNoActionNotice)
+            .Select(pair => (Code: pair.Key, Text: pair.Value))
+            .Concat(PackDirectories().Select(dir => (
+                Code: Path.GetFileName(dir),
+                Text: JsonSerializer.Deserialize<Dictionary<string, string>>(
+                    File.ReadAllText(Path.Combine(dir, LanguagePluginConstants.AssistantTextsFileName)), JsonOptions)!
+                    [GracefulCorrectionTexts.EmptyAnswerNoActionNotice])))
+            .ToList();
+        notices.Count.ShouldBe(GracefulCorrectionTexts.CoreLanguages.Count + ExpectedPluginPacks);
+
+        var claims = notices
+            .Where(notice => CompletionClaimDetector.ClaimsCompletion(notice.Text)
+                || PluginPhraseMatcher.MatchesAny(notice.Text.ToLowerInvariant(), Tokens(notice.Text), packEntries))
+            .Select(notice => $"{notice.Code}: {notice.Text}")
+            .ToList();
+
+        claims.ShouldBeEmpty(string.Join(Environment.NewLine, claims));
+    }
+
+    private static IReadOnlyCollection<string> Tokens(string text) =>
+        Regex.Matches(text, LetterRunPattern).Select(match => match.Value.ToLowerInvariant()).ToList();
 }

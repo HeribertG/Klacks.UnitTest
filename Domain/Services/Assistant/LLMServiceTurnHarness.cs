@@ -6,7 +6,8 @@
 /// skills run through the real LLMFunctionExecutor against a substituted ILLMSkillBridge, and the persisted
 /// assistant answer and the tracked usage totals are read back from the substituted repository. A streamed
 /// response reports its usage through the request's stream-usage callback, as the real providers do, and a
-/// response registered with StreamBreaksOffAfter streams its content and then fails.
+/// response registered with StreamBreaksOffAfter streams its content and then fails. StartsRecipe hands the
+/// turn a recipe plan, as the turn preparation does for a matched recipe.
 /// </summary>
 
 using System.Runtime.CompilerServices;
@@ -39,6 +40,7 @@ internal sealed class LLMServiceTurnHarness
     private readonly Queue<LLMProviderResponse> _script = new();
     private readonly HashSet<LLMProviderResponse> _breakingStreams = new(ReferenceEqualityComparer.Instance);
     private readonly ILLMRepository _repository;
+    private readonly ITurnPreparationService _turnPreparation;
 
     internal LLMServiceTurnHarness(bool streaming)
     {
@@ -94,9 +96,8 @@ internal sealed class LLMServiceTurnHarness
         SkillBridge = Substitute.For<ILLMSkillBridge>();
         SkillsSucceed();
 
-        var turnPreparation = Substitute.For<ITurnPreparationService>();
-        turnPreparation.PrepareAsync(Arg.Any<TurnPreparationRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new TurnPreparation(null, false, null, null));
+        _turnPreparation = Substitute.For<ITurnPreparationService>();
+        StartsRecipe(null);
 
         var contextBudgetPolicy = Substitute.For<IContextBudgetPolicy>();
         contextBudgetPolicy.Resolve(Arg.Any<ILLMProvider>(), Arg.Any<LLMModel>())
@@ -136,7 +137,7 @@ internal sealed class LLMServiceTurnHarness
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: Substitute.For<ISuggestionEntityNameReader>(),
             contextBudgetPolicy: contextBudgetPolicy,
-            turnPreparation: turnPreparation);
+            turnPreparation: _turnPreparation);
     }
 
     internal LLMService Service { get; }
@@ -204,6 +205,10 @@ internal sealed class LLMServiceTurnHarness
             _script.Enqueue(response);
         }
     }
+
+    internal void StartsRecipe(RecipeExecutionPlan? plan) =>
+        _turnPreparation.PrepareAsync(Arg.Any<TurnPreparationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new TurnPreparation(plan, false, null, null));
 
     internal LLMProviderResponse StreamBreaksOffAfter(string partialContent)
     {

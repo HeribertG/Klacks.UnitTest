@@ -377,4 +377,65 @@ public class RecipeReplyGuardTests
         RecipeReplyGuard.WithConfirmationChip("Start?", null, "zz")
             .ShouldEndWith("[REPLIES:single \"Yes=yes\" | \"No=no\"]");
     }
+
+    [Test]
+    public void SafeConfirmation_ReasoningWithInnerQuestion_ReplacedByDeterministicFrameAndChip()
+    {
+        var leakedReasoning = "The user wants a new group. Should I call manage_pending_notes first? "
+                              + "No tools are available in this step, so I will just phrase the confirmation.";
+
+        var result = RecipeReplyGuard.WithConfirmationChip(
+            RecipeReplyGuard.SafeConfirmation(leakedReasoning, Goal, null, "de", GoalTranslations), null, "de");
+
+        result.ShouldNotContain("manage_pending_notes");
+        result.ShouldStartWith("Möchtest du diese geführte Aktion starten: „Eine neue Gruppe erstellen.\"?");
+        result.ShouldEndWith("[REPLIES:single \"Ja=yes\" | \"Nein=no\"]");
+    }
+
+    [Test]
+    public void SafeConfirmation_EmptyContent_ReplacedByDeterministicFrameAndChip()
+    {
+        var result = RecipeReplyGuard.WithConfirmationChip(
+            RecipeReplyGuard.SafeConfirmation(string.Empty, Goal, null, "en"), null, "en");
+
+        result.ShouldStartWith("Do you want to start this guided action: \"Create a new group.\"?");
+        result.ShouldEndWith("[REPLIES:single \"Yes=yes\" | \"No=no\"]");
+    }
+
+    [Test]
+    public void SafeConfirmation_QuestionFollowedByAnotherSentence_ReplacedByDeterministicText()
+    {
+        var reply = "Möchtest du eine neue Gruppe erstellen? Ich warte auf deine Antwort.";
+
+        RecipeReplyGuard.SafeConfirmation(reply, Goal, null, "de").ShouldNotBe(reply);
+    }
+
+    [TestCase("Möchtest du die Gruppe „Nord\" erstellen?")]
+    [TestCase("Soll ich Gruppe Nr. 5 (Version 3.5) erstellen?")]
+    [TestCase("**Möchtest du eine neue Gruppe erstellen?**")]
+    [TestCase("Möchtest du eine neue Gruppe erstellen?!")]
+    [TestCase("هل تريد إنشاء مجموعة جديدة؟")]
+    [TestCase("新しいグループを作成しますか？」")]
+    public void SafeConfirmation_ReplyEndingOnQuestion_PassesThrough(string reply)
+    {
+        RecipeReplyGuard.SafeConfirmation(reply, Goal, null, "de").ShouldBe(reply);
+    }
+
+    [Test]
+    public void SafeConfirmation_QuestionBeforeTrailingRepliesAndSuggestionBlocks_PassesThrough()
+    {
+        var reply = "Möchtest du eine neue Gruppe erstellen?\n[REPLIES:single \"Ja=yes\" | \"Nein=no\"]\n"
+                    + "[SUGGESTIONS: \"Gruppe anlegen\" | \"Abbrechen\"]";
+
+        RecipeReplyGuard.SafeConfirmation(reply, Goal, null, "de").ShouldBe(reply);
+    }
+
+    [Test]
+    public void SafeAsk_ReasoningWithInnerQuestion_ReplacedByLocalizedAskQuestion()
+    {
+        var leakedReasoning = "We need the start date. Is there a tool for that? No, just ask the user in German.";
+
+        RecipeReplyGuard.SafeAsk(leakedReasoning, "From which date should the group be valid?", AskTranslations, "de")
+            .ShouldBe(AskTranslations["de"]);
+    }
 }

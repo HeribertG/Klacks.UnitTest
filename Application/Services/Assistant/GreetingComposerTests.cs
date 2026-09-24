@@ -84,15 +84,15 @@ public class GreetingComposerTests
     }
 
     [Test]
-    public async Task ComposeAsync_AnswerOnlyFromReasoningChannel_ReturnsNull()
+    public async Task ComposeAsync_ModelWroteOnlyReasoning_ReturnsNull()
     {
         GivenWeather();
         _provider.ProcessAsync(Arg.Any<LLMProviderRequest>())
             .Returns(new LLMProviderResponse
             {
                 Success = true,
-                Content = "We need to write a short, warm greeting in German...",
-                ContentFromReasoning = true
+                Content = string.Empty,
+                ReasoningWithoutContent = true
             });
 
         var result = await _sut.ComposeAsync(new GreetingContext("u3", "de", "admin", "afternoon", 10.0, 20.0, "CH"));
