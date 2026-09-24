@@ -42,6 +42,7 @@
   "check_erp_drop_point_folder_health": "Irreversible",
   "check_group_geocoding_status": "ReadOnly",
   "clear_client_availability": "Sensitive",
+  "close_clarification": "Irreversible",
   "close_period": "Sensitive",
   "confirm_pending_action": "Irreversible",
   "confirm_work": "Reversible",
