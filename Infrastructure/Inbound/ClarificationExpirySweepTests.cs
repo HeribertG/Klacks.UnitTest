@@ -9,6 +9,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Configuration;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Inbound;
@@ -160,6 +161,21 @@ public class ClarificationExpirySweepTests
             .Returns<IReadOnlyList<InboundClarification>>(_ => throw new OperationCanceledException(cancellation.Token));
 
         await Should.ThrowAsync<OperationCanceledException>(() => _sweep.RunCycleAsync(cancellation.Token));
+    }
+
+    [TestCase(0)]
+    [TestCase(-5)]
+    [TestCase(int.MinValue)]
+    public void ClampedSeconds_NonPositiveConfiguration_BecomesTheMinimum(int configuredSeconds)
+    {
+        ClarificationExpirySweep.ClampedSeconds(configuredSeconds)
+            .ShouldBe(TimeSpan.FromSeconds(InboundClarificationConstants.MinSweepSeconds));
+    }
+
+    [Test]
+    public void ClampedSeconds_PositiveConfiguration_IsKept()
+    {
+        ClarificationExpirySweep.ClampedSeconds(60).ShouldBe(TimeSpan.FromSeconds(60));
     }
 
     [TestCase(0, 0)]
