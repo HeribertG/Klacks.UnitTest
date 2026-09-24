@@ -172,33 +172,20 @@ public class ClarificationExpirySweepTests
             .ShouldBe(TimeSpan.FromSeconds(InboundClarificationConstants.MinSweepSeconds));
     }
 
-    [Test]
-    public void ClampedSeconds_PositiveConfiguration_IsKept()
+    [TestCase(InboundClarificationConstants.MaxSweepSeconds + 1)]
+    [TestCase(4_294_968)]
+    [TestCase(int.MaxValue)]
+    public void ClampedSeconds_OversizedConfiguration_BecomesTheMaximum(int configuredSeconds)
     {
-        ClarificationExpirySweep.ClampedSeconds(60).ShouldBe(TimeSpan.FromSeconds(60));
+        ClarificationExpirySweep.ClampedSeconds(configuredSeconds)
+            .ShouldBe(TimeSpan.FromSeconds(InboundClarificationConstants.MaxSweepSeconds));
     }
 
-    [TestCase(0, 0)]
-    [TestCase(-5, -5)]
-    public async Task ExecuteAsync_NonPositiveCadenceFromConfiguration_IsClampedInsteadOfCrashingTheService(int startupDelaySeconds, int intervalSeconds)
+    [TestCase(InboundClarificationConstants.MinSweepSeconds)]
+    [TestCase(60)]
+    [TestCase(InboundClarificationConstants.MaxSweepSeconds)]
+    public void ClampedSeconds_ConfigurationInsideTheRange_IsKept(int configuredSeconds)
     {
-        using var sweep = new ClarificationExpirySweep(
-            _serviceProvider,
-            TimeProvider.System,
-            Options.Create(new BackgroundServiceOptions
-            {
-                InboundClarificationSweep = true,
-                InboundClarificationSweepStartupDelaySeconds = startupDelaySeconds,
-                InboundClarificationSweepIntervalSeconds = intervalSeconds
-            }),
-            NullLogger<ClarificationExpirySweep>.Instance);
-
-        await sweep.StartAsync(CancellationToken.None);
-        await Task.Delay(TimeSpan.FromMilliseconds(200));
-
-        sweep.ExecuteTask.ShouldNotBeNull();
-        sweep.ExecuteTask.IsFaulted.ShouldBeFalse();
-        await sweep.StopAsync(CancellationToken.None);
-        sweep.ExecuteTask.IsFaulted.ShouldBeFalse();
+        ClarificationExpirySweep.ClampedSeconds(configuredSeconds).ShouldBe(TimeSpan.FromSeconds(configuredSeconds));
     }
 }

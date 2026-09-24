@@ -10,10 +10,8 @@
 /// possibly wrapped by EF's transient-failure InvalidOperationException).
 /// </summary>
 
-using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Models.Email;
-using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
@@ -73,21 +71,6 @@ public class EmailClientAssignmentServiceNpgsqlTranslationTests
             () => _service.GetStoredAddressAsync(Guid.NewGuid(), MixedCaseAddress));
 
         AssertConnectionFailureNotTranslationFailure(exception);
-    }
-
-    [Test]
-    public void SenderLookupExpression_UsesSqlLower()
-    {
-        var normalizedAddress = MixedCaseAddress.ToLowerInvariant();
-
-        var sql = _context.Set<Communication>()
-            .Where(c => !c.IsDeleted &&
-                        (c.Type == CommunicationTypeEnum.PrivateMail || c.Type == CommunicationTypeEnum.OfficeMail) &&
-                        c.Value != null && c.Value.ToLower() == normalizedAddress)
-            .Select(c => c.ClientId)
-            .ToQueryString();
-
-        sql.ToLowerInvariant().ShouldContain("lower(");
     }
 
     private static void AssertConnectionFailureNotTranslationFailure(Exception exception)

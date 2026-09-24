@@ -626,7 +626,7 @@ public class ClarificationCoordinatorTests
             open.Id, InboundClarificationStatus.Unresolved, Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
-    private async Task<ClarificationPreAnalysis> LoseTheAnswerRaceAgainst(InboundClarificationStatus? statusOnReload)
+    private async Task<ClarificationPreAnalysis> LoseTheAnswerRaceAgainst(InboundClarificationStatus? statusOnReload, bool reloadedHasAnswerSource = true)
     {
         var open = OpenClarification();
         _repository.GetOpenByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns(open);
@@ -635,7 +635,7 @@ public class ClarificationCoordinatorTests
         _repository.TryResolveAsync(Arg.Any<Guid>(), Arg.Any<InboundClarificationStatus>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(false);
         var reloaded = statusOnReload is { } status
-            ? new InboundClarification { Id = open.Id, ClientId = ClientId, Status = status, Question = Question, AnswerSourceId = Guid.NewGuid() }
+            ? new InboundClarification { Id = open.Id, ClientId = ClientId, Status = status, Question = Question, AnswerSourceId = reloadedHasAnswerSource ? Guid.NewGuid() : null }
             : null;
         _repository.GetByIdAsync(open.Id, Arg.Any<CancellationToken>()).Returns(reloaded);
 
@@ -673,6 +673,17 @@ public class ClarificationCoordinatorTests
         result.NotifierContext.ShouldNotBeNull();
         result.NotifierContext.ShouldNotContain("expired");
         result.NotifierContext.ShouldContain("already been closed");
+    }
+
+    [Test]
+    public async Task Before_RaceLostToAnUndeliveredRow_NoteSaysTheQuestionCouldNotBeDelivered()
+    {
+        var result = await LoseTheAnswerRaceAgainst(InboundClarificationStatus.Unresolved, reloadedHasAnswerSource: false);
+
+        result.AnswerAnalysis.ShouldBeNull();
+        result.NotifierContext.ShouldNotBeNull();
+        result.NotifierContext.ShouldContain("could not be delivered");
+        result.NotifierContext.ShouldNotContain("expired");
     }
 
     [TestCase(null)]
