@@ -8,8 +8,10 @@
 /// constructor: MessagingService receives the observers through its constructor and sits inside the
 /// ILLMService graph, so such an edge would close a DI cycle and stop the host from booting whenever the
 /// messaging plugin is active (reviewer memory messaging-observer-di-leaf). Direct constructor
-/// parameters only; the transitive graph is covered by ClarificationCoordinatorContainerTests and
-/// MessengerReplyChannelContainerTests (ValidateOnBuild on the real container).
+/// parameters only. The container tests (ClarificationCoordinatorContainerTests,
+/// ClarificationExpirySweepContainerTests, MessengerReplyChannelContainerTests; ValidateOnBuild) cover
+/// transitive DI cycles and resolvability of the registrations, NOT the transitive reachability of
+/// ILLMService and NOT the real host boot.
 /// </summary>
 
 using Klacks.Api.Application.Skills;
@@ -93,6 +95,7 @@ public class InboundClarificationDependencyGuardTests
             .ToList();
 
         observerTypes.Count.ShouldBeGreaterThanOrEqualTo(MinimumExpectedObservers);
+        observerTypes.ShouldContain(typeof(MessengerIntentObserver));
 
         var offenders = observerTypes
             .SelectMany(t => t.GetConstructors()
