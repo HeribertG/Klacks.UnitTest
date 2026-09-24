@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Domain.Services.Inbound;
@@ -167,5 +168,28 @@ public class ClarificationStatusTextTests
                 text.ShouldNotContain(name, Case.Sensitive);
             }
         }
+    }
+
+    [TestCase(InboundClarificationStatus.Open, false, ClarificationTextKeys.StatusOpen)]
+    [TestCase(InboundClarificationStatus.Answered, false, ClarificationTextKeys.StatusAnswered)]
+    [TestCase(InboundClarificationStatus.Unresolved, true, ClarificationTextKeys.StatusUnresolved)]
+    [TestCase(InboundClarificationStatus.Unresolved, false, ClarificationTextKeys.StatusUndelivered)]
+    [TestCase(InboundClarificationStatus.Expired, false, ClarificationTextKeys.StatusExpired)]
+    [TestCase(InboundClarificationStatus.TakenOver, false, ClarificationTextKeys.StatusTakenOver)]
+    [TestCase(InboundClarificationStatus.Suggested, false, ClarificationTextKeys.StatusSuggested)]
+    public void KeyOf_MapsEveryStatusToItsCatalogueKey_AndTheEnglishWordsAreTheCatalogueEntries(
+        InboundClarificationStatus status, bool hasAnswer, string expectedKey)
+    {
+        var clarification = Build(status, hasAnswer ? AnswerSource : null);
+
+        ClarificationStatusText.KeyOf(clarification).ShouldBe(expectedKey);
+        ClarificationStatusText.Describe(clarification).ShouldBe(ClarificationTexts.English(expectedKey));
+    }
+
+    [Test]
+    public void KeyOf_AnUnknownStatus_MapsToTheUnknownKey()
+    {
+        ClarificationStatusText.KeyOf((InboundClarificationStatus)(-1)).ShouldBe(ClarificationTextKeys.StatusUnknown);
+        ClarificationStatusText.Describe((InboundClarificationStatus)(-1)).ShouldBe("unknown");
     }
 }

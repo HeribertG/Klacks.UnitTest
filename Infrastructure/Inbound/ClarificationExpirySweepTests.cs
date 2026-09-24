@@ -30,6 +30,7 @@ public class ClarificationExpirySweepTests
 
     private IInboundClarificationRepository _repository = null!;
     private IInboundAnalysisNotifier _notifier = null!;
+    private IInstallationLanguageResolver _languageResolver = null!;
     private ServiceProvider _serviceProvider = null!;
     private ClarificationExpirySweep _sweep = null!;
 
@@ -46,10 +47,14 @@ public class ClarificationExpirySweepTests
         _repository.TryResolveAsync(Arg.Any<Guid>(), Arg.Any<InboundClarificationStatus>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(true);
         _notifier = Substitute.For<IInboundAnalysisNotifier>();
+        _languageResolver = Substitute.For<IInstallationLanguageResolver>();
+        _languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(LanguageConfig.DefaultLanguageFallback);
 
         var services = new ServiceCollection();
         services.AddSingleton(_repository);
         services.AddSingleton(_notifier);
+        services.AddSingleton<IClarificationTextService>(
+            new ClarificationTextService(_languageResolver, NullLogger<ClarificationTextService>.Instance));
         services.AddSingleton<ICompanyClock>(new FixedCompanyClock(new DateTimeOffset(NowUtc), FixedOffsetZone(2)));
         _serviceProvider = services.BuildServiceProvider();
 
@@ -94,6 +99,23 @@ public class ClarificationExpirySweepTests
         await _notifier.Received(1).NotifyMessageAsync(
             Arg.Is<string>(m => m.Contains("Question unanswered") && m.Contains("Anna Muster") && m.Contains(clarification.Question)
                                 && m.Contains("2026-09-23 09:59") && m.Contains("Spätdienst 2026-09-23 14:00-22:00")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("de", "Frage unbeantwortet")]
+    [TestCase("fr", "Question sans réponse")]
+    [TestCase("it", "Domanda senza risposta")]
+    public async Task OverdueOpenClarification_TellsThePlannersInTheInstallationLanguage(string language, string heading)
+    {
+        _languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(language);
+        var clarification = Due(NowUtc.AddMinutes(-1));
+        _repository.GetOpenDueAsync(NowUtc, Arg.Any<CancellationToken>()).Returns(new[] { clarification });
+
+        await _sweep.RunCycleAsync(CancellationToken.None);
+
+        await _notifier.Received(1).NotifyMessageAsync(
+            Arg.Is<string>(m => m.Contains(heading) && m.Contains("Anna Muster") && m.Contains("2026-09-23 09:59")
+                                && !m.Contains("Question unanswered") && !m.Contains("{")),
             Arg.Any<CancellationToken>());
     }
 

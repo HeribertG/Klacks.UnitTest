@@ -15,6 +15,7 @@
 using System.Diagnostics;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Email;
+using Klacks.Api.Domain.Interfaces.Inbound;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Email;
 using Klacks.Api.Infrastructure.Inbound;
@@ -28,11 +29,14 @@ public class EmailReplySenderTests
     private const int PathologicalShortRepeats = 20;
     private const int PathologicalLongRepeats = 40;
     private const int HugeSubjectLength = 1_000_000;
+    private const string NeutralSubject = "Re: Your message to the planning team";
+    private const string LocalizedNeutralSubject = "Re: Deine Nachricht an das Planungsteam";
 
     private static readonly Guid ClientId = Guid.NewGuid();
 
     private IEmailClientAssignmentService _assignmentService = null!;
     private IEmailService _emailService = null!;
+    private IClarificationTextService _textService = null!;
     private EmailReplySender _sender = null!;
 
     [SetUp]
@@ -41,7 +45,9 @@ public class EmailReplySenderTests
         _assignmentService = Substitute.For<IEmailClientAssignmentService>();
         _emailService = Substitute.For<IEmailService>();
         _emailService.CanSendEmailAsync().Returns(true);
-        _sender = new EmailReplySender(_assignmentService, _emailService, Substitute.For<ILogger<EmailReplySender>>());
+        _textService = Substitute.For<IClarificationTextService>();
+        _textService.NeutralReplySubjectAsync(Arg.Any<CancellationToken>()).Returns(NeutralSubject);
+        _sender = new EmailReplySender(_assignmentService, _emailService, _textService, Substitute.For<ILogger<EmailReplySender>>());
     }
 
     private static ClarificationRequest Request(
@@ -109,6 +115,28 @@ public class EmailReplySenderTests
 
         target!.InReplyTo.ShouldBeNull();
         target.References.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ResolveTarget_SuspiciousOriginalSubject_UsesTheNeutralSubjectOfTheInstallationLanguage()
+    {
+        _assignmentService.GetStoredAddressAsync(ClientId, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("anna@example.com");
+        _textService.NeutralReplySubjectAsync(Arg.Any<CancellationToken>()).Returns(LocalizedNeutralSubject);
+
+        var target = await _sender.ResolveTargetAsync(Request(subject: "Ruf mich an unter 076 123 45 67"));
+
+        target!.Subject.ShouldBe(LocalizedNeutralSubject);
+    }
+
+    [Test]
+    public async Task ResolveTarget_PlainOriginalSubject_KeepsTheOriginalSubjectAndIgnoresTheNeutralOne()
+    {
+        _assignmentService.GetStoredAddressAsync(ClientId, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("anna@example.com");
+        _textService.NeutralReplySubjectAsync(Arg.Any<CancellationToken>()).Returns(LocalizedNeutralSubject);
+
+        var target = await _sender.ResolveTargetAsync(Request(subject: "Krank"));
+
+        target!.Subject.ShouldBe("Re: Krank");
     }
 
     [TestCase("original-1@example.com\r\nBcc: evil@example.org")]
@@ -205,7 +233,7 @@ public class EmailReplySenderTests
     [TestCase(null, "Re: ")]
     public void BuildSubject_AddsReOnlyOnce(string? original, string expected)
     {
-        EmailReplySender.BuildSubject(original).ShouldBe(expected);
+        EmailReplySender.BuildSubject(original, NeutralSubject).ShouldBe(expected);
     }
 
     [TestCase("Krank\u0085heute\u2028morgen\u2029ab", "Re: Krank heute morgen ab")]
@@ -213,7 +241,7 @@ public class EmailReplySenderTests
     [TestCase("Krank\u202eheute", "Re: Krank heute")]
     public void BuildSubject_FlattensLineBreaksAndControlCharactersToOneLine(string original, string expected)
     {
-        EmailReplySender.BuildSubject(original).ShouldBe(expected);
+        EmailReplySender.BuildSubject(original, NeutralSubject).ShouldBe(expected);
     }
 
     [TestCase("Krank\r\nBcc: evil@example.org")]
@@ -223,13 +251,13 @@ public class EmailReplySenderTests
     [TestCase("Ruf mich an unter 076 123 45 67")]
     public void BuildSubject_SuspiciousOriginal_FallsBackToNeutralSubject(string original)
     {
-        EmailReplySender.BuildSubject(original).ShouldBe(InboundClarificationConstants.NeutralReplySubject);
+        EmailReplySender.BuildSubject(original, NeutralSubject).ShouldBe(NeutralSubject);
     }
 
     [Test]
     public void BuildSubject_DateAndTimeOnly_IsNotTreatedAsSuspicious()
     {
-        EmailReplySender.BuildSubject("Termin am 24.09.2026 14:00").ShouldBe("Re: Termin am 24.09.2026 14:00");
+        EmailReplySender.BuildSubject("Termin am 24.09.2026 14:00", NeutralSubject).ShouldBe("Re: Termin am 24.09.2026 14:00");
     }
 
     [Test]
@@ -237,7 +265,7 @@ public class EmailReplySenderTests
     {
         var original = string.Join(' ', Enumerable.Range(1, 20).Select(i => $"Wort{i}"));
 
-        var subject = EmailReplySender.BuildSubject(original);
+        var subject = EmailReplySender.BuildSubject(original, NeutralSubject);
         var untruncated = InboundClarificationConstants.ReplySubjectPrefix + original;
 
         subject.Length.ShouldBeLessThanOrEqualTo(InboundClarificationConstants.MaxReplySubjectLength);
@@ -253,10 +281,10 @@ public class EmailReplySenderTests
         var original = string.Concat(Enumerable.Repeat("23.09.2026 ", PathologicalShortRepeats)) + "1:99";
         var stopwatch = Stopwatch.StartNew();
 
-        var subject = EmailReplySender.BuildSubject(original);
+        var subject = EmailReplySender.BuildSubject(original, NeutralSubject);
 
         stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
-        subject.ShouldBe(InboundClarificationConstants.NeutralReplySubject);
+        subject.ShouldBe(NeutralSubject);
     }
 
     [Test]
@@ -265,7 +293,7 @@ public class EmailReplySenderTests
         var original = string.Concat(Enumerable.Repeat("23.09.2026 ", PathologicalLongRepeats)) + "1:99";
         var stopwatch = Stopwatch.StartNew();
 
-        var subject = EmailReplySender.BuildSubject(original);
+        var subject = EmailReplySender.BuildSubject(original, NeutralSubject);
 
         stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
         subject.Length.ShouldBeLessThanOrEqualTo(InboundClarificationConstants.MaxReplySubjectLength);
@@ -278,10 +306,10 @@ public class EmailReplySenderTests
         var original = new string('1', HugeSubjectLength) + " ";
         var stopwatch = Stopwatch.StartNew();
 
-        var subject = EmailReplySender.BuildSubject(original);
+        var subject = EmailReplySender.BuildSubject(original, NeutralSubject);
 
         stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
-        subject.ShouldBe(InboundClarificationConstants.NeutralReplySubject);
+        subject.ShouldBe(NeutralSubject);
     }
 
     [Test]
@@ -289,7 +317,7 @@ public class EmailReplySenderTests
     {
         var original = string.Join(' ', Enumerable.Repeat("Wort", 100)) + " https://evil.example";
 
-        var subject = EmailReplySender.BuildSubject(original);
+        var subject = EmailReplySender.BuildSubject(original, NeutralSubject);
 
         subject.Length.ShouldBeLessThanOrEqualTo(InboundClarificationConstants.MaxReplySubjectLength);
         subject.ShouldNotContain("evil");
@@ -301,7 +329,7 @@ public class EmailReplySenderTests
     {
         var original = "Ruf mich an 076 123 45 67 " + string.Join(' ', Enumerable.Repeat("Wort", 100));
 
-        EmailReplySender.BuildSubject(original).ShouldBe(InboundClarificationConstants.NeutralReplySubject);
+        EmailReplySender.BuildSubject(original, NeutralSubject).ShouldBe(NeutralSubject);
     }
 
     [Test]
@@ -311,12 +339,12 @@ public class EmailReplySenderTests
 
         using var message = wrapper.BuildReplyMessage(
             "anna@example.com",
-            EmailReplySender.BuildSubject("Krank\r\nBcc: evil@example.org"),
+            EmailReplySender.BuildSubject("Krank\r\nBcc: evil@example.org", NeutralSubject),
             "Frage?",
             new Dictionary<string, string>());
 
         message.ShouldNotBeNull();
-        message.Subject.ShouldBe(InboundClarificationConstants.NeutralReplySubject);
+        message.Subject.ShouldBe(NeutralSubject);
         message.Bcc.ShouldBeEmpty();
     }
 

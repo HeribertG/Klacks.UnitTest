@@ -17,12 +17,14 @@ using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Inbound;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Infrastructure.Inbound;
 
 [TestFixture]
 public class ClarificationCoordinatorTests
 {
+    private const string UnpackedLanguage = "xx-Test";
     private const string Question = "Heißt das, du kannst deinen Spätdienst heute (14:00-22:00) nicht antreten?";
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly DateTime NowUtc = new(2026, 9, 23, 6, 0, 0, DateTimeKind.Utc);
@@ -35,6 +37,8 @@ public class ClarificationCoordinatorTests
     private IInboundReplySender _messengerSender = null!;
     private IInboundIntentAnalysisService _analysisService = null!;
     private IInboundAnalysisNotifier _notifier = null!;
+    private IInstallationLanguageResolver _languageResolver = null!;
+    private ClarificationTextService _textService = null!;
     private ClarificationCoordinator _coordinator = null!;
 
     private static TimeZoneInfo FixedOffsetZone(int offsetHours)
@@ -80,6 +84,9 @@ public class ClarificationCoordinatorTests
 
         _analysisService = Substitute.For<IInboundIntentAnalysisService>();
         _notifier = Substitute.For<IInboundAnalysisNotifier>();
+        _languageResolver = Substitute.For<IInstallationLanguageResolver>();
+        _languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(LanguageConfig.DefaultLanguageFallback);
+        _textService = new ClarificationTextService(_languageResolver, NullLogger<ClarificationTextService>.Instance);
 
         _coordinator = new ClarificationCoordinator(
             _settingsReader,
@@ -89,6 +96,7 @@ public class ClarificationCoordinatorTests
             new[] { _emailSender, _messengerSender },
             _analysisService,
             _notifier,
+            _textService,
             new FixedCompanyClock(new DateTimeOffset(NowUtc), FixedOffsetZone(2)),
             Substitute.For<ILogger<ClarificationCoordinator>>());
     }
@@ -203,6 +211,76 @@ public class ClarificationCoordinatorTests
             Arg.Any<CancellationToken>());
     }
 
+    [TestCase("de", "Klärung angefordert", "Betroffene Schicht: Spätdienst 2026-09-23 14:00-22:00")]
+    [TestCase("fr", "Clarification demandée", "Spätdienst 2026-09-23 14:00-22:00")]
+    [TestCase("it", "Chiarimento richiesto", "Spätdienst 2026-09-23 14:00-22:00")]
+    public async Task After_Ask_TellsThePlannersInTheInstallationLanguage(string language, string heading, string shiftLine)
+    {
+        _languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(language);
+
+        var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(), UnclearAnalysis());
+
+        result.ShouldBe(ClarificationPostAnalysis.Sent);
+        await _notifier.Received(1).NotifyMessageAsync(
+            Arg.Is<string>(m => m.Contains(heading) && m.Contains(Question) && m.Contains("2026-09-23 09:00") && m.Contains(shiftLine)
+                                && !m.Contains("Clarification requested") && !m.Contains("{")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task After_Ask_EmployeeTextIsNotExpandedAsAPlaceholder()
+    {
+        var analysis = UnclearAnalysis();
+        analysis.Summary = "{question} {sender}";
+
+        await _coordinator.AfterAnalysisAsync(MessengerRequest(), analysis);
+
+        await _notifier.Received(1).NotifyMessageAsync(
+            Arg.Is<string>(m => m.Contains("The message was unclear: {question} {sender}")), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task After_GlobalLevelPropose_InGerman_SuggestsInGerman()
+    {
+        _languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns("de");
+        _governanceResolver.GetGlobalAutonomyLevelAsync(Arg.Any<CancellationToken>()).Returns(AutonomyLevel.Propose);
+
+        var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(), UnclearAnalysis());
+
+        result.NotifierContext.ShouldNotBeNull();
+        result.NotifierContext.ShouldContain("schlägt vor, nachzufragen");
+        result.NotifierContext.ShouldContain(Question);
+        result.NotifierContext.ShouldNotContain("would ask back");
+    }
+
+    [Test]
+    public async Task Before_PlannerTookOverDuringTheAnswerAnalysis_InGerman_NamesTheStatusInGerman()
+    {
+        _languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns("de");
+
+        var result = await LoseTheAnswerRaceAgainst(InboundClarificationStatus.TakenOver);
+
+        result.NotifierContext.ShouldNotBeNull();
+        result.NotifierContext.ShouldContain("bereits geschlossen war: von einem Planer übernommen.");
+        result.NotifierContext.ShouldNotContain("taken over by a planner");
+    }
+
+    [Test]
+    public async Task After_ATextIsMissingInAnInstalledLanguage_FallsBackToEnglishWithoutFailing()
+    {
+        _languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(UnpackedLanguage);
+        ClarificationTexts.Configure(UnpackedLanguage, new Dictionary<string, string> { ["some.other.key"] = "x" });
+
+        var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(), UnclearAnalysis());
+
+        result.ShouldBe(ClarificationPostAnalysis.Sent);
+        await _notifier.Received(1).NotifyMessageAsync(
+            Arg.Is<string>(m => m.Contains("Clarification requested")), Arg.Any<CancellationToken>());
+    }
+
+    [TearDown]
+    public void ResetConfiguredTexts() => ClarificationTexts.Reset();
+
     [Test]
     public async Task After_Ask_ReceivedAtOfKindLocal_IsConvertedViaToUniversalTime()
     {
@@ -238,6 +316,7 @@ public class ClarificationCoordinatorTests
             new[] { _emailSender },
             _analysisService,
             _notifier,
+            _textService,
             new FixedCompanyClock(new DateTimeOffset(NowUtc), FixedOffsetZone(2)),
             Substitute.For<ILogger<ClarificationCoordinator>>());
 
