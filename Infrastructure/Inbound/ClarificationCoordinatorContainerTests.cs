@@ -22,6 +22,7 @@ using Klacks.Api.Infrastructure.Inbound;
 using Klacks.Api.Infrastructure.Plugins;
 using Klacks.Api.Infrastructure.Repositories.Inbound;
 using Klacks.Api.Infrastructure.Services;
+using Klacks.Api.Infrastructure.Services.Settings;
 using Klacks.Plugin.Messaging;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -46,6 +47,8 @@ public class ClarificationCoordinatorContainerTests
         nameof(MessagingPluginClientReplyChannel),
         nameof(InboundIntentAnalysisService),
         nameof(InboundAnalysisNotifier),
+        nameof(ClarificationTextService),
+        nameof(InstallationLanguageResolver),
         nameof(InboundClarificationRepository),
         nameof(InboundShiftContextReader),
         nameof(CompanyClock)

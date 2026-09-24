@@ -32,7 +32,11 @@ public class AssistantTextsPackCoverageTests
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     [TearDown]
-    public void ResetConfiguredTexts() => GracefulCorrectionTexts.Reset();
+    public void ResetConfiguredTexts()
+    {
+        GracefulCorrectionTexts.Reset();
+        ClarificationTexts.Reset();
+    }
 
     /// <summary>
     /// The Klacks.Api project directory, i.e. the base directory the loader itself is given at startup.

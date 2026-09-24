@@ -21,6 +21,7 @@ using Klacks.Api.Infrastructure.Hubs;
 using Klacks.Api.Infrastructure.Inbound;
 using Klacks.Api.Infrastructure.Repositories.Inbound;
 using Klacks.Api.Infrastructure.Services;
+using Klacks.Api.Infrastructure.Services.Settings;
 using Klacks.Plugin.Messaging;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -42,6 +43,8 @@ public class ClarificationExpirySweepContainerTests
         nameof(ClarificationExpirySweep),
         nameof(InboundClarificationRepository),
         nameof(InboundAnalysisNotifier),
+        nameof(ClarificationTextService),
+        nameof(InstallationLanguageResolver),
         nameof(CompanyClock)
     ];
 

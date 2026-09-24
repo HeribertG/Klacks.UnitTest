@@ -28,7 +28,11 @@ public class EmptyAnswerNoticeTextTests
     private const string OwnerId = "owner-notice";
 
     [TearDown]
-    public void ResetConfiguredTexts() => GracefulCorrectionTexts.Reset();
+    public void ResetConfiguredTexts()
+    {
+        GracefulCorrectionTexts.Reset();
+        ClarificationTexts.Reset();
+    }
 
     [Test]
     public void EveryShippedLanguage_FallbackNotice_BecomesTheStepsRanMarker()
