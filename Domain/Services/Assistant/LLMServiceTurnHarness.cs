@@ -109,6 +109,7 @@ internal sealed class LLMServiceTurnHarness
             .Returns(new CompanyTimeZoneResolution(TimeZoneInfo.Utc, CompanyTimeZoneSource.Utc));
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        BackgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
 
         Service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
@@ -129,7 +130,7 @@ internal sealed class LLMServiceTurnHarness
                 companyClock),
             agentRepository: agentRepository,
             contextAssemblyPipeline: null!,
-            backgroundTaskService: Substitute.For<ILLMBackgroundTaskService>(),
+            backgroundTaskService: BackgroundTasks,
             recipeEngine: new RecipeEngineService(
                 scopeFactory,
                 Substitute.For<IPendingRecipeStore>(),
@@ -145,6 +146,8 @@ internal sealed class LLMServiceTurnHarness
     internal ILLMProvider Provider { get; }
 
     internal ILLMSkillBridge SkillBridge { get; }
+
+    internal ILLMBackgroundTaskService BackgroundTasks { get; }
 
     internal List<LLMProviderRequest> Requests { get; } = new();
 
