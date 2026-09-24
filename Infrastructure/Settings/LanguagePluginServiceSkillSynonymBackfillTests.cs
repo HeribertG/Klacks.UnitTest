@@ -2,9 +2,9 @@
 
 /// <summary>
 /// Proves that the startup backfill of language-pack skill synonyms writes under the manifest spelling of
-/// the pack code. The installed codes come back lower-cased from the settings (zh-cn), while a fresh install
-/// keys the jsonb mirror and the skill_phrase rows as zh-CN - a backfill under the lower-cased code would
-/// add a second key and a second set of phrase rows for the same language.
+/// the pack code. The settings key carries the code upper-cased (INSTALLED_LANGUAGE_ZH-CN), while a fresh
+/// install keys the jsonb mirror and the skill_phrase rows as zh-CN - a backfill under any other spelling
+/// would add a second key and a second set of phrase rows for the same language.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
