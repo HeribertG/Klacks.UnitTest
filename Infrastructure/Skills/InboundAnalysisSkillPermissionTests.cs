@@ -8,7 +8,11 @@
 /// employee, the date window and the clarification question, never the message body; the mail inbox they
 /// draw on is open to every authenticated caller (InboxGuard is a feature gate, ReceivedEmailController
 /// has no role), so the change widens no access to raw text. A caller without a role (Planer floor) still
-/// reaches none of the three.
+/// reaches none of them. The three mail readers that hand out the emailId get_email_analysis needs
+/// (list_emails, read_email, list_emails_by_client) follow, because a supervisor who cannot find the id
+/// cannot use the analysis reader: they run the very queries ReceivedEmailController serves to every
+/// authenticated caller. translate_email deliberately stays CanViewSettings: it does not hand out an id
+/// the analysis reader needs, so it is outside this decision.
 /// </summary>
 
 using System.Text.Json;
@@ -35,7 +39,10 @@ public class InboundAnalysisSkillPermissionTests
     [
         "get_email_analysis",
         "get_messenger_analysis",
-        "close_clarification"
+        "close_clarification",
+        "list_emails",
+        "read_email",
+        "list_emails_by_client"
     ];
 
     [TestCaseSource(nameof(ClarificationSkills))]
@@ -66,8 +73,17 @@ public class InboundAnalysisSkillPermissionTests
             "hold CanManageAutomation.");
     }
 
+    [Test]
+    public void TranslateEmail_StaysAtTheSettingsRight_BecauseItIsOutsideTheDecision()
+    {
+        SeededPermissionsOf("translate_email").ShouldBe([Permissions.CanViewSettings]);
+    }
+
     [TestCase("get_email_analysis", 5)]
     [TestCase("get_messenger_analysis", 2)]
+    [TestCase("list_emails", 5)]
+    [TestCase("read_email", 9)]
+    [TestCase("list_emails_by_client", 4)]
     public void FormerlyAdminOnlyReader_CarriesTheBumpedSeedVersion(string skillName, int minimumVersion)
     {
         SeededVersionOf(skillName).ShouldBeGreaterThanOrEqualTo(

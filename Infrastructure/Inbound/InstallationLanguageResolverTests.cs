@@ -28,8 +28,8 @@ public class InstallationLanguageResolverTests
     }
 
     private void Configure(string? value) =>
-        _settingsReader.GetSetting(SettingKeys.DefaultLanguage)
-            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.DefaultLanguage, Value = value! });
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, string> { [SettingKeys.DefaultLanguage] = value! });
 
     [TestCase("de", "de")]
     [TestCase("zh-CN", "zh-CN")]
@@ -67,7 +67,8 @@ public class InstallationLanguageResolverTests
     [Test]
     public async Task AMissingSetting_FallsBackToEnglish()
     {
-        _settingsReader.GetSetting(SettingKeys.DefaultLanguage).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, string>());
 
         (await _resolver.ResolveAsync()).ShouldBe(LanguageConfig.DefaultLanguageFallback);
     }
@@ -77,10 +78,43 @@ public class InstallationLanguageResolverTests
     {
         var logger = new TestHelpers.RecordingLogger<InstallationLanguageResolver>();
         _resolver = new InstallationLanguageResolver(_settingsReader, logger);
-        _settingsReader.GetSetting(SettingKeys.DefaultLanguage).Returns<Klacks.Api.Domain.Models.Settings.Settings?>(
-            _ => throw new InvalidOperationException("database down"));
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyDictionary<string, string>>(_ => throw new InvalidOperationException("database down"));
 
         (await _resolver.ResolveAsync()).ShouldBe(LanguageConfig.DefaultLanguageFallback);
         logger.Entries.ShouldContain(entry => entry.Level == LogLevel.Warning && entry.Exception is InvalidOperationException);
+    }
+
+    [Test]
+    public async Task TheCancellationToken_IsPassedToTheSettingsRead()
+    {
+        Configure("fr");
+        using var cts = new CancellationTokenSource();
+
+        await _resolver.ResolveAsync(cts.Token);
+
+        await _settingsReader.Received(1).GetSettingsByTypesAsync(
+            Arg.Is<IEnumerable<string>>(types => types.SequenceEqual(new[] { SettingKeys.DefaultLanguage })),
+            cts.Token);
+    }
+
+    [Test]
+    public async Task ACancelledRead_Rethrows_InsteadOfFallingBackToEnglish()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyDictionary<string, string>>(_ => throw new OperationCanceledException(cts.Token));
+
+        await Should.ThrowAsync<OperationCanceledException>(() => _resolver.ResolveAsync(cts.Token));
+    }
+
+    [Test]
+    public async Task AnOperationCanceledException_WithoutACancelledCaller_FallsBackToEnglish()
+    {
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyDictionary<string, string>>(_ => throw new OperationCanceledException());
+
+        (await _resolver.ResolveAsync()).ShouldBe(LanguageConfig.DefaultLanguageFallback);
     }
 }

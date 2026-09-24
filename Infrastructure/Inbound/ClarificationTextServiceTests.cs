@@ -56,8 +56,10 @@ public class ClarificationTextServiceTests
     }
 
     private void UseLanguage(string? language) =>
-        _settingsReader.GetSetting(SettingKeys.DefaultLanguage)
-            .Returns(language == null ? null : new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.DefaultLanguage, Value = language });
+        _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(language == null
+                ? new Dictionary<string, string>()
+                : new Dictionary<string, string> { [SettingKeys.DefaultLanguage] = language });
 
     private static void LoadThePacks()
     {

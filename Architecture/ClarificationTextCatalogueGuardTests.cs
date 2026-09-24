@@ -3,20 +3,26 @@
 /// <summary>
 /// Guards the localized texts of the inbound clarification dialog in all 25 languages (the four core
 /// languages in code, the 21 packs in assistant-texts.json, joined by AssistantTextsPluginLoader): every
-/// language has every key and no text is empty, an installed language never resolves to English, the
+/// language has every key and no text is empty, no non-English language carries the English wording for any
+/// of the 19 keys (a pack that was never translated; a legitimate coincidence needs a reasoned entry in
+/// SameAsEnglishByDesign), the suggested-question text of every pack names the autonomy level and the kill
+/// switch exactly as that pack's translations.json (the UI) calls them, the
 /// placeholders of every translation are exactly those of the English text and of the code that fills them,
 /// no text keeps a stray brace (the retired {level} and {killSwitch} included), emoji, bold markers and line
 /// breaks match the English text, and the neutral reply subject is a valid single-line "Re:" subject. The
 /// behaviour tests pin the resolution rules: an unknown language is English, a regional tag reaches its
 /// language, the zh-CN and zh-TW casing resolves, and an installed language that lacks a key resolves to
-/// nothing instead of silently to English.
+/// nothing instead of silently to English (the loader-side gap, a pack directory without
+/// assistant-texts.json, is treated as an unknown language and speaks English, and is only warned about).
 /// </summary>
 
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Klacksy;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Inbound;
 using NUnit.Framework;
@@ -46,6 +52,9 @@ public class ClarificationTextCatalogueGuardTests
     private const string PortugueseRegional = "pt-BR";
     private const string Portuguese = "pt";
     private const string SkillSentenceMarker = "skillSentence";
+    private const string TranslationsFileName = "translations.json";
+    private const string AutonomyAssistedUiKey = "setting.autonomy.level-1";
+    private const string KillSwitchUiKey = "setting.proactiveGovernance.kill-switch";
 
     private static readonly IReadOnlyDictionary<string, string[]> ExpectedPlaceholders =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -58,6 +67,9 @@ public class ClarificationTextCatalogueGuardTests
             [ClarificationTextKeys.PlannerAnsweredAfterExpiry] = [ClarificationTextPlaceholders.Question, ClarificationTextPlaceholders.Asked],
             [ClarificationTextKeys.PlannerArrivedAfterClosure] = [ClarificationTextPlaceholders.Question, ClarificationTextPlaceholders.Asked, ClarificationTextPlaceholders.Status]
         };
+
+    private static readonly IReadOnlyDictionary<(string Language, string Key), string> SameAsEnglishByDesign =
+        new Dictionary<(string Language, string Key), string>();
 
     [SetUp]
     public void LoadThePacks()
@@ -91,6 +103,9 @@ public class ClarificationTextCatalogueGuardTests
         throw new DirectoryNotFoundException(
             $"Could not locate {ApiProjectDirectory}/{PluginsDirectory}/{LanguagesDirectory} by walking up from the test base directory.");
     }
+
+    private static bool IsEnglish(string language) =>
+        string.Equals(language, LanguageConfig.DefaultLanguageFallback, StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<string> PackLanguages() =>
         Directory.GetDirectories(Path.Combine(ApiRoot(), PluginsDirectory, LanguagesDirectory))
@@ -165,19 +180,62 @@ public class ClarificationTextCatalogueGuardTests
     }
 
     [Test]
-    public void EveryPack_ResolvesItsPlannerTextsInItsOwnLanguage_NotInEnglish()
+    public void EveryNonEnglishLanguage_ResolvesEveryKeyInItsOwnLanguage_NotInEnglish()
     {
         var problems = new List<string>();
-        var plannerKeys = ClarificationTextKeys.RequiredKeys.Where(key => key.Contains(".planner.", StringComparison.Ordinal));
 
-        foreach (var language in PackLanguages())
+        foreach (var language in AllLanguages().Where(code => !IsEnglish(code)))
         {
-            foreach (var key in plannerKeys)
+            foreach (var key in ClarificationTextKeys.RequiredKeys)
             {
-                if (string.Equals(TextOf(key, language), English(key), StringComparison.Ordinal))
+                if (string.Equals(TextOf(key, language), English(key), StringComparison.Ordinal)
+                    && !SameAsEnglishByDesign.ContainsKey((language, key)))
                 {
                     problems.Add($"{language}: '{key}' equals the English text");
                 }
+            }
+        }
+
+        problems.ShouldBeEmpty(string.Join(Environment.NewLine, problems));
+    }
+
+    [Test]
+    public void EveryPack_NamesTheAutonomyLevelAndTheKillSwitchAsItsOwnUiCallsThem()
+    {
+        var problems = new List<string>();
+
+        foreach (var language in PackLanguages())
+        {
+            var translationsFile = Path.Combine(ApiRoot(), PluginsDirectory, LanguagesDirectory, language, TranslationsFileName);
+            var translations = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(translationsFile))!;
+            var suggested = TextOf(ClarificationTextKeys.PlannerSuggested, language);
+
+            foreach (var uiKey in new[] { AutonomyAssistedUiKey, KillSwitchUiKey })
+            {
+                if (!translations.TryGetValue(uiKey, out var uiTerm) || string.IsNullOrWhiteSpace(uiTerm))
+                {
+                    problems.Add($"{language}: {TranslationsFileName} has no '{uiKey}'");
+                }
+                else if (!suggested.Contains(uiTerm, StringComparison.Ordinal))
+                {
+                    problems.Add($"{language}: '{ClarificationTextKeys.PlannerSuggested}' does not contain the UI term '{uiTerm}' of '{uiKey}'");
+                }
+            }
+        }
+
+        problems.ShouldBeEmpty(string.Join(Environment.NewLine, problems));
+    }
+
+    [Test]
+    public void EveryEnglishIdenticalException_StillEqualsTheEnglishText_SoTheListCannotRot()
+    {
+        var problems = new List<string>();
+
+        foreach (var ((language, key), reason) in SameAsEnglishByDesign)
+        {
+            if (!string.Equals(TextOf(key, language), English(key), StringComparison.Ordinal))
+            {
+                problems.Add($"{language}: '{key}' no longer equals the English text - remove the exception ({reason})");
             }
         }
 
