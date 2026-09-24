@@ -11,12 +11,14 @@ public class ClarificationStatusTextTests
 {
     private const string Question = "Which shift do you mean?";
     private static readonly Guid AnswerSource = Guid.NewGuid();
+    private static readonly Guid ClarificationId = Guid.NewGuid();
 
     private static InboundClarification Build(
         InboundClarificationStatus status,
         Guid? answerSourceId = null,
         string question = Question) => new()
     {
+        Id = ClarificationId,
         Status = status,
         Question = question,
         ShiftContext = "Early shift, Site A",
@@ -127,6 +129,7 @@ public class ClarificationStatusTextTests
 
         var data = ClarificationStatusText.ToSkillData(clarification);
 
+        Read<Guid>(data, "Id").ShouldBe(ClarificationId);
         Read<string>(data, "Status").ShouldBe("answered, but still unclear");
         Read<string>(data, "Question").ShouldBe(Question);
         Read<string>(data, "ShiftContext").ShouldBe("Early shift, Site A");
