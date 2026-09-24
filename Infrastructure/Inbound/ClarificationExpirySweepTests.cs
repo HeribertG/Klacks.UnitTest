@@ -6,6 +6,9 @@
 /// meanwhile (conditional transition lost) is not reported; deadlines missed during downtime are all
 /// caught up in the first cycle; a failing notification does not stop the remaining rows; a failing
 /// repository is logged, not thrown; a cancelled cycle rethrows the cancellation instead of swallowing it.
+/// The retention step clears the original text of rounds closed before now minus the configured days
+/// (default 30, clamped to 1..3650), also when nothing is due, and is independent of the expire step in
+/// both directions: a failure of one never stops or changes the outcome of the other.
 /// </summary>
 
 using Klacks.Api.Application.Configuration;
@@ -159,6 +162,101 @@ public class ClarificationExpirySweepTests
         cancellation.Cancel();
         _repository.GetOpenDueAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns<IReadOnlyList<InboundClarification>>(_ => throw new OperationCanceledException(cancellation.Token));
+
+        await Should.ThrowAsync<OperationCanceledException>(() => _sweep.RunCycleAsync(cancellation.Token));
+    }
+
+    private ClarificationExpirySweep SweepWithRetentionDays(int retentionDays) => new(
+        _serviceProvider,
+        new SettableTimeProvider(NowUtc),
+        Options.Create(new BackgroundServiceOptions
+        {
+            InboundClarificationSweep = true,
+            InboundClarificationOriginalTextRetentionDays = retentionDays
+        }),
+        NullLogger<ClarificationExpirySweep>.Instance);
+
+    [Test]
+    public async Task Retention_ClearsTheTextOfRoundsClosedBeforeTheDefaultCutoff()
+    {
+        _repository.GetOpenDueAsync(NowUtc, Arg.Any<CancellationToken>()).Returns(Array.Empty<InboundClarification>());
+        _repository.ClearOriginalTextAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(3);
+
+        await _sweep.RunCycleAsync(CancellationToken.None);
+
+        await _repository.Received(1).ClearOriginalTextAsync(
+            NowUtc.AddDays(-InboundClarificationConstants.DefaultOriginalTextRetentionDays), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Retention_UsesTheConfiguredDays()
+    {
+        using var sweep = SweepWithRetentionDays(7);
+        _repository.GetOpenDueAsync(NowUtc, Arg.Any<CancellationToken>()).Returns(Array.Empty<InboundClarification>());
+
+        await sweep.RunCycleAsync(CancellationToken.None);
+
+        await _repository.Received(1).ClearOriginalTextAsync(NowUtc.AddDays(-7), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(0, InboundClarificationConstants.MinOriginalTextRetentionDays)]
+    [TestCase(-30, InboundClarificationConstants.MinOriginalTextRetentionDays)]
+    [TestCase(int.MinValue, InboundClarificationConstants.MinOriginalTextRetentionDays)]
+    [TestCase(int.MaxValue, InboundClarificationConstants.MaxOriginalTextRetentionDays)]
+    public async Task Retention_UnusableConfiguration_IsClampedInTheCutoff(int configuredDays, int expectedDays)
+    {
+        using var sweep = SweepWithRetentionDays(configuredDays);
+        _repository.GetOpenDueAsync(NowUtc, Arg.Any<CancellationToken>()).Returns(Array.Empty<InboundClarification>());
+
+        await sweep.RunCycleAsync(CancellationToken.None);
+
+        await _repository.Received(1).ClearOriginalTextAsync(NowUtc.AddDays(-expectedDays), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(0, InboundClarificationConstants.MinOriginalTextRetentionDays)]
+    [TestCase(-1, InboundClarificationConstants.MinOriginalTextRetentionDays)]
+    [TestCase(int.MaxValue, InboundClarificationConstants.MaxOriginalTextRetentionDays)]
+    [TestCase(30, 30)]
+    [TestCase(InboundClarificationConstants.MinOriginalTextRetentionDays, InboundClarificationConstants.MinOriginalTextRetentionDays)]
+    [TestCase(InboundClarificationConstants.MaxOriginalTextRetentionDays, InboundClarificationConstants.MaxOriginalTextRetentionDays)]
+    public void ClampedRetentionDays_StaysInsideTheRange(int configuredDays, int expectedDays)
+    {
+        ClarificationExpirySweep.ClampedRetentionDays(configuredDays).ShouldBe(expectedDays);
+    }
+
+    [Test]
+    public async Task Retention_FailingExpireStep_DoesNotStopIt()
+    {
+        _repository.GetOpenDueAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<InboundClarification>>(_ => throw new InvalidOperationException("db down"));
+
+        (await _sweep.RunCycleAsync(CancellationToken.None)).ShouldBe(0);
+
+        await _repository.Received(1).ClearOriginalTextAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Expire_FailingRetentionStep_DoesNotChangeTheExpireOutcome()
+    {
+        var clarification = Due(NowUtc.AddMinutes(-1));
+        _repository.GetOpenDueAsync(NowUtc, Arg.Any<CancellationToken>()).Returns(new[] { clarification });
+        _repository.ClearOriginalTextAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns<int>(_ => throw new InvalidOperationException("db down"));
+
+        var expired = await _sweep.RunCycleAsync(CancellationToken.None);
+
+        expired.ShouldBe(1);
+        await _notifier.Received(1).NotifyMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Retention_CancelledStep_RethrowsTheCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        _repository.GetOpenDueAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<InboundClarification>());
+        _repository.ClearOriginalTextAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns<int>(_ => throw new OperationCanceledException(cancellation.Token));
 
         await Should.ThrowAsync<OperationCanceledException>(() => _sweep.RunCycleAsync(cancellation.Token));
     }
