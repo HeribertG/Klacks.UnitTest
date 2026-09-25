@@ -73,5 +73,12 @@ public class StopTurnServiceRegistrationTests
         scopeParameters.ShouldAllBe(parameter => !parameter.HasDefaultValue && !parameter.IsOptional);
     }
 
+    [Test]
+    public void TheStoppedTurnCleanup_IsScopedBecauseItReadsTheScopedConfirmationsAndTheDbContext()
+    {
+        Descriptor<IStoppedTurnCleanup>().ImplementationType.ShouldBe(typeof(StoppedTurnCleanup));
+        Descriptor<IStoppedTurnCleanup>().Lifetime.ShouldBe(ServiceLifetime.Scoped);
+    }
+
     private ServiceDescriptor Descriptor<TService>() => _services.Single(d => d.ServiceType == typeof(TService));
 }

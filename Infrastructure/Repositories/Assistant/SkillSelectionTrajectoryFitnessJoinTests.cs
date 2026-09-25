@@ -112,6 +112,42 @@ public class SkillSelectionTrajectoryFitnessJoinTests
     }
 
     [Test]
+    public async Task PhraseUsage_CancelledUiActionOfAStoppedTurn_StaysNeutral()
+    {
+        var turnId = Guid.NewGuid();
+        await SeedAsync(MakeTrajectory(turnId, wasSuccessful: null), MakeUsage(turnId, success: false, UiActionStatus.Cancelled));
+
+        var usage = await CreateRepository().CountPhraseUsageAsync(OwnerName, WindowStartUtc);
+
+        usage.Uses.ShouldBe(1);
+        usage.Successes.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task PhraseUsage_ACancelledSkillRowOfAStoppedTurn_StaysNeutral()
+    {
+        var turnId = Guid.NewGuid();
+        var cancelled = MakeUsage(turnId, success: false, uiActionStatus: null);
+        cancelled.FailureKind = SkillFailureKind.Cancelled;
+        await SeedAsync(MakeTrajectory(turnId, wasSuccessful: null), cancelled);
+
+        var usage = await CreateRepository().CountPhraseUsageAsync(OwnerName, WindowStartUtc);
+
+        usage.Successes.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task RecipeUsage_CancelledUiActionOfAStoppedTurn_StaysNeutral()
+    {
+        var turnId = Guid.NewGuid();
+        await SeedAsync(MakeTrajectory(turnId, wasSuccessful: null), MakeUsage(turnId, success: false, UiActionStatus.Cancelled));
+
+        var usage = await CreateRepository().CountRecipeUsageAsync(RecipeName, WindowStartUtc);
+
+        usage.Successes.ShouldBe(1);
+    }
+
+    [Test]
     public async Task PhraseUsage_LegacyTurnWithoutATurnId_KeepsTheOldSemantics()
     {
         await SeedAsync(MakeTrajectory(turnId: null, wasSuccessful: null), usage: null);

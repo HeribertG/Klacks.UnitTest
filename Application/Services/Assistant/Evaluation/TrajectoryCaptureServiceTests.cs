@@ -245,6 +245,43 @@ public class TrajectoryCaptureServiceTests
     }
 
     [Test]
+    public async Task OnlyCancelledUiActions_WasSuccessfulStaysUnknown()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _usage.GetByTurnIdAsync(turnId, Arg.Any<CancellationToken>())
+            .Returns([Usage(turnId, false, UiActionStatus.Cancelled)]);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Öffne die Einstellungen", UserId = "user-1", TurnId = turnId },
+            "Wird ausgeführt.",
+            [new LLMFunctionCall { FunctionName = "open_settings" }]);
+
+        captured!.WasSuccessful.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ACancelledSkillRowIsNoVerdict_TheOtherRowsDecideTheTurn()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        var cancelled = Usage(turnId, false);
+        cancelled.FailureKind = SkillFailureKind.Cancelled;
+        _usage.GetByTurnIdAsync(turnId, Arg.Any<CancellationToken>()).Returns([Usage(turnId, true), cancelled]);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1", TurnId = turnId },
+            "Hier.",
+            [new LLMFunctionCall { FunctionName = "list_open_shifts" }]);
+
+        captured!.WasSuccessful.ShouldBe(true);
+    }
+
+    [Test]
     public async Task DispatchedUiActionPlusCompletedSuccess_MarksTheTurnSuccessful()
     {
         SkillSelectionTrajectory? captured = null;

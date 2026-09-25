@@ -61,6 +61,20 @@ public class SkillEffectivenessRepositoryTests
         stat.Failures.ShouldBe(1);
     }
 
+    // A UiAction of a stopped turn never reached the browser: it is neither a call nor a failure of the skill,
+    // exactly like a dispatched one that nobody has reported yet.
+    [Test]
+    public async Task ACancelledUiAction_IsNeitherACallNorAFailure()
+    {
+        await SeedUsageAsync(MakeUsage(uiActionStatus: UiActionStatus.Completed), InsideWindow);
+        await SeedUsageAsync(MakeUsage(uiActionStatus: UiActionStatus.Cancelled, success: false), InsideWindow);
+
+        var stat = (await CreateRepository().GetSkillCallStatsAsync(WindowStart)).ShouldHaveSingleItem();
+
+        stat.Calls.ShouldBe(1);
+        stat.Failures.ShouldBe(0);
+    }
+
     // A read the user's stop cut short is not a call the skill got wrong: counting it turns every stop into
     // a failure of the skill that happened to be running, and a row without a failure kind must stay in.
     [Test]

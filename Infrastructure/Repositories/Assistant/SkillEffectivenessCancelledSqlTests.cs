@@ -28,6 +28,12 @@ public class SkillEffectivenessCancelledSqlTests
 
     private static readonly DateTime WindowStartUtc = new(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
 
+    private static readonly string CompletedValue =
+        ((int)UiActionStatus.Completed).ToString(CultureInfo.InvariantCulture);
+
+    private static readonly string FailedValue =
+        ((int)UiActionStatus.Failed).ToString(CultureInfo.InvariantCulture);
+
     private static readonly string CancelledValue =
         ((int)SkillFailureKind.Cancelled).ToString(CultureInfo.InvariantCulture);
 
@@ -67,6 +73,16 @@ public class SkillEffectivenessCancelledSqlTests
         sql.ShouldContain($"FROM {UsageTable}");
         Regex.IsMatch(sql, $@"failure_kind <> {CancelledValue} OR \w+\.failure_kind IS NULL").ShouldBeTrue(
             $"The predicate must keep rows without a failure kind. Generated SQL: {sql}");
+    }
+
+    [Test]
+    public void CallRecords_KeepOnlyRowsWithoutAPendingOrCancelledUiActionStatus()
+    {
+        var sql = Normalize(_repository.CallRecordsQuery(WindowStartUtc).ToQueryString());
+
+        sql.ShouldContain($"ui_action_status IN ({CompletedValue}, {FailedValue})");
+        Regex.IsMatch(sql, @"ui_action_status IN \(2, 3\) OR \w+\.ui_action_status IS NULL").ShouldBeTrue(
+            $"Rows that are no UiAction (status NULL) must stay in. Generated SQL: {sql}");
     }
 
     private static string Normalize(string sql) => Regex.Replace(sql, WhitespaceRuns, SingleSpace);

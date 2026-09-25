@@ -34,6 +34,23 @@ public class ReportUiActionResultCommandHandlerTests
             _repository, Substitute.For<ILogger<ReportUiActionResultCommandHandler>>());
     }
 
+    [TestCase("completed")]
+    [TestCase("failed")]
+    public async Task ARowTheStopAlreadyCancelled_IsNotOverwrittenByALateReport(string status)
+    {
+        var record = GivenDispatch();
+        record.UiActionStatus = UiActionStatus.Cancelled;
+        record.Success = false;
+
+        var result = await _handler.Handle(Command(record.Id, status), CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        result.Updated.ShouldBeFalse();
+        record.UiActionStatus.ShouldBe(UiActionStatus.Cancelled);
+        record.Success.ShouldBeFalse();
+        await _repository.DidNotReceive().UpdateAsync(Arg.Any<SkillUsageRecord>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task KnownDispatch_ReportedCompleted_SetsSuccessAndStatus()
     {
