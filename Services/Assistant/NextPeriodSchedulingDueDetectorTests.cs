@@ -164,6 +164,13 @@ public class NextPeriodSchedulingDueDetectorTests
             .Returns(groups.Select(group => group.Id).ToList());
     }
 
+    private void StubDeadlineLead(string? value)
+    {
+        _settingsReader.GetSetting(SettingKeys.PlanningDeadlineLeadDays)
+            .Returns(Task.FromResult<SettingsRow?>(
+                value == null ? null : new SettingsRow { Type = SettingKeys.PlanningDeadlineLeadDays, Value = value }));
+    }
+
     private void StubEmailAnalysis(bool enabled, int backlogCount)
     {
         _settingsReader.GetSetting(AppSettings.EMAIL_ANALYSIS_ENABLED)
@@ -231,13 +238,68 @@ public class NextPeriodSchedulingDueDetectorTests
     [Test]
     public async Task DetectAsync_MonthlyGroup_OutsideLeadTime_Skips()
     {
-        // 2026-01-10 is 22 days before the next period start (2026-02-01) — outside LeadTimeDays.
+        // 2026-01-10 is 22 days before the next period start (2026-02-01) — outside PlanningWindowDays.
         StubGroups(MakeGroup(PaymentInterval.Monthly));
         _sut = CreateSut(new DateOnly(2026, 1, 10));
 
         var events = await _sut.DetectAsync();
 
         Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_DeadlineLeadSet_WidensTheWindowByTheStoredLead()
+    {
+        // 2026-01-10 is 22 days before 2026-02-01; stored lead 16 + window 7 = 23 covers it.
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubDeadlineLead("16");
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
+        Assert.That(((NextPeriodSchedulingDueTriggerEvent)events[0]).DaysUntilStart, Is.EqualTo(22));
+    }
+
+    [Test]
+    public async Task DetectAsync_DeadlineLeadSet_StillSkipsBeyondTheWidenedWindow()
+    {
+        // 2026-01-08 is 24 days before 2026-02-01; 16 + 7 = 23 does not reach it.
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubDeadlineLead("16");
+        _sut = CreateSut(new DateOnly(2026, 1, 8));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [TestCase(null)]
+    [TestCase("0")]
+    [TestCase("-3")]
+    [TestCase("abc")]
+    [TestCase("")]
+    public async Task DetectAsync_DeadlineLeadUnsetOrUnusable_KeepsTheBaselineWindow(string? stored)
+    {
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubDeadlineLead(stored);
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task DetectAsync_DeadlineLeadAboveTheLimit_IsClamped()
+    {
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubDeadlineLead("99999");
+        _sut = CreateSut(new DateOnly(2026, 1, 10));
+
+        var events = await _sut.DetectAsync();
+
+        Assert.That(events, Has.Count.EqualTo(1));
     }
 
     [Test]

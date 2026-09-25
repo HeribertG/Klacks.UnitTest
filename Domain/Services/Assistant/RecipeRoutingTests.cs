@@ -86,6 +86,27 @@ public class RecipeRoutingTests
     }
 
     [Test]
+    [TestCase("Bis wann muss ich die Pläne fertig haben, damit sie rechtzeitig per Post ankommen?", "de")]
+    [TestCase("Klacksy sollte in Gespräch mit dem User herausfinden, wann die Planungen bis spätesten gemacht werden müssen damit sie rechtzeitig via Email oder Post versenden werden können.", "de")]
+    [TestCase("Bis wann muss die Planung stehen, damit ich sie noch per E-Mail versenden kann?", "de")]
+    [TestCase("By when do I have to finish the roster so it reaches everyone in time by post?", "en")]
+    [TestCase("Jusqu'a quand dois-je terminer la planification pour qu'elle arrive a temps par courrier ?", "fr")]
+    [TestCase("Entro quando devo finire la pianificazione perche arrivi in tempo per posta?", "it")]
+    public void PlanDeliveryDeadlineUtterances_RouteToThePlanDeliveryDeadlineRecipe(string utterance, string language)
+    {
+        Assert.That(Resolve(utterance, language), Is.EqualTo("plan-delivery-deadline"));
+    }
+
+    [Test]
+    [TestCase("Erstelle einen Dienstplan und versende ihn per E-Mail spätestens morgen")]
+    [TestCase("Wie fange ich an?")]
+    [TestCase("Wir haben abwesende Mitarbeiter im Briefing")]
+    public void OtherUtterances_DoNotRouteToThePlanDeliveryDeadlineRecipe(string utterance)
+    {
+        Assert.That(Resolve(utterance), Is.Not.EqualTo("plan-delivery-deadline"));
+    }
+
+    [Test]
     [TestCase("Erstelle eine neue Bestellung für den Kunden Migros")]
     [TestCase("Lege einen neuen Dienst an")]
     public void ShiftOrderUtterances_StillRouteToCreateShiftOrderRecipe(string utterance)
