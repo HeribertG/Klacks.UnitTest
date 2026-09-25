@@ -57,6 +57,15 @@ public class LLMBackgroundTaskServiceTests
     }
 
     [Test]
+    public void SelectFailedCalls_ACallTheStopSkipped_IsNoFailure()
+    {
+        var skipped = Call(success: false);
+        skipped.SkippedByStop = true;
+
+        LLMBackgroundTaskService.SelectFailedCalls([skipped]).ShouldBeEmpty();
+    }
+
+    [Test]
     public void SelectFailedCalls_AllSuccessful_SelectsNothing()
     {
         var calls = new List<LLMFunctionCall> { Call(success: true), Call(success: true) };

@@ -93,6 +93,40 @@ public class LLMServiceStopTests
     }
 
     [Test]
+    public async Task ACallTheStopKeptFromRunning_GetsNoResultEventAndIsNotCounted()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: true);
+        harness.Script(new LLMProviderResponse
+        {
+            Success = true,
+            Content = string.Empty,
+            FunctionCalls =
+            [
+                new LLMFunctionCall { FunctionName = SkillName },
+                new LLMFunctionCall { FunctionName = "list_groups" },
+                new LLMFunctionCall { FunctionName = "create_employee" }
+            ]
+        });
+        using var stop = new CancellationTokenSource();
+        harness.SkillBridge.ExecuteSkillFromLLMCallAsync(
+                Arg.Any<LLMFunctionCall>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                stop.Cancel();
+                return new SkillBridgeResult { Success = true, ResultType = "Data", Message = "Skill result." };
+            });
+
+        var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
+
+        chunks.Count(c => c.Type == SseChunkType.FunctionCall).ShouldBe(3);
+        chunks.Where(c => c.Type == SseChunkType.FunctionResult).Select(c => c.FunctionName)
+            .ShouldBe([SkillName]);
+        chunks.Single(c => c.Type == SseChunkType.TurnStopped).ExecutedCount.ShouldBe(1);
+        harness.TurnState.Calls.Count(c => c.SkippedByStop).ShouldBe(2);
+        AssertStoppedEnding(chunks);
+    }
+
+    [Test]
     public async Task AStopWhileANonStreamingProviderCallIsRunning_CancelsTheCallAndEndsCleanly()
     {
         var harness = new LLMServiceTurnHarness(streaming: false);

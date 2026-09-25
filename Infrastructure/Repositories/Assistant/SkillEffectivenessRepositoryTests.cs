@@ -61,6 +61,24 @@ public class SkillEffectivenessRepositoryTests
         stat.Failures.ShouldBe(1);
     }
 
+    // A read the user's stop cut short is not a call the skill got wrong: counting it turns every stop into
+    // a failure of the skill that happened to be running, and a row without a failure kind must stay in.
+    [Test]
+    public async Task ACancelledSkillRow_IsNeitherACallNorAFailure()
+    {
+        await SeedUsageAsync(MakeUsage(), InsideWindow);
+        await SeedUsageAsync(MakeUsage(failureKind: SkillFailureKind.Exception, success: false), InsideWindow);
+        await SeedUsageAsync(MakeUsage(failureKind: SkillFailureKind.Cancelled, success: false), InsideWindow);
+        var repository = CreateRepository();
+
+        var stat = (await repository.GetSkillCallStatsAsync(WindowStart)).ShouldHaveSingleItem();
+        var kinds = await repository.GetFailureCountsAsync(WindowStart);
+
+        stat.Calls.ShouldBe(2);
+        stat.Failures.ShouldBe(1);
+        kinds.ShouldHaveSingleItem().Kind.ShouldBe(SkillFailureKind.Exception);
+    }
+
     [Test]
     public async Task ARowOlderThanTheWindow_IsOutsideTheReport()
     {

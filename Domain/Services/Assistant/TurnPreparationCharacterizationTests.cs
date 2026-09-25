@@ -277,6 +277,23 @@ public class TurnPreparationCharacterizationTests
         saved()!.Calls[0].SkillName.ShouldBe("add_client_to_group");
     }
 
+    /// <summary>
+    /// A call the user's stop kept from running is not something the user could be correcting either: the
+    /// anchor of a stopped turn names only what really ran.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_CallsTheStopSkipped_AreNotRecorded()
+    {
+        var saved = CaptureSave();
+        var skipped = Call("delete_group", success: false);
+        skipped.SkippedByStop = true;
+
+        Record(Call("add_client_to_group"), skipped);
+
+        saved()!.Calls.Count.ShouldBe(1);
+        saved()!.Calls[0].SkillName.ShouldBe("add_client_to_group");
+    }
+
     [Test]
     public void RecordLastAction_OnlyRejectedOrHeldCalls_SupersedeInsteadOfReplacing()
     {
