@@ -13,6 +13,7 @@ using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.UnitTest.Infrastructure.Skills;
 
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
@@ -27,6 +28,7 @@ public class CancellableSkillPolicyTests
     private const string SensitiveSkill = "delete_client";
     private const string UiActionSkill = "search_in_list";
     private const string UnknownSkill = "no_such_skill";
+    private const int MinimumCancellableSeededSkills = 50;
 
     private ISkillRegistry _registry = null!;
     private CancellableSkillPolicy _policy = null!;
@@ -57,7 +59,7 @@ public class CancellableSkillPolicyTests
     [Test]
     public void TheFolderHealthCheck_NeverReceivesTheStopTokenBecauseItCreatesTheFolder()
     {
-        Register(FolderHealthSkill, SkillCategory.Action);
+        RegisterFromSeeds(FolderHealthSkill);
 
         ReadOnlySkillPrefixes.HasReadOnlyPrefix(FolderHealthSkill)
             .ShouldBeTrue("the name prefix alone would wrongly qualify it, which is why the prefix is never the rule");
@@ -69,7 +71,7 @@ public class CancellableSkillPolicyTests
     [Test]
     public void CreatePlan_NeverReceivesTheStopTokenBecauseItStoresThePlanAndTheToken()
     {
-        Register(CreatePlanSkill, SkillCategory.Action);
+        RegisterFromSeeds(CreatePlanSkill);
 
         new SkillRiskClassifier().Classify(_registry.GetSkillByName(CreatePlanSkill)!)
             .ShouldBe(SkillRiskClass.ReadOnly, "the counter-example is ReadOnly by exception, which is why the class alone is unsafe");
@@ -118,6 +120,53 @@ public class CancellableSkillPolicyTests
 
             _policy.ReceivesStopToken(name).ShouldBeFalse(name);
         }
+    }
+
+    [Test]
+    public void EverySkillOfTheSeedCatalogueThatReceivesTheStopToken_IsARead()
+    {
+        var seeded = SkillSeedCatalog.EnabledSkills().ToDictionary(skill => skill.Name, StringComparer.OrdinalIgnoreCase);
+        _registry.GetSkillByName(Arg.Any<string>()).Returns(call =>
+            seeded.TryGetValue(call.Arg<string>(), out var skill) ? SkillSeedCatalog.ToDescriptor(skill) : null);
+
+        var cancellable = seeded.Values.Where(skill => _policy.ReceivesStopToken(skill.Name)).ToList();
+
+        cancellable.Count.ShouldBeGreaterThan(MinimumCancellableSeededSkills);
+        var notReads = cancellable
+            .Where(skill => SkillSeedCatalog.IsWriteCategory(skill.Category)
+                || SkillRiskClassifier.IrreversibleSkills.Contains(skill.Name)
+                || SkillRiskClassifier.SensitiveSkills.Contains(skill.Name)
+                || SkillRiskClassifier.ScenarioGatedSkills.Contains(skill.Name)
+                || SkillRiskClassifier.ReversibleExtras.Contains(skill.Name)
+                || SkillRiskClassifier.ReadOnlyExtras.Contains(skill.Name))
+            .Select(skill => $"{skill.Name} ({skill.Category})")
+            .ToList();
+        notReads.ShouldBeEmpty("A skill that a stop may cut short must have no write category and sit on no risk list: " + string.Join(", ", notReads));
+    }
+
+    [Test]
+    public void NoSkillOfTheSeedCatalogueThatTheClassifierListsAsARiskyWrite_IsClassifiedReadOnly()
+    {
+        // ReadOnly is decided before the Irreversible list, so the seeded category is the only thing that keeps a
+        // listed skill from being classified ReadOnly and receiving the stop token.
+        var classifier = new SkillRiskClassifier();
+        var listedButReadOnly = SkillSeedCatalog.EnabledSkills()
+            .Where(skill => SkillRiskClassifier.IrreversibleSkills.Contains(skill.Name)
+                || SkillRiskClassifier.SensitiveSkills.Contains(skill.Name)
+                || SkillRiskClassifier.ScenarioGatedSkills.Contains(skill.Name))
+            .Where(skill => classifier.Classify(SkillSeedCatalog.ToDescriptor(skill)) == SkillRiskClass.ReadOnly)
+            .Select(skill => $"{skill.Name} ({skill.Category})")
+            .ToList();
+
+        listedButReadOnly.ShouldBeEmpty("A listed write that classifies ReadOnly would receive the stop token: " + string.Join(", ", listedButReadOnly));
+    }
+
+    private void RegisterFromSeeds(string name)
+    {
+        var seeded = SkillSeedCatalog.EnabledSkills().SingleOrDefault(skill =>
+            string.Equals(skill.Name, name, StringComparison.OrdinalIgnoreCase));
+        seeded.ShouldNotBeNull($"{name} must be seeded, otherwise this pin says nothing about the catalogue");
+        _registry.GetSkillByName(name).Returns(SkillSeedCatalog.ToDescriptor(seeded));
     }
 
     private void Register(string name, SkillCategory category, string executionType = LlmExecutionTypes.Skill)
