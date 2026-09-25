@@ -43,7 +43,7 @@ public class ProactiveMessengerTextComposerTests
     [SetUp]
     public void Setup()
     {
-        MessengerProactiveTexts.Reset();
+        AssistantTextCatalogues.ResetAll();
         _settingsReader = Substitute.For<ISettingsReader>();
         SetInstallationLanguage(null);
         _resolverLogger = new RecordingLogger<InstallationLanguageResolver>();
@@ -52,7 +52,7 @@ public class ProactiveMessengerTextComposerTests
     }
 
     [TearDown]
-    public void ResetConfiguredTexts() => MessengerProactiveTexts.Reset();
+    public void ResetConfiguredTexts() => AssistantTextCatalogues.ResetAll();
 
     private void SetInstallationLanguage(string? language) =>
         _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())

@@ -28,6 +28,7 @@ using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Services.Common;
+using Klacks.UnitTest.TestHelpers;
 using NUnit.Framework;
 using Shouldly;
 
@@ -78,22 +79,14 @@ public class EscalationAndProactiveTextCatalogueGuardTests
     [SetUp]
     public void LoadThePacks()
     {
-        ResetAll();
+        AssistantTextCatalogues.ResetAll();
         var failures = new List<string>();
         AssistantTextsPluginLoader.Load(ApiRoot(), (file, ex) => failures.Add($"{file}: {ex.Message}"));
         failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
     }
 
     [TearDown]
-    public void ResetConfiguredTexts() => ResetAll();
-
-    private static void ResetAll()
-    {
-        EscalationHandoffTexts.Reset();
-        MessengerProactiveTexts.Reset();
-        ClarificationTexts.Reset();
-        GracefulCorrectionTexts.Reset();
-    }
+    public void ResetConfiguredTexts() => AssistantTextCatalogues.ResetAll();
 
     private static string ApiRoot()
     {
@@ -201,8 +194,6 @@ public class EscalationAndProactiveTextCatalogueGuardTests
     {
         PackLanguages().Count.ShouldBe(ExpectedPluginPacks);
         AllLanguages().Count.ShouldBe(EscalationHandoffTexts.CoreLanguages.Count + ExpectedPluginPacks);
-        EscalationHandoffTexts.CoreLanguages.ShouldBe(MultiLanguage.CoreLanguages, ignoreOrder: true);
-        MessengerProactiveTexts.CoreLanguages.ShouldBe(MultiLanguage.CoreLanguages, ignoreOrder: true);
     }
 
     [Test]

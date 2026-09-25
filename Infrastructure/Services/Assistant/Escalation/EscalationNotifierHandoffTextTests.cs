@@ -54,7 +54,7 @@ public class EscalationNotifierHandoffTextTests
     [SetUp]
     public void SetUp()
     {
-        EscalationHandoffTexts.Reset();
+        AssistantTextCatalogues.ResetAll();
         _rows = [];
         _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
         _dispatchRepository
@@ -86,7 +86,7 @@ public class EscalationNotifierHandoffTextTests
     }
 
     [TearDown]
-    public void ResetConfiguredTexts() => EscalationHandoffTexts.Reset();
+    public void ResetConfiguredTexts() => AssistantTextCatalogues.ResetAll();
 
     private void UseLanguage(string? language) =>
         _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
