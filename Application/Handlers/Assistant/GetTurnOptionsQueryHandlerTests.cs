@@ -71,6 +71,73 @@ public class GetTurnOptionsQueryHandlerTests
     private Task<TurnOptionsResult> HandleAsync() =>
         _handler.Handle(new GetTurnOptionsQuery { UserId = UserId, UserMessage = Message }, CancellationToken.None);
 
+    private static string CandidatesOf(string skill) =>
+        "[{\"name\":\"" + skill + "\",\"rank\":1,\"score\":0.7,\"source\":\"Retrieved\"}]";
+
+    // Stop and resend of the same text leaves two trajectories under one hash and the stopped one is often
+    // persisted last, so "most recent by hash" can show the options of the wrong twin.
+    [Test]
+    public async Task Handle_WithATurnId_ShowsTheOptionsOfExactlyThatTurnEvenWhenTheHashIsAmbiguous()
+    {
+        var turnId = Guid.NewGuid();
+        var stopped = MakeTrajectory(UserId, CandidatesOf("create_client"), chosenSkill: null);
+        stopped.TurnId = turnId;
+        var resent = MakeTrajectory(UserId, CandidatesOf("list_clients"), chosenSkill: null);
+        GivenTrajectory(resent);
+        _trajectories.FindByUserAndTurnIdAsync(UserId, turnId, Arg.Any<CancellationToken>()).Returns(stopped);
+
+        var result = await _handler.Handle(
+            new GetTurnOptionsQuery { UserId = UserId, UserMessage = Message, TurnId = turnId }, CancellationToken.None);
+
+        result.Outcome.ShouldBe(TurnOptionsOutcome.Found);
+        result.Options.Select(option => option.SkillName).ShouldBe(new[] { "create_client" });
+        await _trajectories.DidNotReceiveWithAnyArgs().FindMostRecentByUserAndHashAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task Handle_WithoutATurnId_KeepsTheHashLookup()
+    {
+        GivenTrajectory(MakeTrajectory(UserId, CandidatesOf("create_client"), chosenSkill: null));
+
+        var result = await HandleAsync();
+
+        result.Options.Select(option => option.SkillName).ShouldBe(new[] { "create_client" });
+        await _trajectories.DidNotReceiveWithAnyArgs().FindByUserAndTurnIdAsync(default!, default, default);
+    }
+
+    [Test]
+    public async Task Handle_WithATurnIdOfAnotherUser_ReportsNotFoundAndLeaksNoOption()
+    {
+        var turnId = Guid.NewGuid();
+        _trajectories.FindByUserAndTurnIdAsync(UserId, turnId, Arg.Any<CancellationToken>())
+            .Returns((SkillSelectionTrajectory?)null);
+
+        var result = await _handler.Handle(
+            new GetTurnOptionsQuery { UserId = UserId, UserMessage = Message, TurnId = turnId }, CancellationToken.None);
+
+        result.Outcome.ShouldBe(TurnOptionsOutcome.NotFound);
+        result.Options.ShouldBeEmpty();
+        await _trajectories.Received(1).FindByUserAndTurnIdAsync(UserId, turnId, Arg.Any<CancellationToken>());
+    }
+
+    // An id that resolves to nothing must not fall back to the hash: the hash would name the older twin and
+    // show its options in the menu of a turn it does not belong to.
+    [Test]
+    public async Task Handle_WithAnUnknownTurnId_DoesNotFallBackToTheHash()
+    {
+        GivenTrajectory(MakeTrajectory(UserId, CandidatesOf("list_clients"), chosenSkill: null));
+        _trajectories.FindByUserAndTurnIdAsync(UserId, Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns((SkillSelectionTrajectory?)null);
+
+        var result = await _handler.Handle(
+            new GetTurnOptionsQuery { UserId = UserId, UserMessage = Message, TurnId = Guid.NewGuid() },
+            CancellationToken.None);
+
+        result.Outcome.ShouldBe(TurnOptionsOutcome.NotFound);
+        result.Options.ShouldBeEmpty();
+        await _trajectories.DidNotReceiveWithAnyArgs().FindMostRecentByUserAndHashAsync(default!, default!, default);
+    }
+
     [Test]
     public async Task Handle_NoTrajectoryForTheHash_ReportsNotFoundWithNoOptions()
     {

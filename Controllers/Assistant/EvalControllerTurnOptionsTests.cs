@@ -99,6 +99,68 @@ public class EvalControllerTurnOptionsTests
     }
 
     [Test]
+    public async Task TurnOptions_ForwardsTheTurnId()
+    {
+        var turnId = Guid.NewGuid();
+        _mediator.Send(Arg.Any<GetTurnOptionsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new TurnOptionsResult { Outcome = TurnOptionsOutcome.NotFound });
+
+        await _controller.TurnOptions(
+            new EvalController.TurnOptionsRequest { UserMessage = "Lege einen Kunden an", TurnId = turnId },
+            CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<GetTurnOptionsQuery>(query => query.UserId == UserId && query.TurnId == turnId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TurnOptions_WithoutATurnId_SendsNoTurnId()
+    {
+        _mediator.Send(Arg.Any<GetTurnOptionsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new TurnOptionsResult { Outcome = TurnOptionsOutcome.NotFound });
+
+        await _controller.TurnOptions(
+            new EvalController.TurnOptionsRequest { UserMessage = "Lege einen Kunden an" }, CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<GetTurnOptionsQuery>(query => query.TurnId == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SubmitHelpfulFeedback_ForwardsTheTurnIdAndTheCallerIdentity()
+    {
+        var turnId = Guid.NewGuid();
+        _mediator.Send(Arg.Any<SubmitHelpfulFeedbackCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SubmitHelpfulFeedbackResult(Found: true, TrajectoryId: Guid.NewGuid()));
+
+        await _controller.SubmitHelpfulFeedback(
+            new EvalController.SubmitHelpfulFeedbackRequest { UserMessage = "Lege einen Kunden an", TurnId = turnId },
+            CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SubmitHelpfulFeedbackCommand>(command =>
+                command.UserId == UserId && command.TurnId == turnId && command.UserMessage == "Lege einen Kunden an"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SubmitHelpfulFeedback_WithoutATurnId_SendsNoTurnId()
+    {
+        _mediator.Send(Arg.Any<SubmitHelpfulFeedbackCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SubmitHelpfulFeedbackResult(Found: false, TrajectoryId: null));
+
+        await _controller.SubmitHelpfulFeedback(
+            new EvalController.SubmitHelpfulFeedbackRequest { UserMessage = "Lege einen Kunden an" },
+            CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SubmitHelpfulFeedbackCommand>(command => command.TurnId == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task TurnOptions_WithoutABody_ReturnsBadRequest()
     {
         var result = await _controller.TurnOptions(null!, CancellationToken.None);

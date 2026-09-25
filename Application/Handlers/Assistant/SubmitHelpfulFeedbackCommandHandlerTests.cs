@@ -133,6 +133,10 @@ public class SubmitHelpfulFeedbackCommandHandlerTests
     private static SubmitHelpfulFeedbackCommand Command(string message, bool helpful, string? comment = null) =>
         new() { UserId = UserId, UserMessage = message, Helpful = helpful, Comment = comment };
 
+    private static SubmitHelpfulFeedbackCommand Command(
+        string message, Guid turnId, bool? helpful = null, string? comment = null) =>
+        new() { UserId = UserId, UserMessage = message, TurnId = turnId, Helpful = helpful, Comment = comment };
+
     // W1.8: a thumbs-down marks the turn not helpful, stores the optional comment, and forwards an
     // explicit negative case to the learning loop.
     [Test]
@@ -228,6 +232,95 @@ public class SubmitHelpfulFeedbackCommandHandlerTests
 
         trajectory.Helpful.ShouldBe(true);
         trajectory.HelpfulComment.ShouldBeNull();
+    }
+
+    // Stop and resend of the same text leaves two trajectories under one hash and the stopped one is often
+    // persisted last, so "most recent by hash" can mark the wrong twin. The turn id is the exact key.
+    [Test]
+    public async Task AThumbsUpWithATurnId_MarksExactlyThatTurnEvenWhenTheHashIsAmbiguous()
+    {
+        var turnId = Guid.NewGuid();
+        var stopped = new SkillSelectionTrajectory { Id = Guid.NewGuid(), UserId = UserId, TurnId = turnId, WasInterrupted = true };
+        var resent = GivenTrajectory();
+        _repository.FindByUserAndTurnIdAsync(UserId, turnId, Arg.Any<CancellationToken>()).Returns(stopped);
+
+        var result = await _handler.Handle(Command(Message, turnId), CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        result.TrajectoryId.ShouldBe(stopped.Id);
+        stopped.Helpful.ShouldBe(true);
+        resent.Helpful.ShouldBeNull();
+        await _repository.Received(1).UpdateAsync(stopped, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().UpdateAsync(resent, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceiveWithAnyArgs().FindMostRecentByUserAndHashAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task AThumbsDownWithATurnId_MarksThatTurnAndFeedsTheLearningCaseFromIt()
+    {
+        var turnId = Guid.NewGuid();
+        var completed = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(), AgentId = Guid.NewGuid(), UserId = UserId, TurnId = turnId, LlmChosenSkill = "list_clients"
+        };
+        var twin = GivenTrajectory();
+        _repository.FindByUserAndTurnIdAsync(UserId, turnId, Arg.Any<CancellationToken>()).Returns(completed);
+
+        var result = await _handler.Handle(Command(Message, turnId, helpful: false, comment: "Falsch."), CancellationToken.None);
+
+        result.TrajectoryId.ShouldBe(completed.Id);
+        completed.Helpful.ShouldBe(false);
+        twin.Helpful.ShouldBeNull();
+        await _caseCollector.Received(1).CollectNotHelpfulFeedbackAsync(
+            Arg.Is<SkillLearningFeedback>(f => f.TrajectoryId == completed.Id && f.AgentId == completed.AgentId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutATurnId_TheHashLookupStillApplies()
+    {
+        var trajectory = GivenTrajectory();
+
+        var result = await _handler.Handle(Command(Message), CancellationToken.None);
+
+        result.TrajectoryId.ShouldBe(trajectory.Id);
+        await _repository.DidNotReceiveWithAnyArgs().FindByUserAndTurnIdAsync(default!, default, default);
+    }
+
+    // The owner is part of the lookup key, and the handler must put the authenticated user into it. Whether
+    // a foreign turn is filtered is the repository's job; the caller sees "not found" either way.
+    [Test]
+    public async Task ATurnIdOfAnotherUser_IsReportedAsNotFoundAndTouchesNothing()
+    {
+        var turnId = Guid.NewGuid();
+        GivenTrajectory();
+        _repository.FindByUserAndTurnIdAsync(UserId, turnId, Arg.Any<CancellationToken>())
+            .Returns((SkillSelectionTrajectory?)null);
+
+        var result = await _handler.Handle(Command(Message, turnId), CancellationToken.None);
+
+        result.Found.ShouldBeFalse();
+        result.TrajectoryId.ShouldBeNull();
+        await _repository.Received(1).FindByUserAndTurnIdAsync(UserId, turnId, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectNotHelpfulFeedbackAsync(default!, default);
+    }
+
+    // An id that resolves to nothing (turn not persisted yet, no trajectory captured) must not fall back to
+    // the hash: the hash would name the older twin and mark the wrong turn.
+    [Test]
+    public async Task AnUnknownTurnId_DoesNotFallBackToTheHash()
+    {
+        var twin = GivenTrajectory();
+        _repository.FindByUserAndTurnIdAsync(UserId, Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns((SkillSelectionTrajectory?)null);
+
+        var result = await _handler.Handle(Command(Message, Guid.NewGuid()), CancellationToken.None);
+
+        result.Found.ShouldBeFalse();
+        twin.Helpful.ShouldBeNull();
+        await _repository.DidNotReceiveWithAnyArgs().FindMostRecentByUserAndHashAsync(default!, default!, default);
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
     }
 
     private SkillSelectionTrajectory GivenTrajectory()
