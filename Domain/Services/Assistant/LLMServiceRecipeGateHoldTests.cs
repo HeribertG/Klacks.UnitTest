@@ -90,6 +90,7 @@ public class LLMServiceRecipeGateHoldTests
             Substitute.For<IAgentSkillRepository>(),
             agentRepository,
             Substitute.For<IPendingConfirmationStore>(),
+            Substitute.For<ITurnConfirmationScope>(),
             _skillBridge);
 
         _service = new LLMService(

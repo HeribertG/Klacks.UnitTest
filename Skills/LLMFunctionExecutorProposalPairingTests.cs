@@ -60,6 +60,7 @@ public class LLMFunctionExecutorProposalPairingTests
             _agentSkillRepository,
             _agentRepository,
             _confirmationStore,
+            Substitute.For<ITurnConfirmationScope>(),
             _skillBridge);
     }
 

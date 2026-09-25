@@ -165,7 +165,7 @@ public class CorrectionTurnPreparerTests
         _lastActionStore, _pendingRecipeStore, _turnPreparation, _assembler, _pendingConfirmationStore,
         _skillRegistry, _permissionGate,
         Substitute.For<ILogger<CorrectionTurnPreparer>>(),
-        turnScope);
+        turnScope ?? Substitute.For<ITurnConfirmationScope>());
 
     private Task<CorrectionTurnPreparation> Prepare(string message = CorrectionMessage, ITurnConfirmationScope? turnScope = null) =>
         CreatePreparer(turnScope).PrepareAsync(

@@ -63,7 +63,7 @@ public class LLMFunctionExecutorProposalHintScopeTests
             });
 
         _executor = new LLMFunctionExecutor(
-            Substitute.For<ILogger<LLMFunctionExecutor>>(), skills, agents, _pending, bridge, null, _scope);
+            Substitute.For<ILogger<LLMFunctionExecutor>>(), skills, agents, _pending, _scope, bridge);
         _context = new LLMContext { UserId = Guid.NewGuid().ToString(), Message = "Do it." };
     }
 

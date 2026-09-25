@@ -111,6 +111,7 @@ public class LLMServiceCorrectionClarificationTests
                 Substitute.For<IAgentSkillRepository>(),
                 _agentRepository,
                 Substitute.For<IPendingConfirmationStore>(),
+                Substitute.For<ITurnConfirmationScope>(),
                 Substitute.For<ILLMSkillBridge>()),
             responseBuilder: new LLMResponseBuilder(),
             promptBuilder: new LLMSystemPromptBuilder(

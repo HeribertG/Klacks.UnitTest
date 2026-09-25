@@ -43,6 +43,7 @@ public class LLMFunctionExecutorTests
             _agentSkillRepository,
             _agentRepository,
             PendingStoreTestFactory.CreateConfirmationStore(),
+            Substitute.For<ITurnConfirmationScope>(),
             _skillBridge);
     }
 
