@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for CreateShiftSkill's asDraft parameter: a draft order is created with status
 /// OriginalOrder and skips the sealed-order reuse lookup (which only makes sense once an order is
-/// already sealed), while omitting asDraft keeps the pre-existing sealed-on-create behavior unchanged.
+/// already sealed), while omitting asDraft keeps the pre-existing sealed-on-create behavior unchanged. A macroId
+/// that points to a macro created by the assistant is refused before anything is stored; other macroIds are used.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Settings;
@@ -122,4 +123,41 @@ public class CreateShiftSkillTests
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
+
+    [TestCase(MacroOrigin.Assistant)]
+    [TestCase(MacroOrigin.AssistantExtension)]
+    public async Task RefusesAndDoesNotPersist_WhenMacroIdPointsToAnAssistantMacro(MacroOrigin origin)
+    {
+        var macroId = Guid.NewGuid();
+        GivenMacro(macroId, origin);
+        var parameters = Params();
+        parameters["macroId"] = macroId.ToString();
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("created by the assistant").And.Contain(macroId.ToString()));
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [TestCase(MacroOrigin.Seed)]
+    [TestCase(MacroOrigin.Import)]
+    [TestCase(MacroOrigin.User)]
+    public async Task CreatesTheOrder_WithAnyOtherMacroId(MacroOrigin origin)
+    {
+        var macroId = Guid.NewGuid();
+        GivenMacro(macroId, origin);
+        var parameters = Params();
+        parameters["macroId"] = macroId.ToString();
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True, result.Message);
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Is<Shift>(s => s.MacroId == macroId));
+    }
+
+    private void GivenMacro(Guid macroId, MacroOrigin origin) =>
+        _mediator.Send(Arg.Any<ListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MacroResource> { new() { Id = macroId, Name = "Sunday rate", Origin = origin } }.AsEnumerable());
 }

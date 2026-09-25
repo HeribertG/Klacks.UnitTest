@@ -6,7 +6,8 @@
 /// externally authored content — the defense would disappear without any test turning red. This guard
 /// asserts that every curated entry still exists in the seeded skill catalogue (core definitions plus
 /// every plugin feature seed), and that the curated names are unique and lower-case, matching the
-/// naming convention every seeded skill follows.
+/// naming convention every seeded skill follows. list_macros must stay in the registry, because macro names and
+/// scripts are free text an administrator or the assistant wrote.
 /// </summary>
 
 using System.Text.Json;
@@ -20,6 +21,7 @@ public class UntrustedSkillOutputsCatalogueTests
     private const string SkillSeedsFileName = "skill-seeds.json";
     private const string SkillsJsonProperty = "skills";
     private const string SkillNameJsonProperty = "name";
+    private const string MacroListingSkill = "list_macros";
 
     private static readonly string[] DefinitionsRelativePath =
     [
@@ -46,6 +48,12 @@ public class UntrustedSkillOutputsCatalogueTests
             "UntrustedSkillOutputs lists skills that no longer exist in any skill-seeds.json. "
             + "A rename silently disables the prompt-injection framing for that skill: "
             + string.Join(", ", missing));
+    }
+
+    [Test]
+    public void MacroListing_IsUntrusted_BecauseMacroNamesAndScriptsAreFreeText()
+    {
+        UntrustedSkillOutputs.Contains(MacroListingSkill).ShouldBeTrue();
     }
 
     [Test]

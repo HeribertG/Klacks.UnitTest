@@ -143,7 +143,7 @@ public static class SkillFeatureCoverageMap
         ["CalendarRulesController"] = Covered("import_calendar_rules", "validate_calendar_rule", "list_holidays_for_period", "validate_holiday_overlap"),
         ["CountriesController"] = Covered("list_countries"),
         ["GeneralSettingsController"] = Covered("get_general_settings", "update_general_settings", "get_email_settings", "update_email_settings", "get_imap_settings", "update_imap_settings", "get_owner_address", "update_owner_address", "get_work_settings", "update_work_settings", "get_deepl_settings", "update_deepl_settings", "get_web_search_settings", "update_web_search_settings", "test_smtp_connection", "test_imap_connection", "set_erp_import_schedule"),
-        ["MacrosController"] = Covered("list_macros", "create_macro", "update_macro", "delete_macro"),
+        ["MacrosController"] = Covered("list_macros", "create_macro", "update_macro", "delete_macro", "extend_macro"),
         ["PostcodeChController"] = Covered("lookup_location"),
         ["QualificationController"] = Covered("create_qualification", "update_qualification", "delete_qualification", "list_qualifications", "set_client_qualification"),
         ["StatesController"] = Covered("list_states"),

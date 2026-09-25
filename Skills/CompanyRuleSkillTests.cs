@@ -23,6 +23,7 @@ using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Domain.Services.Settings;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.Api.Infrastructure.Services.Macros;
 using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
@@ -150,6 +151,7 @@ public class CompanyRuleSkillTests
             _store, _catalog, _validator,
             Substitute.For<ISettingsReader>(),
             Substitute.For<IMacroScriptValidator>(),
+            new MacroOutputChannelInspector(),
             Substitute.For<IComplianceEnforcementResolver>(),
             Substitute.For<IMediator>());
 
@@ -174,6 +176,7 @@ public class CompanyRuleSkillTests
             _store, _catalog, _validator,
             Substitute.For<ISettingsReader>(),
             macroValidator,
+            new MacroOutputChannelInspector(),
             Substitute.For<IComplianceEnforcementResolver>(),
             Substitute.For<IMediator>());
 
@@ -181,6 +184,35 @@ public class CompanyRuleSkillTests
 
         result.Success.ShouldBeTrue();
         macroValidator.Received(1).Validate("OUTPUT 1, 0");
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        json.ShouldContain("\"ScriptValid\":true");
+    }
+
+    [Test]
+    public async Task Preview_CustomMacro_UnprocessedOutputChannel_IsShownAsInvalidScript()
+    {
+        var draft = new CompanyRuleDraft { Kind = CompanyRuleKind.CustomMacro, RuleText = "x" };
+        draft.Parameters[CompanyRuleParameterNames.MacroName] = "Info";
+        draft.Parameters[CompanyRuleParameterNames.MacroScript] = "OUTPUT 5, 1";
+        _store.Set(UserId, "company-rule-intake", draft);
+
+        var macroValidator = Substitute.For<IMacroScriptValidator>();
+        macroValidator.Validate(Arg.Any<string>()).Returns(MacroScriptValidationResult.Success());
+
+        var skill = new PreviewCompanyRuleSkill(
+            _store, _catalog, _validator,
+            Substitute.For<ISettingsReader>(),
+            macroValidator,
+            new MacroOutputChannelInspector(),
+            Substitute.For<IComplianceEnforcementResolver>(),
+            Substitute.For<IMediator>());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeTrue();
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Data);
+        json.ShouldContain("\"ScriptValid\":false");
+        json.ShouldContain("OUTPUT channel(s) 5 are not processed");
     }
 
     [Test]
@@ -200,6 +232,7 @@ public class CompanyRuleSkillTests
             _store, _catalog, _validator,
             Substitute.For<ISettingsReader>(),
             Substitute.For<IMacroScriptValidator>(),
+            new MacroOutputChannelInspector(),
             resolver,
             Substitute.For<IMediator>());
 
@@ -227,6 +260,7 @@ public class CompanyRuleSkillTests
             _store, _catalog, _validator,
             Substitute.For<ISettingsReader>(),
             Substitute.For<IMacroScriptValidator>(),
+            new MacroOutputChannelInspector(),
             resolver,
             Substitute.For<IMediator>());
 

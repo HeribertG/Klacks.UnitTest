@@ -83,7 +83,7 @@ public class MacroManagementServiceTests
         macro.Name = "UpdatedName";
         macro.Content = "UpdatedContent";
 
-        await _service.UpdateMacroAsync(macro);
+        await _service.UpdateMacroAsync(macro, byAssistant: false);
         await _context.SaveChangesAsync();
 
         var result = await _context.Macro.FindAsync(macro.Id);
@@ -202,7 +202,7 @@ public class MacroManagementServiceTests
         _macroCache.Contains(macro.Id).ShouldBeTrue();
 
         macro.Content = "output 1, 2";
-        await _service.UpdateMacroAsync(macro);
+        await _service.UpdateMacroAsync(macro, byAssistant: false);
 
         _macroCache.Contains(macro.Id).ShouldBeFalse();
     }
@@ -308,5 +308,168 @@ public class MacroManagementServiceTests
         var result = await _service.MacroExistsAsync(nonExistingId);
 
         result.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task UpdateMacroAsync_DetachedPayloadWithOtherOrigin_KeepsPersistedOrigin()
+    {
+        var id = Guid.NewGuid();
+        _context.Macro.Add(new Macro
+        {
+            Id = id,
+            Name = "AllShift",
+            Content = "output 1, 1",
+            Description = new MultiLanguage { De = "Desc" },
+            Origin = MacroOrigin.Seed
+        });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var returned = await _service.UpdateMacroAsync(new Macro
+        {
+            Id = id,
+            Name = "AllShift renamed",
+            Content = "output 1, 2",
+            Description = new MultiLanguage { De = "Desc" },
+            Origin = MacroOrigin.User
+        }, byAssistant: false);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        returned.Origin.ShouldBe(MacroOrigin.Seed);
+        var persisted = await _context.Macro.AsNoTracking().SingleAsync(m => m.Id == id);
+        persisted.Origin.ShouldBe(MacroOrigin.Seed);
+        persisted.Name.ShouldBe("AllShift renamed");
+    }
+
+    [TestCase(MacroOrigin.Assistant, false, MacroOrigin.User)]
+    [TestCase(MacroOrigin.AssistantExtension, false, MacroOrigin.User)]
+    [TestCase(MacroOrigin.Assistant, true, MacroOrigin.Assistant)]
+    [TestCase(MacroOrigin.AssistantExtension, true, MacroOrigin.AssistantExtension)]
+    [TestCase(MacroOrigin.Seed, false, MacroOrigin.Seed)]
+    [TestCase(MacroOrigin.Import, false, MacroOrigin.Import)]
+    [TestCase(MacroOrigin.User, true, MacroOrigin.User)]
+    public async Task UpdateMacroAsync_AssistantMacroEditedByTheAdministrator_BecomesUser_OtherwiseOriginIsKept(
+        MacroOrigin persistedOrigin, bool byAssistant, MacroOrigin expectedOrigin)
+    {
+        var id = Guid.NewGuid();
+        _context.Macro.Add(new Macro
+        {
+            Id = id,
+            Name = "Sunday rate",
+            Content = "output 1, 1",
+            Description = new MultiLanguage { De = "Desc" },
+            Origin = persistedOrigin
+        });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var returned = await _service.UpdateMacroAsync(new Macro
+        {
+            Id = id,
+            Name = "Sunday rate",
+            Content = "output 1, 2",
+            Description = new MultiLanguage { De = "Desc" },
+            Origin = MacroOrigin.Assistant
+        }, byAssistant);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        returned.Origin.ShouldBe(expectedOrigin);
+        (await _context.Macro.AsNoTracking().SingleAsync(m => m.Id == id)).Origin.ShouldBe(expectedOrigin);
+    }
+
+    private async Task<Macro> AddCustomMacroAsync(string name)
+    {
+        var macro = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Content = "Content",
+            Description = new MultiLanguage { De = "Desc" },
+            Type = (int)MacroFunctionEnum.Custom
+        };
+        _context.Macro.Add(macro);
+        await _context.SaveChangesAsync();
+        return macro;
+    }
+
+    private static Absence AbsenceUsing(Guid macroId, bool isDeleted = false) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = new MultiLanguage { De = "Ferien" },
+        Description = new MultiLanguage(),
+        Abbreviation = new MultiLanguage(),
+        MacroId = macroId,
+        IsDeleted = isDeleted
+    };
+
+    [Test]
+    public async Task DeleteMacroAsync_ReferencedByAbsenceType_ThrowsWithAbsenceCount()
+    {
+        var macro = await AddCustomMacroAsync("UsedByAbsence");
+        _context.Absence.AddRange(AbsenceUsing(macro.Id), AbsenceUsing(macro.Id), AbsenceUsing(macro.Id));
+        await _context.SaveChangesAsync();
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => _service.DeleteMacroAsync(macro.Id));
+
+        ex.Message.ShouldContain("3 absence type(s)");
+        (await _context.Macro.FindAsync(macro.Id))!.IsDeleted.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task DeleteMacroAsync_OnlySoftDeletedAbsenceReference_Succeeds()
+    {
+        var macro = await AddCustomMacroAsync("FormerlyUsedByAbsence");
+        _context.Absence.Add(AbsenceUsing(macro.Id, isDeleted: true));
+        await _context.SaveChangesAsync();
+
+        await _service.DeleteMacroAsync(macro.Id);
+        await _context.SaveChangesAsync();
+
+        (await _context.Macro.IgnoreQueryFilters().SingleAsync(m => m.Id == macro.Id)).IsDeleted.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task DeleteMacroAsync_OnlySoftDeletedShiftReference_Succeeds()
+    {
+        var macro = await AddCustomMacroAsync("FormerlyUsedByShift");
+        _context.Shift.Add(new Shift { Id = Guid.NewGuid(), Name = "Old", MacroId = macro.Id, IsDeleted = true });
+        await _context.SaveChangesAsync();
+
+        await _service.DeleteMacroAsync(macro.Id);
+        await _context.SaveChangesAsync();
+
+        (await _context.Macro.IgnoreQueryFilters().SingleAsync(m => m.Id == macro.Id)).IsDeleted.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task AddMacroAsync_CustomUnspecifiedCopy_LeavesTheStandardHolderUntouched()
+    {
+        var holder = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "AllShift",
+            Content = "output 1, 1",
+            Description = new MultiLanguage { De = "Desc" },
+            Category = MacroCategoryEnum.Shift,
+            Type = (int)MacroFunctionEnum.Standard
+        };
+        _context.Macro.Add(holder);
+        await _context.SaveChangesAsync();
+
+        await _service.AddMacroAsync(new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "AllShift copy",
+            Content = "output 1, 1",
+            Description = new MultiLanguage(),
+            Category = MacroCategoryEnum.Unspecified,
+            Type = (int)MacroFunctionEnum.Custom,
+            Origin = MacroOrigin.Assistant
+        });
+        await _context.SaveChangesAsync();
+
+        (await _context.Macro.AsNoTracking().SingleAsync(m => m.Id == holder.Id)).Category.ShouldBe(MacroCategoryEnum.Shift);
     }
 }

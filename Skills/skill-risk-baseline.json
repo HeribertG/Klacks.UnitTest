@@ -199,6 +199,7 @@
   "explain_system_context": "ReadOnly",
   "explain_user_account_creation": "ReadOnly",
   "explain_whisper_setup": "ReadOnly",
+  "extend_macro": "Sensitive",
   "fetch_new_emails": "Irreversible",
   "fill_group_by_criteria": "Irreversible",
   "find_absence_capacity_windows": "ReadOnly",

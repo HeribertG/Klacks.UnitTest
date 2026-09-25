@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for the macro Post/PutCommandHandler script validation gate: an invalid script is
 /// rejected with an InvalidRequestException carrying the validator message and nothing is
-/// persisted; a valid or empty script passes through to the settings repository.
+/// persisted; a valid or empty script passes through to the settings repository. The PutCommand tells the
+/// repository who edits the macro (administrator by default, the assistant when its skill sets ByAssistant).
 /// </summary>
 
 using Klacks.Api.Application.Commands.Settings.Macros;
@@ -37,7 +38,7 @@ public class MacroCommandHandlerValidationTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
         _settingsRepository.AddMacroAsync(Arg.Any<MacroEntity>()).Returns(ci => ci.Arg<MacroEntity>());
-        _settingsRepository.PutMacroAsync(Arg.Any<MacroEntity>()).Returns(ci => ci.Arg<MacroEntity>());
+        _settingsRepository.PutMacroAsync(Arg.Any<MacroEntity>(), Arg.Any<bool>()).Returns(ci => ci.Arg<MacroEntity>());
     }
 
     private PostCommandHandler CreatePostHandler() => new(
@@ -110,7 +111,7 @@ public class MacroCommandHandlerValidationTests
             () => CreatePutHandler().Handle(new PutCommand(Resource("DIM 123abc")), CancellationToken.None));
 
         ex.Message.ShouldBe(ValidatorErrorMessage);
-        await _settingsRepository.DidNotReceive().PutMacroAsync(Arg.Any<MacroEntity>());
+        await _settingsRepository.DidNotReceive().PutMacroAsync(Arg.Any<MacroEntity>(), Arg.Any<bool>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
@@ -125,6 +126,24 @@ public class MacroCommandHandlerValidationTests
 
         result.ShouldNotBeNull();
         _macroScriptValidator.Received(1).Validate("OUTPUT 1, 0");
-        await _settingsRepository.Received(1).PutMacroAsync(Arg.Any<MacroEntity>());
+        await _settingsRepository.Received(1).PutMacroAsync(Arg.Any<MacroEntity>(), Arg.Any<bool>());
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Put_PassesWhoEditsTheMacro_ToTheRepository(bool byAssistant)
+    {
+        _macroScriptValidator.Validate(Arg.Any<string>())
+            .Returns(MacroScriptValidationResult.Success());
+
+        await CreatePutHandler().Handle(new PutCommand(Resource("OUTPUT 1, 0"), byAssistant), CancellationToken.None);
+
+        await _settingsRepository.Received(1).PutMacroAsync(Arg.Any<MacroEntity>(), byAssistant);
+    }
+
+    [Test]
+    public void PutCommand_Default_IsTheAdministratorPath()
+    {
+        new PutCommand(Resource("OUTPUT 1, 0")).ByAssistant.ShouldBeFalse();
     }
 }

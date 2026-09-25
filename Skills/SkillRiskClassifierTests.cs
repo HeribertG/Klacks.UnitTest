@@ -312,6 +312,7 @@ public class SkillRiskClassifierTests
     [TestCase("update_contract")]
     [TestCase("create_macro")]
     [TestCase("update_macro")]
+    [TestCase("extend_macro")]
     [TestCase("create_monthly_target_hours")]
     [TestCase("update_monthly_target_hours")]
     [TestCase("update_overtime_settings")]

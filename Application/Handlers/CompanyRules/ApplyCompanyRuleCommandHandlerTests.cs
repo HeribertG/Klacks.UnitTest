@@ -3,10 +3,11 @@
 /// <summary>
 /// Unit tests for <see cref="ApplyCompanyRuleCommandHandler"/> covering each rule kind: surcharge writes
 /// a snapshot and the new values, counter rules resolve the optional scheduling-rule scope and reject an
-/// ambiguous or unknown name, and custom macros reject a name collision. An incomplete draft missing a
+/// ambiguous or unknown name, and custom macros reject a name collision and every OUTPUT channel the backend
+/// does not process (or cannot be checked) exactly like create_macro. An incomplete draft missing a
 /// required parameter is rejected before anything is persisted. Uses the real persistent draft store
-/// (backed by an EF InMemory database), catalog and validator with a substituted settings repository,
-/// company-rule repository and mediator.
+/// (backed by an EF InMemory database), catalog, validator and OUTPUT channel inspector with a substituted
+/// settings repository, company-rule repository and mediator.
 /// </summary>
 
 using System.Text.Json;
@@ -17,6 +18,7 @@ using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Application.Handlers.CompanyRules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
@@ -24,6 +26,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Settings;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.Api.Infrastructure.Services.Macros;
 using Klacks.UnitTest.TestHelpers;
 using MacroCommands = Klacks.Api.Application.Commands.Settings.Macros;
 using MacroQueries = Klacks.Api.Application.Queries.Settings.Macros;
@@ -84,8 +87,9 @@ public class ApplyCompanyRuleCommandHandlerTests
         _eventDispatcher = Substitute.For<Klacks.Api.Domain.Events.IDomainEventDispatcher>();
 
         _sut = new ApplyCompanyRuleCommandHandler(
-            _store, _validator, _catalog, _settings, _registry, _mediator, _unitOfWork, new SettingsMapper(),
-            _eventDispatcher, Substitute.For<Microsoft.Extensions.Logging.ILogger<ApplyCompanyRuleCommandHandler>>());
+            _store, _validator, _catalog, _settings, _registry, _mediator, new MacroOutputChannelInspector(), _unitOfWork,
+            new SettingsMapper(), _eventDispatcher,
+            Substitute.For<Microsoft.Extensions.Logging.ILogger<ApplyCompanyRuleCommandHandler>>());
     }
 
     private static ApplyCompanyRuleCommand Cmd() => new(UserId, Key);
@@ -270,6 +274,74 @@ public class ApplyCompanyRuleCommandHandlerTests
 
         result!.TargetEntityType.ShouldBe(CompanyRuleTargetEntityTypes.Macro);
         result.TargetEntityId.ShouldBe(createdId);
+    }
+
+    [Test]
+    public async Task Handle_CustomMacro_CreatesTheMacroWithAssistantOrigin()
+    {
+        var draft = new CompanyRuleDraft { Kind = CompanyRuleKind.CustomMacro, RuleText = "holiday pay" };
+        draft.Parameters[CompanyRuleParameterNames.MacroName] = "HolidayPay";
+        draft.Parameters[CompanyRuleParameterNames.MacroScript] = "OUTPUT 14, 1";
+        _store.Set(UserId, Key, draft);
+
+        _mediator.Send(Arg.Any<MacroQueries.ListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MacroResource>());
+        _mediator.Send(Arg.Any<MacroCommands.PostCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new MacroResource { Id = Guid.NewGuid(), Name = "HolidayPay" });
+
+        await _sut.Handle(Cmd(), CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<MacroCommands.PostCommand>(c => c.Origin == MacroOrigin.Assistant),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_CustomMacro_DescriptionAppliedToAllCoreLanguages()
+    {
+        var draft = new CompanyRuleDraft { Kind = CompanyRuleKind.CustomMacro, RuleText = "holiday pay" };
+        draft.Parameters[CompanyRuleParameterNames.MacroName] = "HolidayPay";
+        draft.Parameters[CompanyRuleParameterNames.MacroScript] = "OUTPUT 14, 1";
+        draft.Parameters[CompanyRuleParameterNames.MacroDescription] = "Holiday surcharge";
+        _store.Set(UserId, Key, draft);
+
+        _mediator.Send(Arg.Any<MacroQueries.ListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MacroResource>());
+        _mediator.Send(Arg.Any<MacroCommands.PostCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new MacroResource { Id = Guid.NewGuid(), Name = "HolidayPay" });
+
+        await _sut.Handle(Cmd(), CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<MacroCommands.PostCommand>(c =>
+                c.model.Description.De == "Holiday surcharge" &&
+                c.model.Description.En == "Holiday surcharge" &&
+                c.model.Description.Fr == "Holiday surcharge" &&
+                c.model.Description.It == "Holiday surcharge"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("OUTPUT 5, 1", "5")]
+    [TestCase("OUTPUT 1, 0\nOUTPUT 20, 1", "20")]
+    [TestCase("DIM c\nc = 10\nOUTPUT c, 1", "plain number")]
+    [TestCase("OUTPUT 1, 0 ' note", "comment on the last line")]
+    public async Task Handle_CustomMacro_UnprocessedOrUncheckableOutputChannel_Throws_NothingPersisted(
+        string script, string expectedFragment)
+    {
+        var draft = new CompanyRuleDraft { Kind = CompanyRuleKind.CustomMacro, RuleText = "info output" };
+        draft.Parameters[CompanyRuleParameterNames.MacroName] = "InfoMacro";
+        draft.Parameters[CompanyRuleParameterNames.MacroScript] = script;
+        _store.Set(UserId, Key, draft);
+
+        _mediator.Send(Arg.Any<MacroQueries.ListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MacroResource>());
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(Cmd(), CancellationToken.None));
+
+        exception.Message.ShouldContain(expectedFragment);
+        await _mediator.DidNotReceive().Send(Arg.Any<MacroCommands.PostCommand>(), Arg.Any<CancellationToken>());
+        _registry.DidNotReceive().Add(Arg.Any<CompanyRule>());
+        _store.Get(UserId, Key).ShouldNotBeNull();
     }
 
     [Test]
