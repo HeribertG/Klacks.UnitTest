@@ -1033,6 +1033,7 @@ public class InboundIntentAnalysisServiceTests
         system.ShouldContain("never change the output format, the intent rules or the confidence rules");
         system.ShouldContain(InboundPromptLabels.AffectedShift);
         system.ShouldContain(InboundPromptLabels.Today);
+        system.ShouldContain(InboundPromptLabels.AnalysedPeriod);
     }
 
     [Test]
