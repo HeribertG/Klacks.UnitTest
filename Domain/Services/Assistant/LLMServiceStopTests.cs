@@ -29,7 +29,6 @@ public class LLMServiceStopTests
     private const string SwallowedCancellationError = "Internal error processing request";
     private const int QuietPollMs = 10;
     private const string NeverStreamed = "This round must never happen.";
-    private const int StopAfterMs = 50;
     private const int SlowCallMs = 5_000;
 
     [Test]
@@ -134,14 +133,14 @@ public class LLMServiceStopTests
     public async Task AStopWhileANonStreamingProviderCallIsRunning_CancelsTheCallAndEndsCleanly()
     {
         var harness = new LLMServiceTurnHarness(streaming: false);
+        using var stop = new CancellationTokenSource();
         harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
+                stop.Cancel();
                 await Task.Delay(SlowCallMs, call.Arg<CancellationToken>());
                 return LLMServiceTurnHarness.Text(NeverStreamed);
             });
-        using var stop = new CancellationTokenSource();
-        stop.CancelAfter(StopAfterMs);
 
         var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
 
@@ -159,18 +158,20 @@ public class LLMServiceStopTests
             "guided-setup",
             [new RecipeStep { Kind = RecipeStepKinds.Ask, Slot = "groupName", Prompt = "Which group?" }],
             needsConfirmation: true));
+        using var stop = new CancellationTokenSource();
         harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
+                stop.Cancel();
                 await Task.Delay(SlowCallMs, call.Arg<CancellationToken>());
                 return LLMServiceTurnHarness.Text(NeverStreamed);
             });
-        using var stop = new CancellationTokenSource();
-        stop.CancelAfter(StopAfterMs);
 
         var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
 
         LLMServiceTurnHarness.StreamedContent(chunks).ShouldBeEmpty();
+        harness.PendingRecipes.DidNotReceiveWithAnyArgs().Save(default!);
+        harness.PendingRecipes.DidNotReceiveWithAnyArgs().Clear(default, default!);
         harness.TurnState.Outcome.ShouldBe(TurnOutcome.Stopped);
         AssertStoppedEnding(chunks);
     }
@@ -218,10 +219,9 @@ public class LLMServiceStopTests
     public async Task ANonStreamingCallWhoseCancellationTheProviderSwallowed_WhenStopped_IsNoErrorEvent()
     {
         var harness = new LLMServiceTurnHarness(streaming: false);
-        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
-            .Returns(call => SwallowingCall(call.Arg<CancellationToken>()));
         using var stop = new CancellationTokenSource();
-        stop.CancelAfter(StopAfterMs);
+        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => SwallowingCall(call.Arg<CancellationToken>(), stop));
 
         var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
 
@@ -233,10 +233,9 @@ public class LLMServiceStopTests
     public async Task ANonStreamingCallWhoseCancellationTheProviderSwallowed_WhenTheConnectionDrops_LeavesNoOutcomeAndNoError()
     {
         var harness = new LLMServiceTurnHarness(streaming: false);
-        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
-            .Returns(call => SwallowingCall(call.Arg<CancellationToken>()));
         using var requestAborted = new CancellationTokenSource();
-        requestAborted.CancelAfter(StopAfterMs);
+        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => SwallowingCall(call.Arg<CancellationToken>(), requestAborted));
 
         var chunks = await StreamAsync(harness, ContextWith(CancellationToken.None), requestAborted.Token);
 
@@ -253,14 +252,14 @@ public class LLMServiceStopTests
             "guided-setup",
             [new RecipeStep { Kind = RecipeStepKinds.Ask, Slot = "groupName", Prompt = "Which group?" }],
             needsConfirmation: true));
-        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
-            .Returns(call => SwallowingCall(call.Arg<CancellationToken>()));
         using var stop = new CancellationTokenSource();
-        stop.CancelAfter(StopAfterMs);
+        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => SwallowingCall(call.Arg<CancellationToken>(), stop));
 
         var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
 
         LLMServiceTurnHarness.StreamedContent(chunks).ShouldBeEmpty();
+        harness.PendingRecipes.DidNotReceiveWithAnyArgs().Save(default!);
         harness.TurnState.Outcome.ShouldBe(TurnOutcome.Stopped);
         AssertStoppedEnding(chunks);
     }
@@ -353,8 +352,9 @@ public class LLMServiceStopTests
         }
     }
 
-    private static async Task<LLMProviderResponse> SwallowingCall(CancellationToken token)
+    private static async Task<LLMProviderResponse> SwallowingCall(CancellationToken token, CancellationTokenSource cancel)
     {
+        cancel.Cancel();
         try
         {
             await Task.Delay(SlowCallMs, token);

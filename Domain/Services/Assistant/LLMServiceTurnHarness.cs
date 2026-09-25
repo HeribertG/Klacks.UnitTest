@@ -85,6 +85,7 @@ internal sealed class LLMServiceTurnHarness
             .Returns(call =>
             {
                 var request = call.Arg<LLMProviderRequest>();
+                ProviderStreamTokens.Add(call.Arg<CancellationToken>());
                 return AsTokens(request, Next(request));
             });
 
@@ -138,7 +139,7 @@ internal sealed class LLMServiceTurnHarness
             backgroundTaskService: BackgroundTasks,
             recipeEngine: new RecipeEngineService(
                 scopeFactory,
-                Substitute.For<IPendingRecipeStore>(),
+                PendingRecipes,
                 Substitute.For<ILogger<RecipeEngineService>>()),
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: Substitute.For<ISuggestionEntityNameReader>(),
@@ -151,6 +152,10 @@ internal sealed class LLMServiceTurnHarness
     }
 
     internal LLMService Service { get; }
+
+    internal IPendingRecipeStore PendingRecipes { get; } = Substitute.For<IPendingRecipeStore>();
+
+    internal List<CancellationToken> ProviderStreamTokens { get; } = new();
 
     internal RecordingLogger<LLMService> Logger { get; } = new();
 
