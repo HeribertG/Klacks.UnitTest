@@ -142,7 +142,7 @@ internal sealed class LLMServiceTurnHarness
                 scopeFactory,
                 PendingRecipes,
                 Substitute.For<ILogger<RecipeEngineService>>()),
-            recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
+            recipeRunRecorder: RecipeRuns,
             suggestionEntityNameReader: Substitute.For<ISuggestionEntityNameReader>(),
             contextBudgetPolicy: contextBudgetPolicy,
             turnPreparation: _turnPreparation,
@@ -153,6 +153,8 @@ internal sealed class LLMServiceTurnHarness
     }
 
     internal LLMService Service { get; }
+
+    internal IRecipeRunRecorder RecipeRuns { get; } = Substitute.For<IRecipeRunRecorder>();
 
     internal IStoppedTurnCleanup StoppedTurnCleanup { get; } = Substitute.For<IStoppedTurnCleanup>();
 

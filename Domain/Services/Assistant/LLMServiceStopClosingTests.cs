@@ -223,11 +223,41 @@ public class LLMServiceStopClosingTests
         AssertStoppedEnding(chunks);
     }
 
-    private static RecipeExecutionPlan AskingRecipe() => new(
+    // The recipe run is closed by FinalizeAsync when the turn's plan is finished. A stop that arrives while that
+    // write runs does not undo it: the run is completed and the pending plan cleared, the turn is still stopped.
+    [Test]
+    public async Task AStopWhileTheRecipeRunIsBeingFinalized_StopsTheTurnAfterTheRunWasCompleted()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: true);
+        var finishedPlan = AskingRecipe(slots: new Dictionary<string, string> { ["groupName"] = "Bern" });
+        finishedPlan.AdvanceOverSatisfied();
+        finishedPlan.IsActive.ShouldBeFalse();
+        harness.StartsRecipe(finishedPlan);
+        harness.Script(LLMServiceTurnHarness.Text(IndependentAnswer));
+        using var stop = new CancellationTokenSource();
+        harness.RecipeRuns.BeginOrResumeAsync(
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call => new RecipeRunHandle(Guid.NewGuid(), call.ArgAt<string>(0), call.ArgAt<Guid>(1), call.ArgAt<string>(2)));
+        harness.RecipeRuns.CompleteAsync(Arg.Any<RecipeRunHandle>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                stop.Cancel();
+                return Task.CompletedTask;
+            });
+
+        var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
+
+        await harness.RecipeRuns.Received(1).CompleteAsync(Arg.Any<RecipeRunHandle>(), Arg.Any<CancellationToken>());
+        harness.PendingRecipes.Received(1).Clear(Arg.Any<Guid>(), Arg.Any<string>());
+        harness.TurnState.Outcome.ShouldBe(TurnOutcome.Stopped);
+        AssertStoppedEnding(chunks);
+    }
+
+    private static RecipeExecutionPlan AskingRecipe(Dictionary<string, string>? slots = null) => new(
         "guided-setup",
         [new RecipeStep { Kind = RecipeStepKinds.Ask, Slot = "groupName", Prompt = RecipeQuestion }],
+        slots,
         needsConfirmation: false);
-
     private static async IAsyncEnumerable<string> ToolCallTokens()
     {
         await Task.Yield();
