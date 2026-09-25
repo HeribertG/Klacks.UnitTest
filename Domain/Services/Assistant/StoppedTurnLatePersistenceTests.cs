@@ -145,6 +145,7 @@ public class StoppedTurnLatePersistenceTests
         user.CreateTime.ShouldBe(turn.StartedAtUtc);
         assistant.CreateTime.ShouldNotBeNull();
         assistant.CreateTime!.Value.ShouldBeGreaterThan(user.CreateTime!.Value);
+        (assistant.CreateTime.Value - user.CreateTime.Value).ShouldBeGreaterThanOrEqualTo(TimeSpan.FromMicroseconds(1));
         assistant.CreateTime.Value.ShouldBeLessThan(user.CreateTime.Value.AddMilliseconds(TurnGapMs));
     }
 
