@@ -10,7 +10,8 @@
 /// real validator, channel inspector and regression checker run end to end, including the known interpreter
 /// defect that makes variables of the original unreadable in the appended block; the refusal must then carry
 /// the guidance for writing a block that works despite the defect. A regression abort that is not a runtime
-/// failure of the copy (original does not compile, no comparable input, time budget) carries no such guidance,
+/// failure of the copy (original does not compile, no comparable input, time budget, result total of the copy beyond
+/// the decimal range) carries no such guidance,
 /// and a block ending in a comment line is refused by the channel scan on the trimmed block.
 /// </summary>
 
@@ -211,6 +212,7 @@ public class ExtendMacroSkillTests
     [TestCase(MacroRegressionFailureKind.CopyCompileError, "The extended script does not compile: boom")]
     [TestCase(MacroRegressionFailureKind.NoComparableSample, "The original macro could not be executed on any test input.")]
     [TestCase(MacroRegressionFailureKind.BudgetExceeded, "The regression check did not finish within 30000 ms.")]
+    [TestCase(MacroRegressionFailureKind.CopyTotalOutOfRange, "The extended script adds surcharges at test input [weekday 3] whose total lies beyond the decimal range.")]
     public async Task Extend_RegressionCheckAbortedNotByACopyRuntimeFailure_IsRefused_WithReasonButWithoutGuidance(
         MacroRegressionFailureKind kind, string reason)
     {

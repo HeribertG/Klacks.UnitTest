@@ -8,7 +8,10 @@
 /// a cent), and a copy may not add channel 1 where the original has none. The caller's cancellation token stops the
 /// check with OperationCanceledException instead of a budget failure. Compile errors
 /// of either script abort the check, inputs the original fails on are skipped, a copy that fails where the
-/// original runs aborts the check, the time budget stops the check, and the grid has its documented size
+/// original runs aborts the check (a channel sum beyond the decimal range counts as a failed run of that script, for
+/// the original as for the copy; a sum form of channel 1 beyond the decimal range - added surcharges, original result
+/// plus them, or the copy's distance from that total - refuses the copy as CopyTotalOutOfRange instead of throwing,
+/// while huge surcharges with an unchanged result still pass), the time budget stops the check, and the grid has its documented size
 /// with unique sample descriptions. The seeded AllShift macro is used as a real original: the grid must
 /// drive every one of its channels, harmless clones pass and clones that touch its surcharges fail; a clone with a
 /// Wednesday surcharge and a total recomputed through a copy of its function passes, while calling the function of
@@ -54,6 +57,23 @@ public class MacroRegressionCheckerTests
         + "FOR I = 1 TO 100000\n"
         + "NEXT\n"
         + "OUTPUT 1, 1";
+
+    private const string OverflowingSundaySurcharge =
+        "\nIF Weekday = 7 THEN\n"
+        + "OUTPUT 13, \"6E28\"\n"
+        + "OUTPUT 13, \"6E28\"\n"
+        + "ENDIF";
+
+    private const string DecimalOverflowText = "too large or too small for a Decimal";
+    private const string TotalOutOfRangeText = "lies beyond the decimal range";
+
+    private const string OriginalWithHourResult = "IMPORT Hour\nOUTPUT 1, Hour";
+    private const string OriginalWithHugeResult = "OUTPUT 1, \"6E28\"";
+    private const string OriginalWithHugeNegativeResult = "OUTPUT 1, \"-6E28\"";
+    private const string TwoHugeSurcharges = "\nOUTPUT 13, \"6E28\"\nOUTPUT 14, \"6E28\"";
+    private const string TwoHugeSurchargesAndAChangedResult = TwoHugeSurcharges + "\nOUTPUT 1, -1";
+    private const string OneHugeSurchargeAndAChangedResult = "\nOUTPUT 13, \"6E28\"\nOUTPUT 1, 0";
+    private const string SmallSurchargeAndAHugeResult = "\nOUTPUT 13, 1\nOUTPUT 1, \"6E28\"";
 
     private const string FastOriginal = "IMPORT Hour\nOUTPUT 1, Hour";
     private const string PlainResult = "IMPORT Hour\nOUTPUT 1, Hour";
@@ -341,6 +361,65 @@ public class MacroRegressionCheckerTests
     }
 
     [Test]
+    public void OriginalWhoseChannelSumOverflows_SkipsThatInput_InsteadOfThrowing()
+    {
+        const string original = "IMPORT Hour, Weekday" + OverflowingSundaySurcharge + "\nOUTPUT 1, Hour";
+
+        var result = _checker.Check(original, original);
+
+        result.Passed.ShouldBeTrue(result.FailureMessage);
+        result.SkippedSamples.ShouldBe(SamplesPerWeekday);
+        result.ComparedSamples.ShouldBe(ExpectedGridSize - SamplesPerWeekday);
+    }
+
+    [Test]
+    public void CopyWhoseChannelSumOverflows_AbortsAsCopyRuntimeError_InsteadOfThrowing()
+    {
+        const string original = "IMPORT Hour, Weekday\nOUTPUT 1, Hour";
+
+        var result = _checker.Check(original, original + OverflowingSundaySurcharge);
+
+        result.Passed.ShouldBeFalse();
+        result.FailureKind.ShouldBe(MacroRegressionFailureKind.CopyRuntimeError);
+        result.FailureMessage!.ShouldContain("fails at test input [weekday 7");
+        result.FailureMessage.ShouldContain(DecimalOverflowText);
+    }
+
+    [Test]
+    public void AddedSurchargesWhoseSumOverflows_AreRefusedAsCopyTotalOutOfRange_InsteadOfThrowing()
+    {
+        var result = _checker.Check(OriginalWithHourResult, OriginalWithHourResult + TwoHugeSurchargesAndAChangedResult);
+
+        AssertRefusedAsTotalOutOfRange(result);
+    }
+
+    [Test]
+    public void OriginalResultPlusAddedSurchargesOverflowing_IsRefusedAsCopyTotalOutOfRange_InsteadOfThrowing()
+    {
+        var result = _checker.Check(OriginalWithHugeResult, OriginalWithHugeResult + OneHugeSurchargeAndAChangedResult);
+
+        AssertRefusedAsTotalOutOfRange(result);
+    }
+
+    [Test]
+    public void CopyResultTooFarFromTheAcceptedTotal_IsRefusedAsCopyTotalOutOfRange_InsteadOfThrowing()
+    {
+        var result = _checker.Check(
+            OriginalWithHugeNegativeResult, OriginalWithHugeNegativeResult + SmallSurchargeAndAHugeResult);
+
+        AssertRefusedAsTotalOutOfRange(result);
+    }
+
+    [Test]
+    public void HugeSurchargesOnFreeChannels_WithTheResultUnchanged_StillPass()
+    {
+        var result = _checker.Check(OriginalWithHourResult, OriginalWithHourResult + TwoHugeSurcharges);
+
+        result.Passed.ShouldBeTrue(result.FailureMessage);
+        result.ComparedSamples.ShouldBe(ExpectedGridSize);
+    }
+
+    [Test]
     public void CheckExceedingItsBudget_StopsAndFails()
     {
         var checker = new MacroRegressionChecker(TimeSpan.FromMilliseconds(100));
@@ -473,6 +552,15 @@ public class MacroRegressionCheckerTests
         result.Passed.ShouldBeFalse();
         result.TotalDeviationCount.ShouldBe(SamplesPerWeekday);
         result.Deviations.ShouldAllBe(d => d.Channel == 1 && d.SampleDescription.Contains("weekday 3"));
+    }
+
+    private static void AssertRefusedAsTotalOutOfRange(MacroRegressionResult result)
+    {
+        result.Passed.ShouldBeFalse();
+        result.FailureKind.ShouldBe(MacroRegressionFailureKind.CopyTotalOutOfRange);
+        result.FailureMessage!.ShouldContain("test input [");
+        result.FailureMessage.ShouldContain(TotalOutOfRangeText);
+        result.FailureMessage.ShouldNotContain(DecimalOverflowText);
     }
 
     private static string DescribeDeviations(MacroRegressionResult result) =>

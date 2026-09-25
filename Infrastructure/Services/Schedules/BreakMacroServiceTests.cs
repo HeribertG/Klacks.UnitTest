@@ -3,6 +3,9 @@
 /// <summary>
 /// Tests for BreakMacroService.ReprocessAllBreaksAsync: sealed breaks (LockLevel != None) must never
 /// be pushed through the macro pipeline again, their persisted work time stays unchanged.
+/// A single sealed break passed to ProcessBreakMacroAsync is recomputed: only the bulk
+/// reprocessing skips sealed breaks (characterization; owner decision F3 of 2026-09-25: pinned as it is, no guard is
+/// added).
 /// </summary>
 
 using Klacks.Api.Domain.Models.Macros;
@@ -145,6 +148,17 @@ public class BreakMacroServiceTests
         await _sut.ProcessBreakMacroAsync(breakEntry);
 
         breakEntry.WorkTime.ShouldBe(RecalculatedWorkTime);
+    }
+
+    [Test]
+    public async Task ProcessBreakMacro_ClosedBreak_IsRecomputed_NoSealGuard()
+    {
+        var absenceId = await SeedAbsenceWithMacroAsync();
+        var sealedBreak = AddBreak(Guid.NewGuid(), absenceId, new DateOnly(2026, 6, 10), WorkLockLevel.Closed);
+
+        await _sut.ProcessBreakMacroAsync(sealedBreak);
+
+        sealedBreak.WorkTime.ShouldBe(RecalculatedWorkTime);
     }
 
     private async Task<Guid> SeedAbsenceWithMacroAsync()

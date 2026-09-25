@@ -3,6 +3,8 @@
 /// <summary>
 /// Tests for WorkMacroService — verifies macro routing for WorkChange entries.
 /// Effective time computation is tested in WorkChangeEffectiveTimeServiceTests.
+/// A confirmed work is recomputed like any other: the service itself has no seal
+/// guard (characterization; owner decision F3 of 2026-09-25: pinned as it is, no guard is added).
 /// </summary>
 using System.Linq;
 using Klacks.Api.Domain.Common;
@@ -440,12 +442,27 @@ public class WorkMacroServiceTests
 
         await _sut.ProcessWorkMacroAsync(work);
 
-        // ApplyRateModeAdjustments first turns the FixedPerShift Night amount into the flat rate (20.0),
+        // MacroRateModeAdjuster first turns the FixedPerShift Night amount into the flat rate (20.0),
         // then Additive stacking adds the overtime portion (5.0) on top — 25.0 total, two items.
         work.Surcharges.ShouldBe(25.0m);
         work.SurchargeItems.Count.ShouldBe(2);
         work.SurchargeItems.ShouldContain(i => i.Type == SurchargeType.Night && i.Amount == 20.0m);
         work.SurchargeItems.ShouldContain(i => i.Type == SurchargeType.Overtime1 && i.Amount == 5.0m);
+    }
+
+    [Test]
+    public async Task ProcessWorkMacroAsync_ConfirmedWork_IsRecomputedWithTheShiftsCurrentMacro_NoSealGuard()
+    {
+        var work = await AddWorkAsync(shiftMacroId: Guid.NewGuid(), surcharges: 1m);
+        work.LockLevel = WorkLockLevel.Confirmed;
+        var macroId = (await _shiftRepository.Get(work.ShiftId))!.MacroId!.Value;
+        var macroData = new MacroData();
+        _macroDataProvider.GetMacroDataAsync(work).Returns(macroData);
+        _macroCompilationService.CompileAndExecuteAsync(macroId, macroData).Returns(new MacroExecutionResult(true, 9m));
+
+        await _sut.ProcessWorkMacroAsync(work);
+
+        work.Surcharges.ShouldBe(9m);
     }
 
     private async Task<Work> AddWorkAsync(

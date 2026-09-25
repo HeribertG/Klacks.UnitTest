@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for MacroAssistantGuard: the assistant may change macros it created (Assistant) freely, may rename
 /// its extended copies (AssistantExtension) but never change their script, may delete both, and may not assign
-/// either to an order; templates, imports and user macros are refused with an actionable message per origin. The
+/// either while an order is created — the refusal points to the macro switch with its server-computed preview; templates,
+/// imports and user macros are refused with an actionable message per origin. The
 /// persisted integer values of MacroOrigin are frozen, because the database column stores them.
 /// </summary>
 
@@ -89,6 +90,13 @@ public class MacroAssistantGuardTests
         refusal.ShouldNotBeNull();
         refusal.ShouldContain("Sunday rate");
         refusal.ShouldContain(macro.Id.ToString());
+    }
+
+    [TestCase(MacroOrigin.Assistant)]
+    [TestCase(MacroOrigin.AssistantExtension)]
+    public void FindAssignmentRefusal_PointsToTheSwitchWithPreview(MacroOrigin origin)
+    {
+        MacroAssistantGuard.FindAssignmentRefusal(MacroWith(origin))!.ShouldContain(MacroAssignmentSkillNames.AssignToShift);
     }
 
     [TestCase(MacroOrigin.Seed)]

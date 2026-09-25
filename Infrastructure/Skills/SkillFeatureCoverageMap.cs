@@ -115,7 +115,7 @@ public static class SkillFeatureCoverageMap
         ["ClientSortPreferencesController"] = Excluded("per-user UI sort preference persistence, not meaningful as a chat skill"),
 
         ["AbsenceDetailsController"] = Covered("search_client_absences", "cover_absence", "find_replacement"),
-        ["AbsencesController"] = Covered("create_absence", "update_absence", "delete_absence", "list_absence_types"),
+        ["AbsencesController"] = Covered("create_absence", "update_absence", "delete_absence", "list_absence_types", "assign_macro_to_absence_type"),
         ["AnalyseScenariosController"] = Covered("list_scenarios", "evaluate_scenario", "accept_scenario", "reject_scenario"),
         ["AutoWizardController"] = Covered("start_autowizard"),
         ["BreakPlaceholdersController"] = Gap("break placeholder planning"),
@@ -128,7 +128,7 @@ public static class SkillFeatureCoverageMap
         ["RecoveryController"] = Covered("cover_absence"),
         ["ScheduleCommandsController"] = Covered("add_schedule_command"),
         ["ScheduleNotesController"] = Covered("list_schedule_notes", "add_schedule_note", "delete_schedule_note"),
-        ["ShiftsController"] = Covered("create_shift", "update_shift", "delete_shift", "set_shift_required_qualification", "search_shifts", "get_shift_details"),
+        ["ShiftsController"] = Covered("create_shift", "update_shift", "delete_shift", "set_shift_required_qualification", "search_shifts", "get_shift_details", "assign_macro_to_shift"),
         ["WizardController"] = Covered("start_wizard1", "list_open_wizard_jobs", "cancel_wizard_job"),
         ["WorkChangesController"] = Covered("add_workchange"),
         ["WorksController"] = Covered("place_work", "delete_work", "confirm_work", "unconfirm_work", "read_schedule_state"),

@@ -131,6 +131,31 @@ public class ConfirmPendingActionSkillTests
     }
 
     [Test]
+    public async Task ContextWithBypassedGate_IsRefusedBeforeTheTokenIsConsumed()
+    {
+        var context = Ctx();
+        var token = _store.Create(context.UserId, "close_period", new Dictionary<string, object>());
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null));
+
+        var background = await _sut.ExecuteAsync(context with { BypassAutonomyGate = true }, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(background.Success, Is.False);
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+
+        var interactive = await _sut.ExecuteAsync(context, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(interactive.Success, Is.True);
+    }
+
+    [Test]
     public async Task MissingToken_ReturnsError()
     {
         var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());

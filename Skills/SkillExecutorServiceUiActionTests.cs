@@ -80,6 +80,7 @@ public class SkillExecutorServiceUiActionTests
             new SkillRiskClassifier(),
             _confirmationStore,
             _turnScope,
+            Array.Empty<ISkillConfirmationPreviewProvider>(),
             NullLogger<AutonomyGateService>.Instance);
         return CreateExecutor(gate);
     }

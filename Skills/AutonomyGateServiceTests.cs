@@ -36,6 +36,7 @@ public class AutonomyGateServiceTests
         _riskClassifier,
         _confirmationStore,
         turnScope,
+        Array.Empty<ISkillConfirmationPreviewProvider>(),
         NullLogger<AutonomyGateService>.Instance);
 
     private static SkillDescriptor Descriptor(string name = "test_skill", SkillCategory category = SkillCategory.Crud)
@@ -70,6 +71,7 @@ public class AutonomyGateServiceTests
         new SkillRiskClassifier(),
         _confirmationStore,
         _turnScope,
+        Array.Empty<ISkillConfirmationPreviewProvider>(),
         NullLogger<AutonomyGateService>.Instance);
 
     [Test]

@@ -25,7 +25,7 @@ public class SkillLabelSeedGuardTests
 {
     private const string ApiProjectDirectory = "Klacks.Api";
     private const string SeedRelativePath = "Application/Skills/Definitions/skill-seeds.json";
-    private const int ExpectedSkillCount = 475;
+    private const int ExpectedSkillCount = 478;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
