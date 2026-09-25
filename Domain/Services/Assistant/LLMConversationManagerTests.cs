@@ -121,6 +121,18 @@ public class LLMConversationManagerTests
     }
 
     [Test]
+    public async Task SaveConversationMessagesAsync_ForALatePersistedTurn_HandsOverTheTurnStartAsTheMessageTime()
+    {
+        var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1" };
+        var turnStart = DateTime.UtcNow.AddMinutes(-3);
+
+        await _manager.SaveConversationMessagesAsync(conversation, "hello", "answer", "model-1", turnStart);
+
+        await _repository.Received(1).RecordConversationTurnAsync(
+            conversation, 2, turnStart, "model-1", "hello");
+    }
+
+    [Test]
     public async Task TrackUsageAsync_AddsTheTurnTotalsThroughTheRepository()
     {
         var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1" };
