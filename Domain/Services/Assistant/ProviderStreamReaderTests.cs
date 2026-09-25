@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 using Shouldly;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -29,11 +30,17 @@ public class ProviderStreamReaderTests
 
     private sealed class ScriptedProvider : ILLMProvider
     {
-        private readonly Queue<Func<IAsyncEnumerable<string>>> _attempts;
+        private readonly Queue<Func<CancellationToken, IAsyncEnumerable<string>>> _attempts;
 
         internal ScriptedProvider(params Func<IAsyncEnumerable<string>>[] attempts)
         {
-            _attempts = new Queue<Func<IAsyncEnumerable<string>>>(attempts);
+            _attempts = new Queue<Func<CancellationToken, IAsyncEnumerable<string>>>(
+                attempts.Select(attempt => new Func<CancellationToken, IAsyncEnumerable<string>>(_ => attempt())));
+        }
+
+        internal ScriptedProvider(Func<CancellationToken, IAsyncEnumerable<string>> attempt)
+        {
+            _attempts = new Queue<Func<CancellationToken, IAsyncEnumerable<string>>>(new[] { attempt });
         }
 
         internal int Attempts { get; private set; }
@@ -60,7 +67,7 @@ public class ProviderStreamReaderTests
             LLMProviderRequest request, CancellationToken cancellationToken = default)
         {
             Attempts++;
-            return _attempts.Dequeue()();
+            return _attempts.Dequeue()(cancellationToken);
         }
     }
 
@@ -95,6 +102,58 @@ public class ProviderStreamReaderTests
 
     private static ProviderStreamReader NewReader() =>
         new(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+
+    private static async IAsyncEnumerable<string> HonouringTheToken(
+        IEnumerable<string> tokens,
+        Action onDisposed,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (var token in tokens)
+            {
+                await Task.Yield();
+                yield return token;
+            }
+
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+        finally
+        {
+            onDisposed();
+        }
+    }
+
+    private static async IAsyncEnumerable<string> IgnoringTheToken(
+        IEnumerable<string> tokens,
+        Action onDisposed)
+    {
+        try
+        {
+            foreach (var token in tokens)
+            {
+                await Task.Yield();
+                yield return token;
+            }
+        }
+        finally
+        {
+            onDisposed();
+        }
+    }
+
+    private static async Task<List<string>> ReadUntilCancelled(
+        ProviderStreamReader reader, ILLMProvider provider, CancellationTokenSource source)
+    {
+        var yielded = new List<string>();
+        await foreach (var token in reader.ReadAsync(provider, new LLMProviderRequest(), ModelId, source.Token))
+        {
+            yielded.Add(token);
+            source.Cancel();
+        }
+
+        return yielded;
+    }
 
     [Test]
     public async Task ToolCallDeltasAndEndMarker_AreAccumulatedButNeverYielded()
@@ -248,5 +307,99 @@ public class ProviderStreamReaderTests
 
         provider.Attempts.ShouldBe(2);
         yielded.ShouldBe(new[] { "second attempt" });
+    }
+
+    [Test]
+    public async Task CancellationWhileStreaming_EndsQuietlyWithoutErrorLogFailureOrRetry()
+    {
+        var disposed = false;
+        using var source = new CancellationTokenSource();
+        var provider = new ScriptedProvider(token =>
+            HonouringTheToken(new[] { "Hel", "lo " }, () => disposed = true, token));
+        var logger = new RecordingLogger<ProviderStreamReaderTests>();
+        var reader = new ProviderStreamReader(logger);
+
+        var yielded = await ReadUntilCancelled(reader, provider, source);
+
+        yielded.ShouldBe(new[] { "Hel" });
+        reader.Cancelled.ShouldBeTrue();
+        reader.Failed.ShouldBeFalse();
+        provider.Attempts.ShouldBe(1);
+        disposed.ShouldBeTrue();
+        logger.Entries.ShouldNotContain(e => e.Level >= LogLevel.Warning);
+    }
+
+    [Test]
+    public async Task CancellationWithAProviderThatIgnoresTheToken_StopsAtTheNextToken()
+    {
+        var disposed = false;
+        using var source = new CancellationTokenSource();
+        var provider = new ScriptedProvider(_ => IgnoringTheToken(new[] { "one ", "two ", "three " }, () => disposed = true));
+        var reader = NewReader();
+
+        var yielded = await ReadUntilCancelled(reader, provider, source);
+
+        yielded.ShouldBe(new[] { "one " });
+        reader.Cancelled.ShouldBeTrue();
+        reader.Failed.ShouldBeFalse();
+        disposed.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task CancellationMidToolCall_KeepsTheTextAndNeverMarksTheToolCallsComplete()
+    {
+        using var source = new CancellationTokenSource();
+        var provider = new ScriptedProvider(token => HonouringTheToken(new[]
+        {
+            "Creating it. ",
+            LLMStreamingTokens.ToolCallPrefix + """{"index":0,"name":"create_employee","arguments":"{\"na"}"""
+        }, () => { }, token));
+        var reader = NewReader();
+
+        var yielded = await ReadUntilCancelled(reader, provider, source);
+
+        yielded.ShouldBe(new[] { "Creating it. " });
+        reader.Accumulator.AccumulatedContent.ShouldBe("Creating it. ");
+        reader.HasToolEnd.ShouldBeFalse();
+        reader.Cancelled.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ACompletedRead_IsNotReportedAsCancelled()
+    {
+        var provider = new ScriptedProvider(() => Tokens(new[] { "all of it" }));
+        var reader = NewReader();
+
+        await Read(reader, provider);
+
+        reader.Cancelled.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ACallerThatStopsEnumeratingEarly_StillDisposesTheProviderStream()
+    {
+        var disposed = false;
+        var provider = new ScriptedProvider(_ => IgnoringTheToken(new[] { "one ", "two " }, () => disposed = true));
+        var reader = NewReader();
+
+        await foreach (var _ in reader.ReadAsync(provider, new LLMProviderRequest(), ModelId, CancellationToken.None))
+        {
+            break;
+        }
+
+        disposed.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task AnErrorWithoutACancellation_IsStillLoggedAsAnError()
+    {
+        var provider = new ScriptedProvider(() => Tokens(Array.Empty<string>(), PermanentError));
+        var logger = new RecordingLogger<ProviderStreamReaderTests>();
+        var reader = new ProviderStreamReader(logger);
+
+        await Read(reader, provider);
+
+        logger.Entries.ShouldContain(e => e.Level == LogLevel.Error);
+        reader.Cancelled.ShouldBeFalse();
     }
 }

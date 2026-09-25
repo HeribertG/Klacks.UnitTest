@@ -21,6 +21,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.Infrastructure.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -60,6 +61,7 @@ internal sealed class LLMServiceTurnHarness
             .Returns(call =>
             {
                 var message = call.Arg<RepositoryLLMMessage>();
+                OnMessageSaved?.Invoke();
                 if (message.Role == AssistantRole)
                 {
                     PersistedAnswer = message.Content;
@@ -90,6 +92,7 @@ internal sealed class LLMServiceTurnHarness
         providerFactory.GetProviderForModelAsync(ModelId).Returns(Provider);
 
         var agentRepository = Substitute.For<IAgentRepository>();
+        AgentRepository = agentRepository;
         agentRepository.GetDefaultAgentAsync().Returns((Agent?)null);
         agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns((Agent?)null);
 
@@ -115,7 +118,7 @@ internal sealed class LLMServiceTurnHarness
             Substitute.For<ILogger<LLMConversationManager>>(), _repository);
 
         Service = new LLMService(
-            logger: Substitute.For<ILogger<LLMService>>(),
+            logger: Logger,
             providerOrchestrator: new LLMProviderOrchestrator(
                 Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository),
             conversationManager: conversationManager,
@@ -148,6 +151,14 @@ internal sealed class LLMServiceTurnHarness
     }
 
     internal LLMService Service { get; }
+
+    internal RecordingLogger<LLMService> Logger { get; } = new();
+
+    internal IAgentRepository AgentRepository { get; private set; } = null!;
+
+    internal ITurnPreparationService TurnPreparation => _turnPreparation;
+
+    internal Action? OnMessageSaved { get; set; }
 
     internal TurnRunState TurnState { get; } = new();
 

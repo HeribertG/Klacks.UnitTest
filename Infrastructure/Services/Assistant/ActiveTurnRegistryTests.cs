@@ -98,6 +98,23 @@ public class ActiveTurnRegistryTests
     }
 
     [Test]
+    public void RequestStop_WhenACallbackOnTheTokenThrows_StillAcceptsAndCancelsTheToken()
+    {
+        var turnId = Guid.NewGuid();
+        var token = _registry.Register(turnId, Owner);
+        var laterCallbackRan = false;
+        token.Register(() => throw new InvalidOperationException("a linked provider token failed to cancel"));
+        token.Register(() => laterCallbackRan = true);
+
+        var outcome = Should.NotThrow(() => _registry.RequestStop(turnId, Owner));
+
+        outcome.ShouldBe(StopRequestOutcome.Accepted);
+        token.IsCancellationRequested.ShouldBeTrue();
+        laterCallbackRan.ShouldBeTrue();
+        _registry.IsStopRequested(turnId).ShouldBeTrue();
+    }
+
+    [Test]
     public void RequestStop_Twice_IsAcceptedBothTimes()
     {
         var turnId = Guid.NewGuid();

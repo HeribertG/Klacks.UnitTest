@@ -227,6 +227,33 @@ public class ChatControllerCancelTests
     }
 
     [Test]
+    public async Task Stream_AStopCancellationThatEscapesTheTurn_IsNoErrorEventAndEndsCleanly()
+    {
+        _script = (request, _) =>
+        {
+            ControllerFor(OwnerId).CancelTurn(request.TurnId).Result.ShouldBeOfType<AcceptedResult>();
+            return Throwing(new OperationCanceledException(request.StopToken));
+        };
+
+        await StreamAsync(OwnerId);
+
+        ReadBody().ShouldNotContain("event: error");
+        _registry.Inner.ActiveCount.ShouldBe(0);
+        _registry.Completed.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Stream_ACancellationThatIsNeitherAStopNorADisconnect_IsStillAnErrorEvent()
+    {
+        _script = (_, _) => Throwing(new OperationCanceledException());
+
+        await StreamAsync(OwnerId);
+
+        ReadBody().ShouldContain("event: error");
+        _registry.Inner.ActiveCount.ShouldBe(0);
+    }
+
+    [Test]
     public async Task Stream_WithoutAUserId_StillStreamsButRegistersNothing()
     {
         LLMStreamRequest? seen = null;
