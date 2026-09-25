@@ -7,6 +7,7 @@
 /// </summary>
 
 using System.Security.Claims;
+using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.DTOs.Assistant;
 using Klacks.Api.Application.Queries.Assistant;
 using Klacks.Api.Application.Services.Assistant.Evaluation;
@@ -58,6 +59,43 @@ public class EvalControllerTurnOptionsTests
                 User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"))
             }
         };
+    }
+
+    [Test]
+    public async Task SubmitCorrection_ForwardsTheTurnIdAndTheCallerIdentity()
+    {
+        var turnId = Guid.NewGuid();
+        _mediator.Send(Arg.Any<SubmitCorrectionCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SubmitCorrectionResult(Found: true, TrajectoryId: Guid.NewGuid()));
+
+        await _controller.SubmitCorrection(
+            new EvalController.SubmitCorrectionRequest
+            {
+                UserMessage = "Lege einen Kunden an",
+                CorrectionType = "wrong_skill",
+                TurnId = turnId
+            },
+            CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SubmitCorrectionCommand>(command =>
+                command.UserId == UserId && command.TurnId == turnId && command.UserMessage == "Lege einen Kunden an"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SubmitCorrection_WithoutATurnId_SendsNoTurnId()
+    {
+        _mediator.Send(Arg.Any<SubmitCorrectionCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SubmitCorrectionResult(Found: false, TrajectoryId: null));
+
+        await _controller.SubmitCorrection(
+            new EvalController.SubmitCorrectionRequest { UserMessage = "Lege einen Kunden an", CorrectionType = "wrong_skill" },
+            CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SubmitCorrectionCommand>(command => command.TurnId == null),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

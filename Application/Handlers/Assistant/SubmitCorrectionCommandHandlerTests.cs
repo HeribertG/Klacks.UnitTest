@@ -150,6 +150,123 @@ public class SubmitCorrectionCommandHandlerTests
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectCorrectionAsync(default!, default);
     }
 
+    // Stop and resend of the same text leaves two trajectories with one hash, and the stopped one is often
+    // persisted last, so "most recent by hash" can name the wrong turn. The turn id is the exact key.
+    [Test]
+    public async Task Handle_WithATurnId_CorrectsExactlyThatTurnEvenWhenTheHashIsAmbiguous()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var agentId = Guid.NewGuid();
+        var turnId = Guid.NewGuid();
+        var resent = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(), AgentId = agentId, UserId = userId, TurnId = Guid.NewGuid(),
+            UserMessageHash = ExpectedHashPrefix(message), LlmChosenSkill = "list_clients"
+        };
+        var stopped = StoppedTrajectory(userId, message, agentId);
+        stopped.TurnId = turnId;
+        _repository.FindByUserAndTurnIdAsync(userId, turnId, Arg.Any<CancellationToken>()).Returns(stopped);
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(resent);
+
+        var result = await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill,
+            TurnId = turnId
+        }, CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        result.TrajectoryId.ShouldBe(stopped.Id);
+        stopped.WasCorrected.ShouldBeTrue();
+        resent.WasCorrected.ShouldBeFalse();
+        await _repository.Received(1).UpdateAsync(stopped, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().UpdateAsync(resent, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceiveWithAnyArgs().FindMostRecentByUserAndHashAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task Handle_WithoutATurnId_FallsBackToTheHashLookupAsBefore()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var existing = new SkillSelectionTrajectory { Id = Guid.NewGuid(), UserId = userId, UserMessageHash = ExpectedHashPrefix(message) };
+        _repository.FindMostRecentByUserAndHashAsync(userId, ExpectedHashPrefix(message), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        var result = await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill
+        }, CancellationToken.None);
+
+        result.TrajectoryId.ShouldBe(existing.Id);
+        await _repository.DidNotReceiveWithAnyArgs().FindByUserAndTurnIdAsync(default!, default, default);
+    }
+
+    // The lookup is asked for the caller's own turn only. Whether a stranger's turn is filtered out is the
+    // repository's job (pinned in SkillSelectionTrajectoryRepositoryUserScopeTests); here the handler must
+    // put the authenticated user, not anything from the body, into the key, and report "not found" without
+    // saying whether the turn exists.
+    [Test]
+    public async Task Handle_WithATurnIdOfAnotherUser_ReportsNotFoundAndTouchesNothing()
+    {
+        const string callerId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var turnId = Guid.NewGuid();
+        _repository.FindByUserAndTurnIdAsync(callerId, turnId, Arg.Any<CancellationToken>())
+            .Returns((SkillSelectionTrajectory?)null);
+
+        var result = await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = callerId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill,
+            TurnId = turnId
+        }, CancellationToken.None);
+
+        result.Found.ShouldBeFalse();
+        result.TrajectoryId.ShouldBeNull();
+        await _repository.Received(1).FindByUserAndTurnIdAsync(callerId, turnId, Arg.Any<CancellationToken>());
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+    }
+
+    // A turn id that was sent but resolves to nothing (turn not persisted yet, no trajectory captured) must
+    // not fall back to the hash: the hash would name the older twin of a stop-and-resend and book the
+    // correction, including its lesson, on the wrong turn.
+    [Test]
+    public async Task Handle_WithAnUnknownTurnId_DoesNotFallBackToTheHash()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var olderTwin = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(), AgentId = Guid.NewGuid(), UserId = userId,
+            UserMessageHash = ExpectedHashPrefix(message), LlmChosenSkill = "delete_client"
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(olderTwin);
+        _repository.FindByUserAndTurnIdAsync(userId, Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns((SkillSelectionTrajectory?)null);
+
+        var result = await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill,
+            TurnId = Guid.NewGuid()
+        }, CancellationToken.None);
+
+        result.Found.ShouldBeFalse();
+        olderTwin.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceiveWithAnyArgs().FindMostRecentByUserAndHashAsync(default!, default!, default);
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+        _backgroundTasks.DidNotReceiveWithAnyArgs().TriggerReflection(default!);
+    }
+
     private static SkillSelectionTrajectory StoppedTrajectory(string userId, string message, Guid agentId) => new()
     {
         Id = Guid.NewGuid(),

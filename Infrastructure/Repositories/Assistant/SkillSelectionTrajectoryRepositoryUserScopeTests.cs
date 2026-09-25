@@ -83,6 +83,69 @@ public class SkillSelectionTrajectoryRepositoryUserScopeTests
     }
 
     [Test]
+    public async Task TheTurnIdLookup_NamesTheStoppedTurnEvenWhenItWasStoredAfterItsTwinWithTheSameHash()
+    {
+        var stoppedTurnId = Guid.NewGuid();
+        var resentTurnId = Guid.NewGuid();
+        var stopped = MakeTrajectory(FirstUserId, "delete_client");
+        stopped.TurnId = stoppedTurnId;
+        stopped.WasInterrupted = true;
+        var resent = MakeTrajectory(FirstUserId, "list_clients");
+        resent.TurnId = resentTurnId;
+        await using (var seed = CreateContext())
+        {
+            seed.SkillSelectionTrajectories.Add(resent);
+            await seed.SaveChangesAsync();
+        }
+        await using (var lateSeed = CreateContext())
+        {
+            lateSeed.SkillSelectionTrajectories.Add(stopped);
+            await lateSeed.SaveChangesAsync();
+        }
+        var repository = CreateRepository();
+
+        var byHash = await repository.FindMostRecentByUserAndHashAsync(FirstUserId, MessageNormalizer.Hash(Message));
+        var byStoppedTurn = await repository.FindByUserAndTurnIdAsync(FirstUserId, stoppedTurnId);
+        var byResentTurn = await repository.FindByUserAndTurnIdAsync(FirstUserId, resentTurnId);
+
+        byHash!.Id.ShouldBe(stopped.Id);
+        byStoppedTurn!.Id.ShouldBe(stopped.Id);
+        byResentTurn!.Id.ShouldBe(resent.Id);
+        byResentTurn.LlmChosenSkill.ShouldBe("list_clients");
+    }
+
+    [Test]
+    public async Task TheTurnIdLookup_DoesNotFindTheTurnOfAnotherUser()
+    {
+        var turnId = Guid.NewGuid();
+        var foreign = MakeTrajectory(SecondUserId, "create_client");
+        foreign.TurnId = turnId;
+        await using (var seed = CreateContext())
+        {
+            seed.SkillSelectionTrajectories.Add(foreign);
+            await seed.SaveChangesAsync();
+        }
+
+        var asOwner = await CreateRepository().FindByUserAndTurnIdAsync(SecondUserId, turnId);
+        var asStranger = await CreateRepository().FindByUserAndTurnIdAsync(FirstUserId, turnId);
+
+        asOwner.ShouldNotBeNull();
+        asStranger.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task TheTurnIdLookup_DoesNotFindAnUnknownTurnOrARowWithoutATurnId()
+    {
+        await SeedBothUsersAsync();
+
+        var unknown = await CreateRepository().FindByUserAndTurnIdAsync(FirstUserId, Guid.NewGuid());
+        var empty = await CreateRepository().FindByUserAndTurnIdAsync(FirstUserId, Guid.Empty);
+
+        unknown.ShouldBeNull();
+        empty.ShouldBeNull();
+    }
+
+    [Test]
     public async Task AUserWithoutACapturedTurn_GetsNothingFromAnotherUsersRow()
     {
         await SeedBothUsersAsync();
