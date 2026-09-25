@@ -67,19 +67,71 @@ public class SubmitCorrectionCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_ACorrectionOfAStoppedTurn_IsRecordedButTeachesNothing()
+    public async Task Handle_AnExplicitCorrectionOfAStoppedTurn_TeachesLikeOnAnyOtherTurn()
     {
         const string userId = "user-1";
         const string message = "Lösche Mitarbeiter Max";
-        var existing = new SkillSelectionTrajectory
+        var agentId = Guid.NewGuid();
+        var existing = StoppedTrajectory(userId, message, agentId);
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        var result = await _handler.Handle(new SubmitCorrectionCommand
         {
-            Id = Guid.NewGuid(),
-            AgentId = Guid.NewGuid(),
             UserId = userId,
-            UserMessageHash = ExpectedHashPrefix(message),
-            LlmChosenSkill = "delete_client",
-            WasInterrupted = true
-        };
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill,
+            ExpectedSkill = "update_client"
+        }, CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        existing.WasCorrected.ShouldBeTrue();
+        existing.CorrectionType.ShouldBe(CorrectionTypes.WrongSkill);
+        await _repository.Received(1).UpdateAsync(existing, Arg.Any<CancellationToken>());
+        _backgroundTasks.Received(1).TriggerReflection(Arg.Is<TurnReflectionRequest>(r =>
+            r.AgentId == agentId && r.ScopeKey == "delete_client"));
+        await _caseCollector.Received(1).CollectCorrectionAsync(
+            Arg.Is<SkillLearningCorrection>(c =>
+                c.TrajectoryId == existing.Id && c.ExpectedSkill == "update_client"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ANoneNeededCorrectionOfAStoppedTurn_RevokesTheLessonLikeOnAnyOtherTurn()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var agentId = Guid.NewGuid();
+        var existing = StoppedTrajectory(userId, message, agentId);
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+        var lesson = new AgentMemory { Id = Guid.NewGuid(), Key = "delete_client", SourceRef = ReflectionTriggers.UncoveredClaim, CreateTime = DateTime.UtcNow };
+        _agentMemories.GetByCategoryAndKeysAsync(
+                agentId, Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentMemory> { lesson });
+
+        await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.NoneNeeded
+        }, CancellationToken.None);
+
+        await _agentMemories.Received(1).DeleteAsync(lesson.Id, Arg.Any<CancellationToken>());
+        _backgroundTasks.DidNotReceiveWithAnyArgs().TriggerReflection(default!);
+    }
+
+    // The graceful-correction path of the turn that followed the stop has already booked and taught this turn;
+    // a click on the menu afterwards must not teach it again or replace what is on record.
+    [TestCase(CorrectionTypes.GracefulRerouted)]
+    [TestCase(CorrectionTypes.WrongSkill)]
+    public async Task Handle_ACorrectionOfAStoppedTurnThatWasAlreadyCorrected_TeachesNothingAgain(string recordedType)
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var existing = StoppedTrajectory(userId, message, Guid.NewGuid());
+        existing.WasCorrected = true;
+        existing.CorrectionType = recordedType;
         _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(existing);
 
@@ -91,11 +143,22 @@ public class SubmitCorrectionCommandHandlerTests
         }, CancellationToken.None);
 
         result.Found.ShouldBeTrue();
-        existing.WasCorrected.ShouldBeTrue();
-        await _repository.Received(1).UpdateAsync(existing, Arg.Any<CancellationToken>());
+        result.TrajectoryId.ShouldBe(existing.Id);
+        existing.CorrectionType.ShouldBe(recordedType);
+        await _repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
         _backgroundTasks.DidNotReceiveWithAnyArgs().TriggerReflection(default!);
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectCorrectionAsync(default!, default);
     }
+
+    private static SkillSelectionTrajectory StoppedTrajectory(string userId, string message, Guid agentId) => new()
+    {
+        Id = Guid.NewGuid(),
+        AgentId = agentId,
+        UserId = userId,
+        UserMessageHash = ExpectedHashPrefix(message),
+        LlmChosenSkill = "delete_client",
+        WasInterrupted = true
+    };
 
     [Test]
     public async Task Handle_WrongSkillCorrection_TriggersAReflectionScopedToTheChosenSkill()

@@ -118,6 +118,10 @@ internal sealed class LLMServiceTurnHarness
         var conversationManager = new LLMConversationManager(
             Substitute.For<ILogger<LLMConversationManager>>(), _repository);
 
+        Recorder = new TurnCompletionRecorder(
+            Substitute.For<ILogger<TurnCompletionRecorder>>(),
+            conversationManager, _turnPreparation, agentRepository, BackgroundTasks, TurnState, StoppedTurnCleanup);
+
         Service = new LLMService(
             logger: Logger,
             providerOrchestrator: new LLMProviderOrchestrator(
@@ -146,13 +150,13 @@ internal sealed class LLMServiceTurnHarness
             suggestionEntityNameReader: Substitute.For<ISuggestionEntityNameReader>(),
             contextBudgetPolicy: contextBudgetPolicy,
             turnPreparation: _turnPreparation,
-            turnCompletionRecorder: new TurnCompletionRecorder(
-                Substitute.For<ILogger<TurnCompletionRecorder>>(),
-                conversationManager, _turnPreparation, agentRepository, BackgroundTasks, TurnState, StoppedTurnCleanup),
+            turnCompletionRecorder: Recorder,
             turnState: TurnState);
     }
 
     internal LLMService Service { get; }
+
+    internal TurnCompletionRecorder Recorder { get; }
 
     internal IRecipeRunRecorder RecipeRuns { get; } = Substitute.For<IRecipeRunRecorder>();
 

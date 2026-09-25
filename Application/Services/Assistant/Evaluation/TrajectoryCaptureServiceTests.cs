@@ -336,6 +336,26 @@ public class TrajectoryCaptureServiceTests
             Arg.Is<SkillLearningImplicitCorrection>(c => c.TrajectoryId == previous.Id), Arg.Any<CancellationToken>());
     }
 
+    // The user already judged the stopped turn through the correction menu, which taught it: the routed
+    // correction that follows must not book and collect the same turn a second time.
+    [Test]
+    public async Task ARoutedCorrectionAfterAStoppedTurnTheMenuAlreadyCorrected_MarksAndCollectsNothing()
+    {
+        var previous = PreviousTurn(createdSecondsAgo: 30, skill: "create_employee", interrupted: true);
+        previous.WasCorrected = true;
+        previous.CorrectionType = CorrectionTypes.WrongSkill;
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Nein, ich meinte den Vertrag", UserId = "user-1", GracefulCorrectionApplied = true },
+            "Verstanden.", []);
+
+        previous.CorrectionType.ShouldBe(CorrectionTypes.WrongSkill);
+        await _repository.DidNotReceive().UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
     [Test]
     public async Task ACorrectionThatWasNotRoutedAfterAStoppedTurn_MarksNothing()
     {
