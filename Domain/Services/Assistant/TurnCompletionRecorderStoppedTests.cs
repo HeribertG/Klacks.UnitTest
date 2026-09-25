@@ -270,6 +270,64 @@ public class TurnCompletionRecorderStoppedTests
     }
 
     [Test]
+    public async Task AFailingCleanup_IsLoggedAndStillLeavesTheBackgroundTasks()
+    {
+        BeginTurnWithARunWrite();
+        var failure = new InvalidOperationException("tracker down");
+        _cleanup.CleanUpAsync(UserId, _context.TurnId!.Value, Arg.Any<CancellationToken>()).Returns(Task.FromException(failure));
+
+        await Should.NotThrowAsync(() => _recorder.RecordStoppedAsync(CancellationToken.None));
+
+        _logger.Entries.ShouldContain(e => e.Level == LogLevel.Error && ReferenceEquals(e.Exception, failure));
+        _backgroundTasks.Received(1).RunStoppedTurnTasks(
+            _agent, _conversation, _context, Arg.Any<string>(), Arg.Any<List<LLMFunctionCall>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task AFailingCleanup_OfATurnWithoutAConversation_IsLoggedAndNotThrown()
+    {
+        _turnState.Begin(_context);
+        var failure = new InvalidOperationException("tracker down");
+        _cleanup.CleanUpAsync(UserId, _context.TurnId!.Value, Arg.Any<CancellationToken>()).Returns(Task.FromException(failure));
+
+        await Should.NotThrowAsync(() => _recorder.RecordStoppedAsync(CancellationToken.None));
+
+        _logger.Entries.ShouldContain(e => e.Level == LogLevel.Error && ReferenceEquals(e.Exception, failure));
+    }
+
+    [Test]
+    public async Task AStorageFailureOfAStoppedTurn_IsLoggedAsStoppedAndOfAnErroredTurnAsErrored()
+    {
+        BeginTurnWithARunWrite();
+        _repository.SaveMessageAsync(Arg.Any<RepositoryLLMMessage>())
+            .Returns<RepositoryLLMMessage>(_ => throw new InvalidOperationException("db down"));
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        var stoppedEntry = _logger.Entries.Single(e => e.Level == LogLevel.Error && e.Message.Contains("history"));
+        stoppedEntry.Message.ShouldContain("stopped");
+        stoppedEntry.Message.ShouldNotContain("errored");
+
+        var erroredLogger = new RecordingLogger<TurnCompletionRecorder>();
+        var erroredState = new TurnRunState();
+        var erroredContext = new LLMContext { Message = UserMessage, UserId = UserId, TurnId = Guid.NewGuid() };
+        erroredState.Begin(erroredContext);
+        erroredState.Attach(_conversation, _model, providerSupportsToolChoice: true);
+        erroredState.RegisterCalls([Ran(WriteSkill)]);
+        erroredState.TrySetOutcome(TurnOutcome.Errored);
+        var erroredRecorder = new TurnCompletionRecorder(
+            erroredLogger,
+            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository),
+            _turnPreparation, _agentRepository, _backgroundTasks, erroredState, _cleanup);
+
+        await erroredRecorder.RecordErroredAsync(CancellationToken.None);
+
+        var erroredEntry = erroredLogger.Entries.Single(e => e.Level == LogLevel.Error && e.Message.Contains("history"));
+        erroredEntry.Message.ShouldContain("errored");
+        erroredEntry.Message.ShouldNotContain("stopped");
+    }
+
+    [Test]
     public async Task ANewerAnchorInTheConversation_IsLeftAloneWhileHistoryAndUsageAreStillWritten()
     {
         BeginTurn();
