@@ -75,6 +75,25 @@ public class SkillSelectionTrajectoryRepositoryGetUncorrectedWrongSkillTests
     }
 
     [Test]
+    public async Task AStoppedTurn_IsNeverSharpeningEvidence()
+    {
+        var stopped = MakeTrajectory(CorrectionTypes.WrongSkill, StartUtc);
+        stopped.WasInterrupted = true;
+        var finished = MakeTrajectory(CorrectionTypes.WrongSkill, StartUtc.AddMinutes(1));
+
+        await using (var seed = CreateContext())
+        {
+            seed.SkillSelectionTrajectories.Add(stopped);
+            seed.SkillSelectionTrajectories.Add(finished);
+            await seed.SaveChangesAsync();
+        }
+
+        var result = await CreateRepository().GetUncorrectedWrongSkillAsync(AgentId, 30);
+
+        result.Select(t => t.Id).ShouldBe([finished.Id]);
+    }
+
+    [Test]
     public async Task AWrongSkillCorrectionAlreadySharpened_IsExcluded()
     {
         var trajectory = MakeTrajectory(CorrectionTypes.WrongSkill, StartUtc);

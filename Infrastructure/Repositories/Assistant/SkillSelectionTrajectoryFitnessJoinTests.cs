@@ -147,6 +147,42 @@ public class SkillSelectionTrajectoryFitnessJoinTests
         usage.Successes.ShouldBe(1);
     }
 
+    private static SkillSelectionTrajectory Interrupted(SkillSelectionTrajectory trajectory)
+    {
+        trajectory.WasInterrupted = true;
+        trajectory.InterruptedPhase = "during_tools";
+        return trajectory;
+    }
+
+    // Recorded, but counted for nothing: neither a use, nor a success, nor a correction of the phrase.
+    [Test]
+    public async Task PhraseUsage_AStoppedTurn_IsNotCountedAtAll()
+    {
+        await SeedAsync(Interrupted(MakeTrajectory(Guid.NewGuid(), wasSuccessful: null)), usage: null);
+
+        var usage = await CreateRepository().CountPhraseUsageAsync(OwnerName, WindowStartUtc);
+
+        usage.Uses.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task RecipeUsage_AStoppedTurn_IsNotCountedAtAll()
+    {
+        await SeedAsync(Interrupted(MakeTrajectory(Guid.NewGuid(), wasSuccessful: true)), usage: null);
+
+        var usage = await CreateRepository().CountRecipeUsageAsync(RecipeName, WindowStartUtc);
+
+        usage.Uses.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task HasSuccessfulRecipeTurn_AStoppedTurnDoesNotProveTheRecipeWorks()
+    {
+        await SeedAsync(Interrupted(MakeTrajectory(Guid.NewGuid(), wasSuccessful: true)), usage: null);
+
+        (await CreateRepository().HasSuccessfulRecipeTurnAsync(RecipeName)).ShouldBeFalse();
+    }
+
     [Test]
     public async Task PhraseUsage_LegacyTurnWithoutATurnId_KeepsTheOldSemantics()
     {

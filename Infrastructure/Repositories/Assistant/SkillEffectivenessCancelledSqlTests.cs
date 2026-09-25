@@ -76,6 +76,15 @@ public class SkillEffectivenessCancelledSqlTests
     }
 
     [Test]
+    public void TheChosenSourceSample_LeavesAStoppedTurnOut()
+    {
+        var sql = Normalize(_repository.ChosenSourceCandidates(WindowStartUtc).ToQueryString());
+
+        sql.ShouldContain("FROM skill_selection_trajectories");
+        sql.ShouldContain("NOT (s.was_interrupted)");
+    }
+
+    [Test]
     public void CallRecords_KeepOnlyRowsWithoutAPendingOrCancelledUiActionStatus()
     {
         var sql = Normalize(_repository.CallRecordsQuery(WindowStartUtc).ToQueryString());

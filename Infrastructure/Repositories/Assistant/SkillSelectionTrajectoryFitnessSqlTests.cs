@@ -96,6 +96,25 @@ public class SkillSelectionTrajectoryFitnessSqlTests
         sql.ShouldContain($"ui_action_status IN ({CompletedValue}, {FailedValue})");
     }
 
+    [Test]
+    public void TheThreeFitnessQueries_LeaveAStoppedTurnOut()
+    {
+        foreach (var sql in new[]
+                 {
+                     _repository.PhraseUsageQuery(OwnerName, WindowStartUtc).ToQueryString(),
+                     _repository.RecipeUsageQuery(RecipeName, WindowStartUtc).ToQueryString(),
+                     _repository.SuccessfulRecipeTurnQuery(RecipeName).ToQueryString()
+                 })
+        {
+            Normalize(sql).ShouldContain("NOT (s.was_interrupted)");
+        }
+    }
+
+    [Test]
+    public void TheSharpeningEvidence_LeavesAStoppedTurnOut() =>
+        Normalize(_repository.UncorrectedWrongSkillQuery(Guid.NewGuid()).ToQueryString())
+            .ShouldContain("NOT (s.was_interrupted)");
+
     private static void AssertTheSubSelectSurvivedTranslation(string sql)
     {
         var normalized = Normalize(sql);

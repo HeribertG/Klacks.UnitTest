@@ -166,6 +166,23 @@ public class SubmitHelpfulFeedbackCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    // F17: the judgement of a turn the user stopped is kept on its trajectory, but no learning case comes out
+    // of it - an unfinished answer says nothing about whether the routing was right.
+    [Test]
+    public async Task AThumbsDownOnAStoppedTurn_IsStoredButCollectsNoLearningCase()
+    {
+        var trajectory = GivenTrajectory();
+        trajectory.WasInterrupted = true;
+
+        var result = await _handler.Handle(Command(Message, helpful: false, comment: "Zu langsam."), CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        trajectory.Helpful.ShouldBe(false);
+        trajectory.HelpfulComment.ShouldBe("Zu langsam.");
+        await _repository.Received(1).UpdateAsync(trajectory, Arg.Any<CancellationToken>());
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectNotHelpfulFeedbackAsync(default!, default);
+    }
+
     [Test]
     public async Task AThumbsUp_NeverCollectsALearningCase()
     {

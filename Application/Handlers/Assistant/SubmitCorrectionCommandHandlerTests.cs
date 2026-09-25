@@ -67,6 +67,37 @@ public class SubmitCorrectionCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_ACorrectionOfAStoppedTurn_IsRecordedButTeachesNothing()
+    {
+        const string userId = "user-1";
+        const string message = "Lösche Mitarbeiter Max";
+        var existing = new SkillSelectionTrajectory
+        {
+            Id = Guid.NewGuid(),
+            AgentId = Guid.NewGuid(),
+            UserId = userId,
+            UserMessageHash = ExpectedHashPrefix(message),
+            LlmChosenSkill = "delete_client",
+            WasInterrupted = true
+        };
+        _repository.FindMostRecentByUserAndHashAsync(userId, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        var result = await _handler.Handle(new SubmitCorrectionCommand
+        {
+            UserId = userId,
+            UserMessage = message,
+            CorrectionType = CorrectionTypes.WrongSkill
+        }, CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        existing.WasCorrected.ShouldBeTrue();
+        await _repository.Received(1).UpdateAsync(existing, Arg.Any<CancellationToken>());
+        _backgroundTasks.DidNotReceiveWithAnyArgs().TriggerReflection(default!);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectCorrectionAsync(default!, default);
+    }
+
+    [Test]
     public async Task Handle_WrongSkillCorrection_TriggersAReflectionScopedToTheChosenSkill()
     {
         const string userId = "user-1";

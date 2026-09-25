@@ -245,6 +245,163 @@ public class TrajectoryCaptureServiceTests
     }
 
     [Test]
+    public async Task AStoppedTurn_IsRecordedWithItsPhaseAndTheExecutedCallsOnly()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var context = new LLMContext { Message = "Lege den Mitarbeiter Anna Meier an", UserId = "user-1", TurnId = Guid.NewGuid() };
+
+        await _service.CaptureAsync(
+            _agentId, context, "Teilantwort [interrupted by user]",
+            [new LLMFunctionCall { FunctionName = "create_employee" }],
+            InterruptedTurnPhases.DuringTools);
+
+        captured!.WasInterrupted.ShouldBeTrue();
+        captured.InterruptedPhase.ShouldBe(InterruptedTurnPhases.DuringTools);
+        captured.WasExecuted.ShouldBeTrue();
+        captured.LlmChosenSkill.ShouldBe("create_employee");
+    }
+
+    [Test]
+    public async Task ATurnThatRanToItsEnd_IsNotMarkedInterrupted()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Zeig mir die Kunden", UserId = "user-1" }, "Bitte.", []);
+
+        captured!.WasInterrupted.ShouldBeFalse();
+        captured.InterruptedPhase.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task AStoppedTurn_HasNoVerdictAndNoRecipeGateEvenWhenItsRowsSucceeded()
+    {
+        SkillSelectionTrajectory? captured = null;
+        await _repository.AddAsync(Arg.Do<SkillSelectionTrajectory>(r => captured = r));
+        var turnId = Guid.NewGuid();
+        _usage.GetByTurnIdAsync(turnId, Arg.Any<CancellationToken>()).Returns([Usage(turnId, true)]);
+        var context = new LLMContext
+        {
+            Message = "Melde die offenen Dienste",
+            UserId = "user-1",
+            TurnId = turnId,
+            ActiveRecipeName = "open-shift-report",
+            RecipeAwaitingConfirmation = true
+        };
+
+        await _service.CaptureAsync(
+            _agentId, context, "Teil.", [new LLMFunctionCall { FunctionName = "list_open_shifts" }],
+            InterruptedTurnPhases.DuringText);
+
+        captured!.WasSuccessful.ShouldBeNull();
+        captured.RecipeOutcome.ShouldBeNull();
+    }
+
+    // What a stopped turn's message says about the answer BEFORE it is no evidence: the stopped turn never ran to
+    // its end, so it must not mark the previous turn corrected or resolve its recipe gate.
+    [Test]
+    public async Task AStoppedTurn_ResolvesNothingAboutThePreviousTurn()
+    {
+        var previous = PreviousTurn(createdSecondsAgo: 30, skill: "list_clients");
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Nein, das war nicht richtig", UserId = "user-1" }, "Teil.", [],
+            InterruptedTurnPhases.BeforeText);
+
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceive().FindMostRecentByAgentAndUserAsync(Arg.Any<Guid>(), Arg.Any<string>());
+        await _repository.DidNotReceive().UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    // The one exception (F1): the stop plus a correction the graceful-correction path really re-routed.
+    [Test]
+    public async Task ARoutedCorrectionAfterAStoppedTurn_MarksItGracefulReroutedAndCollectsTheCase()
+    {
+        var previous = PreviousTurn(createdSecondsAgo: 30, skill: "create_employee", interrupted: true);
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Nein, ich meinte den Vertrag", UserId = "user-1", GracefulCorrectionApplied = true },
+            "Verstanden.", []);
+
+        previous.WasCorrected.ShouldBeTrue();
+        previous.CorrectionType.ShouldBe(CorrectionTypes.GracefulRerouted);
+        await _repository.Received(1).UpdateAsync(previous);
+        await _caseCollector.Received(1).CollectImplicitCorrectionAsync(
+            Arg.Is<SkillLearningImplicitCorrection>(c => c.TrajectoryId == previous.Id), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ACorrectionThatWasNotRoutedAfterAStoppedTurn_MarksNothing()
+    {
+        var previous = PreviousTurn(createdSecondsAgo: 30, skill: "create_employee", interrupted: true);
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId, new LLMContext { Message = "Nein, das war nicht richtig", UserId = "user-1" }, "Ok.", []);
+
+        previous.WasCorrected.ShouldBeFalse();
+        await _repository.DidNotReceive().UpdateAsync(previous);
+        await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    [Test]
+    public async Task ARoutedCorrectionOutsideTheWindowAfterAStoppedTurn_MarksNothing()
+    {
+        var previous = PreviousTurn(createdSecondsAgo: 600, skill: "create_employee", interrupted: true);
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext { Message = "Nein, ich meinte den Vertrag", UserId = "user-1", GracefulCorrectionApplied = true },
+            "Verstanden.", []);
+
+        previous.WasCorrected.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task AConfirmedRecipeGateAfterAStoppedTurn_DoesNotResolveTheStoppedTurn()
+    {
+        var previous = PreviousTurn(createdSecondsAgo: 30, skill: null, interrupted: true);
+        previous.RecipeOutcome = RecipeOutcomes.Pending;
+        previous.RecipeName = "open-shift-report";
+        _repository.FindMostRecentByAgentAndUserAsync(_agentId, "user-1").Returns(previous);
+
+        await _service.CaptureAsync(
+            _agentId,
+            new LLMContext
+            {
+                Message = "ja",
+                UserId = "user-1",
+                ActiveRecipeName = "open-shift-report",
+                RecipeConfirmationAccepted = true
+            },
+            "Ok.", []);
+
+        previous.RecipeOutcome.ShouldBe(RecipeOutcomes.Pending);
+        await _repository.DidNotReceive().UpdateAsync(previous);
+    }
+
+    private SkillSelectionTrajectory PreviousTurn(int createdSecondsAgo, string? skill, bool interrupted = false) => new()
+    {
+        Id = Guid.NewGuid(),
+        AgentId = _agentId,
+        UserId = "user-1",
+        Locale = "de",
+        UserMessageHash = "abc123def4567890",
+        LlmChosenSkill = skill,
+        WasCorrected = false,
+        WasInterrupted = interrupted,
+        InterruptedPhase = interrupted ? InterruptedTurnPhases.DuringTools : null,
+        CreateTime = DateTime.UtcNow.AddSeconds(-createdSecondsAgo)
+    };
+
+    [Test]
     public async Task OnlyCancelledUiActions_WasSuccessfulStaysUnknown()
     {
         SkillSelectionTrajectory? captured = null;
