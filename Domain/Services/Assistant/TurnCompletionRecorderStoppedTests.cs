@@ -29,6 +29,7 @@ public class TurnCompletionRecorderStoppedTests
     private const string Partial = "Sure, I am creating";
     private const string WriteSkill = "create_employee";
     private const string ReadSkill = "search_employees";
+    private const int TurnGapMs = 15;
 
     private ILLMRepository _repository = null!;
     private ITurnPreparationService _turnPreparation = null!;
@@ -222,6 +223,75 @@ public class TurnCompletionRecorderStoppedTests
         await _cleanup.Received(1).CleanUpAsync(UserId, _context.TurnId!.Value, Arg.Any<CancellationToken>());
         _backgroundTasks.Received(1).RunStoppedTurnTasks(
             _agent, _conversation, _context, Arg.Any<string>(), Arg.Any<List<LLMFunctionCall>>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task AFailingHistoryWrite_DoesNotKeepTheUsageRowAndTheAnchorFromBeingWritten()
+    {
+        BeginTurn();
+        _repository.SaveMessageAsync(Arg.Any<RepositoryLLMMessage>())
+            .Returns<RepositoryLLMMessage>(_ => throw new InvalidOperationException("db down"));
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        await _repository.Received(1).TrackUsageAsync(Arg.Any<RepositoryLLMUsage>());
+        _turnPreparation.Received(1).RecordLastAction(
+            _context, ConversationKey, Arg.Any<string>(), Arg.Any<IReadOnlyList<LLMFunctionCall>>(), false);
+    }
+
+    [Test]
+    public async Task AFailingUsageWrite_IsLoggedAndDoesNotKeepTheAnchorFromBeingWritten()
+    {
+        BeginTurn();
+        var failure = new InvalidOperationException("usage down");
+        _repository.TrackUsageAsync(Arg.Any<RepositoryLLMUsage>()).Returns<RepositoryLLMUsage>(_ => throw failure);
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        _logger.Entries.ShouldContain(e => e.Level == LogLevel.Error && ReferenceEquals(e.Exception, failure));
+        _turnPreparation.Received(1).RecordLastAction(
+            _context, ConversationKey, Arg.Any<string>(), Arg.Any<IReadOnlyList<LLMFunctionCall>>(), false);
+    }
+
+    [Test]
+    public async Task AFailingAnchorWrite_IsLoggedAndStillLeavesTheCleanupAndTheBackgroundTasks()
+    {
+        BeginTurn();
+        var failure = new InvalidOperationException("anchor down");
+        _turnPreparation
+            .When(preparation => preparation.RecordLastAction(
+                Arg.Any<LLMContext>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<LLMFunctionCall>>(), Arg.Any<bool>()))
+            .Do(_ => throw failure);
+
+        await Should.NotThrowAsync(() => _recorder.RecordStoppedAsync(CancellationToken.None));
+
+        _logger.Entries.ShouldContain(e => e.Level == LogLevel.Error && ReferenceEquals(e.Exception, failure));
+        await _cleanup.Received(1).CleanUpAsync(UserId, _context.TurnId!.Value, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ANewerAnchorInTheConversation_IsLeftAloneWhileHistoryAndUsageAreStillWritten()
+    {
+        BeginTurn();
+        _turnPreparation.HasLastActionSince(_context, ConversationKey, _turnState.StartedAtUtc).Returns(true);
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        _turnPreparation.DidNotReceiveWithAnyArgs().RecordLastAction(default!, default!, default!, default!, default);
+        await _repository.Received(2).SaveMessageAsync(Arg.Any<RepositoryLLMMessage>());
+        await _repository.Received(1).TrackUsageAsync(Arg.Any<RepositoryLLMUsage>());
+    }
+
+    [Test]
+    public async Task TheHistoryRows_AreStampedWithTheTimeTheTurnBegan()
+    {
+        BeginTurn();
+        await Task.Delay(TurnGapMs);
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        await _repository.Received(1).SaveMessageAsync(Arg.Is<RepositoryLLMMessage>(m =>
+            m.Role == "user" && m.CreateTime == _turnState.StartedAtUtc));
     }
 
     [Test]
