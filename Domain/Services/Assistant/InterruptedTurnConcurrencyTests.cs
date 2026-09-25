@@ -163,6 +163,22 @@ public class InterruptedTurnConcurrencyTests
     }
 
     [Test]
+    public async Task TheRecorder_ReturnsTheSummaryToTheCallerThatClaimedTheStopAndNullToTheOthers()
+    {
+        MidTurn();
+
+        var first = await _recorder.TryRecordStoppedAsync(CancellationToken.None);
+        var second = await _recorder.TryRecordStoppedAsync(CancellationToken.None);
+        var forTheTail = await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        first.ShouldNotBeNull();
+        second.ShouldBeNull();
+        forTheTail.ExecutedCount.ShouldBe(first.ExecutedCount);
+        forTheTail.Labels.ShouldBe(first.Labels);
+        _saveCalls.ShouldBe(MessagesPerTurn);
+    }
+
+    [Test]
     public async Task ManyFinalizersReleasedTogether_ExactlyOneWritesAndExactlyOneReports()
     {
         for (var repetition = 0; repetition < RaceRepetitions; repetition++)
