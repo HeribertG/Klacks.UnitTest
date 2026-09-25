@@ -84,6 +84,8 @@ public class ClarificationTextCatalogueGuardTests
     {
         ClarificationTexts.Reset();
         GracefulCorrectionTexts.Reset();
+        EscalationHandoffTexts.Reset();
+        MessengerProactiveTexts.Reset();
     }
 
     private static string ApiRoot()

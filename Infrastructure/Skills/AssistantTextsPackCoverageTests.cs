@@ -36,6 +36,8 @@ public class AssistantTextsPackCoverageTests
     {
         GracefulCorrectionTexts.Reset();
         ClarificationTexts.Reset();
+        EscalationHandoffTexts.Reset();
+        MessengerProactiveTexts.Reset();
     }
 
     /// <summary>

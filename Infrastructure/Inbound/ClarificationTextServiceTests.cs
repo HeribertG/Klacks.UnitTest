@@ -53,6 +53,8 @@ public class ClarificationTextServiceTests
     {
         ClarificationTexts.Reset();
         GracefulCorrectionTexts.Reset();
+        EscalationHandoffTexts.Reset();
+        MessengerProactiveTexts.Reset();
     }
 
     private void UseLanguage(string? language) =>

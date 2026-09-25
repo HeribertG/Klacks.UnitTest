@@ -32,6 +32,8 @@ public class EmptyAnswerNoticeTextTests
     {
         GracefulCorrectionTexts.Reset();
         ClarificationTexts.Reset();
+        EscalationHandoffTexts.Reset();
+        MessengerProactiveTexts.Reset();
     }
 
     [Test]

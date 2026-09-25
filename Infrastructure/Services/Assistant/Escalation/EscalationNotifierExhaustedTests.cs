@@ -19,10 +19,10 @@ using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Assistant.Escalation;
 using Klacks.Api.Infrastructure.Services.Assistant.Escalation;
+using Klacks.Api.Infrastructure.Services.Settings;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using NSubstitute.ExceptionExtensions;
-using SettingsEntity = Klacks.Api.Domain.Models.Settings.Settings;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Assistant.Escalation;
 
@@ -51,7 +51,8 @@ public class EscalationNotifierExhaustedTests
         _conditionRepository = Substitute.For<IAgentConditionRepository>();
 
         var settingsReader = Substitute.For<ISettingsReader>();
-        settingsReader.GetSetting(Arg.Any<string>()).Returns((SettingsEntity?)null);
+        settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, string>());
 
         _notificationService.GetConnectedUserIdsAsync().Returns(new List<string>());
         _conditionRepository.GetByIdAsync(ConditionId, Arg.Any<CancellationToken>())
@@ -62,7 +63,9 @@ public class EscalationNotifierExhaustedTests
             _notificationService,
             Substitute.For<IOfflineMessengerNotifier>(),
             Substitute.For<IProactiveMessengerTextComposer>(),
-            settingsReader,
+            new EscalationHandoffTextService(
+                new InstallationLanguageResolver(settingsReader, Substitute.For<ILogger<InstallationLanguageResolver>>()),
+                Substitute.For<ILogger<EscalationHandoffTextService>>()),
             new FixedCompanyClock(new DateTimeOffset(DeadlineUtc, TimeSpan.Zero)),
             _conditionRepository,
             Substitute.For<IConditionRemediationRegistry>(),

@@ -4,7 +4,10 @@
 /// Unit tests for AssistantTextsPluginLoader on a throw-away Plugins/Languages tree: a pack directory
 /// without assistant-texts.json is reported through onMissingFile (its language would otherwise resolve to
 /// English without any warning), a core-language directory is never reported, a pack that ships the file is
-/// loaded and not reported, and an unreadable file goes to onError instead.
+/// loaded and not reported, and an unreadable file goes to onError instead. The same tree checks the other two
+/// catalogues the loader feeds: assistant-texts.json also configures EscalationHandoffTexts, and the
+/// assistant.proactive.* keys of translations.json (and only those) configure MessengerProactiveTexts, also
+/// for a pack that ships no assistant-texts.json.
 /// </summary>
 
 using Klacks.Api.Application.Constants;
@@ -21,6 +24,7 @@ public class AssistantTextsPluginLoaderTests
     private const string PackWithBrokenFile = "qa-broken";
     private const string CoreLanguageDirectory = "de";
     private const string SampleText = "Sample notice";
+    private const string OtherTranslationKey = "SOME_UI_LABEL";
 
     private string _baseDirectory = null!;
 
@@ -36,6 +40,8 @@ public class AssistantTextsPluginLoaderTests
     {
         ClarificationTexts.Reset();
         GracefulCorrectionTexts.Reset();
+        EscalationHandoffTexts.Reset();
+        MessengerProactiveTexts.Reset();
 
         if (Directory.Exists(_baseDirectory))
         {
@@ -45,12 +51,17 @@ public class AssistantTextsPluginLoaderTests
 
     private string LanguagesRoot() => Path.Combine(_baseDirectory, LanguagePluginConstants.PluginDirectory);
 
-    private void CreatePack(string code, string? assistantTextsJson)
+    private void CreatePack(string code, string? assistantTextsJson, string? translationsJson = null)
     {
         var directory = Directory.CreateDirectory(Path.Combine(LanguagesRoot(), code));
         if (assistantTextsJson != null)
         {
             File.WriteAllText(Path.Combine(directory.FullName, LanguagePluginConstants.AssistantTextsFileName), assistantTextsJson);
+        }
+
+        if (translationsJson != null)
+        {
+            File.WriteAllText(Path.Combine(directory.FullName, LanguagePluginConstants.TranslationsFileName), translationsJson);
         }
     }
 
@@ -110,5 +121,51 @@ public class AssistantTextsPluginLoaderTests
         CreatePack(PackWithoutFile, null);
 
         Should.NotThrow(() => AssistantTextsPluginLoader.Load(_baseDirectory));
+    }
+
+    [Test]
+    public void APackWithTheFile_ConfiguresTheEscalationHandoffCatalogueToo()
+    {
+        CreatePack(PackWithFile, $"{{\"{EscalationHandoffTexts.HandoffQuietNote}\":\"{SampleText}\"}}");
+
+        AssistantTextsPluginLoader.Load(_baseDirectory);
+
+        EscalationHandoffTexts.TryGetText(EscalationHandoffTexts.HandoffQuietNote, PackWithFile, out var text).ShouldBeTrue();
+        text.ShouldBe(SampleText);
+    }
+
+    [Test]
+    public void TheProactiveKeysOfATranslationsJson_ConfigureTheMessengerCatalogue_AndNothingElse()
+    {
+        var translations = $"{{\"{ProactiveMessageI18nKeys.UnstaffedShift}\":\"{SampleText}\",\"{OtherTranslationKey}\":\"x\"}}";
+        CreatePack(PackWithFile, null, translations);
+
+        AssistantTextsPluginLoader.Load(_baseDirectory, onMissingFile: _ => { });
+
+        MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.UnstaffedShift, PackWithFile, out var text).ShouldBeTrue();
+        text.ShouldBe(SampleText);
+        MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.DailyDigest, PackWithFile, out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public void APackWithoutAnyProactiveKey_StaysAnUnknownLanguage_AndResolvesToEnglish()
+    {
+        CreatePack(PackWithFile, null, $"{{\"{OtherTranslationKey}\":\"x\"}}");
+
+        AssistantTextsPluginLoader.Load(_baseDirectory, onMissingFile: _ => { });
+
+        MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.UnstaffedShift, PackWithFile, out var text).ShouldBeTrue();
+        text.ShouldBe(MessengerProactiveTexts.EnglishOf(ProactiveMessageI18nKeys.UnstaffedShift));
+    }
+
+    [Test]
+    public void AnUnreadableTranslationsJson_GoesToOnError()
+    {
+        CreatePack(PackWithBrokenFile, "{}", "{ not json");
+        var errors = new List<string>();
+
+        AssistantTextsPluginLoader.Load(_baseDirectory, (file, _) => errors.Add(file));
+
+        errors.ShouldBe([Path.Combine(LanguagesRoot(), PackWithBrokenFile, LanguagePluginConstants.TranslationsFileName)]);
     }
 }
