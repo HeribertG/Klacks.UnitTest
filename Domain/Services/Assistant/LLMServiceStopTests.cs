@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -24,6 +25,9 @@ public class LLMServiceStopTests
 {
     private const string UserMessage = "Create the employee Anna Meier.";
     private const string SkillName = "get_employee";
+    private const string WriteSkillName = "create_employee";
+    private const string SwallowedCancellationError = "Internal error processing request";
+    private const int QuietPollMs = 10;
     private const string NeverStreamed = "This round must never happen.";
     private const int StopAfterMs = 50;
     private const int SlowCallMs = 5_000;
@@ -102,9 +106,9 @@ public class LLMServiceStopTests
             Content = string.Empty,
             FunctionCalls =
             [
+                new LLMFunctionCall { FunctionName = WriteSkillName },
                 new LLMFunctionCall { FunctionName = SkillName },
-                new LLMFunctionCall { FunctionName = "list_groups" },
-                new LLMFunctionCall { FunctionName = "create_employee" }
+                new LLMFunctionCall { FunctionName = "list_groups" }
             ]
         });
         using var stop = new CancellationTokenSource();
@@ -120,7 +124,7 @@ public class LLMServiceStopTests
 
         chunks.Count(c => c.Type == SseChunkType.FunctionCall).ShouldBe(3);
         chunks.Where(c => c.Type == SseChunkType.FunctionResult).Select(c => c.FunctionName)
-            .ShouldBe([SkillName]);
+            .ShouldBe([WriteSkillName]);
         chunks.Single(c => c.Type == SseChunkType.TurnStopped).ExecutedCount.ShouldBe(1);
         harness.TurnState.Calls.Count(c => c.SkippedByStop).ShouldBe(2);
         AssertStoppedEnding(chunks);
@@ -169,6 +173,121 @@ public class LLMServiceStopTests
         LLMServiceTurnHarness.StreamedContent(chunks).ShouldBeEmpty();
         harness.TurnState.Outcome.ShouldBe(TurnOutcome.Stopped);
         AssertStoppedEnding(chunks);
+    }
+
+    // The real providers do not throw when their token is cancelled: the streaming loops of
+    // BaseHttpProvider and AnthropicProvider simply end, and ProcessAsync turns the cancellation into a
+    // failed response. The tests above use a provider that throws, so these pin the shapes that occur.
+    [Test]
+    public async Task AStreamThatEndsQuietlyOnCancellation_WhenStopped_EndsOnTurnStopped()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: true);
+        harness.Provider.ProcessStreamAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => QuietStream(call.Arg<CancellationToken>()));
+        using var stop = new CancellationTokenSource();
+
+        var chunks = await StreamAsync(
+            harness, ContextWith(stop.Token), requestToken: default, onChunk: chunk => CancelOn(chunk, SseChunkType.Content, stop));
+
+        harness.TurnState.StreamedContent.ToString().ShouldBe("Here ");
+        harness.TurnState.Outcome.ShouldBe(TurnOutcome.Stopped);
+        AssertStoppedEnding(chunks);
+    }
+
+    [Test]
+    public async Task AStreamThatEndsQuietlyOnCancellation_WhenTheConnectionDrops_LeavesNoOutcomeAndPersistsNothing()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: true);
+        harness.Provider.ProcessStreamAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => QuietStream(call.Arg<CancellationToken>()));
+        using var requestAborted = new CancellationTokenSource();
+
+        var chunks = await StreamAsync(
+            harness, ContextWith(CancellationToken.None), requestAborted.Token,
+            onChunk: chunk => CancelOn(chunk, SseChunkType.Content, requestAborted));
+
+        Kinds(chunks).ShouldNotContain(SseChunkType.Done);
+        Kinds(chunks).ShouldNotContain(SseChunkType.Metadata);
+        Kinds(chunks).ShouldNotContain(SseChunkType.Error);
+        harness.TurnState.Outcome.ShouldBeNull();
+        harness.TrackedUsage.ShouldBeNull();
+        harness.PersistedAnswer.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ANonStreamingCallWhoseCancellationTheProviderSwallowed_WhenStopped_IsNoErrorEvent()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: false);
+        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => SwallowingCall(call.Arg<CancellationToken>()));
+        using var stop = new CancellationTokenSource();
+        stop.CancelAfter(StopAfterMs);
+
+        var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
+
+        harness.TurnState.Outcome.ShouldBe(TurnOutcome.Stopped);
+        AssertStoppedEnding(chunks);
+    }
+
+    [Test]
+    public async Task ANonStreamingCallWhoseCancellationTheProviderSwallowed_WhenTheConnectionDrops_LeavesNoOutcomeAndNoError()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: false);
+        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => SwallowingCall(call.Arg<CancellationToken>()));
+        using var requestAborted = new CancellationTokenSource();
+        requestAborted.CancelAfter(StopAfterMs);
+
+        var chunks = await StreamAsync(harness, ContextWith(CancellationToken.None), requestAborted.Token);
+
+        Kinds(chunks).ShouldNotContain(SseChunkType.Error);
+        Kinds(chunks).ShouldNotContain(SseChunkType.Done);
+        harness.TurnState.Outcome.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ARecipeQuestionWhoseCancellationTheProviderSwallowed_WhenStopped_StreamsNoFallbackText()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: true);
+        harness.StartsRecipe(new RecipeExecutionPlan(
+            "guided-setup",
+            [new RecipeStep { Kind = RecipeStepKinds.Ask, Slot = "groupName", Prompt = "Which group?" }],
+            needsConfirmation: true));
+        harness.Provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => SwallowingCall(call.Arg<CancellationToken>()));
+        using var stop = new CancellationTokenSource();
+        stop.CancelAfter(StopAfterMs);
+
+        var chunks = await StreamAsync(harness, ContextWith(stop.Token), requestToken: default);
+
+        LLMServiceTurnHarness.StreamedContent(chunks).ShouldBeEmpty();
+        harness.TurnState.Outcome.ShouldBe(TurnOutcome.Stopped);
+        AssertStoppedEnding(chunks);
+    }
+
+    [Test]
+    public async Task TheTextStreamedSoFar_IsInTheStateWhenTheConsumerAbandonsTheStream()
+    {
+        var harness = new LLMServiceTurnHarness(streaming: true);
+        harness.Script(LLMServiceTurnHarness.Text("Here she is, with all of her details."));
+        var received = string.Empty;
+
+        await using (var enumerator = harness.Service
+                         .ProcessStreamAsync(ContextWith(CancellationToken.None)).GetAsyncEnumerator())
+        {
+            while (await enumerator.MoveNextAsync())
+            {
+                if (enumerator.Current.Type == SseChunkType.Content)
+                {
+                    received = enumerator.Current.Text!;
+                    break;
+                }
+            }
+        }
+
+        received.ShouldNotBeEmpty();
+        harness.TurnState.StreamedContent.ToString().ShouldBe(received);
+        harness.TurnState.Outcome.ShouldBeNull();
     }
 
     [Test]
@@ -223,6 +342,28 @@ public class LLMServiceStopTests
             .Select(call => call.GetArguments().OfType<CancellationToken>().Single())
             .ToList();
         agentLookups.Last().CanBeCanceled.ShouldBeFalse();
+    }
+
+    private static async IAsyncEnumerable<string> QuietStream([EnumeratorCancellation] CancellationToken token)
+    {
+        yield return "Here ";
+        while (!token.IsCancellationRequested)
+        {
+            await Task.Delay(QuietPollMs, CancellationToken.None);
+        }
+    }
+
+    private static async Task<LLMProviderResponse> SwallowingCall(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(SlowCallMs, token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        return new LLMProviderResponse { Success = false, Error = SwallowedCancellationError };
     }
 
     private static LLMContext ContextWith(CancellationToken stopToken)
