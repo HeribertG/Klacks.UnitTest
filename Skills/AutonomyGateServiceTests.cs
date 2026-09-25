@@ -101,6 +101,37 @@ public class AutonomyGateServiceTests
         Assert.That(result.Metadata, Does.ContainKey("confirmationToken"));
     }
 
+    // Every token the gate issues is recorded on the turn's scope - a turn the user stops drops exactly
+    // these - while only a token of a SENSITIVE skill also carries the same-turn redemption refusal.
+    [TestCase(SkillRiskClass.Reversible, false)]
+    [TestCase(SkillRiskClass.Irreversible, false)]
+    [TestCase(SkillRiskClass.Sensitive, true)]
+    public async Task Check_AHeldSkill_RecordsItsTokenOnTheTurnScopeWhateverItsRiskClass(
+        SkillRiskClass riskClass, bool sensitive)
+    {
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Propose);
+        SetRisk(riskClass);
+
+        var result = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
+
+        var token = (string)result!.Metadata!["confirmationToken"];
+        _turnScope.IssuedTokens.ShouldBe([token]);
+        _turnScope.WasIssuedThisTurnForSensitiveSkill(token).ShouldBe(sensitive);
+    }
+
+    [Test]
+    public async Task Check_AnAllowedSkill_RecordsNoToken()
+    {
+        var context = Context();
+        SetLevel(context.UserId, AutonomyLevel.Autonomous);
+        SetRisk(SkillRiskClass.Reversible);
+
+        await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
+
+        _turnScope.IssuedTokens.ShouldBeEmpty();
+    }
+
     [TestCase(SkillRiskClass.Reversible, true)]
     [TestCase(SkillRiskClass.ScenarioGated, true)]
     [TestCase(SkillRiskClass.Irreversible, false)]

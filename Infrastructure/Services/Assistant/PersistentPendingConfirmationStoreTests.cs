@@ -10,6 +10,7 @@
 /// IServiceScopeFactory, mirroring the store's own fresh-scope-per-operation design.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Persistence;
@@ -241,5 +242,42 @@ public class PersistentPendingConfirmationStoreTests
         _store.Create(User1, "delete_system_user", SampleParameters());
 
         _store.PeekLatestForUser(User1, TimeSpan.FromMilliseconds(-1)).ShouldBeNull();
+    }
+
+    [Test]
+    public void DiscardByTokens_DropsExactlyTheGivenTokensOfThatUser()
+    {
+        var dropped = _store.Create(User1, "delete_group", SampleParameters());
+        var alsoDropped = _store.Create(User1, "create_plan", SampleParameters());
+        var kept = _store.Create(User1, "delete_client", SampleParameters());
+        var othersToken = _store.Create(User2, "delete_group", SampleParameters());
+
+        _store.DiscardByTokens(User1, [dropped, alsoDropped, othersToken, "unknown-token"]);
+
+        _store.Consume(dropped, User1).ShouldBeNull();
+        _store.Consume(alsoDropped, User1).ShouldBeNull();
+        _store.Consume(kept, User1).ShouldNotBeNull();
+        _store.Consume(othersToken, User2).ShouldNotBeNull();
+    }
+
+    [Test]
+    public void DiscardByTokens_DropsATokenWhateverItsPurpose()
+    {
+        _store.Create(User1, "delete_group", SampleParameters(), PendingConfirmationPurposes.CorrectionUndo);
+        var undo = _store.PeekLatestForUser(User1, Window, PendingConfirmationPurposes.CorrectionUndo)!;
+
+        _store.DiscardByTokens(User1, [undo.Token]);
+
+        _store.PeekLatestForUser(User1, Window, PendingConfirmationPurposes.CorrectionUndo).ShouldBeNull();
+    }
+
+    [Test]
+    public void DiscardByTokens_WithNoTokens_TouchesNothing()
+    {
+        var token = _store.Create(User1, "delete_group", SampleParameters());
+
+        _store.DiscardByTokens(User1, []);
+
+        _store.Consume(token, User1).ShouldNotBeNull();
     }
 }
