@@ -1,7 +1,9 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// W1.7: TrackUsageAsync must persist the serialized functions_called JSON on the llm_usage row.
+/// W1.7: TrackUsageAsync must persist the serialized functions_called JSON on the llm_usage row. Follow-up 5:
+/// the conversation row is only ever changed through the targeted repository calls (message count, title
+/// proposal, token and cost increments), never by writing the loaded entity back.
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -103,5 +105,43 @@ public class LLMConversationManagerTests
         captured!.ToolChoiceRequested.ShouldBeFalse();
         captured.ToolChoiceSupported.ShouldBeFalse();
         captured.ToolCallReturned.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task SaveConversationMessagesAsync_HandsTheTurnToTheRepositoryAsAnIncrementWithATitleProposal()
+    {
+        var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1", MessageCount = 6 };
+
+        await _manager.SaveConversationMessagesAsync(
+            conversation, "one two three four five six", "answer", "model-1");
+
+        await _repository.Received(1).RecordConversationTurnAsync(
+            conversation, 2, Arg.Any<DateTime>(), "model-1", "one two three four five...");
+        conversation.MessageCount.ShouldBe(6, "the row is incremented in SQL, not by writing the entity back");
+    }
+
+    [Test]
+    public async Task TrackUsageAsync_AddsTheTurnTotalsThroughTheRepository()
+    {
+        var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1" };
+        var usage = new Klacks.Api.Domain.Services.Assistant.Providers.LLMUsage { InputTokens = 30, OutputTokens = 12, Cost = 0.5m };
+
+        await _manager.TrackUsageAsync(
+            "user-1", new LLMModel { Id = Guid.NewGuid(), ModelId = "m" }, conversation, usage, 900);
+
+        await _repository.Received(1).AddConversationUsageAsync(conversation, 42, 0.5m);
+    }
+
+    [Test]
+    public async Task TrackUsageAsync_ForAFailedTurn_AddsNoTotals()
+    {
+        var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1" };
+        var usage = new Klacks.Api.Domain.Services.Assistant.Providers.LLMUsage { InputTokens = 30, Cost = 0.5m };
+
+        await _manager.TrackUsageAsync(
+            "user-1", new LLMModel { Id = Guid.NewGuid(), ModelId = "m" }, conversation, usage, 900, hasError: true);
+
+        await _repository.DidNotReceive().AddConversationUsageAsync(
+            Arg.Any<LLMConversation>(), Arg.Any<int>(), Arg.Any<decimal>());
     }
 }

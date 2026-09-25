@@ -91,7 +91,7 @@ public class ConversationCompactionServiceTests
         ConversationSummaryCodec.TryParse(conversation.Summary, out var stored).ShouldBeTrue();
         stored.OpenTasks.ShouldContain("Finish the roster");
         stored.Facts.ShouldContain("Prefers mornings");
-        await _repository.Received(1).UpdateConversationAsync(conversation);
+        await _repository.Received(1).UpdateConversationSummaryAsync(conversation);
     }
 
     [Test]
@@ -131,7 +131,7 @@ public class ConversationCompactionServiceTests
         conversation.Summary.ShouldBe("old");
         await _provider.DidNotReceive()
             .ProcessAsync(Arg.Any<LlmProviders.LLMProviderRequest>(), Arg.Any<CancellationToken>());
-        await _repository.DidNotReceive().UpdateConversationAsync(Arg.Any<LLMConversation>());
+        await _repository.DidNotReceive().UpdateConversationSummaryAsync(Arg.Any<LLMConversation>());
     }
 
     [Test]
@@ -144,7 +144,7 @@ public class ConversationCompactionServiceTests
         await _service.CompactIfNeededAsync(ConvId, OwnerId);
 
         conversation.Summary.ShouldBe("old");
-        await _repository.DidNotReceive().UpdateConversationAsync(Arg.Any<LLMConversation>());
+        await _repository.DidNotReceive().UpdateConversationSummaryAsync(Arg.Any<LLMConversation>());
     }
 
     [Test]
@@ -156,7 +156,7 @@ public class ConversationCompactionServiceTests
         await _service.CompactIfNeededAsync(ConvId, OtherUserId);
 
         conversation.Summary.ShouldBe("old");
-        await _repository.DidNotReceive().UpdateConversationAsync(Arg.Any<LLMConversation>());
+        await _repository.DidNotReceive().UpdateConversationSummaryAsync(Arg.Any<LLMConversation>());
         await _repository.DidNotReceive()
             .GetOldestMessagesAsync(ConvId, OtherUserId, Arg.Any<int>(), Arg.Any<int>());
     }
@@ -183,7 +183,7 @@ public class ConversationCompactionServiceTests
         conversation.Summary.ShouldBe("old");
         await _provider.DidNotReceive()
             .ProcessAsync(Arg.Any<LlmProviders.LLMProviderRequest>(), Arg.Any<CancellationToken>());
-        await _repository.DidNotReceive().UpdateConversationAsync(Arg.Any<LLMConversation>());
+        await _repository.DidNotReceive().UpdateConversationSummaryAsync(Arg.Any<LLMConversation>());
     }
 
     [Test]
@@ -196,6 +196,6 @@ public class ConversationCompactionServiceTests
 
         ConversationSummaryCodec.TryParse(conversation.Summary, out var stored).ShouldBeTrue();
         stored.Facts.ShouldContain("Prefers mornings");
-        await _repository.Received(1).UpdateConversationAsync(conversation);
+        await _repository.Received(1).UpdateConversationSummaryAsync(conversation);
     }
 }
