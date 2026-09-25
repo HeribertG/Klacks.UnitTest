@@ -407,6 +407,20 @@ public class MacroManagementServiceTests
         (await _context.Macro.AsNoTracking().SingleAsync(m => m.Id == macro.Id)).Name.ShouldBe("Night rate renamed");
     }
 
+    [Test]
+    public async Task UpdateMacroAsync_NewInstanceWhileTheTrackedMacroHasPendingChanges_FailsInsteadOfDroppingThem()
+    {
+        var macro = await AddCustomMacroAsync("Holiday rate");
+        _context.ChangeTracker.Clear();
+        var tracked = await _service.GetMacroAsync(macro.Id);
+        tracked.Content = "output 1, 3";
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => _service.UpdateMacroAsync(RenamedCopyOf(macro, "Holiday rate renamed"), byAssistant: true));
+
+        _context.Entry(tracked).State.ShouldBe(EntityState.Modified);
+    }
+
     private static Macro RenamedCopyOf(Macro macro, string name) => new()
     {
         Id = macro.Id,
