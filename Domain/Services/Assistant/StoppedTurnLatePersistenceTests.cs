@@ -119,6 +119,28 @@ public class StoppedTurnLatePersistenceTests
         anchor.SupersededAtUtc.ShouldNotBeNull();
     }
 
+    // Follow-up 4 (inverted anchor race), open and left to the owner: HasLastActionSince compares the WRITE
+    // time of the anchor with the START of the persisting turn. The older stopped turn writes its anchor (write
+    // time = now) while the newer stopped turn is still running; the newer one then finds an anchor that is
+    // "newer than its start" and keeps it, so the anchor names the OLDER turn's action. The desired outcome is
+    // the newer request; this test pins today's outcome and must flip when the owner decides on a fix.
+    [Test]
+    public async Task KnownLimit_TwoStoppedTurnsThatPersistInTheirStartOrder_LeaveTheAnchorOfTheOlderOne()
+    {
+        var older = NewTurn(OldRequest, out var olderRecorder);
+        older.RegisterCalls([Ran(WriteSkill)]);
+        await Task.Delay(TurnGapMs);
+        var newer = NewTurn(NewRequest, out var newerRecorder);
+        newer.RegisterCalls([Ran(WriteSkill)]);
+
+        await Task.Delay(TurnGapMs);
+        await olderRecorder.RecordStoppedAsync(CancellationToken.None);
+        await Task.Delay(TurnGapMs);
+        await newerRecorder.RecordStoppedAsync(CancellationToken.None);
+
+        _store.Peek(UserId, ConversationKey)!.UserMessage.ShouldBe(OldRequest);
+    }
+
     [Test]
     public async Task AStoppedTurnWithoutANewerTurn_RecordsItsAnchorAsBefore()
     {
