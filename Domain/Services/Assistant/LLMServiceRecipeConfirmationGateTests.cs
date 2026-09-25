@@ -113,7 +113,8 @@ public class LLMServiceRecipeConfirmationGateTests
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!,
             turnPreparation: _turnPreparation,
-            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create(),
+            turnState: new TurnRunState());
     }
 
     private static LLMContext Context(string message) => new()

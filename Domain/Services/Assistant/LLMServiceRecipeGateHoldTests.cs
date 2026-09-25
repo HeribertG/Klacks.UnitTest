@@ -115,7 +115,8 @@ public class LLMServiceRecipeGateHoldTests
                 Substitute.For<IDeterministicRouteProbe>(),
                 Substitute.For<ISkillInverseResolver>(),
                 Substitute.For<ILogger<TurnPreparationService>>()),
-            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create(),
+            turnState: new TurnRunState());
     }
 
     private static MultiTurnContext BuildContext(ILLMProvider provider) => new(

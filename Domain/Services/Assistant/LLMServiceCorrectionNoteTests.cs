@@ -56,7 +56,8 @@ public class LLMServiceCorrectionNoteTests
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!,
             turnPreparation: _turnPreparation,
-            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create(),
+            turnState: new TurnRunState());
     }
 
     private static LLMContext Context(string? correctionNote) => new()

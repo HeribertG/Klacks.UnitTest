@@ -92,7 +92,8 @@ public class LLMServiceTransientRetryTests
                 Substitute.For<IDeterministicRouteProbe>(),
                 Substitute.For<ISkillInverseResolver>(),
                 Substitute.For<ILogger<TurnPreparationService>>()),
-            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create(),
+            turnState: new TurnRunState());
     }
 
     private static LLMProviderRequest Request() => new()

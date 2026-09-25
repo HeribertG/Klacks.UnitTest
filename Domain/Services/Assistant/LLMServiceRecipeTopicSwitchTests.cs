@@ -133,7 +133,8 @@ public class LLMServiceRecipeTopicSwitchTests
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!,
             turnPreparation: _turnPreparation,
-            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create(),
+            turnState: new TurnRunState());
     }
 
     private static LLMContext Context(string message, string? language = "de") => new()

@@ -15,5 +15,5 @@ namespace Klacks.UnitTest.TestHelpers;
 internal static class InertTurnCompletionRecorder
 {
     internal static TurnCompletionRecorder Create() => new(
-        Substitute.For<ILogger<TurnCompletionRecorder>>(), null!, null!, null!, null!);
+        Substitute.For<ILogger<TurnCompletionRecorder>>(), null!, null!, null!, null!, new TurnRunState());
 }

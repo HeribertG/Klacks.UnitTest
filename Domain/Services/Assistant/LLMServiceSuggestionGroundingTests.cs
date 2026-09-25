@@ -44,7 +44,8 @@ public class LLMServiceSuggestionGroundingTests
             suggestionEntityNameReader: _nameReader,
             contextBudgetPolicy: null!,
             turnPreparation: null!,
-            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create(),
+            turnState: new TurnRunState());
     }
 
     [Test]

@@ -6,6 +6,7 @@
 /// own values, and a storage failure is logged instead of thrown because the answer is already on screen.
 /// </summary>
 
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
@@ -33,6 +34,7 @@ public class TurnCompletionRecorderTests
     private ILLMBackgroundTaskService _backgroundTasks = null!;
     private RecordingLogger<TurnCompletionRecorder> _logger = null!;
     private TurnCompletionRecorder _recorder = null!;
+    private TurnRunState _turnState = null!;
     private LLMConversation _conversation = null!;
     private LLMModel _model = null!;
     private LLMContext _context = null!;
@@ -46,6 +48,7 @@ public class TurnCompletionRecorderTests
         _agentRepository = Substitute.For<IAgentRepository>();
         _backgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
         _logger = new RecordingLogger<TurnCompletionRecorder>();
+        _turnState = new TurnRunState();
 
         _agent = new Agent();
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(_agent);
@@ -55,7 +58,8 @@ public class TurnCompletionRecorderTests
             new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository),
             _turnPreparation,
             _agentRepository,
-            _backgroundTasks);
+            _backgroundTasks,
+            _turnState);
 
         _conversation = new LLMConversation { Id = Guid.NewGuid(), ConversationId = ConversationKey, UserId = UserId };
         _model = new LLMModel { Id = Guid.NewGuid(), ModelId = ModelKey };
@@ -135,6 +139,44 @@ public class TurnCompletionRecorderTests
         await _repository.DidNotReceive().TrackUsageAsync(Arg.Any<RepositoryLLMUsage>());
         _backgroundTasks.DidNotReceiveWithAnyArgs().RunBackgroundTasks(
             default, default!, default!, default!, default!, default);
+    }
+
+    [Test]
+    public async Task RecordCompleted_ClaimsTheOutcomeBeforeAnythingIsWritten()
+    {
+        TurnOutcome? outcomeWhenTheHistoryWasWritten = null;
+        _repository.SaveMessageAsync(Arg.Any<RepositoryLLMMessage>()).Returns(call =>
+        {
+            outcomeWhenTheHistoryWasWritten ??= _turnState.Outcome;
+            return call.Arg<RepositoryLLMMessage>();
+        });
+
+        await _recorder.RecordCompletedAsync(Turn([]), CancellationToken.None);
+
+        outcomeWhenTheHistoryWasWritten.ShouldBe(TurnOutcome.Completed);
+    }
+
+    [Test]
+    public async Task RecordCompleted_WhenStorageThrows_TheOutcomeStaysCompleted()
+    {
+        _repository.SaveMessageAsync(Arg.Any<RepositoryLLMMessage>())
+            .Returns<RepositoryLLMMessage>(_ => throw new InvalidOperationException("db down"));
+
+        await _recorder.RecordCompletedAsync(Turn([]), CancellationToken.None);
+
+        _turnState.Outcome.ShouldBe(TurnOutcome.Completed);
+    }
+
+    [Test]
+    public async Task RecordCompleted_WhenTheTurnAlreadyHasAnOutcome_WritesNothingAndKeepsIt()
+    {
+        _turnState.TrySetOutcome(TurnOutcome.Stopped);
+
+        await _recorder.RecordCompletedAsync(Turn([]), CancellationToken.None);
+
+        _turnState.Outcome.ShouldBe(TurnOutcome.Stopped);
+        await _repository.DidNotReceive().SaveMessageAsync(Arg.Any<RepositoryLLMMessage>());
+        await _repository.DidNotReceive().TrackUsageAsync(Arg.Any<RepositoryLLMUsage>());
     }
 
     private TurnCompletion Turn(List<LLMFunctionCall> calls) => new(

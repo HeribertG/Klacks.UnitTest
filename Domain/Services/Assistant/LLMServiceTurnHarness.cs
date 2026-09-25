@@ -143,10 +143,13 @@ internal sealed class LLMServiceTurnHarness
             turnPreparation: _turnPreparation,
             turnCompletionRecorder: new TurnCompletionRecorder(
                 Substitute.For<ILogger<TurnCompletionRecorder>>(),
-                conversationManager, _turnPreparation, agentRepository, BackgroundTasks));
+                conversationManager, _turnPreparation, agentRepository, BackgroundTasks, TurnState),
+            turnState: TurnState);
     }
 
     internal LLMService Service { get; }
+
+    internal TurnRunState TurnState { get; } = new();
 
     internal ILLMProvider Provider { get; }
 
@@ -224,6 +227,10 @@ internal sealed class LLMServiceTurnHarness
         _breakingStreams.Add(response);
         return response;
     }
+
+    internal void ConversationStoreFails() =>
+        _repository.GetOrCreateConversationAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns<LLMConversation>(_ => throw new InvalidOperationException("conversation store down"));
 
     internal void SkillsSucceed() =>
         SkillBridge.ExecuteSkillFromLLMCallAsync(

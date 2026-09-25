@@ -99,6 +99,8 @@ public class LLMServiceCorrectionClarificationTests
         var conversationManager = new LLMConversationManager(
             Substitute.For<ILogger<LLMConversationManager>>(), _repository);
 
+        var turnState = new TurnRunState();
+
         _service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
             providerOrchestrator: new LLMProviderOrchestrator(
@@ -128,7 +130,8 @@ public class LLMServiceCorrectionClarificationTests
             turnPreparation: _turnPreparation,
             turnCompletionRecorder: new TurnCompletionRecorder(
                 Substitute.For<ILogger<TurnCompletionRecorder>>(),
-                conversationManager, _turnPreparation, _agentRepository, _backgroundTaskService));
+                conversationManager, _turnPreparation, _agentRepository, _backgroundTaskService, turnState),
+            turnState: turnState);
     }
 
     private static LLMContext Context(string? clarificationReply) => new()
