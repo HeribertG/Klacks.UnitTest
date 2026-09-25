@@ -36,6 +36,7 @@ public class ChatControllerCancelTests
     private const string CancelRouteTemplate = "turns/{turnId:guid}/cancel";
     private const string DashboardRoute = "/workplace/dashboard";
     private const string DashboardTarget = "dashboard";
+    private const string WriteLabel = "Create employee";
 
     private SpyTurnRegistry _registry = null!;
     private IInterruptedTurnFinalizer _finalizer = null!;
@@ -321,6 +322,112 @@ public class ChatControllerCancelTests
     }
 
     [Test]
+    public async Task Stream_AStopCancellationThatEscapesTheTurn_TheClientStillHearsTurnStoppedThenDone()
+    {
+        LLMStreamRequest? seen = null;
+        FinalizerClaimsTheStop(new StoppedTurnSummary(new[] { WriteLabel }, 1));
+        _script = (request, _) =>
+        {
+            seen = request;
+            return StopEscapes(request);
+        };
+
+        await StreamAsync(OwnerId);
+
+        var body = ReadBody();
+        EventCount(body, "turn_stopped").ShouldBe(1);
+        body.ShouldContain(seen!.TurnId.ToString());
+        body.ShouldContain(WriteLabel);
+        body.IndexOf("event: turn_stopped", StringComparison.Ordinal)
+            .ShouldBeLessThan(body.IndexOf("event: done", StringComparison.Ordinal));
+        LastEventName(body).ShouldBe("done");
+        body.ShouldNotContain("event: error");
+        body.ShouldNotContain("event: metadata");
+        _registry.Inner.ActiveCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Stream_AStopCancellationThatEscapesTheTurn_ButWasPersistedByTheStopTail_AddsNothing()
+    {
+        FinalizerClaimsNothing();
+        _script = (request, _) => StopEscapes(request);
+
+        await StreamAsync(OwnerId);
+
+        EventCount(ReadBody(), "turn_stopped").ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Stream_WhenTheStopTailAlreadySentTurnStopped_ItIsNeverSentASecondTime()
+    {
+        FinalizerClaimsTheStop(new StoppedTurnSummary(new[] { WriteLabel }, 1));
+        _script = (request, _) => TailThenEscape(request);
+
+        await StreamAsync(OwnerId);
+
+        EventCount(ReadBody(), "turn_stopped").ShouldBe(1);
+        EventCount(ReadBody(), "done").ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Stream_AStopThatArrivesAfterTheDoneChunk_IsAcceptedButAddsNoEvent()
+    {
+        FinalizerClaimsNothing();
+        _script = (request, _) => DoneThenStop(request);
+
+        await StreamAsync(OwnerId);
+
+        var body = ReadBody();
+        EventCount(body, "turn_stopped").ShouldBe(0);
+        EventCount(body, "done").ShouldBe(1);
+        LastEventName(body).ShouldBe("done");
+    }
+
+    [Test]
+    public async Task Stream_AClientDisconnectIsNeverAnsweredWithTurnStopped()
+    {
+        using var disconnect = new CancellationTokenSource();
+        FinalizerClaimsTheStop(new StoppedTurnSummary(new[] { WriteLabel }, 1));
+        _script = (request, _) =>
+        {
+            disconnect.Cancel();
+            return Throwing(new OperationCanceledException(disconnect.Token));
+        };
+
+        await StreamAsync(OwnerId, disconnect.Token);
+
+        EventCount(ReadBody(), "turn_stopped").ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Stream_AFailedTurnIsNeverAnsweredWithTurnStoppedEvenIfTheFinalizerReturnedASummary()
+    {
+        FinalizerClaimsTheStop(new StoppedTurnSummary(new[] { WriteLabel }, 1));
+        _script = (_, _) => Throwing(new InvalidOperationException("boom"));
+
+        await StreamAsync(OwnerId);
+
+        EventCount(ReadBody(), "turn_stopped").ShouldBe(0);
+        ReadBody().ShouldContain("event: error");
+    }
+
+    [Test]
+    public async Task Stream_WhenTheClientIsGoneBeforeTurnStoppedIsWritten_TheStreamEndsQuietlyAndTheTurnIsRemoved()
+    {
+        FinalizerClaimsTheStop(new StoppedTurnSummary(new[] { WriteLabel }, 1));
+        _script = (request, _) => StopEscapes(request);
+
+        var controller = ControllerFor(OwnerId);
+        controller.ControllerContext.HttpContext.Response.Body = new ThrowsOnStopConfirmationStream(_body);
+
+        await Should.NotThrowAsync(() => controller.ProcessMessageStream(
+            new LLMRequest { Message = "Zeig mir alles", ConversationId = null }, CancellationToken.None));
+
+        _registry.Inner.ActiveCount.ShouldBe(0);
+        _registry.Completed.Count.ShouldBe(1);
+    }
+
+    [Test]
     public async Task Stream_TheFinalizerRunsWhileTheTurnIsStillRegisteredAndBeforeItIsRemoved()
     {
         var completedWhenFinalizing = -1;
@@ -330,7 +437,7 @@ public class ChatControllerCancelTests
             {
                 completedWhenFinalizing = _registry.Completed.Count;
                 registeredWhenFinalizing = _registry.Inner.ActiveCount;
-                return Task.CompletedTask;
+                return Task.FromResult<StoppedTurnSummary?>(null);
             });
 
         await StreamAsync(OwnerId);
@@ -344,7 +451,7 @@ public class ChatControllerCancelTests
     public async Task Stream_EvenIfTheFinalizerFailsUnexpectedly_TheTurnIsRemovedFromTheRegistry()
     {
         _finalizer.FinalizeAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<bool>())
-            .Returns<Task>(_ => throw new InvalidOperationException("finalizer broke"));
+            .Returns<Task<StoppedTurnSummary?>>(_ => throw new InvalidOperationException("finalizer broke"));
 
         await Should.ThrowAsync<InvalidOperationException>(() => StreamAsync(OwnerId));
 
@@ -410,6 +517,46 @@ public class ChatControllerCancelTests
 
         _registry.Registered.ShouldBeEmpty();
     }
+
+    private void FinalizerClaimsTheStop(StoppedTurnSummary summary) =>
+        _finalizer.FinalizeAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<bool>())
+            .Returns(Task.FromResult<StoppedTurnSummary?>(summary));
+
+    private void FinalizerClaimsNothing() =>
+        _finalizer.FinalizeAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<bool>())
+            .Returns(Task.FromResult<StoppedTurnSummary?>(null));
+
+    private IAsyncEnumerable<SseChunk> StopEscapes(LLMStreamRequest request)
+    {
+        ControllerFor(OwnerId).CancelTurn(request.TurnId).Result.ShouldBeOfType<AcceptedResult>();
+        return Throwing(new OperationCanceledException(request.StopToken));
+    }
+
+    private async IAsyncEnumerable<SseChunk> DoneThenStop(LLMStreamRequest request)
+    {
+        await Task.Yield();
+        yield return SseChunk.Done();
+        ControllerFor(OwnerId).CancelTurn(request.TurnId).Result.ShouldBeOfType<AcceptedResult>();
+    }
+
+    private async IAsyncEnumerable<SseChunk> TailThenEscape(LLMStreamRequest request)
+    {
+        await Task.Yield();
+        ControllerFor(OwnerId).CancelTurn(request.TurnId).Result.ShouldBeOfType<AcceptedResult>();
+        yield return SseChunk.TurnStopped(request.TurnId, new List<string> { WriteLabel }, 1);
+        yield return SseChunk.Done();
+        throw new OperationCanceledException(request.StopToken);
+    }
+
+    private static string LastEventName(string body)
+    {
+        var lastBlock = body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries).Last();
+        return lastBlock.Split('\n')[0].Substring("event: ".Length);
+    }
+
+    private static int EventCount(string body, string eventName) =>
+        body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+            .Count(block => block.StartsWith("event: " + eventName + "\n", StringComparison.Ordinal));
 
     private async Task StreamAsync(string? userId, CancellationToken requestAborted = default)
     {
@@ -484,6 +631,43 @@ public class ChatControllerCancelTests
         }
 
         yield break;
+    }
+
+    private sealed class ThrowsOnStopConfirmationStream : Stream
+    {
+        private const string StopConfirmationEvent = "event: turn_stopped";
+        private readonly Stream _inner;
+
+        public ThrowsOnStopConfirmationStream(Stream inner) => _inner = inner;
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => _inner.Flush();
+        public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => WriteCore(buffer.AsSpan(offset, count));
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            WriteCore(buffer.Span);
+            return ValueTask.CompletedTask;
+        }
+
+        private void WriteCore(ReadOnlySpan<byte> buffer)
+        {
+            if (System.Text.Encoding.UTF8.GetString(buffer).Contains(StopConfirmationEvent, StringComparison.Ordinal))
+            {
+                throw new IOException("The client is gone.");
+            }
+
+            _inner.Write(buffer);
+        }
     }
 
     private sealed class SpyTurnRegistry : IActiveTurnRegistry
