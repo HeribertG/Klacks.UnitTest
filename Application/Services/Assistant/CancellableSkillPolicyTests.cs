@@ -30,6 +30,27 @@ public class CancellableSkillPolicyTests
     private const string UnknownSkill = "no_such_skill";
     private const int MinimumCancellableSeededSkills = 50;
 
+    private static readonly HashSet<SkillCategory> ReadCategories =
+        [SkillCategory.Query, SkillCategory.Read, SkillCategory.Validation, SkillCategory.UI];
+
+    /// <summary>
+    /// Seeded skills of a category outside the read and write sets (System, Meta): the classifier lets the
+    /// read-only name prefix alone decide there, which the stop-token rule otherwise never trusts. Each was
+    /// read on 2026-09-25 and only reads: get_current_time, get_system_info and get_user_context compute from
+    /// the clock, the host and the caller's claims; get_user_permissions derives text from the caller's
+    /// rights; list_agent_skills lists enabled skills through GetAllEnabledAsync. A new System/Meta skill
+    /// with a read prefix fails the test until somebody has read it and added it here.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> PrefixOnlyReads =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["get_current_time"] = "reads the clock and the effective time zone",
+            ["get_system_info"] = "reports host information",
+            ["get_user_context"] = "reads the caller's identity claims",
+            ["get_user_permissions"] = "derives descriptive text from the caller's rights",
+            ["list_agent_skills"] = "lists enabled skills through a read-only repository call"
+        };
+
     private ISkillRegistry _registry = null!;
     private CancellableSkillPolicy _policy = null!;
 
@@ -133,7 +154,7 @@ public class CancellableSkillPolicyTests
 
         cancellable.Count.ShouldBeGreaterThan(MinimumCancellableSeededSkills);
         var notReads = cancellable
-            .Where(skill => SkillSeedCatalog.IsWriteCategory(skill.Category)
+            .Where(skill => !ReadCategories.Contains(skill.Category) && !PrefixOnlyReads.ContainsKey(skill.Name)
                 || SkillRiskClassifier.IrreversibleSkills.Contains(skill.Name)
                 || SkillRiskClassifier.SensitiveSkills.Contains(skill.Name)
                 || SkillRiskClassifier.ScenarioGatedSkills.Contains(skill.Name)
@@ -141,7 +162,26 @@ public class CancellableSkillPolicyTests
                 || SkillRiskClassifier.ReadOnlyExtras.Contains(skill.Name))
             .Select(skill => $"{skill.Name} ({skill.Category})")
             .ToList();
-        notReads.ShouldBeEmpty("A skill that a stop may cut short must have no write category and sit on no risk list: " + string.Join(", ", notReads));
+        notReads.ShouldBeEmpty(
+            "A skill that a stop may cut short must be seeded in a read category (or be written down in PrefixOnlyReads) " +
+            "and sit on no risk list: " + string.Join(", ", notReads));
+    }
+
+    [Test]
+    public void ThePrefixOnlyReadsAllowlist_NamesOnlySkillsThatAreStillCancellableByTheirPrefixAlone()
+    {
+        var seeded = SkillSeedCatalog.EnabledSkills().ToDictionary(skill => skill.Name, StringComparer.OrdinalIgnoreCase);
+        _registry.GetSkillByName(Arg.Any<string>()).Returns(call =>
+            seeded.TryGetValue(call.Arg<string>(), out var skill) ? SkillSeedCatalog.ToDescriptor(skill) : null);
+
+        var dead = PrefixOnlyReads.Keys
+            .Where(name => !seeded.TryGetValue(name, out var skill)
+                || ReadCategories.Contains(skill.Category)
+                || !_policy.ReceivesStopToken(name))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+
+        dead.ShouldBeEmpty("An entry that is no longer a prefix-only read is dead weight: " + string.Join(", ", dead));
     }
 
     [Test]
