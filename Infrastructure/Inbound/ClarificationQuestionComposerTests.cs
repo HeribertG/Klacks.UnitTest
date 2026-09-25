@@ -305,6 +305,39 @@ public class ClarificationQuestionComposerTests
     }
 
     [Test]
+    public async Task SystemPrompt_ForbidsRepeatingSpecificsThatAppearOnlyInsideTheTaggedBlocks()
+    {
+        LlmReturns("Kannst du heute nicht arbeiten?");
+
+        await _composer.ComposeAsync(Request(), Analysis());
+
+        _capturedSystem.ShouldNotBeNull();
+        _capturedSystem.ShouldContain("Never repeat, quote or build on shift details, dates, times, places, names");
+        _capturedSystem.ShouldContain("appear only inside the <employee_message> or <draft_question> blocks");
+        _capturedSystem.ShouldContain("name a shift, date or time in the question ONLY if it stands in the established facts");
+        _capturedSystem.ShouldContain("otherwise ask the attendance question in general terms");
+        _capturedSystem.ShouldContain(InboundPromptLabels.AffectedShift);
+        _capturedSystem.ShouldContain(InboundPromptLabels.AnalysedPeriod);
+    }
+
+    [Test]
+    public async Task SystemPrompt_StillLetsTheQuestionNameTheShiftOfTheEstablishedFacts()
+    {
+        _shiftReader.GetShiftsAsync(ClientId, Yesterday, Tomorrow, 10, Arg.Any<CancellationToken>())
+            .Returns(new[] { new ClarificationShift(Today, new TimeOnly(14, 0), new TimeOnly(22, 0), "Spätdienst") });
+        LlmReturns("Kannst du heute nicht arbeiten?");
+
+        await _composer.ComposeAsync(Request(), Analysis());
+
+        _capturedSystem.ShouldNotBeNull();
+        _capturedSystem.ShouldContain("mention the affected shift with its date and times when the established facts give one");
+        _capturedUser.ShouldNotBeNull();
+        _capturedUser.ShouldContain("Affected shift: Spätdienst 2026-09-23 14:00-22:00");
+        _capturedUser!.IndexOf("Affected shift:", StringComparison.Ordinal)
+            .ShouldBeLessThan(_capturedUser.IndexOf("<employee_message>", StringComparison.Ordinal));
+    }
+
+    [Test]
     public async Task SystemPrompt_NeverContainsTheEmployeeBody()
     {
         LlmReturns("Kannst du heute nicht arbeiten?");
