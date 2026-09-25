@@ -1,9 +1,11 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// The executor tells the turn's confirmation scope which proposal hints it left, so a stopped turn can drop
-/// them. A hint is left when a propose-style skill succeeds: for its paired apply skill, or for itself when
-/// it previews and applies through one name. Nothing is recorded when no hint was left.
+/// The executor tells the turn's confirmation scope what the turn left behind, so a stopped turn can drop it:
+/// every confirmation token a skill issued, wherever the skill mints it (the autonomy gate, create_plan, the
+/// membership plausibility check), and every proposal hint. A hint is left when a propose-style skill
+/// succeeds: for its paired apply skill, or for itself when it previews and applies through one name.
+/// Nothing is recorded when nothing was left.
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
@@ -30,6 +32,7 @@ public class LLMFunctionExecutorProposalHintScopeTests
     private LLMFunctionExecutor _executor = null!;
     private LLMContext _context = null!;
     private bool _bridgeSucceeds;
+    private string? _bridgeToken;
 
     [SetUp]
     public void SetUp()
@@ -37,6 +40,7 @@ public class LLMFunctionExecutorProposalHintScopeTests
         _scope = Substitute.For<ITurnConfirmationScope>();
         _pending = Substitute.For<IPendingConfirmationStore>();
         _bridgeSucceeds = true;
+        _bridgeToken = null;
 
         var agents = Substitute.For<IAgentRepository>();
         agents.GetDefaultAgentAsync().Returns(new Agent { Id = AgentId });
@@ -54,7 +58,8 @@ public class LLMFunctionExecutorProposalHintScopeTests
             {
                 Success = _bridgeSucceeds,
                 ResultType = nameof(SkillResultType.Data),
-                Message = "Done."
+                Message = "Done.",
+                ConfirmationToken = _bridgeToken
             });
 
         _executor = new LLMFunctionExecutor(
@@ -77,6 +82,24 @@ public class LLMFunctionExecutorProposalHintScopeTests
         await _executor.ProcessFunctionCallsAsync(_context, [new LLMFunctionCall { FunctionName = SelfPairedSkill }]);
 
         _scope.Received(1).MarkProposalHint(SelfPairedSkill);
+    }
+
+    [Test]
+    public async Task AConfirmationTokenAnySkillIssued_IsRecordedOnTheScope()
+    {
+        _bridgeToken = "membership-token";
+
+        await _executor.ProcessFunctionCallsAsync(_context, [new LLMFunctionCall { FunctionName = PlainSkill }]);
+
+        _scope.Received(1).MarkIssued("membership-token");
+    }
+
+    [Test]
+    public async Task AResultWithoutAConfirmationToken_RecordsNoToken()
+    {
+        await _executor.ProcessFunctionCallsAsync(_context, [new LLMFunctionCall { FunctionName = PlainSkill }]);
+
+        _scope.DidNotReceiveWithAnyArgs().MarkIssued(default!);
     }
 
     [Test]

@@ -47,7 +47,7 @@ public class TurnConfirmationDiscarderTests
         _scope.MarkIssued(gateToken);
         _scope.MarkIssued(planToken);
 
-        _discarder.DiscardIssuedThisTurn(_userId, correctionUndoOffered: false);
+        _discarder.DiscardIssuedThisTurn(_userId);
 
         _store.Consume(gateToken, _userId).ShouldBeNull();
         _store.Consume(planToken, _userId).ShouldBeNull();
@@ -60,7 +60,7 @@ public class TurnConfirmationDiscarderTests
         _store.CreateProposalHint(_userId, ApplySkill);
         _scope.MarkProposalHint(ApplySkill);
 
-        _discarder.DiscardIssuedThisTurn(_userId, correctionUndoOffered: false);
+        _discarder.DiscardIssuedThisTurn(_userId);
 
         _store.PeekLatestForUser(_userId, PeekWindow, PendingConfirmationPurposes.ProposalHint).ShouldBeNull();
     }
@@ -70,17 +70,18 @@ public class TurnConfirmationDiscarderTests
     {
         _store.CreateProposalHint(_userId, ApplySkill);
 
-        _discarder.DiscardIssuedThisTurn(_userId, correctionUndoOffered: false);
+        _discarder.DiscardIssuedThisTurn(_userId);
 
         _store.PeekLatestForUser(_userId, PeekWindow, PendingConfirmationPurposes.ProposalHint).ShouldNotBeNull();
     }
 
     [Test]
-    public void TheCorrectionUndoOfferThisTurnMade_IsDropped()
+    public void TheCorrectionUndoOfferThisTurnMade_IsDroppedThroughItsToken()
     {
-        _store.Create(_userId, SkillName, NoParameters, PendingConfirmationPurposes.CorrectionUndo);
+        var undoToken = _store.Create(_userId, SkillName, NoParameters, PendingConfirmationPurposes.CorrectionUndo);
+        _scope.MarkIssued(undoToken);
 
-        _discarder.DiscardIssuedThisTurn(_userId, correctionUndoOffered: true);
+        _discarder.DiscardIssuedThisTurn(_userId);
 
         _store.PeekLatestForUser(_userId, PeekWindow, PendingConfirmationPurposes.CorrectionUndo).ShouldBeNull();
     }
@@ -90,7 +91,7 @@ public class TurnConfirmationDiscarderTests
     {
         _store.Create(_userId, SkillName, NoParameters, PendingConfirmationPurposes.CorrectionUndo);
 
-        _discarder.DiscardIssuedThisTurn(_userId, correctionUndoOffered: false);
+        _discarder.DiscardIssuedThisTurn(_userId);
 
         _store.PeekLatestForUser(_userId, PeekWindow, PendingConfirmationPurposes.CorrectionUndo).ShouldNotBeNull();
     }
@@ -101,7 +102,7 @@ public class TurnConfirmationDiscarderTests
         var store = Substitute.For<IPendingConfirmationStore>();
         var discarder = new TurnConfirmationDiscarder(_scope, store, _logger);
 
-        discarder.DiscardIssuedThisTurn(_userId, correctionUndoOffered: false);
+        discarder.DiscardIssuedThisTurn(_userId);
 
         store.ReceivedCalls().ShouldBeEmpty();
     }
@@ -115,7 +116,7 @@ public class TurnConfirmationDiscarderTests
         _scope.MarkIssued("token");
         var discarder = new TurnConfirmationDiscarder(_scope, store, _logger);
 
-        Should.NotThrow(() => discarder.DiscardIssuedThisTurn(_userId, correctionUndoOffered: true));
+        Should.NotThrow(() => discarder.DiscardIssuedThisTurn(_userId));
 
         _logger.Entries.ShouldContain(e => e.Level == LogLevel.Warning && ReferenceEquals(e.Exception, failure));
     }

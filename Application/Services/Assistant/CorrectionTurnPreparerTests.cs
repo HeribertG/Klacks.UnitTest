@@ -41,6 +41,7 @@ public class CorrectionTurnPreparerTests
     private const string SecondCandidate = "list_group_clients";
 
     private const string UndoSkillName = "remove_shift_from_group";
+    private const string UndoToken = "undo-token";
     private const string UndoneSkillLabel = "Assigns a shift to a group";
     private const string UndoArgumentName = "shiftId";
     private const string InversePermission = Permissions.CanEditSettings;
@@ -160,13 +161,14 @@ public class CorrectionTurnPreparerTests
                 : new GracefulCorrectionOutcome(ContextNote, null, []));
     }
 
-    private CorrectionTurnPreparer CreatePreparer() => new(
+    private CorrectionTurnPreparer CreatePreparer(ITurnConfirmationScope? turnScope = null) => new(
         _lastActionStore, _pendingRecipeStore, _turnPreparation, _assembler, _pendingConfirmationStore,
         _skillRegistry, _permissionGate,
-        Substitute.For<ILogger<CorrectionTurnPreparer>>());
+        Substitute.For<ILogger<CorrectionTurnPreparer>>(),
+        turnScope);
 
-    private Task<CorrectionTurnPreparation> Prepare(string message = CorrectionMessage) =>
-        CreatePreparer().PrepareAsync(
+    private Task<CorrectionTurnPreparation> Prepare(string message = CorrectionMessage, ITurnConfirmationScope? turnScope = null) =>
+        CreatePreparer(turnScope).PrepareAsync(
             new Agent { Id = Guid.NewGuid(), Name = "Klacksy" }, new List<string>(), message, ConversationId,
             UserId, language: "de", currentRoute: null, maxToolsForProvider: 10, CancellationToken.None);
 
@@ -357,6 +359,32 @@ public class CorrectionTurnPreparerTests
         await Prepare();
 
         NoConfirmationWasHeld();
+    }
+
+    [Test]
+    public async Task TheHeldUndoToken_IsRecordedOnTheTurnScopeSoAStoppedTurnCanDropIt()
+    {
+        GivenAnUndoIsOffered();
+        _pendingConfirmationStore.Create(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>(),
+                PendingConfirmationPurposes.CorrectionUndo)
+            .Returns(UndoToken);
+        var turnScope = Substitute.For<ITurnConfirmationScope>();
+
+        await Prepare(CorrectionMessage, turnScope);
+
+        turnScope.Received(1).MarkIssued(UndoToken);
+    }
+
+    [Test]
+    public async Task WhenNoUndoWasHeld_NoTokenIsRecordedOnTheTurnScope()
+    {
+        GivenACorrectionIsPlanned();
+        var turnScope = Substitute.For<ITurnConfirmationScope>();
+
+        await Prepare(CorrectionMessage, turnScope);
+
+        turnScope.DidNotReceiveWithAnyArgs().MarkIssued(default!);
     }
 
     // Same trade as the pin write: losing the token costs the user one convenient "yes", while a thrown
