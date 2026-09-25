@@ -21,6 +21,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using ProviderLLMMessage = Klacks.Api.Domain.Services.Assistant.Providers.LLMMessage;
 using ProviderLLMUsage = Klacks.Api.Domain.Services.Assistant.Providers.LLMUsage;
@@ -111,7 +112,8 @@ public class LLMServiceRecipeConfirmationGateTests
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!,
-            turnPreparation: _turnPreparation);
+            turnPreparation: _turnPreparation,
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
     }
 
     private static LLMContext Context(string message) => new()

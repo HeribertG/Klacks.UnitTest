@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
@@ -54,7 +55,8 @@ public class LLMServiceCorrectionNoteTests
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!,
-            turnPreparation: _turnPreparation);
+            turnPreparation: _turnPreparation,
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
     }
 
     private static LLMContext Context(string? correctionNote) => new()

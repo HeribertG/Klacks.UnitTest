@@ -10,6 +10,7 @@
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -42,7 +43,8 @@ public class LLMServiceSuggestionGroundingTests
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: _nameReader,
             contextBudgetPolicy: null!,
-            turnPreparation: null!);
+            turnPreparation: null!,
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
     }
 
     [Test]

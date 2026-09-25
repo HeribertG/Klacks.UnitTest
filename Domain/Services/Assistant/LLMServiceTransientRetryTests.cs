@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using ProviderLLMMessage = Klacks.Api.Domain.Services.Assistant.Providers.LLMMessage;
 using ProviderLLMUsage = Klacks.Api.Domain.Services.Assistant.Providers.LLMUsage;
@@ -90,7 +91,8 @@ public class LLMServiceTransientRetryTests
                 Substitute.For<IAssistantLastActionStore>(),
                 Substitute.For<IDeterministicRouteProbe>(),
                 Substitute.For<ISkillInverseResolver>(),
-                Substitute.For<ILogger<TurnPreparationService>>()));
+                Substitute.For<ILogger<TurnPreparationService>>()),
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
     }
 
     private static LLMProviderRequest Request() => new()

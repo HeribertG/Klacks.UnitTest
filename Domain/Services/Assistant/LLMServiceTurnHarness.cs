@@ -111,12 +111,14 @@ internal sealed class LLMServiceTurnHarness
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         BackgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
 
+        var conversationManager = new LLMConversationManager(
+            Substitute.For<ILogger<LLMConversationManager>>(), _repository);
+
         Service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
             providerOrchestrator: new LLMProviderOrchestrator(
                 Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository),
-            conversationManager: new LLMConversationManager(
-                Substitute.For<ILogger<LLMConversationManager>>(), _repository),
+            conversationManager: conversationManager,
             functionExecutor: new LLMFunctionExecutor(
                 Substitute.For<ILogger<LLMFunctionExecutor>>(),
                 Substitute.For<IAgentSkillRepository>(),
@@ -138,7 +140,10 @@ internal sealed class LLMServiceTurnHarness
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: Substitute.For<ISuggestionEntityNameReader>(),
             contextBudgetPolicy: contextBudgetPolicy,
-            turnPreparation: _turnPreparation);
+            turnPreparation: _turnPreparation,
+            turnCompletionRecorder: new TurnCompletionRecorder(
+                Substitute.For<ILogger<TurnCompletionRecorder>>(),
+                conversationManager, _turnPreparation, agentRepository, BackgroundTasks));
     }
 
     internal LLMService Service { get; }

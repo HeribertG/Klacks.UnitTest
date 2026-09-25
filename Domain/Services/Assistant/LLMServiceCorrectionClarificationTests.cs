@@ -96,12 +96,14 @@ public class LLMServiceCorrectionClarificationTests
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
 
+        var conversationManager = new LLMConversationManager(
+            Substitute.For<ILogger<LLMConversationManager>>(), _repository);
+
         _service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
             providerOrchestrator: new LLMProviderOrchestrator(
                 Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository),
-            conversationManager: new LLMConversationManager(
-                Substitute.For<ILogger<LLMConversationManager>>(), _repository),
+            conversationManager: conversationManager,
             functionExecutor: new LLMFunctionExecutor(
                 Substitute.For<ILogger<LLMFunctionExecutor>>(),
                 Substitute.For<IAgentSkillRepository>(),
@@ -123,7 +125,10 @@ public class LLMServiceCorrectionClarificationTests
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: Substitute.For<ISuggestionEntityNameReader>(),
             contextBudgetPolicy: contextBudgetPolicy,
-            turnPreparation: _turnPreparation);
+            turnPreparation: _turnPreparation,
+            turnCompletionRecorder: new TurnCompletionRecorder(
+                Substitute.For<ILogger<TurnCompletionRecorder>>(),
+                conversationManager, _turnPreparation, _agentRepository, _backgroundTaskService));
     }
 
     private static LLMContext Context(string? clarificationReply) => new()

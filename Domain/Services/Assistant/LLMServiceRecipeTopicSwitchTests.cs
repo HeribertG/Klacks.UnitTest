@@ -20,6 +20,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using BridgeLLMFunctionCall = Klacks.Api.Domain.Services.Assistant.Providers.LLMFunctionCall;
 using ProviderLLMMessage = Klacks.Api.Domain.Services.Assistant.Providers.LLMMessage;
@@ -131,7 +132,8 @@ public class LLMServiceRecipeTopicSwitchTests
             recipeRunRecorder: Substitute.For<IRecipeRunRecorder>(),
             suggestionEntityNameReader: null!,
             contextBudgetPolicy: null!,
-            turnPreparation: _turnPreparation);
+            turnPreparation: _turnPreparation,
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
     }
 
     private static LLMContext Context(string message, string? language = "de") => new()

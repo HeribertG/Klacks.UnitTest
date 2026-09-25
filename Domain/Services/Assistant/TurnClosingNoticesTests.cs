@@ -8,8 +8,11 @@
 /// user already has an answer.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging;
 using Shouldly;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -71,6 +74,53 @@ public class TurnClosingNoticesTests
     public void NoCallsAtAll_SuppressesTheNotice()
     {
         TurnClosingNotices.LastUnrecoveredFailure(new List<LLMFunctionCall>(), string.Empty).ShouldBeNull();
+    }
+
+    [Test]
+    public void Collect_MutationRequestWithoutAnyCall_YieldsOnlyTheNoActionNotice()
+    {
+        var logger = new RecordingLogger<TurnClosingNoticesTests>();
+
+        var notices = TurnClosingNotices.Collect(
+            isMutationIntent: true, forceConfirmation: false, "I looked into it.", [], recipePausedOnAsk: false, logger);
+
+        notices.ShouldBe([MutationGuardConstants.NoActionStreamNotice]);
+        logger.Entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Collect_AnswerThatOwesNothing_YieldsNoNotice()
+    {
+        var logger = new RecordingLogger<TurnClosingNoticesTests>();
+
+        var notices = TurnClosingNotices.Collect(
+            isMutationIntent: false, forceConfirmation: false, "Hello.", [], recipePausedOnAsk: false, logger);
+
+        notices.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Collect_EveryCallFailedAndNoProse_YieldsTheStepFailedNoticeAndLogsTheRawResult()
+    {
+        var logger = new RecordingLogger<TurnClosingNoticesTests>();
+        var failed = Call("resolve_contract", success: false, RealFailure);
+
+        var notices = TurnClosingNotices.Collect(
+            isMutationIntent: true, forceConfirmation: false, string.Empty, [failed], recipePausedOnAsk: false, logger);
+
+        notices.ShouldBe([TurnClosingNotices.StepFailed(failed)]);
+        logger.Entries.ShouldContain(e => e.Level == LogLevel.Warning && e.Message.Contains(RealFailure));
+    }
+
+    [Test]
+    public void Collect_RecipePausedOnAsk_SuppressesTheNoActionNotice()
+    {
+        var logger = new RecordingLogger<TurnClosingNoticesTests>();
+
+        var notices = TurnClosingNotices.Collect(
+            isMutationIntent: true, forceConfirmation: false, "Which contract?", [], recipePausedOnAsk: true, logger);
+
+        notices.ShouldBeEmpty();
     }
 
     [Test]

@@ -19,6 +19,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using BridgeLLMFunctionCall = Klacks.Api.Domain.Services.Assistant.Providers.LLMFunctionCall;
 using ProviderLLMMessage = Klacks.Api.Domain.Services.Assistant.Providers.LLMMessage;
@@ -113,7 +114,8 @@ public class LLMServiceRecipeGateHoldTests
                 Substitute.For<IAssistantLastActionStore>(),
                 Substitute.For<IDeterministicRouteProbe>(),
                 Substitute.For<ISkillInverseResolver>(),
-                Substitute.For<ILogger<TurnPreparationService>>()));
+                Substitute.For<ILogger<TurnPreparationService>>()),
+            turnCompletionRecorder: InertTurnCompletionRecorder.Create());
     }
 
     private static MultiTurnContext BuildContext(ILLMProvider provider) => new(
