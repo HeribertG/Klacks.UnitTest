@@ -200,6 +200,68 @@ public class LLMFunctionExecutorStopTests
     }
 
     [Test]
+    public async Task AReadThatFailsWithAnOrdinaryErrorWhileTheStopCutIt_CountsAsNotExecuted()
+    {
+        using var stop = new CancellationTokenSource();
+        _policy.ReceivesStopToken(ReadSkill).Returns(true);
+        _bridge.ExecuteSkillFromLLMCallAsync(
+                Arg.Any<LLMFunctionCall>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                stop.Cancel();
+                return new SkillBridgeResult { Success = false, ResultType = nameof(SkillResultType.Error), Message = "search failed" };
+            });
+        var call = Call(ReadSkill);
+
+        await _executor.ProcessFunctionCallsAsync(_context, [call], stop.Token);
+
+        call.SkippedByStop.ShouldBeTrue();
+        call.Success.ShouldBeFalse();
+        call.Result.ShouldBe(TurnInterruptionDefaults.SkippedCallResult);
+    }
+
+    [Test]
+    public async Task AWriteThatFailsWhileTheStopIsRequested_StaysAnOrdinaryFailure()
+    {
+        using var stop = new CancellationTokenSource();
+        _policy.ReceivesStopToken(WriteSkill).Returns(false);
+        _bridge.ExecuteSkillFromLLMCallAsync(
+                Arg.Any<LLMFunctionCall>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                stop.Cancel();
+                return new SkillBridgeResult { Success = false, ResultType = nameof(SkillResultType.Error), Message = "write failed" };
+            });
+        var call = Call(WriteSkill);
+
+        await _executor.ProcessFunctionCallsAsync(_context, [call], stop.Token);
+
+        call.SkippedByStop.ShouldBeFalse();
+        call.Success.ShouldBeFalse();
+        call.Result.ShouldContain("write failed");
+    }
+
+    [Test]
+    public async Task AReadThatSucceedsAndIsStoppedAfterwards_StaysExecuted()
+    {
+        using var stop = new CancellationTokenSource();
+        _policy.ReceivesStopToken(ReadSkill).Returns(true);
+        _bridge.ExecuteSkillFromLLMCallAsync(
+                Arg.Any<LLMFunctionCall>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                stop.Cancel();
+                return Succeeded();
+            });
+        var call = Call(ReadSkill);
+
+        await _executor.ProcessFunctionCallsAsync(_context, [call], stop.Token);
+
+        call.SkippedByStop.ShouldBeFalse();
+        call.Success.ShouldBeTrue();
+    }
+
+    [Test]
     public async Task ACancelledResultWithoutAStopRequest_IsAnOrdinaryFailureNotASkip()
     {
         using var stop = new CancellationTokenSource();

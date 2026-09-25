@@ -23,6 +23,7 @@ public class SkillExecutorCancellationTests
     private const string SkillName = "probe_slow_read";
 
     private ISkillUsageTracker _usageTracker = null!;
+    private IServiceProvider _serviceProvider = null!;
     private SkillExecutorService _executor = null!;
 
     [SetUp]
@@ -40,13 +41,13 @@ public class SkillExecutorCancellationTests
             Array.Empty<LLMCapability>(),
             typeof(CancellingSkill)));
 
-        var serviceProvider = Substitute.For<IServiceProvider>();
-        serviceProvider.GetService(typeof(CancellingSkill)).Returns(new CancellingSkill());
+        _serviceProvider = Substitute.For<IServiceProvider>();
+        _serviceProvider.GetService(typeof(CancellingSkill)).Returns(new CancellingSkill());
 
         _executor = new SkillExecutorService(
             registry,
             _usageTracker,
-            serviceProvider,
+            _serviceProvider,
             Substitute.For<IGenericSkillDispatcher>(),
             Substitute.For<IAutonomyGate>(),
             Substitute.For<IEntityChangeNotifier>(),
@@ -83,6 +84,46 @@ public class SkillExecutorCancellationTests
             Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task ATimeoutTheStopDidNotCause_IsAnOrdinaryFailureNotACancellation()
+    {
+        var timedOut = new TimingOutSkill();
+        _serviceProvider.GetService(typeof(CancellingSkill)).Returns(timedOut);
+        using var stop = new CancellationTokenSource();
+
+        var result = await _executor.ExecuteAsync(Invocation(), Context(), stop.Token);
+
+        result.Type.ShouldBe(SkillResultType.Error);
+        await _usageTracker.Received(1).TrackFailureAsync(
+            SkillName,
+            SkillFailureKind.Exception,
+            Arg.Any<SkillExecutionContext>(),
+            Arg.Any<Dictionary<string, object>?>(),
+            Arg.Any<string?>(),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<SkillCategory>(),
+            Arg.Any<CancellationToken>());
+        await _usageTracker.DidNotReceive().TrackFailureAsync(
+            Arg.Any<string>(),
+            SkillFailureKind.Cancelled,
+            Arg.Any<SkillExecutionContext>(),
+            Arg.Any<Dictionary<string, object>?>(),
+            Arg.Any<string?>(),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<SkillCategory>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ATimeoutOfACallWithoutAnyToken_IsAnOrdinaryFailureNotACancellation()
+    {
+        _serviceProvider.GetService(typeof(CancellingSkill)).Returns(new TimingOutSkill());
+
+        var result = await _executor.ExecuteAsync(Invocation(), Context());
+
+        result.Type.ShouldBe(SkillResultType.Error);
+    }
+
     private static SkillInvocation Invocation() => new()
     {
         SkillName = SkillName,
@@ -96,6 +137,17 @@ public class SkillExecutorCancellationTests
         UserName = nameof(SkillExecutorCancellationTests),
         UserPermissions = Array.Empty<string>()
     };
+
+    private sealed class TimingOutSkill : BaseSkillImplementation
+    {
+        public override Task<SkillResult> ExecuteAsync(
+            SkillExecutionContext context,
+            Dictionary<string, object> parameters,
+            CancellationToken cancellationToken = default)
+        {
+            throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.");
+        }
+    }
 
     private sealed class CancellingSkill : BaseSkillImplementation
     {
