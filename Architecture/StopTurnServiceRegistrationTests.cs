@@ -74,6 +74,13 @@ public class StopTurnServiceRegistrationTests
     }
 
     [Test]
+    public void TheInterruptedTurnFinalizer_IsScopedBecauseItSharesTheRunStateOfTheRequest()
+    {
+        Descriptor<IInterruptedTurnFinalizer>().ImplementationType.ShouldBe(typeof(InterruptedTurnFinalizer));
+        Descriptor<IInterruptedTurnFinalizer>().Lifetime.ShouldBe(ServiceLifetime.Scoped);
+    }
+
+    [Test]
     public void TheStoppedTurnCleanup_IsScopedBecauseItReadsTheScopedConfirmationsAndTheDbContext()
     {
         Descriptor<IStoppedTurnCleanup>().ImplementationType.ShouldBe(typeof(StoppedTurnCleanup));

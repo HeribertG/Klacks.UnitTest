@@ -67,7 +67,8 @@ public class ChatControllerFastPathTests
             _llmRepository,
             Substitute.For<IUserActivityTracker>(),
             _entityRouteGuard,
-            Substitute.For<IActiveTurnRegistry>())
+            Substitute.For<IActiveTurnRegistry>(),
+            Substitute.For<IInterruptedTurnFinalizer>())
         {
             ControllerContext = new ControllerContext
             {

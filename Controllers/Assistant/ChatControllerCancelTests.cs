@@ -13,6 +13,7 @@ using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Application.Interfaces.Klacksy;
 using Klacks.Api.Application.Klacksy.Models;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.Api.Presentation.Controllers.Assistant;
@@ -37,6 +38,7 @@ public class ChatControllerCancelTests
     private const string DashboardTarget = "dashboard";
 
     private SpyTurnRegistry _registry = null!;
+    private IInterruptedTurnFinalizer _finalizer = null!;
     private ILLMStreamingOrchestrator _orchestrator = null!;
     private INavigationTargetMatcher _navMatcher = null!;
     private IUtteranceNormalizer _normalizer = null!;
@@ -47,6 +49,7 @@ public class ChatControllerCancelTests
     public void SetUp()
     {
         _registry = new SpyTurnRegistry(new ActiveTurnRegistry());
+        _finalizer = Substitute.For<IInterruptedTurnFinalizer>();
         _orchestrator = Substitute.For<ILLMStreamingOrchestrator>();
         _normalizer = Substitute.For<IUtteranceNormalizer>();
         _navMatcher = Substitute.For<INavigationTargetMatcher>();
@@ -254,6 +257,113 @@ public class ChatControllerCancelTests
     }
 
     [Test]
+    public async Task Stream_AfterANormalEnd_TheFinalizerIsCalledWithTheTurnAndNoError()
+    {
+        LLMStreamRequest? seen = null;
+        _script = (request, _) =>
+        {
+            seen = request;
+            return Chunks(SseChunk.Done());
+        };
+
+        await StreamAsync(OwnerId);
+
+        await _finalizer.Received(1).FinalizeAsync(OwnerId, seen!.TurnId, false);
+    }
+
+    [Test]
+    public async Task Stream_WhenTheOrchestratorThrows_TheFinalizerHearsOfTheFailureSoItIsNotLabelledInterrupted()
+    {
+        _script = (_, _) => Throwing(new InvalidOperationException("boom"));
+
+        await StreamAsync(OwnerId);
+
+        await _finalizer.Received(1).FinalizeAsync(OwnerId, Arg.Any<Guid>(), true);
+    }
+
+    [Test]
+    public async Task Stream_ACancellationThatIsNeitherAStopNorADisconnect_IsAFailureForTheFinalizer()
+    {
+        _script = (_, _) => Throwing(new OperationCanceledException());
+
+        await StreamAsync(OwnerId);
+
+        await _finalizer.Received(1).FinalizeAsync(OwnerId, Arg.Any<Guid>(), true);
+    }
+
+    [Test]
+    public async Task Stream_WhenTheClientDisconnects_TheFinalizerIsCalledWithoutAFailure()
+    {
+        using var disconnect = new CancellationTokenSource();
+        _script = (_, _) =>
+        {
+            disconnect.Cancel();
+            return Throwing(new OperationCanceledException(disconnect.Token));
+        };
+
+        await StreamAsync(OwnerId, disconnect.Token);
+
+        await _finalizer.Received(1).FinalizeAsync(OwnerId, Arg.Any<Guid>(), false);
+    }
+
+    [Test]
+    public async Task Stream_AStopCancellationThatEscapesTheTurn_IsFinalizedAsInterruptedNotAsAFailure()
+    {
+        _script = (request, _) =>
+        {
+            ControllerFor(OwnerId).CancelTurn(request.TurnId).Result.ShouldBeOfType<AcceptedResult>();
+            return Throwing(new OperationCanceledException(request.StopToken));
+        };
+
+        await StreamAsync(OwnerId);
+
+        await _finalizer.Received(1).FinalizeAsync(OwnerId, Arg.Any<Guid>(), false);
+    }
+
+    [Test]
+    public async Task Stream_TheFinalizerRunsWhileTheTurnIsStillRegisteredAndBeforeItIsRemoved()
+    {
+        var completedWhenFinalizing = -1;
+        var registeredWhenFinalizing = -1;
+        _finalizer.FinalizeAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<bool>())
+            .Returns(_ =>
+            {
+                completedWhenFinalizing = _registry.Completed.Count;
+                registeredWhenFinalizing = _registry.Inner.ActiveCount;
+                return Task.CompletedTask;
+            });
+
+        await StreamAsync(OwnerId);
+
+        completedWhenFinalizing.ShouldBe(0);
+        registeredWhenFinalizing.ShouldBe(1);
+        _registry.Inner.ActiveCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Stream_EvenIfTheFinalizerFailsUnexpectedly_TheTurnIsRemovedFromTheRegistry()
+    {
+        _finalizer.FinalizeAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<bool>())
+            .Returns<Task>(_ => throw new InvalidOperationException("finalizer broke"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => StreamAsync(OwnerId));
+
+        _registry.Inner.ActiveCount.ShouldBe(0);
+        _registry.Completed.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Stream_OnTheFastPathOrAnEmptyUtterance_NoTurnIsFinalized()
+    {
+        _normalizer.Normalize(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new NormalizedUtterance(string.Empty, string.Empty, false, true));
+
+        await StreamAsync(OwnerId);
+
+        await _finalizer.DidNotReceiveWithAnyArgs().FinalizeAsync(default!, default, default);
+    }
+
+    [Test]
     public async Task Stream_WithoutAUserId_StillStreamsButRegistersNothing()
     {
         LLMStreamRequest? seen = null;
@@ -337,7 +447,8 @@ public class ChatControllerCancelTests
             Substitute.For<ILLMRepository>(),
             Substitute.For<IUserActivityTracker>(),
             Substitute.For<INavigationEntityRouteGuard>(),
-            _registry)
+            _registry,
+            _finalizer)
         {
             ControllerContext = new ControllerContext
             {
