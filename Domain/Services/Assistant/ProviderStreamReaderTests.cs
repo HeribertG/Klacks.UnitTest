@@ -27,6 +27,7 @@ public class ProviderStreamReaderTests
     private const string TransientError = "429 rate limit reached";
     private const string PermanentError = "invalid api key";
     private const string ModelId = "test-model";
+    private const int BackoffCancelAfterMs = 50;
 
     private sealed class ScriptedProvider : ILLMProvider
     {
@@ -362,6 +363,29 @@ public class ProviderStreamReaderTests
         reader.Accumulator.AccumulatedContent.ShouldBe("Creating it. ");
         reader.HasToolEnd.ShouldBeFalse();
         reader.Cancelled.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task CancellationDuringTheBackoffOfATransientRetry_EndsQuietlyWithoutAnotherAttempt()
+    {
+        using var source = new CancellationTokenSource();
+        source.CancelAfter(BackoffCancelAfterMs);
+        var provider = new ScriptedProvider(
+            () => Tokens(Array.Empty<string>(), TransientError),
+            () => Tokens(new[] { "must never run" }));
+        var logger = new RecordingLogger<ProviderStreamReaderTests>();
+        var reader = new ProviderStreamReader(logger);
+
+        var yielded = new List<string>();
+        await foreach (var token in reader.ReadAsync(provider, new LLMProviderRequest(), ModelId, source.Token))
+        {
+            yielded.Add(token);
+        }
+
+        yielded.ShouldBeEmpty();
+        reader.Cancelled.ShouldBeTrue();
+        reader.Failed.ShouldBeFalse();
+        provider.Attempts.ShouldBe(1);
     }
 
     [Test]
