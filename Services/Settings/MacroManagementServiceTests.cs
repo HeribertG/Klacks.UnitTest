@@ -379,6 +379,44 @@ public class MacroManagementServiceTests
         (await _context.Macro.AsNoTracking().SingleAsync(m => m.Id == id)).Origin.ShouldBe(expectedOrigin);
     }
 
+    [Test]
+    public async Task UpdateMacroAsync_NewInstanceAfterTheSameMacroWasReadTrackedById_UpdatesWithoutTrackingConflict()
+    {
+        var macro = await AddCustomMacroAsync("Sunday rate");
+        _context.ChangeTracker.Clear();
+        await _service.GetMacroAsync(macro.Id);
+
+        await _service.UpdateMacroAsync(RenamedCopyOf(macro, "Sunday rate renamed"), byAssistant: true);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        (await _context.Macro.AsNoTracking().SingleAsync(m => m.Id == macro.Id)).Name.ShouldBe("Sunday rate renamed");
+    }
+
+    [Test]
+    public async Task UpdateMacroAsync_NewInstanceAfterTheMacroListWasReadTracked_UpdatesWithoutTrackingConflict()
+    {
+        var macro = await AddCustomMacroAsync("Night rate");
+        _context.ChangeTracker.Clear();
+        await _service.GetMacroListAsync();
+
+        await _service.UpdateMacroAsync(RenamedCopyOf(macro, "Night rate renamed"), byAssistant: true);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        (await _context.Macro.AsNoTracking().SingleAsync(m => m.Id == macro.Id)).Name.ShouldBe("Night rate renamed");
+    }
+
+    private static Macro RenamedCopyOf(Macro macro, string name) => new()
+    {
+        Id = macro.Id,
+        Name = name,
+        Content = macro.Content,
+        Description = new MultiLanguage { De = "Desc" },
+        Type = macro.Type,
+        Origin = MacroOrigin.Assistant
+    };
+
     private async Task<Macro> AddCustomMacroAsync(string name)
     {
         var macro = new Macro
