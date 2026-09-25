@@ -94,6 +94,7 @@ public class ToolResultFormatterTests
             agentRepository,
             Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<ICancellableSkillPolicy>(),
             bridge);
         var call = new LLMFunctionCall { FunctionName = WrapperSkill };
 

@@ -105,6 +105,7 @@ public class LLMServiceRecipeTopicSwitchTests
             agentRepository,
             Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<ICancellableSkillPolicy>(),
             _skillBridge);
 
         // Both objects are needed since the resolve moved into TurnPreparationService (2026-09-16): the

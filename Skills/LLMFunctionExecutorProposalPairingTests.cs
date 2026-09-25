@@ -61,6 +61,7 @@ public class LLMFunctionExecutorProposalPairingTests
             _agentRepository,
             _confirmationStore,
             Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<ICancellableSkillPolicy>(),
             _skillBridge);
     }
 

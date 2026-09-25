@@ -74,6 +74,18 @@ public class StopTurnServiceRegistrationTests
     }
 
     [Test]
+    public void TheCancellableSkillPolicy_IsARequiredConstructorParameterOfTheFunctionExecutor()
+    {
+        var policyParameters = typeof(LLMFunctionExecutor).GetConstructors()
+            .SelectMany(constructor => constructor.GetParameters())
+            .Where(parameter => parameter.ParameterType == typeof(ICancellableSkillPolicy))
+            .ToList();
+
+        policyParameters.ShouldNotBeEmpty();
+        policyParameters.ShouldAllBe(parameter => !parameter.HasDefaultValue && !parameter.IsOptional);
+    }
+
+    [Test]
     public void TheInterruptedTurnFinalizer_IsScopedBecauseItSharesTheRunStateOfTheRequest()
     {
         Descriptor<IInterruptedTurnFinalizer>().ImplementationType.ShouldBe(typeof(InterruptedTurnFinalizer));

@@ -91,6 +91,7 @@ public class LLMServiceRecipeGateHoldTests
             agentRepository,
             Substitute.For<IPendingConfirmationStore>(),
             Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<ICancellableSkillPolicy>(),
             _skillBridge);
 
         _service = new LLMService(
