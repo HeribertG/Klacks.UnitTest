@@ -88,7 +88,6 @@ public class SourceFileSizeGuardTests
         [@"Application\Skills\UpdateContractSkill.cs::ExecuteAsync"] = 179,
         [@"Infrastructure\Email\EmailTestService.cs::TestConnectionAsync"] = 219,
         [@"Infrastructure\Exceptions\ErrorHandlingMiddleware.cs::Invoke"] = 286,
-        [@"Application\Services\Assistant\LLMStreamingOrchestrator.cs::ProcessStreamAsync"] = 176,
         [@"Domain\Services\Assistant\LLMService.cs::ProcessStreamAsync"] = 331,
         [@"Domain\Services\Assistant\LLMService.cs::HistoryBudgetFor"] = 235,
         [@"Infrastructure\Services\Assistant\LLMModelSyncService.cs::SyncProviderAsync"] = 174,
