@@ -66,7 +66,8 @@ public class ChatControllerFastPathTests
             _navMissDetector,
             _llmRepository,
             Substitute.For<IUserActivityTracker>(),
-            _entityRouteGuard)
+            _entityRouteGuard,
+            Substitute.For<IActiveTurnRegistry>())
         {
             ControllerContext = new ControllerContext
             {
