@@ -45,7 +45,7 @@ public class AssignMacroCommandHandlerTests
     private MacroReferenceRepository _references = null!;
     private MacroAssignmentHistoryRepository _history = null!;
     private IMacroDryRunService _dryRun = null!;
-    private MacroAssignmentPlanner _planner = null!;
+    private MacroAssignPlanner _planner = null!;
     private IUnitOfWork _unitOfWork = null!;
     private AssignMacroCommandHandler _sut = null!;
     private bool _inTransaction;
@@ -63,7 +63,7 @@ public class AssignMacroCommandHandlerTests
         _history = new MacroAssignmentHistoryRepository(_context);
         _dryRun = Substitute.For<IMacroDryRunService>();
         GivenDryRun(new MacroDryRunResult(0, 0, [], null, false));
-        _planner = new MacroAssignmentPlanner(_references, _history, new MacroOutputChannelInspector(), _dryRun);
+        _planner = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun);
         _inTransaction = false;
         _completedOutsideTransaction = false;
         _pendingAtCommit = [];
@@ -453,7 +453,7 @@ public class AssignMacroCommandHandlerTests
 
         parameters.ShouldBe(new[]
         {
-            typeof(IMacroAssignmentPlanner),
+            typeof(IMacroAssignPlanner),
             typeof(IMacroReferenceRepository),
             typeof(IMacroAssignmentHistoryRepository),
             typeof(IUnitOfWork),
@@ -470,10 +470,10 @@ public class AssignMacroCommandHandlerTests
         MacroReferenceHolder holder, MacroSnapshot macro, IReadOnlyList<MacroReferenceChange> changes) =>
         new(PlannerReturning(holder, macro, changes), _references, _history, _unitOfWork, AssignLog);
 
-    private static IMacroAssignmentPlanner PlannerReturning(
+    private static IMacroAssignPlanner PlannerReturning(
         MacroReferenceHolder holder, MacroSnapshot macro, IReadOnlyList<MacroReferenceChange> changes)
     {
-        var planner = Substitute.For<IMacroAssignmentPlanner>();
+        var planner = Substitute.For<IMacroAssignPlanner>();
         var plan = new MacroAssignmentPlan(holder, macro, changes, [], [], null);
         planner.PreviewAssignAsync(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Arg.Any<CancellationToken>())
             .Returns(new MacroAssignmentPreview(plan, new MacroDryRunResult(0, 0, [], null, false), null));

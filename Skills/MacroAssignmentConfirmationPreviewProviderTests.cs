@@ -20,14 +20,16 @@ public class MacroAssignmentConfirmationPreviewProviderTests
     private const string RevertRefusal = "This macro switch was already undone.";
     private const string OtherSkillName = "update_macro";
 
-    private IMacroAssignmentPlanner _planner = null!;
+    private IMacroAssignPlanner _assignPlanner = null!;
+    private IMacroRevertPlanner _revertPlanner = null!;
     private MacroAssignmentConfirmationPreviewProvider _sut = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _planner = Substitute.For<IMacroAssignmentPlanner>();
-        _sut = new MacroAssignmentConfirmationPreviewProvider(_planner);
+        _assignPlanner = Substitute.For<IMacroAssignPlanner>();
+        _revertPlanner = Substitute.For<IMacroRevertPlanner>();
+        _sut = new MacroAssignmentConfirmationPreviewProvider(_assignPlanner, _revertPlanner);
     }
 
     [TestCase(MacroAssignmentSkillNames.AssignToShift, true)]
@@ -47,7 +49,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
 
         preview.IsRefusal.ShouldBeTrue();
         preview.Text.ShouldBe(MacroAssignmentAccess.AdminOnlyMessage);
-        await _planner.DidNotReceiveWithAnyArgs().PreviewAssignAsync(default, default, default, default);
+        await _assignPlanner.DidNotReceiveWithAnyArgs().PreviewAssignAsync(default, default, default, default);
     }
 
     [Test]
@@ -60,7 +62,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
 
         preview.IsRefusal.ShouldBeTrue();
         preview.Text.ShouldBe(MacroAssignmentAccess.AdminOnlyMessage);
-        await _planner.DidNotReceiveWithAnyArgs().PreviewRevertAsync(default!, default);
+        await _revertPlanner.DidNotReceiveWithAnyArgs().PreviewRevertAsync(default!, default);
     }
 
     [Test]
@@ -76,7 +78,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
     [Test]
     public async Task RefusedPlan_IsRefused()
     {
-        _planner.PreviewAssignAsync(Arg.Any<MacroAssignmentTarget>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        _assignPlanner.PreviewAssignAsync(Arg.Any<MacroAssignmentTarget>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new MacroAssignmentPreview(MacroAssignmentPlan.Refused(PlanRefusal), null, PlanRefusal));
 
         var preview = await _sut.BuildAsync(
@@ -89,7 +91,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
     [Test]
     public async Task RefusedUndo_IsRefused()
     {
-        _planner.PreviewRevertAsync(Arg.Any<MacroRevertRequest>(), Arg.Any<CancellationToken>())
+        _revertPlanner.PreviewRevertAsync(Arg.Any<MacroRevertRequest>(), Arg.Any<CancellationToken>())
             .Returns(new MacroRevertPreview(MacroRevertPlan.Refused(RevertRefusal), null, RevertRefusal));
 
         var preview = await _sut.BuildAsync(
@@ -106,7 +108,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
     {
         var change = new MacroReferenceChange(Holder(), null, Snapshot("Sunday plus"));
         var plan = new MacroAssignmentPlan(change.Holder, change.To, [change], [], [], null);
-        _planner.PreviewAssignAsync(MacroAssignmentTarget.Shift, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        _assignPlanner.PreviewAssignAsync(MacroAssignmentTarget.Shift, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new MacroAssignmentPreview(plan, new MacroDryRunResult(3, 1, [], null, false), null));
 
         var preview = await _sut.BuildAsync(
@@ -121,13 +123,13 @@ public class MacroAssignmentConfirmationPreviewProviderTests
     [Test]
     public async Task AbsenceTypeSkill_PlansForTheAbsenceType()
     {
-        _planner.PreviewAssignAsync(Arg.Any<MacroAssignmentTarget>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        _assignPlanner.PreviewAssignAsync(Arg.Any<MacroAssignmentTarget>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new MacroAssignmentPreview(MacroAssignmentPlan.Refused(PlanRefusal), null, PlanRefusal));
 
         await _sut.BuildAsync(
             MacroAssignmentSkillNames.AssignToAbsenceType, Context(Roles.Admin), AssignParameters(MacroAssignmentParameters.AbsenceTypeId));
 
-        await _planner.Received(1).PreviewAssignAsync(
+        await _assignPlanner.Received(1).PreviewAssignAsync(
             MacroAssignmentTarget.AbsenceType, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
@@ -138,7 +140,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
         var current = Snapshot("Sunday plus");
         var change = new MacroReferenceChange(Holder(current.Id), current, Snapshot("AllShift"));
         var plan = new MacroRevertPlan(switchId, change.Holder, [change], [], null);
-        _planner.PreviewRevertAsync(Arg.Any<MacroRevertRequest>(), Arg.Any<CancellationToken>())
+        _revertPlanner.PreviewRevertAsync(Arg.Any<MacroRevertRequest>(), Arg.Any<CancellationToken>())
             .Returns(new MacroRevertPreview(plan, new MacroDryRunResult(3, 1, [], null, false), null));
 
         var preview = await _sut.BuildAsync(
@@ -148,7 +150,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
 
         preview.IsRefusal.ShouldBeFalse();
         preview.Text.ShouldContain($"Undo the macro switch {switchId}");
-        await _planner.Received(1).PreviewRevertAsync(new MacroRevertRequest(switchId, null, null), Arg.Any<CancellationToken>());
+        await _revertPlanner.Received(1).PreviewRevertAsync(new MacroRevertRequest(switchId, null, null), Arg.Any<CancellationToken>());
     }
 
     private static SkillExecutionContext Context(params string[] rights) => new()

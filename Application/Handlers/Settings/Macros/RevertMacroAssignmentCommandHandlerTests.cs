@@ -41,7 +41,8 @@ public class RevertMacroAssignmentCommandHandlerTests
     private IMacroDryRunService _dryRun = null!;
     private MacroReferenceRepository _references = null!;
     private MacroAssignmentHistoryRepository _history = null!;
-    private MacroAssignmentPlanner _planner = null!;
+    private MacroAssignPlanner _assignPlanner = null!;
+    private MacroRevertPlanner _planner = null!;
     private IUnitOfWork _unitOfWork = null!;
     private AssignMacroCommandHandler _assign = null!;
     private RevertMacroAssignmentCommandHandler _sut = null!;
@@ -61,7 +62,8 @@ public class RevertMacroAssignmentCommandHandlerTests
         _dryRun.RunAsync(
                 Arg.Any<MacroAssignmentTarget>(), Arg.Any<IReadOnlyList<MacroDryRunHolder>>(), Arg.Any<CancellationToken>())
             .Returns(new MacroDryRunResult(0, 0, [], null, false));
-        _planner = new MacroAssignmentPlanner(_references, _history, new MacroOutputChannelInspector(), _dryRun);
+        _assignPlanner = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun);
+        _planner = new MacroRevertPlanner(_references, _history, new MacroOutputChannelInspector(), _dryRun);
         _inTransaction = false;
         _completedOutsideTransaction = false;
         _unitOfWork = Substitute.For<IUnitOfWork>();
@@ -85,7 +87,7 @@ public class RevertMacroAssignmentCommandHandlerTests
             _completedOutsideTransaction |= !_inTransaction;
             await _context.SaveChangesAsync();
         });
-        _assign = new AssignMacroCommandHandler(_planner, _references, _history, _unitOfWork, AssignLog);
+        _assign = new AssignMacroCommandHandler(_assignPlanner, _references, _history, _unitOfWork, AssignLog);
         _sut = new RevertMacroAssignmentCommandHandler(_planner, _references, _history, _unitOfWork, RevertLog);
     }
 
@@ -172,7 +174,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         _context.ChangeTracker.Clear();
         await AssignAsync(firstCut.Id, copy.Id);
         var rowsBefore = await _context.MacroAssignmentHistory.AsNoTracking().CountAsync();
-        var planner = Substitute.For<IMacroAssignmentPlanner>();
+        var planner = Substitute.For<IMacroRevertPlanner>();
         planner.PreviewRevertAsync(Arg.Any<MacroRevertRequest>(), Arg.Any<CancellationToken>()).Returns(stalePreview);
         var sut = new RevertMacroAssignmentCommandHandler(planner, _references, _history, _unitOfWork, RevertLog);
 
@@ -197,8 +199,9 @@ public class RevertMacroAssignmentCommandHandlerTests
         {
             var otherReferences = new MacroReferenceRepository(otherScope);
             var otherHistory = new MacroAssignmentHistoryRepository(otherScope);
-            var otherPlanner = new MacroAssignmentPlanner(
+            var otherPlanner = new MacroRevertPlanner(
                 otherReferences, otherHistory, new MacroOutputChannelInspector(), _dryRun);
+            var otherAssignPlanner = new MacroAssignPlanner(otherReferences, new MacroOutputChannelInspector(), _dryRun);
             var otherUnitOfWork = Substitute.For<IUnitOfWork>();
             otherUnitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
                 .Returns(async ci =>
@@ -211,13 +214,13 @@ public class RevertMacroAssignmentCommandHandlerTests
             await new RevertMacroAssignmentCommandHandler(
                     otherPlanner, otherReferences, otherHistory, otherUnitOfWork, RevertLog)
                 .Handle(new RevertMacroAssignmentCommand(switched.SwitchId, null, null, Guid.NewGuid()), CancellationToken.None);
-            await new AssignMacroCommandHandler(otherPlanner, otherReferences, otherHistory, otherUnitOfWork, AssignLog)
+            await new AssignMacroCommandHandler(otherAssignPlanner, otherReferences, otherHistory, otherUnitOfWork, AssignLog)
                 .Handle(new AssignMacroCommand(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
                     CancellationToken.None);
         }
 
         var rowsBefore = await _context.MacroAssignmentHistory.AsNoTracking().CountAsync();
-        var planner = Substitute.For<IMacroAssignmentPlanner>();
+        var planner = Substitute.For<IMacroRevertPlanner>();
         planner.PreviewRevertAsync(Arg.Any<MacroRevertRequest>(), Arg.Any<CancellationToken>()).Returns(stalePreview);
         var sut = new RevertMacroAssignmentCommandHandler(planner, _references, _history, _unitOfWork, RevertLog);
 
@@ -320,7 +323,7 @@ public class RevertMacroAssignmentCommandHandlerTests
 
         parameters.ShouldBe(new[]
         {
-            typeof(IMacroAssignmentPlanner),
+            typeof(IMacroRevertPlanner),
             typeof(IMacroReferenceRepository),
             typeof(IMacroAssignmentHistoryRepository),
             typeof(IUnitOfWork),
