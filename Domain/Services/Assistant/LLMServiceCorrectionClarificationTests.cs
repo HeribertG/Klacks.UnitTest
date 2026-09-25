@@ -131,7 +131,8 @@ public class LLMServiceCorrectionClarificationTests
             turnPreparation: _turnPreparation,
             turnCompletionRecorder: new TurnCompletionRecorder(
                 Substitute.For<ILogger<TurnCompletionRecorder>>(),
-                conversationManager, _turnPreparation, _agentRepository, _backgroundTaskService, turnState),
+                conversationManager, _turnPreparation, _agentRepository, _backgroundTaskService, turnState,
+                Substitute.For<IStoppedTurnCleanup>()),
             turnState: turnState);
     }
 

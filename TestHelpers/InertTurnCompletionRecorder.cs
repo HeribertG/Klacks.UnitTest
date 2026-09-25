@@ -7,6 +7,7 @@
 /// tail was inline in LLMService.
 /// </summary>
 
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Microsoft.Extensions.Logging;
 
@@ -15,5 +16,6 @@ namespace Klacks.UnitTest.TestHelpers;
 internal static class InertTurnCompletionRecorder
 {
     internal static TurnCompletionRecorder Create() => new(
-        Substitute.For<ILogger<TurnCompletionRecorder>>(), null!, null!, null!, null!, new TurnRunState());
+        Substitute.For<ILogger<TurnCompletionRecorder>>(), null!, null!, null!, null!, new TurnRunState(),
+        Substitute.For<IStoppedTurnCleanup>());
 }

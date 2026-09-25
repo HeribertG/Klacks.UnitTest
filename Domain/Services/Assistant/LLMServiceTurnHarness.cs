@@ -148,11 +148,13 @@ internal sealed class LLMServiceTurnHarness
             turnPreparation: _turnPreparation,
             turnCompletionRecorder: new TurnCompletionRecorder(
                 Substitute.For<ILogger<TurnCompletionRecorder>>(),
-                conversationManager, _turnPreparation, agentRepository, BackgroundTasks, TurnState),
+                conversationManager, _turnPreparation, agentRepository, BackgroundTasks, TurnState, StoppedTurnCleanup),
             turnState: TurnState);
     }
 
     internal LLMService Service { get; }
+
+    internal IStoppedTurnCleanup StoppedTurnCleanup { get; } = Substitute.For<IStoppedTurnCleanup>();
 
     internal IPendingRecipeStore PendingRecipes { get; } = Substitute.For<IPendingRecipeStore>();
 

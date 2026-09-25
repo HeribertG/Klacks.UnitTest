@@ -59,7 +59,8 @@ public class TurnCompletionRecorderTests
             _turnPreparation,
             _agentRepository,
             _backgroundTasks,
-            _turnState);
+            _turnState,
+            Substitute.For<IStoppedTurnCleanup>());
 
         _conversation = new LLMConversation { Id = Guid.NewGuid(), ConversationId = ConversationKey, UserId = UserId };
         _model = new LLMModel { Id = Guid.NewGuid(), ModelId = ModelKey };
