@@ -191,4 +191,39 @@ public class PeriodAutoCloseResolverTests
 
         await AssertBlockedAsync(PeriodAutoCloseBlockedBy.NoDecidingAdmin);
     }
+
+    [TestCase(AutonomyLevel.Propose, ProactiveMaxAction.Hint)]
+    [TestCase(AutonomyLevel.Assisted, ProactiveMaxAction.Prepare)]
+    public async Task ResolveAsync_RuleArmedUnderALowGlobalLevel_NamesTheGlobalLevelNotTheRule(
+        AutonomyLevel globalLevel, ProactiveMaxAction globalCap)
+    {
+        StubGlobalLevel(globalLevel);
+        StubGovernance(ProactiveMaxAction.Execute, enabled: true, killSwitchActive: false, globalCap);
+
+        await AssertBlockedAsync(PeriodAutoCloseBlockedBy.GlobalLevel);
+    }
+
+    [Test]
+    public async Task ResolveAsync_CanClose_OnlyForTheOneFullyArmedCombination()
+    {
+        var levels = Enum.GetValues<AutonomyLevel>();
+        foreach (var killSwitch in new[] { false, true })
+        foreach (var enabled in new[] { false, true })
+        foreach (var configured in Enum.GetValues<ProactiveMaxAction>())
+        foreach (var globalLevel in levels)
+        foreach (var adminLevel in levels)
+        {
+            StubGlobalLevel(globalLevel);
+            StubGovernance(configured, enabled, killSwitch, ProactiveGovernanceDefaults.MapAutonomyLevel(globalLevel));
+            StubAdmins((FirstAdminId, AutonomyLevel.FullyAutonomous), (SecondAdminId, adminLevel));
+
+            var decision = await _sut.ResolveAsync(GroupId);
+
+            var expected = !killSwitch && enabled && configured == ProactiveMaxAction.Execute
+                && globalLevel == AutonomyLevel.FullyAutonomous && adminLevel == AutonomyLevel.FullyAutonomous;
+            Assert.That(decision.CanClose, Is.EqualTo(expected),
+                $"killSwitch={killSwitch} enabled={enabled} rule={configured} global={globalLevel} admin={adminLevel}");
+            Assert.That(decision.BlockedBy == PeriodAutoCloseBlockedBy.None, Is.EqualTo(expected));
+        }
+    }
 }

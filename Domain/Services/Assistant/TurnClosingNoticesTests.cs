@@ -188,4 +188,92 @@ public class TurnClosingNoticesTests
 
         notices.ShouldBe(new[] { RecipeEngineDefaults.NothingStoredNoticeSeparator + RecipeEngineDefaults.NothingStoredNotice });
     }
+
+    [TestCase("Sie haben noch keinen Wert gespeichert.")]
+    [TestCase("Es wurde bisher kein Abschlussnachlauf für diese Gruppen gespeichert.")]
+    [TestCase("Ich habe nichts gespeichert, das ist ein eigener Schritt.")]
+    [TestCase("No lag has been saved yet.")]
+    [TestCase("I haven't saved anything.")]
+    [TestCase("Nothing has been saved in this step.")]
+    [TestCase("Rien n'a été enregistré pour l'instant.")]
+    [TestCase("Je n'ai pas encore enregistré ce délai.")]
+    [TestCase("Non è stato salvato nulla.")]
+    [TestCase("Non ho ancora salvato il ritardo.")]
+    public void NothingStored_NegatedClaim_IsNoClaim(string honest)
+    {
+        TurnClosingNotices.NothingStored(true, honest, new List<LLMFunctionCall>(), "de").ShouldBeEmpty();
+    }
+
+    [TestCase("Ich habe keine Fehler gefunden und den Nachlauf gespeichert.")]
+    [TestCase("Ich habe, wie gewünscht, den Nachlauf gespeichert.")]
+    [TestCase("Ich habe den Nachlauf gespeichert, nicht die Daten.")]
+    [TestCase("Ich habe nicht nur den Nachlauf gespeichert.")]
+    [TestCase("There were no errors, and I have saved the lag.")]
+    [TestCase("Il n'y avait pas d'erreur et j'ai enregistré le délai.")]
+    [TestCase("Non c'erano errori e ho salvato il ritardo.")]
+    public void NothingStored_ClaimNextToAnUnrelatedNegation_StillGetsTheNotice(string claim)
+    {
+        TurnClosingNotices.NothingStored(true, claim, new List<LLMFunctionCall>(), "de").ShouldNotBeEmpty();
+    }
+
+    [Test]
+    public void NothingStored_ExplainCallTheGuardLetsThrough_DoesNotSuppressTheNotice()
+    {
+        var calls = new List<LLMFunctionCall> { Call("explain_period_closing", success: true, "How it works") };
+        var functions = new List<Klacks.Api.Domain.Models.Assistant.LLMFunction>
+        {
+            new() { Name = "explain_period_closing", Effect = Klacks.Api.Domain.Enums.SkillEffect.Explain }
+        };
+
+        TurnClosingNotices.NothingStored(true, StoredClaim, calls, "de", functions).ShouldNotBeEmpty();
+    }
+
+    [TestCase("Nein – gespeichert ist nichts.")]
+    [TestCase("Nein, ich habe nichts gespeichert.")]
+    [TestCase("Nein. Es wurde noch kein Abschlussnachlauf gespeichert.")]
+    [TestCase("No, nothing has been saved.")]
+    [TestCase("Non, rien n'a été enregistré.")]
+    [TestCase("No, non è stato salvato niente.")]
+    public void NoAction_HonestDenialAfterAMisreadYesNoQuestion_GetsNoNotice(string denial)
+    {
+        TurnClosingNotices.NoAction(
+                isMutationIntent: true, forceConfirmation: false, denial, functionCallCount: 0,
+                recipePausedOnAsk: false, isClarifyingResponse: false)
+            .ShouldBeNull();
+    }
+
+    [TestCase("Ich habe den Nachlauf gespeichert.")]
+    [TestCase("Nichts gelöscht, aber ich habe den Kunden angelegt.")]
+    [TestCase("Es gab keine Fehler. Ich habe den Nachlauf gespeichert.")]
+    [TestCase("Kein Problem, ich habe den Kunden angelegt.")]
+    [TestCase("I looked into it.")]
+    public void NoAction_FalseClaimOrNoDenial_StillGetsTheNotice(string answer)
+    {
+        TurnClosingNotices.NoAction(
+                isMutationIntent: true, forceConfirmation: false, answer, functionCallCount: 0,
+                recipePausedOnAsk: false, isClarifyingResponse: false)
+            .ShouldBe(MutationGuardConstants.NoActionStreamNotice);
+    }
+
+    [Test]
+    public void NoAction_DenialNextToUnexecutedToolMarkup_StillGetsTheNotice()
+    {
+        const string answer = "Nichts gespeichert. <function_calls><invoke name=\"set_period_close_lag\"></invoke></function_calls>";
+
+        TurnClosingNotices.NoAction(
+                isMutationIntent: false, forceConfirmation: false, answer, functionCallCount: 0,
+                recipePausedOnAsk: false, isClarifyingResponse: false)
+            .ShouldBe(MutationGuardConstants.NoActionStreamNotice);
+    }
+
+    [TestCase("Nein – gespeichert ist nichts.", true)]
+    [TestCase("Gespeichert wurde nichts.", true)]
+    [TestCase("Ich habe den Nachlauf gespeichert.", false)]
+    [TestCase("Ich habe den Nachlauf gespeichert, nicht die Daten.", false)]
+    [TestCase("Das ist eine Erklärung ohne Aussage.", false)]
+    [TestCase("", false)]
+    public void DeniesCompletion_RecognisesOnlyAnswersThatDenyAndClaimNothing(string answer, bool expected)
+    {
+        ClaimNegationDetector.DeniesCompletion(answer).ShouldBe(expected);
+    }
 }

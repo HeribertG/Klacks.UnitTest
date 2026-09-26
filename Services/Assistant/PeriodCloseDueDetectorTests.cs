@@ -57,7 +57,8 @@ public class PeriodCloseDueDetectorTests
     {
         var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
         return new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock, _settingsReader);
+            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock, _settingsReader,
+            Substitute.For<IPeriodAutoCloseResolver>());
     }
 
     private void StubGroups(List<Group> groups)
@@ -203,7 +204,8 @@ public class PeriodCloseDueDetectorTests
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
         _sut = new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock, _settingsReader);
+            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock, _settingsReader,
+            Substitute.For<IPeriodAutoCloseResolver>());
 
         var events = await _sut.DetectAsync();
 

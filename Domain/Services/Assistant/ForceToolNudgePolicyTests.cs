@@ -67,4 +67,22 @@ public class ForceToolNudgePolicyTests
 
     private static readonly bool[] Bools = [false, true];
     private static readonly int[] Counts = [0, 1];
+
+    [Test]
+    public void HonestDenial_DoesNotForceAToolCall()
+    {
+        ForceToolNudgePolicy.ShouldForceToolNudge(
+                isMutationIntent: true, forceConfirmation: false, containsMarkup: false, claimsCompletion: false,
+                toolCallCount: 0, recipePausedOnAsk: false, isClarifyingResponse: false, deniesCompletion: true)
+            .ShouldBeFalse();
+    }
+
+    [Test]
+    public void DenialWithUnexecutedMarkup_StillForcesTheToolCall()
+    {
+        ForceToolNudgePolicy.ShouldForceToolNudge(
+                isMutationIntent: false, forceConfirmation: false, containsMarkup: true, claimsCompletion: false,
+                toolCallCount: 0, recipePausedOnAsk: false, isClarifyingResponse: false, deniesCompletion: true)
+            .ShouldBeTrue();
+    }
 }

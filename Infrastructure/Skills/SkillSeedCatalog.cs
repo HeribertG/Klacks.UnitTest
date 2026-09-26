@@ -21,6 +21,7 @@ internal static class SkillSeedCatalog
     private const string SkillNameJsonProperty = "name";
     private const string SkillCategoryJsonProperty = "category";
     private const string SkillIsEnabledJsonProperty = "isEnabled";
+    private const string SkillEffectJsonProperty = "effect";
 
     private static readonly string[] DefinitionsRelativePath =
     [
@@ -109,7 +110,7 @@ internal static class SkillSeedCatalog
         }
 
         var name = nameProperty.GetString()!;
-        skills.TryAdd(name, new SeedSkill(name, ParseCategory(element)));
+        skills.TryAdd(name, new SeedSkill(name, ParseCategory(element), ParseEffect(element)));
     }
 
     private static SkillCategory ParseCategory(JsonElement element)
@@ -122,6 +123,21 @@ internal static class SkillSeedCatalog
         }
 
         return SkillCategory.Action;
+    }
+
+    /// <summary>
+    /// Mirrors SkillSeedLoader.ParseEffect: a missing or unknown effect is Mutate (fail-closed).
+    /// </summary>
+    private static SkillEffect ParseEffect(JsonElement element)
+    {
+        if (element.TryGetProperty(SkillEffectJsonProperty, out var effect) &&
+            effect.ValueKind == JsonValueKind.String &&
+            Enum.TryParse<SkillEffect>(effect.GetString(), true, out var parsed))
+        {
+            return parsed;
+        }
+
+        return SkillEffect.Mutate;
     }
 
     private static string LocateDefinitionsFile(string fileName)
@@ -165,4 +181,4 @@ internal static class SkillSeedCatalog
     }
 }
 
-internal sealed record SeedSkill(string Name, SkillCategory Category);
+internal sealed record SeedSkill(string Name, SkillCategory Category, SkillEffect Effect = SkillEffect.Mutate);

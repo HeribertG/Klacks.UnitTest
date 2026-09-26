@@ -67,4 +67,22 @@ public class NoActionNoticePolicyTests
 
     private static readonly bool[] Bools = [false, true];
     private static readonly int[] Counts = [0, 1];
+
+    [Test]
+    public void HonestDenial_SuppressesTheNotice()
+    {
+        NoActionNoticePolicy.ShouldAppendNotice(
+                isMutationIntent: true, forceConfirmation: false, emittedTextToolCall: false, claimsCompletion: false,
+                toolCallCount: 0, recipePausedOnAsk: false, isClarifyingResponse: false, deniesCompletion: true)
+            .ShouldBeFalse();
+    }
+
+    [Test]
+    public void DenialWithUnexecutedMarkup_KeepsTheNotice()
+    {
+        NoActionNoticePolicy.ShouldAppendNotice(
+                isMutationIntent: false, forceConfirmation: false, emittedTextToolCall: true, claimsCompletion: false,
+                toolCallCount: 0, recipePausedOnAsk: false, isClarifyingResponse: false, deniesCompletion: true)
+            .ShouldBeTrue();
+    }
 }

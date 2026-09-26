@@ -183,14 +183,17 @@ public class PeriodAutoCloseServiceTests
             value == null ? null : new SettingsRow { Type = SettingKeys.PeriodCloseLagDays, Value = value }));
     }
 
-    private static void StubAutonomy(IPeriodAutoCloseResolver resolver, bool allowed)
+    private static void StubAutonomy(
+        IPeriodAutoCloseResolver resolver,
+        bool allowed,
+        PeriodAutoCloseBlockedBy blockedBy = PeriodAutoCloseBlockedBy.AdminLevel)
     {
         resolver.ResolveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new PeriodAutoCloseDecision(
                 allowed ? AutonomyLevel.FullyAutonomous : AutonomyLevel.Autonomous,
                 DecidingAdminId,
                 allowed,
-                allowed ? PeriodAutoCloseBlockedBy.None : PeriodAutoCloseBlockedBy.AdminLevel));
+                allowed ? PeriodAutoCloseBlockedBy.None : blockedBy));
     }
 
     private void StubIssues(params ScheduleValidationType[] severities)
@@ -259,12 +262,13 @@ public class PeriodAutoCloseServiceTests
         await _freshResolver.Received(1).ResolveAsync(group.Id, Arg.Any<CancellationToken>());
     }
 
-    [Test]
-    public async Task RunAsync_AutonomyNotAllowed_DoesNothingAndReportsNothing()
+    [TestCase(PeriodAutoCloseBlockedBy.KillSwitch)]
+    [TestCase(PeriodAutoCloseBlockedBy.KindDisabled)]
+    [TestCase(PeriodAutoCloseBlockedBy.MaxAction)]
+    public async Task RunAsync_RuleNotArmed_DoesNothingAndReportsNothingEvenWithADuePeriod(PeriodAutoCloseBlockedBy blockedBy)
     {
         StubGroups(MakeGroup());
-        StubAutonomy(_resolver, allowed: false);
-        StubLag(null);
+        StubAutonomy(_resolver, allowed: false, blockedBy);
 
         var events = await CreateSut().RunAsync();
 
@@ -709,5 +713,161 @@ public class PeriodAutoCloseServiceTests
             Assert.That(blocked.Reason, Is.EqualTo(PeriodAutoCloseBlockReason.Failed));
             Assert.That(blocked.Severity, Is.EqualTo(AgentTriggerSeverity.High));
         });
+    }
+
+    [TestCase(PeriodAutoCloseBlockedBy.AdminLevelMissing, PeriodAutoCloseBlockReason.AdminAutonomyMissing)]
+    [TestCase(PeriodAutoCloseBlockedBy.AdminLevel, PeriodAutoCloseBlockReason.AutonomyBelowFull)]
+    [TestCase(PeriodAutoCloseBlockedBy.GlobalLevel, PeriodAutoCloseBlockReason.AutonomyBelowFull)]
+    [TestCase(PeriodAutoCloseBlockedBy.NoAdmins, PeriodAutoCloseBlockReason.AutonomyBelowFull)]
+    [TestCase(PeriodAutoCloseBlockedBy.NoDecidingAdmin, PeriodAutoCloseBlockReason.AutonomyBelowFull)]
+    public async Task RunAsync_RuleArmedButAnAutonomyLevelBrakes_ReportsTheBrakeInsteadOfStayingSilent(
+        PeriodAutoCloseBlockedBy blockedBy, PeriodAutoCloseBlockReason expected)
+    {
+        var group = StubGroups(MakeGroup())[0];
+        StubAutonomy(_resolver, allowed: false, blockedBy);
+
+        var events = await CreateSut().RunAsync();
+
+        var blocked = SingleBlocked(events);
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(expected));
+            Assert.That(blocked.GroupId, Is.EqualTo(group.Id));
+            Assert.That(blocked.PeriodEndDate, Is.EqualTo(AugustEnd));
+            Assert.That(blocked.Summary, Does.StartWith(ProactiveMessageMarkers.I18nPrefix + "assistant.proactive.periodAutoCloseBlocked"));
+        });
+        await AssertNothingSentToTheCloseHandlerAsync();
+        _scopeFactory.DidNotReceive().CreateScope();
+    }
+
+    [Test]
+    public async Task RunAsync_RuleArmedButAutonomyBrakes_WithoutAStoredLag_StaysSilent()
+    {
+        StubGroups(MakeGroup());
+        StubAutonomy(_resolver, allowed: false, PeriodAutoCloseBlockedBy.AdminLevelMissing);
+        StubLag(null);
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(events, Is.Empty);
+        await AssertNothingSentToTheCloseHandlerAsync();
+    }
+
+    [Test]
+    public async Task RunAsync_RuleArmedButAutonomyBrakes_OutsideTheWindow_StaysSilent()
+    {
+        StubGroups(MakeGroup());
+        StubAutonomy(_resolver, allowed: false, PeriodAutoCloseBlockedBy.GlobalLevel);
+        StubLag("0");
+
+        var events = await CreateSut(new DateOnly(2026, 9, 5)).RunAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task RunAsync_RuleArmedButAutonomyBrakes_CloseDateNotReached_StaysSilent()
+    {
+        StubGroups(MakeGroup());
+        StubAutonomy(_resolver, allowed: false, PeriodAutoCloseBlockedBy.AdminLevel);
+        StubLag("5");
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public async Task RunAsync_RuleArmedButAutonomyBrakes_AlreadySealedPeriod_StaysSilent()
+    {
+        var group = StubGroups(MakeGroup())[0];
+        StubAutonomy(_resolver, allowed: false, PeriodAutoCloseBlockedBy.AdminLevel);
+        SealAsPerson(group.Id, AugustStart, AugustEnd);
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(events, Is.Empty);
+    }
+
+    [Test]
+    public void ReportableAutonomyBlock_ReportsExactlyTheAutonomyLevelBrakes()
+    {
+        foreach (var blockedBy in Enum.GetValues<PeriodAutoCloseBlockedBy>())
+        {
+            var reportable = PeriodAutoCloseService.ReportableAutonomyBlock(blockedBy);
+            var silent = blockedBy is PeriodAutoCloseBlockedBy.None
+                or PeriodAutoCloseBlockedBy.KillSwitch
+                or PeriodAutoCloseBlockedBy.KindDisabled
+                or PeriodAutoCloseBlockedBy.MaxAction;
+
+            Assert.That(reportable == null, Is.EqualTo(silent), blockedBy.ToString());
+        }
+    }
+
+    [Test]
+    public async Task RunAsync_MoreDueGroupsThanTheCap_ClosesAtMostTheCapAndReportsTheRestAsTickLimit()
+    {
+        var groups = StubGroups(Enumerable.Range(1, PeriodAutoClose.MaxClosesPerTick + 2)
+            .Select(index => MakeGroup(name: $"G{index}")).ToArray());
+
+        var events = await CreateSut().RunAsync();
+
+        await _freshMediator.Received(PeriodAutoClose.MaxClosesPerTick)
+            .Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>());
+        var deferred = events.OfType<PeriodAutoCloseBlockedTriggerEvent>().ToList();
+        Assert.Multiple(() =>
+        {
+            Assert.That(events.OfType<PeriodAutoClosedTriggerEvent>().Count(), Is.EqualTo(PeriodAutoClose.MaxClosesPerTick));
+            Assert.That(deferred, Has.Count.EqualTo(2));
+            Assert.That(deferred.Select(evt => evt.Reason), Is.All.EqualTo(PeriodAutoCloseBlockReason.TickLimitReached));
+            Assert.That(deferred.Select(evt => evt.GroupId),
+                Is.EquivalentTo(groups.Skip(PeriodAutoClose.MaxClosesPerTick).Select(group => group.Id)));
+            Assert.That(deferred[0].SummaryParams["limit"],
+                Is.EqualTo(PeriodAutoClose.MaxClosesPerTick.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        });
+    }
+
+    [Test]
+    public async Task RunAsync_NextScan_PicksUpTheGroupsTheCapDeferred()
+    {
+        StubGroups(Enumerable.Range(1, PeriodAutoClose.MaxClosesPerTick + 2)
+            .Select(index => MakeGroup(name: $"G{index}")).ToArray());
+
+        await CreateSut().RunAsync();
+        var second = await CreateSut().RunAsync();
+
+        Assert.That(second.OfType<PeriodAutoClosedTriggerEvent>().Count(), Is.EqualTo(2));
+        Assert.That(second.OfType<PeriodAutoCloseBlockedTriggerEvent>(), Is.Empty);
+    }
+
+    [Test]
+    public async Task RunAsync_AFailedAttemptCountsAgainstTheCap()
+    {
+        StubGroups(Enumerable.Range(1, PeriodAutoClose.MaxClosesPerTick + 1)
+            .Select(index => MakeGroup(name: $"G{index}")).ToArray());
+        _freshMediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidRequestException("You do not have permission to close periods."));
+
+        var events = await CreateSut().RunAsync();
+
+        var reasons = events.OfType<PeriodAutoCloseBlockedTriggerEvent>().Select(evt => evt.Reason).ToList();
+        Assert.That(reasons.Count(reason => reason == PeriodAutoCloseBlockReason.Refused), Is.EqualTo(PeriodAutoClose.MaxClosesPerTick));
+        Assert.That(reasons.Count(reason => reason == PeriodAutoCloseBlockReason.TickLimitReached), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RunAsync_GroupsBlockedByAutonomy_DoNotUseUpTheCap()
+    {
+        var groups = StubGroups(Enumerable.Range(1, PeriodAutoClose.MaxClosesPerTick + 1)
+            .Select(index => MakeGroup(name: $"G{index}")).ToArray());
+        _resolver.ResolveAsync(groups[0].Id, Arg.Any<CancellationToken>())
+            .Returns(new PeriodAutoCloseDecision(
+                AutonomyLevel.Autonomous, DecidingAdminId, false, PeriodAutoCloseBlockedBy.AdminLevel));
+
+        var events = await CreateSut().RunAsync();
+
+        Assert.That(events.OfType<PeriodAutoClosedTriggerEvent>().Count(), Is.EqualTo(PeriodAutoClose.MaxClosesPerTick));
+        Assert.That(events.OfType<PeriodAutoCloseBlockedTriggerEvent>().Single().Reason,
+            Is.EqualTo(PeriodAutoCloseBlockReason.AutonomyBelowFull));
     }
 }

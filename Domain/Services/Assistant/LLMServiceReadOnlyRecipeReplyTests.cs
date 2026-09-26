@@ -7,7 +7,9 @@
 /// then took the user's slot answer as an order to store and called the Sensitive store skill (a waiting
 /// confirmation token), or claimed "stored" without any write. Pinned here on the real loop: the reply call
 /// carries the step note, a write call in it never reaches the skill bridge, and a completion claim gets the
-/// nothing-stored notice. A mutating recipe keeps its previous behaviour.
+/// nothing-stored notice. Since the follow-up of 2026-09-26 a WRITING recipe's final note reaches the reply call as
+/// well, under a prefix saying the step already ran, and any further write in that reply is rejected; a final step
+/// held by the autonomy gate is not a completed step and gets neither.
 /// LLMFunctionExecutor is used for real; the skill layer is replaced one level deeper through ILLMSkillBridge.
 /// </summary>
 
@@ -34,6 +36,7 @@ public class LLMServiceReadOnlyRecipeReplyTests
     private const string ConversationId = "conv-read-only-reply";
     private const string ReadSkill = "get_period_close_schedule";
     private const string StoreSkill = "set_period_close_lag";
+    private const string FollowUpWrite = "delete_break";
     private const string StepNote = "Your NEXT reply lists the close date of every group.";
     private const string SlotAnswer = "5 Tage";
     private const string FalseClaim = "Erledigt – ich habe 5 Tage als Abschlussfrist gespeichert.";
@@ -266,7 +269,7 @@ public class LLMServiceReadOnlyRecipeReplyTests
     }
 
     [Test]
-    public async Task MutatingRecipe_KeepsItsBehaviour_NoCompletionNoteAndItsWriteRuns()
+    public async Task MutatingRecipe_ItsWriteRuns_AndGetsNoReadOnlyNote()
     {
         ResumeAtAskStep(MutatingRecipe);
         var provider = Provider(Calls(StoreSkill), Text("Gespeichert."));
@@ -279,6 +282,89 @@ public class LLMServiceReadOnlyRecipeReplyTests
                 request.VolatileSystemPrompt != null
                 && request.VolatileSystemPrompt.Contains(
                     RecipeEngineDefaults.ReadOnlyRecipeCompletedNotePrefix, StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplyAfterMutatingRecipe_CarriesTheFinalStepNoteUnderTheStepIsFinishedPrefix()
+    {
+        ResumeAtAskStep(MutatingRecipe);
+        var provider = Provider(Calls(StoreSkill), Text("5 Tage gespeichert und bestätigt."));
+
+        await _service.ExecuteMultiTurnLoopAsync(BuildContext(provider));
+
+        await provider.Received().ProcessAsync(
+            Arg.Is<LLMProviderRequest>(request =>
+                request.VolatileSystemPrompt != null
+                && request.VolatileSystemPrompt.Contains(
+                    RecipeEngineDefaults.WritingRecipeCompletedNotePrefix, StringComparison.Ordinal)
+                && request.VolatileSystemPrompt.Contains(StepNote, StringComparison.Ordinal)
+                && request.ToolChoice != MutationGuardConstants.ToolChoiceRequired),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplyAfterMutatingRecipe_AFurtherWriteIsRejectedAndNeverReachesTheSkill()
+    {
+        ResumeAtAskStep(MutatingRecipe);
+        var provider = Provider(Calls(StoreSkill), Calls(FollowUpWrite), Text("Gespeichert."));
+
+        var (_, _, _, allFunctionCalls, _) = await _service.ExecuteMultiTurnLoopAsync(BuildContext(provider));
+
+        await ReceivedBridgeCallFor(StoreSkill, 1);
+        await ReceivedBridgeCallFor(FollowUpWrite, 0);
+        var rejected = allFunctionCalls.Single(call => call.FunctionName == FollowUpWrite);
+        rejected.Success.ShouldBeFalse();
+        rejected.Result.ShouldBe(LLMLoopConstants.CompletedRecipeWriteRejectedResult);
+    }
+
+    [Test]
+    public async Task ReplyAfterMutatingRecipe_TheStepSkillAgainIsRejectedAsARepeat()
+    {
+        ResumeAtAskStep(MutatingRecipe);
+        var provider = Provider(Calls(StoreSkill), Calls(StoreSkill), Text("Gespeichert."));
+
+        await _service.ExecuteMultiTurnLoopAsync(BuildContext(provider));
+
+        await ReceivedBridgeCallFor(StoreSkill, 1);
+    }
+
+    [Test]
+    public async Task ReplyAfterMutatingRecipe_ReadsStillRun()
+    {
+        ResumeAtAskStep(MutatingRecipe);
+        var provider = Provider(Calls(StoreSkill), Calls(ReadSkill), Text("Gespeichert, Bern schliesst am 05.10."));
+
+        await _service.ExecuteMultiTurnLoopAsync(BuildContext(provider));
+
+        await ReceivedBridgeCallFor(StoreSkill, 1);
+        await ReceivedBridgeCallFor(ReadSkill, 1);
+    }
+
+    [Test]
+    public async Task MutatingRecipe_FinalStepHeldByTheAutonomyGate_GetsNoCompletionNoteAndNoWriteBlock()
+    {
+        ResumeAtAskStep(MutatingRecipe);
+        _skillBridge.ExecuteSkillFromLLMCallAsync(
+                Arg.Is<BridgeLLMFunctionCall>(call => call.FunctionName == StoreSkill),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillBridgeResult
+            {
+                Success = false,
+                ResultType = "Confirmation",
+                Message = "Please confirm.",
+                ConfirmationToken = "token-1"
+            });
+        var provider = Provider(Calls(StoreSkill), Text("Soll ich 5 Tage speichern?"));
+
+        var (_, _, _, allFunctionCalls, _) = await _service.ExecuteMultiTurnLoopAsync(BuildContext(provider));
+
+        allFunctionCalls.Single(call => call.FunctionName == StoreSkill).RequiresConfirmation.ShouldBeTrue();
+        await provider.DidNotReceive().ProcessAsync(
+            Arg.Is<LLMProviderRequest>(request =>
+                request.VolatileSystemPrompt != null
+                && request.VolatileSystemPrompt.Contains(
+                    RecipeEngineDefaults.WritingRecipeCompletedNotePrefix, StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
     }
 }

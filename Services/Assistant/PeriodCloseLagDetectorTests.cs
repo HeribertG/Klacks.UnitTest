@@ -23,6 +23,7 @@ public class PeriodCloseLagDetectorTests
     private IWeekConfiguration _weekConfiguration = null!;
     private IScheduleActivityProbe _activityProbe = null!;
     private ISettingsReader _settingsReader = null!;
+    private IPeriodAutoCloseResolver _autoCloseResolver = null!;
     private List<Group> _groups = null!;
 
     [SetUp]
@@ -33,6 +34,8 @@ public class PeriodCloseLagDetectorTests
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
         _activityProbe = Substitute.For<IScheduleActivityProbe>();
         _settingsReader = Substitute.For<ISettingsReader>();
+        _autoCloseResolver = Substitute.For<IPeriodAutoCloseResolver>();
+        StubAutoClose(PeriodAutoCloseBlockedBy.MaxAction);
         _activityProbe.HasWorkInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(true);
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -73,7 +76,20 @@ public class PeriodCloseLagDetectorTests
 
     private PeriodCloseDueDetector CloseDueOn(DateOnly today) => new(
         _groupRepository, _sealedDayRepository, _weekConfiguration, _activityProbe,
-        NullLogger<PeriodCloseDueDetector>.Instance, ClockOn(today), _settingsReader);
+        NullLogger<PeriodCloseDueDetector>.Instance, ClockOn(today), _settingsReader, _autoCloseResolver);
+
+    private void StubAutoClose(PeriodAutoCloseBlockedBy blockedBy) =>
+        _autoCloseResolver.ResolveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new PeriodAutoCloseDecision(
+                blockedBy == PeriodAutoCloseBlockedBy.None ? AutonomyLevel.FullyAutonomous : AutonomyLevel.Autonomous,
+                blockedBy == PeriodAutoCloseBlockedBy.None ? Guid.NewGuid() : null,
+                blockedBy == PeriodAutoCloseBlockedBy.None,
+                blockedBy));
+
+    private void StubDirectWork(bool hasDirectWork) =>
+        _activityProbe.HasDirectWorkInRangeAsync(
+                Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(hasDirectWork);
 
     private PeriodOverdueDetector OverdueOn(DateOnly today) => new(
         _groupRepository, _sealedDayRepository, _weekConfiguration, _activityProbe,
@@ -341,5 +357,114 @@ public class PeriodCloseLagDetectorTests
             var events = await OverdueOn(day).DetectAsync();
             Assert.That(OverdueEventsOf(events, "Individual"), Is.Empty);
         }
+    }
+
+    [Test]
+    public async Task CloseDue_NoLagStored_NeverAsksTheAutoCloseResolver_AndStaysPlain()
+    {
+        StubAutoClose(PeriodAutoCloseBlockedBy.None);
+        StubDirectWork(true);
+        StubLag(null);
+
+        var events = await CloseDueOn(new DateOnly(2026, 1, 29)).DetectAsync();
+
+        var monthly = CloseDueEventsOf(events, "Monthly").Single();
+        Assert.That(monthly.AutoCloseDate, Is.Null);
+        Assert.That(monthly.Summary, Is.EqualTo(ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.PeriodCloseDue));
+        await _autoCloseResolver.DidNotReceive().ResolveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CloseDue_LagStoredButRuleNotArmed_IsByteIdenticalToTheEventWithoutAnnouncement()
+    {
+        StubDirectWork(true);
+        StubLag("2");
+
+        var events = await CloseDueOn(new DateOnly(2026, 1, 31)).DetectAsync();
+
+        var monthly = CloseDueEventsOf(events, "Monthly").Single();
+        var plain = new PeriodCloseDueTriggerEvent(
+            monthly.GroupId, monthly.GroupName, monthly.PeriodEndDate, monthly.DaysUntilDue, monthly.LagDays);
+        Assert.That(monthly.AutoCloseDate, Is.Null);
+        Assert.That(Fingerprint(monthly), Is.EqualTo(Fingerprint(plain)));
+    }
+
+    [Test]
+    public async Task CloseDue_AutoCloseArmed_AnnouncesTheFirstAutomaticCloseDay()
+    {
+        StubAutoClose(PeriodAutoCloseBlockedBy.None);
+        StubDirectWork(true);
+        StubLag("2");
+
+        var events = await CloseDueOn(new DateOnly(2026, 1, 31)).DetectAsync();
+
+        var monthly = CloseDueEventsOf(events, "Monthly").Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(monthly.AutoCloseDate, Is.EqualTo(new DateOnly(2026, 2, 2)));
+            Assert.That(monthly.Summary,
+                Is.EqualTo(ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.PeriodCloseDueAutoClose));
+            Assert.That(monthly.SummaryParams["date"], Is.EqualTo("02.02.2026"));
+            Assert.That(monthly.SummaryParams["periodEnd"], Is.EqualTo("31.01.2026"));
+            Assert.That(monthly.SummaryParams["days"], Is.EqualTo("2"));
+            Assert.That(monthly.SummaryParams.Keys, Is.EquivalentTo(new[] { "group", "periodEnd", "date", "days" }));
+            Assert.That(monthly.DedupKey, Is.EqualTo(PeriodCloseDueTriggerEvent.DedupKeyFor(monthly.GroupId, monthly.PeriodEndDate)));
+        });
+    }
+
+    [Test]
+    public async Task CloseDue_AutoCloseArmedWithLagZero_AnnouncesTheDayAfterThePeriodEnd()
+    {
+        StubAutoClose(PeriodAutoCloseBlockedBy.None);
+        StubDirectWork(true);
+        StubLag("0");
+
+        var events = await CloseDueOn(new DateOnly(2026, 1, 29)).DetectAsync();
+
+        var monthly = CloseDueEventsOf(events, "Monthly").Single();
+        Assert.That(monthly.AutoCloseDate, Is.EqualTo(new DateOnly(2026, 2, 1)));
+        Assert.That(monthly.SummaryParams["days"], Is.EqualTo("3"));
+    }
+
+    [Test]
+    public async Task CloseDue_AutoCloseArmedButNoWorkOnTheGroupsOwnShifts_DoesNotPromiseAClose()
+    {
+        StubAutoClose(PeriodAutoCloseBlockedBy.None);
+        StubDirectWork(false);
+        StubLag("2");
+
+        var events = await CloseDueOn(new DateOnly(2026, 1, 31)).DetectAsync();
+
+        var monthly = CloseDueEventsOf(events, "Monthly").Single();
+        Assert.That(monthly.AutoCloseDate, Is.Null);
+        Assert.That(monthly.Summary,
+            Is.EqualTo(ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.PeriodCloseDueWithLag));
+    }
+
+    [Test]
+    public async Task CloseDue_ResolverFails_KeepsTheReminderWithoutAnnouncement()
+    {
+        _autoCloseResolver.ResolveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns<Task<PeriodAutoCloseDecision>>(_ => throw new InvalidOperationException("boom"));
+        StubDirectWork(true);
+        StubLag("2");
+
+        var events = await CloseDueOn(new DateOnly(2026, 1, 31)).DetectAsync();
+
+        var monthly = CloseDueEventsOf(events, "Monthly").Single();
+        Assert.That(monthly.AutoCloseDate, Is.Null);
+    }
+
+    [Test]
+    public async Task CloseDue_PeriodEndingBeforeTheGroupsValidFrom_IsNotAnnounced()
+    {
+        StubAutoClose(PeriodAutoCloseBlockedBy.None);
+        StubDirectWork(true);
+        StubLag("2");
+        _groups.Single(group => group.Name == "Monthly").ValidFrom = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var events = await CloseDueOn(new DateOnly(2026, 1, 31)).DetectAsync();
+
+        Assert.That(CloseDueEventsOf(events, "Monthly").Single().AutoCloseDate, Is.Null);
     }
 }

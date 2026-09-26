@@ -12,6 +12,8 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Models.Assistant;
 using Shouldly;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -20,6 +22,7 @@ namespace Klacks.UnitTest.Domain.Services.Assistant;
 public class ReadOnlyRecipeWriteGuardTests
 {
     private const string FinalNote = "final-note";
+    private const string Rejected = LLMLoopConstants.ReadOnlyRecipeWriteRejectedResult;
 
     private static LLMFunctionCall Call(string name) =>
         new() { FunctionName = name, Parameters = new Dictionary<string, object>(), Success = true };
@@ -31,7 +34,7 @@ public class ReadOnlyRecipeWriteGuardTests
     {
         var call = Call(skill);
 
-        var executable = ReadOnlyRecipeWriteGuard.Reject(new List<LLMFunctionCall> { call }, true);
+        var executable = ReadOnlyRecipeWriteGuard.Reject(new List<LLMFunctionCall> { call }, true, Rejected, null);
 
         executable.ShouldBeEmpty();
         call.Success.ShouldBeFalse();
@@ -45,7 +48,7 @@ public class ReadOnlyRecipeWriteGuardTests
     {
         var call = Call(skill);
 
-        ReadOnlyRecipeWriteGuard.Reject(new List<LLMFunctionCall> { call }, true).ShouldBe(new[] { call });
+        ReadOnlyRecipeWriteGuard.Reject(new List<LLMFunctionCall> { call }, true, Rejected, null).ShouldBe(new[] { call });
         call.Success.ShouldBeTrue();
     }
 
@@ -54,7 +57,7 @@ public class ReadOnlyRecipeWriteGuardTests
     {
         var calls = new List<LLMFunctionCall> { Call("set_period_close_lag") };
 
-        ReadOnlyRecipeWriteGuard.Reject(calls, false).ShouldBeSameAs(calls);
+        ReadOnlyRecipeWriteGuard.Reject(calls, false, Rejected, null).ShouldBeSameAs(calls);
     }
 
     [Test]
@@ -106,4 +109,88 @@ public class ReadOnlyRecipeWriteGuardTests
             Slot = kind == RecipeStepKinds.Ask ? $"slot{index}" : null,
             Prompt = kind == RecipeStepKinds.Ask ? "?" : null
         }).ToList());
+
+    private static LLMFunction Function(string name, SkillEffect? effect) => new() { Name = name, Effect = effect };
+
+    [TestCase("explain_period_closing", SkillEffect.Explain)]
+    [TestCase("select_group", SkillEffect.Read)]
+    [TestCase("open_order_export", SkillEffect.Read)]
+    [TestCase("suggest_next_step", SkillEffect.Advise)]
+    public void CompletedRecipe_LetsExplainReadAndAdviseSkillsRunWhateverTheirName(string skill, SkillEffect effect)
+    {
+        var call = Call(skill);
+
+        ReadOnlyRecipeWriteGuard.Reject(new List<LLMFunctionCall> { call }, true, Rejected, new[] { Function(skill, effect) })
+            .ShouldBe(new[] { call });
+    }
+
+    [TestCase("start_guided_tour")]
+    [TestCase("create_plan")]
+    [TestCase("check_erp_drop_point_folder_health")]
+    [TestCase(AutonomyDefaults.ConfirmPendingActionSkillName)]
+    public void CompletedRecipe_RejectsMutateSkills_EvenWithAReadPrefixOrAnUngatedRiskClass(string skill)
+    {
+        var call = Call(skill);
+
+        ReadOnlyRecipeWriteGuard.Reject(new List<LLMFunctionCall> { call }, true, Rejected, new[] { Function(skill, SkillEffect.Mutate) })
+            .ShouldBeEmpty();
+        call.Result.ShouldBe(Rejected);
+    }
+
+    [Test]
+    public void CompletedRecipe_ReadActionOfAMultiActionSkill_Runs()
+    {
+        var call = new LLMFunctionCall
+        {
+            FunctionName = SkillNames.ManagePendingNotes,
+            Parameters = new Dictionary<string, object> { [ReadOnlySkillActions.ActionParameter] = ReadOnlySkillActions.PendingNotesRead },
+            Success = true
+        };
+
+        ReadOnlyRecipeWriteGuard.Reject(
+                new List<LLMFunctionCall> { call }, true, Rejected, new[] { Function(SkillNames.ManagePendingNotes, SkillEffect.Mutate) })
+            .ShouldBe(new[] { call });
+    }
+
+    [TestCase("get_period_close_schedule", true)]
+    [TestCase("explain_period_closing", false)]
+    [TestCase("set_period_close_lag", false)]
+    public void SkillOutsideTheToolset_FallsBackToTheReadPrefix(string skill, bool expected)
+    {
+        ReadOnlyRecipeWriteGuard.IsSideEffectFree(Call(skill), Array.Empty<LLMFunction>()).ShouldBe(expected);
+    }
+
+    [Test]
+    public void FunctionWithoutAnEffect_FallsBackToTheReadPrefix()
+    {
+        ReadOnlyRecipeWriteGuard.IsSideEffectFree(Call("explain_x"), new[] { Function("explain_x", null) }).ShouldBeFalse();
+        ReadOnlyRecipeWriteGuard.IsSideEffectFree(Call("get_x"), new[] { Function("get_x", null) }).ShouldBeTrue();
+    }
+
+    [Test]
+    public void CompletedWritingRecipe_UsesItsOwnRejectionText()
+    {
+        var call = Call("delete_break");
+
+        ReadOnlyRecipeWriteGuard.Reject(
+                new List<LLMFunctionCall> { call }, true, LLMLoopConstants.CompletedRecipeWriteRejectedResult, null)
+            .ShouldBeEmpty();
+        call.Result.ShouldBe(LLMLoopConstants.CompletedRecipeWriteRejectedResult);
+    }
+
+    [Test]
+    public void Plan_FinalStepHeldByTheAutonomyGate_DoesNotCountAsCompleted()
+    {
+        var plan = new RecipeExecutionPlan(
+            "r",
+            new List<RecipeStep> { new() { Kind = RecipeStepKinds.Mutate, Skill = "close_period", Note = FinalNote } });
+        var held = Call("close_period");
+        held.Success = false;
+        held.RequiresConfirmation = true;
+
+        plan.Observe(new[] { held });
+
+        plan.CompletedThisTurn.ShouldBeFalse();
+        plan.CompletionNote.ShouldBeNull();
+    }
 }

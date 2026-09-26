@@ -205,7 +205,8 @@ public class DetectorFingerprintContainmentTests
         var sut = new PeriodCloseDueDetector(
             groupRepository, sealedDayRepository, weekConfiguration, activityProbe,
             NullLogger<PeriodCloseDueDetector>.Instance, clock,
-            Substitute.For<Klacks.Api.Domain.Interfaces.Settings.ISettingsReader>());
+            Substitute.For<Klacks.Api.Domain.Interfaces.Settings.ISettingsReader>(),
+            Substitute.For<IPeriodAutoCloseResolver>());
 
         var expectedPeriodEnd = new DateOnly(2026, 1, 31);
         var fingerprints = await AssertContainmentAsync(sut, sut, expectedCappedCount: 1);

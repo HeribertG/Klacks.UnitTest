@@ -225,4 +225,51 @@ public class PayrollExportOnPeriodClosedHandlerTests
             Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).CompleteAsync();
     }
+
+    [Test]
+    public async Task HandleAsync_ExportLogWriteFails_RemovesTheUploadedArtifactAndRethrows()
+    {
+        EnableFeature();
+        ReturnData(SampleData());
+        _formatter.Format(Arg.Any<PayrollExportData>(), Arg.Any<PayrollExportGroupConfig>())
+            .Returns(new PayrollExportResult { Content = [1, 2, 3], RecordCount = 1, SkippedAbsenceCount = 0 });
+        _unitOfWork.CompleteAsync().Returns<Task>(_ => throw new InvalidOperationException("value too long"));
+        string? uploadedKey = null;
+        await _objectStorage.UploadAsync(Arg.Do<string>(key => uploadedKey = key), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _handler.HandleAsync(GroupEvent(), CancellationToken.None));
+
+        uploadedKey.ShouldNotBeNull();
+        await _objectStorage.Received(1).DeleteAsync(uploadedKey!, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HandleAsync_ArtifactCannotBeRemoved_StillRethrowsTheLogFailure()
+    {
+        EnableFeature();
+        ReturnData(SampleData());
+        _formatter.Format(Arg.Any<PayrollExportData>(), Arg.Any<PayrollExportGroupConfig>())
+            .Returns(new PayrollExportResult { Content = [1, 2, 3], RecordCount = 1, SkippedAbsenceCount = 0 });
+        _unitOfWork.CompleteAsync().Returns<Task>(_ => throw new InvalidOperationException("value too long"));
+        _objectStorage.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new IOException("storage down"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _handler.HandleAsync(GroupEvent(), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task HandleAsync_TwoRunsForTheSamePeriod_UploadUnderTheSameKey()
+    {
+        EnableFeature();
+        ReturnData(SampleData());
+        _formatter.Format(Arg.Any<PayrollExportData>(), Arg.Any<PayrollExportGroupConfig>())
+            .Returns(new PayrollExportResult { Content = [1, 2, 3], RecordCount = 1, SkippedAbsenceCount = 0 });
+        var keys = new List<string>();
+        await _objectStorage.UploadAsync(Arg.Do<string>(keys.Add), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+
+        await _handler.HandleAsync(GroupEvent(), CancellationToken.None);
+        await _handler.HandleAsync(GroupEvent(), CancellationToken.None);
+
+        keys.Distinct().Count().ShouldBe(1);
+    }
 }

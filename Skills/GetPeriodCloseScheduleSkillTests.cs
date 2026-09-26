@@ -1,3 +1,4 @@
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
@@ -98,6 +99,15 @@ public class GetPeriodCloseScheduleSkillTests
 
     private static string DataOf(SkillResult result) => System.Text.Json.JsonSerializer.Serialize(result.Data);
 
+    /// <summary>The text LLMFunctionExecutor feeds back to the model for a successful data result.</summary>
+    private static string ToolResultText(SkillResult result) => $"{result.Message}\nData: {DataOf(result)}";
+
+    private static Group[] ManyGroups(int count, string namePrefix) =>
+        Enumerable.Range(1, count)
+            .Select(index => MakeGroup(
+                index % 3 == 0 ? PaymentInterval.Weekly : PaymentInterval.Monthly, $"{namePrefix} {index:00}"))
+            .ToArray();
+
     private static Dictionary<string, object> Args(int lagDays) => new()
     {
         [PeriodCloseParameters.LagDays] = lagDays
@@ -157,8 +167,8 @@ public class GetPeriodCloseScheduleSkillTests
         var data = DataOf(result);
         Assert.That(data, Does.Contain("\"GlobalAutonomyLevel\":\"FullyAutonomous\""));
         Assert.That(data, Does.Contain("\"AutonomyAllowsAutoClose\":true"));
-        Assert.That(data, Does.Contain("\"AutoCloseAllowed\":true"));
-        Assert.That(data, Does.Contain("\"AutoCloseBlockedBy\":\"None\""));
+        Assert.That(data, Does.Contain("\"ClosesAutomatically\":true"));
+        Assert.That(data, Does.Not.Contain("AutoCloseBlockedBy"));
     }
 
     [Test]
@@ -174,9 +184,9 @@ public class GetPeriodCloseScheduleSkillTests
 
         var data = DataOf(result);
         Assert.That(data, Does.Contain("\"AutonomyAllowsAutoClose\":false"));
-        Assert.That(data, Does.Contain("\"AutoCloseBlockedBy\":\"MaxAction\""));
+        Assert.That(data, Does.Contain(System.Text.Json.JsonSerializer.Serialize(PeriodAutoCloseReasonTexts.RuleBelowCarryOut)));
         Assert.That(result.Message, Does.Contain("active for no group"));
-        Assert.That(result.Message, Does.Contain("period_auto_close"));
+        Assert.That(result.Message, Does.Contain("\"Automatic period close\""));
     }
 
     [Test]
@@ -190,7 +200,7 @@ public class GetPeriodCloseScheduleSkillTests
 
         var data = DataOf(result);
         Assert.That(data, Does.Contain("\"AutoCloseAllowed\":false"));
-        Assert.That(data, Does.Contain("\"AutoCloseBlockedBy\":\"AdminLevel\""));
+        Assert.That(data, Does.Contain(System.Text.Json.JsonSerializer.Serialize(PeriodAutoCloseReasonTexts.AdminLevel)));
     }
 
     [Test]
@@ -206,7 +216,6 @@ public class GetPeriodCloseScheduleSkillTests
         Assert.That(data, Does.Contain("\"Mode\":\"Computed\""));
         Assert.That(data, Does.Contain("\"CurrentPeriodEnd\":\"2026-01-31\""));
         Assert.That(data, Does.Contain("\"CurrentPeriodCloseDate\":\"2026-02-05\""));
-        Assert.That(data, Does.Contain("\"CurrentPeriodDaysUntilClose\":26"));
     }
 
     [Test]
@@ -220,7 +229,6 @@ public class GetPeriodCloseScheduleSkillTests
         var data = DataOf(result);
         Assert.That(data, Does.Contain("\"PreviousPeriodEnd\":\"2025-12-31\""));
         Assert.That(data, Does.Contain("\"PreviousPeriodCloseDate\":\"2026-01-05\""));
-        Assert.That(data, Does.Contain("\"PreviousPeriodDaysUntilClose\":-5"));
         Assert.That(data, Does.Contain("\"PreviousPeriodCloseDue\":true"));
     }
 
@@ -237,8 +245,8 @@ public class GetPeriodCloseScheduleSkillTests
         var result = await _sut.ExecuteAsync(Ctx(), Args(20));
 
         var data = DataOf(result);
-        Assert.That(data, Does.Contain("\"PreviousPeriodCloseDate\":null"));
-        Assert.That(data, Does.Contain("\"PreviousPeriodCloseDue\":null"));
+        Assert.That(data, Does.Not.Contain("PreviousPeriodCloseDate"));
+        Assert.That(data, Does.Not.Contain("PreviousPeriodCloseDue"));
     }
 
     [Test]
@@ -252,7 +260,7 @@ public class GetPeriodCloseScheduleSkillTests
 
         var result = await _sut.ExecuteAsync(Ctx(), Args(5));
 
-        Assert.That(DataOf(result), Does.Contain("\"PreviousPeriodCloseDate\":null"));
+        Assert.That(DataOf(result), Does.Not.Contain("PreviousPeriodCloseDate"));
     }
 
     [Test]
@@ -278,7 +286,6 @@ public class GetPeriodCloseScheduleSkillTests
         var data = DataOf(result);
         Assert.That(data, Does.Contain("\"CurrentPeriodEnd\":\"2026-01-11\""));
         Assert.That(data, Does.Contain("\"CurrentPeriodCloseDate\":\"2026-01-14\""));
-        Assert.That(data, Does.Contain("\"CurrentPeriodDaysUntilClose\":4"));
     }
 
     [Test]
@@ -292,7 +299,6 @@ public class GetPeriodCloseScheduleSkillTests
         var data = DataOf(result);
         Assert.That(data, Does.Contain("\"PreviousPeriodEnd\":\"2025-12-31\""));
         Assert.That(data, Does.Contain("\"PreviousPeriodCloseDate\":\"2026-01-20\""));
-        Assert.That(data, Does.Contain("\"PreviousPeriodDaysUntilClose\":10"));
         Assert.That(data, Does.Contain("\"PreviousPeriodCloseDue\":false"));
     }
 
@@ -332,5 +338,112 @@ public class GetPeriodCloseScheduleSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain(PeriodCloseParameters.LagDays));
+    }
+
+    [TestCase(PeriodAutoCloseBlockedBy.MaxAction)]
+    [TestCase(PeriodAutoCloseBlockedBy.AdminLevelMissing)]
+    [TestCase(PeriodAutoCloseBlockedBy.None)]
+    public async Task ExecuteAsync_TheReadableReasonIsReportedOnceWithItsGroups(PeriodAutoCloseBlockedBy blockedBy)
+    {
+        StubAutoClose(blockedBy);
+        StubGroups(MakeGroup(PaymentInterval.Monthly));
+        StubStoredLag("2");
+
+        var contextResult = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+        var computedResult = await _sut.ExecuteAsync(Ctx(), Args(3));
+
+        var expected = System.Text.Json.JsonSerializer.Serialize(PeriodAutoCloseReasonTexts.For(blockedBy));
+        Assert.That(DataOf(contextResult), Does.Contain("\"Reason\":" + expected));
+        Assert.That(DataOf(computedResult), Does.Contain("\"Reason\":" + expected));
+        Assert.That(ToolResultText(computedResult).Split(expected).Length - 1, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void TheReadableReasons_NameNoInternalIdentifier()
+    {
+        var internalNames = Enum.GetNames<PeriodAutoCloseBlockedBy>()
+            .Concat(new[] { AgentTriggerKinds.PeriodAutoClose, "FullyAutonomous", "Execute", "Hint" })
+            .ToList();
+
+        foreach (var blockedBy in Enum.GetValues<PeriodAutoCloseBlockedBy>())
+        {
+            var text = PeriodAutoCloseReasonTexts.For(blockedBy);
+            foreach (var name in internalNames)
+            {
+                Assert.That(
+                    System.Text.RegularExpressions.Regex.IsMatch(text, $@"\b{name}\b"),
+                    Is.False,
+                    $"{blockedBy}: '{text}' names '{name}'");
+            }
+        }
+    }
+
+    [TestCase(15)]
+    [TestCase(30)]
+    public async Task ExecuteAsync_ManyGroups_StaysUnderTheToolResultCapAndCountsWhatIsLeftOut(int groupCount)
+    {
+        StubGroups(ManyGroups(groupCount, "Pflegeteam Zürich-Nord Übergang"));
+        StubStoredLag("2");
+
+        var computed = await _sut.ExecuteAsync(Ctx(), Args(2));
+        var context = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ToolResultText(computed).Length, Is.LessThan(LLMLoopConstants.DefaultMaxToolResultChars));
+            Assert.That(ToolResultText(context).Length, Is.LessThan(LLMLoopConstants.DefaultMaxToolResultChars));
+        });
+
+        using var document = System.Text.Json.JsonDocument.Parse(DataOf(computed));
+        var listed = document.RootElement.GetProperty("Groups").GetArrayLength();
+        var omitted = document.RootElement.GetProperty("OmittedGroups").GetInt32();
+        Assert.That(listed + omitted, Is.EqualTo(groupCount));
+        if (groupCount == 15)
+        {
+            Assert.That(omitted, Is.Zero, "fifteen groups must all be listed");
+        }
+    }
+
+    [Test]
+    public async Task ExecuteAsync_VeryLongGroupNames_AreCutByTheBudgetAndCountedAsOmitted()
+    {
+        StubGroups(ManyGroups(25, new string('Ä', 180)));
+        StubStoredLag("2");
+
+        var computed = await _sut.ExecuteAsync(Ctx(), Args(2));
+
+        using var document = System.Text.Json.JsonDocument.Parse(DataOf(computed));
+        var listed = document.RootElement.GetProperty("Groups").GetArrayLength();
+        Assert.That(listed, Is.GreaterThan(0));
+        Assert.That(listed + document.RootElement.GetProperty("OmittedGroups").GetInt32(), Is.EqualTo(25));
+    }
+
+    [Test]
+    public async Task ExecuteAsync_AGroupWithADuePreviousPeriod_IsListedFirst()
+    {
+        var due = MakeGroup(PaymentInterval.Monthly, "Zeta");
+        var notDue = MakeGroup(PaymentInterval.Weekly, "Alpha");
+        StubGroups(notDue, due);
+        StubStoredLag(null);
+        _activityProbe.HasDirectWorkInRangeAsync(
+                Arg.Is<Group>(group => group.Id == notDue.Id), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _sut.ExecuteAsync(Ctx(), Args(5));
+
+        using var document = System.Text.Json.JsonDocument.Parse(DataOf(result));
+        Assert.That(document.RootElement.GetProperty("Groups")[0].GetProperty("GroupName").GetString(), Is.EqualTo("Zeta"));
+    }
+
+    [Test]
+    public async Task ExecuteAsync_TheConditionsTextAppearsOnlyOnce()
+    {
+        StubGroups(ManyGroups(10, "Team"));
+        StubStoredLag("2");
+
+        var result = await _sut.ExecuteAsync(Ctx(), Args(2));
+
+        var text = ToolResultText(result);
+        Assert.That(text.Split("Klacksy closes a group's period on its own only when").Length - 1, Is.EqualTo(1));
     }
 }
