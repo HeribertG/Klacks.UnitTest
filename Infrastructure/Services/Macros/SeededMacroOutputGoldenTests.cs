@@ -55,7 +55,8 @@ public class SeededMacroOutputGoldenTests
 
     [TestCase(0, new[] { "1:0", "10:0", "11:0", "12:0", "13:0", "14:0" })]
     [TestCase(400, new[] { "1:3.1", "10:0.1", "11:0", "12:0", "13:0", "14:3" })]
-    [TestCase(671, new[] { "1:0.4", "10:1", "11:0", "12:0", "13:-0.4", "14:-0.2" })]
+    [TestCase(504, new[] { "1:0.7", "10:0.7000000000000001", "11:0", "12:0", "13:0", "14:0" })]
+    [TestCase(671, new[] { "1:10.3", "10:3.5", "11:0", "12:0", "13:6.800000000000001", "14:0" })]
     public void AllShift_EmitsTheRecordedMessagesInOrder(int sampleIndex, string[] expectedMessages)
     {
         var (compiled, error) = MacroScriptRunner.TryCompile(SeededMacroScripts.AllShiftScript());

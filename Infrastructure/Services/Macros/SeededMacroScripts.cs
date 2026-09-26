@@ -40,18 +40,22 @@ public static class SeededMacroScripts
         "DIM WednesdayBonus, NewTotal\n"
         + "WednesdayBonus = 0\n"
         + "IF Weekday = 3 THEN WednesdayBonus = Hour * 0.1 ENDIF\n"
+        + "IF TimeToHours(UntilHour) = TimeToHours(FromHour) AndAlso Hour <= 0 THEN\n"
+        + "NewTotal = 0\n"
+        + "ELSE\n"
         + "IF TimeToHours(UntilHour) <= TimeToHours(FromHour) THEN\n"
-        + "NewTotal = (F(FromHour, \"00:00\", Holiday, Weekday, 10) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 10))"
-        + " + (F(FromHour, \"00:00\", Holiday, Weekday, 11) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 11))"
-        + " + (F(FromHour, \"00:00\", Holiday, Weekday, 12) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 12))"
-        + " + (F(FromHour, \"00:00\", Holiday, Weekday, 13) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 13))"
-        + " + (F(FromHour, \"00:00\", Holiday, Weekday, 14) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 14))\n"
+        + "NewTotal = (F(FromHour, \"24:00\", Holiday, Weekday, 10) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 10))"
+        + " + (F(FromHour, \"24:00\", Holiday, Weekday, 11) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 11))"
+        + " + (F(FromHour, \"24:00\", Holiday, Weekday, 12) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 12))"
+        + " + (F(FromHour, \"24:00\", Holiday, Weekday, 13) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 13))"
+        + " + (F(FromHour, \"24:00\", Holiday, Weekday, 14) + F(\"00:00\", UntilHour, HolidayNextDay, (Weekday MOD 7) + 1, 14))\n"
         + "ELSE\n"
         + "NewTotal = F(FromHour, UntilHour, Holiday, Weekday, 10)"
         + " + F(FromHour, UntilHour, Holiday, Weekday, 11)"
         + " + F(FromHour, UntilHour, Holiday, Weekday, 12)"
         + " + F(FromHour, UntilHour, Holiday, Weekday, 13)"
         + " + F(FromHour, UntilHour, Holiday, Weekday, 14)\n"
+        + "ENDIF\n"
         + "ENDIF\n"
         + "NewTotal = Round(NewTotal, 2) + WednesdayBonus\n"
         + "OUTPUT 13, WednesdayBonus\n"
@@ -130,7 +134,8 @@ public static class SeededMacroScripts
         new AddSurchargeNightWindow(),
         new AddAllShiftAdditiveMacro(),
         new WireAbsenceMacrosToPercentVariable(),
-        new SplitTrainingAndWirePaidAbsence()
+        new SplitTrainingAndWirePaidAbsence(),
+        new FixAllShiftMidnightSegments()
     ];
 
     private static IEnumerable<(Guid Id, string Name, string Content)> Rows()
