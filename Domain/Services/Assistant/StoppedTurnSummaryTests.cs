@@ -1,11 +1,12 @@
 // Copyright (c) Heribert Gasparoli Private. All rights reserved.
 
 /// <summary>
-/// What a stopped turn tells the user it did. The client is told about write actions only - successful,
-/// non-repeatable server calls - because "nothing was executed" means "nothing was changed"; lookups,
-/// held confirmations, failed calls, repeats the loop rejected, calls the stop skipped and everything that
-/// is handed to the browser are not listed. An action without a label in the user's language is counted but
-/// not named, so the client can tell "nothing ran" from "something ran that cannot be named".
+/// What a stopped turn tells the user it did. The client is told about data changes only - successful,
+/// non-repeatable server calls of skills whose effect is Mutate - because "nothing was executed" means
+/// "nothing was changed"; lookups, explanations, advice, navigations, held confirmations, failed calls,
+/// repeats the loop rejected, calls the stop skipped and everything that is handed to the browser are not
+/// listed. An action without a label in the user's language is counted but not named, so the client can tell
+/// "nothing ran" from "something ran that cannot be named". Labels and count come from the same list.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -22,6 +23,14 @@ public class StoppedTurnSummaryTests
     private const string ReadSkill = "search_employees";
     private const string GermanLabel = "Mitarbeiter anlegen";
     private const string MembershipLabel = "Zugehörigkeit ändern";
+    private const string ExplainSkill = "explain_page_schedule";
+    private const string ExplainLabel = "Dienstplan-Seite erklären";
+    private const string CountReadSkill = "count_open_shifts";
+    private const string AdviseSkill = "recommend_shift_cover";
+    private const string NavigationSkill = "open_schedule";
+    private const string NavigationLabel = "Dienstplan öffnen";
+    private const string NoEffectSkill = "legacy_bridge_skill";
+    private const string NoEffectLabel = "Alte Aktion";
 
     [Test]
     public void ASuccessfulWrite_IsListedWithItsLabelInTheUsersLanguage()
@@ -72,6 +81,93 @@ public class StoppedTurnSummaryTests
     public void ALookup_IsNotAnAction()
     {
         StoppedTurnSummary.From(Context("de"), [Ran(ReadSkill)]).ExecutedCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void AnExplainSkillWithoutAReadOnlyPrefix_IsNotAnActionAndLeavesNoLabel()
+    {
+        var summary = StoppedTurnSummary.From(Context("de"), [Ran(ExplainSkill)]);
+
+        summary.Labels.ShouldBeEmpty();
+        summary.ExecutedCount.ShouldBe(0);
+    }
+
+    [TestCase(CountReadSkill)]
+    [TestCase(AdviseSkill)]
+    public void AReadOrAdviseSkillWithoutAReadOnlyPrefix_IsNotAnAction(string skill)
+    {
+        var summary = StoppedTurnSummary.From(Context("de"), [Ran(skill)]);
+
+        summary.Labels.ShouldBeEmpty();
+        summary.ExecutedCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void ANavigationResult_IsNotAnActionEvenWhenTheSkillIsSeededAsMutate()
+    {
+        var navigation = Ran(NavigationSkill);
+        navigation.IsNavigation = true;
+
+        var summary = StoppedTurnSummary.From(Context("de"), [navigation]);
+
+        summary.Labels.ShouldBeEmpty();
+        summary.ExecutedCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void AWriteBesideAnExplainAndANavigation_IsTheOnlyActionOfTheSummary()
+    {
+        var navigation = Ran(NavigationSkill);
+        navigation.IsNavigation = true;
+
+        var summary = StoppedTurnSummary.From(Context("de"), [Ran(ExplainSkill), navigation, Ran(WriteSkill), Ran(ReadSkill)]);
+
+        summary.Labels.ShouldBe([GermanLabel]);
+        summary.ExecutedCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void AWriteThatReturnedData_IsStillNamed()
+    {
+        var write = Ran(WriteSkill);
+        write.ResultKind = LLMFunctionResultKind.Data;
+        write.DataJson.Add("{\"Route\":\"/workplace/client\"}");
+
+        var summary = StoppedTurnSummary.From(Context("de"), [write]);
+
+        summary.Labels.ShouldBe([GermanLabel]);
+        summary.ExecutedCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void ASkillWithoutAnEffect_IsTreatedAsAWriteBecauseNothingSaysItIsSafe()
+    {
+        var summary = StoppedTurnSummary.From(Context("de"), [Ran(NoEffectSkill)]);
+
+        summary.Labels.ShouldBe([NoEffectLabel]);
+        summary.ExecutedCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void ANonWriteWithoutALabelInTheUsersLanguage_DoesNotMakeTheClientThinkSomethingRan()
+    {
+        var summary = StoppedTurnSummary.From(Context("fr"), [Ran(ExplainSkill), Ran(CountReadSkill)]);
+
+        summary.Labels.ShouldBeEmpty();
+        summary.ExecutedCount.ShouldBe(0);
+    }
+
+    [Test]
+    public void LabelsAndCount_ComeFromTheSameListOfWrites()
+    {
+        var navigation = Ran(NavigationSkill);
+        navigation.IsNavigation = true;
+        var calls = new[] { Ran(ExplainSkill), Ran(WriteSkill), navigation, Ran(SecondWriteSkill), Ran(NoEffectSkill), Ran(CountReadSkill) };
+
+        var summary = StoppedTurnSummary.From(Context("de"), calls);
+
+        summary.Labels.ShouldBe([GermanLabel, MembershipLabel, NoEffectLabel]);
+        summary.ExecutedCount.ShouldBe(summary.Labels.Count);
     }
 
     [Test]
@@ -174,14 +270,35 @@ public class StoppedTurnSummaryTests
             new LLMFunction
             {
                 Name = WriteSkill,
+                Effect = SkillEffect.Mutate,
                 Labels = new Dictionary<string, string> { ["de"] = GermanLabel, ["en"] = "Create employee" }
             },
             new LLMFunction
             {
                 Name = SecondWriteSkill,
+                Effect = SkillEffect.Mutate,
                 Labels = new Dictionary<string, string> { ["de"] = MembershipLabel }
             },
-            new LLMFunction { Name = ReadSkill }
+            new LLMFunction { Name = ReadSkill, Effect = SkillEffect.Read },
+            new LLMFunction
+            {
+                Name = ExplainSkill,
+                Effect = SkillEffect.Explain,
+                Labels = new Dictionary<string, string> { ["de"] = ExplainLabel }
+            },
+            new LLMFunction { Name = CountReadSkill, Effect = SkillEffect.Read },
+            new LLMFunction { Name = AdviseSkill, Effect = SkillEffect.Advise },
+            new LLMFunction
+            {
+                Name = NavigationSkill,
+                Effect = SkillEffect.Mutate,
+                Labels = new Dictionary<string, string> { ["de"] = NavigationLabel }
+            },
+            new LLMFunction
+            {
+                Name = NoEffectSkill,
+                Labels = new Dictionary<string, string> { ["de"] = NoEffectLabel }
+            }
         ]
     };
 }

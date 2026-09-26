@@ -278,6 +278,29 @@ public class LLMFunctionExecutorStopTests
         call.Success.ShouldBeFalse();
     }
 
+    [Test]
+    public async Task ANavigationResult_IsMarkedOnTheCallSoTheStoppedTurnRecordLeavesItOut()
+    {
+        _bridge.ExecuteSkillFromLLMCallAsync(
+                Arg.Any<LLMFunctionCall>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillBridgeResult { Success = true, ResultType = nameof(SkillResultType.Navigation), Message = "Open schedule" });
+        var call = Call(ProposeSkill(1));
+
+        await _executor.ProcessFunctionCallsAsync(_context, [call], CancellationToken.None);
+
+        call.IsNavigation.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ADataResult_IsNotMarkedAsANavigation()
+    {
+        var call = Call(WriteSkill);
+
+        await _executor.ProcessFunctionCallsAsync(_context, [call], CancellationToken.None);
+
+        call.IsNavigation.ShouldBeFalse();
+    }
+
     private static string ProposeSkill(int index) => $"propose_{index}";
 
     private static LLMFunctionCall Call(string skill) => new() { FunctionName = skill };

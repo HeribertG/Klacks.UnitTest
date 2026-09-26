@@ -108,7 +108,7 @@ public class SkillToolsetAssemblerTests
             .Returns(new List<AgentSkill>
             {
                 CreateSkill(AlwaysOnSkillName, alwaysOn: true),
-                CreateSkill(RetrievedSkillName),
+                CreateSkill(RetrievedSkillName, effect: SkillEffect.Explain),
                 CreateSkill(NeighbourSkillName),
                 CreateSkill(RestrictedSkillName, requiredPermission: RequiredRight),
                 CreateSkill(MultiPermissionSkillName, requiredPermission: MultiPermissionRequirement),
@@ -203,10 +203,11 @@ public class SkillToolsetAssemblerTests
 
     private static AgentSkill CreateSkill(
         string name, bool alwaysOn = false, string? requiredPermission = null, int sortOrder = 0,
-        string triggerKeywords = "[]")
+        string triggerKeywords = "[]", SkillEffect effect = SkillEffect.Mutate)
     {
         return new AgentSkill
         {
+            Effect = effect,
             Name = name,
             Description = "A skill.",
             ParametersJson = "[]",
@@ -262,6 +263,17 @@ public class SkillToolsetAssemblerTests
 
         result.Functions.Select(f => f.Name).ShouldBe(new[] { AlwaysOnSkillName });
         result.HasDomainSkillContext.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task AssembleAsync_CopiesTheSkillEffectOntoTheFunction_SoTheStoppedTurnSummaryCanTellExplainFromWrite()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+
+        var result = await AssembleAsync();
+
+        result.Functions.Single(f => f.Name == AlwaysOnSkillName).Effect.ShouldBe(SkillEffect.Mutate);
+        result.Functions.Single(f => f.Name == RetrievedSkillName).Effect.ShouldBe(SkillEffect.Explain);
     }
 
     [Test]
