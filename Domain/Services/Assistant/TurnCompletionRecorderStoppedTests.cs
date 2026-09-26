@@ -30,6 +30,8 @@ public class TurnCompletionRecorderStoppedTests
     private const string WriteSkill = "create_employee";
     private const string ReadSkill = "search_employees";
     private const int TurnGapMs = 15;
+    private const int StreamedChars = 400;
+    private const int ReportedOutputTokens = 37;
 
     private ILLMRepository _repository = null!;
     private ITurnPreparationService _turnPreparation = null!;
@@ -385,6 +387,53 @@ public class TurnCompletionRecorderStoppedTests
         var summary = await _recorder.RecordStoppedAsync(CancellationToken.None);
 
         summary.ExecutedCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ATurnStoppedMidTextWithoutProviderUsage_RecordsTheOutputTokensEstimatedFromTheStreamedText()
+    {
+        BeginTurn();
+        _turnState.StreamedContent.Append(new string('a', StreamedChars));
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        await _repository.Received(1).TrackUsageAsync(Arg.Is<RepositoryLLMUsage>(u =>
+            u.OutputTokens == StreamedChars / LLMService.CharsPerToken
+            && u.InputTokens == 0
+            && u.Cost == 0m));
+    }
+
+    [Test]
+    public async Task ATurnStoppedWithProviderUsage_KeepsTheReportedOutputTokens()
+    {
+        BeginTurn();
+        _turnState.StreamedContent.Append(new string('a', StreamedChars));
+        _turnState.Usage.OutputTokens = ReportedOutputTokens;
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        await _repository.Received(1).TrackUsageAsync(Arg.Is<RepositoryLLMUsage>(u => u.OutputTokens == ReportedOutputTokens));
+    }
+
+    [Test]
+    public async Task ATurnStoppedBeforeAnyText_RecordsNoOutputTokens()
+    {
+        BeginTurn();
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        await _repository.Received(1).TrackUsageAsync(Arg.Is<RepositoryLLMUsage>(u => u.OutputTokens == 0));
+    }
+
+    [Test]
+    public async Task TheEstimate_LeavesTheTurnsOwnUsageUntouched()
+    {
+        BeginTurn();
+        _turnState.StreamedContent.Append(new string('a', StreamedChars));
+
+        await _recorder.RecordStoppedAsync(CancellationToken.None);
+
+        _turnState.Usage.OutputTokens.ShouldBe(0);
     }
 
     private LLMFunctionCall BeginTurnWithARunWrite()
