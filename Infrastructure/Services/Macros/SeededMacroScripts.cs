@@ -7,6 +7,9 @@
 /// and sets the result channel 1 to the original total plus that surcharge. The block cannot read the variables
 /// of AllShift, so it recomputes the total from the IMPORT symbols through the given function: the original
 /// FUNCTION of AllShift, or a copy of it under another name that the block declares itself.
+/// ShippedScriptVariants lists every macro script literal Klacks has shipped (the MacrosSeed rows and the scripts the
+/// macro-content migrations insert, rewrite or match), keyed by source and position so the keys do not depend on the
+/// line endings of the checkout.
 /// </summary>
 
 using System.Text.RegularExpressions;
@@ -55,6 +58,15 @@ public static class SeededMacroScripts
 
     private const string FunctionPlaceholder = "F(";
 
+    private const string UpSuffix = ":Up";
+    private const string DownSuffix = ":Down";
+    private const string KeySeparator = ":";
+
+    private static readonly Regex SqlLiteral = new(@"'(?<content>(?:[^']|'')*)'", RegexOptions.Compiled);
+
+    private static readonly Regex OutputStatement = new(
+        @"^\s*OUTPUT\s", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
+
     private static readonly Regex SeedRow = new(
         @"SELECT\s+'(?<id>[^']*)',\s*'(?<name>[^']*)',\s*'(?<content>(?:[^']|'')*)'",
         RegexOptions.Compiled);
@@ -79,6 +91,39 @@ public static class SeededMacroScripts
 
     public static IReadOnlyDictionary<Guid, string> NamesById() =>
         Rows().ToDictionary(row => row.Id, row => row.Name);
+
+    public static IReadOnlyList<(string Key, string Content)> ShippedScriptVariants()
+    {
+        var seedBuilder = new MigrationBuilder(null);
+        MacrosSeed.SeedData(seedBuilder);
+        var sources = new List<(string Name, IEnumerable<MigrationOperation> Operations)>
+        {
+            (nameof(MacrosSeed), seedBuilder.Operations)
+        };
+
+        foreach (var migration in MacroContentMigrations())
+        {
+            var name = migration.GetType().Name;
+            sources.Add((name + UpSuffix, migration.UpOperations));
+            sources.Add((name + DownSuffix, migration.DownOperations));
+        }
+
+        return sources
+            .SelectMany(source => source.Operations
+                .OfType<SqlOperation>()
+                .SelectMany(operation => SqlLiteral.Matches(operation.Sql).Select(match => match.Groups[ContentGroup].Value))
+                .Where(literal => OutputStatement.IsMatch(literal))
+                .Select((literal, index) => (source.Name + KeySeparator + index, literal.Replace(SqlEscapedQuote, SqlQuote))))
+            .ToList();
+    }
+
+    private static IEnumerable<Migration> MacroContentMigrations() =>
+    [
+        new AddSurchargeNightWindow(),
+        new AddAllShiftAdditiveMacro(),
+        new WireAbsenceMacrosToPercentVariable(),
+        new SplitTrainingAndWirePaidAbsence()
+    ];
 
     private static IEnumerable<(Guid Id, string Name, string Content)> Rows()
     {
