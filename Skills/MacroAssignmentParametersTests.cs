@@ -78,7 +78,7 @@ public class MacroAssignmentParametersTests
     }
 
     [Test]
-    public void ReadRevert_ReadsTheGivenSelector()
+    public void ReadRevert_ReadsTheSwitchId()
     {
         var switchId = Guid.NewGuid();
 
@@ -86,16 +86,27 @@ public class MacroAssignmentParametersTests
             new Dictionary<string, object> { [MacroAssignmentParameters.SwitchId] = switchId.ToString() });
 
         error.ShouldBeNull();
-        request.ShouldBe(new MacroRevertRequest(switchId, null, null));
+        request.ShouldBe(new MacroRevertRequest(switchId));
     }
 
     [Test]
     public void ReadRevert_InvalidId_IsRefused()
     {
         var (request, error) = MacroAssignmentParameters.ReadRevert(
-            new Dictionary<string, object> { [MacroAssignmentParameters.ShiftId] = ShiftName });
+            new Dictionary<string, object> { [MacroAssignmentParameters.SwitchId] = ShiftName });
 
         request.ShouldBeNull();
-        error!.ShouldContain("is not a valid id for shiftId");
+        error!.ShouldContain("is not a valid id for switchId");
+    }
+
+    [TestCase(MacroAssignmentParameters.ShiftId)]
+    [TestCase(MacroAssignmentParameters.AbsenceTypeId)]
+    public void ReadRevert_HolderIdInsteadOfSwitchId_IsRefused(string holderParameter)
+    {
+        var (request, error) = MacroAssignmentParameters.ReadRevert(
+            new Dictionary<string, object> { [holderParameter] = Guid.NewGuid().ToString() });
+
+        request.ShouldBeNull();
+        error!.ShouldContain("switchId is required");
     }
 }

@@ -103,7 +103,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         var userId = Guid.NewGuid();
 
         var undo = await _sut.Handle(
-            new RevertMacroAssignmentCommand(null, secondCut.Id, null, userId), CancellationToken.None);
+            new RevertMacroAssignmentCommand(switched.SwitchId, userId), CancellationToken.None);
         _context.ChangeTracker.Clear();
 
         var shifts = await _context.Shift.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.MacroId);
@@ -122,7 +122,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         }
 
         undo.Changes.Count.ShouldBe(2);
-        undo.Holder.Id.ShouldBe(secondCut.Id);
+        undo.Changes.Select(change => change.Holder.Id).ShouldBe(new[] { firstCut.Id, secondCut.Id }, ignoreOrder: true);
         _completedOutsideTransaction.ShouldBeFalse();
         await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
         await _unitOfWork.Received(1).CompleteAsync();
@@ -132,14 +132,14 @@ public class RevertMacroAssignmentCommandHandlerTests
     public async Task UndoAfterAnOutsideChangeOnOneCut_IsRefusedAsAWhole_AndChangesNothing()
     {
         var (firstCut, secondCut, _, copy, third) = await SeedOrderAsync();
-        await AssignAsync(firstCut.Id, copy.Id);
+        var switched = await AssignAsync(firstCut.Id, copy.Id);
         var tracked = await _context.Shift.SingleAsync(s => s.Id == secondCut.Id);
         tracked.MacroId = third.Id;
         await _context.SaveChangesAsync();
         _context.ChangeTracker.Clear();
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
-            new RevertMacroAssignmentCommand(null, firstCut.Id, null, Guid.NewGuid()), CancellationToken.None));
+            new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None));
 
         exception.Message.ShouldContain("cannot be undone as a whole");
         exception.Message.ShouldContain("changed outside the assistant");
@@ -152,12 +152,12 @@ public class RevertMacroAssignmentCommandHandlerTests
     public async Task UndoingTheUndo_IsRefused()
     {
         var (firstCut, _, _, copy, _) = await SeedOrderAsync();
-        await AssignAsync(firstCut.Id, copy.Id);
-        await _sut.Handle(new RevertMacroAssignmentCommand(null, firstCut.Id, null, Guid.NewGuid()), CancellationToken.None);
+        var switched = await AssignAsync(firstCut.Id, copy.Id);
+        var undo = await _sut.Handle(new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None);
         _context.ChangeTracker.Clear();
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
-            new RevertMacroAssignmentCommand(null, firstCut.Id, null, Guid.NewGuid()), CancellationToken.None));
+            new RevertMacroAssignmentCommand(undo.SwitchId, Guid.NewGuid()), CancellationToken.None));
 
         exception.Message.ShouldContain("itself an undo");
     }
@@ -167,10 +167,10 @@ public class RevertMacroAssignmentCommandHandlerTests
     {
         var (firstCut, secondCut, _, copy, _) = await SeedOrderAsync();
         var switched = await AssignAsync(firstCut.Id, copy.Id);
-        var stalePreview = await _planner.PreviewRevertAsync(new MacroRevertRequest(switched.SwitchId, null, null));
+        var stalePreview = await _planner.PreviewRevertAsync(new MacroRevertRequest(switched.SwitchId));
         _context.ChangeTracker.Clear();
         await _sut.Handle(
-            new RevertMacroAssignmentCommand(switched.SwitchId, null, null, Guid.NewGuid()), CancellationToken.None);
+            new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None);
         _context.ChangeTracker.Clear();
         await AssignAsync(firstCut.Id, copy.Id);
         var rowsBefore = await _context.MacroAssignmentHistory.AsNoTracking().CountAsync();
@@ -179,7 +179,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         var sut = new RevertMacroAssignmentCommandHandler(planner, _references, _history, _unitOfWork, RevertLog);
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => sut.Handle(
-            new RevertMacroAssignmentCommand(switched.SwitchId, null, null, Guid.NewGuid()), CancellationToken.None));
+            new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None));
         _context.ChangeTracker.Clear();
 
         exception.Message.ShouldContain("no longer recorded as it was planned");
@@ -194,7 +194,7 @@ public class RevertMacroAssignmentCommandHandlerTests
     {
         var (firstCut, secondCut, _, copy, _) = await SeedOrderAsync();
         var switched = await AssignAsync(firstCut.Id, copy.Id);
-        var stalePreview = await _planner.PreviewRevertAsync(new MacroRevertRequest(switched.SwitchId, null, null));
+        var stalePreview = await _planner.PreviewRevertAsync(new MacroRevertRequest(switched.SwitchId));
         await using (var otherScope = new DataBaseContext(_options, null!))
         {
             var otherReferences = new MacroReferenceRepository(otherScope);
@@ -213,7 +213,7 @@ public class RevertMacroAssignmentCommandHandlerTests
             otherUnitOfWork.CompleteAsync().Returns(async _ => { await otherScope.SaveChangesAsync(); });
             await new RevertMacroAssignmentCommandHandler(
                     otherPlanner, otherReferences, otherHistory, otherUnitOfWork, RevertLog)
-                .Handle(new RevertMacroAssignmentCommand(switched.SwitchId, null, null, Guid.NewGuid()), CancellationToken.None);
+                .Handle(new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None);
             await new AssignMacroCommandHandler(otherAssignPlanner, otherReferences, otherHistory, otherUnitOfWork, AssignLog)
                 .Handle(new AssignMacroCommand(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
                     CancellationToken.None);
@@ -225,7 +225,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         var sut = new RevertMacroAssignmentCommandHandler(planner, _references, _history, _unitOfWork, RevertLog);
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => sut.Handle(
-            new RevertMacroAssignmentCommand(switched.SwitchId, null, null, Guid.NewGuid()), CancellationToken.None));
+            new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None));
         _context.ChangeTracker.Clear();
 
         exception.Message.ShouldContain("no longer recorded as it was planned");
@@ -247,7 +247,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         var switched = await AssignAsync(cut.Id, copy.Id);
 
         var undo = await _sut.Handle(
-            new RevertMacroAssignmentCommand(switched.SwitchId, null, null, Guid.NewGuid()), CancellationToken.None);
+            new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None);
         _context.ChangeTracker.Clear();
 
         (await _context.Shift.AsNoTracking().SingleAsync(s => s.Id == cut.Id)).MacroId.ShouldBeNull();
@@ -271,7 +271,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         _dryRun.ClearReceivedCalls();
 
         var undo = await _sut.Handle(
-            new RevertMacroAssignmentCommand(null, firstCut.Id, null, Guid.NewGuid()), CancellationToken.None);
+            new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None);
 
         undo.DryRun.ShouldBeSameAs(dryRun);
         undo.UndoneSwitchId.ShouldBe(switched.SwitchId);
@@ -290,7 +290,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         var sut = new RevertMacroAssignmentCommandHandler(_planner, _references, _history, _unitOfWork, logger);
 
         var thrown = await Should.ThrowAsync<DatabaseUpdateException>(() => sut.Handle(
-            new RevertMacroAssignmentCommand(switched.SwitchId, null, null, Guid.NewGuid()), CancellationToken.None));
+            new RevertMacroAssignmentCommand(switched.SwitchId, Guid.NewGuid()), CancellationToken.None));
 
         thrown.ShouldBeSameAs(failure);
         var entry = logger.Entries.ShouldHaveSingleItem();
@@ -310,7 +310,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         var sut = new RevertMacroAssignmentCommandHandler(_planner, _references, _history, _unitOfWork, logger);
 
         await Should.ThrowAsync<InvalidRequestException>(() => sut.Handle(
-            new RevertMacroAssignmentCommand(Guid.NewGuid(), null, null, Guid.NewGuid()), CancellationToken.None));
+            new RevertMacroAssignmentCommand(Guid.NewGuid(), Guid.NewGuid()), CancellationToken.None));
 
         logger.Entries.ShouldBeEmpty();
     }

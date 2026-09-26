@@ -150,7 +150,7 @@ public class MacroAssignmentConfirmationPreviewProviderTests
 
         preview.IsRefusal.ShouldBeFalse();
         preview.Text.ShouldContain($"Undo the macro switch {switchId}");
-        await _revertPlanner.Received(1).PreviewRevertAsync(new MacroRevertRequest(switchId, null, null), Arg.Any<CancellationToken>());
+        await _revertPlanner.Received(1).PreviewRevertAsync(new MacroRevertRequest(switchId), Arg.Any<CancellationToken>());
     }
 
     private static SkillExecutionContext Context(params string[] rights) => new()

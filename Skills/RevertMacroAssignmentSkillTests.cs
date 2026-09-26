@@ -2,9 +2,9 @@
 
 /// <summary>
 /// Unit tests for revert_macro_assignment: a caller without the Admin role is refused without a command, an invalid id is
-/// refused without a command, each selector (switch id, shift id, absence type id) reaches the command unchanged together
-/// with the caller, a valid undo answers with the undo id, the undone switch id and the entry counts of the dry run the
-/// handler's own preview produced, a refusal of the command handler (unknown, itself an undo, already undone, conflicts,
+/// refused without a command, a missing switch id (a shift or absence type id instead) is refused without a command, the
+/// switch id reaches the command unchanged together with the caller, a valid undo answers with the undo id, the undone
+/// switch id and the entry counts of the dry run the handler's own preview produced, a refusal of the command handler (unknown, itself an undo, already undone, conflicts,
 /// a switch recorded in between) is relayed verbatim, and a database failure at the commit answers with the save-failed
 /// text. The skill depends on the mediator only: the handler resolves the switch, plans and runs the dry run once per
 /// confirmed call, so the confirmed call re-checks the role and re-plans instead of trusting the preview it was confirmed
@@ -43,7 +43,7 @@ public class RevertMacroAssignmentSkillTests
     [Test]
     public async Task CallerWithoutTheAdminRole_IsRefused()
     {
-        var result = await _sut.ExecuteAsync(Context(Permissions.CanEditSettings), By(MacroAssignmentParameters.ShiftId, Guid.NewGuid()));
+        var result = await _sut.ExecuteAsync(Context(Permissions.CanEditSettings), By(MacroAssignmentParameters.SwitchId, Guid.NewGuid()));
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(MacroAssignmentAccess.AdminOnlyMessage);
@@ -54,30 +54,36 @@ public class RevertMacroAssignmentSkillTests
     public async Task InvalidId_IsRefused_WithoutACommand()
     {
         var result = await _sut.ExecuteAsync(
-            Context(Roles.Admin), new Dictionary<string, object> { [MacroAssignmentParameters.ShiftId] = ShiftName });
+            Context(Roles.Admin), new Dictionary<string, object> { [MacroAssignmentParameters.SwitchId] = ShiftName });
 
         result.Success.ShouldBeFalse();
-        result.Message!.ShouldContain("is not a valid id for shiftId");
+        result.Message!.ShouldContain("is not a valid id for switchId");
         await _mediator.DidNotReceive().Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>());
     }
 
-    [TestCase(MacroAssignmentParameters.SwitchId)]
     [TestCase(MacroAssignmentParameters.ShiftId)]
     [TestCase(MacroAssignmentParameters.AbsenceTypeId)]
-    public async Task Selector_ReachesTheCommandUnchanged(string selector)
+    public async Task HolderIdInsteadOfSwitchId_IsRefused_WithoutACommand(string holderParameter)
+    {
+        var result = await _sut.ExecuteAsync(Context(Roles.Admin), By(holderParameter, Guid.NewGuid()));
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldContain("switchId is required");
+        await _mediator.DidNotReceive().Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SwitchId_ReachesTheCommandUnchanged()
     {
         var id = Guid.NewGuid();
         var context = Context(Roles.Admin);
         GivenUndo(Guid.NewGuid(), Guid.NewGuid());
 
-        await _sut.ExecuteAsync(context, By(selector, id));
+        await _sut.ExecuteAsync(context, By(MacroAssignmentParameters.SwitchId, id));
 
         await _mediator.Received(1).Send(
             Arg.Is<RevertMacroAssignmentCommand>(command =>
-                command.SwitchId == (selector == MacroAssignmentParameters.SwitchId ? id : null)
-                && command.ShiftId == (selector == MacroAssignmentParameters.ShiftId ? id : null)
-                && command.AbsenceTypeId == (selector == MacroAssignmentParameters.AbsenceTypeId ? id : null)
-                && command.UserId == context.UserId),
+                command.SwitchId == id && command.UserId == context.UserId),
             Arg.Any<CancellationToken>());
     }
 
@@ -88,7 +94,7 @@ public class RevertMacroAssignmentSkillTests
         var undoneSwitchId = Guid.NewGuid();
         GivenUndo(undoId, undoneSwitchId);
 
-        var result = await _sut.ExecuteAsync(Context(Roles.Admin), By(MacroAssignmentParameters.ShiftId, Guid.NewGuid()));
+        var result = await _sut.ExecuteAsync(Context(Roles.Admin), By(MacroAssignmentParameters.SwitchId, Guid.NewGuid()));
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message!.ShouldContain($"undo id {undoId}");
@@ -104,7 +110,7 @@ public class RevertMacroAssignmentSkillTests
         _mediator.Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>())
             .Returns<MacroAssignmentOutcome>(_ => throw new InvalidRequestException(refusal));
 
-        var result = await _sut.ExecuteAsync(Context(Roles.Admin), By(MacroAssignmentParameters.ShiftId, Guid.NewGuid()));
+        var result = await _sut.ExecuteAsync(Context(Roles.Admin), By(MacroAssignmentParameters.SwitchId, Guid.NewGuid()));
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(refusal);
@@ -116,7 +122,7 @@ public class RevertMacroAssignmentSkillTests
         _mediator.Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>())
             .Returns<MacroAssignmentOutcome>(_ => throw new DatabaseUpdateException(RawDatabaseMessage));
 
-        var result = await _sut.ExecuteAsync(Context(Roles.Admin), By(MacroAssignmentParameters.ShiftId, Guid.NewGuid()));
+        var result = await _sut.ExecuteAsync(Context(Roles.Admin), By(MacroAssignmentParameters.SwitchId, Guid.NewGuid()));
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(MacroAssignmentTextFormatter.SaveFailedMessage);

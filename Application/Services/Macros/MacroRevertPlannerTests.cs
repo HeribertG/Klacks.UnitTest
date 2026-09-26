@@ -30,35 +30,12 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
         _sut = new MacroRevertPlanner(_references, _history, new MacroOutputChannelInspector(), _dryRun);
     }
 
-    [TestCase(false, false, false)]
-    [TestCase(true, true, false)]
-    [TestCase(false, true, true)]
-    public async Task PlanRevert_NotExactlyOneSelector_IsRefused(bool bySwitch, bool byShift, bool byAbsenceType)
-    {
-        var request = new MacroRevertRequest(
-            bySwitch ? Guid.NewGuid() : null,
-            byShift ? Guid.NewGuid() : null,
-            byAbsenceType ? Guid.NewGuid() : null);
-
-        var plan = await _sut.PlanRevertAsync(request);
-
-        plan.Refusal!.ShouldContain("exactly one");
-    }
-
     [Test]
     public async Task PlanRevert_UnknownSwitchId_IsRefused()
     {
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(Guid.NewGuid(), null, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(Guid.NewGuid()));
 
         plan.Refusal!.ShouldContain("No macro switch with id");
-    }
-
-    [Test]
-    public async Task PlanRevert_NoSwitchRecordedForTheShift_IsRefused()
-    {
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(null, Guid.NewGuid(), null));
-
-        plan.Refusal!.ShouldContain("No macro switch made by the assistant");
     }
 
     [Test]
@@ -68,7 +45,7 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
         var entry = GivenEntry(holder, null, Guid.NewGuid());
         entry.RevertedByHistoryId = Guid.NewGuid();
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(entry.SwitchId, null, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         plan.Refusal!.ShouldContain("already undone");
     }
@@ -80,7 +57,7 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
         var entry = GivenEntry(holder, Guid.NewGuid(), null);
         entry.RevertOfHistoryId = Guid.NewGuid();
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(null, holder.Id, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         plan.Refusal!.ShouldContain("itself an undo");
     }
@@ -92,7 +69,7 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
         var older = GivenEntry(holder, null, Guid.NewGuid(), isLatest: false);
         GivenEntry(holder, older.NewMacroId, Guid.NewGuid());
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(older.SwitchId, null, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(older.SwitchId));
 
         plan.Refusal!.ShouldContain("switched again later");
     }
@@ -102,9 +79,9 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
     {
         var switchedTo = GivenMacro();
         var holder = GivenHolder(macroId: Guid.NewGuid());
-        GivenEntry(holder, null, switchedTo.Id);
+        var entry = GivenEntry(holder, null, switchedTo.Id);
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(null, holder.Id, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         plan.Refusal!.ShouldContain("changed outside the assistant");
     }
@@ -114,9 +91,9 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
     {
         var switchedTo = GivenMacro();
         var holder = GivenHolder(macroId: switchedTo.Id);
-        GivenEntry(holder, Guid.NewGuid(), switchedTo.Id);
+        var entry = GivenEntry(holder, Guid.NewGuid(), switchedTo.Id);
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(null, holder.Id, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         plan.Refusal!.ShouldContain("has been deleted");
     }
@@ -131,7 +108,7 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
         var changed = GivenHolder(macroId: Guid.NewGuid(), cutGroupId: orderId, name: "Cut 2");
         var rows = GivenSwitch(true, (intact, previous.Id, switchedTo.Id), (changed, previous.Id, switchedTo.Id));
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(rows[0].SwitchId, null, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(rows[0].SwitchId));
 
         plan.Refusal!.ShouldContain("cannot be undone as a whole");
         plan.Refusal!.ShouldContain("1 of its 2 change(s)");
@@ -141,7 +118,7 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
     }
 
     [Test]
-    public async Task PlanRevert_ByShift_RestoresEachShiftsOwnPreviousMacro()
+    public async Task PlanRevert_RestoresEachShiftsOwnPreviousMacro()
     {
         var firstPrevious = GivenMacro();
         var secondPrevious = GivenMacro();
@@ -151,11 +128,11 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
         var second = GivenHolder(macroId: switchedTo.Id, cutGroupId: orderId, name: "Cut 2");
         var rows = GivenSwitch(true, (first, firstPrevious.Id, switchedTo.Id), (second, secondPrevious.Id, switchedTo.Id));
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(null, second.Id, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(rows[0].SwitchId));
 
         plan.Refusal.ShouldBeNull();
         plan.SwitchId.ShouldBe(rows[0].SwitchId);
-        plan.Holder.ShouldBe(second);
+        plan.Holder.ShouldBe(first);
         plan.Changes.Select(change => change.To).ShouldBe(new[] { firstPrevious, secondPrevious });
         plan.Changes.ShouldAllBe(change => change.From == switchedTo);
         plan.Warnings.ShouldContain(warning => warning.Contains("gets its own previous macro back"));
@@ -166,9 +143,9 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
     {
         var switchedTo = GivenMacro();
         var holder = GivenHolder(macroId: switchedTo.Id);
-        GivenEntry(holder, null, switchedTo.Id);
+        var entry = GivenEntry(holder, null, switchedTo.Id);
 
-        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(null, holder.Id, null));
+        var plan = await _sut.PlanRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         plan.Refusal.ShouldBeNull();
         plan.Changes.Single().To.ShouldBeNull();
@@ -180,9 +157,9 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
         var previous = GivenMacro();
         var switchedTo = GivenMacro();
         var holder = GivenHolder(macroId: switchedTo.Id);
-        GivenEntry(holder, previous.Id, switchedTo.Id);
+        var entry = GivenEntry(holder, previous.Id, switchedTo.Id);
 
-        var preview = await _sut.PreviewRevertAsync(new MacroRevertRequest(null, holder.Id, null));
+        var preview = await _sut.PreviewRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         preview.Refusal.ShouldBeNull();
         await _dryRun.Received(1).RunAsync(
@@ -197,10 +174,10 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
     {
         var switchedTo = GivenMacro();
         var holder = GivenHolder(macroId: switchedTo.Id);
-        GivenEntry(holder, null, switchedTo.Id);
+        var entry = GivenEntry(holder, null, switchedTo.Id);
         GivenDryRunSamples(Sample(ComputedValue, null));
 
-        var preview = await _sut.PreviewRevertAsync(new MacroRevertRequest(null, holder.Id, null));
+        var preview = await _sut.PreviewRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         preview.Refusal.ShouldBeNull();
         preview.Plan.Warnings.ShouldContain(warning => warning.Contains(ReferenceRemovedText));
@@ -213,9 +190,9 @@ public class MacroRevertPlannerTests : MacroPlannerTestBase
     {
         var switchedTo = GivenMacro();
         var holder = GivenHolder(macroId: switchedTo.Id);
-        GivenEntry(holder, Guid.Empty, switchedTo.Id);
+        var entry = GivenEntry(holder, Guid.Empty, switchedTo.Id);
 
-        var preview = await _sut.PreviewRevertAsync(new MacroRevertRequest(null, holder.Id, null));
+        var preview = await _sut.PreviewRevertAsync(new MacroRevertRequest(entry.SwitchId));
 
         preview.Refusal.ShouldBeNull();
         preview.Plan.Changes.Single().To.ShouldBeNull();

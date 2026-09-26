@@ -220,7 +220,7 @@ public class MacroAssignmentTextFormatterTests
         text.ShouldContain($"switch id {outcome.SwitchId}");
         text.ShouldContain("switched from 'Old' to 'New'");
         text.ShouldNotContain(": stored ");
-        text.ShouldContain("can be undone");
+        text.ShouldContain($"call {MacroAssignmentSkillNames.Revert} with switchId {outcome.SwitchId}");
         text.ShouldContain("an undo itself is final");
     }
 
