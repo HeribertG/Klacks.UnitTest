@@ -14,8 +14,9 @@
 /// while huge surcharges with an unchanged result still pass), the time budget stops the check, and the grid has its documented size
 /// with unique sample descriptions. The seeded AllShift macro is used as a real original: the grid must
 /// drive every one of its channels, harmless clones pass and clones that touch its surcharges fail; a clone with a
-/// Wednesday surcharge and a total recomputed through a copy of its function passes, while calling the function of
-/// the original fails at runtime (known interpreter defect).
+/// Wednesday surcharge and a total recomputed through a copy of its function or through its own function passes, and so
+/// does a block that reads the total variable and the function the original already computed; reading a variable of the
+/// original to change a surcharge the original emits still fails, and so does a total with the surcharge added twice.
 /// </summary>
 
 using System.Diagnostics;
@@ -284,14 +285,24 @@ public class MacroRegressionCheckerTests
     }
 
     [Test]
-    public void CopyReadingAVariableOfTheOriginal_FailsAtRuntime_KnownInterpreterDefect()
+    public void CopyReadingAVariableOfTheOriginal_ForASurchargeOnAFreeChannel_Passes()
     {
         var result = _checker.Check(SundayNightBonus, SundayNightBonus + "\nOUTPUT 13, Bonus");
 
-        result.Passed.ShouldBeFalse();
-        result.FailureKind.ShouldBe(MacroRegressionFailureKind.CopyRuntimeError);
-        result.FailureMessage!.ShouldContain("although the original runs there");
-        result.FailureMessage.ShouldContain("has not been assigned a value");
+        result.Passed.ShouldBeTrue(result.FailureMessage ?? DescribeDeviations(result));
+        result.ComparedSamples.ShouldBe(ExpectedGridSize);
+    }
+
+    [Test]
+    public void CopyReadingAVariableOfTheOriginal_ForTheResult_PassesOnlyWithExactlyTheAddedSurcharge()
+    {
+        var passing = _checker.Check(SundayNightBonus, SundayNightBonus + "\nOUTPUT 13, Bonus\nOUTPUT 1, Hour + Bonus");
+        var failing = _checker.Check(SundayNightBonus, SundayNightBonus + "\nOUTPUT 13, Bonus\nOUTPUT 1, Hour + Bonus + 1");
+
+        passing.Passed.ShouldBeTrue(passing.FailureMessage ?? DescribeDeviations(passing));
+        failing.Passed.ShouldBeFalse();
+        failing.TotalDeviationCount.ShouldBe(ExpectedGridSize);
+        failing.Deviations.ShouldAllBe(d => d.Channel == 1);
     }
 
     [Test]
@@ -527,17 +538,54 @@ public class MacroRegressionCheckerTests
     }
 
     [Test]
-    public void AllShift_BlockCallingTheFunctionOfTheOriginal_FailsAtRuntime_KnownInterpreterDefect()
+    public void AllShift_BlockCallingTheFunctionOfTheOriginal_Passes()
     {
         var original = AllShiftScript();
         var block = SeededMacroScripts.AllShiftWednesdayBonusBlock(SeededMacroScripts.OriginalFunctionName);
 
         var result = _checker.Check(original, original + "\n" + block);
 
+        result.Passed.ShouldBeTrue(result.FailureMessage ?? DescribeDeviations(result));
+        result.ComparedSamples.ShouldBe(ExpectedGridSize);
+    }
+
+    [Test]
+    public void AllShift_BlockReadingTheTotalAndTheFunctionOfTheOriginal_Passes()
+    {
+        var original = AllShiftScript();
+
+        var result = _checker.Check(original, original + "\n" + SeededMacroScripts.WednesdayBonusReadingTheOriginal);
+
+        result.Passed.ShouldBeTrue(result.FailureMessage ?? DescribeDeviations(result));
+        result.ComparedSamples.ShouldBe(ExpectedGridSize);
+        result.SkippedSamples.ShouldBe(0);
+    }
+
+    [Test]
+    public void AllShift_BlockReadingTheTotalOfTheOriginal_ButAddingTheSurchargeTwice_Fails()
+    {
+        var original = AllShiftScript();
+        var block = SeededMacroScripts.WednesdayBonusReadingTheOriginal.Replace(
+            "Round(TotalBonus, 2) + WednesdayBonus", "Round(TotalBonus, 2) + WednesdayBonus * 2");
+
+        var result = _checker.Check(original, original + "\n" + block);
+
         result.Passed.ShouldBeFalse();
-        result.FailureKind.ShouldBe(MacroRegressionFailureKind.CopyRuntimeError);
-        result.FailureMessage!.ShouldContain(SeededMacroScripts.OriginalFunctionName);
-        result.FailureMessage.ShouldContain("has not been assigned a value");
+        result.FailureMessage.ShouldBeNull();
+        result.TotalDeviationCount.ShouldBe(SamplesPerWeekday);
+        result.Deviations.ShouldAllBe(d => d.Channel == 1 && d.SampleDescription.Contains("weekday 3"));
+    }
+
+    [Test]
+    public void AllShift_BlockReadingAVariableOfTheOriginal_ToChangeASurchargeTheOriginalEmits_Fails()
+    {
+        var original = AllShiftScript();
+
+        var result = _checker.Check(original, original + "\nOUTPUT 10, BonusNight\n");
+
+        result.Passed.ShouldBeFalse();
+        result.FailureMessage.ShouldBeNull();
+        result.Deviations.ShouldAllBe(d => d.Channel == 10);
     }
 
     [Test]

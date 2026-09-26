@@ -4,9 +4,10 @@
 /// Reads the template macros shipped with Klacks straight from the seed code (MacrosSeed plus the
 /// AddAllShiftAdditiveMacro migration), so tests work with the real scripts and names instead of copies.
 /// AllShiftWednesdayBonusBlock builds a block appended to AllShift that adds a Wednesday surcharge on channel 13
-/// and sets the result channel 1 to the original total plus that surcharge. The block cannot read the variables
-/// of AllShift, so it recomputes the total from the IMPORT symbols through the given function: the original
-/// FUNCTION of AllShift, or a copy of it under another name that the block declares itself.
+/// and sets the result channel 1 to the original total plus that surcharge, recomputing the total from the IMPORT
+/// symbols through the given function: the original FUNCTION of AllShift, or a copy of it under another name that the
+/// block declares itself. WednesdayBonusReadingTheOriginal is the shorter block appended to AllShift that reads what
+/// AllShift already computed: its total variable TotalBonus and its FUNCTION SegBonusForType.
 /// ShippedScriptVariants lists every macro script literal Klacks has shipped (the MacrosSeed rows and the scripts the
 /// macro-content migrations insert, rewrite or match), keyed by source and position so the keys do not depend on the
 /// line endings of the checkout.
@@ -57,6 +58,13 @@ public static class SeededMacroScripts
         + "OUTPUT 1, NewTotal";
 
     private const string FunctionPlaceholder = "F(";
+
+    public const string WednesdayBonusReadingTheOriginal =
+        "DIM WednesdayBonus\n"
+        + "WednesdayBonus = 0\n"
+        + "IF Weekday = 3 THEN WednesdayBonus = Hour * 0.1 + " + OriginalFunctionName + "(FromHour, UntilHour, Holiday, Weekday, 10) ENDIF\n"
+        + "OUTPUT 13, WednesdayBonus\n"
+        + "OUTPUT 1, Round(TotalBonus, 2) + WednesdayBonus";
 
     private const string UpSuffix = ":Up";
     private const string DownSuffix = ":Down";

@@ -6,12 +6,12 @@
 /// template names), unsupported channels, invalid scripts and regression deviations are refused before anything is
 /// stored, and the regression check runs under the cancellation token of the skill call. An AllShift copy with a
 /// surcharge on a free channel and a result recomputed from the IMPORT symbols (through a copied function) is
-/// stored under the result-channel rule of the check. Tests with the
-/// real validator, channel inspector and regression checker run end to end, including the known interpreter
-/// defect that makes variables of the original unreadable in the appended block; the refusal must then carry
-/// the guidance for writing a block that works despite the defect. A regression abort that is not a runtime
-/// failure of the copy (original does not compile, no comparable input, time budget, result total of the copy beyond
-/// the decimal range) carries no such guidance,
+/// stored under the result-channel rule of the check, and so is a block that reads the total variable and the FUNCTION
+/// of the real AllShift seed. Tests with the real validator, channel inspector and regression checker run end to end:
+/// a block may read the variables of the original, in any OUTPUT order. A refusal by the validator or a runtime failure
+/// of the copy carries the guidance on what the appended block sees and may declare; a regression abort that is not a
+/// runtime failure of the copy (original does not compile, no comparable input, time budget, result total of the copy
+/// beyond the decimal range) carries no such guidance,
 /// and a block ending in a comment line is refused by the channel scan on the trimmed block.
 /// </summary>
 
@@ -39,7 +39,7 @@ public class ExtendMacroSkillTests
 
     private const string AdditiveBlock = "OUTPUT 13, Hour * 0.5";
     private const string UnassignedVariableText = "has not been assigned a value";
-    private const string OutputLimitationHintText = "every OUTPUT statement discards the oldest declared variable";
+    private const string AppendedBlockHintText = "The appended block runs after the original script";
     private const string TrailingCommentText = "comment on the last line of the script";
 
     private readonly Guid _sourceId = Guid.NewGuid();
@@ -167,7 +167,7 @@ public class ExtendMacroSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message!.ShouldContain("compile error: already declared");
-        result.Message.ShouldContain(OutputLimitationHintText);
+        result.Message.ShouldContain(AppendedBlockHintText);
         _checker.DidNotReceive().Check(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
     }
@@ -204,7 +204,7 @@ public class ExtendMacroSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message!.ShouldContain("fails at test input [weekday 3]: boom");
-        result.Message.ShouldContain(OutputLimitationHintText);
+        result.Message.ShouldContain(AppendedBlockHintText);
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
     }
 
@@ -222,7 +222,7 @@ public class ExtendMacroSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message!.ShouldContain(reason);
-        result.Message.ShouldNotContain(OutputLimitationHintText);
+        result.Message.ShouldNotContain(AppendedBlockHintText);
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
     }
 
@@ -256,7 +256,7 @@ public class ExtendMacroSkillTests
     [TestCase("DIM EarlyBonus\nEarlyBonus = 0\nIF Weekday = 3 THEN EarlyBonus = Hour * 0.1 ENDIF\nOUTPUT 13, EarlyBonus", true)]
     [TestCase("IMPORT Holiday\nOUTPUT 14, Holiday * Hour", true)]
     [TestCase("DIM A, B\nA = 0\nB = 0\nIF Weekday = 3 THEN\nA = Hour * 0.1\nB = Hour * 0.2\nENDIF\nOUTPUT 13, A\nOUTPUT 14, B", true)]
-    [TestCase("DIM A, B\nA = 0\nB = 0\nIF Weekday = 3 THEN\nA = Hour * 0.1\nB = Hour * 0.2\nENDIF\nOUTPUT 14, B\nOUTPUT 13, A", false)]
+    [TestCase("DIM A, B\nA = 0\nB = 0\nIF Weekday = 3 THEN\nA = Hour * 0.1\nB = Hour * 0.2\nENDIF\nOUTPUT 14, B\nOUTPUT 13, A", true)]
     [TestCase("OUTPUT 10, 1", false)]
     [TestCase("DIM Extra, NewTotal\nExtra = Hour * 0.5\nNewTotal = Hour + Extra\nOUTPUT 13, Extra\nOUTPUT 1, NewTotal", true)]
     [TestCase("DIM Extra, NewTotal\nExtra = Hour * 0.5\nNewTotal = Hour + Extra + 0.01\nOUTPUT 13, Extra\nOUTPUT 1, NewTotal", false)]
@@ -316,26 +316,59 @@ public class ExtendMacroSkillTests
     }
 
     [Test]
-    public async Task Extend_BlockReadingAVariableOfTheOriginal_IsRefusedByTheValidator_KnownInterpreterDefect()
+    public async Task Extend_BlockReadingAVariableOfTheOriginal_WithRealComponents_IsStored()
     {
         var result = await CreateSkillWithRealComponents().ExecuteAsync(Ctx(), Parameters(block: "OUTPUT 13, Bonus"));
 
-        result.Success.ShouldBeFalse();
-        result.Message!.ShouldContain(UnassignedVariableText);
-        result.Message.ShouldContain(OutputLimitationHintText);
-        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(
+            Arg.Is<PostCommand>(c => c.model.Content == OriginalScript + "\nOUTPUT 13, Bonus"), Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task Extend_ConditionalReadOfAVariableOfTheOriginal_IsRefusedByTheRegressionCheck_KnownInterpreterDefect()
+    public async Task Extend_ConditionalReadOfAVariableOfTheOriginal_WithRealComponents_IsStored()
     {
         var result = await CreateSkillWithRealComponents().ExecuteAsync(
             Ctx(), Parameters(block: "IF Weekday = 3 THEN\nOUTPUT 13, Bonus\nENDIF"));
 
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Extend_BlockChangingASurchargeOfTheOriginalThroughItsVariable_WithRealComponents_IsRefused()
+    {
+        var result = await CreateSkillWithRealComponents().ExecuteAsync(Ctx(), Parameters(block: "OUTPUT 10, Bonus"));
+
         result.Success.ShouldBeFalse();
-        result.Message!.ShouldContain("fails at test input [weekday 3");
-        result.Message.ShouldContain(UnassignedVariableText);
-        result.Message.ShouldContain(OutputLimitationHintText);
+        result.Message!.ShouldContain("channel 10");
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Extend_AllShiftBlockReadingItsTotalAndItsFunction_WithRealComponents_IsStored()
+    {
+        _mediator.Send(Arg.Any<ListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MacroResource>
+            {
+                new()
+                {
+                    Id = _sourceId,
+                    Name = "AllShift",
+                    Content = SeededMacroScripts.AllShiftScript(),
+                    Type = (int)MacroFunctionEnum.Standard,
+                    Category = MacroCategoryEnum.Shift,
+                    Origin = MacroOrigin.Seed,
+                    Description = new MultiLanguage()
+                }
+            }.AsEnumerable());
+        var block = SeededMacroScripts.WednesdayBonusReadingTheOriginal;
+
+        var result = await CreateSkillWithRealComponents().ExecuteAsync(Ctx(), Parameters(block: block));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message!.ShouldContain("compared 672 test inputs (0 skipped");
+        await _mediator.Received(1).Send(
+            Arg.Is<PostCommand>(c => c.model.Content.EndsWith(block)), Arg.Any<CancellationToken>());
     }
 }
