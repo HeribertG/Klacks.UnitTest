@@ -27,6 +27,7 @@ public class PeriodOverdueDetectorTests
     private ISealedDayRepository _sealedDayRepository = null!;
     private IWeekConfiguration _weekConfiguration = null!;
     private IScheduleActivityProbe _activityProbe = null!;
+    private ISettingsReader _settingsReader = null!;
     private PeriodOverdueDetector _sut = null!;
 
     [SetUp]
@@ -36,6 +37,7 @@ public class PeriodOverdueDetectorTests
         _sealedDayRepository = Substitute.For<ISealedDayRepository>();
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
         _activityProbe = Substitute.For<IScheduleActivityProbe>();
+        _settingsReader = Substitute.For<ISettingsReader>();
         _activityProbe.HasWorkInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(true);
         _sealedDayRepository.GetRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
@@ -59,7 +61,7 @@ public class PeriodOverdueDetectorTests
     {
         var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
         return new PeriodOverdueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            _activityProbe, NullLogger<PeriodOverdueDetector>.Instance, clock);
+            _activityProbe, NullLogger<PeriodOverdueDetector>.Instance, clock, _settingsReader);
     }
 
     private void StubGroups(List<Group> groups)
@@ -299,7 +301,7 @@ public class PeriodOverdueDetectorTests
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
         _sut = new PeriodOverdueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            _activityProbe, NullLogger<PeriodOverdueDetector>.Instance, clock);
+            _activityProbe, NullLogger<PeriodOverdueDetector>.Instance, clock, _settingsReader);
 
         var events = await _sut.DetectAsync();
 

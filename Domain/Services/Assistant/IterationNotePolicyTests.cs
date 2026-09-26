@@ -18,6 +18,7 @@ public class IterationNotePolicyTests
 {
     private const string PendingNote = "pending-note";
     private const string RecipeNote = "recipe-note";
+    private const string CompletionNote = "completion-note";
 
     [Test]
     public void ConfirmationGate_WinsOverRecipeAndPlanNudge()
@@ -47,6 +48,29 @@ public class IterationNotePolicyTests
 
         IterationNotePolicy.Select(false, PendingNote, false, RecipeNote, true, 1)
             .ShouldBeNull();
+    }
+
+    [Test]
+    public void ReadOnlyRecipeCompletionNote_AppliesWhenNothingIsForced()
+    {
+        IterationNotePolicy.Select(false, PendingNote, false, null, false, 1, CompletionNote)
+            .ShouldBe(CompletionNote);
+    }
+
+    [Test]
+    public void ForcedStepAndConfirmation_WinOverTheCompletionNote()
+    {
+        IterationNotePolicy.Select(false, PendingNote, true, RecipeNote, false, 1, CompletionNote)
+            .ShouldBe(RecipeNote);
+        IterationNotePolicy.Select(true, PendingNote, true, RecipeNote, false, 1, CompletionNote)
+            .ShouldBe(PendingNote);
+    }
+
+    [Test]
+    public void CompletionNote_WinsOverThePlanNudge()
+    {
+        IterationNotePolicy.Select(false, PendingNote, false, null, true, 0, CompletionNote)
+            .ShouldBe(CompletionNote);
     }
 
     [Test]

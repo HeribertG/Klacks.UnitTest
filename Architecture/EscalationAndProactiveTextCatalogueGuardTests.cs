@@ -43,7 +43,7 @@ public class EscalationAndProactiveTextCatalogueGuardTests
     private const int ExpectedPluginPacks = 21;
     private const int ExpectedEscalationKeys = 5;
     private const int ExpectedProactiveKeys = 5;
-    private const int ExpectedAssistantTextsKeys = 29;
+    private const int ExpectedAssistantTextsKeys = 30;
     private const string Bold = "**";
     private const char LineBreak = '\n';
     private const int VariationSelector16 = 0xFE0F;

@@ -37,6 +37,7 @@ public class ClosePeriodByGroupCommandHandlerTests
     private IPeriodValidationLoader _validationLoader = null!;
     private IComplianceEscalationService _escalationService = null!;
     private IUserService _userService = null!;
+    private IPlanningAudienceResolver _audienceResolver = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<ClosePeriodByGroupCommandHandler> _logger = null!;
     private ClosePeriodByGroupCommandHandler _handler = null!;
@@ -60,6 +61,9 @@ public class ClosePeriodByGroupCommandHandlerTests
         _escalationService = Substitute.For<IComplianceEscalationService>();
         _userService = Substitute.For<IUserService>();
         _userService.GetDisplayName().Returns("Ada Lovelace");
+        _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string>());
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ClosePeriodByGroupCommandHandler>>();
 
@@ -77,6 +81,7 @@ public class ClosePeriodByGroupCommandHandlerTests
             _validationLoader,
             _escalationService,
             _userService,
+            _audienceResolver,
             _unitOfWork,
             _logger);
     }

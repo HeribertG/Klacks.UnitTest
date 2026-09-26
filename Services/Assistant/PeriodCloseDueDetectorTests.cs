@@ -25,6 +25,7 @@ public class PeriodCloseDueDetectorTests
     private ISealedDayRepository _sealedDayRepository = null!;
     private IWeekConfiguration _weekConfiguration = null!;
     private IScheduleActivityProbe _activityProbe = null!;
+    private ISettingsReader _settingsReader = null!;
     private PeriodCloseDueDetector _sut = null!;
 
     [SetUp]
@@ -34,6 +35,7 @@ public class PeriodCloseDueDetectorTests
         _sealedDayRepository = Substitute.For<ISealedDayRepository>();
         _weekConfiguration = Substitute.For<IWeekConfiguration>();
         _activityProbe = Substitute.For<IScheduleActivityProbe>();
+        _settingsReader = Substitute.For<ISettingsReader>();
         _activityProbe.HasWorkInRangeAsync(Arg.Any<Group>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(true);
         StubWeekStart(DayOfWeek.Monday);
@@ -55,7 +57,7 @@ public class PeriodCloseDueDetectorTests
     {
         var clock = new FixedCompanyClock(new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
         return new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock);
+            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock, _settingsReader);
     }
 
     private void StubGroups(List<Group> groups)
@@ -201,7 +203,7 @@ public class PeriodCloseDueDetectorTests
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
         _sut = new PeriodCloseDueDetector(_groupRepository, _sealedDayRepository, _weekConfiguration,
-            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock);
+            _activityProbe, NullLogger<PeriodCloseDueDetector>.Instance, clock, _settingsReader);
 
         var events = await _sut.DetectAsync();
 

@@ -131,4 +131,61 @@ public class TurnClosingNoticesTests
         notice.ShouldStartWith(Klacks.Api.Domain.Constants.MutationGuardConstants.RecipeStepFailedNoticePrefix);
         notice.ShouldContain("Nightshift");
     }
+
+    private const string StoredClaim = "Erledigt – ich habe 3 Tage als Abschlussfrist gespeichert.";
+
+    [Test]
+    public void NothingStored_ClaimAfterReadOnlyRecipe_AppendsTheLocalizedNotice()
+    {
+        var calls = new List<LLMFunctionCall> { Call("get_period_close_schedule", success: true, "Data") };
+
+        var notice = TurnClosingNotices.NothingStored(true, StoredClaim, calls, "de");
+
+        GracefulCorrectionTexts.TryGetText(GracefulCorrectionTexts.RecipeNothingStoredNotice, "de", out var german)
+            .ShouldBeTrue();
+        notice.ShouldBe(RecipeEngineDefaults.NothingStoredNoticeSeparator + german);
+    }
+
+    [Test]
+    public void NothingStored_WithoutReadOnlyRecipe_IsEmpty()
+    {
+        TurnClosingNotices.NothingStored(false, StoredClaim, new List<LLMFunctionCall>(), "de").ShouldBeEmpty();
+    }
+
+    [Test]
+    public void NothingStored_HonestOffer_IsEmpty()
+    {
+        TurnClosingNotices.NothingStored(
+                true, "Bern schliesst am 05.10. Soll ich 3 Tage speichern?", new List<LLMFunctionCall>(), "de")
+            .ShouldBeEmpty();
+    }
+
+    [Test]
+    public void NothingStored_AuxiliaryAndParticipleInDifferentSentences_IsNoClaim()
+    {
+        const string honest = "Es ist noch kein Nachlauf gespeichert, deshalb schliesst Klacksy nichts ab. "
+            + "Dazu müssten alle Admins «Voll autonom» gewählt haben.";
+
+        TurnClosingNotices.NothingStored(true, honest, new List<LLMFunctionCall>(), "de").ShouldBeEmpty();
+    }
+
+    [Test]
+    public void NothingStored_SuccessfulWriteInTheTurn_IsEmpty()
+    {
+        var calls = new List<LLMFunctionCall> { Call("set_period_close_lag", success: true, "stored") };
+
+        TurnClosingNotices.NothingStored(true, StoredClaim, calls, "de").ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Collect_ReadOnlyRecipeClaim_AddsTheNothingStoredNotice()
+    {
+        var calls = new List<LLMFunctionCall> { Call("get_period_close_schedule", success: true, "Data") };
+
+        var notices = TurnClosingNotices.Collect(
+            false, false, StoredClaim, calls, false, Substitute.For<ILogger>(), readOnlyRecipeCompleted: true,
+            language: "en");
+
+        notices.ShouldBe(new[] { RecipeEngineDefaults.NothingStoredNoticeSeparator + RecipeEngineDefaults.NothingStoredNotice });
+    }
 }

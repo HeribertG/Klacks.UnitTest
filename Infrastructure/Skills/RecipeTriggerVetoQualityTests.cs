@@ -51,7 +51,7 @@ public class RecipeTriggerVetoQualityTests
     // below; the create-verb guard (anyWordStart: erstell/anleg/erfass/create/crée/crea) that
     // routes "Erstelle einen Dienst, wie fange ich an?" to create-shift-order is untouched and
     // must not be exempted by any test that checks it.
-    private static readonly string[] VetoExemptRecipes = ["setup-consultation", "plan-delivery-deadline"];
+    private static readonly string[] VetoExemptRecipes = ["setup-consultation", "plan-delivery-deadline", "period-close-schedule"];
 
     /// <summary>
     /// The W1b obligation: noneOf carries question words for de/en/fr/it only, so an information
