@@ -278,6 +278,110 @@ public class ThoroughRecalculationBackgroundServiceTests
         _sut.PendingRequestCount.ShouldBe(capacity);
     }
 
+    [Test]
+    public async Task ProcessAllUnsealed_FindsItsOwnSpan_AndWorksMonthByMonth()
+    {
+        var clientId = Guid.NewGuid();
+        var earliest = AddWork(clientId, new DateOnly(2024, 1, 15), WorkLockLevel.None);
+        var middle = AddWork(clientId, new DateOnly(2025, 7, 3), WorkLockLevel.None);
+        var latest = AddWork(clientId, new DateOnly(2026, 6, 10), WorkLockLevel.None);
+        AddWork(clientId, new DateOnly(2020, 1, 1), WorkLockLevel.Closed);
+        AddWork(clientId, new DateOnly(2030, 1, 1), WorkLockLevel.Approved);
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculationOfAllUnsealed().ShouldBeTrue();
+        await RunUntilCompletionNotificationAsync();
+
+        foreach (var work in new[] { earliest, middle, latest })
+        {
+            await _workMacroService.Received(1).ProcessWorkMacroAsync(Arg.Is<Work>(w => w.Id == work.Id));
+        }
+
+        await _workMacroService.Received(3).ProcessWorkMacroAsync(Arg.Any<Work>());
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(
+            new DateOnly(2024, 1, 15), new DateOnly(2024, 1, 31), null, null);
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(
+            new DateOnly(2024, 2, 1), new DateOnly(2024, 2, 29), null, null);
+        await _periodHoursService.Received(1).RecalculateAllClientsAsync(
+            new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 10), null, null);
+        await _periodHoursService.Received(30).RecalculateAllClientsAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), null, null);
+        await _notificationService.Received(1).NotifyThoroughRecalculationCompleted(
+            Arg.Is<ThoroughRecalculationCompletedDto>(dto =>
+                dto.StartDate == new DateOnly(2024, 1, 15)
+                && dto.EndDate == new DateOnly(2026, 6, 10)
+                && dto.ProcessedWorks == 3
+                && dto.SelectedGroup == null
+                && dto.AnalyseToken == null));
+    }
+
+    [Test]
+    public async Task ProcessAllUnsealed_SealedWorksAndScenarioWorksAndDeletedWorks_AreNotProcessed()
+    {
+        var clientId = Guid.NewGuid();
+        var open = AddWork(clientId, new DateOnly(2026, 6, 10), WorkLockLevel.None);
+        var sealedWork = AddWork(clientId, new DateOnly(2026, 6, 11), WorkLockLevel.Closed);
+        var scenario = AddWork(clientId, new DateOnly(2026, 6, 12), WorkLockLevel.None);
+        scenario.AnalyseToken = Guid.NewGuid();
+        var deleted = AddWork(clientId, new DateOnly(2026, 6, 13), WorkLockLevel.None);
+        deleted.IsDeleted = true;
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculationOfAllUnsealed();
+        await RunUntilCompletionNotificationAsync();
+
+        await _workMacroService.Received(1).ProcessWorkMacroAsync(Arg.Is<Work>(w => w.Id == open.Id));
+        await _workMacroService.DidNotReceive().ProcessWorkMacroAsync(
+            Arg.Is<Work>(w => w.Id == sealedWork.Id || w.Id == scenario.Id || w.Id == deleted.Id));
+        (await _context.Work.SingleAsync(w => w.Id == sealedWork.Id)).Surcharges.ShouldBe(OriginalSurcharge);
+    }
+
+    [Test]
+    public async Task ProcessAllUnsealed_AnUnsealedBreakOutsideTheWorkSpan_ExtendsTheSpan_ASealedOneDoesNot()
+    {
+        var clientId = Guid.NewGuid();
+        AddWork(clientId, new DateOnly(2026, 6, 10), WorkLockLevel.None);
+        AddBreak(clientId, new DateOnly(2026, 3, 5), WorkLockLevel.None);
+        AddBreak(clientId, new DateOnly(2019, 1, 1), WorkLockLevel.Closed);
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculationOfAllUnsealed();
+        await RunUntilCompletionNotificationAsync();
+
+        await _breakMacroService.Received(1).ReprocessAllBreaksAsync(
+            new DateOnly(2026, 3, 5), new DateOnly(2026, 3, 31), Arg.Any<List<Guid>?>());
+        await _breakMacroService.DidNotReceive().ReprocessAllBreaksAsync(
+            new DateOnly(2019, 1, 1), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>());
+        await _notificationService.Received(1).NotifyThoroughRecalculationCompleted(
+            Arg.Is<ThoroughRecalculationCompletedDto>(dto =>
+                dto.StartDate == new DateOnly(2026, 3, 5) && dto.EndDate == new DateOnly(2026, 6, 10)));
+    }
+
+    [Test]
+    public async Task ProcessAllUnsealed_NothingUnsealed_SendsOneCompletionAndProcessesNothing()
+    {
+        AddWork(Guid.NewGuid(), new DateOnly(2026, 6, 10), WorkLockLevel.Closed);
+        await _context.SaveChangesAsync();
+
+        _sut.QueueRecalculationOfAllUnsealed();
+        await RunUntilCompletionNotificationAsync();
+
+        await _workMacroService.DidNotReceiveWithAnyArgs().ProcessWorkMacroAsync(default!);
+        await _periodHoursService.DidNotReceiveWithAnyArgs().RecalculateAllClientsAsync(default, default, null, null);
+        await _notificationService.Received(1).NotifyThoroughRecalculationCompleted(
+            Arg.Is<ThoroughRecalculationCompletedDto>(dto => dto.ProcessedWorks == 0 && dto.ProcessedBreaks == 0));
+    }
+
+    [Test]
+    public void QueueRecalculationOfAllUnsealed_IdenticalPendingRequest_IsCoalesced_AndDiffersFromAWindowRequest()
+    {
+        _sut.QueueRecalculationOfAllUnsealed().ShouldBeTrue();
+        _sut.QueueRecalculationOfAllUnsealed().ShouldBeTrue();
+        _sut.QueueRecalculation(DateOnly.MinValue, DateOnly.MaxValue, null, null).ShouldBeTrue();
+
+        _sut.PendingRequestCount.ShouldBe(2);
+    }
+
     private Work AddWork(Guid clientId, DateOnly date, WorkLockLevel lockLevel)
     {
         var work = new Work
@@ -294,6 +398,20 @@ public class ThoroughRecalculationBackgroundServiceTests
         };
         _context.Work.Add(work);
         return work;
+    }
+
+    private Break AddBreak(Guid clientId, DateOnly date, WorkLockLevel lockLevel)
+    {
+        var breakEntry = new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            AbsenceId = Guid.NewGuid(),
+            CurrentDate = date,
+            LockLevel = lockLevel,
+        };
+        _context.Break.Add(breakEntry);
+        return breakEntry;
     }
 
     private WorkChange AddWorkChange(Work work)
