@@ -133,6 +133,32 @@ public class LLMConversationManagerTests
     }
 
     [Test]
+    public async Task SaveConversationMessagesAsync_ATitleLongerThanTheColumn_IsCutToTheColumnLength()
+    {
+        var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1" };
+        var pastedLink = "https://example.test/" + new string('a', LLMConversation.TitleMaxLength * 2);
+
+        await _manager.SaveConversationMessagesAsync(conversation, pastedLink + " what is this", "answer", "model-1");
+
+        await _repository.Received(1).RecordConversationTurnAsync(
+            conversation, 2, Arg.Any<DateTime>(), "model-1", pastedLink[..LLMConversation.TitleMaxLength]);
+    }
+
+    [Test]
+    public async Task SaveConversationMessagesAsync_TheCutNeverSplitsASurrogatePair()
+    {
+        var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1" };
+        const string Emoji = "\U0001F600";
+        var message = new string('a', LLMConversation.TitleMaxLength - 1) + Emoji + "tail";
+
+        await _manager.SaveConversationMessagesAsync(conversation, message, "answer", "model-1");
+
+        await _repository.Received(1).RecordConversationTurnAsync(
+            conversation, 2, Arg.Any<DateTime>(), "model-1",
+            Arg.Is<string>(title => title == new string('a', LLMConversation.TitleMaxLength - 1)));
+    }
+
+    [Test]
     public async Task TrackUsageAsync_AddsTheTurnTotalsThroughTheRepository()
     {
         var conversation = new LLMConversation { ConversationId = "c-1", UserId = "user-1" };
