@@ -77,4 +77,37 @@ public class ProactiveGovernancePeriodAutoCloseDisplayTests
 
         dto.Rules.Single().EffectiveMaxAction.ShouldBe((int)ProactiveMaxAction.Hint);
     }
+
+    [Test]
+    public async Task PeriodAutoClose_ReportsFixedRunLimitInsteadOfBudget()
+    {
+        Given(AutonomyLevel.FullyAutonomous, AgentTriggerKinds.PeriodAutoClose, ProactiveMaxAction.Execute);
+
+        var dto = await _sut.Handle(new GetProactiveGovernanceQuery(), CancellationToken.None);
+
+        var rule = dto.Rules.Single();
+        rule.BudgetApplies.ShouldBeFalse();
+        rule.FixedRunLimit.ShouldBe(PeriodAutoClose.MaxClosesPerTick);
+    }
+
+    [Test]
+    public async Task NextPeriodSchedulingDue_KeepsTheBudgetAndHasNoFixedRunLimit()
+    {
+        Given(AutonomyLevel.FullyAutonomous, AgentTriggerKinds.NextPeriodSchedulingDue, ProactiveMaxAction.Execute);
+
+        var dto = await _sut.Handle(new GetProactiveGovernanceQuery(), CancellationToken.None);
+
+        var rule = dto.Rules.Single();
+        rule.BudgetApplies.ShouldBeTrue();
+        rule.FixedRunLimit.ShouldBeNull();
+    }
+
+    [Test]
+    public void FixedRunLimits_OnlyListGovernedKinds()
+    {
+        foreach (var kind in ProactiveGovernanceDefaults.FixedRunLimits.Keys)
+        {
+            ProactiveGovernanceDefaults.IsGovernedKind(kind).ShouldBeTrue();
+        }
+    }
 }

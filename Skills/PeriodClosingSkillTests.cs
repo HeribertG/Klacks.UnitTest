@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -133,7 +134,7 @@ public class PeriodClosingSkillTests
     [Test]
     public async Task ReopenPeriod_UnsealsWithReason_AndVerifiesDayLocksGone()
     {
-        _mediator.Send(Arg.Any<ReopenPeriodByGroupCommand>(), Arg.Any<CancellationToken>()).Returns(7);
+        _mediator.Send(Arg.Any<ReopenPeriodByGroupCommand>(), Arg.Any<CancellationToken>()).Returns(Reopened(new PeriodUnsealCounts(0, 0, 7, 0)));
         _mediator.Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>())
             .Returns(new List<SealedPeriodSummaryDto> { Day(1, false), Day(2, false) });
         var skill = new ReopenPeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
@@ -148,9 +149,48 @@ public class PeriodClosingSkillTests
     }
 
     [Test]
+    public async Task ReopenPeriod_ReportsRestoredConfirmedAndApproved_WithoutClaimingEverythingIsOpen()
+    {
+        _mediator.Send(Arg.Any<ReopenPeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Reopened(new PeriodUnsealCounts(RestoredConfirmed: 3, RestoredApproved: 2, RestoredNone: 5, WithoutRecordedLevel: 0)));
+        _mediator.Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedPeriodSummaryDto> { Day(1, false) });
+        var skill = new ReopenPeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
+
+        var result = await skill.ExecuteAsync(Ctx(), Range("reason", "payroll correction"));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("3 back to Confirmed");
+        result.Message.ShouldContain("2 back to Approved");
+        result.Message.ShouldContain("5 open again");
+        result.Message.ShouldNotContain("NOT restored");
+        result.Message.ShouldNotContain("editable again");
+    }
+
+    [Test]
+    public async Task ReopenPeriod_SaysPlainlyWhatWasNotRestored_ForEntriesWithoutRecordedLevel()
+    {
+        _mediator.Send(Arg.Any<ReopenPeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Reopened(new PeriodUnsealCounts(RestoredConfirmed: 0, RestoredApproved: 0, RestoredNone: 0, WithoutRecordedLevel: 4)));
+        _mediator.Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedPeriodSummaryDto> { Day(1, false) });
+        var skill = new ReopenPeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
+
+        var result = await skill.ExecuteAsync(Ctx(), Range("reason", "payroll correction"));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("4 entry(ies) were sealed before the pre-close state was recorded");
+        result.Message.ShouldContain("NOT restored");
+        result.Message.ShouldContain("payroll exports");
+    }
+
+    private static PeriodReopenResult Reopened(PeriodUnsealCounts entries) =>
+        new(entries.Total + 30, 30, entries);
+
+    [Test]
     public async Task ReopenPeriod_ReturnsError_WhenDayLocksRemain()
     {
-        _mediator.Send(Arg.Any<ReopenPeriodByGroupCommand>(), Arg.Any<CancellationToken>()).Returns(7);
+        _mediator.Send(Arg.Any<ReopenPeriodByGroupCommand>(), Arg.Any<CancellationToken>()).Returns(Reopened(new PeriodUnsealCounts(0, 0, 7, 0)));
         _mediator.Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>())
             .Returns(new List<SealedPeriodSummaryDto> { Day(1, true) });
         var skill = new ReopenPeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());

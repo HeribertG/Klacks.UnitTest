@@ -88,6 +88,38 @@ public class ContainerWorkCascadeServiceTests
     }
 
     [Test]
+    public async Task UpdateLockLevelAsync_DropsThePreSealStateOfTheChildren()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childWork = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            PreSealLockLevel = Klacks.Api.Domain.Enums.WorkLockLevel.Approved, PreSealSealedBy = "supervisor",
+            PreSealSealedAt = DateTime.UtcNow.AddDays(-2)
+        };
+        var childBreak = new Break
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date,
+            PreSealLockLevel = Klacks.Api.Domain.Enums.WorkLockLevel.Confirmed, PreSealSealedBy = "planner"
+        };
+        _context.Work.AddRange(parent, childWork);
+        _context.Break.Add(childBreak);
+        await _context.SaveChangesAsync();
+
+        await _sut.UpdateLockLevelAsync(parent.Id, Klacks.Api.Domain.Enums.WorkLockLevel.Confirmed, "planner");
+        await _context.SaveChangesAsync();
+
+        var reloadedWork = await _context.Work.SingleAsync(w => w.Id == childWork.Id);
+        var reloadedBreak = await _context.Break.SingleAsync(b => b.Id == childBreak.Id);
+        reloadedWork.LockLevel.ShouldBe(Klacks.Api.Domain.Enums.WorkLockLevel.Confirmed);
+        reloadedWork.PreSealLockLevel.ShouldBeNull();
+        reloadedWork.PreSealSealedAt.ShouldBeNull();
+        reloadedWork.PreSealSealedBy.ShouldBeNull();
+        reloadedBreak.PreSealLockLevel.ShouldBeNull();
+        reloadedBreak.PreSealSealedBy.ShouldBeNull();
+    }
+
+    [Test]
     public async Task RestoreChildrenAsync_RestoresChildWorkAndBreak_DeletedByTheSameDelete()
     {
         var deletedTime = new DateTime(2027, 3, 1, 12, 0, 0, DateTimeKind.Utc);

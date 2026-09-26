@@ -7,6 +7,7 @@
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -42,8 +43,8 @@ public class ReopenPeriodCommandHandlerTests
     {
         WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
         _lockLevelService.CanUnseal(WorkLockLevel.Closed, false, true).Returns(true);
-        _workRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), WorkLockLevel.Closed, Arg.Any<CancellationToken>()).Returns(7);
-        _breakRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), WorkLockLevel.Closed, Arg.Any<CancellationToken>()).Returns(1);
+        _workRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), WorkLockLevel.Closed, Arg.Any<CancellationToken>()).Returns(new PeriodUnsealCounts(2, 1, 4, 0));
+        _breakRepository.UnsealByPeriod(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), WorkLockLevel.Closed, Arg.Any<CancellationToken>()).Returns(new PeriodUnsealCounts(0, 0, 0, 1));
 
         var command = new ReopenPeriodCommand(new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31));
 

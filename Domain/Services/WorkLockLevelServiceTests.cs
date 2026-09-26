@@ -318,4 +318,79 @@ public class WorkLockLevelServiceTests
         entity.SealedAt.ShouldBeNull();
         entity.SealedBy.ShouldBeNull();
     }
+
+    [Test]
+    public void Unseal_AdminAtClosed_DropsThePreSealStateAPeriodSealRecorded()
+    {
+        var entity = new Work
+        {
+            LockLevel = WorkLockLevel.Closed,
+            SealedAt = DateTime.UtcNow,
+            SealedBy = "admin",
+            PreSealLockLevel = WorkLockLevel.Confirmed,
+            PreSealSealedAt = DateTime.UtcNow.AddDays(-3),
+            PreSealSealedBy = "planner",
+            ShiftId = Guid.NewGuid()
+        };
+
+        _service.Unseal(entity, isAdmin: true, isAuthorised: false);
+
+        entity.PreSealLockLevel.ShouldBeNull();
+        entity.PreSealSealedAt.ShouldBeNull();
+        entity.PreSealSealedBy.ShouldBeNull();
+    }
+
+    [Test]
+    public void Seal_DropsAStalePreSealState()
+    {
+        var entity = new Break
+        {
+            LockLevel = WorkLockLevel.None,
+            PreSealLockLevel = WorkLockLevel.Approved,
+            PreSealSealedAt = DateTime.UtcNow.AddDays(-3),
+            PreSealSealedBy = "supervisor"
+        };
+
+        _service.Seal(entity, WorkLockLevel.Confirmed, "planner", isAdmin: false, isAuthorised: false);
+
+        entity.LockLevel.ShouldBe(WorkLockLevel.Confirmed);
+        entity.PreSealLockLevel.ShouldBeNull();
+        entity.PreSealSealedAt.ShouldBeNull();
+        entity.PreSealSealedBy.ShouldBeNull();
+    }
+
+    [Test]
+    public void CarryOver_KeepsThePreSealStateOfTheStoredRow()
+    {
+        var sealedAt = DateTime.UtcNow.AddDays(-1);
+        var preSealedAt = DateTime.UtcNow.AddDays(-5);
+        var stored = new Work
+        {
+            LockLevel = WorkLockLevel.Closed,
+            SealedAt = sealedAt,
+            SealedBy = "admin",
+            PreSealLockLevel = WorkLockLevel.Approved,
+            PreSealSealedAt = preSealedAt,
+            PreSealSealedBy = "supervisor"
+        };
+        var rebuilt = new Work();
+
+        ScheduleEntrySealState.CarryOver(rebuilt, stored);
+
+        rebuilt.LockLevel.ShouldBe(WorkLockLevel.Closed);
+        rebuilt.PreSealLockLevel.ShouldBe(WorkLockLevel.Approved);
+        rebuilt.PreSealSealedAt.ShouldBe(preSealedAt);
+        rebuilt.PreSealSealedBy.ShouldBe("supervisor");
+    }
+
+    [Test]
+    public void CarryOver_WithoutStoredRow_LeavesNoPreSealState()
+    {
+        var rebuilt = new Work { PreSealLockLevel = WorkLockLevel.Confirmed, PreSealSealedBy = "client payload" };
+
+        ScheduleEntrySealState.CarryOver(rebuilt, null);
+
+        rebuilt.PreSealLockLevel.ShouldBeNull();
+        rebuilt.PreSealSealedBy.ShouldBeNull();
+    }
 }
