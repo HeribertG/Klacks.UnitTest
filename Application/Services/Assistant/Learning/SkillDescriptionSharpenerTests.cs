@@ -489,6 +489,25 @@ public class SkillDescriptionSharpenerTests
         await _skills.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
     }
 
+    // Each holdout goldset needs an answered baseline item: a German holdout half with no answer cannot be
+    // completed by the translated half, so applying would be for nothing.
+    [Test]
+    public async Task ABaselineReplayWithoutAnAnsweredItemInOneHoldoutGoldset_IsNotMeasuredAndNothingIsApplied()
+    {
+        var translatedRef = new GoldsetItemRef(TurnEvalDefaults.I18nGoldset, "i18n-ja--" + HoldoutRef.ItemId);
+        GivenMode(SkillLearningMode.Gate);
+        GivenPlan([HoldoutRef, translatedRef], [TrainRef]);
+        _holdoutGate.ReplayAsync(Arg.Any<GoldsetReplayPlan>(), Arg.Any<CancellationToken>())
+            .Returns(Verdicts((HoldoutRef, null), (translatedRef, true), (TrainRef, false)));
+        var proposal = GivenPending();
+
+        await Run();
+
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Pending);
+        Metrics(proposal).GetProperty("verdict").GetString().ShouldBe(GoldsetGateVerdicts.NotMeasured);
+        await _skills.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
     // Without a measured holdout item there was no regression check, so a train gain alone must not pass.
     [Test]
     public async Task AHoldoutItemUnansweredAfterApplying_KeepsAMeasuredTrainGainFromPassing()

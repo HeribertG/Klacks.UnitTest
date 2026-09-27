@@ -91,6 +91,33 @@ public class GoldsetGateJudgeTests
         outcome.Verdict.ShouldBe(GoldsetGateVerdicts.Passed);
     }
 
+    // The German holdout and the translated holdout protect different users: when every planned item of one
+    // holdout goldset went unanswered, the other goldset's measured items cannot stand in for it.
+    [Test]
+    public void OneHoldoutGoldsetEntirelyUnanswered_IsNotMeasuredEvenIfTheOtherWasMeasured()
+    {
+        var translated = new GoldsetItemRef(TurnEvalDefaults.I18nGoldset, "i18n-ja--ts-h");
+        var plan = new GoldsetReplayPlan(Guid.NewGuid(), "deepseek-flash", 6, [Holdout, translated], [Train]);
+        var before = new Dictionary<GoldsetItemRef, bool?> { [Holdout] = null, [translated] = true, [Train] = false };
+        var after = new Dictionary<GoldsetItemRef, bool?> { [Holdout] = true, [translated] = true, [Train] = true };
+
+        GoldsetGateJudge.Judge(plan, before, after, 1).Verdict.ShouldBe(GoldsetGateVerdicts.NotMeasured);
+    }
+
+    [Test]
+    public void BothHoldoutGoldsetsMeasured_AreJudgedTogether()
+    {
+        var translated = new GoldsetItemRef(TurnEvalDefaults.I18nGoldset, "i18n-ja--ts-h");
+        var plan = new GoldsetReplayPlan(Guid.NewGuid(), "deepseek-flash", 6, [Holdout, translated], [Train]);
+        var before = new Dictionary<GoldsetItemRef, bool?> { [Holdout] = true, [translated] = true, [Train] = false };
+        var after = new Dictionary<GoldsetItemRef, bool?> { [Holdout] = true, [translated] = false, [Train] = true };
+
+        var outcome = GoldsetGateJudge.Judge(plan, before, after, 1);
+
+        outcome.Verdict.ShouldBe(GoldsetGateVerdicts.BlockedRegression);
+        outcome.HoldoutRegressions.ShouldHaveSingleItem().ShouldBe("i18n-ja--ts-h");
+    }
+
     // Without a measured holdout item there is no regression protection, so a train gain alone must not pass
     // a proposal whose holdout items were planned - for example when the provider failed only on those calls.
     [Test]

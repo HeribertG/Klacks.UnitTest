@@ -31,7 +31,10 @@ public class GoldsetHoldoutReplayGateTests
     private const string OtherModel = "deepseek-v4-pro";
     private const string ForeignGoldset = "turn-honesty-v1";
 
+    private const string JapaneseLocale = "ja";
+
     private static readonly Guid RunId = Guid.NewGuid();
+    private static readonly Guid I18nRunId = Guid.NewGuid();
 
     private static readonly string[] HoldoutIds =
         [.. Enumerable.Range(1, 4000).Select(i => $"ts-{i:D4}").Where(GoldsetPartitioner.IsHoldout).Take(40)];
@@ -152,6 +155,102 @@ public class GoldsetHoldoutReplayGateTests
 
         plan!.HoldoutItems.Count.ShouldBe(SkillLearningDefaults.MaxTargetedHoldoutReplaysPerProposal);
         plan.HoldoutItems.ShouldAllBe(item => !HoldoutIds.Take(5).Contains(item.ItemId));
+    }
+
+    [Test]
+    public async Task ThePlan_AlsoHoldsTheTranslatedHoldoutItemsOfTheLatestI18nRun()
+    {
+        var translated = GoldsetTranslationId.Compose(JapaneseLocale, HoldoutIds[0]);
+        GivenRows(Row(HoldoutIds[1], Sharpened, true));
+        GivenBaseGoldset(Item(HoldoutIds[1], Sharpened));
+        GivenI18nRun(Row(translated, Sharpened, true, runId: I18nRunId), Row(GoldsetTranslationId.Compose(JapaneseLocale, TrainId), Sharpened, true, runId: I18nRunId));
+        GivenI18nGoldset(Item(translated, Sharpened), Item(GoldsetTranslationId.Compose(JapaneseLocale, TrainId), Sharpened));
+
+        var plan = await _gate.PlanAsync(Sharpened, []);
+
+        plan.ShouldNotBeNull();
+        plan.HoldoutItems.ShouldBe(
+            [new GoldsetItemRef(TurnEvalDefaults.DefaultGoldset, HoldoutIds[1]), new GoldsetItemRef(TurnEvalDefaults.I18nGoldset, translated)],
+            ignoreOrder: true);
+        plan.ReferenceEvalRunId.ShouldBe(RunId);
+    }
+
+    [Test]
+    public async Task WithoutAnI18nRun_ThePlanStillHoldsTheDefaultHoldoutItems()
+    {
+        GivenRows(Row(HoldoutIds[0], Sharpened, true));
+        GivenBaseGoldset(Item(HoldoutIds[0], Sharpened));
+
+        var plan = await _gate.PlanAsync(Sharpened, []);
+
+        plan!.HoldoutItems.ShouldBe([new GoldsetItemRef(TurnEvalDefaults.DefaultGoldset, HoldoutIds[0])]);
+    }
+
+    // "i18n-..." sorts before "ts-..." ordinally; one shared cap would let translations crowd out the default
+    // goldset's own holdout items, so each goldset keeps its own cap.
+    [Test]
+    public async Task TranslatedHoldoutItems_DoNotCrowdOutTheDefaultOnes()
+    {
+        var translatedIds = HoldoutIds.Take(30).Select(id => GoldsetTranslationId.Compose(JapaneseLocale, id)).ToList();
+        GivenRows([.. HoldoutIds.Take(30).Select(id => Row(id, Sharpened, true))]);
+        GivenBaseGoldset([.. HoldoutIds.Take(30).Select(id => Item(id, Sharpened))]);
+        GivenI18nRun([.. translatedIds.Select(id => Row(id, Sharpened, true, runId: I18nRunId))]);
+        GivenI18nGoldset([.. translatedIds.Select(id => Item(id, Sharpened))]);
+
+        var plan = await _gate.PlanAsync(Sharpened, []);
+
+        plan!.HoldoutItems.Count(item => item.Goldset == TurnEvalDefaults.DefaultGoldset)
+            .ShouldBe(SkillLearningDefaults.MaxTargetedHoldoutReplaysPerProposal);
+        plan.HoldoutItems.Count(item => item.Goldset == TurnEvalDefaults.I18nGoldset)
+            .ShouldBe(SkillLearningDefaults.MaxTargetedTranslatedHoldoutReplaysPerProposal);
+    }
+
+    // Ordinal ids put ar, cs, da ... first and th, vi, zh-CN, zh-TW last, so an ordinal cap of 15 over 24
+    // translations of one source never replayed the late locales. The cap now takes a stable scatter.
+    [Test]
+    public async Task TheTranslatedHoldoutCap_DoesNotStarveTheLateLocales()
+    {
+        string[] locales =
+        [
+            "ar", "cs", "da", "el", "en", "es", "fi", "fr", "he", "id", "it", "ja",
+            "ko", "ms", "nb", "nl", "pl", "pt", "ro", "sv", "th", "vi", "zh-CN", "zh-TW"
+        ];
+        var plannedLocales = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var sources in HoldoutIds.Chunk(4).Take(4))
+        {
+            var translatedIds = sources.SelectMany(source => locales.Select(locale => GoldsetTranslationId.Compose(locale, source))).ToList();
+            GivenI18nRun([.. translatedIds.Select(id => Row(id, Sharpened, true, runId: I18nRunId))]);
+            GivenI18nGoldset([.. translatedIds.Select(id => Item(id, Sharpened))]);
+            var gate = new GoldsetHoldoutReplayGate(
+                _evalRuns, _evalRunItems, _goldsetLoader, _replayService, _learningOptions,
+                NullLogger<GoldsetHoldoutReplayGate>.Instance);
+
+            var plan = await gate.PlanAsync(Sharpened, []);
+
+            var locales15 = plan!.HoldoutItems
+                .Where(item => item.Goldset == TurnEvalDefaults.I18nGoldset)
+                .Select(item => GoldsetTranslationId.TryParse(item.ItemId, out var locale, out _) ? locale : string.Empty)
+                .ToList();
+            locales15.Count.ShouldBe(SkillLearningDefaults.MaxTargetedTranslatedHoldoutReplaysPerProposal);
+            locales15.ShouldBeUnique();
+            plannedLocales.UnionWith(locales15);
+        }
+
+        plannedLocales.ShouldContain("zh-TW");
+        plannedLocales.ShouldContain("th");
+        plannedLocales.ShouldContain("vi");
+    }
+
+    [Test]
+    public async Task ThePlan_ResolvesATrainMissOfTheI18nGoldset()
+    {
+        var translatedTrain = GoldsetTranslationId.Compose(JapaneseLocale, TrainId);
+        GivenI18nGoldset(Item(translatedTrain, Sharpened));
+
+        var plan = await _gate.PlanAsync(Sharpened, [new GoldsetItemRef(TurnEvalDefaults.I18nGoldset, translatedTrain)]);
+
+        plan!.TrainItems.ShouldBe([new GoldsetItemRef(TurnEvalDefaults.I18nGoldset, translatedTrain)]);
     }
 
     [Test]
@@ -363,6 +462,17 @@ public class GoldsetHoldoutReplayGateTests
     private void GivenBaseGoldset(params TurnGoldsetItem[] items) =>
         _goldsetLoader.LoadAsync(TurnEvalDefaults.DefaultGoldset, Arg.Any<CancellationToken>()).Returns(items);
 
+    private void GivenI18nGoldset(params TurnGoldsetItem[] items) =>
+        _goldsetLoader.LoadAsync(TurnEvalDefaults.I18nGoldset, Arg.Any<CancellationToken>()).Returns(items);
+
+    private void GivenI18nRun(params EvalRunItem[] rows)
+    {
+        _evalRuns.GetLatestFullRunAsync(
+                TurnEvalDefaults.I18nGoldset, TurnEvalScorer.ScorerVersion, Model, Arg.Any<CancellationToken>())
+            .Returns(new EvalRun { Id = I18nRunId, Model = Model });
+        _evalRunItems.ListByRunAsync(I18nRunId, Arg.Any<CancellationToken>()).Returns(rows);
+    }
+
     private void GivenReplayChoosing(string tool, List<string> offered) =>
         _replayService.ReplayAsync(
                 Arg.Any<TurnGoldsetItem>(), Arg.Any<string>(), Arg.Any<string>(),
@@ -370,10 +480,10 @@ public class GoldsetHoldoutReplayGateTests
             .Returns(new TurnReplayResult { Success = true, ChosenTool = tool, AvailableToolNames = offered });
 
     private static EvalRunItem Row(
-        string itemId, string? expectedTool, bool selectionHit, string? chosenTool = null) => new()
+        string itemId, string? expectedTool, bool selectionHit, string? chosenTool = null, Guid? runId = null) => new()
     {
         Id = Guid.NewGuid(),
-        EvalRunId = RunId,
+        EvalRunId = runId ?? RunId,
         ItemId = itemId,
         Locale = "de",
         ExpectedTool = expectedTool,

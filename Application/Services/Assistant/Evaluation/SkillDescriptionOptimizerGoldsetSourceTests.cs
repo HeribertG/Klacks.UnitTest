@@ -43,6 +43,9 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
     private static readonly Guid RunId = Guid.NewGuid();
     private static readonly Guid ParaphraseRunId = Guid.NewGuid();
+    private static readonly Guid I18nRunId = Guid.NewGuid();
+
+    private static readonly string[] TranslatedLocales = ["ja", "ar", "zh-CN", "fr", "th", "vi", "ko", "pl"];
 
     private ISkillSelectionTrajectoryRepository _trajectories = null!;
     private IProposedSkillChangeRepository _proposals = null!;
@@ -357,6 +360,61 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
         _added.Select(p => p.SkillName).ShouldContain(skills[3]);
         _added.Select(p => p.SkillName).ShouldNotContain(skills[2]);
+    }
+
+    // One German miss translated into eight languages is one piece of evidence, not eight: the cap ranks the
+    // groups by distinct source items (translations and paraphrases count for their source).
+    [Test]
+    public async Task TheCapRanksByDistinctSourceItems_NotByRowCount()
+    {
+        var ids = TrainItemIds(7);
+        string[] skills = ["skill_a", "skill_b", "skill_c", "skill_d"];
+        GivenGoldsetItems([.. ids]);
+        foreach (var name in skills)
+        {
+            GivenSkill(name);
+        }
+
+        _provider.Answering(Suggestion, Suggestion, Suggestion);
+        GivenMisses(
+            Miss(ids[0], skills[0]), Miss(ids[1], skills[0]),
+            Miss(ids[2], skills[1]), Miss(ids[3], skills[1]),
+            Miss(ids[4], skills[2]), Miss(ids[5], skills[2]));
+        GivenI18nRun([.. TranslatedLocales.Select(locale => Miss(GoldsetTranslationId.Compose(locale, ids[6]), skills[3]))]);
+
+        await _optimizer.GenerateProposalsAsync(30);
+
+        _added.Select(p => p.SkillName).ShouldBe([skills[0], skills[1], skills[2]], ignoreOrder: true);
+    }
+
+    // The evidence is capped at a handful of misses; taken in row order it would always be the default
+    // goldset's, so a translation miss could never reach the optimizer or the gate's train replay.
+    [Test]
+    public async Task TheEvidence_IsSpreadOverSourcesAndGoldsets()
+    {
+        var ids = TrainItemIds(7);
+        GivenGoldsetItems([.. ids]);
+        GivenMisses([.. ids.Take(6).Select(id => Miss(id))]);
+        var translated = GoldsetTranslationId.Compose(TranslatedLocales[0], ids[6]);
+        GivenI18nRun(Miss(translated), Miss(GoldsetTranslationId.Compose(TranslatedLocales[1], ids[6])));
+
+        await _optimizer.GenerateProposalsAsync(30);
+
+        var evidence = GoldsetMissEvidenceCodec.Parse(_added.ShouldHaveSingleItem().EvidenceJson).Items;
+        evidence.ShouldContain(item => item.Goldset == TurnEvalDefaults.I18nGoldset);
+        evidence.Count(item => item.Goldset == TurnEvalDefaults.I18nGoldset).ShouldBe(1);
+    }
+
+    private void GivenI18nRun(params EvalRunItem[] misses)
+    {
+        _evalRuns.GetLatestFullRunAsync(
+                TurnEvalDefaults.I18nGoldset, TurnEvalScorer.ScorerVersion, ReferenceModel, Arg.Any<CancellationToken>())
+            .Returns(new EvalRun { Id = I18nRunId, Model = ReferenceModel });
+        _goldsetLoader.LoadAsync(TurnEvalDefaults.I18nGoldset, Arg.Any<CancellationToken>())
+            .Returns([.. misses.Select(miss => Item(miss.ItemId))]);
+        _evalRunItems.ListUnconsumedSelectionMissesAsync(
+                I18nRunId, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(misses);
     }
 
     private void GivenParaphraseRun(params EvalRunItem[] misses)
