@@ -29,9 +29,9 @@ public class RecipeCorrectionEntityReferenceCensusTests
 
     /// <summary>
     /// Every (recipe, slot) pair the correction gate treats as an entity name, in engine order (sortOrder,
-    /// then name). Four of these are names of entities being CREATED rather than resolved
+    /// then name). Six of these are names of entities being CREATED rather than resolved
     /// (onboard-employee/employeeName, user-onboarding/fullName, create-group/groupName,
-    /// create-shift-order/shiftName); they are admitted because a multi-clause sentence is not a plausible
+    /// create-shift-order/shiftName, create-calendar-selection/calendarSelectionName, create-branch/branchName); they are admitted because a multi-clause sentence is not a plausible
     /// value for them either, and raw-filling one would create the entity under that sentence as its name.
     /// Change this list only together with the seed file or with the predicate.
     /// </summary>
@@ -64,7 +64,9 @@ public class RecipeCorrectionEntityReferenceCensusTests
         "add-task-to-container::containerName",
         "add-task-to-container::taskName",
         "add-extern-employee-to-nearest-group::clientName",
-        "setup-owner-address::calendarName"
+        "create-calendar-selection::calendarSelectionName",
+        "setup-owner-address::calendarName",
+        "create-branch::branchName"
     ];
 
     /// <summary>
