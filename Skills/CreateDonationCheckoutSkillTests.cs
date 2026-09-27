@@ -110,13 +110,23 @@ public class CreateDonationCheckoutSkillTests
     [Test]
     public async Task AnUnsupportedCurrency_IsRejectedWithoutEverCallingTheEndpoint()
     {
-        var result = await _skill.ExecuteAsync(Ctx(), Params(ValidAmount, "USD"));
+        var result = await _skill.ExecuteAsync(Ctx(), Params(ValidAmount, "GBP"));
 
         _api.Calls.ShouldBeEmpty();
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("USD");
+        result.Message.ShouldContain("GBP");
         result.Message.ShouldContain(DonationCheckoutLimits.CurrencyChf);
         result.Message.ShouldContain(DonationCheckoutLimits.CurrencyEur);
+        result.Message.ShouldContain(DonationCheckoutLimits.CurrencyUsd);
+    }
+
+    [Test]
+    public async Task UsDollars_AreSentToTheEndpoint()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), Params(ValidAmount, "usd"));
+
+        result.Success.ShouldBeTrue(result.Message);
+        _api.BodyOf<CreateDonationCheckoutRequest>()!.Currency.ShouldBe(DonationCheckoutLimits.CurrencyUsd);
     }
 
     [Test]
