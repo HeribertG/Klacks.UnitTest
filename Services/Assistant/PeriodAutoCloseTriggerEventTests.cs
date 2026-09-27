@@ -74,7 +74,7 @@ public class PeriodAutoCloseTriggerEventTests
             });
         }
 
-        Assert.That(AgentConditionActionRoutes.For(AgentTriggerKinds.PeriodAutoClose), Is.EqualTo(ProactiveActionRoutes.PeriodClosing));
+        Assert.That(AgentConditionActionRoutes.For(AgentTriggerKinds.PeriodAutoClose, null), Is.EqualTo(ProactiveActionRoutes.PeriodClosing));
     }
 
     [Test]

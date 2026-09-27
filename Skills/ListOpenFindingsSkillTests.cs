@@ -208,6 +208,24 @@ public class ListOpenFindingsSkillTests
     }
 
     [Test]
+    public async Task EmptyContainerFinding_RoutesToTheContainersTemplatePage()
+    {
+        var containerId = Guid.NewGuid();
+        var seeded = Finding(AgentTriggerKinds.EmptyContainer, AgentTriggerSeverity.Medium, AgentConditionStatus.Reported, NowUtc);
+        seeded.EntityId = containerId;
+        _scopeResolver.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(AgentConditionVisibilityScope.Unrestricted());
+        _repository.CountOpenForScopeAsync(true, Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<CancellationToken>()).Returns(1);
+        _repository.GetOpenForScopeAsync(true, Arg.Any<IReadOnlySet<Guid>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentCondition> { seeded });
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        var finding = SingleFinding(result);
+        finding.GetProperty("ActionRoute").GetString().ShouldBe($"/workplace/container-template/{containerId}");
+    }
+
+    [Test]
     public async Task FindingWithoutAnActionRouteMapping_HasNullActionRoute()
     {
         const string unmappedKind = "some_future_kind_without_a_route";

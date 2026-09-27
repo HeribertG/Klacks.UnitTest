@@ -266,6 +266,21 @@ public class WelcomeFocusResolverTests
     }
 
     [Test]
+    public async Task ResolveAsync_EmptyContainerWinner_RoutesToTheContainersTemplatePage()
+    {
+        var containerId = Guid.NewGuid();
+        var emptyContainer = Condition(AgentTriggerKinds.EmptyContainer, AgentTriggerSeverity.High, Older);
+        emptyContainer.EntityId = containerId;
+        GivenJournal(emptyContainer);
+
+        var result = await _resolver.ResolveAsync(UserId, CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.Kind.ShouldBe(AgentTriggerKinds.EmptyContainer);
+        result.ActionRoute.ShouldBe($"/workplace/container-template/{containerId}");
+    }
+
+    [Test]
     public async Task ResolveAsync_PeriodOverdue_FillsPromptParamsFromPayload()
     {
         GivenJournal(Condition(AgentTriggerKinds.PeriodOverdue, AgentTriggerSeverity.Medium, Older, PeriodOverduePayload("Nord", "2026-08-31", 7)));
