@@ -11,10 +11,13 @@ namespace Klacks.UnitTest.Application.Services.Assistant.Learning;
 
 using Klacks.Api.Application.Services.Assistant.Learning;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using Shouldly;
 
@@ -52,16 +55,19 @@ public class SkillLearningLoopTests
         _phraseLearner = Substitute.For<IPhraseLearner>();
 
         _sharpener = Substitute.For<ISkillDescriptionSharpener>();
-        _sharpener.RunAsync(Arg.Any<CancellationToken>()).Returns((0, 0));
+        _sharpener.RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>())
+            .Returns(SkillDescriptionSharpenerResult.Empty);
 
         _proposals = Substitute.For<IProposedSkillChangeRepository>();
         _proposals.GetPendingAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
-        _loop = new SkillLearningLoop(
-            _clusters, _cases, _generator, _oracle, _phraseLearner, _capabilityLearner, _sharpener,
-            _proposals, Substitute.For<ILogger<SkillLearningLoop>>());
+        _loop = NewLoop(SkillLearningMode.AutoApply);
     }
+
+    private SkillLearningLoop NewLoop(SkillLearningMode mode) => new(
+        _clusters, _cases, _generator, _oracle, _phraseLearner, _capabilityLearner, _sharpener,
+        _proposals, LearningModeOptions.Provider(mode), Substitute.For<ILogger<SkillLearningLoop>>());
 
     private SkillLearningCluster GivenReadyCluster(int attemptCount = 0)
     {
@@ -125,7 +131,7 @@ public class SkillLearningLoopTests
             .Returns<IReadOnlyList<SkillLearningClassification>>(_ =>
                 throw new InvalidOperationException("the model is unreachable"));
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Failed.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -148,7 +154,7 @@ public class SkillLearningLoopTests
             .Returns<IReadOnlyList<SkillLearningClassification>>(_ =>
                 throw new InvalidOperationException("the model is unreachable"));
 
-        await _loop.RunAsync();
+        await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _phraseLearner.DidNotReceive().LearnAsync(
             Arg.Any<SkillLearningClusterContext>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -164,10 +170,10 @@ public class SkillLearningLoopTests
         GivenProbe(false);
         GivenClassification(cluster.Id, SkillLearningClassifications.PhraseGap, Target);
         GivenPhraseLearned(Guid.NewGuid());
-        _sharpener.RunAsync(Arg.Any<CancellationToken>())
-            .Returns<(int, int)>(_ => throw new InvalidOperationException("the optimizer is unreachable"));
+        _sharpener.RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>())
+            .Returns<SkillDescriptionSharpenerResult>(_ => throw new InvalidOperationException("the optimizer is unreachable"));
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Learned.ShouldBe(1);
         summary.Sharpened.ShouldBe(0);
@@ -181,7 +187,7 @@ public class SkillLearningLoopTests
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
-        await _loop.RunAsync();
+        await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _clusters.Received(1).ReleaseStaleClaimsAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
@@ -196,7 +202,7 @@ public class SkillLearningLoopTests
                 Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Processed.ShouldBe(0);
         await _generator.DidNotReceive().ClassifyAsync(
@@ -210,7 +216,7 @@ public class SkillLearningLoopTests
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
-        await _loop.RunAsync();
+        await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _generator.DidNotReceive().ClassifyAsync(
             Arg.Any<IReadOnlyList<SkillLearningTriageInput>>(), Arg.Any<CancellationToken>());
@@ -224,12 +230,12 @@ public class SkillLearningLoopTests
         var logger = Substitute.For<ILogger<SkillLearningLoop>>();
         var loop = new SkillLearningLoop(
             _clusters, _cases, _generator, _oracle, _phraseLearner, _capabilityLearner, _sharpener,
-            _proposals, logger);
+            _proposals, LearningModeOptions.Provider(SkillLearningMode.AutoApply), logger);
         _clusters.ListByStatusAsync(
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
-        await loop.RunAsync();
+        await loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         logger.Received(1).Log(
             LogLevel.Information,
@@ -248,7 +254,7 @@ public class SkillLearningLoopTests
         GivenCorrection(cluster.Id, Target);
         GivenProbe(true, Target);
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.AlreadyRouted.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -270,7 +276,7 @@ public class SkillLearningLoopTests
         GivenProbe(false, "list_clients");
         GivenClassification(cluster.Id, SkillLearningClassifications.PhraseGap, "list_clients");
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.AlreadyRouted.ShouldBe(1);
         await _phraseLearner.DidNotReceive().LearnAsync(
@@ -286,7 +292,7 @@ public class SkillLearningLoopTests
         GivenClassification(cluster.Id, SkillLearningClassifications.PhraseGap, Target);
         GivenPhraseLearned(phraseId);
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Learned.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -304,7 +310,7 @@ public class SkillLearningLoopTests
         GivenClassification(cluster.Id, SkillLearningClassifications.PhraseGap, "list_clients_by_city");
         GivenPhraseLearned(Guid.NewGuid());
 
-        await _loop.RunAsync();
+        await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _phraseLearner.Received(1).LearnAsync(
             Arg.Any<SkillLearningClusterContext>(), Target, Arg.Any<CancellationToken>());
@@ -318,7 +324,7 @@ public class SkillLearningLoopTests
         GivenClassification(cluster.Id, SkillLearningClassifications.PhraseGap, Target);
         GivenPhraseFailed("list_clients was offered instead");
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Failed.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -334,7 +340,7 @@ public class SkillLearningLoopTests
         GivenClassification(cluster.Id, SkillLearningClassifications.PhraseGap, Target);
         GivenPhraseFailed("still not found");
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Unfulfillable.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -349,7 +355,7 @@ public class SkillLearningLoopTests
         GivenProbe(false, "list_clients");
         GivenClassification(cluster.Id, SkillLearningClassifications.NeedsCode, null, "no skill reports revenue");
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Unfulfillable.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -368,7 +374,7 @@ public class SkillLearningLoopTests
         GivenClassification(cluster.Id, SkillLearningClassifications.Composable, null, "chain two skills");
         GivenCapabilityOutcome(CapabilityLearningOutcome.Success("learned-revenue-report", false));
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Learned.ShouldBe(1);
         await _capabilityLearner.Received(1).LearnAsync(
@@ -394,7 +400,7 @@ public class SkillLearningLoopTests
         GivenClassification(cluster.Id, SkillLearningClassifications.Composable, null, "chain two skills");
         GivenCapabilityOutcome(CapabilityLearningOutcome.Failure("no composition survived"));
 
-        await _loop.RunAsync();
+        await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _clusters.Received(1).FinishLearningAsync(
             cluster.Id, SkillLearningClusterStatuses.Ready, null, null, "no composition survived", 1,
@@ -411,7 +417,7 @@ public class SkillLearningLoopTests
         GivenClassification(cluster.Id, SkillLearningClassifications.Composable, null, "chain two skills");
         GivenCapabilityOutcome(CapabilityLearningOutcome.Unjudged("the owner's token was refused"));
 
-        await _loop.RunAsync();
+        await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _clusters.Received(1).FinishLearningAsync(
             cluster.Id, SkillLearningClusterStatuses.Ready, null, null, "the owner's token was refused", 0,
@@ -437,7 +443,7 @@ public class SkillLearningLoopTests
                 Arg.Any<IReadOnlyList<SkillLearningTriageInput>>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Failed.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -460,7 +466,7 @@ public class SkillLearningLoopTests
                 Arg.Any<SkillLearningClusterContext>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<Task<PhraseLearningOutcome>>(_ => throw new InvalidOperationException("index unavailable"));
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Failed.ShouldBe(1);
         await _clusters.Received(1).FinishLearningAsync(
@@ -474,12 +480,31 @@ public class SkillLearningLoopTests
         _clusters.ListByStatusAsync(
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
-        _sharpener.RunAsync(Arg.Any<CancellationToken>()).Returns((2, 1));
+        _sharpener.RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillDescriptionSharpenerResult(2, 1, 0, 0));
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Sharpened.ShouldBe(2);
         summary.Blocked.ShouldBe(1);
+    }
+
+    // The optimizer's own attempt/failure counters have to reach the summary the launcher stores in
+    // run-status, or a weekly pipeline watching that field would never see an optimizer that failed on
+    // every attempt.
+    [Test]
+    public async Task TheSharpenersOptimizerCounters_ReachTheSummary()
+    {
+        _clusters.ListByStatusAsync(
+                Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _sharpener.RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillDescriptionSharpenerResult(0, 0, 5, 5));
+
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
+
+        summary.OptimizerAttempts.ShouldBe(5);
+        summary.OptimizerFailures.ShouldBe(5);
     }
 
     [Test]
@@ -489,7 +514,7 @@ public class SkillLearningLoopTests
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
-        await _loop.RunAsync();
+        await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _clusters.Received(1).ListByStatusAsync(
             Arg.Is<IReadOnlyList<string>>(statuses => statuses.Contains(SkillLearningClusterStatuses.Ready)),
@@ -509,7 +534,7 @@ public class SkillLearningLoopTests
         ProposedSkillChange? proposal = null;
         await _proposals.AddAsync(Arg.Do<ProposedSkillChange>(p => proposal = p), Arg.Any<CancellationToken>());
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         proposal.ShouldNotBeNull();
         proposal!.AgentId.ShouldBe(cluster.AgentId);
@@ -554,7 +579,7 @@ public class SkillLearningLoopTests
         ProposedSkillChange? proposal = null;
         await _proposals.AddAsync(Arg.Do<ProposedSkillChange>(p => proposal = p), Arg.Any<CancellationToken>());
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         proposal.ShouldNotBeNull();
         proposal!.SkillName.ShouldBe(DeclinedRecipe);
@@ -582,7 +607,7 @@ public class SkillLearningLoopTests
             });
         GivenProbe(true, Target);
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _proposals.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
         summary.RecipeTriggerProposals.ShouldBe(0);
@@ -613,7 +638,7 @@ public class SkillLearningLoopTests
                 }
             ]);
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         await _proposals.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
         summary.RecipeTriggerProposals.ShouldBe(1);
@@ -625,6 +650,64 @@ public class SkillLearningLoopTests
             Arg.Any<string>(),
             Arg.Any<int>(),
             Arg.Any<CancellationToken>());
+    }
+
+    // Outside AutoApply nothing may be written live: a phrase goes into the index the moment it is learned
+    // and a learned recipe is enabled on creation, so the whole cluster round waits.
+    [TestCase(SkillLearningMode.Collect)]
+    [TestCase(SkillLearningMode.Gate)]
+    public async Task OutsideAutoApply_NoClusterIsClaimedAndNoLearnerRuns(SkillLearningMode mode)
+    {
+        GivenReadyCluster();
+
+        var summary = await NewLoop(mode).RunAsync(SkillLearningRunTrigger.Manual);
+
+        summary.Processed.ShouldBe(0);
+        await _clusters.DidNotReceive().ListByStatusAsync(
+            Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _generator.DidNotReceive().ClassifyAsync(
+            Arg.Any<IReadOnlyList<SkillLearningTriageInput>>(), Arg.Any<CancellationToken>());
+        await _phraseLearner.DidNotReceiveWithAnyArgs().LearnAsync(default!, default!, default);
+        await _capabilityLearner.DidNotReceiveWithAnyArgs().LearnAsync(default!, default!, default);
+        await _sharpener.Received(1).RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>());
+    }
+
+    // A description the index did not take back is the one failure the run must not swallow: the run ends
+    // failed and the launcher reports the skill.
+    [Test]
+    public async Task AnIndexThatWasNotRestored_FailsTheWholeRun()
+    {
+        _clusters.ListByStatusAsync(
+                Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _sharpener.RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>()).ThrowsAsync(new SkillIndexNotRestoredException(Target));
+
+        var exception = await Should.ThrowAsync<SkillIndexNotRestoredException>(() => _loop.RunAsync(SkillLearningRunTrigger.Manual));
+
+        exception.SkillName.ShouldBe(Target);
+    }
+
+    // Whether Gate measures depends on who started the run, so the loop has to pass the trigger on unchanged.
+    [TestCase(SkillLearningRunTrigger.Scheduled)]
+    [TestCase(SkillLearningRunTrigger.Manual)]
+    public async Task TheTrigger_IsHandedToTheSharpener(SkillLearningRunTrigger trigger)
+    {
+        await NewLoop(SkillLearningMode.Gate).RunAsync(trigger);
+
+        await _sharpener.Received(1).RunAsync(trigger, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AnyOtherSharpeningFailure_StillLeavesTheRunStanding()
+    {
+        _clusters.ListByStatusAsync(
+                Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _sharpener.RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("db down"));
+
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
+
+        summary.Sharpened.ShouldBe(0);
     }
 
     private void GivenCases(Guid clusterId, params SkillLearningCase[] cases) =>

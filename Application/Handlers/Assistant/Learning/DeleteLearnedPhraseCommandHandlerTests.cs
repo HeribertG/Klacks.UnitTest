@@ -147,6 +147,41 @@ public class DeleteLearnedPhraseCommandHandlerTests
         await _refresher.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    // Exported and the release already reseeded the skill from skill-seeds.json: the live description equals
+    // ValueAfter, so rejecting the proposal now would disagree with what is actually still live.
+    [Test]
+    public async Task AnExportedProposalAlreadyReseededLive_IsLeftUntouchedAndReportedAsAConflict()
+    {
+        var proposal = Given(ProposedChangeStatuses.Exported, After);
+
+        var result = await _handler.Handle(new DeleteLearnedPhraseCommand(proposal.Id), CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        result.Conflict.ShouldBeTrue();
+        result.Error.ShouldNotBeNullOrWhiteSpace();
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Exported);
+        await _proposals.DidNotReceive().UpdateAsync(Arg.Any<ProposedSkillChange>(), Arg.Any<CancellationToken>());
+        await _skills.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+        await _refresher.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // mark-exported runs before a human reviews the export branch. When that branch was discarded, the live
+    // description never became ValueAfter - a reviewer must still be able to veto the proposal, or the skill
+    // would be locked for new proposals forever.
+    [Test]
+    public async Task AnExportedProposalWhoseExportBranchWasDiscarded_CanStillBeRejected()
+    {
+        var proposal = Given(ProposedChangeStatuses.Exported, Before);
+
+        var result = await _handler.Handle(new DeleteLearnedPhraseCommand(proposal.Id), CancellationToken.None);
+
+        result.Found.ShouldBeTrue();
+        result.Conflict.ShouldBeFalse();
+        proposal.Status.ShouldBe(ProposedChangeStatuses.Rejected);
+        await _proposals.Received(1).UpdateAsync(proposal, Arg.Any<CancellationToken>());
+        await _skills.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task AnUnknownId_ReportsNotFound()
     {

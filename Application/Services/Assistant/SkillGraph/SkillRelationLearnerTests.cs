@@ -7,6 +7,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.SkillGraph;
+using Klacks.UnitTest.Application.Services.Assistant.Learning;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
@@ -47,7 +48,8 @@ public class SkillRelationLearnerTests
         };
 
     private static (SkillRelationLearner Sut, List<SkillRelation> Added, List<SkillRelation> Updated) Build(
-        IReadOnlyList<SkillUsageRecord> usage, List<SkillRelation> existing)
+        IReadOnlyList<SkillUsageRecord> usage, List<SkillRelation> existing,
+        SkillLearningMode mode = SkillLearningMode.AutoApply)
     {
         var usageRepo = Substitute.For<ISkillUsageRepository>();
         usageRepo.GetRecordsAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(usage);
@@ -59,7 +61,76 @@ public class SkillRelationLearnerTests
             .Do(ci => added.AddRange(ci.Arg<IEnumerable<SkillRelation>>()));
         relRepo.When(r => r.UpdateRangeAsync(Arg.Any<IEnumerable<SkillRelation>>(), Arg.Any<CancellationToken>()))
             .Do(ci => updated.AddRange(ci.Arg<IEnumerable<SkillRelation>>()));
-        return (new SkillRelationLearner(usageRepo, relRepo, NullLogger<SkillRelationLearner>.Instance), added, updated);
+        return (new SkillRelationLearner(usageRepo, relRepo, LearningModeOptions.Provider(mode),
+            NullLogger<SkillRelationLearner>.Instance), added, updated);
+    }
+
+    private static List<SkillUsageRecord> PositiveLiftForAaAndBb()
+    {
+        var usage = new List<SkillUsageRecord>();
+        for (var i = 0; i < 4; i++) { usage.Add(Usage($"ab{i}", "aa", 0)); usage.Add(Usage($"ab{i}", "bb", 1)); }
+        usage.Add(Usage("ac", "aa", 0)); usage.Add(Usage("ac", "cc", 1));
+        usage.Add(Usage("bd", "bb", 0)); usage.Add(Usage("bd", "dd", 1));
+        for (var i = 0; i < 4; i++) { usage.Add(Usage($"ef{i}", "ee", 0)); usage.Add(Usage($"ef{i}", "ff", 1)); }
+        return usage;
+    }
+
+    [TestCase(SkillLearningMode.Collect)]
+    [TestCase(SkillLearningMode.Gate)]
+    public async Task OutsideAutoApply_ACandidateCrossingTheThreshold_StaysCandidate(SkillLearningMode mode)
+    {
+        var (sut, _, updated) = Build(PositiveLiftForAaAndBb(),
+            [Edge("aa", "bb", SkillRelationType.CoRequired, 0.68)], mode);
+
+        await sut.LearnAsync();
+
+        var edge = updated.Single(e => e.SkillAName == "aa" && e.SkillBName == "bb");
+        edge.Confidence.ShouldBe(0.73, 0.0001);
+        edge.Status.ShouldBe(SkillRelationStatus.Candidate);
+    }
+
+    [Test]
+    public async Task InAutoApply_ACandidateCrossingTheThreshold_BecomesActive()
+    {
+        var (sut, _, updated) = Build(PositiveLiftForAaAndBb(),
+            [Edge("aa", "bb", SkillRelationType.CoRequired, 0.68)]);
+
+        await sut.LearnAsync();
+
+        updated.Single(e => e.SkillAName == "aa" && e.SkillBName == "bb").Status.ShouldBe(SkillRelationStatus.Active);
+    }
+
+    [Test]
+    public async Task OutsideAutoApply_AnAlreadyActiveEdge_StaysActive()
+    {
+        var (sut, _, updated) = Build(PositiveLiftForAaAndBb(),
+            [Edge("aa", "bb", SkillRelationType.CoRequired, 0.8, SkillRelationStatus.Active)], SkillLearningMode.Collect);
+
+        await sut.LearnAsync();
+
+        updated.Single(e => e.SkillAName == "aa" && e.SkillBName == "bb").Status.ShouldBe(SkillRelationStatus.Active);
+    }
+
+    // The status of an existing Active edge is untouched outside AutoApply, even when its usage signal has
+    // turned against it: Confidence, SupportCount and ContradictionCount still move, only the live-visible
+    // Status field is frozen. In AutoApply the very same decay still demotes it, exactly as before.
+    [TestCase(SkillLearningMode.Collect)]
+    [TestCase(SkillLearningMode.Gate)]
+    public async Task OutsideAutoApply_AnActiveEdgeThatDecaysBelowThreshold_StaysActive(SkillLearningMode mode)
+    {
+        var usage = new List<SkillUsageRecord>();
+        for (var i = 0; i < 5; i++) { usage.Add(Usage($"ax{i}", "aa", 0)); usage.Add(Usage($"ax{i}", "xx", 1)); }
+        for (var i = 0; i < 5; i++) { usage.Add(Usage($"by{i}", "bb", 0)); usage.Add(Usage($"by{i}", "yy", 1)); }
+
+        var (sut, _, updated) = Build(usage,
+            [Edge("aa", "bb", SkillRelationType.CoRequired, 0.7, SkillRelationStatus.Active)], mode);
+
+        await sut.LearnAsync();
+
+        var decayed = updated.Single(e => e.SkillAName == "aa" && e.SkillBName == "bb");
+        decayed.Confidence.ShouldBe(0.55, 0.0001);
+        decayed.ContradictionCount.ShouldBe(1);
+        decayed.Status.ShouldBe(SkillRelationStatus.Active);
     }
 
     [Test]

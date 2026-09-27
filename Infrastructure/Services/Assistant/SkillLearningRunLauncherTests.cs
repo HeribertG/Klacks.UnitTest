@@ -7,6 +7,7 @@
 /// </summary>
 namespace Klacks.UnitTest.Infrastructure.Services.Assistant;
 
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
@@ -21,6 +22,7 @@ public class SkillLearningRunLauncherTests
 {
     private BlockingLoop _loop = null!;
     private ServiceProvider _provider = null!;
+    private ILogger<SkillLearningRunLauncher> _logger = null!;
     private SkillLearningRunLauncher _launcher = null!;
 
     [SetUp]
@@ -30,10 +32,11 @@ public class SkillLearningRunLauncherTests
         var services = new ServiceCollection();
         services.AddScoped<ISkillLearningLoop>(_ => _loop);
         _provider = services.BuildServiceProvider();
+        _logger = Substitute.For<ILogger<SkillLearningRunLauncher>>();
 
         _launcher = new SkillLearningRunLauncher(
             _provider.GetRequiredService<IServiceScopeFactory>(),
-            Substitute.For<ILogger<SkillLearningRunLauncher>>());
+            _logger);
     }
 
     [TearDown]
@@ -93,6 +96,27 @@ public class SkillLearningRunLauncherTests
         _loop.Release();
     }
 
+    // In Gate only an explicit trigger may measure, so the tick has to be told apart from the manual start.
+    [Test]
+    public async Task TheBackgroundTick_RunsAsScheduled()
+    {
+        _loop.Release();
+
+        await _launcher.RunAsync();
+
+        _loop.Trigger.ShouldBe(SkillLearningRunTrigger.Scheduled);
+    }
+
+    [Test]
+    public void TheDetachedStart_RunsAsManual()
+    {
+        _launcher.StartDetached().Started.ShouldBeTrue();
+        _loop.WaitUntilRunning();
+        _loop.Release();
+
+        _loop.Trigger.ShouldBe(SkillLearningRunTrigger.Manual);
+    }
+
     [Test]
     public void AFailingRun_StillReleasesTheGate()
     {
@@ -105,6 +129,118 @@ public class SkillLearningRunLauncherTests
         _launcher.RunAsync().GetAwaiter().GetResult().Started.ShouldBeTrue();
     }
 
+    [Test]
+    public void AnIdleLauncher_ReportsThatNoRunHappenedYet()
+    {
+        var status = _launcher.GetStatus();
+
+        status.Running.ShouldBeFalse();
+        status.LastStartedUtc.ShouldBeNull();
+        status.LastSucceeded.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task WhileARunIsUnderWay_TheStatusSaysRunning()
+    {
+        var run = Task.Run(() => _launcher.RunAsync());
+        _loop.WaitUntilRunning();
+
+        _launcher.GetStatus().Running.ShouldBeTrue();
+
+        _loop.Release();
+        await run;
+        _launcher.GetStatus().Running.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task AFinishedRun_ReportsItsSummary()
+    {
+        _loop.Release();
+
+        await _launcher.RunAsync();
+
+        var status = _launcher.GetStatus();
+        status.LastSucceeded.ShouldBe(true);
+        status.LastSummary.ShouldNotBeNull();
+        status.LastFinishedUtc.ShouldNotBeNull();
+        status.LastError.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task AFailedRun_ReportsItsError()
+    {
+        _loop.Release();
+        _loop.Throw = true;
+
+        await _launcher.RunAsync();
+
+        var status = _launcher.GetStatus();
+        status.LastSucceeded.ShouldBe(false);
+        status.LastError.ShouldNotBeNull().ShouldContain("run failed");
+        status.LastSummary.ShouldBeNull();
+    }
+
+    // POST run answers as soon as the gate is taken, before ExecuteAsync's finish branch ever runs. A
+    // status read right after StartDetached returns has to say Running already, or a script that polls
+    // immediately would see the previous run's finished state and export before this one measured anything.
+    [Test]
+    public void TheDetachedStart_ReportsRunningBeforeItReturns()
+    {
+        _launcher.StartDetached();
+
+        var status = _launcher.GetStatus();
+        status.Running.ShouldBeTrue();
+        status.LastTrigger.ShouldBe(SkillLearningRunTrigger.Manual);
+
+        _loop.WaitUntilRunning();
+        _loop.Release();
+    }
+
+    [Test]
+    public async Task TheBackgroundTick_ReportsScheduled()
+    {
+        _loop.Release();
+
+        await _launcher.RunAsync();
+
+        _launcher.GetStatus().LastTrigger.ShouldBe(SkillLearningRunTrigger.Scheduled);
+    }
+
+    // A provider timeout throws TaskCanceledException, a subclass of OperationCanceledException, even though
+    // nobody cancelled the run's own token. Treating every OperationCanceledException as "the run was
+    // cancelled" would swallow the timeout's message and log nothing, hiding the real failure behind a
+    // generic status the export/weekly scripts cannot act on.
+    [Test]
+    public async Task AProviderTimeout_IsReportedByItsOwnMessageAndLogged()
+    {
+        _loop.Release();
+        _loop.ThrowException = new TaskCanceledException("timeout");
+
+        await _launcher.RunAsync();
+
+        var status = _launcher.GetStatus();
+        status.LastSucceeded.ShouldBe(false);
+        status.LastError.ShouldBe("timeout");
+        _logger.Received(1).Log(
+            LogLevel.Error, Arg.Any<EventId>(), Arg.Any<object>(), Arg.Any<Exception>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    // The counterpart of the timeout test above: an actually cancelled token must still report the
+    // cancellation reason, or the fix that separates timeouts from real cancellation would have broken the
+    // case it was not meant to touch.
+    [Test]
+    public async Task AGenuineCancellation_StillReportsTheCancelledReason()
+    {
+        using var cts = new CancellationTokenSource();
+        _loop.CancelWhenRunning = cts;
+        _loop.Release();
+
+        await _launcher.RunAsync(cts.Token);
+
+        _launcher.GetStatus().LastError.ShouldBe("The learning run was cancelled.");
+    }
+
     private sealed class BlockingLoop : ISkillLearningLoop
     {
         private readonly ManualResetEventSlim _running = new(false);
@@ -114,20 +250,38 @@ public class SkillLearningRunLauncherTests
 
         public bool Throw { get; set; }
 
+        public Exception? ThrowException { get; set; }
+
+        public CancellationTokenSource? CancelWhenRunning { get; set; }
+
         public void Release() => _mayFinish.Set();
 
         public void WaitUntilRunning() => _running.Wait(TimeSpan.FromSeconds(5));
 
-        public Task<SkillLearningRunSummary> RunAsync(CancellationToken cancellationToken = default)
+        public SkillLearningRunTrigger? Trigger { get; private set; }
+
+        public Task<SkillLearningRunSummary> RunAsync(
+            SkillLearningRunTrigger trigger, CancellationToken cancellationToken = default)
         {
             Runs++;
+            Trigger = trigger;
             _running.Set();
             _mayFinish.Wait(TimeSpan.FromSeconds(5));
             _running.Reset();
+            CancelWhenRunning?.Cancel();
 
-            return Throw
-                ? throw new InvalidOperationException("run failed")
-                : Task.FromResult(SkillLearningRunSummary.Empty);
+            if (ThrowException != null)
+            {
+                throw ThrowException;
+            }
+
+            if (Throw)
+            {
+                throw new InvalidOperationException("run failed");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(SkillLearningRunSummary.Empty);
         }
     }
 }

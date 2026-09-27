@@ -168,6 +168,7 @@ public class SkillSeedLoaderPhraseTests
             Name = SkillName,
             Description = "old description",
             Version = 1,
+            SeedVersion = 1,
             Synonyms = new Dictionary<string, List<string>>
             {
                 ["de"] = ["alte saat"],

@@ -14,6 +14,7 @@ using System.Security.Claims;
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Commands.Assistant.Learning;
 using Klacks.Api.Application.DTOs.Assistant.Learning;
+using Klacks.Api.Application.Queries.Assistant.Learning;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.Assistant;
@@ -212,5 +213,100 @@ public class KlacksyLearningControllerAuthorizationTests
         var result = await controller.ApprovePhraseProposal(Guid.NewGuid(), CancellationToken.None);
 
         result.ShouldBeOfType<NotFoundResult>();
+    }
+
+    [Test]
+    public async Task TheRunStatus_IsReturned()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetSkillLearningRunStatusQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillLearningRunStatusResponse(true, DateTime.UtcNow, null, null, null, null, null));
+
+        var result = await new KlacksyLearningController(mediator).GetRunStatus(CancellationToken.None);
+
+        result.Result.ShouldBeOfType<OkObjectResult>().Value
+            .ShouldBeOfType<SkillLearningRunStatusResponse>().Running.ShouldBeTrue();
+    }
+
+    private static KlacksyLearningController ControllerWithIdentity(IMediator mediator) =>
+        new(mediator)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "admin@klacks")]))
+                }
+            }
+        };
+
+    [Test]
+    public async Task TheExportCandidates_AreReturned()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetLearnedDescriptionExportCandidatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new LearnedDescriptionExportCandidateDto(Guid.NewGuid(), Guid.NewGuid(), "list_clients", "a", "b", 5, 4, "a", null, null)]);
+
+        var result = await new KlacksyLearningController(mediator).GetExportCandidates(null, CancellationToken.None);
+
+        result.Result.ShouldBeOfType<OkObjectResult>().Value
+            .ShouldBeAssignableTo<IReadOnlyList<LearnedDescriptionExportCandidateDto>>()!.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task AMarkExportedWithoutIdentity_Answers401()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var controller = new KlacksyLearningController(mediator)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var result = await controller.MarkExported(new MarkProposalsExportedRequest([Guid.NewGuid()]), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<UnauthorizedResult>();
+        await mediator.DidNotReceive().Send(Arg.Any<MarkProposalsExportedCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AMarkExportedWithoutIds_Answers400()
+    {
+        var result = await ControllerWithIdentity(Substitute.For<IMediator>())
+            .MarkExported(new MarkProposalsExportedRequest([]), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<BadRequestObjectResult>();
+    }
+
+    [Test]
+    public async Task AMarkExportedWithTooManyIds_Answers400()
+    {
+        var tooMany = Enumerable.Range(0, SkillLearningDefaults.MaxExportCandidates + 1)
+            .Select(_ => Guid.NewGuid())
+            .ToList();
+        var mediator = Substitute.For<IMediator>();
+
+        var result = await ControllerWithIdentity(mediator)
+            .MarkExported(new MarkProposalsExportedRequest(tooMany), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<BadRequestObjectResult>();
+        await mediator.DidNotReceive().Send(Arg.Any<MarkProposalsExportedCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AMarkExported_ReportsWhatWasMarkedAndSkipped()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skipped = Guid.NewGuid();
+        mediator.Send(Arg.Any<MarkProposalsExportedCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new MarkProposalsExportedResult(1, [skipped]));
+
+        var result = await ControllerWithIdentity(mediator)
+            .MarkExported(new MarkProposalsExportedRequest([Guid.NewGuid(), skipped]), CancellationToken.None);
+
+        var payload = result.Result.ShouldBeOfType<OkObjectResult>().Value.ShouldBeOfType<MarkProposalsExportedResult>();
+        payload.Marked.ShouldBe(1);
+        payload.Skipped.ShouldHaveSingleItem().ShouldBe(skipped);
+        await mediator.Received(1).Send(
+            Arg.Is<MarkProposalsExportedCommand>(command => command.ReviewedBy == "admin@klacks"), Arg.Any<CancellationToken>());
     }
 }

@@ -13,7 +13,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 /// </summary>
 internal sealed class FakeLLMProvider : ILLMProvider
 {
-    private readonly Queue<string> _answers = new();
+    private readonly Queue<LLMProviderResponse> _answers = new();
 
     public string ProviderId => "fake";
 
@@ -29,9 +29,29 @@ internal sealed class FakeLLMProvider : ILLMProvider
     {
         foreach (var answer in answers)
         {
-            _answers.Enqueue(answer);
+            _answers.Enqueue(new LLMProviderResponse { Success = true, Content = answer });
         }
 
+        return this;
+    }
+
+    /// <summary>
+    /// Enqueues a fully controlled response, for cases plain content strings cannot express - for example a
+    /// reasoning model that spent its token budget on reasoning and answered with empty content.
+    /// </summary>
+    public FakeLLMProvider AnsweringWith(LLMProviderResponse response)
+    {
+        _answers.Enqueue(response);
+        return this;
+    }
+
+    /// <summary>
+    /// Discards every answer queued so far, so a test that set up its scenario through a helper which already
+    /// queued a default answer can replace it with a fully controlled one instead of appending behind it.
+    /// </summary>
+    public FakeLLMProvider ClearAnswers()
+    {
+        _answers.Clear();
         return this;
     }
 
@@ -47,7 +67,7 @@ internal sealed class FakeLLMProvider : ILLMProvider
 
         return Task.FromResult(_answers.Count == 0
             ? new LLMProviderResponse { Success = false, Content = string.Empty }
-            : new LLMProviderResponse { Success = true, Content = _answers.Dequeue() });
+            : _answers.Dequeue());
     }
 
     public Task<bool> ValidateApiKeyAsync(string apiKey) => Task.FromResult(true);

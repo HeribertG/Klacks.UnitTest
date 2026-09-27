@@ -158,6 +158,7 @@ public class SkillSeedLoaderHandlerConfigTests
             Name = SkillName,
             Description = "old description",
             Version = 1,
+            SeedVersion = 1,
             HandlerConfig = handlerConfig,
             ParametersJson = parametersJson ?? "[]"
         };

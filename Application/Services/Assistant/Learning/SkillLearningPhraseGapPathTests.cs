@@ -17,6 +17,7 @@ namespace Klacks.UnitTest.Application.Services.Assistant.Learning;
 
 using Klacks.Api.Application.Services.Assistant.Learning;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
@@ -56,7 +57,8 @@ public class SkillLearningPhraseGapPathTests
         _capabilityLearner = Substitute.For<ICapabilityLearner>();
 
         var sharpener = Substitute.For<ISkillDescriptionSharpener>();
-        sharpener.RunAsync(Arg.Any<CancellationToken>()).Returns((0, 0));
+        sharpener.RunAsync(Arg.Any<SkillLearningRunTrigger>(), Arg.Any<CancellationToken>())
+            .Returns(SkillDescriptionSharpenerResult.Empty);
 
         _provider = new FakeLLMProvider();
         var resolver = Substitute.For<ICheapestModelResolver>();
@@ -69,6 +71,7 @@ public class SkillLearningPhraseGapPathTests
         _loop = new SkillLearningLoop(
             _clusters, _cases, generator, _oracle, _phraseLearner, _capabilityLearner, sharpener,
             Substitute.For<IProposedSkillChangeRepository>(),
+            LearningModeOptions.Provider(SkillLearningMode.AutoApply),
             Substitute.For<ILogger<SkillLearningLoop>>());
     }
 
@@ -89,7 +92,7 @@ public class SkillLearningPhraseGapPathTests
                 Arg.Any<SkillLearningClusterContext>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(PhraseLearningOutcome.Success(phraseId, "umsatz pro kunde"));
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Learned.ShouldBe(1);
         await _phraseLearner.Received(1).LearnAsync(
@@ -120,7 +123,7 @@ public class SkillLearningPhraseGapPathTests
                 Arg.Any<SkillLearningClusterContext>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(PhraseLearningOutcome.Success(phraseId, "kundenverfuegbarkeit festlegen"));
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Learned.ShouldBe(1);
         summary.AlreadyRouted.ShouldBe(0);
@@ -145,7 +148,7 @@ public class SkillLearningPhraseGapPathTests
         GivenProbe(OfferedSkill, Target);
         GivenAnswer(Target);
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Learned.ShouldBe(0);
         summary.AlreadyRouted.ShouldBe(1);
@@ -173,7 +176,7 @@ public class SkillLearningPhraseGapPathTests
         GivenProbe(OfferedSkill);
         GivenAnswer("a_skill_the_model_invented");
 
-        var summary = await _loop.RunAsync();
+        var summary = await _loop.RunAsync(SkillLearningRunTrigger.Manual);
 
         summary.Learned.ShouldBe(0);
         summary.Failed.ShouldBe(1);

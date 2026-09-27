@@ -10,11 +10,15 @@ using Shouldly;
 public class FileTurnGoldsetLoaderTests
 {
     private const string RealGoldsetName = "turn-selection-v1";
-    private const string WrongKindGoldsetName = "turneval-test-wrong-kind";
-    private const string EnumGoldsetName = "turneval-test-enum-parsing";
-    private const string ParentDecoyGoldsetName = "turneval-test-parent-decoy";
-    private const string CorrectionKindGoldsetName = "turneval-test-correction-kind";
     private const string JsonExtension = ".json";
+
+    // Suffixed per test run so a leftover from a killed run, or another fixture instance in the same shared
+    // bin output directory, can never collide on the exact same file name and race File.Delete in teardown.
+    private static readonly string RunId = Guid.NewGuid().ToString("N")[..8];
+    private static readonly string WrongKindGoldsetName = $"turneval-test-wrong-kind-{RunId}";
+    private static readonly string EnumGoldsetName = $"turneval-test-enum-parsing-{RunId}";
+    private static readonly string ParentDecoyGoldsetName = $"turneval-test-parent-decoy-{RunId}";
+    private static readonly string CorrectionKindGoldsetName = $"turneval-test-correction-kind-{RunId}";
 
     private static readonly string[] GoldsetRelativePath = ["Application", "Skills", "Goldsets"];
 
@@ -94,7 +98,16 @@ public class FileTurnGoldsetLoaderTests
     {
         foreach (var file in _tempFiles.Where(File.Exists))
         {
-            File.Delete(file);
+            try
+            {
+                File.Delete(file);
+            }
+            catch (IOException)
+            {
+                // Windows (antivirus/indexer) can briefly hold a lock on a just-written file. The file is
+                // uniquely named for this run and harms nothing if a later cleanup or the next run's own
+                // OneTimeSetUp overwrites it.
+            }
         }
     }
 

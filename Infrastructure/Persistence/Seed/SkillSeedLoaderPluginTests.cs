@@ -96,7 +96,7 @@ public class SkillSeedLoaderPluginTests
     public async Task SeedPluginSkillsAsync_SameVersionAlreadyStored_DoesNotReEnableTheSkill()
     {
         WritePluginSeed(version: 1);
-        var stored = new AgentSkill { Name = PluginSkillName, Version = 1, IsEnabled = false };
+        var stored = new AgentSkill { Name = PluginSkillName, Version = 1, SeedVersion = 1, IsEnabled = false };
         _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns([stored]);
 
@@ -110,7 +110,7 @@ public class SkillSeedLoaderPluginTests
     public async Task SetPluginSkillsEnabledAsync_False_DisablesTheSkillWithoutDeletingIt()
     {
         WritePluginSeed(version: 1);
-        var stored = new AgentSkill { Name = PluginSkillName, Version = 1, IsEnabled = true };
+        var stored = new AgentSkill { Name = PluginSkillName, Version = 1, SeedVersion = 1, IsEnabled = true };
         _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns([stored]);
 
@@ -126,7 +126,7 @@ public class SkillSeedLoaderPluginTests
     public async Task SetPluginSkillsEnabledAsync_True_BringsADisabledSkillBack()
     {
         WritePluginSeed(version: 1);
-        var stored = new AgentSkill { Name = PluginSkillName, Version = 1, IsEnabled = false };
+        var stored = new AgentSkill { Name = PluginSkillName, Version = 1, SeedVersion = 1, IsEnabled = false };
         _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns([stored]);
 
@@ -141,7 +141,7 @@ public class SkillSeedLoaderPluginTests
     {
         WritePluginSeed(version: 1);
         _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns([new AgentSkill { Name = PluginSkillName, Version = 1, IsEnabled = false }]);
+            .Returns([new AgentSkill { Name = PluginSkillName, Version = 1, SeedVersion = 1, IsEnabled = false }]);
 
         var changed = await _loader.SetPluginSkillsEnabledAsync(PluginName, isEnabled: false);
 
@@ -155,7 +155,7 @@ public class SkillSeedLoaderPluginTests
     public async Task SetPluginSkillsEnabledAsync_LeavesSkillsOfOtherOriginsAlone()
     {
         WritePluginSeed(version: 1);
-        var foreign = new AgentSkill { Name = "create_shift", Version = 3, IsEnabled = true };
+        var foreign = new AgentSkill { Name = "create_shift", Version = 3, SeedVersion = 3, IsEnabled = true };
         _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns([foreign]);
 
@@ -163,6 +163,24 @@ public class SkillSeedLoaderPluginTests
 
         changed.ShouldBe(0);
         foreign.IsEnabled.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task SeedPluginSkillsAsync_ANeverSeededRowThatDiverged_AdoptsTheDescriptionButKeepsItsFlag()
+    {
+        WritePluginSeed(version: 1);
+        var stored = new AgentSkill
+        {
+            Name = PluginSkillName, Description = "learned", Version = 3, SeedVersion = 0, IsEnabled = false
+        };
+        _skillRepository.GetAllByAgentIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns([stored]);
+
+        await _loader.SeedPluginSkillsAsync(PluginName);
+
+        stored.Description.ShouldBe("Sends a message through a configured messenger provider.");
+        stored.SeedVersion.ShouldBe(1);
+        stored.IsEnabled.ShouldBeFalse();
     }
 
     private void WritePluginSeed(int version)

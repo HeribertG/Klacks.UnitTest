@@ -22,6 +22,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.UnitTest.Application.Services.Assistant.Learning;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using Shouldly;
 
@@ -34,7 +35,14 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
     private const string Suggestion =
         "{\"description\":\"Lists the contract data of one client.\",\"justification\":\"too broad\"}";
 
+    private const string ParaphraseItemId = "para-ts-001-1";
+    private const string ResolvedModelId = "resolved-model";
+    private const string ResolvedApiModelId = "resolved-model-api-id";
+    private const string ReferenceModel = "deepseek-flash";
+    private const string OtherModel = "deepseek-v4-pro";
+
     private static readonly Guid RunId = Guid.NewGuid();
+    private static readonly Guid ParaphraseRunId = Guid.NewGuid();
 
     private ISkillSelectionTrajectoryRepository _trajectories = null!;
     private IProposedSkillChangeRepository _proposals = null!;
@@ -45,7 +53,10 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
     private IEvalRunRepository _evalRuns = null!;
     private IEvalRunItemRepository _evalRunItems = null!;
     private ITurnGoldsetLoader _goldsetLoader = null!;
+    private ISkillLearningOptionsProvider _learningOptions = null!;
     private FakeLLMProvider _provider = null!;
+    private LLMModel _model = null!;
+    private ICheapestModelResolver _modelResolver = null!;
     private SkillDescriptionOptimizer _optimizer = null!;
     private Agent _agent = null!;
     private AgentSkill _skill = null!;
@@ -101,10 +112,19 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
         _goldenCases.ExistsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
+        _learningOptions = Substitute.For<ISkillLearningOptionsProvider>();
+        _learningOptions.GetAsync(Arg.Any<CancellationToken>())
+            .Returns(new SkillLearningOptions(
+                SkillLearningDefaults.MinOccurrences,
+                SkillLearningDefaults.MinDistinctUsers,
+                SkillLearningDefaults.PruneDays,
+                SkillLearningDefaults.RetentionDays,
+                ReferenceModel: ReferenceModel));
+
         _evalRuns = Substitute.For<IEvalRunRepository>();
         _evalRuns.GetLatestFullRunAsync(
-                TurnEvalDefaults.DefaultGoldset, TurnEvalScorer.ScorerVersion, Arg.Any<CancellationToken>())
-            .Returns(new EvalRun { Id = RunId, Model = "deepseek-v4-pro" });
+                TurnEvalDefaults.DefaultGoldset, TurnEvalScorer.ScorerVersion, ReferenceModel, Arg.Any<CancellationToken>())
+            .Returns(new EvalRun { Id = RunId, Model = ReferenceModel });
 
         _evalRunItems = Substitute.For<IEvalRunItemRepository>();
         _evalRunItems.ListUnconsumedSelectionMissesAsync(
@@ -124,15 +144,14 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
         _provider = new FakeLLMProvider();
         _provider.Answering(Suggestion);
 
-        var factory = Substitute.For<ILLMProviderFactory>();
-        factory.GetProviderForModelAsync(Arg.Any<string>()).Returns(_provider);
-
-        var llm = Substitute.For<ILLMRepository>();
-        llm.GetModelsAsync(true).Returns([new LLMModel { ModelId = "fake", ApiModelId = "fake-1" }]);
+        _model = new LLMModel { ModelId = ResolvedModelId, ApiModelId = ResolvedApiModelId };
+        _modelResolver = Substitute.For<ICheapestModelResolver>();
+        _modelResolver.ResolveAsync(Arg.Any<CancellationToken>())
+            .Returns(((LLMModel?)_model, (ILLMProvider?)_provider));
 
         _optimizer = new SkillDescriptionOptimizer(
             _trajectories, _proposals, _skills, _agents, _cases, _goldenCases,
-            _evalRuns, _evalRunItems, _goldsetLoader, factory, llm,
+            _evalRuns, _evalRunItems, _goldsetLoader, _modelResolver, _learningOptions,
             NullLogger<SkillDescriptionOptimizer>.Instance);
     }
 
@@ -143,7 +162,7 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
         var generated = await _optimizer.GenerateProposalsAsync(30);
 
-        generated.ShouldBe(1);
+        generated.Generated.ShouldBe(1);
         _added.Count.ShouldBe(1);
         _added[0].SkillId.ShouldBe(_skill.Id);
         _added[0].Origin.ShouldBe(ProposedChangeOrigins.GoldsetEval);
@@ -159,7 +178,7 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
         var generated = await _optimizer.GenerateProposalsAsync(30);
 
-        generated.ShouldBe(0);
+        generated.Generated.ShouldBe(0);
         _added.ShouldBeEmpty();
     }
 
@@ -181,14 +200,56 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
     public async Task WithoutAFullRun_NothingIsProposedFromTheGoldset()
     {
         _evalRuns.GetLatestFullRunAsync(
-                TurnEvalDefaults.DefaultGoldset, TurnEvalScorer.ScorerVersion, Arg.Any<CancellationToken>())
+                TurnEvalDefaults.DefaultGoldset, TurnEvalScorer.ScorerVersion, ReferenceModel, Arg.Any<CancellationToken>())
             .Returns((EvalRun?)null);
         GivenMisses(Miss(TrainItemId));
 
         var generated = await _optimizer.GenerateProposalsAsync(30);
 
-        generated.ShouldBe(0);
+        generated.Generated.ShouldBe(0);
         _added.ShouldBeEmpty();
+    }
+
+    // The dev database also carries nightly full runs of other models. The learning loop must not spend a
+    // goldset miss group generated against one of those - a run of another model is treated exactly like no
+    // reference run at all.
+    [Test]
+    public async Task AFullRunOfAnotherModel_IsTreatedAsNoReferenceRun()
+    {
+        _evalRuns.GetLatestFullRunAsync(
+                TurnEvalDefaults.DefaultGoldset, TurnEvalScorer.ScorerVersion, ReferenceModel, Arg.Any<CancellationToken>())
+            .Returns((EvalRun?)null);
+        _evalRuns.GetLatestFullRunAsync(
+                TurnEvalDefaults.DefaultGoldset, TurnEvalScorer.ScorerVersion, OtherModel, Arg.Any<CancellationToken>())
+            .Returns(new EvalRun { Id = Guid.NewGuid(), Model = OtherModel });
+        GivenMisses(Miss(TrainItemId));
+
+        var generated = await _optimizer.GenerateProposalsAsync(30);
+
+        generated.Generated.ShouldBe(0);
+        _added.ShouldBeEmpty();
+    }
+
+    // Neither KLACKSY_LEARNING_REFERENCE_MODEL nor a database default model resolved to anything: the
+    // optimizer must not guess a model to query eval_runs with, it has to skip the goldset source entirely.
+    [Test]
+    public async Task WithoutAResolvedReferenceModel_NoRunIsQueriedAndNothingIsProposed()
+    {
+        _learningOptions.GetAsync(Arg.Any<CancellationToken>())
+            .Returns(new SkillLearningOptions(
+                SkillLearningDefaults.MinOccurrences,
+                SkillLearningDefaults.MinDistinctUsers,
+                SkillLearningDefaults.PruneDays,
+                SkillLearningDefaults.RetentionDays,
+                ReferenceModel: null));
+        GivenMisses(Miss(TrainItemId));
+
+        var generated = await _optimizer.GenerateProposalsAsync(30);
+
+        generated.Generated.ShouldBe(0);
+        _added.ShouldBeEmpty();
+        await _evalRuns.DidNotReceive().GetLatestFullRunAsync(
+            Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -201,7 +262,7 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
         var generated = await _optimizer.GenerateProposalsAsync(30);
 
-        generated.ShouldBe(0);
+        generated.Generated.ShouldBe(0);
         _added.ShouldBeEmpty();
         await _evalRunItems.DidNotReceive().MarkConsumedAsync(
             Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
@@ -246,7 +307,7 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
         var generated = await _optimizer.GenerateProposalsAsync(30);
 
-        generated.ShouldBe(1);
+        generated.Generated.ShouldBe(1);
         _added.ShouldHaveSingleItem().SkillName.ShouldBe(WronglyChosen);
     }
 
@@ -268,7 +329,7 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
         var generated = await _optimizer.GenerateProposalsAsync(30);
 
-        generated.ShouldBe(SkillLearningDefaults.MaxGoldsetProposalsPerRun);
+        generated.Generated.ShouldBe(SkillLearningDefaults.MaxGoldsetProposalsPerRun);
         _added.Count.ShouldBe(SkillLearningDefaults.MaxGoldsetProposalsPerRun);
     }
 
@@ -296,6 +357,96 @@ public class SkillDescriptionOptimizerGoldsetSourceTests
 
         _added.Select(p => p.SkillName).ShouldContain(skills[3]);
         _added.Select(p => p.SkillName).ShouldNotContain(skills[2]);
+    }
+
+    private void GivenParaphraseRun(params EvalRunItem[] misses)
+    {
+        _evalRuns.GetLatestFullRunAsync(
+                TurnEvalDefaults.ParaphraseGoldset, TurnEvalScorer.ScorerVersion, ReferenceModel, Arg.Any<CancellationToken>())
+            .Returns(new EvalRun { Id = ParaphraseRunId, Model = ReferenceModel });
+        _goldsetLoader.LoadAsync(TurnEvalDefaults.ParaphraseGoldset, Arg.Any<CancellationToken>())
+            .Returns([Item(ParaphraseItemId)]);
+        _evalRunItems.ListUnconsumedSelectionMissesAsync(
+                ParaphraseRunId, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(misses);
+    }
+
+    // The gate replays exactly the misses a proposal was built from, so they have to travel with it.
+    [Test]
+    public async Task AGoldsetBornProposal_CarriesTheEvalItemsItWasBuiltFrom()
+    {
+        GivenMisses(Miss(TrainItemId));
+
+        await _optimizer.GenerateProposalsAsync(30);
+
+        GoldsetMissEvidenceCodec.Parse(_added.ShouldHaveSingleItem().EvidenceJson).Items
+            .ShouldHaveSingleItem().ShouldBe(new GoldsetItemRef(TurnEvalDefaults.DefaultGoldset, TrainItemId));
+    }
+
+    [Test]
+    public async Task MissesOfTheParaphraseGoldset_AlsoOpenAProposal()
+    {
+        var miss = Miss(ParaphraseItemId);
+        GivenParaphraseRun(miss);
+
+        var generated = await _optimizer.GenerateProposalsAsync(30);
+
+        generated.Generated.ShouldBe(1);
+        GoldsetMissEvidenceCodec.Parse(_added.ShouldHaveSingleItem().EvidenceJson).Items
+            .ShouldHaveSingleItem().ShouldBe(new GoldsetItemRef(TurnEvalDefaults.ParaphraseGoldset, ParaphraseItemId));
+        await _evalRunItems.Received(1).MarkConsumedAsync(
+            Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == miss.Id),
+            Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task MissesOfBothGoldsetsForOneSkill_OpenOneProposal()
+    {
+        GivenMisses(Miss(TrainItemId));
+        GivenParaphraseRun(Miss(ParaphraseItemId));
+
+        await _optimizer.GenerateProposalsAsync(30);
+
+        GoldsetMissEvidenceCodec.Parse(_added.ShouldHaveSingleItem().EvidenceJson).Items.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task AnUnreadableParaphraseGoldset_DoesNotStopTheDefaultGoldset()
+    {
+        GivenParaphraseRun();
+        _goldsetLoader.LoadAsync(TurnEvalDefaults.ParaphraseGoldset, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new FileNotFoundException("not generated yet"));
+        GivenMisses(Miss(TrainItemId));
+
+        (await _optimizer.GenerateProposalsAsync(30)).Generated.ShouldBe(1);
+    }
+
+    // Ordering every enabled model by cost picked an unpriced model on an unpriced catalogue, whose answers
+    // were unusable, so a run with three goldset groups produced no proposal at all. The model choice is the
+    // shared resolver's, which ignores unpriced models.
+    [Test]
+    public async Task TheSuggestion_IsRequestedFromTheModelTheSharedResolverPicks()
+    {
+        GivenMisses(Miss(TrainItemId));
+
+        await _optimizer.GenerateProposalsAsync(30);
+
+        await _modelResolver.Received(1).ResolveAsync(Arg.Any<CancellationToken>());
+        _provider.Requests.ShouldHaveSingleItem().ModelId.ShouldBe(ResolvedApiModelId);
+    }
+
+    [Test]
+    public async Task WithoutAResolvedModel_NothingIsProposedAndNothingIsSpent()
+    {
+        _modelResolver.ResolveAsync(Arg.Any<CancellationToken>())
+            .Returns(((LLMModel?)null, (ILLMProvider?)null));
+        GivenMisses(Miss(TrainItemId));
+
+        (await _optimizer.GenerateProposalsAsync(30)).Generated.ShouldBe(0);
+
+        _added.ShouldBeEmpty();
+        await _evalRunItems.DidNotReceive().MarkConsumedAsync(
+            Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
     private void GivenMisses(params EvalRunItem[] misses) =>

@@ -41,6 +41,7 @@ public class SkillDescriptionOptimizerTests
     private IEvalRunRepository _evalRuns = null!;
     private IEvalRunItemRepository _evalRunItems = null!;
     private ITurnGoldsetLoader _goldsetLoader = null!;
+    private ISkillLearningOptionsProvider _learningOptions = null!;
     private FakeLLMProvider _provider = null!;
     private SkillDescriptionOptimizer _optimizer = null!;
     private Agent _agent = null!;
@@ -77,22 +78,28 @@ public class SkillDescriptionOptimizerTests
 
         _evalRuns = Substitute.For<IEvalRunRepository>();
         _evalRuns.GetLatestFullRunAsync(
-                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((EvalRun?)null);
         _evalRunItems = Substitute.For<IEvalRunItemRepository>();
         _goldsetLoader = Substitute.For<ITurnGoldsetLoader>();
 
+        _learningOptions = Substitute.For<ISkillLearningOptionsProvider>();
+        _learningOptions.GetAsync(Arg.Any<CancellationToken>())
+            .Returns(new SkillLearningOptions(
+                SkillLearningDefaults.MinOccurrences,
+                SkillLearningDefaults.MinDistinctUsers,
+                SkillLearningDefaults.PruneDays,
+                SkillLearningDefaults.RetentionDays));
+
         _provider = new FakeLLMProvider();
 
-        var factory = Substitute.For<ILLMProviderFactory>();
-        factory.GetProviderForModelAsync(Arg.Any<string>()).Returns(_provider);
-
-        var llm = Substitute.For<ILLMRepository>();
-        llm.GetModelsAsync(true).Returns([new LLMModel { ModelId = "fake", ApiModelId = "fake-1" }]);
+        var modelResolver = Substitute.For<ICheapestModelResolver>();
+        modelResolver.ResolveAsync(Arg.Any<CancellationToken>())
+            .Returns(((LLMModel?)new LLMModel { ModelId = "fake", ApiModelId = "fake-1" }, (ILLMProvider?)_provider));
 
         _optimizer = new SkillDescriptionOptimizer(
             _trajectories, _proposals, _skills, _agents, _cases, _goldenCases,
-            _evalRuns, _evalRunItems, _goldsetLoader, factory, llm,
+            _evalRuns, _evalRunItems, _goldsetLoader, modelResolver, _learningOptions,
             Substitute.For<ILogger<SkillDescriptionOptimizer>>());
     }
 
@@ -127,7 +134,7 @@ public class SkillDescriptionOptimizerTests
     {
         var trajectory = GivenWrongSkillCorrection();
 
-        (await _optimizer.GenerateProposalsAsync(30)).ShouldBe(1);
+        (await _optimizer.GenerateProposalsAsync(30)).Generated.ShouldBe(1);
 
         await _trajectories.Received(1).MarkSharpenedAsync(
             Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == trajectory.Id),
@@ -140,7 +147,7 @@ public class SkillDescriptionOptimizerTests
     {
         GivenWrongSkillCorrection(answer: "this is not json");
 
-        (await _optimizer.GenerateProposalsAsync(30)).ShouldBe(0);
+        (await _optimizer.GenerateProposalsAsync(30)).Generated.ShouldBe(0);
 
         await _trajectories.DidNotReceive().MarkSharpenedAsync(
             Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
@@ -155,10 +162,111 @@ public class SkillDescriptionOptimizerTests
                 _skill.Id, ProposedChangeFields.Description, Arg.Any<CancellationToken>())
             .Returns(true);
 
-        (await _optimizer.GenerateProposalsAsync(30)).ShouldBe(0);
+        (await _optimizer.GenerateProposalsAsync(30)).Generated.ShouldBe(0);
 
         await _proposals.DidNotReceive().AddAsync(
             Arg.Any<ProposedSkillChange>(), Arg.Any<CancellationToken>());
+    }
+
+    // A skill already carrying an open proposal is skipped before any model call, so it must not count as an
+    // attempt: an attempt is what the optimizer actually asked the model for.
+    [Test]
+    public async Task ASkillWithAnOpenProposal_IsSkippedWithoutCountingAsAnAttempt()
+    {
+        GivenWrongSkillCorrection();
+        _proposals.HasOpenProposalForSkillAsync(
+                _skill.Id, ProposedChangeFields.Description, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _optimizer.GenerateProposalsAsync(30);
+
+        result.Attempts.ShouldBe(0);
+        result.Failures.ShouldBe(0);
+    }
+
+    // Every correction group that reaches the model is an attempt; a clean suggestion is not a failure.
+    [Test]
+    public async Task ASuccessfulCorrection_CountsOneAttemptAndNoFailure()
+    {
+        GivenWrongSkillCorrection();
+
+        var result = await _optimizer.GenerateProposalsAsync(30);
+
+        result.Attempts.ShouldBe(1);
+        result.Failures.ShouldBe(0);
+    }
+
+    // An answer with no JSON object at all - a reasoning model that spent its budget without ever writing
+    // the answer, for example - is a failed attempt, not a skipped one.
+    [Test]
+    public async Task AnUnparsableAnswer_CountsAsAFailedAttempt()
+    {
+        GivenWrongSkillCorrection(answer: "this is not json");
+
+        var result = await _optimizer.GenerateProposalsAsync(30);
+
+        result.Attempts.ShouldBe(1);
+        result.Failures.ShouldBe(1);
+    }
+
+    // The model correctly decided nothing needs to change - that is a working attempt, not a failure the
+    // weekly pipeline should alarm on.
+    [Test]
+    public async Task AModelThatKeepsTheCurrentDescription_CountsAsAnAttemptButNotAFailure()
+    {
+        GivenWrongSkillCorrection(answer:
+            "{\"description\":\"Lists everything about clients.\",\"justification\":\"already tight\"}");
+
+        var result = await _optimizer.GenerateProposalsAsync(30);
+
+        result.Generated.ShouldBe(0);
+        result.Attempts.ShouldBe(1);
+        result.Failures.ShouldBe(0);
+    }
+
+    // Live finding 2026-09-27: DeepSeek reasoning models can spend the whole completion budget on
+    // reasoning_content and answer with empty content and no tool call - LLMProviderResponse reports that as
+    // ReasoningWithoutContent. The optimizer must count it as a failed attempt, not silently drop it.
+    [Test]
+    public async Task AReasoningOnlyAnswer_CountsAsAFailedAttempt()
+    {
+        GivenWrongSkillCorrection();
+        _provider.ClearAnswers().AnsweringWith(new LLMProviderResponse
+        {
+            Success = true,
+            Content = string.Empty,
+            ReasoningWithoutContent = true
+        });
+
+        var result = await _optimizer.GenerateProposalsAsync(30);
+
+        result.Generated.ShouldBe(0);
+        result.Attempts.ShouldBe(1);
+        result.Failures.ShouldBe(1);
+    }
+
+    // Verified 2026-09-27: 256 tokens let a DeepSeek reasoning model exhaust the budget on reasoning_content
+    // before writing any JSON. The request must carry a budget generous enough for that plus a full answer.
+    [Test]
+    public async Task TheSuggestionRequest_CarriesAMaxTokenBudgetThatSurvivesAReasoningModel()
+    {
+        GivenWrongSkillCorrection();
+
+        await _optimizer.GenerateProposalsAsync(30);
+
+        _provider.Requests.ShouldHaveSingleItem().MaxTokens.ShouldBeGreaterThanOrEqualTo(2048);
+    }
+
+    // The extraction between the first '{' and the last '}' already skips a code fence wrapped around the
+    // JSON object - some models answer that way even when told not to.
+    [Test]
+    public async Task AnAnswerWrappedInAMarkdownCodeFence_IsStillParsed()
+    {
+        GivenWrongSkillCorrection(answer: "```json\n" + Suggestion + "\n```");
+
+        var result = await _optimizer.GenerateProposalsAsync(30);
+
+        result.Generated.ShouldBe(1);
     }
 
     // The frozen case names where the wish belonged, never the skill being narrowed: an expectation
@@ -182,7 +290,7 @@ public class SkillDescriptionOptimizerTests
     {
         GivenWrongSkillCorrection(intendedTarget: null);
 
-        (await _optimizer.GenerateProposalsAsync(30)).ShouldBe(1);
+        (await _optimizer.GenerateProposalsAsync(30)).Generated.ShouldBe(1);
 
         await _goldenCases.DidNotReceive().AddAsync(
             Arg.Any<SkillLearningGoldenCase>(), Arg.Any<CancellationToken>());

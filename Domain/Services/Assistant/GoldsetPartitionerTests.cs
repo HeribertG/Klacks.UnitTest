@@ -69,4 +69,21 @@ public class GoldsetPartitionerTests
     {
         GoldsetPartitioner.Resolve(string.Empty).ShouldBe(GoldenCasePartitions.Holdout);
     }
+
+    // By hash alone roughly 30 of these ids would land in the holdout half, so all-train proves the rule.
+    [Test]
+    public void Resolve_AParaphraseId_IsAlwaysTrain()
+    {
+        var ids = Enumerable.Range(1, 300)
+            .Select(i => $"{TurnEvalDefaults.ParaphraseItemIdPrefix}ts-{i:D3}-1")
+            .ToList();
+
+        ids.ShouldAllBe(id => GoldsetPartitioner.Resolve(id) == GoldenCasePartitions.Train);
+    }
+
+    [Test]
+    public void Resolve_AnOrdinaryIdKeepsItsHashPartition()
+    {
+        GoldsetPartitioner.Resolve("ts-001").ShouldBe(GoldenCasePartitions.Holdout);
+    }
 }

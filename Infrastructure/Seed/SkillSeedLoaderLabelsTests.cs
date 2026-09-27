@@ -142,6 +142,7 @@ public class SkillSeedLoaderLabelsTests
             Name = SkillName,
             Description = "old description",
             Version = 1,
+            SeedVersion = 1,
             Labels = labels
         };
 
