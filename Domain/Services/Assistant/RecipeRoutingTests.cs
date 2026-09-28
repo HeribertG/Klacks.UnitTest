@@ -106,6 +106,36 @@ public class RecipeRoutingTests
         Assert.That(Resolve(utterance), Is.Not.EqualTo("plan-delivery-deadline"));
     }
 
+    [TestCase("Prüfe, ob meine Gruppen planungsfähig sind", "de")]
+    [TestCase("Kannst du prüfen, ob unsere Gruppen für die Planung bereit sind?", "de")]
+    [TestCase("Check whether my groups are ready for planning", "en")]
+    [TestCase("Vérifie si mes groupes sont prêts pour la planification", "fr")]
+    [TestCase("Verifica se i miei gruppi sono pronti per la pianificazione", "it")]
+    public void PrepareGroupsUtterances_RouteToThePrepareGroupsRecipe(string utterance, string language)
+    {
+        Assert.That(Resolve(utterance, language), Is.EqualTo("prepare-groups-for-planning"));
+    }
+
+    [TestCase("Erstelle eine Gruppe für die Planung", "de")]
+    [TestCase("Verteile alle Mitarbeiter auf die für sie besten Gruppen", "de")]
+    public void GroupCreationOrDistribution_DoesNotRouteToThePrepareGroupsRecipe(string utterance, string language)
+    {
+        Assert.That(Resolve(utterance, language), Is.Not.EqualTo("prepare-groups-for-planning"));
+    }
+
+    [TestCase("Gruppenplan anwenden: 0123456789ab, 2026-09-27 bis 2026-11-22", "de")]
+    [TestCase("Gruppenplan anwenden: 0123456789ab, 2026-09-27 bis 2026-11-22, Pflege Nord", "de")]
+    [TestCase("Apply the group plan: 0123456789ab, 2026-09-27 to 2026-11-22", "en")]
+    [TestCase("Apply the group plan: 0123456789ab, 2026-09-27 to 2026-11-22, Care North", "en")]
+    [TestCase("Appliquer le plan de groupes : 0123456789ab, du 2026-09-27 au 2026-11-22", "fr")]
+    [TestCase("Appliquer le plan de groupes : 0123456789ab, du 2026-09-27 au 2026-11-22, Soins Nord", "fr")]
+    [TestCase("Applicare il piano dei gruppi: 0123456789ab, dal 2026-09-27 al 2026-11-22", "it")]
+    [TestCase("Applicare il piano dei gruppi: 0123456789ab, dal 2026-09-27 al 2026-11-22, Cura Nord", "it")]
+    public void GroupPlanYesChip_RoutesToNoRecipe(string utterance, string language)
+    {
+        Assert.That(Resolve(utterance, language), Is.Null);
+    }
+
     [Test]
     [TestCase("Erstelle eine neue Bestellung für den Kunden Migros")]
     [TestCase("Lege einen neuen Dienst an")]

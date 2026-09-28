@@ -187,4 +187,39 @@ public class GetSetupGuidanceSkillTests
         result.Message.ShouldStartWith("FIRST:");
         result.Message.ShouldContain("Setup is complete");
     }
+
+    [Test]
+    public async Task ExecuteAsync_EmployeesAndShifts_RecommendGroupPreparation()
+    {
+        StubState(hasOrders: true, hasShifts: true, hasWork: true);
+        _activityProbe.CountActiveEmployeesAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(4);
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        DataOf(result).ShouldContain("\"GroupingPreparation\":{");
+        result.Message.ShouldContain("check whether every group can actually be planned");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_EmployeesAndShiftsWithoutWork_RecommendGroupPreparation()
+    {
+        StubState(hasOrders: true, hasShifts: true, hasWork: false);
+        _activityProbe.CountActiveEmployeesAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(2);
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        DataOf(result).ShouldContain("\"GroupingPreparation\":{");
+        result.Message.ShouldContain("check whether every group can actually be planned");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ShiftsWithoutEmployees_NoGroupPreparation()
+    {
+        StubState(hasOrders: true, hasShifts: true, hasWork: false);
+
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        DataOf(result).ShouldContain("\"GroupingPreparation\":null");
+        result.Message.ShouldNotContain("check whether every group can actually be planned");
+    }
 }

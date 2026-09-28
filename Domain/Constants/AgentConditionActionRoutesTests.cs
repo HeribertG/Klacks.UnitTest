@@ -34,6 +34,7 @@ public class AgentConditionActionRoutesTests
     [TestCase(AgentTriggerKinds.ClientMissingCoreData)]
     [TestCase(AgentTriggerKinds.UngroupedWorkforce)]
     [TestCase(AgentTriggerKinds.UngroupedShifts)]
+    [TestCase(AgentTriggerKinds.GroupingFeasibility)]
     public void For_EveryLedgerTrackedKind_ReturnsANonNullRoute(string kind)
     {
         AgentConditionActionRoutes.For(kind, Guid.NewGuid()).ShouldNotBeNull();

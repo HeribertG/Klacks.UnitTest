@@ -24,7 +24,8 @@ public class GoalTypeCatalogTests
         AgentTriggerKinds.DailyDigest,
         AgentTriggerKinds.ScenarioPrepared,
         AgentTriggerKinds.KlacksyLearnedDigest,
-        AgentTriggerKinds.PeriodAutoClose
+        AgentTriggerKinds.PeriodAutoClose,
+        AgentTriggerKinds.GroupingFeasibility
     ];
 
     private static IEnumerable<string> AllTriggerKinds() =>

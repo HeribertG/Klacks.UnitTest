@@ -193,4 +193,22 @@ public class ReadOnlyRecipeWriteGuardTests
         plan.CompletedThisTurn.ShouldBeFalse();
         plan.CompletionNote.ShouldBeNull();
     }
+
+    [TestCase(false)]
+    [TestCase(null)]
+    public void CompletedRecipe_StillRejectsTheGroupingPlanPreview(bool? apply)
+    {
+        var parameters = new Dictionary<string, object>();
+        if (apply is bool value)
+        {
+            parameters[PreviewApplySkillCalls.ApplyParameter] = value;
+        }
+
+        var call = new LLMFunctionCall { FunctionName = GroupingSkillNames.Apply, Parameters = parameters, Success = true };
+
+        ReadOnlyRecipeWriteGuard.Reject(
+                new List<LLMFunctionCall> { call }, true, Rejected, new[] { Function(GroupingSkillNames.Apply, SkillEffect.Mutate) })
+            .ShouldBeEmpty();
+        ReadOnlyRecipeWriteGuard.IsSideEffectFree(call, null).ShouldBeFalse();
+    }
 }

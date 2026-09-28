@@ -323,4 +323,88 @@ public class RepeatedWriteCallGuardTests
             Assert.That(repeat.IsRejectedRepeat, Is.True);
         });
     }
+
+    private static LLMFunctionCall GroupingPlanCall(bool? apply)
+    {
+        var parameters = new Dictionary<string, object> { ["fingerprint"] = "abcdefabcdef" };
+        if (apply is bool value)
+        {
+            parameters[PreviewApplySkillCalls.ApplyParameter] = JsonSerializer.SerializeToElement(value);
+        }
+
+        return new LLMFunctionCall { FunctionName = GroupingSkillNames.Apply, Parameters = parameters };
+    }
+
+    [Test]
+    public void PreviewAfterARefusedApply_IsNotRejected()
+    {
+        var called = Called();
+        RunIteration(called, GroupingPlanCall(true));
+
+        var preview = GroupingPlanCall(false);
+        var executable = RunIteration(called, preview);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(executable, Is.EqualTo(new[] { preview }));
+            Assert.That(preview.IsRejectedRepeat, Is.False);
+        });
+    }
+
+    [Test]
+    public void PreviewWithoutApplyArgument_MayRepeat()
+    {
+        var called = Called();
+        RunIteration(called, GroupingPlanCall(null));
+
+        var again = GroupingPlanCall(null);
+        var executable = RunIteration(called, again);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(executable, Is.EqualTo(new[] { again }));
+            Assert.That(again.IsRejectedRepeat, Is.False);
+        });
+    }
+
+    [Test]
+    public void ApplyAfterAPreviewInTheSameTurn_IsStillRejected()
+    {
+        var called = Called();
+        RunIteration(called, GroupingPlanCall(false));
+
+        var apply = GroupingPlanCall(true);
+        var executable = RunIteration(called, apply);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(executable, Is.Empty);
+            Assert.That(apply.IsRejectedRepeat, Is.True);
+        });
+    }
+
+    [Test]
+    public void UncataloguedSkillWithApplyFalse_IsStillRejectedAsARepeat()
+    {
+        var repeat = new LLMFunctionCall
+        {
+            FunctionName = "apply_grouping",
+            Parameters = new Dictionary<string, object> { [PreviewApplySkillCalls.ApplyParameter] = false }
+        };
+
+        var executable = RepeatedWriteCallGuard.Reject(
+            new List<LLMFunctionCall> { repeat }, Called("apply_grouping"), forceRecipe: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(executable, Is.Empty);
+            Assert.That(repeat.IsRejectedRepeat, Is.True);
+        });
+    }
+
+    [Test]
+    public void Preview_StaysNonRepeatable_SoStoppedTurnAndRecipeFallbacksDoNotTreatItAsARead()
+    {
+        Assert.That(RepeatedWriteCallGuard.IsRepeatable(GroupingPlanCall(false)), Is.False);
+    }
 }
