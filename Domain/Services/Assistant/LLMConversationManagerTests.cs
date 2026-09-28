@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// W1.7: TrackUsageAsync must persist the serialized functions_called JSON on the llm_usage row. Follow-up 5:

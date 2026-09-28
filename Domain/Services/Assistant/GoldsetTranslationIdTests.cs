@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Pins the id format of translated goldset items, i18n-&lt;locale&gt;--&lt;sourceId&gt;. The double hyphen is the

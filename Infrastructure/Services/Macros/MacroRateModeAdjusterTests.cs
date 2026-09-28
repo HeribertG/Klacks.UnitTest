@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Unit tests for MacroRateModeAdjuster: FixedPerShift replaces a surcharge amount by the flat rate and moves the result

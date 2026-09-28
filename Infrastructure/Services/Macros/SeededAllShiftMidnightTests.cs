@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Pins what the shipped AllShift and AllShiftAdditive scripts surcharge when a shift touches midnight exactly: a shift

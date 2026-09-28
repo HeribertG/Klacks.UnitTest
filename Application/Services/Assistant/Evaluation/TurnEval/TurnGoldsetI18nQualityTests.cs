@@ -1,4 +1,4 @@
-// Copyright (c) Heribert Gasparoli Private. All rights reserved.
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Quality gate of the translated goldset turn-selection-v1-i18n (spec 2026-09-27 section 3.5). Every id is
