@@ -114,6 +114,51 @@ public sealed class WorkNotificationServiceBatchTests
             Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task SingleDayValidations_AllEntriesOnThePreviousDay_StillReachTheCheckedDaySubscribers()
+    {
+        var checkedDate = AnyDate;
+        var previousDay = checkedDate.AddDays(-1);
+        var checkedDayClient = ClientFor("conn-checked-day");
+        _tracker.GetConnectionsForDatesAsync(
+                Arg.Any<IReadOnlyCollection<DateOnly>>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns([Snapshot("conn-checked-day", null)]);
+
+        await _sut.NotifyScheduleValidationsDetected(new ScheduleValidationListNotificationDto
+        {
+            IsFullRefresh = false,
+            CheckedClientId = ClientInGroupOne,
+            CheckedDate = checkedDate,
+            Entries = [new ScheduleValidationNotificationDto { ClientId = ClientInGroupOne, Date = previousDay }]
+        });
+
+        await _tracker.Received(1).GetConnectionsForDatesAsync(
+            Arg.Is<IReadOnlyCollection<DateOnly>>(dates =>
+                dates.Count == 2 && dates.Contains(checkedDate) && dates.Contains(previousDay)),
+            Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await checkedDayClient.Received(1).ScheduleValidationsDetected(Arg.Any<ScheduleValidationListNotificationDto>());
+    }
+
+    [Test]
+    public async Task SingleDayValidations_EntryOnTheCheckedDay_DoesNotDuplicateTheDate()
+    {
+        _tracker.GetConnectionsForDatesAsync(
+                Arg.Any<IReadOnlyCollection<DateOnly>>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns([Snapshot("conn-all", null)]);
+
+        await _sut.NotifyScheduleValidationsDetected(new ScheduleValidationListNotificationDto
+        {
+            IsFullRefresh = false,
+            CheckedClientId = ClientInGroupOne,
+            CheckedDate = AnyDate,
+            Entries = [new ScheduleValidationNotificationDto { ClientId = ClientInGroupOne, Date = AnyDate }]
+        });
+
+        await _tracker.Received(1).GetConnectionsForDatesAsync(
+            Arg.Is<IReadOnlyCollection<DateOnly>>(dates => dates.Count == 1 && dates.Contains(AnyDate)),
+            Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private IScheduleClient ClientFor(string connectionId)
     {
         var client = Substitute.For<IScheduleClient>();

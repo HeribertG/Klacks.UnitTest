@@ -215,4 +215,92 @@ public class ScheduleValidationBuilderTests
         _entries.Count.ShouldBe(1);
         _entries[0].Date.ShouldBe(Monday);
     }
+
+    private static readonly DateOnly Tuesday = Monday.AddDays(1);
+    private static readonly DateOnly Wednesday = Monday.AddDays(2);
+    private static readonly DateOnly Thursday = Monday.AddDays(3);
+
+    private void AddShift(DateOnly date, int startHour, int endHour)
+    {
+        _timeline.AddBlock(new ScheduleBlock(
+            Guid.NewGuid(), ScheduleBlockType.Work, _clientId,
+            date.ToDateTime(new TimeOnly(startHour, 0)),
+            date.ToDateTime(new TimeOnly(endHour, 0))));
+        _timeline.SortBlocks();
+    }
+
+    [Test]
+    public void AddRestViolations_WindowAroundTuesday_LateMondayEarlyTuesday_ReportsOneEntryDatedMonday()
+    {
+        AddShift(Monday, 15, 22);
+        AddShift(Tuesday, 7, 15);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy(), Monday, Tuesday);
+
+        _entries.Count.ShouldBe(1);
+        _entries[0].Date.ShouldBe(Monday);
+        _entries[0].Comment.ShouldBe("schedule.error-list.rest-violation");
+        _entries[0].CommentParams["actualHours"].ShouldBe("9.0");
+        _entries[0].CommentParams["endTime"].ShouldBe("22:00");
+        _entries[0].CommentParams["startTime"].ShouldBe("07:00");
+    }
+
+    [Test]
+    public void AddRestViolations_PairOutsideTheReportWindow_IsNotReported()
+    {
+        AddShift(Wednesday, 15, 22);
+        AddShift(Thursday, 7, 15);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy(), Monday, Tuesday);
+
+        _entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AddRestViolations_PairWhosePreviousShiftIsOnTheLastWindowDay_IsReported()
+    {
+        AddShift(Tuesday, 15, 22);
+        AddShift(Wednesday, 7, 15);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy(), Monday, Tuesday);
+
+        _entries.Count.ShouldBe(1);
+        _entries[0].Date.ShouldBe(Tuesday);
+    }
+
+    [Test]
+    public void AddRestViolations_PairEntirelyOnThePreviousDay_IsStillReported()
+    {
+        AddShift(Monday, 6, 10);
+        AddShift(Monday, 18, 22);
+        AddShift(Tuesday, 7, 15);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy(), Monday, Tuesday);
+
+        _entries.Count.ShouldBe(2);
+        _entries.ShouldAllBe(e => e.Date == Monday);
+    }
+
+    [Test]
+    public void AddRestViolations_OverASingleDayTimeline_CannotSeeAPairAcrossMidnight()
+    {
+        AddShift(Tuesday, 7, 15);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy());
+
+        _entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AddRestViolations_WithoutWindow_ReportsEveryPair()
+    {
+        AddShift(Monday, 15, 22);
+        AddShift(Tuesday, 7, 15);
+        AddShift(Wednesday, 15, 22);
+        AddShift(Thursday, 7, 15);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy());
+
+        _entries.Select(e => e.Date).ShouldBe([Monday, Wednesday]);
+    }
 }

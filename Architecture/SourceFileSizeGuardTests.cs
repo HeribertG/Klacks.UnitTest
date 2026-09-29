@@ -54,7 +54,7 @@ public class SourceFileSizeGuardTests
     // Relative path -> its measured line count on the day it was allowlisted. See ShrinkOnlyHint.
     private static readonly IReadOnlyDictionary<string, int> FileCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 886,
+        [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 859,
         [@"Domain\Services\Assistant\LLMService.cs"] = 1104,
         [@"Domain\Services\RouteOptimization\ContainerAutofillService.cs"] = 859,
         [@"Infrastructure\Services\AnalyseScenarios\AnalyseScenarioService.cs"] = 991,

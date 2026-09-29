@@ -75,14 +75,10 @@ public class ReportSkillTests
     public async Task GeneratePeriodSummary_ReturnsClientCount()
     {
         var groupId = Guid.NewGuid();
-        var repo = Substitute.For<IClientRepository>();
-        repo.GetActiveClientsWithAddressesForGroupsAsync(
-            Arg.Is<List<Guid>>(l => l.Single() == groupId), Arg.Any<CancellationToken>())
-            .Returns(new List<Client>
-            {
-                new() { Id = Guid.NewGuid(), FirstName = "Anna", Name = "M" },
-                new() { Id = Guid.NewGuid(), FirstName = "Max", Name = "M" }
-            });
+        var repo = Substitute.For<IGroupPlanningAgentRepository>();
+        repo.GetAgentIdsAsync(
+            groupId, new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { Guid.NewGuid(), Guid.NewGuid() });
         var skill = new GeneratePeriodSummarySkill(repo);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
@@ -99,7 +95,7 @@ public class ReportSkillTests
     [Test]
     public async Task GeneratePeriodSummary_RejectsInvertedRange()
     {
-        var repo = Substitute.For<IClientRepository>();
+        var repo = Substitute.For<IGroupPlanningAgentRepository>();
         var skill = new GeneratePeriodSummarySkill(repo);
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>

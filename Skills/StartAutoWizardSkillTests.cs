@@ -26,7 +26,7 @@ public class StartAutoWizardSkillTests
 {
     private IAutoWizardJobRunner _runner = null!;
     private IGroupRepository _groupRepository = null!;
-    private IClientRepository _clientRepository = null!;
+    private IGroupPlanningAgentRepository _planningAgentRepository = null!;
     private IShiftScheduleRepository _shiftScheduleRepository = null!;
     private StartAutoWizardSkill _skill = null!;
     private SkillExecutionContext _context = null!;
@@ -36,10 +36,10 @@ public class StartAutoWizardSkillTests
     {
         _runner = Substitute.For<IAutoWizardJobRunner>();
         _groupRepository = Substitute.For<IGroupRepository>();
-        _clientRepository = Substitute.For<IClientRepository>();
+        _planningAgentRepository = Substitute.For<IGroupPlanningAgentRepository>();
         _shiftScheduleRepository = Substitute.For<IShiftScheduleRepository>();
 
-        _skill = new StartAutoWizardSkill(_runner, _groupRepository, _clientRepository, _shiftScheduleRepository);
+        _skill = new StartAutoWizardSkill(_runner, _groupRepository, _planningAgentRepository, _shiftScheduleRepository);
         _context = new SkillExecutionContext
         {
             UserId = Guid.NewGuid(),
@@ -105,8 +105,8 @@ public class StartAutoWizardSkillTests
     {
         var groupId = Guid.NewGuid();
         _groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Bern" });
-        _clientRepository.GetActiveClientsWithAddressesForGroupsAsync(
-            Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>()).Returns(new List<Client>());
+        _planningAgentRepository.GetAgentIdsAsync(
+            groupId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(new List<Guid>());
 
         var parameters = new Dictionary<string, object>
         {
@@ -126,9 +126,9 @@ public class StartAutoWizardSkillTests
     {
         var groupId = Guid.NewGuid();
         _groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Bern" });
-        _clientRepository.GetActiveClientsWithAddressesForGroupsAsync(
-            Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Client> { new() { Id = Guid.NewGuid(), FirstName = "Coline" } });
+        _planningAgentRepository.GetAgentIdsAsync(
+            groupId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { Guid.NewGuid() });
         _shiftScheduleRepository.GetShiftScheduleAsync(
             Arg.Any<ShiftScheduleFilter>(), Arg.Any<CancellationToken>())
             .Returns((new List<ShiftDayAssignment>(), 0));
@@ -155,9 +155,9 @@ public class StartAutoWizardSkillTests
         var shiftId = Guid.NewGuid();
 
         _groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Bern" });
-        _clientRepository.GetActiveClientsWithAddressesForGroupsAsync(
-            Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Client> { new() { Id = clientId } });
+        _planningAgentRepository.GetAgentIdsAsync(
+            groupId, new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { clientId });
         _shiftScheduleRepository.GetShiftScheduleAsync(
             Arg.Any<ShiftScheduleFilter>(), Arg.Any<CancellationToken>())
             .Returns((new List<ShiftDayAssignment> { new() { ShiftId = shiftId } }, 1));
