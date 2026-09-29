@@ -67,7 +67,7 @@ public class CreatePlanSkillTests
     {
         var userId = Guid.NewGuid();
         var plan = DraftPlan(Guid.NewGuid(), userId);
-        _planChatService.CreatePlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
             .Returns(plan);
 
         var result = await _skill.ExecuteAsync(
@@ -91,7 +91,7 @@ public class CreatePlanSkillTests
     {
         var userId = Guid.NewGuid();
         var plan = DraftPlan(Guid.NewGuid(), userId);
-        _planChatService.CreatePlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
             .Returns(plan);
         IReadOnlyDictionary<string, object>? stored = null;
         _confirmationStore
@@ -113,8 +113,9 @@ public class CreatePlanSkillTests
         var result = await _skill.ExecuteAsync(Ctx(Guid.NewGuid()), new Dictionary<string, object>());
 
         result.Success.ShouldBeFalse();
-        await _planChatService.DidNotReceive().CreatePlanAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _planChatService.DidNotReceive().DraftPlanAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>());
+        await _planRepository.DidNotReceive().AddAsync(Arg.Any<AgentPlan>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -122,7 +123,7 @@ public class CreatePlanSkillTests
     {
         var userId = Guid.NewGuid();
         var plan = DraftPlan(Guid.NewGuid(), userId, stepsJson: "[]");
-        _planChatService.CreatePlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
             .Returns(plan);
 
         var result = await _skill.ExecuteAsync(
@@ -130,8 +131,37 @@ public class CreatePlanSkillTests
             new Dictionary<string, object> { [PlanSkillDefaults.GoalParameter] = "impossible goal" });
 
         result.Success.ShouldBeFalse();
+        await _planRepository.DidNotReceive().AddAsync(Arg.Any<AgentPlan>(), Arg.Any<CancellationToken>());
         _confirmationStore.DidNotReceive().Create(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
+        _turnScope.DidNotReceive().MarkIssued(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task Proposal_WithSteps_PersistsPlanOnce_BeforeTokenIsMinted_AndTokenReferencesPlanId()
+    {
+        var userId = Guid.NewGuid();
+        var plan = DraftPlan(Guid.NewGuid(), userId);
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(plan);
+        IReadOnlyDictionary<string, object>? stored = null;
+        _confirmationStore
+            .Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Do<IReadOnlyDictionary<string, object>>(p => stored = p))
+            .Returns("plan-token");
+
+        await _skill.ExecuteAsync(
+            Ctx(userId),
+            new Dictionary<string, object> { [PlanSkillDefaults.GoalParameter] = "do X and Y" });
+
+        await _planRepository.Received(1).AddAsync(plan, Arg.Any<CancellationToken>());
+        stored.ShouldNotBeNull();
+        stored![PlanSkillDefaults.PlanIdParameter].ShouldBe(plan.Id.ToString());
+        Received.InOrder(() =>
+        {
+            _planRepository.AddAsync(plan, Arg.Any<CancellationToken>());
+            _confirmationStore.Create(userId, PlanSkillDefaults.CreatePlanSkillName,
+                Arg.Any<IReadOnlyDictionary<string, object>>());
+        });
     }
 
     // ── Confirmed execution replay ──────────────────────────────────────────────

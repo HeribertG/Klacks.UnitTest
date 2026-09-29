@@ -4,7 +4,8 @@
 /// Unit tests for GoalPlanDraftService — the Phase 3 plan-draft step of the self-directed-goals
 /// roadmap. Covers: a candidate that is not (yet) Approved never gets a plan; a candidate that
 /// already has a PlanId is never drafted a second time; a successful draft creates the plan with
-/// Origin = SelfReflection and links GoalCandidate.PlanId; a failure while drafting is swallowed and
+/// Origin = SelfReflection, persists the plan exactly once and links GoalCandidate.PlanId; a step-less
+/// draft is never persisted; a failure while drafting is swallowed and
 /// returns null without mutating the candidate; a structural guard that the constructor cannot take
 /// any dependency capable of executing a plan step, because Phase 3 only drafts and shows, never runs.
 /// </summary>
@@ -30,6 +31,7 @@ public class GoalPlanDraftServiceTests
 
     private IGoalCandidateRepository _goalCandidateRepository = null!;
     private IPlanChatService _planChatService = null!;
+    private IAgentPlanRepository _planRepository = null!;
     private BackgroundServiceOptions _options = null!;
     private GoalPlanDraftService _sut = null!;
 
@@ -38,9 +40,10 @@ public class GoalPlanDraftServiceTests
     {
         _goalCandidateRepository = Substitute.For<IGoalCandidateRepository>();
         _planChatService = Substitute.For<IPlanChatService>();
+        _planRepository = Substitute.For<IAgentPlanRepository>();
         _options = new BackgroundServiceOptions { GoalReflectionPlanDrafting = true };
         _sut = new GoalPlanDraftService(
-            _goalCandidateRepository, _planChatService, Options.Create(_options), NullLogger<GoalPlanDraftService>.Instance);
+            _goalCandidateRepository, _planChatService, _planRepository, Options.Create(_options), NullLogger<GoalPlanDraftService>.Instance);
     }
 
     private static GoalCandidate MakeCandidate(string status = "approved", Guid? planId = null) => new()
@@ -56,7 +59,7 @@ public class GoalPlanDraftServiceTests
         PlanId = planId
     };
 
-    private static AgentPlan MakePlan(string stepsJson = "[{\"order\":1}]") => new()
+    private static AgentPlan MakePlan(string stepsJson = "[{\"order\":1,\"skill\":\"create_shift\"}]") => new()
     {
         Id = Guid.NewGuid(),
         AgentId = Guid.NewGuid(),
@@ -74,7 +77,7 @@ public class GoalPlanDraftServiceTests
         var result = await _sut.DraftForCandidateAsync(candidate.Id, CancellationToken.None);
 
         result.ShouldBeNull();
-        await _planChatService.DidNotReceiveWithAnyArgs().CreatePlanAsync(default!, default!, default, default, default!);
+        await _planChatService.DidNotReceiveWithAnyArgs().DraftPlanAsync(default!, default!, default, default, default!);
         await _goalCandidateRepository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
     }
 
@@ -87,7 +90,7 @@ public class GoalPlanDraftServiceTests
         var result = await _sut.DraftForCandidateAsync(candidate.Id, CancellationToken.None);
 
         result.ShouldBeNull();
-        await _planChatService.DidNotReceiveWithAnyArgs().CreatePlanAsync(default!, default!, default, default, default!);
+        await _planChatService.DidNotReceiveWithAnyArgs().DraftPlanAsync(default!, default!, default, default, default!);
         await _goalCandidateRepository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
     }
 
@@ -99,7 +102,7 @@ public class GoalPlanDraftServiceTests
         var result = await _sut.DraftForCandidateAsync(Guid.NewGuid(), CancellationToken.None);
 
         result.ShouldBeNull();
-        await _planChatService.DidNotReceiveWithAnyArgs().CreatePlanAsync(default!, default!, default, default, default!);
+        await _planChatService.DidNotReceiveWithAnyArgs().DraftPlanAsync(default!, default!, default, default, default!);
     }
 
     [Test]
@@ -108,7 +111,7 @@ public class GoalPlanDraftServiceTests
         var candidate = MakeCandidate(status: GoalCandidateStatus.Approved);
         var plan = MakePlan();
         _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
-        _planChatService.CreatePlanAsync(
+        _planChatService.DraftPlanAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
             .Returns(plan);
 
@@ -116,9 +119,10 @@ public class GoalPlanDraftServiceTests
 
         result.ShouldBe(plan.Id);
         candidate.PlanId.ShouldBe(plan.Id);
-        await _planChatService.Received(1).CreatePlanAsync(
+        await _planChatService.Received(1).DraftPlanAsync(
             Arg.Any<string>(), OwnerUserId, null, Arg.Any<CancellationToken>(), AgentPlanOrigin.SelfReflection);
         await _goalCandidateRepository.Received(1).UpdateAsync(candidate, Arg.Any<CancellationToken>());
+        await _planRepository.Received(1).AddAsync(plan, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -127,13 +131,13 @@ public class GoalPlanDraftServiceTests
         var candidate = MakeCandidate(status: GoalCandidateStatus.Approved);
         var plan = MakePlan();
         _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
-        _planChatService.CreatePlanAsync(
+        _planChatService.DraftPlanAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
             .Returns(plan);
 
         await _sut.DraftForCandidateAsync(candidate.Id, CancellationToken.None);
 
-        await _planChatService.Received(1).CreatePlanAsync(
+        await _planChatService.Received(1).DraftPlanAsync(
             Arg.Is<string>(g => g.Contains(candidate.Title) && g.Contains(candidate.Rationale)),
             Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>());
     }
@@ -143,7 +147,7 @@ public class GoalPlanDraftServiceTests
     {
         var candidate = MakeCandidate(status: GoalCandidateStatus.Approved);
         _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
-        _planChatService.CreatePlanAsync(
+        _planChatService.DraftPlanAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
             .Throws(new InvalidOperationException("simulated planning failure"));
 
@@ -152,6 +156,7 @@ public class GoalPlanDraftServiceTests
         result.ShouldBeNull();
         candidate.PlanId.ShouldBeNull();
         await _goalCandidateRepository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+        await _planRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
     }
 
     [Test]
@@ -174,16 +179,16 @@ public class GoalPlanDraftServiceTests
 
         result.ShouldBeNull();
         await _goalCandidateRepository.DidNotReceiveWithAnyArgs().GetByIdAsync(default, default);
-        await _planChatService.DidNotReceiveWithAnyArgs().CreatePlanAsync(default!, default!, default, default, default!);
+        await _planChatService.DidNotReceiveWithAnyArgs().DraftPlanAsync(default!, default!, default, default, default!);
     }
 
     [Test]
-    public async Task DraftForCandidateAsync_PlanHasZeroSteps_ReturnsNullAndLeavesPlanIdUnsetForRetry()
+    public async Task DraftForCandidateAsync_PlanHasZeroSteps_ReturnsNullWithoutPersistingAndLeavesPlanIdUnsetForRetry()
     {
         var candidate = MakeCandidate(status: GoalCandidateStatus.Approved);
         var plan = MakePlan(stepsJson: "[]");
         _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
-        _planChatService.CreatePlanAsync(
+        _planChatService.DraftPlanAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
             .Returns(plan);
 
@@ -192,6 +197,7 @@ public class GoalPlanDraftServiceTests
         result.ShouldBeNull();
         candidate.PlanId.ShouldBeNull();
         await _goalCandidateRepository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+        await _planRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
     }
 
     [Test]
