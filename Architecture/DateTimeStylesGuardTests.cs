@@ -123,7 +123,6 @@ public class DateTimeStylesGuardTests
             ["Application/Skills/SearchClientAbsencesSkill.cs"] = 1,
             ["Application/Skills/SetClientAvailabilitySkill.cs"] = 1,
             ["Application/Skills/SetSealedOrderUntilDateSkill.cs"] = 1,
-            ["Application/Skills/StartAutoWizardSkill.cs"] = 2,
             ["Application/Skills/UpdateBreakSkill.cs"] = 2,
             ["Application/Skills/UpdateIndividualPeriodSkill.cs"] = 2,
             ["Application/Skills/UpdateShiftSkill.cs"] = 4,

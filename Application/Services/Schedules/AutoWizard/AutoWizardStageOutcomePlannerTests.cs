@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Klacks.Api.Application.Services.Schedules.AutoWizard;
+using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
 using NUnit.Framework;
 using Shouldly;
 
@@ -107,5 +108,55 @@ public sealed class AutoWizardStageOutcomePlannerTests
 
         reason.ShouldContain("Wizard");
         reason.ShouldNotContain("partial result");
+    }
+
+    [Test]
+    public void HolisticStageFailure_WithMissingPrerequisite_DegradesToSkip()
+    {
+        AutoWizardStageOutcomePlanner
+            .ShouldSkipHolisticStageAfterFailure(HolisticHarmonizerReadiness.NotReady("model is text-only"))
+            .ShouldBeTrue();
+    }
+
+    [Test]
+    public void HolisticStageFailure_WithPrerequisiteMet_StaysAFailure()
+    {
+        AutoWizardStageOutcomePlanner
+            .ShouldSkipHolisticStageAfterFailure(HolisticHarmonizerReadiness.Ready())
+            .ShouldBeFalse();
+    }
+
+    [Test]
+    public void PartialResult_PointsAtTheKeptScenario()
+    {
+        var harmonizer = Stage("Harmonizer");
+        var jobId = Guid.NewGuid();
+        var failure = AutoWizardStageOutcomePlanner.BuildFailure(
+            jobId, [Stage("Wizard"), harmonizer], AllStages, "engine crashed");
+
+        var partial = AutoWizardStageOutcomePlanner.BuildPartialResult(failure, elapsedMs: 1234);
+
+        partial.ShouldNotBeNull();
+        partial.JobId.ShouldBe(jobId);
+        partial.FinalScenarioId.ShouldBe(harmonizer.ScenarioId);
+        partial.FinalScenarioToken.ShouldBe(harmonizer.Token);
+        partial.FinalScenarioName.ShouldBe(harmonizer.Name);
+        partial.ElapsedMs.ShouldBe(1234);
+        partial.HarmonizationSkipped.ShouldBeFalse();
+    }
+
+    [Test]
+    public void PartialResult_WithoutAnyScenario_IsNull()
+    {
+        var failure = AutoWizardStageOutcomePlanner.BuildFailure(Guid.NewGuid(), [], AllStages, "no agents");
+
+        AutoWizardStageOutcomePlanner.BuildPartialResult(failure, elapsedMs: 10).ShouldBeNull();
+    }
+
+    [Test]
+    public void HarmonizationSkippedNote_NamesTheReason()
+    {
+        AutoWizardStageOutcomePlanner.BuildHarmonizationSkippedNote("no model configured")
+            .ShouldContain("no model configured");
     }
 }

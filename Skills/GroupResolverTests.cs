@@ -104,6 +104,25 @@ public class GroupResolverTests
     }
 
     [Test]
+    public void IdenticalNamesUnderDifferentRoots_AmbiguityNamesParentRootAndId()
+    {
+        var zurich = new Group { Id = Guid.NewGuid(), Name = "Zürich" };
+        var bern = new Group { Id = Guid.NewGuid(), Name = "Bern" };
+        var bernWest = new Group { Id = Guid.NewGuid(), Name = "Bern West", Parent = bern.Id, Root = bern.Id };
+        var pflegeZurich = new Group { Id = Guid.NewGuid(), Name = "Pflege", Parent = zurich.Id, Root = zurich.Id };
+        var pflegeBern = new Group { Id = Guid.NewGuid(), Name = "Pflege", Parent = bernWest.Id, Root = bern.Id };
+
+        var (group, error) = GroupResolver.Resolve(
+            new List<Group> { zurich, bern, bernWest, pflegeZurich, pflegeBern }, "Pflege");
+
+        Assert.That(group, Is.Null);
+        Assert.That(error, Does.Contain("ambiguous"));
+        Assert.That(error, Does.Contain($"'Pflege' in 'Zürich', id {pflegeZurich.Id}"));
+        Assert.That(error, Does.Contain($"'Pflege' in 'Bern West' under 'Bern', id {pflegeBern.Id}"));
+        Assert.That(error, Does.Contain("do not guess"));
+    }
+
+    [Test]
     public void UnknownName_ReturnsNotFound_ListingRealGroups()
     {
         var (group, error) = GroupResolver.Resolve(TwoBernGroups(), "Administration");

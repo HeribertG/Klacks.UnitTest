@@ -290,6 +290,65 @@ public class SkillMatchingEngineTests
         result.ShouldContain("seal_open_orders");
     }
 
+    [TestCase("Plane bitte die Woche vom 2. bis 8. November 2026 für Winterthur.")]
+    [TestCase("Plane die KW 45 für Winterthur automatisch.")]
+    [TestCase("Starte den Planassistenten für Winterthur vom 2. bis 8. November 2026.")]
+    [TestCase("Plane den Monat Dezember für Winterthur.")]
+    [TestCase("Erstelle den Dienstplan für Winterthur im November.")]
+    [TestCase("Füll mir bitte den Dienstplan für die Gruppe Pflege Ost im nächsten Monat automatisch aus.")]
+    [TestCase("Plan the week of November 2 to 8 for Winterthur.")]
+    [TestCase("Plan calendar week 45 for Winterthur automatically.")]
+    [TestCase("Planifie la semaine du 2 au 8 novembre pour Winterthur.")]
+    [TestCase("Pianifica la settimana dal 2 all'8 novembre per Winterthur.")]
+    public void TopKeywordMatchedSkillNames_NaturalPlanningRequest_GuaranteesTheAutoWizard(string message)
+    {
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(LoadAllNonAlwaysOnSkillsFromSeeds(), message);
+
+        result.ShouldContain("start_autowizard");
+    }
+
+    [Test]
+    public void TopKeywordMatchedSkillNames_PlanningAssistantStart_RanksTheAutoWizardAboveTheExplainSkill()
+    {
+        var result = SkillMatchingEngine.TopKeywordMatchedSkillNames(
+            LoadAllNonAlwaysOnSkillsFromSeeds(),
+            "Starte den Planassistenten für Winterthur vom 2. bis 8. November 2026.");
+
+        result[0].ShouldBe("start_autowizard");
+    }
+
+    private static List<AgentSkill> LoadAllNonAlwaysOnSkillsFromSeeds()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(LocateSkillSeedsFile()));
+        var skills = new List<AgentSkill>();
+
+        foreach (var element in document.RootElement.GetProperty("skills").EnumerateArray())
+        {
+            if (element.TryGetProperty("alwaysOn", out var alwaysOn) && alwaysOn.GetBoolean())
+            {
+                continue;
+            }
+
+            var synonyms = element.TryGetProperty("synonyms", out var synonymsElement)
+                && synonymsElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<string>>>(synonymsElement.GetRawText())
+                : null;
+
+            skills.Add(new AgentSkill
+            {
+                Name = element.GetProperty("name").GetString()!,
+                Category = element.GetProperty("category").GetString()!,
+                TriggerKeywords = element.TryGetProperty("triggerKeywords", out var keywords)
+                    && keywords.ValueKind != System.Text.Json.JsonValueKind.Null
+                    ? keywords.GetRawText()
+                    : "[]",
+                Synonyms = synonyms
+            });
+        }
+
+        return skills;
+    }
+
     private static AgentSkill LoadSealOpenOrdersFromSeeds()
     {
         const string skillName = "seal_open_orders";

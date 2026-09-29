@@ -57,6 +57,57 @@ public class HolisticHarmonizerLoopControlTests
     }
 
     [Test]
+    public async Task TransientCapabilityFailure_IsNotCachedAsNotVisionCapable()
+    {
+        // A timeout or an unavailable provider says nothing about vision. Cached as a negative verdict it
+        // would make the readiness check call a working model "text-only" and skip stage 3 for 10 minutes.
+        var contextBuilder = Substitute.For<IHarmonizerContextBuilder>();
+        contextBuilder
+            .BuildContextAsync(Arg.Any<HarmonizerContextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(BuildContext());
+        var provider = Substitute.For<IPlanProposalProvider>();
+        provider
+            .CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(IsHealthy: false, LatencyMs: 90000, Error: "Capability check timed out after 90s."));
+        var cache = new HolisticHarmonizerModelCapabilityCache();
+        var engine = new HolisticHarmonizerEngine(
+            contextBuilder, provider, cache, NullLogger<HolisticHarmonizerEngine>.Instance);
+
+        var first = await engine.RunAsync(BuildRequest(), CancellationToken.None);
+        await engine.RunAsync(BuildRequest(), CancellationToken.None);
+
+        first.LlmParsingError.ShouldNotBeNull();
+        cache.TryGet(ModelId, out _, out _).ShouldBeFalse();
+        await provider.Received(2).CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AnsweredButFailedImageCheck_IsCachedAsNotVisionCapable()
+    {
+        var contextBuilder = Substitute.For<IHarmonizerContextBuilder>();
+        contextBuilder
+            .BuildContextAsync(Arg.Any<HarmonizerContextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(BuildContext());
+        var provider = Substitute.For<IPlanProposalProvider>();
+        provider
+            .CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(
+                IsHealthy: false, LatencyMs: 800, Error: "token mismatch", AnsweredButFailedImageCheck: true));
+        var cache = new HolisticHarmonizerModelCapabilityCache();
+        var engine = new HolisticHarmonizerEngine(
+            contextBuilder, provider, cache, NullLogger<HolisticHarmonizerEngine>.Instance);
+
+        await engine.RunAsync(BuildRequest(), CancellationToken.None);
+        var second = await engine.RunAsync(BuildRequest(), CancellationToken.None);
+
+        cache.TryGet(ModelId, out var isVisionCapable, out var error).ShouldBeTrue();
+        isVisionCapable.ShouldBeFalse();
+        error.ShouldBe("token mismatch");
+        second.LlmParsingError!.ShouldContain("not vision-capable");
+        await provider.Received(1).CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ProviderHealthy_ExplicitlyEmptyBatches_BreaksLoopAsSatisfied()
     {
         var contextBuilder = Substitute.For<IHarmonizerContextBuilder>();

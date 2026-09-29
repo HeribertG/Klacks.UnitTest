@@ -91,4 +91,19 @@ public sealed class JobTerminalStateCacheTests
         state.Status.ShouldBe(WizardJobStatusValues.Failed);
         state.Reason.ShouldBe("engine exploded");
     }
+
+    [Test]
+    public async Task StoreFailed_WithPartialResult_KeepsReasonAndResult()
+    {
+        var cache = JobTerminalStateCacheTestFactory.Create<FakeResult>();
+        var jobId = Guid.NewGuid();
+
+        await cache.StoreFailedAsync(jobId, "stage 3 failed", new FakeResult("partial scenario"));
+
+        var state = await cache.TryGetAsync(jobId);
+        state.Found.ShouldBeTrue();
+        state.Status.ShouldBe(WizardJobStatusValues.Failed);
+        state.Reason.ShouldBe("stage 3 failed");
+        state.Result.ShouldBe(new FakeResult("partial scenario"));
+    }
 }

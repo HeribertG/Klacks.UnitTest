@@ -311,6 +311,53 @@ public class NextPeriodAutoCommitServiceTests
     }
 
     [Test]
+    public async Task WatchAndCommit_CompletedWithoutHolisticHarmonization_IsNeverAutoAccepted()
+    {
+        // Owner decision: autonomy consent covers the full chain. A plan whose stage 3 was skipped stays a
+        // draft with its own block reason, even when compliance and the autonomy gate would let it through.
+        StubCompliance();
+        _jobRunner.IsRunning(JobId).Returns(false);
+        var terminalStates = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
+        await terminalStates.StoreCompletedAsync(JobId, new AutoWizardJobResultDto(
+            JobId, ScenarioId, ScenarioToken, "AutoWizard-Harmonizer", 1000, [], [], [],
+            HarmonizationSkipped: true,
+            HarmonizationSkippedReason: "No model is configured for the holistic harmonization."));
+        _sut = new NextPeriodAutoCommitService(
+            _jobRunner, terminalStates, _scopeFactory, Substitute.For<IHostApplicationLifetime>(),
+            _timeProvider, NullLogger<NextPeriodAutoCommitService>.Instance);
+
+        await _sut.WatchAndCommitAsync(JobId, GroupId, GroupName, PeriodStart, PeriodEnd, CancellationToken.None);
+
+        var blocked = CapturedBlockedEvent();
+        Assert.Multiple(() =>
+        {
+            Assert.That(blocked.Reason, Is.EqualTo(NextPeriodAutoCommitBlockReason.HarmonizationSkipped));
+            Assert.That(blocked.ScenarioId, Is.EqualTo(ScenarioId), "The unharmonized draft is what the reviewer must look at.");
+            Assert.That(blocked.Summary, Does.EndWith(ProactiveMessageI18nKeys.NextPeriodAutoCommitBlockedHarmonizationSkipped));
+        });
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WatchAndCommit_CompletedWithHolisticHarmonization_IsStillAccepted()
+    {
+        StubCompliance();
+        _jobRunner.IsRunning(JobId).Returns(false);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        var terminalStates = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
+        await terminalStates.StoreCompletedAsync(JobId, new AutoWizardJobResultDto(
+            JobId, ScenarioId, ScenarioToken, "AutoWizard-Holistic", 1000, [], [], []));
+        _sut = new NextPeriodAutoCommitService(
+            _jobRunner, terminalStates, _scopeFactory, Substitute.For<IHostApplicationLifetime>(),
+            _timeProvider, NullLogger<NextPeriodAutoCommitService>.Instance);
+
+        await _sut.WatchAndCommitAsync(JobId, GroupId, GroupName, PeriodStart, PeriodEnd, CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<AcceptAnalyseScenarioCommand>(c => c.ScenarioId == ScenarioId), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task WatchAndCommit_ShutdownDuringTheWait_IsInformationNotAnError()
     {
         var logger = Substitute.For<ILogger<NextPeriodAutoCommitService>>();
