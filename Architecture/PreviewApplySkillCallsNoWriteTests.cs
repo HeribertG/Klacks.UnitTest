@@ -15,6 +15,7 @@
 
 using System.Reflection;
 using System.Text.Json;
+using Klacks.Api.Application.Commands.Grouping;
 using Klacks.Api.Application.Commands.Groups;
 using Klacks.Api.Application.Commands.Orders;
 using Klacks.Api.Application.DTOs.Filter;
@@ -22,6 +23,7 @@ using Klacks.Api.Application.DTOs.Grouping;
 using Klacks.Api.Application.DTOs.Groups;
 using Klacks.Api.Application.DTOs.Orders;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Handlers.Grouping;
 using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Application.Handlers.Orders;
 using Klacks.Api.Application.Interfaces;
@@ -57,6 +59,7 @@ public class PreviewApplySkillCallsNoWriteTests
     private const string AddSelectedClientsToGroup = "add_selected_clients_to_group";
     private const string GroupUngroupedByCityName = "group_ungrouped_by_city_name";
     private const string AssignOrdersToGroups = "assign_orders_to_groups";
+    private const string AssignShiftsToCityGroups = "assign_shifts_to_city_groups";
     private const string SealOpenOrders = "seal_open_orders";
     private const string ScheduleRecurringTask = "schedule_recurring_task";
 
@@ -91,6 +94,8 @@ public class PreviewApplySkillCallsNoWriteTests
     private const char FingerprintChar = 'b';
     private const int FingerprintLength = 64;
     private const int ExistingTaskRunCount = 4;
+    private const int LeafLeft = 1;
+    private const int LeafRight = 2;
 
     private static readonly string[] ReadMethodPrefixes = ["Get", "List", "Count", "Exists", "Search", "get_"];
 
@@ -112,6 +117,7 @@ public class PreviewApplySkillCallsNoWriteTests
             [AddSelectedClientsToGroup] = typeof(AddSelectedClientsToGroupSkill),
             [GroupUngroupedByCityName] = typeof(GroupUngroupedByCityNameSkill),
             [AssignOrdersToGroups] = typeof(AssignOrdersToGroupsSkill),
+            [AssignShiftsToCityGroups] = typeof(AssignShiftsToCityGroupsSkill),
             [SealOpenOrders] = typeof(SealOpenOrdersSkill),
             [ScheduleRecurringTask] = typeof(ScheduleRecurringTaskSkill),
         };
@@ -120,6 +126,7 @@ public class PreviewApplySkillCallsNoWriteTests
     private IGroupItemRepository _groupItemRepository = null!;
     private IClientRepository _clientRepository = null!;
     private IShiftRepository _shiftRepository = null!;
+    private IAddressRepository _addressRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IMediator _mediator = null!;
     private ICompanyClock _companyClock = null!;
@@ -137,6 +144,8 @@ public class PreviewApplySkillCallsNoWriteTests
             .Returns(ci => ci.Arg<IReadOnlyCollection<Guid>>().Count);
         _clientRepository = Substitute.For<IClientRepository>();
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _addressRepository = Substitute.For<IAddressRepository>();
+        _addressRepository.GetCityCentroidsAsync(Arg.Any<CancellationToken>()).Returns(new List<CityCentroid>());
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
             .Returns(ci => ci.Arg<Func<Task<int>>>()());
@@ -381,6 +390,31 @@ public class PreviewApplySkillCallsNoWriteTests
     }
 
     [Test]
+    public async Task AssignShiftsToCityGroups_PreviewWritesNothing_InSkillAndHandler([Values(ApplyAbsent, ApplyFalse, ApplyJsonFalse)] string applyShape)
+    {
+        var cityGroup = new Group { Id = GroupId, Name = CityName, Lft = LeafLeft, Rgt = LeafRight };
+        _groupRepository.List().Returns(new List<Group> { cityGroup });
+        var regionLink = new GroupItem { Id = Guid.NewGuid(), GroupId = Guid.NewGuid() };
+        var shift = UngroupedOrderOfCustomerInCity();
+        shift.GroupItems = new List<GroupItem> { regionLink };
+        _shiftRepository.GetShiftsForCityGroupPlacementAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Shift> { shift });
+        RouteAssignShiftsToHandler();
+        var skill = new AssignShiftsToCityGroupsSkill(TestGroupScopeGuard.Unrestricted(), _mediator);
+
+        var result = await RunPreviewAsync(AssignShiftsToCityGroups, skill, Ctx(), WithApply(applyShape, new Dictionary<string, object>()));
+
+        result.Message.ShouldContain(NothingChangedMarker);
+        var data = result.Data.ShouldBeOfType<AssignShiftsToCityGroupsResult>();
+        data.Applied.ShouldBeFalse();
+        data.AssignedCount.ShouldBe(1);
+        data.VerifiedCount.ShouldBe(0);
+        shift.GroupItems.ShouldHaveSingleItem().ShouldBeSameAs(regionLink);
+        await _mediator.Received(1).Send(Arg.Is<AssignShiftsToCityGroupsCommand>(c => !c.Apply), Arg.Any<CancellationToken>());
+        ShouldNotHaveWritten(_mediator, [_shiftRepository, _groupRepository, _addressRepository, _groupItemRepository], _unitOfWork);
+    }
+
+    [Test]
     public async Task SealOpenOrders_PreviewWithAutoAssignWritesNothing_InSkillAndBothHandlers([Values(ApplyAbsent, ApplyFalse, ApplyJsonFalse)] string applyShape)
     {
         var sealable = SealableOrder();
@@ -579,6 +613,14 @@ public class PreviewApplySkillCallsNoWriteTests
             _shiftRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
         _mediator.Send(Arg.Any<AssignOrdersToGroupsCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<AssignOrdersToGroupsCommand>(), ci.Arg<CancellationToken>()));
+    }
+
+    private void RouteAssignShiftsToHandler()
+    {
+        var handler = new AssignShiftsToCityGroupsCommandHandler(
+            _shiftRepository, _groupRepository, _addressRepository, _groupItemRepository, _unitOfWork, _companyClock);
+        _mediator.Send(Arg.Any<AssignShiftsToCityGroupsCommand>(), Arg.Any<CancellationToken>())
+            .Returns(ci => handler.Handle(ci.Arg<AssignShiftsToCityGroupsCommand>(), ci.Arg<CancellationToken>()));
     }
 
     private void OpenOrders(params Shift[] orders) =>

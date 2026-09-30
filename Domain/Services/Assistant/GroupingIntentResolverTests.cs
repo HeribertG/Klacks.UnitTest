@@ -27,6 +27,7 @@ public class GroupingIntentResolverTests
         result.ShouldContain("apply_grouping");
         result.ShouldContain("add_client_to_nearest_group");
         result.ShouldContain("group_ungrouped_by_city_name");
+        result.ShouldContain("assign_shifts_to_city_groups");
     }
 
     [TestCase("Gruppiere die Mitarbeiter nach Adresse")]
@@ -50,6 +51,31 @@ public class GroupingIntentResolverTests
         var result = GroupingIntentResolver.GuaranteedSkillNames(message);
 
         result.ShouldContain("partition_clients_by_address");
+    }
+
+    [TestCase("Kannst du Dienste gemäss ihrer Kundenadresse auf die Gruppen aufteilen?")]
+    [TestCase("Dienste nach Kundenadresse auf die Gruppen aufteilen")]
+    [TestCase("Alle Dienste zu allen Gruppen/Städten")]
+    [TestCase("Alle Dienste zu allen Städten")]
+    [TestCase("shifts die nicht an einer Stadt oder Gemeinde angehängt sind zu einer solchen Stadt hinzufügen, wenn kein direkter Treffer die nächstgelegene")]
+    [TestCase("assign all shifts to the town groups by customer address")]
+    [TestCase("Répartir les services dans les communes")]
+    [TestCase("Assegna i turni ai comuni più vicini")]
+    public void GuaranteedSkillNames_Returns_ShiftToCityGroupsSkill_For_ShiftPlacementIntent(string message)
+    {
+        var result = GroupingIntentResolver.GuaranteedSkillNames(message);
+
+        result.ShouldContain("assign_shifts_to_city_groups");
+        result.ShouldContain("list_groups");
+    }
+
+    [TestCase("Welche Dienste gibt es in der Stadt Bern?")]
+    [TestCase("Zeig mir die Dienste in Zürich")]
+    [TestCase("Dienste in der Stadt Bern anzeigen")]
+    [TestCase("Wie viele Shifts hat die Gemeinde Bern?")]
+    public void GuaranteedSkillNames_Empty_For_ShiftQuestionsWithoutPlacementIntent(string message)
+    {
+        GroupingIntentResolver.GuaranteedSkillNames(message).ShouldBeEmpty();
     }
 
     [TestCase("Ja, wende die Gruppierung an")]
