@@ -67,6 +67,8 @@ public class AcceptAnalyseScenarioComplianceGateTests
             Substitute.For<IAgentConditionRepository>(),
             Substitute.For<IAgentConditionLedgerService>(),
             Substitute.For<IHttpContextAccessor>(),
+            Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
+            Substitute.For<IWorkNotificationService>(),
             Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>());
     }
 

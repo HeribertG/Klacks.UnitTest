@@ -240,7 +240,9 @@ public class AcceptAnalyseScenarioCommandHandlerTests
         _handler = new AcceptAnalyseScenarioCommandHandler(
             _repository, _scenarioService, _unitOfWork, softeningRepository,
             complianceService, overrideAuthorizer, timelineService,
-            conditionRepository, ledgerService, httpContextAccessor, logger);
+            conditionRepository, ledgerService, httpContextAccessor,
+            Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
+            Substitute.For<IWorkNotificationService>(), logger);
     }
 
     [Test]

@@ -85,6 +85,8 @@ public class AcceptAnalyseScenarioLedgerWriteBackTests
             _conditionRepository,
             _ledgerService,
             _httpContextAccessor,
+            Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
+            Substitute.For<IWorkNotificationService>(),
             Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>());
     }
 
