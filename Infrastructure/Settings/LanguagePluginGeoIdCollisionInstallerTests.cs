@@ -29,7 +29,7 @@ public class LanguagePluginGeoIdCollisionInstallerTests
     private string _pluginDirectory = null!;
     private DataBaseContext _context = null!;
     private IServiceScope _scope = null!;
-    private LanguagePluginContentInstaller _contentInstaller = null!;
+    private LanguagePluginGeoContentInstaller _geoInstaller = null!;
     private LanguagePluginGeoDataInstaller _geoDataInstaller = null!;
 
     [SetUp]
@@ -49,7 +49,7 @@ public class LanguagePluginGeoIdCollisionInstallerTests
         _scope = Substitute.For<IServiceScope>();
         _scope.ServiceProvider.Returns(provider);
 
-        _contentInstaller = new LanguagePluginContentInstaller(_pluginDirectory, NullLogger.Instance);
+        _geoInstaller = new LanguagePluginGeoContentInstaller(_pluginDirectory, NullLogger.Instance);
         _geoDataInstaller = new LanguagePluginGeoDataInstaller(
             _pluginDirectory, new ConcurrentDictionary<string, LanguagePluginManifest>(), NullLogger.Instance);
     }
@@ -73,7 +73,7 @@ public class LanguagePluginGeoIdCollisionInstallerTests
         await GivenCountryAsync(SharedId, "IL", OwnerName);
         GivenPackFile("countries.json", CountryJson(SharedId, "ID", "Indonesia"));
 
-        await _contentInstaller.InstallCountryAsync(_scope, Code);
+        await _geoInstaller.InstallCountryAsync(_scope, Code);
 
         var rows = await _context.Countries.AsNoTracking().ToListAsync();
         rows.Count.ShouldBe(2);
@@ -90,7 +90,7 @@ public class LanguagePluginGeoIdCollisionInstallerTests
         await GivenCountryAsync(SharedId, "ID", "Indonesia");
         GivenPackFile("countries.json", CountryJson(NewPackId, "ID", "Indonesia"));
 
-        await _contentInstaller.InstallCountryAsync(_scope, Code);
+        await _geoInstaller.InstallCountryAsync(_scope, Code);
 
         var rows = await _context.Countries.AsNoTracking().ToListAsync();
         rows.Count.ShouldBe(1);
@@ -108,7 +108,7 @@ public class LanguagePluginGeoIdCollisionInstallerTests
         _context.ChangeTracker.Clear();
         GivenPackFile("countries.json", CountryJson(SharedId, "ID", "Indonesia"));
 
-        await _contentInstaller.InstallCountryAsync(_scope, Code);
+        await _geoInstaller.InstallCountryAsync(_scope, Code);
 
         var rows = await _context.Countries.IgnoreQueryFilters().AsNoTracking().ToListAsync();
         rows.Count.ShouldBe(1);
@@ -143,7 +143,7 @@ public class LanguagePluginGeoIdCollisionInstallerTests
         GivenPackFile("states.json",
             $$"""[ { "id": "{{SharedId}}", "abbreviation": "AC", "countryPrefix": "ID", "name": { "en": "Aceh" } } ]""");
 
-        await _contentInstaller.InstallStatesAsync(_scope, Code);
+        await _geoInstaller.InstallStatesAsync(_scope, Code);
 
         var rows = await _context.State.AsNoTracking().ToListAsync();
         rows.Count.ShouldBe(2);

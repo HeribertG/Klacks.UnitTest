@@ -27,7 +27,7 @@ public class LanguagePluginStatesInstallerTests
     private string _pluginDirectory = null!;
     private DataBaseContext _context = null!;
     private IServiceScope _scope = null!;
-    private LanguagePluginContentInstaller _installer = null!;
+    private LanguagePluginGeoContentInstaller _installer = null!;
 
     [SetUp]
     public void Setup()
@@ -46,7 +46,7 @@ public class LanguagePluginStatesInstallerTests
         _scope = Substitute.For<IServiceScope>();
         _scope.ServiceProvider.Returns(provider);
 
-        _installer = new LanguagePluginContentInstaller(_pluginDirectory, NullLogger.Instance);
+        _installer = new LanguagePluginGeoContentInstaller(_pluginDirectory, NullLogger.Instance);
     }
 
     [TearDown]
