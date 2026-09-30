@@ -27,6 +27,12 @@ public sealed class SlotConstraintFilterBlockIdealTests
 
     private const string AgentId = "A";
 
+    /// <summary>
+    /// Packages start on a Thursday so a six- or seven-day run spans two calendar weeks: the weekly
+    /// rest-day veto (WeeklyRestDayGuard) never fires and each test isolates the rule it pins.
+    /// </summary>
+    private static readonly DateOnly PackageStart = new(2026, 6, 4);
+
     private static CoreAgent MakeAgent(int maxWorkDays = SoftCapDays) => new(
         Id: AgentId,
         CurrentHours: 0,
@@ -89,8 +95,8 @@ public sealed class SlotConstraintFilterBlockIdealTests
     {
         var agent = MakeAgent();
         var context = MakeContext();
-        var assigned = Run(new DateOnly(2026, 6, 1), SoftCapDays);
-        var sixthDay = new DateOnly(2026, 6, 6);
+        var assigned = Run(PackageStart, SoftCapDays);
+        var sixthDay = PackageStart.AddDays(SoftCapDays);
 
         SlotConstraintFilter.IsValidAssignment(
             agent, sixthDay, 0, Guid.Empty, SlotHours, context, assigned, relaxation: SlotRelaxation.RestDaysOnly)
@@ -102,8 +108,8 @@ public sealed class SlotConstraintFilterBlockIdealTests
     {
         var agent = MakeAgent();
         var context = MakeContext();
-        var assigned = Run(new DateOnly(2026, 6, 1), SoftCapDays);
-        var sixthDay = new DateOnly(2026, 6, 6);
+        var assigned = Run(PackageStart, SoftCapDays);
+        var sixthDay = PackageStart.AddDays(SoftCapDays);
 
         SlotConstraintFilter.IsValidAssignment(
             agent, sixthDay, 0, Guid.Empty, SlotHours, context, assigned)
@@ -162,8 +168,8 @@ public sealed class SlotConstraintFilterBlockIdealTests
     {
         var agent = MakeAgent();
         var context = MakeContext();
-        var assigned = Run(new DateOnly(2026, 6, 1), SoftCapDays);
-        var sixthDay = new DateOnly(2026, 6, 6);
+        var assigned = Run(PackageStart, SoftCapDays);
+        var sixthDay = PackageStart.AddDays(SoftCapDays);
 
         SlotConstraintFilter.IsValidAssignment(
             agent, sixthDay, 0, Guid.Empty, SlotHours, context, assigned,
@@ -176,8 +182,8 @@ public sealed class SlotConstraintFilterBlockIdealTests
     {
         var agent = MakeAgent();
         var context = MakeContext();
-        var assigned = Run(new DateOnly(2026, 6, 1), HardCapDays);
-        var seventhDay = new DateOnly(2026, 6, 7);
+        var assigned = Run(PackageStart, HardCapDays);
+        var seventhDay = PackageStart.AddDays(HardCapDays);
 
         SlotConstraintFilter.IsValidAssignment(
             agent, seventhDay, 0, Guid.Empty, SlotHours, context, assigned,
@@ -190,14 +196,14 @@ public sealed class SlotConstraintFilterBlockIdealTests
     {
         var agent = MakeAgent(maxWorkDays: 0);
         var context = MakeContext();
-        var sixDays = Run(new DateOnly(2026, 6, 1), HardCapDays);
+        var sixDays = Run(PackageStart, HardCapDays);
 
         SlotConstraintFilter.IsValidAssignment(
-            agent, new DateOnly(2026, 6, 6), 0, Guid.Empty, SlotHours, context, Run(new DateOnly(2026, 6, 1), SoftCapDays))
+            agent, PackageStart.AddDays(SoftCapDays), 0, Guid.Empty, SlotHours, context, Run(PackageStart, SoftCapDays))
             .ShouldBeTrue();
 
         SlotConstraintFilter.IsValidAssignment(
-            agent, new DateOnly(2026, 6, 7), 0, Guid.Empty, SlotHours, context, sixDays)
+            agent, PackageStart.AddDays(HardCapDays), 0, Guid.Empty, SlotHours, context, sixDays)
             .ShouldBeFalse();
     }
 }

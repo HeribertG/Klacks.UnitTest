@@ -453,6 +453,8 @@ public class ClientTimelineTests
 
     private static readonly DateOnly MondayAnchor = new(2026, 3, 2);
 
+    private const decimal MinimumRestDays = 2m;
+
     [Test]
     public void GetWeeklyWorkDuration_FiveEightHourDays_Returns40()
     {
@@ -504,7 +506,7 @@ public class ClientTimelineTests
         }
 
         // Act
-        var restDays = _timeline.GetRestDayCount(MondayAnchor);
+        var restDays = _timeline.GetRestDayCount(MondayAnchor, MinimumRestDays);
 
         // Assert
         restDays.ShouldBe(2);
@@ -523,7 +525,7 @@ public class ClientTimelineTests
         }
 
         // Act
-        var restDays = _timeline.GetRestDayCount(MondayAnchor);
+        var restDays = _timeline.GetRestDayCount(MondayAnchor, MinimumRestDays);
 
         // Assert
         restDays.ShouldBe(0);
@@ -546,9 +548,67 @@ public class ClientTimelineTests
             breakDay.ToDateTime(new TimeOnly(16, 0))));
 
         // Act
-        var restDays = _timeline.GetRestDayCount(MondayAnchor);
+        var restDays = _timeline.GetRestDayCount(MondayAnchor, MinimumRestDays);
 
         // Assert
         restDays.ShouldBe(1);
+    }
+
+    [Test]
+    public void GetRestDayCount_NightSpilloverDayWithFreeNextDayAndFullFreeBlockIsRest()
+    {
+        // Arrange
+        _timeline.AddBlock(CreateWorkBlock(
+            MondayAnchor.ToDateTime(new TimeOnly(22, 0)),
+            MondayAnchor.AddDays(1).ToDateTime(new TimeOnly(6, 0))));
+        for (var i = 3; i < 7; i++)
+        {
+            var date = MondayAnchor.AddDays(i);
+            _timeline.AddBlock(CreateWorkBlock(
+                date.ToDateTime(new TimeOnly(6, 0)),
+                date.ToDateTime(new TimeOnly(14, 0))));
+        }
+
+        // Act
+        var restDays = _timeline.GetRestDayCount(MondayAnchor, MinimumRestDays);
+        var restDaysWithThreeDayFreeBlock = _timeline.GetRestDayCount(MondayAnchor, 3m);
+
+        // Assert
+        restDays.ShouldBe(2);
+        restDaysWithThreeDayFreeBlock.ShouldBe(1);
+    }
+
+    [Test]
+    public void GetRestDayCount_NightEndingAtMidnightDoesNotOccupyTheFollowingDay()
+    {
+        // Arrange
+        _timeline.AddBlock(CreateWorkBlock(
+            MondayAnchor.ToDateTime(new TimeOnly(16, 0)),
+            MondayAnchor.AddDays(1).ToDateTime(TimeOnly.MinValue)));
+
+        // Act
+        var restDays = _timeline.GetRestDayCount(MondayAnchor, MinimumRestDays);
+
+        // Assert
+        restDays.ShouldBe(6);
+    }
+
+    [Test]
+    public void GetRestDayCount_NightSpilloverDayFollowedByAShiftTheNextDayIsWork()
+    {
+        // Arrange
+        var saturday = MondayAnchor.AddDays(5);
+        _timeline.AddBlock(CreateWorkBlock(
+            saturday.ToDateTime(new TimeOnly(22, 0)),
+            saturday.AddDays(1).ToDateTime(new TimeOnly(6, 0))));
+        _timeline.AddBlock(CreateWorkBlock(
+            saturday.AddDays(2).ToDateTime(new TimeOnly(6, 0)),
+            saturday.AddDays(2).ToDateTime(new TimeOnly(14, 0))));
+
+        // Act
+        var restDays = _timeline.GetRestDayCount(MondayAnchor, MinimumRestDays);
+
+        // Assert
+        restDays.ShouldBe(5);
     }
 }

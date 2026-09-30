@@ -60,7 +60,11 @@ public sealed class TokenRepairEscalationLadderTests
 
     private const int TracedGeneration = 7;
 
-    private static readonly DateOnly FirstDay = new(2026, 6, 1);
+    /// <summary>
+    /// A Thursday: the six-day package of the widest-rung cases then spans two calendar weeks, so the
+    /// weekly rest-day veto stays silent and only the block ideal and the consecutive cap decide.
+    /// </summary>
+    private static readonly DateOnly FirstDay = new(2026, 6, 4);
 
     /// <summary>
     /// Owner ruling 2026-08-12: the rest between two packages vetoes on every rung, judged in hours.

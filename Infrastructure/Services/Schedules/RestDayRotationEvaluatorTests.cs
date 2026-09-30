@@ -107,13 +107,28 @@ public class RestDayRotationEvaluatorTests
     }
 
     [Test]
-    public async Task EvaluateAsync_CrossMidnightSaturdayShift_OccupiesTheSunday()
+    public async Task EvaluateAsync_CrossMidnightSaturdayShiftWithFreeMondayAndFullFreeBlock_LeavesTheSundayFree()
     {
         StubRule(DayOfWeek.Sunday, minFree: 2, windowWeeks: 4);
         var clientId = Guid.NewGuid();
         SeedWork(clientId, Sunday1, new TimeOnly(8, 0), new TimeOnly(16, 0));
         SeedWork(clientId, Sunday2, new TimeOnly(8, 0), new TimeOnly(16, 0));
         SeedWork(clientId, Sunday3.AddDays(-1), new TimeOnly(22, 0), new TimeOnly(7, 0));
+
+        var result = await _sut.EvaluateAsync(clientId, "Anna", Sunday4);
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EvaluateAsync_CrossMidnightSaturdayShiftFollowedByMondayShift_OccupiesTheSunday()
+    {
+        StubRule(DayOfWeek.Sunday, minFree: 2, windowWeeks: 4);
+        var clientId = Guid.NewGuid();
+        SeedWork(clientId, Sunday1, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        SeedWork(clientId, Sunday2, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        SeedWork(clientId, Sunday3.AddDays(-1), new TimeOnly(22, 0), new TimeOnly(7, 0));
+        SeedWork(clientId, Sunday3.AddDays(1), new TimeOnly(6, 0), new TimeOnly(14, 0));
 
         var result = await _sut.EvaluateAsync(clientId, "Anna", Sunday4);
 
@@ -178,11 +193,13 @@ public class RestDayRotationEvaluatorTests
         // Saturday night shift spilling into the last free Sunday must be reported even though the
         // planned slot itself is dated Saturday. Only Sunday2/Sunday3 are pre-occupied so the baseline
         // windows are still compliant and the single reported violation is attributable to the planned
-        // cross-midnight slot alone.
+        // cross-midnight slot alone. The Monday shift after Sunday4 makes the spillover Sunday a work day
+        // under the shared rest-day rule (a spillover day is free only when the next day is free).
         StubRule(DayOfWeek.Sunday, minFree: 2, windowWeeks: 4);
         var clientId = Guid.NewGuid();
         SeedWork(clientId, Sunday2, new TimeOnly(8, 0), new TimeOnly(16, 0));
         SeedWork(clientId, Sunday3, new TimeOnly(8, 0), new TimeOnly(16, 0));
+        SeedWork(clientId, Sunday4.AddDays(1), new TimeOnly(6, 0), new TimeOnly(14, 0));
 
         var result = await _sut.EvaluatePlannedAsync(
             clientId,

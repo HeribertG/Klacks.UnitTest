@@ -18,12 +18,12 @@
     "RosterFidelityInversionRate": 0.2
   },
   "BoundaryWithPriorWorks": {
-    "CoveragePercent": 0.7142857142857143,
+    "CoveragePercent": 0.7380952380952381,
     "TargetReachedPercent": 0,
-    "SlotGini": 0,
-    "ShiftTypeEntropyAvg": 1.2627801778601173,
-    "Stage1EscalationCount": 6,
+    "SlotGini": 0.021505376344086023,
+    "ShiftTypeEntropyAvg": 0.8441252254211814,
+    "Stage1EscalationCount": 7,
     "MaxConsecutiveBlockLen": 5,
-    "RosterFidelityInversionRate": 0.3333333333333333
+    "RosterFidelityInversionRate": 0.6666666666666666
   }
 }
