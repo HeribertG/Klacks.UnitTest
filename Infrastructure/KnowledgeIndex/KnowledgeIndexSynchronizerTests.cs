@@ -7,6 +7,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.KnowledgeIndex.Application.Constants;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Application.Services;
 using Klacks.Api.KnowledgeIndex.Domain;
@@ -650,10 +651,10 @@ public class KnowledgeIndexSynchronizerTests
             Arg.Any<CancellationToken>());
     }
 
-    // The upsert already writes both columns, so an entry whose text changed too must not be written a
-    // second time by the gate path.
+    // The stored row keeps serving until its chunk is embedded, so the gate is corrected up front and
+    // the later upsert writes the same values again.
     [Test]
-    public async Task SyncAsync_TextAndPermissionBothChanged_IsOnlyUpserted()
+    public async Task SyncAsync_TextAndPermissionBothChanged_UpdatesTheGateBeforeUpserting()
     {
         var descriptor = new SkillDescriptor(
             "X", "New description", SkillCategory.System, [], [Permissions.CanCreateGroups], [], null);
@@ -667,11 +668,103 @@ public class KnowledgeIndexSynchronizerTests
         var sync = CreateSut();
         await sync.SyncAsync(CancellationToken.None);
 
-        await NoGateWasUpdated();
-        await _repo.Received(1).UpsertAsync(
+        Received.InOrder(() =>
+        {
+            _repo.UpdateRetrievalGatesAsync(
+                Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                    list.Count == 1 && list[0].RequiredPermission == Permissions.CanCreateGroups),
+                Arg.Any<CancellationToken>());
+            _repo.UpsertAsync(
+                Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
+                    list.Count == 1 && list[0].RequiredPermission == Permissions.CanCreateGroups),
+                Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task SyncAsync_EmbeddingFails_GatesAndOrphansAreAlreadyWritten()
+    {
+        var unchanged = new SkillDescriptor(
+            "create_group", "Desc", SkillCategory.Crud, [], [Permissions.CanCreateGroups], [], null);
+        var dirty = new SkillDescriptor("Y", "Changed", SkillCategory.System, [], [], [], null);
+        _skillRegistry.GetAllSkills().Returns([unchanged, dirty]);
+
+        _repo.GetAllHashesAsync(Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<(KnowledgeEntryKind, string), byte[]>
+            {
+                { (KnowledgeEntryKind.Skill, "create_group"), HashFor("test-space", "create_group. Desc\nParameters: ") },
+                { (KnowledgeEntryKind.Skill, "Y"), HashFor("test-space", "Y. Old\nParameters: ") },
+                { (KnowledgeEntryKind.Skill, "Removed"), new byte[] { 1 } }
+            });
+        GivenStoredGates(("create_group", Permissions.CanEditSettings, null));
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns<float[][]>(_ => throw new OperationCanceledException());
+
+        var sync = CreateSut();
+        await Should.ThrowAsync<OperationCanceledException>(() => sync.SyncAsync(CancellationToken.None));
+
+        await _repo.Received(1).UpdateRetrievalGatesAsync(
             Arg.Is<IReadOnlyList<KnowledgeEntry>>(list =>
-                list.Count == 1 && list[0].RequiredPermission == Permissions.CanCreateGroups),
+                list.Count == 1 && list[0].SourceId == "create_group"
+                && list[0].RequiredPermission == Permissions.CanCreateGroups),
             Arg.Any<CancellationToken>());
+        await _repo.Received(1).DeleteAsync(
+            Arg.Is<IReadOnlyList<(KnowledgeEntryKind, string)>>(list =>
+                list.Count == 1 && list[0].Item2 == "Removed"),
+            Arg.Any<CancellationToken>());
+        await _repo.DidNotReceive().UpsertAsync(
+            Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SyncAsync_StoppedAfterTheFirstChunk_KeepsTheFirstChunkPersisted()
+    {
+        var chunkSize = KnowledgeIndexSyncConstants.PersistChunkSize;
+        var descriptors = Enumerable.Range(0, chunkSize + 1)
+            .Select(i => new SkillDescriptor("S" + i.ToString("D3"), "Desc", SkillCategory.System, [], [], [], null))
+            .ToList();
+        _skillRegistry.GetAllSkills().Returns(descriptors);
+
+        var captured = CaptureUpsertedEntries();
+        var calls = 0;
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                if (++calls > 1)
+                    throw new OperationCanceledException();
+                return callInfo.Arg<IReadOnlyList<string>>().Select(_ => new float[384]).ToArray();
+            });
+
+        var sync = CreateSut();
+        await Should.ThrowAsync<OperationCanceledException>(() => sync.SyncAsync(CancellationToken.None));
+
+        captured.Count.ShouldBe(chunkSize);
+        captured.Select(e => e.SourceId).ShouldBe(descriptors.Take(chunkSize).Select(d => d.Name));
+    }
+
+    [Test]
+    public async Task SyncAsync_MoreMissesThanOneChunk_EmbedsAndPersistsEveryChunkWithAlignedVectors()
+    {
+        var chunkSize = KnowledgeIndexSyncConstants.PersistChunkSize;
+        var total = chunkSize * 2 + 3;
+        var descriptors = Enumerable.Range(0, total)
+            .Select(i => new SkillDescriptor("S" + i.ToString("D3"), "Desc", SkillCategory.System, [], [], [], null))
+            .ToList();
+        _skillRegistry.GetAllSkills().Returns(descriptors);
+
+        var captured = CaptureUpsertedEntries();
+        _embeddings.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<IReadOnlyList<string>>()
+                .Select(text => new[] { (float)int.Parse(text.Substring(1, 3)) })
+                .ToArray());
+
+        var sync = CreateSut();
+        await sync.SyncAsync(CancellationToken.None);
+
+        await _embeddings.Received(3).EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+        await _repo.Received(3).UpsertAsync(Arg.Any<IReadOnlyList<KnowledgeEntry>>(), Arg.Any<CancellationToken>());
+        captured.Count.ShouldBe(total);
+        captured.ShouldAllBe(e => e.Embedding[0] == int.Parse(e.SourceId.Substring(1)));
     }
 
     private List<KnowledgeEntry> CaptureUpsertedEntries()

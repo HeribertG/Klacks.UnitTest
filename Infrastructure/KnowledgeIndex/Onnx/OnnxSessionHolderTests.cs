@@ -48,10 +48,11 @@ public class OnnxSessionHolderTests
     }
 
     private static (OnnxSessionHolder<FakeLease> Holder, Builder Builder) Create(
-        int maxConcurrentRuns = OnnxSessionHolder<FakeLease>.UnlimitedConcurrency)
+        int maxConcurrentRuns = OnnxSessionHolder<FakeLease>.UnlimitedConcurrency,
+        TimeSpan? disposeWaitTimeout = null)
     {
         var builder = new Builder();
-        return (new OnnxSessionHolder<FakeLease>(builder.BuildAsync, maxConcurrentRuns), builder);
+        return (new OnnxSessionHolder<FakeLease>(builder.BuildAsync, maxConcurrentRuns, disposeWaitTimeout), builder);
     }
 
     [Test]
@@ -175,6 +176,55 @@ public class OnnxSessionHolderTests
 
         builder.Built[0].Disposed.ShouldBe(1);
         holder.IsLoaded.ShouldBeFalse();
+    }
+
+    // A background index sync can be mid-inference when the container disposes the provider at
+    // shutdown; freeing the native session under a running Run() faults the process.
+    [Test]
+    public async Task DisposeAsync_WhileARunIsActive_WaitsForTheRunBeforeDisposingTheLease()
+    {
+        var (holder, builder) = Create(SingleSlot);
+
+        await holder.AcquireAsync(CancellationToken.None);
+        await holder.WaitForSlotAsync(CancellationToken.None);
+
+        var disposing = holder.DisposeAsync().AsTask();
+        (await Task.WhenAny(disposing, Task.Delay(SlotProbeMilliseconds))).ShouldNotBeSameAs(disposing);
+        builder.Built[0].Disposed.ShouldBe(0);
+
+        holder.ReleaseSlot();
+        holder.Release();
+        await disposing;
+
+        builder.Built[0].Disposed.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task DisposeAsync_RunNeverFinishes_GivesUpAfterTheTimeoutWithoutFreeingTheLease()
+    {
+        var (holder, builder) = Create(disposeWaitTimeout: TimeSpan.FromMilliseconds(SlotProbeMilliseconds));
+
+        await holder.AcquireAsync(CancellationToken.None);
+
+        await holder.DisposeAsync();
+
+        builder.Built[0].Disposed.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task AcquireAsync_WhileDisposing_ThrowsInsteadOfBuildingANewLease()
+    {
+        var (holder, builder) = Create();
+
+        await holder.AcquireAsync(CancellationToken.None);
+        var disposing = holder.DisposeAsync().AsTask();
+        var late = holder.AcquireAsync(CancellationToken.None);
+
+        holder.Release();
+        await disposing;
+
+        await Should.ThrowAsync<ObjectDisposedException>(() => late);
+        builder.Calls.ShouldBe(1);
     }
 
     [Test]
