@@ -9,6 +9,8 @@
 /// here until the texts carry it.
 /// </summary>
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Klacks.Api.Data.Seed;
 using Klacks.Api.Domain.Common;
@@ -26,22 +28,17 @@ public class UnofficialHolidayDescriptionsSeedGuardTests
     private const string LanguagesRelativePath = "Plugins/Languages";
     private const string CalendarRuleInsert = "INSERT INTO public.calendar_rule";
     private const string CalendarRuleUpdate = "UPDATE public.calendar_rule SET description";
-
-    /// <summary>
-    /// Seed rows marked is_mandatory = false although the day IS a statutory holiday across the whole
-    /// canton (Josefstag in NW, SZ, TI, UR, VS; Peter und Paul in TI). They deliberately carry no
-    /// "unofficial" description; the is_mandatory flag needs an owner decision. Once a row is corrected
-    /// to mandatory, KnownMisflaggedRows_AreStillNonMandatory fails so this list gets cleaned up.
-    /// </summary>
-    private static readonly string[] KnownMisflaggedOfficialHolidayIds =
-    [
-        "00319001-0001-0001-0001-000000000003",
-        "00319001-0001-0001-0001-000000000005",
-        "00319001-0001-0001-0001-000000000006",
-        "00319001-0001-0001-0001-000000000007",
-        "00319001-0001-0001-0001-000000000008",
-        "00629001-0001-0001-0001-000000000002",
-    ];
+    private const string UsFederalHolidayIdPrefix = "05a00001-";
+    private const int UsFederalHolidayCount = 11;
+    private const int ShippedAddUnofficialHolidayDescriptionsIdCount = 83;
+    private const int ShippedAddUnofficialHolidayDescriptionsStatementCount = 14;
+    private const int ShippedAddUnofficialHolidayDescriptionsSqlLength = 42253;
+    private const string ShippedAddUnofficialHolidayDescriptionsSqlSha256 =
+        "8900AFF4413328AB09B09110CB7A669D8630F39F729BC76C40812E8C72F2752F";
+    private const string StatementSeparator = "\n";
+    private static readonly Regex SqlId = new(
+        @"'(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'::uuid",
+        RegexOptions.Compiled);
 
     private static readonly Regex SeedRow = new(
         @"\('(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',\s*'[^']*',\s*'[^']*',\s*(?<mandatory>true|false),",
@@ -108,13 +105,13 @@ public class UnofficialHolidayDescriptionsSeedGuardTests
     }
 
     [Test]
-    public void EveryNonMandatorySeedRow_HasADescription_UnlessKnownMisflagged()
+    public void EveryNonMandatorySeedRow_HasADescription()
     {
         var assigned = AssignedTexts();
         var missing = SeededCalendarRules()
             .Where(row => !row.Value)
             .Select(row => row.Key)
-            .Where(id => !assigned.ContainsKey(id) && !KnownMisflaggedOfficialHolidayIds.Contains(id))
+            .Where(id => !assigned.ContainsKey(id))
             .ToList();
 
         missing.ShouldBeEmpty($"Non-mandatory seed rows without description: {string.Join(", ", missing)}");
@@ -146,16 +143,84 @@ public class UnofficialHolidayDescriptionsSeedGuardTests
     }
 
     [Test]
-    public void KnownMisflaggedRows_AreStillNonMandatory_AndCarryNoUnofficialText()
+    public void PromotedStatutoryHolidays_AreMandatoryInTheSeed_AndCarryNoUnofficialText()
     {
         var rows = SeededCalendarRules();
         var assigned = AssignedTexts();
 
-        foreach (var id in KnownMisflaggedOfficialHolidayIds)
+        StatutoryHolidayPromotionSql.PromotedIds.Count.ShouldBe(12);
+        foreach (var id in StatutoryHolidayPromotionSql.PromotedIds)
         {
             rows.ShouldContainKey(id);
-            rows[id].ShouldBeFalse($"{id} is mandatory now - remove it from {nameof(KnownMisflaggedOfficialHolidayIds)}.");
+            rows[id].ShouldBeTrue($"{id} is statutory and must be seeded with is_mandatory = true.");
             assigned.ShouldNotContainKey(id);
+        }
+    }
+
+    [Test]
+    public void AllElevenUsFederalHolidays_AreMandatoryInTheSeed()
+    {
+        var usFederal = SeededCalendarRules()
+            .Where(row => row.Key.StartsWith(UsFederalHolidayIdPrefix, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        usFederal.Count.ShouldBe(UsFederalHolidayCount);
+        usFederal.Where(row => !row.Value).Select(row => row.Key).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AddUnofficialHolidayDescriptionsMigration_KeepsItsShippedAssignments()
+    {
+        var frozen = UnofficialHolidayDescriptionsSql.AddUnofficialHolidayDescriptionsAssignments;
+
+        frozen.Count.ShouldBe(UnofficialHolidayDescriptionsSql.Assignments.Count + 1);
+        frozen.Last().Texts.ShouldBeSameAs(UnofficialHolidayDescriptionTexts.UsFederalHoliday);
+        frozen.Last().Ids.ShouldBe(StatutoryHolidayPromotionSql.UsFederalHolidayIds);
+        frozen.SelectMany(a => a.Ids).Count().ShouldBe(ShippedAddUnofficialHolidayDescriptionsIdCount);
+    }
+
+    /// <summary>
+    /// The expected values were computed from UnofficialHolidayDescriptionsSql.cs and
+    /// UnofficialHolidayDescriptionTexts.cs as shipped in Klacks.Api commit 8045f33eb (Apply then Remove,
+    /// statements joined by a line feed), so the already applied 20260929120000 migration keeps emitting
+    /// byte-identical SQL in both directions.
+    /// </summary>
+    [Test]
+    public void AddUnofficialHolidayDescriptionsMigration_EmitsTheShippedSqlByteForByte()
+    {
+        var frozen = UnofficialHolidayDescriptionsSql.AddUnofficialHolidayDescriptionsAssignments;
+        var statements = SqlOf(builder => UnofficialHolidayDescriptionsSql.Apply(builder, frozen))
+            .Concat(SqlOf(builder => UnofficialHolidayDescriptionsSql.Remove(builder, frozen)))
+            .ToList();
+        var sql = string.Join(StatementSeparator, statements);
+
+        statements.Count.ShouldBe(ShippedAddUnofficialHolidayDescriptionsStatementCount);
+        sql.Length.ShouldBe(ShippedAddUnofficialHolidayDescriptionsSqlLength);
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ShouldBe(ShippedAddUnofficialHolidayDescriptionsSqlSha256);
+    }
+
+    [Test]
+    public void Promotion_UpdatesOnlyThePromotedIds_AndClearsOnlyTheExactGeneratedText()
+    {
+        var apply = SqlOf(StatutoryHolidayPromotionSql.Apply);
+        var remove = SqlOf(StatutoryHolidayPromotionSql.Remove);
+        var usText = CalendarRuleDescriptionSql.SqlLiteral(UnofficialHolidayDescriptionsSql.DescriptionJson(UnofficialHolidayDescriptionTexts.UsFederalHoliday));
+
+        apply.Count.ShouldBe(2);
+        remove.Count.ShouldBe(2);
+        apply[0].ShouldContain("SET is_mandatory = true WHERE id IN (");
+        apply[0].ShouldEndWith("AND is_mandatory = false;");
+        remove[0].ShouldContain("SET is_mandatory = false WHERE id IN (");
+        remove[0].ShouldEndWith("AND is_mandatory = true;");
+        apply[1].ShouldContain($"AND description = '{usText}'::jsonb");
+        remove[1].ShouldContain("jsonb_each_text(description)");
+        apply.Concat(remove).ShouldAllBe(sql => !sql.Contains("is_paid"));
+
+        foreach (var sql in apply.Concat(remove))
+        {
+            var ids = SqlId.Matches(sql).Select(m => m.Groups["id"].Value).ToList();
+            ids.ShouldNotBeEmpty();
+            ids.ShouldAllBe(id => StatutoryHolidayPromotionSql.PromotedIds.Contains(id));
         }
     }
 
