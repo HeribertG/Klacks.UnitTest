@@ -46,8 +46,9 @@ public static class Scenario1BaselineValues
     /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 6/11/9, so the ceiling
     /// is 11. TIGHTENED from 16 — the night tie-break and the continuation priority leave far
     /// fewer mixed packages. Spec target of the former A4 is 0 and stays documented in SPEC.md.
+    /// 2026-09-30: re-pinned 11 to 14 after weekly rest-day enforcement removed real violations (owner-approved).
     /// </summary>
-    private const int MixedTypeCount = 11;
+    private const int MixedTypeCount = 14;
 
     /// <summary>
     /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 0.1667/0.3571/0.3929,

@@ -67,8 +67,9 @@ public static class Scenario1bBaselineValues
     /// is 9 (owner decision of the same evening — part of the stage's accepted fairness price).
     /// Spec target of the former A8 is a spread of at most 2 over ranks 1 to 5; that rank-scoped
     /// reading has no pin here, because this guard covers every rank.
+    /// 2026-09-30: re-pinned 9 to 14 after weekly rest-day enforcement removed real violations (owner-approved).
     /// </summary>
-    private const int ShiftKindSpread = 9;
+    private const int ShiftKindSpread = 14;
 
     /// <summary>
     /// Band over seeds 42/43/44, measured 2026-08-12 on engine af5f0fa: 0/0/0, so the ceiling is 0 and

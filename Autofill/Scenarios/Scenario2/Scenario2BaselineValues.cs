@@ -62,8 +62,9 @@ public static class Scenario2BaselineValues
     /// Band over seeds 42/43/44 after the package-consolidation mutation of 2026-08-13:
     /// 0.3000/0.2222/0.2963, so the ceiling is 0.3000. TIGHTENED from 0.3871 — the largest
     /// consolidation win of the stage, closing half the gap to the auction-seed level of 0.2069.
+    /// 2026-09-30: re-pinned 0.30 to 0.3871 after weekly rest-day enforcement removed real violations (owner-approved).
     /// </summary>
-    private const double ShortPackageShare = 0.3;
+    private const double ShortPackageShare = 0.3870967741935484;
 
     /// <summary>
     /// Band over seeds 42/43/44, re-measured 2026-08-09 on engine state E1: 0/0/0 — unchanged, and

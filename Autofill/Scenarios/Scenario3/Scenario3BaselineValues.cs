@@ -70,8 +70,9 @@ public static class Scenario3BaselineValues
     /// still forces MA-3/MA-4 to zero nights, so the night row widens while the COHORT fairness
     /// A25 heals to a spread of 0.31). Spec target of the former A8 is a spread of at most 2 over
     /// ranks 1 to 4 (SPEC.md); that rank-scoped reading has no pin here.
+    /// 2026-09-30: re-pinned 15 to 17 after weekly rest-day enforcement removed real violations (owner-approved).
     /// </summary>
-    private const int ShiftKindSpread = 15;
+    private const int ShiftKindSpread = 17;
 
     /// <summary>
     /// Measured on L1, seed 42, 2026-08-12 evening on the decision-12 engine: 1 rank reaches a higher
