@@ -85,6 +85,7 @@ public static class SkillFeatureCoverageMap
         ["DonationController"] = Covered("create_donation_checkout"),
         ["LanguageConfigController"] = Covered("list_languages", "install_language_pack", "uninstall_language_pack"),
         ["LoadFileController"] = Excluded("binary file upload/download infrastructure, not chat-addressable"),
+        ["ClientImportController"] = Excluded("employee list upload (xlsx/csv) with an interactive column mapping and preview in the UI; the assistant cannot pass a file, and a single employee is covered by create_employee"),
         ["RouteOptimizationController"] = Gap("route optimization; geographic grouping is covered by propose_grouping/apply_grouping but route planning itself is not"),
         ["ScheduleChangesController"] = Gap("schedule change history; rollback_my_last_change/verify_my_last_action only cover the assistant's own session"),
         ["TranslationController"] = Covered("get_translation_status"),
