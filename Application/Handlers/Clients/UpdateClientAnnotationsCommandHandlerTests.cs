@@ -28,6 +28,7 @@ public class UpdateClientAnnotationsCommandHandlerTests
 
     private DataBaseContext _context = null!;
     private ClientRepository _clientRepository = null!;
+    private IClientVisibilityGuard _clientVisibilityGuard = null!;
     private UpdateClientAnnotationsCommandHandler _handler = null!;
     private Guid _clientId;
 
@@ -49,8 +50,12 @@ public class UpdateClientAnnotationsCommandHandlerTests
             Substitute.For<IClientValidator>(),
             Substitute.For<ILogger<ClientRepository>>());
 
+        _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _clientVisibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+
         _handler = new UpdateClientAnnotationsCommandHandler(
             _clientRepository,
+            _clientVisibilityGuard,
             new ClientMapper(),
             new UnitOfWork(_context, Substitute.For<ILogger<UnitOfWork>>()),
             Substitute.For<ILogger<UpdateClientAnnotationsCommandHandler>>());
@@ -93,6 +98,26 @@ public class UpdateClientAnnotationsCommandHandlerTests
         stored.Annotations.Count.ShouldBe(1);
         stored.Annotations.Single().Note.ShouldBe("Called in sick");
         stored.Annotations.Single().ClientId.ShouldBe(_clientId);
+    }
+
+    // A note-only caller is the Planer floor, i.e. every authenticated user. Before 2026-10-01 this path
+    // ignored group visibility, so sending an empty note list for a hidden client wiped its notes and the
+    // response handed back the complete client.
+    [Test]
+    public async Task ClientOutsideTheCallersVisibility_IsNeitherWrittenNorReturned()
+    {
+        _context.Annotation.Add(new Annotation { Id = Guid.NewGuid(), ClientId = _clientId, Note = "kept" });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+        _clientVisibilityGuard.IsVisibleAsync(_clientId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await _handler.Handle(
+            new UpdateClientAnnotationsCommand(_clientId, []),
+            CancellationToken.None);
+
+        result.ShouldBeNull();
+        var stored = await StoredClient();
+        stored.Annotations.Single().Note.ShouldBe("kept");
     }
 
     [Test]

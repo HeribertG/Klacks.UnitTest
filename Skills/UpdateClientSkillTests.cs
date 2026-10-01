@@ -44,7 +44,7 @@ public class UpdateClientSkillTests
         _api.Respond(HttpMethod.Put, "api/backend/Clients", new ClientResource());
         _countryResolver = Substitute.For<ICountryResolver>();
         _skill = new UpdateClientSkill(
-            _clientRepository, _searchRepository, new ClientMapper(), _api.Client, new SelfApiRouteResolver(),
+            _clientRepository, SkillClientVisibility.AllVisible(), _searchRepository, new ClientMapper(), _api.Client, new SelfApiRouteResolver(),
             Substitute.For<ILogger<UpdateClientSkill>>(), _countryResolver);
     }
 
@@ -177,5 +177,27 @@ public class UpdateClientSkillTests
 
         Assert.That(result.Success, Is.False);
         _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task HiddenClientById_IsAnsweredExactlyLikeAnUnknownId_AndNothingIsWritten()
+    {
+        var id = Guid.NewGuid();
+        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString(), ["firstName"] = "Anna" };
+        _clientRepository.Get(id).Returns((Client?)null);
+        var unknown = await _skill.ExecuteAsync(Ctx(), parameters);
+        var visibleRepository = Substitute.For<IClientRepository>();
+        visibleRepository.Get(id).Returns(new Client { Id = id, FirstName = "Old", Name = "Müller" });
+        var hiddenSkill = new UpdateClientSkill(
+            visibleRepository, SkillClientVisibility.Hiding(id), _searchRepository, new ClientMapper(), _api.Client,
+            new SelfApiRouteResolver(), Substitute.For<ILogger<UpdateClientSkill>>(), _countryResolver);
+
+        var hidden = await hiddenSkill.ExecuteAsync(Ctx(), parameters);
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe(unknown.Message);
+        _api.Calls.ShouldBeEmpty();
+        await visibleRepository.DidNotReceive().Get(Arg.Any<Guid>());
+        await _searchRepository.DidNotReceiveWithAnyArgs().SearchAsync(default!, default, default, default, default, default);
     }
 }

@@ -51,7 +51,7 @@ public class CheckClientAvailabilitySkillTests
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
         _skill = new CheckClientAvailabilitySkill(
-            _clientRepository, _availabilityRepository, _breakRepository, _scheduleCommandRepository, _keywordProvider);
+            _clientRepository, SkillClientVisibility.AllVisible(), _availabilityRepository, _breakRepository, _scheduleCommandRepository, _keywordProvider);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -190,5 +190,31 @@ public class CheckClientAvailabilitySkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("not found");
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutReadingItsSchedule()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new CheckClientAvailabilitySkill(
+            _clientRepository, guard, _availabilityRepository, _breakRepository, _scheduleCommandRepository, _keywordProvider);
+        var unknownId = Guid.NewGuid();
+        var unknownParameters = Parameters();
+        unknownParameters["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Context(), Parameters());
+        var unknown = await skill.ExecuteAsync(Context(), unknownParameters);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        hidden.Data.ShouldBeNull();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _clientRepository.DidNotReceive().Get(ClientId);
+        await _availabilityRepository.DidNotReceiveWithAnyArgs().GetByClientAndDateRange(default, default, default);
+        await _breakRepository.DidNotReceiveWithAnyArgs().GetByClientAndDateRangeAsync(default, default, default, default);
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().GetByClientsAndDateRangeAsync(
+            default!, default, default, default, default);
     }
 }

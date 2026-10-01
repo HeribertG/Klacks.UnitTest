@@ -215,7 +215,8 @@ public class PreviewApplySkillCallsNoWriteTests
                 Items = new List<ClientSearchItem> { new() { Id = ClientId, FirstName = UserName, LastName = CustomerName } },
                 TotalCount = 1
             });
-        var handler = new FillGroupByCriteriaCommandHandler(searchRepository, _groupItemRepository, _unitOfWork, _companyClock);
+        var handler = new FillGroupByCriteriaCommandHandler(
+            searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups());
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<FillGroupByCriteriaCommand>(), ci.Arg<CancellationToken>()));
         var skill = new FillGroupByCriteriaSkill(
@@ -248,7 +249,8 @@ public class PreviewApplySkillCallsNoWriteTests
         var visibilityPreservation = Substitute.For<IGroupVisibilityPreservationService>();
         var handler = new PartitionClientsByAddressCommandHandler(
             _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock,
-            regionProvider, countryResolver, stateRepository, settingsReader, visibilityPreservation);
+            regionProvider, countryResolver, stateRepository, settingsReader, visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups());
         _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<PartitionClientsByAddressCommand>(), ci.Arg<CancellationToken>()));
         var skill = new PartitionClientsByAddressSkill(
@@ -332,7 +334,8 @@ public class PreviewApplySkillCallsNoWriteTests
     {
         _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client> { EmployeeLivingInCity() });
-        var handler = new AddSelectedClientsToGroupCommandHandler(_clientRepository, _groupItemRepository, _unitOfWork, _companyClock);
+        var handler = new AddSelectedClientsToGroupCommandHandler(
+            _clientRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible());
         _mediator.Send(Arg.Any<AddSelectedClientsToGroupCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<AddSelectedClientsToGroupCommand>(), ci.Arg<CancellationToken>()));
         var skill = new AddSelectedClientsToGroupSkill(
@@ -355,7 +358,7 @@ public class PreviewApplySkillCallsNoWriteTests
         _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
             .Returns(new List<Client> { EmployeeLivingInCity() });
         var handler = new GroupUngroupedByCityNameCommandHandler(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock);
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups());
         _mediator.Send(Arg.Any<GroupUngroupedByCityNameCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<GroupUngroupedByCityNameCommand>(), ci.Arg<CancellationToken>()));
         var skill = new GroupUngroupedByCityNameSkill(_mediator, TestGroupScopeGuard.Unrestricted(), _companyClock);
@@ -503,7 +506,8 @@ public class PreviewApplySkillCallsNoWriteTests
                 Items = new List<ClientSearchItem> { new() { Id = ClientId, FirstName = UserName, LastName = CustomerName } },
                 TotalCount = 1
             });
-        var handler = new FillGroupByCriteriaCommandHandler(searchRepository, _groupItemRepository, _unitOfWork, _companyClock);
+        var handler = new FillGroupByCriteriaCommandHandler(
+            searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups());
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<FillGroupByCriteriaCommand>(), ci.Arg<CancellationToken>()));
         var skill = new FillGroupByCriteriaSkill(

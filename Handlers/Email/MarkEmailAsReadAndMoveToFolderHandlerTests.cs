@@ -33,7 +33,7 @@ public class MarkEmailAsReadCommandHandlerTests
 
         var logger = Substitute.For<ILogger<MarkEmailAsReadCommandHandler>>();
         _handler = new MarkEmailAsReadCommandHandler(
-            _repository, _unitOfWork, _notificationService, _imapService, logger);
+            _repository, EmailVisibilityTestDoubles.SendersWithoutClients(), EmailVisibilityTestDoubles.AllClientsVisible(), _unitOfWork, _notificationService, _imapService, logger);
     }
 
     [Test]
@@ -132,7 +132,7 @@ public class MoveEmailToFolderCommandHandlerTests
 
         var logger = Substitute.For<ILogger<MoveEmailToFolderCommandHandler>>();
         _handler = new MoveEmailToFolderCommandHandler(
-            _repository, _unitOfWork, _imapService, logger);
+            _repository, EmailVisibilityTestDoubles.SendersWithoutClients(), EmailVisibilityTestDoubles.AllClientsVisible(), _unitOfWork, _imapService, logger);
     }
 
     [Test]

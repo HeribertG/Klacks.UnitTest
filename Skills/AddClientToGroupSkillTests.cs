@@ -45,7 +45,7 @@ public class AddClientToGroupSkillTests
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupSkill(
-            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+            _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
 
         _clientRepository.Exists(ClientId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });
@@ -111,6 +111,28 @@ public class AddClientToGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("date"));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutPosting()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new AddClientToGroupSkill(
+            _clientRepository, guard, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+        var unknownId = Guid.NewGuid();
+        var unknownParams = Params();
+        unknownParams["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Ctx(), Params());
+        var unknown = await skill.ExecuteAsync(Ctx(), unknownParams);
+
+        Assert.That(hidden.Success, Is.False);
+        Assert.That(unknown.Success, Is.False);
+        Assert.That(SkillClientVisibility.WithoutId(hidden.Message, ClientId),
+            Is.EqualTo(SkillClientVisibility.WithoutId(unknown.Message, unknownId)));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _groupItemRepository.DidNotReceive().GetByClientAndGroup(ClientId, Arg.Any<Guid>());
         _api.Calls.ShouldBeEmpty();
     }
 }

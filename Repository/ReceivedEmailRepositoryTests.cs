@@ -63,6 +63,23 @@ public class ReceivedEmailRepositoryTests : BaseRepositoryTest
     }
 
     [Test]
+    public async Task GetFilteredListAndCount_ExcludedSender_IsLeftOutCaseInsensitively()
+    {
+        var keptEmail = CreateEmail("kept-message-id");
+        var excludedEmail = CreateEmail("excluded-message-id");
+        excludedEmail.FromAddress = "Hidden.Employee@Example.com";
+        await TestDbContext.ReceivedEmails.AddRangeAsync(keptEmail, excludedEmail);
+        await TestDbContext.SaveChangesAsync();
+        var excluded = new[] { "hidden.employee@example.com" };
+
+        var result = await _repository.GetFilteredListAsync(InboxFolder, null, false, 0, 50, excluded);
+        var count = await _repository.GetFilteredCountAsync(InboxFolder, null, excluded);
+
+        result.Select(e => e.Id).ShouldBe(new[] { keptEmail.Id });
+        count.ShouldBe(1);
+    }
+
+    [Test]
     public async Task GetUnprocessedAsync_ReturnsOnlyEmailsWithoutProcessedAt()
     {
         var unprocessed = CreateEmail("unprocessed-message-id");

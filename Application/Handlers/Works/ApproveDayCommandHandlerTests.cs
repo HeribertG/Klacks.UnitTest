@@ -9,6 +9,7 @@ using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -43,6 +44,7 @@ public class ApproveDayCommandHandlerTests
 
         _handler = new ApproveDayCommandHandler(
             _workRepository,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             _breakRepository,
             new WorkLockLevelService(),
             _httpContextAccessor,

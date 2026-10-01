@@ -60,6 +60,7 @@ public class CoverAbsenceCommandHandlerTests
     private IUnitOfWork _unitOfWork = null!;
     private IEscalationChainService _escalationChainService = null!;
     private ICompanyClock _companyClock = null!;
+    private IClientVisibilityGuard _visibilityGuard = null!;
     private CoverAbsenceCommandHandler _handler = null!;
 
     [SetUp]
@@ -106,6 +107,10 @@ public class CoverAbsenceCommandHandlerTests
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
 
+        _visibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _visibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+        SetVisibleAgents(_ => true);
+
         var partitionService = new CompliancePartitionService(
             _conflictChecker,
             _overrideAuthorizer,
@@ -114,9 +119,14 @@ public class CoverAbsenceCommandHandlerTests
 
         _handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock,
+            partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock, _visibilityGuard,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
+
+    private void SetVisibleAgents(Func<Guid, bool> isVisible)
+        => _visibilityGuard.FilterVisibleAsync(
+                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Func<Guid, Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.ArgAt<IReadOnlyCollection<Guid>>(0).Where(isVisible).ToList());
 
     private void SetAbsentSlots(params ScheduleCell[] cells)
         => _scheduleEntries.GetScheduleEntriesQuery(
@@ -405,7 +415,7 @@ public class CoverAbsenceCommandHandlerTests
             Substitute.For<ILogger<CompliancePartitionService>>());
         var handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock,
+            partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock, _visibilityGuard,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
 
         await handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);
@@ -414,6 +424,36 @@ public class CoverAbsenceCommandHandlerTests
             Arg.Is<StartEscalationChainRequest>(r =>
                 r.ShiftStartUtc == new DateTime(2026, 3, 10, 7, 0, 0, DateTimeKind.Utc)),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AbsentClientOutsideTheCallersVisibility_IsRefusedLikeAMissingClient_BeforeAnythingIsWritten()
+    {
+        _visibilityGuard.IsVisibleAsync(ClientId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => Cover());
+
+        ex.Message.ShouldBe($"Client with ID {ClientId} not found");
+        await _scenarioRepo.DidNotReceive().Add(Arg.Any<AnalyseScenario>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReplacementOutsideTheCallersVisibility_IsNotWritten_AndReportedAsNoEligibleCandidate()
+    {
+        SetVisibleAgents(id => id != CandidateId);
+
+        var outcome = await Cover();
+
+        outcome.Covered.ShouldBeEmpty();
+        outcome.Uncovered.Count.ShouldBe(1);
+        outcome.Uncovered[0].Reason.ShouldBe("no eligible candidate");
+        await _mediator.Received(1).Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+        await _scenarioService.DidNotReceive().AddScenarioMembershipAsync(
+            Arg.Any<Guid>(), CandidateId, Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

@@ -1,7 +1,8 @@
 ﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests verifying that CreateOrderExportQueryHandler persists an ExportLog entry on successful export.
+/// Unit tests verifying that CreateOrderExportQueryHandler persists an ExportLog entry on successful export
+/// and leaves out work entries of employees hidden by group visibility.
 /// @param filter - Contains the order ids, format key and localization settings used to drive the export
 /// </summary>
 
@@ -15,6 +16,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Exports;
 using Klacks.Api.Domain.Models.Exports;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -80,6 +82,22 @@ public class CreateOrderExportQueryHandlerExportLogTests
             _exportLogRepository,
             Substitute.For<IExportFormatOverrideApplier>(),
             _httpContextAccessor,
+            TestGroupWriteVisibility.AllClientsVisible(),
+            _unitOfWork,
+            _logger);
+    }
+
+    private CreateOrderExportQueryHandler CreateHandler(IClientVisibilityGuard clientVisibilityGuard)
+    {
+        return new CreateOrderExportQueryHandler(
+            _dataLoader,
+            [_formatter],
+            _exportFormatPolicy,
+            _companyInfoLoader,
+            _exportLogRepository,
+            Substitute.For<IExportFormatOverrideApplier>(),
+            _httpContextAccessor,
+            clientVisibilityGuard,
             _unitOfWork,
             _logger);
     }
@@ -122,5 +140,47 @@ public class CreateOrderExportQueryHandlerExportLogTests
                 e.FileSize == 3 &&
                 e.ExportedBy == "tester"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_LeavesOutWorkEntriesOfEmployeesHiddenByGroupVisibility()
+    {
+        var visibleEmployeeId = Guid.NewGuid();
+        var hiddenEmployeeId = Guid.NewGuid();
+        _dataLoader.LoadAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderExportData
+            {
+                Orders =
+                [
+                    new OrderGroup
+                    {
+                        OrderShiftId = Guid.NewGuid(),
+                        OrderAbbreviation = "ORD",
+                        WorkEntries =
+                        [
+                            new WorkExportEntry { WorkId = Guid.NewGuid(), EmployeeId = visibleEmployeeId },
+                            new WorkExportEntry { WorkId = Guid.NewGuid(), EmployeeId = hiddenEmployeeId }
+                        ]
+                    }
+                ],
+                StartDate = new DateOnly(2026, 1, 1),
+                EndDate = new DateOnly(2026, 1, 31)
+            });
+        OrderExportData? formattedData = null;
+        _formatter.Format(Arg.Do<OrderExportData>(d => formattedData = d), Arg.Any<ExportOptions>()).Returns(new byte[] { 1 });
+        var handler = CreateHandler(TestGroupWriteVisibility.ClientsHidden(hiddenEmployeeId));
+
+        var filter = new OrderExportFilter
+        {
+            OrderIds = [Guid.NewGuid()],
+            Format = "csv",
+            Language = "de",
+            CurrencyCode = "EUR"
+        };
+
+        await handler.Handle(new CreateOrderExportQuery(filter), CancellationToken.None);
+
+        formattedData.ShouldNotBeNull();
+        formattedData.Orders[0].WorkEntries.Select(w => w.EmployeeId).ShouldBe([visibleEmployeeId]);
     }
 }

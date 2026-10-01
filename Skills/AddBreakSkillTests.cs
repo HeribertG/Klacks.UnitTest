@@ -33,7 +33,7 @@ public class AddBreakSkillTests
         _absenceRepository = Substitute.For<IAbsenceRepository>();
         _clientRepository = Substitute.For<IClientRepository>();
         _breakRepository = Substitute.For<IBreakRepository>();
-        _skill = new AddBreakSkill(_mediator, _absenceRepository, _clientRepository, _breakRepository);
+        _skill = new AddBreakSkill(_mediator, _absenceRepository, _clientRepository, SkillClientVisibility.AllVisible(), _breakRepository);
 
         _clientRepository.Exists(ClientId).Returns(true);
         _absenceRepository.Exists(AbsenceId).Returns(true);
@@ -117,5 +117,27 @@ public class AddBreakSkillTests
 
         Assert.That(result.Success, Is.False);
         await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutSendingCommand()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new AddBreakSkill(_mediator, _absenceRepository, _clientRepository, guard, _breakRepository);
+        var unknownId = Guid.NewGuid();
+        var unknownParams = Params();
+        unknownParams["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Ctx(), Params());
+        var unknown = await skill.ExecuteAsync(Ctx(), unknownParams);
+
+        Assert.That(hidden.Success, Is.False);
+        Assert.That(unknown.Success, Is.False);
+        Assert.That(SkillClientVisibility.WithoutId(hidden.Message, ClientId),
+            Is.EqualTo(SkillClientVisibility.WithoutId(unknown.Message, unknownId)));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
+        await _breakRepository.DidNotReceive().GetClientIdsWithBreakOnDate(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 }

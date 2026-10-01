@@ -38,7 +38,7 @@ public class UpdateBreakPlaceholderSkillTests
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
 
         _skill = new UpdateBreakPlaceholderSkill(
-            _breakPlaceholderRepository, _absenceRepository, _unitOfWork);
+            _breakPlaceholderRepository, SkillClientVisibility.AllVisible(), _absenceRepository, _unitOfWork);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -184,5 +184,70 @@ public class UpdateBreakPlaceholderSkillTests
 
         result.Success.ShouldBeTrue(result.Message);
         lone.Until.ShouldBe(new DateTime(2026, 8, 21, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task HiddenClientById_AnswersLikeUnknownPlaceholderId_WithoutWrite()
+    {
+        var tracked = Placeholder();
+        _breakPlaceholderRepository.Get(PlaceholderId).Returns(tracked);
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new UpdateBreakPlaceholderSkill(_breakPlaceholderRepository, guard, _absenceRepository, _unitOfWork);
+        var unknownId = Guid.NewGuid();
+
+        var hidden = await skill.ExecuteAsync(Context(), new Dictionary<string, object>
+        {
+            ["placeholderId"] = PlaceholderId.ToString(),
+            ["newFromDate"] = "2026-08-04"
+        });
+        var unknown = await skill.ExecuteAsync(Context(), new Dictionary<string, object>
+        {
+            ["placeholderId"] = unknownId.ToString(),
+            ["newFromDate"] = "2026-08-04"
+        });
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        SkillClientVisibility.WithoutId(hidden.Message, PlaceholderId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        tracked.From.ShouldBe(new DateTime(2026, 8, 3, 0, 0, 0, DateTimeKind.Utc));
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task HiddenClientByDate_AnswersLikeUnknownClientId_WithoutReadingOrWriting()
+    {
+        _breakPlaceholderRepository
+            .GetByClientAndRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<BreakPlaceholder> { Placeholder() });
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new UpdateBreakPlaceholderSkill(_breakPlaceholderRepository, guard, _absenceRepository, _unitOfWork);
+        var unknownId = Guid.NewGuid();
+        _breakPlaceholderRepository
+            .GetByClientAndRangeAsync(unknownId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<BreakPlaceholder>());
+
+        var hidden = await skill.ExecuteAsync(Context(), new Dictionary<string, object>
+        {
+            ["clientId"] = ClientId.ToString(),
+            ["date"] = "2026-08-04",
+            ["newUntilDate"] = "2026-08-21"
+        });
+        var unknown = await skill.ExecuteAsync(Context(), new Dictionary<string, object>
+        {
+            ["clientId"] = unknownId.ToString(),
+            ["date"] = "2026-08-04",
+            ["newUntilDate"] = "2026-08-21"
+        });
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _breakPlaceholderRepository.DidNotReceive().GetByClientAndRangeAsync(
+            ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

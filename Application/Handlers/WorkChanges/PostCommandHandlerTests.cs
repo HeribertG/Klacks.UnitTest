@@ -16,6 +16,7 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -70,6 +71,7 @@ public class PostCommandHandlerTests
         _handler = new PostCommandHandler(
             _workChangeRepository,
             _workRepository,
+            TestGroupWriteVisibility.AllClientsVisible(),
             new ScheduleMapper(),
             _periodHoursService,
             _notificationService,

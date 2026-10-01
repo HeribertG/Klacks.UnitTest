@@ -20,6 +20,7 @@ using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Geo;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Settings;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Handlers.Groups;
 
@@ -68,7 +69,8 @@ public class PartitionClientsByAddressCommandHandlerTests
 
         _handler = new PartitionClientsByAddressCommandHandler(
             _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock,
-            _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation);
+            _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups());
 
         _groupRepository.List().Returns(new List<Group>());
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<PartitionApplyOutcome>>>())

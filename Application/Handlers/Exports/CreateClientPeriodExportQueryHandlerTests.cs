@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Exports;
 using Klacks.Api.Domain.Models.Exports;
 using Microsoft.AspNetCore.Http;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using System.Security.Claims;
@@ -71,6 +72,7 @@ public class CreateClientPeriodExportQueryHandlerTests
             _exportLogRepository,
             Substitute.For<IExportFormatOverrideApplier>(),
             _httpContextAccessor,
+            TestGroupWriteVisibility.AllClientsVisible(),
             _unitOfWork,
             _logger);
     }
@@ -140,6 +142,7 @@ public class CreateClientPeriodExportQueryHandlerTests
             _exportLogRepository,
             Substitute.For<IExportFormatOverrideApplier>(),
             _httpContextAccessor,
+            TestGroupWriteVisibility.AllClientsVisible(),
             _unitOfWork,
             _logger);
 
@@ -154,5 +157,49 @@ public class CreateClientPeriodExportQueryHandlerTests
 
         result.FileContent.ShouldBe(new byte[] { 9 });
         result.ContentType.ShouldBe(ExportConstants.ContentTypeCsv);
+    }
+
+    [Test]
+    public async Task Handle_LeavesOutClientsHiddenByGroupVisibility()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var hiddenClientId = Guid.NewGuid();
+        _dataLoader.LoadAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientPeriodExportData
+            {
+                Clients =
+                [
+                    new ClientPeriodGroup { ClientId = visibleClientId, ClientName = "Visible" },
+                    new ClientPeriodGroup { ClientId = hiddenClientId, ClientName = "Hidden" }
+                ],
+                StartDate = new DateOnly(2026, 1, 1),
+                EndDate = new DateOnly(2026, 1, 31)
+            });
+        ClientPeriodExportData? formattedData = null;
+        _formatter.Format(Arg.Do<ClientPeriodExportData>(d => formattedData = d), Arg.Any<ExportOptions>()).Returns(new byte[] { 1 });
+
+        var handler = new CreateClientPeriodExportQueryHandler(
+            _dataLoader,
+            [_formatter],
+            _exportLogRepository,
+            Substitute.For<IExportFormatOverrideApplier>(),
+            _httpContextAccessor,
+            TestGroupWriteVisibility.ClientsHidden(hiddenClientId),
+            _unitOfWork,
+            _logger);
+
+        var filter = new ClientPeriodExportFilter
+        {
+            FromDate = new DateOnly(2026, 1, 1),
+            UntilDate = new DateOnly(2026, 1, 31),
+            Format = ExportConstants.FormatXml
+        };
+
+        await handler.Handle(new CreateClientPeriodExportQuery(filter), CancellationToken.None);
+
+        formattedData.ShouldNotBeNull();
+        formattedData.Clients.Select(c => c.ClientId).ShouldBe([visibleClientId]);
+        await _exportLogRepository.Received(1).AddAsync(
+            Arg.Is<ExportLog>(e => e.RecordCount == 1), Arg.Any<CancellationToken>());
     }
 }

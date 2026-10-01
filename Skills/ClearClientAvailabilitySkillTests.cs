@@ -38,7 +38,7 @@ public class ClearClientAvailabilitySkillTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
 
-        _skill = new ClearClientAvailabilitySkill(_availabilityRepository, _clientRepository, _unitOfWork);
+        _skill = new ClearClientAvailabilitySkill(_availabilityRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -137,5 +137,29 @@ public class ClearClientAvailabilitySkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("not found");
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutReadingOrRemoving()
+    {
+        _availabilityRepository.GetByClientAndDateRange(ClientId, Start, End)
+            .Returns(Task.FromResult(Entries(3)));
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new ClearClientAvailabilitySkill(_availabilityRepository, _clientRepository, guard, _unitOfWork);
+        var unknownId = Guid.NewGuid();
+        var unknownParameters = Parameters();
+        unknownParameters["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Context(), Parameters());
+        var unknown = await skill.ExecuteAsync(Context(), unknownParameters);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _availabilityRepository.DidNotReceive().GetByClientAndDateRange(ClientId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>());
+        _availabilityRepository.DidNotReceiveWithAnyArgs().Remove(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

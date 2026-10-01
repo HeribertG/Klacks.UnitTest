@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for CreatePayrollExportQueryHandler: it persists an ExportLog row on success,
 /// resolves the formatter by the requested format key, and rejects a missing group, an inverted
-/// date range, an unknown/disabled format and a period with no closed payroll data.
+/// date range, an unknown/disabled format and a period with no closed payroll data. A group hidden by group
+/// visibility is answered exactly like a group without closed data.
 /// </summary>
 using Shouldly;
 using Klacks.Api.Application.Constants;
@@ -18,6 +19,7 @@ using Klacks.Api.Domain.Interfaces.Exports;
 using Klacks.Api.Domain.Models.Exports;
 using Klacks.Api.Domain.Models.Exports.Payroll;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -36,6 +38,7 @@ public class CreatePayrollExportQueryHandlerTests
     private IExportFormatPolicy _exportFormatPolicy = null!;
     private IExportLogRepository _exportLogRepository = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private IGroupVisibilityGuard _groupVisibilityGuard = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<CreatePayrollExportQueryHandler> _logger = null!;
     private CreatePayrollExportQueryHandler _handler = null!;
@@ -49,6 +52,7 @@ public class CreatePayrollExportQueryHandlerTests
         _exportFormatPolicy = Substitute.For<IExportFormatPolicy>();
         _exportLogRepository = Substitute.For<IExportLogRepository>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        _groupVisibilityGuard = TestGroupWriteVisibility.UnrestrictedGroups();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<CreatePayrollExportQueryHandler>>();
 
@@ -91,6 +95,7 @@ public class CreatePayrollExportQueryHandlerTests
             _exportFormatPolicy,
             _exportLogRepository,
             _httpContextAccessor,
+            _groupVisibilityGuard,
             _unitOfWork,
             _logger);
 
@@ -196,5 +201,25 @@ public class CreatePayrollExportQueryHandlerTests
 
         result.FileContent.ShouldBe(new byte[] { 9 });
         result.ContentType.ShouldBe(PayrollExportConstants.ContentTypeXml);
+    }
+
+    [Test]
+    public async Task Handle_AnswersHiddenGroupExactlyLikeGroupWithoutClosedData()
+    {
+        _mediator.Send(Arg.Any<GetPayrollPeriodDataQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new PayrollExportData { GroupId = GroupId, Employees = [] });
+        var missing = await Should.ThrowAsync<InvalidRequestException>(async () =>
+            await _handler.Handle(new CreatePayrollExportQuery(ValidFilter()), CancellationToken.None));
+
+        _mediator.ClearReceivedCalls();
+        _configRepository.ClearReceivedCalls();
+        _groupVisibilityGuard.IsGroupVisibleAsync(GroupId, Arg.Any<CancellationToken>()).Returns(false);
+        var hidden = await Should.ThrowAsync<InvalidRequestException>(async () =>
+            await _handler.Handle(new CreatePayrollExportQuery(ValidFilter()), CancellationToken.None));
+
+        hidden.Message.ShouldBe(missing.Message);
+        await _mediator.DidNotReceive().Send(Arg.Any<GetPayrollPeriodDataQuery>(), Arg.Any<CancellationToken>());
+        await _configRepository.DidNotReceive().GetByGroupAsync(GroupId, Arg.Any<CancellationToken>());
+        await _exportLogRepository.DidNotReceive().AddAsync(Arg.Any<ExportLog>(), Arg.Any<CancellationToken>());
     }
 }

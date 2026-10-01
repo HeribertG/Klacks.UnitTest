@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Staffs;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Handlers.Groups;
 
@@ -42,7 +43,7 @@ public class AddSelectedClientsToGroupCommandHandlerTests
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
         _handler = new AddSelectedClientsToGroupCommandHandler(
-            _clientRepository, _groupItemRepository, _unitOfWork, _companyClock);
+            _clientRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible());
 
         _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client>

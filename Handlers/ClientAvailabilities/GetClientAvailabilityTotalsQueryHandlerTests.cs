@@ -6,6 +6,7 @@
 using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Handlers.ClientAvailabilities;
 using Klacks.Api.Application.Queries.ClientAvailabilities;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Handlers.ClientAvailabilities;
@@ -22,6 +23,7 @@ public class GetClientAvailabilityTotalsQueryHandlerTests
         _repository = Substitute.For<IClientAvailabilityRepository>();
         _handler = new GetClientAvailabilityTotalsQueryHandler(
             _repository,
+            TestGroupWriteVisibility.AllClientsVisible(),
             Substitute.For<ILogger<GetClientAvailabilityTotalsQueryHandler>>());
     }
 
@@ -55,7 +57,29 @@ public class GetClientAvailabilityTotalsQueryHandlerTests
 
         await _handler.Handle(new GetClientAvailabilityTotalsQuery(startDate, endDate, clientIds), CancellationToken.None);
 
-        await _repository.Received(1).GetTotalsByClientsAndDateRange(clientIds, startDate, endDate);
+        await _repository.Received(1).GetTotalsByClientsAndDateRange(
+            Arg.Is<List<Guid>>(l => l.SequenceEqual(clientIds)), startDate, endDate);
+    }
+
+    [Test]
+    public async Task Handle_HiddenClient_IsDroppedLikeAnUnknownId()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var hiddenClientId = Guid.NewGuid();
+        _repository.GetTotalsByClientsAndDateRange(Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(new List<ClientAvailabilityTotalResource>());
+        var handler = new GetClientAvailabilityTotalsQueryHandler(
+            _repository,
+            TestGroupWriteVisibility.ClientsHidden(hiddenClientId),
+            Substitute.For<ILogger<GetClientAvailabilityTotalsQueryHandler>>());
+
+        await handler.Handle(
+            new GetClientAvailabilityTotalsQuery(
+                new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31), new List<Guid> { visibleClientId, hiddenClientId }),
+            CancellationToken.None);
+
+        await _repository.Received(1).GetTotalsByClientsAndDateRange(
+            Arg.Is<List<Guid>>(l => l.Count == 1 && l[0] == visibleClientId), Arg.Any<DateOnly>(), Arg.Any<DateOnly>());
     }
 
     [Test]

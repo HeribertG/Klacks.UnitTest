@@ -114,7 +114,7 @@ public class ReportSkillTests
         var clientId = Guid.NewGuid();
         var repo = Substitute.For<IClientRepository>();
         repo.Get(clientId).Returns(new Client { Id = clientId, FirstName = "Anna", Name = "Müller" });
-        var skill = new EmailScheduleToClientSkill(repo);
+        var skill = new EmailScheduleToClientSkill(repo, SkillClientVisibility.AllVisible());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -132,7 +132,7 @@ public class ReportSkillTests
         var clientId = Guid.NewGuid();
         var repo = Substitute.For<IClientRepository>();
         repo.Get(clientId).Returns((Client?)null);
-        var skill = new EmailScheduleToClientSkill(repo);
+        var skill = new EmailScheduleToClientSkill(repo, SkillClientVisibility.AllVisible());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -140,5 +140,26 @@ public class ReportSkillTests
         });
 
         Assert.That(result.Success, Is.False);
+    }
+
+    [Test]
+    public async Task EmailScheduleToClient_HiddenClient_IsAnsweredExactlyLikeAnUnknownId()
+    {
+        var clientId = Guid.NewGuid();
+        var parameters = new Dictionary<string, object> { ["clientId"] = clientId.ToString() };
+        var unknownRepository = Substitute.For<IClientRepository>();
+        unknownRepository.Get(clientId).Returns((Client?)null);
+        var unknown = await new EmailScheduleToClientSkill(unknownRepository, SkillClientVisibility.AllVisible())
+            .ExecuteAsync(Ctx(), parameters);
+        var visibleRepository = Substitute.For<IClientRepository>();
+        visibleRepository.Get(clientId).Returns(new Client { Id = clientId, FirstName = "Anna", Name = "Müller" });
+
+        var hidden = await new EmailScheduleToClientSkill(visibleRepository, SkillClientVisibility.Hiding(clientId))
+            .ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(hidden.Success, Is.False);
+        Assert.That(hidden.Type, Is.Not.EqualTo(SkillResultType.Navigation));
+        Assert.That(hidden.Message, Is.EqualTo(unknown.Message));
+        await visibleRepository.DidNotReceive().Get(Arg.Any<Guid>());
     }
 }

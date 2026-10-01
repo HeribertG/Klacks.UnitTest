@@ -43,7 +43,7 @@ public class AddScheduleCommandsRangeSkillTests
             .Returns([]);
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
-        _skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, _unitOfWork, _keywordProvider);
+        _skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork, _keywordProvider);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -156,5 +156,28 @@ public class AddScheduleCommandsRangeSkillTests
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("Invalid commandKeyword");
         await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutWrite()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, guard, _unitOfWork, _keywordProvider);
+        var unknownId = Guid.NewGuid();
+        var unknownParameters = Parameters();
+        unknownParameters["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Context(), Parameters());
+        var unknown = await skill.ExecuteAsync(Context(), unknownParameters);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().GetByClientsAndDateRangeAsync(
+            default!, default, default, default, default);
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

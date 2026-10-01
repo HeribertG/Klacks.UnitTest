@@ -24,6 +24,7 @@ public class ConfirmBreakCommandHandlerTests
     private IBreakUserContextProvider _userContextProvider = null!;
     private IPeriodAuditLogRepository _auditLogRepository = null!;
     private IUserService _userService = null!;
+    private IClientVisibilityGuard _clientVisibilityGuard = null!;
     private ConfirmBreakCommandHandler _handler = null!;
 
     [SetUp]
@@ -35,12 +36,15 @@ public class ConfirmBreakCommandHandlerTests
         _userContextProvider = Substitute.For<IBreakUserContextProvider>();
         _auditLogRepository = Substitute.For<IPeriodAuditLogRepository>();
         _userService = Substitute.For<IUserService>();
+        _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _clientVisibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
 
         _userContextProvider.GetUserContext().Returns(new BreakUserContext(false, true, ConfirmerId));
         _userService.GetDisplayName().Returns("Ada Lovelace");
 
         _handler = new ConfirmBreakCommandHandler(
             _breakRepository,
+            _clientVisibilityGuard,
             _unitOfWork,
             _lockLevelService,
             new ScheduleMapper(),
@@ -60,6 +64,28 @@ public class ConfirmBreakCommandHandlerTests
 
         await Should.ThrowAsync<KeyNotFoundException>(act);
 
+        await _auditLogRepository.DidNotReceive().AddAsync(Arg.Any<PeriodAuditLog>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_BreakOfAClientOutsideTheCallersVisibility_IsRefusedLikeAMissingBreak()
+    {
+        var hidden = new Break { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), CurrentDate = new DateOnly(2026, 3, 9) };
+        var missingId = Guid.NewGuid();
+        _breakRepository.Get(hidden.Id).Returns(hidden);
+        _breakRepository.Get(missingId).Returns((Break?)null);
+        _clientVisibilityGuard.IsVisibleAsync(hidden.ClientId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => _handler.Handle(new ConfirmBreakCommand(hidden.Id), CancellationToken.None));
+        var missingEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => _handler.Handle(new ConfirmBreakCommand(missingId), CancellationToken.None));
+
+        hiddenEx.Message.ShouldBe($"Break with ID {hidden.Id} not found.");
+        missingEx.Message.ShouldBe($"Break with ID {missingId} not found.");
+        _lockLevelService.DidNotReceiveWithAnyArgs().Seal(default!, default, default!, default, default);
+        await _breakRepository.DidNotReceive().Put(Arg.Any<Break>());
         await _auditLogRepository.DidNotReceive().AddAsync(Arg.Any<PeriodAuditLog>(), Arg.Any<CancellationToken>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }

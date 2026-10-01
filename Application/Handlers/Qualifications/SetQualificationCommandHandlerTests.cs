@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Qualifications;
 
@@ -28,7 +29,7 @@ public class SetQualificationCommandHandlerTests
         var repo = Substitute.For<IClientQualificationRepository>();
         repo.GetActiveAsync(ClientId, QualId, Arg.Any<CancellationToken>()).Returns((ClientQualification?)null);
         var uow = Substitute.For<IUnitOfWork>();
-        var handler = new SetClientQualificationCommandHandler(repo, uow);
+        var handler = new SetClientQualificationCommandHandler(repo, TestGroupWriteVisibility.AllClientsVisible(), uow);
 
         var id = await handler.Handle(
             new SetClientQualificationCommand(ClientId, QualId, QualificationLevel.Proficient, null, null, null),
@@ -50,7 +51,7 @@ public class SetQualificationCommandHandlerTests
         var repo = Substitute.For<IClientQualificationRepository>();
         repo.GetActiveAsync(ClientId, QualId, Arg.Any<CancellationToken>()).Returns(existing);
         var uow = Substitute.For<IUnitOfWork>();
-        var handler = new SetClientQualificationCommandHandler(repo, uow);
+        var handler = new SetClientQualificationCommandHandler(repo, TestGroupWriteVisibility.AllClientsVisible(), uow);
 
         var id = await handler.Handle(
             new SetClientQualificationCommand(ClientId, QualId, QualificationLevel.Expert, new(2026, 1, 1), null, "promoted"),
@@ -62,6 +63,23 @@ public class SetQualificationCommandHandlerTests
         existing.Note.ShouldBe("promoted");
         await repo.DidNotReceive().Add(Arg.Any<ClientQualification>());
         await uow.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task SetClientQualification_HiddenClient_RefusedLikeUnknownClient_NothingWritten()
+    {
+        var repo = Substitute.For<IClientQualificationRepository>();
+        var uow = Substitute.For<IUnitOfWork>();
+        var handler = new SetClientQualificationCommandHandler(repo, TestGroupWriteVisibility.ClientsHidden(ClientId), uow);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new SetClientQualificationCommand(ClientId, QualId, QualificationLevel.Proficient, null, null, null),
+            CancellationToken.None));
+
+        ex.Message.ShouldBe($"Client with ID {ClientId} not found");
+        await repo.DidNotReceive().GetActiveAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await repo.DidNotReceive().Add(Arg.Any<ClientQualification>());
+        await uow.DidNotReceive().CompleteAsync();
     }
 
     [Test]

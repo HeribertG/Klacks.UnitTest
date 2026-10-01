@@ -37,7 +37,7 @@ public class DeleteBreakPlaceholderSkillTests
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
 
         _skill = new DeleteBreakPlaceholderSkill(
-            _breakPlaceholderRepository, _breakRepository, _unitOfWork);
+            _breakPlaceholderRepository, SkillClientVisibility.AllVisible(), _breakRepository, _unitOfWork);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -138,5 +138,52 @@ public class DeleteBreakPlaceholderSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("placeholderId");
+    }
+
+    [Test]
+    public async Task HiddenClientById_IsAnsweredLikeAMissingPlaceholder_WithoutWrite()
+    {
+        _breakPlaceholderRepository.Get(PlaceholderId).Returns(Placeholder());
+        var skill = new DeleteBreakPlaceholderSkill(
+            _breakPlaceholderRepository, SkillClientVisibility.Hiding(ClientId), _breakRepository, _unitOfWork);
+        var missingRepository = Substitute.For<IBreakPlaceholderRepository>();
+        missingRepository.Get(PlaceholderId).Returns((BreakPlaceholder?)null);
+        var missing = await new DeleteBreakPlaceholderSkill(
+                missingRepository, SkillClientVisibility.AllVisible(), _breakRepository, _unitOfWork)
+            .ExecuteAsync(Context(), new Dictionary<string, object> { ["placeholderId"] = PlaceholderId.ToString() });
+
+        var hidden = await skill.ExecuteAsync(
+            Context(), new Dictionary<string, object> { ["placeholderId"] = PlaceholderId.ToString() });
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe(missing.Message);
+        await _breakPlaceholderRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task HiddenClientByDate_RevealsNeitherPlaceholdersNorBookedBreaks()
+    {
+        _breakPlaceholderRepository
+            .GetByClientAndRangeAsync(ClientId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<BreakPlaceholder> { Placeholder() });
+        _breakRepository
+            .GetByClientAndDateRangeAsync(ClientId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Break> { new() { Id = Guid.NewGuid(), ClientId = ClientId, CurrentDate = new DateOnly(2026, 8, 4) } });
+        var skill = new DeleteBreakPlaceholderSkill(
+            _breakPlaceholderRepository, SkillClientVisibility.Hiding(ClientId), _breakRepository, _unitOfWork);
+
+        var result = await skill.ExecuteAsync(Context(), new Dictionary<string, object>
+        {
+            ["clientId"] = ClientId.ToString(),
+            ["date"] = "2026-08-04"
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("No planned absence");
+        result.Message.ShouldNotContain("delete_break");
+        await _breakPlaceholderRepository.DidNotReceiveWithAnyArgs().GetByClientAndRangeAsync(default, default, default, default);
+        await _breakRepository.DidNotReceiveWithAnyArgs().GetByClientAndDateRangeAsync(default, default, default, default);
+        await _breakPlaceholderRepository.DidNotReceive().Delete(Arg.Any<Guid>());
     }
 }

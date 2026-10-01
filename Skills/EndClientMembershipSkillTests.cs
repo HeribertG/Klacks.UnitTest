@@ -4,7 +4,8 @@
 /// Unit tests for end_client_membership — verifies the lone active membership is ended with
 /// database verification, the explicit membershipId override, the error paths for zero and
 /// multiple active memberships (real options, no guessing), exitDate before validFrom, and the
-/// rollback path when the verification re-read fails.
+/// rollback path when the verification re-read fails. A client outside the caller's group visibility, and a
+/// membership owned by such a client, must be answered exactly like missing ones.
 /// </summary>
 
 using Klacks.Api.Application.Skills;
@@ -24,6 +25,7 @@ public class EndClientMembershipSkillTests
 {
     private IMembershipRepository _membershipRepository = null!;
     private IClientRepository _clientRepository = null!;
+    private IClientVisibilityGuard _clientVisibilityGuard = null!;
     private FakeSelfApi _api = null!;
     private ICompanyClock _companyClock = null!;
     private EndClientMembershipSkill _skill = null!;
@@ -37,14 +39,16 @@ public class EndClientMembershipSkillTests
     {
         _membershipRepository = Substitute.For<IMembershipRepository>();
         _clientRepository = Substitute.For<IClientRepository>();
+        _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
         _api = new FakeSelfApi();
         _api.Respond(HttpMethod.Put, "api/backend/Memberships", new MembershipResource());
         _companyClock = Substitute.For<ICompanyClock>();
 
         _clientRepository.Exists(ClientId).Returns(true);
+        _clientVisibilityGuard.IsVisibleAsync(ClientId, Arg.Any<CancellationToken>()).Returns(true);
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(Today);
 
-        _skill = new EndClientMembershipSkill(_membershipRepository, _clientRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+        _skill = new EndClientMembershipSkill(_membershipRepository, _clientRepository, _clientVisibilityGuard, _api.Client, new SelfApiRouteResolver(), _companyClock);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -117,15 +121,35 @@ public class EndClientMembershipSkillTests
     }
 
     [Test]
-    public async Task MembershipIdOverride_ForeignClient_ReturnsError()
+    public async Task MembershipIdOverride_ForeignVisibleClient_StillReportsDoesNotBelong()
     {
-        var foreign = Membership(clientId: Guid.NewGuid());
+        var foreignClientId = Guid.NewGuid();
+        var foreign = Membership(clientId: foreignClientId);
         _membershipRepository.List().Returns(new List<Membership> { foreign });
+        _clientVisibilityGuard.IsVisibleAsync(foreignClientId, Arg.Any<CancellationToken>()).Returns(true);
 
         var result = await _skill.ExecuteAsync(Context(), Parameters(membershipId: foreign.Id));
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("does not belong");
+    }
+
+    [Test]
+    public async Task MembershipIdOverride_OfHiddenClient_IsAnsweredLikeAMissingMembership()
+    {
+        var hiddenClientId = Guid.NewGuid();
+        var hidden = Membership(clientId: hiddenClientId);
+        var missingId = Guid.NewGuid();
+        _membershipRepository.List().Returns(new List<Membership> { hidden });
+        _clientVisibilityGuard.IsVisibleAsync(hiddenClientId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var hiddenResult = await _skill.ExecuteAsync(Context(), Parameters(membershipId: hidden.Id));
+        var missingResult = await _skill.ExecuteAsync(Context(), Parameters(membershipId: missingId));
+
+        hiddenResult.Success.ShouldBeFalse();
+        hiddenResult.Message.ShouldBe($"Membership '{hidden.Id}' not found.");
+        missingResult.Message.ShouldBe($"Membership '{missingId}' not found.");
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]
@@ -178,5 +202,19 @@ public class EndClientMembershipSkillTests
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("not found");
         await _membershipRepository.DidNotReceive().List();
+    }
+
+    [Test]
+    public async Task ClientOutsideTheCallersVisibility_IsAnsweredLikeAnUnknownClient()
+    {
+        _clientVisibilityGuard.IsVisibleAsync(ClientId, Arg.Any<CancellationToken>()).Returns(false);
+        _membershipRepository.List().Returns(new List<Membership> { Membership() });
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Client {ClientId} not found.");
+        await _membershipRepository.DidNotReceive().List();
+        _api.Calls.ShouldBeEmpty();
     }
 }

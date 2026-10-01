@@ -47,7 +47,7 @@ public class AddClientToNearestGroupSkillTests
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToNearestGroupSkill(
-            _clientRepository, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+            _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
 
         _clientRepository.Get(ClientId).Returns(new Client
         {
@@ -106,6 +106,34 @@ public class AddClientToNearestGroupSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("date"));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutLoadingOrPosting()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new AddClientToNearestGroupSkill(
+            _clientRepository, guard, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+        var unknownId = Guid.NewGuid();
+
+        var hidden = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = ClientId.ToString(),
+            ["validFrom"] = "2026-05-01"
+        });
+        var unknown = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = unknownId.ToString(),
+            ["validFrom"] = "2026-05-01"
+        });
+
+        Assert.That(hidden.Success, Is.False);
+        Assert.That(unknown.Success, Is.False);
+        Assert.That(SkillClientVisibility.WithoutId(hidden.Message, ClientId),
+            Is.EqualTo(SkillClientVisibility.WithoutId(unknown.Message, unknownId)));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _clientRepository.DidNotReceive().Get(ClientId);
         _api.Calls.ShouldBeEmpty();
     }
 }

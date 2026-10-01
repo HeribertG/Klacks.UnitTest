@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging;
 using System.Security.Claims;
 using NSubstitute;
 using Klacks.UnitTest.Mocks;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.GroupTrees;
 
@@ -74,18 +75,23 @@ public class GroupTreeTests
             _groupRepository,
             _mapper,
             Substitute.For<IGroupGeocodingQueue>(),
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupWriteVisibility.AllClientsVisible(),
             _unitOfWork,
             postHandlerLogger);
 
         _putHandler = new PutCommandHandler(
             _groupRepository,
             _mapper,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupWriteVisibility.AllClientsVisible(),
             _unitOfWork,
             putHandlerLogger);
 
         _deleteHandler = new DeleteCommandHandler(
             _groupRepository,
             _mapper,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             _unitOfWork,
             deleteHandlerLogger);
 
@@ -97,6 +103,7 @@ public class GroupTreeTests
         _moveHandler = new MoveGroupNodeCommandHandler(
             _groupRepository,
             _mapper,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             _unitOfWork,
             moveHandlerLogger);
     }

@@ -51,7 +51,7 @@ public class GetClientAbsenceSummarySkillTests
             .Returns(new List<Break>());
 
         _skill = new GetClientAbsenceSummarySkill(
-            _clientRepository, _breakPlaceholderRepository, _breakRepository, _absenceRepository,
+            _clientRepository, SkillClientVisibility.AllVisible(), _breakPlaceholderRepository, _breakRepository, _absenceRepository,
             new FixedCompanyClock(new DateTimeOffset(2026, 6, 15, 0, 0, 0, TimeSpan.Zero)));
     }
 
@@ -142,5 +142,30 @@ public class GetClientAbsenceSummarySkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("not found");
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutReadingItsAbsences()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new GetClientAbsenceSummarySkill(
+            _clientRepository, guard, _breakPlaceholderRepository, _breakRepository, _absenceRepository,
+            new FixedCompanyClock(new DateTimeOffset(2026, 6, 15, 0, 0, 0, TimeSpan.Zero)));
+        var unknownId = Guid.NewGuid();
+        var unknownParameters = Parameters();
+        unknownParameters["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Context(), Parameters());
+        var unknown = await skill.ExecuteAsync(Context(), unknownParameters);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        hidden.Data.ShouldBeNull();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _clientRepository.DidNotReceive().Get(ClientId);
+        await _breakPlaceholderRepository.DidNotReceiveWithAnyArgs().GetByClientAndRangeAsync(default, default, default, default);
+        await _breakRepository.DidNotReceiveWithAnyArgs().GetByClientAndDateRangeAsync(default, default, default, default);
     }
 }

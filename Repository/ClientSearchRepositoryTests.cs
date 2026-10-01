@@ -357,4 +357,95 @@ public class ClientSearchRepositoryTests
 
         result.Items.Select(i => i.Id).ShouldBe(new[] { ownClientId });
     }
+
+    // FindList is the duplicate check of "new client" (GET api/backend/Clients/FindClient/...). Owner
+    // decision 2026-10-01: a restricted user must still find a duplicate in a foreign group, so the
+    // group filter is deliberately not applied here.
+    [Test]
+    public async Task FindList_RestrictedUser_StillFindsADuplicateInAnInvisibleGroup()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var ownClientId = AddClientInGroup("Petra", "Steiner", 8101, visibleGroupId);
+        var foreignClientId = AddClientInGroup("Petra", "Steinmann", 8102, Guid.NewGuid());
+        var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
+
+        var result = await repository.FindList(company: null, name: "Stein", firstname: null);
+
+        result.Select(c => c.Id).ShouldBe(new[] { ownClientId, foreignClientId }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task FindList_RestrictedUser_StillFindsClientWithoutAnyGroup()
+    {
+        var repository = CreateRepositoryForRestrictedUser(Guid.NewGuid());
+
+        var result = await repository.FindList(company: null, name: "Gasparoli", firstname: null);
+
+        result.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task FindList_AllParametersBlank_ReturnsNothing()
+    {
+        var result = await _repository.FindList(company: " ", name: " ", firstname: " ");
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task IsVisibleToCallerAsync_RestrictedUser_ClientOfAnInvisibleGroup_IsNotVisible()
+    {
+        var foreignClientId = AddClientInGroup("Petra", "Steinmann", 8104, Guid.NewGuid());
+        var repository = CreateRepositoryForRestrictedUser(Guid.NewGuid());
+
+        (await repository.IsVisibleToCallerAsync(foreignClientId)).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task IsVisibleToCallerAsync_RestrictedUser_ClientOfAVisibleGroup_IsVisible()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var ownClientId = AddClientInGroup("Petra", "Steiner", 8105, visibleGroupId);
+        var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
+
+        (await repository.IsVisibleToCallerAsync(ownClientId)).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task IsVisibleToCallerAsync_RestrictedUser_ClientWithoutAnyGroup_IsVisible()
+    {
+        var repository = CreateRepositoryForRestrictedUser(Guid.NewGuid());
+
+        (await repository.IsVisibleToCallerAsync(_gasparoli6556Id)).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task IsVisibleToCallerAsync_NoCallingUser_StaysUnrestricted()
+    {
+        var foreignClientId = AddClientInGroup("Petra", "Steinmann", 8106, Guid.NewGuid());
+        var repository = CreateRepositoryWithRealGroupFilter(
+            callingUserId: null, GroupVisibilityScope.Restricted([], []));
+
+        (await repository.IsVisibleToCallerAsync(foreignClientId)).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task FilterVisibleToCallerAsync_RestrictedUser_ReturnsOnlyVisibleKnownIds()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var ownClientId = AddClientInGroup("Petra", "Steiner", 8107, visibleGroupId);
+        var foreignClientId = AddClientInGroup("Petra", "Steinmann", 8108, Guid.NewGuid());
+        var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
+
+        var result = await repository.FilterVisibleToCallerAsync(
+            [ownClientId, foreignClientId, _gasparoli6556Id, Guid.NewGuid()]);
+
+        result.ShouldBe(new[] { ownClientId, _gasparoli6556Id }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task IsVisibleToCallerAsync_UnknownClient_IsNotVisible()
+    {
+        (await _repository.IsVisibleToCallerAsync(Guid.NewGuid())).ShouldBeFalse();
+    }
 }

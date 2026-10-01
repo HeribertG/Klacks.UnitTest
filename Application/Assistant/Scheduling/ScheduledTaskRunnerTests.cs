@@ -221,6 +221,30 @@ public class ScheduledTaskRunnerTests
             Owner.ToString(), Arg.Is<string>(m => m.Contains("Report ready")));
     }
 
+    // A scheduled skill runs without an HTTP request. Until 2026-10-01 visibility checks therefore saw no user
+    // and treated the run as an unrestricted system job, although a group-restricted owner had scheduled it.
+    [Test]
+    public async Task RunDueAsync_SkillAction_RunsWithTheOwnerAsAmbientExecutionPrincipal()
+    {
+        var task = Reminder(DateTime.UtcNow.AddMinutes(-1));
+        task.ActionType = ScheduledTaskActionTypes.Skill;
+        task.SkillName = "get_user_context";
+        task.MessageText = null;
+        Due(task);
+        string? principalDuringRun = null;
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                principalDuringRun = Klacks.Api.Domain.Common.ExecutionPrincipal.CurrentUserId;
+                return SkillResult.SuccessResult(null, "done");
+            });
+
+        await _runner.RunDueAsync();
+
+        principalDuringRun.ShouldBe(Owner.ToString());
+        Klacks.Api.Domain.Common.ExecutionPrincipal.CurrentUserId.ShouldBeNull();
+    }
+
     [Test]
     public async Task RunDueAsync_SkillAction_RightsComeFromCurrentRoles_NotTheFrozenCsv()
     {

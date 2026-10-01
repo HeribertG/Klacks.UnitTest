@@ -32,7 +32,7 @@ public class DeleteReceivedEmailCommandHandlerTests
 
         var logger = Substitute.For<ILogger<DeleteReceivedEmailCommandHandler>>();
         _handler = new DeleteReceivedEmailCommandHandler(
-            _repository, _folderRepository, _unitOfWork, _imapService, logger);
+            _repository, EmailVisibilityTestDoubles.SendersWithoutClients(), EmailVisibilityTestDoubles.AllClientsVisible(), _folderRepository, _unitOfWork, _imapService, logger);
     }
 
     [Test]
@@ -125,7 +125,7 @@ public class RestoreEmailCommandHandlerTests
 
         var logger = Substitute.For<ILogger<RestoreEmailCommandHandler>>();
         _handler = new RestoreEmailCommandHandler(
-            _repository, _folderRepository, _unitOfWork, _imapService, logger);
+            _repository, EmailVisibilityTestDoubles.SendersWithoutClients(), EmailVisibilityTestDoubles.AllClientsVisible(), _folderRepository, _unitOfWork, _imapService, logger);
     }
 
     [Test]
@@ -217,7 +217,7 @@ public class PermanentlyDeleteEmailCommandHandlerTests
 
         var logger = Substitute.For<ILogger<PermanentlyDeleteEmailCommandHandler>>();
         _handler = new PermanentlyDeleteEmailCommandHandler(
-            _repository, _folderRepository, _unitOfWork, _imapService, logger);
+            _repository, EmailVisibilityTestDoubles.SendersWithoutClients(), EmailVisibilityTestDoubles.AllClientsVisible(), _folderRepository, _unitOfWork, _imapService, logger);
     }
 
     [Test]

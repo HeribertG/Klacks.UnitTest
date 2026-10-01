@@ -13,6 +13,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Handlers.Associations;
@@ -41,7 +42,7 @@ public class DeleteGroupSubtreeCommandHandlerTests
             .Returns(ci => ci.Arg<Func<Task<DeleteGroupSubtreeResponse>>>()());
 
         _handler = new DeleteGroupSubtreeCommandHandler(
-            _repository, _unitOfWork, NullLogger<DeleteGroupSubtreeCommandHandler>.Instance);
+            _repository, TestGroupWriteVisibility.UnrestrictedGroups(), _unitOfWork, NullLogger<DeleteGroupSubtreeCommandHandler>.Instance);
     }
 
     private void WireChildren(params Guid[] ids) =>

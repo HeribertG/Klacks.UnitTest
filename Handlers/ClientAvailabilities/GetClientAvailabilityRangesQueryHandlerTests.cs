@@ -23,6 +23,7 @@ public class GetClientAvailabilityRangesQueryHandlerTests
         _scheduleService = Substitute.For<IClientAvailabilityScheduleService>();
         _handler = new GetClientAvailabilityRangesQueryHandler(
             _scheduleService,
+            TestGroupWriteVisibility.AllClientsVisible(),
             Substitute.For<ILogger<GetClientAvailabilityRangesQueryHandler>>());
     }
 
@@ -99,5 +100,26 @@ public class GetClientAvailabilityRangesQueryHandlerTests
 
         _scheduleService.Received(1).GetClientAvailabilityQuery(
             startDate, endDate, Arg.Is<List<Guid>>(l => l.Single() == clientId));
+    }
+
+    [Test]
+    public async Task Handle_HiddenClient_IsDroppedLikeAnUnknownId()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var hiddenClientId = Guid.NewGuid();
+        _scheduleService.GetClientAvailabilityQuery(default, default, default)
+            .ReturnsForAnyArgs(new TestAsyncEnumerable<ClientAvailabilityScheduleEntry>(Enumerable.Empty<ClientAvailabilityScheduleEntry>()));
+        var handler = new GetClientAvailabilityRangesQueryHandler(
+            _scheduleService,
+            TestGroupWriteVisibility.ClientsHidden(hiddenClientId),
+            Substitute.For<ILogger<GetClientAvailabilityRangesQueryHandler>>());
+
+        await handler.Handle(
+            new GetClientAvailabilityRangesQuery(
+                new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), new List<Guid> { visibleClientId, hiddenClientId }),
+            CancellationToken.None);
+
+        _scheduleService.Received(1).GetClientAvailabilityQuery(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Is<List<Guid>>(l => l.Single() == visibleClientId));
     }
 }

@@ -23,9 +23,11 @@ namespace Klacks.UnitTest.Commands.Clients;
 public class PutCommandHandlerTests
 {
     private IClientRepository _clientRepository = null!;
+    private IClientVisibilityGuard _clientVisibilityGuard = null!;
     private ClientMapper _mapper = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IGroupVisibilityService _groupVisibilityService = null!;
+    private IGroupVisibilityGuard _groupVisibilityGuard = null!;
     private IEmailClientAssignmentService _emailClientAssignmentService = null!;
     private IDomainEventDispatcher _eventDispatcher = null!;
     private IUserService _userService = null!;
@@ -36,9 +38,12 @@ public class PutCommandHandlerTests
     public void Setup()
     {
         _clientRepository = Substitute.For<IClientRepository>();
+        _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _clientVisibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         _mapper = new ClientMapper();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _groupVisibilityService = Substitute.For<IGroupVisibilityService>();
+        _groupVisibilityGuard = Substitute.For<IGroupVisibilityGuard>();
         _emailClientAssignmentService = Substitute.For<IEmailClientAssignmentService>();
         _eventDispatcher = Substitute.For<IDomainEventDispatcher>();
         _userService = Substitute.For<IUserService>();
@@ -50,14 +55,34 @@ public class PutCommandHandlerTests
 
         _handler = new PutCommandHandler(
             _clientRepository,
+            _clientVisibilityGuard,
             _mapper,
             _unitOfWork,
             _groupVisibilityService,
+            _groupVisibilityGuard,
             _emailClientAssignmentService,
             _eventDispatcher,
             _userService,
             _logger
         );
+    }
+
+    [Test]
+    public async Task Handle_ClientOutsideTheCallersVisibility_IsRefusedLikeAMissingClient()
+    {
+        var clientId = Guid.NewGuid();
+        _clientVisibilityGuard.IsVisibleAsync(clientId, Arg.Any<CancellationToken>()).Returns(false);
+        _clientRepository.GetTrackedForUpdate(clientId)
+            .Returns(Task.FromResult<Client?>(CreateTestClient(clientId, "Hidden Client")));
+        var resource = _mapper.ToResource(CreateTestClient(clientId, "Overwritten"));
+
+        Func<Task> act = async () => await _handler.Handle(new PutCommand<ClientResource>(resource), CancellationToken.None);
+
+        var exception = await act.ShouldThrowAsync<KeyNotFoundException>();
+        exception.Message.ShouldBe($"Client with ID {clientId} not found");
+        await _clientRepository.DidNotReceive().GetTrackedForUpdate(clientId);
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -218,12 +243,11 @@ public class PutCommandHandlerTests
     }
 
     /// <summary>
-    /// The other half of the decision: group memberships were NOT opened. A supervisor changing contracts
-    /// in the same request must still be refused for the group items, so the widened contract gate cannot
-    /// be used as a way in.
+    /// A supervisor changing contracts in the same request may change memberships only within visible groups,
+    /// so the widened contract gate cannot be used to pull a client into a hidden group.
     /// </summary>
     [Test]
-    public async Task Handle_NonAdminHoldingCanEditContracts_StillCannotModifyGroupItems()
+    public async Task Handle_NonAdminHoldingCanEditContracts_CannotAddAHiddenGroup()
     {
         var clientId = Guid.NewGuid();
         var existingClient = new Client
@@ -258,10 +282,74 @@ public class PutCommandHandlerTests
         Func<Task> act = async () => await _handler.Handle(
             new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message
-            .ShouldContain("Only administrators can modify client groups");
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldStartWith("Group with ID ");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
+    }
+
+    // Owner decision 2026-10-01: editing a client follows the same rule as creating one and as the GroupItems
+    // endpoints — a non-admin may change memberships within the groups they can see.
+    [Test]
+    public async Task Handle_NonAdminUser_CanReplaceVisibleGroups()
+    {
+        var clientId = Guid.NewGuid();
+        var oldGroupId = Guid.NewGuid();
+        var newGroupId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.GroupItems = new List<GroupItem>
+        {
+            new GroupItem { GroupId = oldGroupId, ClientId = clientId, ValidFrom = new DateTime(2024, 1, 1) }
+        };
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContractResource>(),
+            GroupItems = new List<ClientGroupItemResource>
+            {
+                new ClientGroupItemResource { GroupId = newGroupId, ClientId = clientId, ValidFrom = new DateTime(2024, 6, 1) }
+            }
+        };
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
+        _groupVisibilityGuard
+            .AreAllGroupsVisibleAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(oldGroupId) && ids.Contains(newGroupId)),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+        _clientRepository.Put(Arg.Any<Client>(), Arg.Any<Client>()).Returns(Task.FromResult<Client?>(existingClient));
+
+        var result = await _handler.Handle(new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        await _clientRepository.Received(1).Put(Arg.Any<Client>(), Arg.Any<Client>());
+    }
+
+    [Test]
+    public async Task Handle_NonAdminUser_CannotRemoveAHiddenGroup()
+    {
+        var clientId = Guid.NewGuid();
+        var hiddenGroupId = Guid.NewGuid();
+        var existingClient = CreateTestClient(clientId, "Test Client");
+        existingClient.GroupItems = new List<GroupItem>
+        {
+            new GroupItem { GroupId = hiddenGroupId, ClientId = clientId, ValidFrom = new DateTime(2024, 1, 1) }
+        };
+        var updatedResource = new ClientResource
+        {
+            Id = clientId,
+            Name = "Test Client",
+            ClientContracts = new List<ClientContractResource>(),
+            GroupItems = new List<ClientGroupItemResource>()
+        };
+        _groupVisibilityService.IsAdmin().Returns(Task.FromResult(false));
+        _clientRepository.GetTrackedForUpdate(clientId).Returns(Task.FromResult<Client?>(existingClient));
+
+        Func<Task> act = async () => await _handler.Handle(new PutCommand<ClientResource>(updatedResource), CancellationToken.None);
+
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe($"Group with ID {hiddenGroupId} not found");
+        await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -313,7 +401,7 @@ public class PutCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_NonAdminUser_CannotModifyGroupItems()
+    public async Task Handle_NonAdminUser_CannotRedateAHiddenGroup()
     {
         var clientId = Guid.NewGuid();
         var groupId = Guid.NewGuid();
@@ -358,7 +446,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client groups");
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldStartWith("Group with ID ");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
@@ -521,7 +609,7 @@ public class PutCommandHandlerTests
     }
 
     [Test]
-    public async Task Handle_NonAdminUser_CannotAddNewGroupItem()
+    public async Task Handle_NonAdminUser_CannotAddAHiddenGroup()
     {
         var clientId = Guid.NewGuid();
         var existingClient = new Client
@@ -556,7 +644,7 @@ public class PutCommandHandlerTests
 
         Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
 
-        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("Only administrators can modify client groups");
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldStartWith("Group with ID ");
 
         await _clientRepository.DidNotReceive().Put(Arg.Any<Client>(), Arg.Any<Client>());
     }

@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Exports;
 using Klacks.Api.Domain.Models.Exports;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -110,7 +111,12 @@ public class CreateOrderRangeExportQueryHandlerTests
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<OrderExportResult>>>())
             .Returns(ci => ci.ArgAt<Func<Task<OrderExportResult>>>(0)());
 
-        _handler = new CreateOrderRangeExportQueryHandler(
+        _handler = CreateHandler(TestGroupWriteVisibility.AllClientsVisible());
+    }
+
+    private CreateOrderRangeExportQueryHandler CreateHandler(IClientVisibilityGuard clientVisibilityGuard)
+    {
+        return new CreateOrderRangeExportQueryHandler(
             _sealedOrderIdLoader,
             _orderDataLoader,
             _clientPeriodDataLoader,
@@ -122,6 +128,7 @@ public class CreateOrderRangeExportQueryHandlerTests
             _exportLogRepository,
             _overrideApplier,
             _httpContextAccessor,
+            clientVisibilityGuard,
             _unitOfWork,
             _logger);
     }
@@ -243,6 +250,26 @@ public class CreateOrderRangeExportQueryHandlerTests
                 e.RecordCount == 2 &&
                 e.ExportedBy == "tester"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_LeavesOutClientsHiddenByGroupVisibility_FromOrdersAndClientPeriodData()
+    {
+        ClientPeriodExportData? formattedData = null;
+        _clientPeriodFormatter.Format(Arg.Do<ClientPeriodExportData>(d => formattedData = d), Arg.Any<ExportOptions>()).Returns([4, 5, 6]);
+        var handler = CreateHandler(TestGroupWriteVisibility.ClientsHidden(_closedEmployeeId));
+
+        var result = await handler.Handle(new CreateOrderRangeExportQuery(BuildFilter()), CancellationToken.None);
+
+        var entryNames = ReadZipEntryNames(result.FileContent);
+        entryNames.ShouldBe(["client-period-export_2026-01-01_2026-01-31.xml"]);
+        formattedData.ShouldNotBeNull();
+        formattedData.Clients.ShouldBeEmpty();
+        await _periodClosedEntryFilter.Received(1).BuildAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => !ids.Contains(_closedEmployeeId)), Arg.Any<CancellationToken>());
+        await _exportLogRepository.Received(1).AddAsync(
+            Arg.Is<ExportLog>(e => e.RecordCount == 0), Arg.Any<CancellationToken>());
     }
 
     private static OrderRangeExportFilter BuildFilter()

@@ -15,6 +15,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Handlers.Associations;
@@ -43,7 +44,11 @@ public class BulkAddGroupItemsCommandHandlerTests
             .Returns(ci => ci.Arg<Func<Task<BulkGroupItemResponse>>>()());
 
         _handler = new BulkAddGroupItemsCommandHandler(
-            _repository, _unitOfWork, NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
+            _repository,
+            _unitOfWork,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupWriteVisibility.AllClientsVisible(),
+            NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
     }
 
     private static BulkAddGroupItemsCommand Command(int count) =>

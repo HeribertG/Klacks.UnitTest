@@ -8,6 +8,7 @@
 using Klacks.Api.Application.Commands.Works;
 using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Mappers;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -39,6 +40,7 @@ public class ConfirmWorkCommandHandlerTests
 
         _handler = new ConfirmWorkCommandHandler(
             _workRepository,
+            TestGroupWriteVisibility.AllClientsVisible(),
             _unitOfWork,
             _lockLevelService,
             new ScheduleMapper(),

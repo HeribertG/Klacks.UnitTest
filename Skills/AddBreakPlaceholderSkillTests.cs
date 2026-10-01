@@ -38,7 +38,7 @@ public class AddBreakPlaceholderSkillTests
         _absenceRepository.Exists(AbsenceId).Returns(true);
 
         _skill = new AddBreakPlaceholderSkill(
-            _breakPlaceholderRepository, _absenceRepository, _clientRepository, _unitOfWork);
+            _breakPlaceholderRepository, _absenceRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -107,5 +107,27 @@ public class AddBreakPlaceholderSkillTests
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("list_absence_types");
         await _breakPlaceholderRepository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutWrite()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new AddBreakPlaceholderSkill(
+            _breakPlaceholderRepository, _absenceRepository, _clientRepository, guard, _unitOfWork);
+        var unknownId = Guid.NewGuid();
+        var unknownParameters = Parameters();
+        unknownParameters["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Context(), Parameters());
+        var unknown = await skill.ExecuteAsync(Context(), unknownParameters);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _breakPlaceholderRepository.DidNotReceiveWithAnyArgs().Add(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 }

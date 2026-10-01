@@ -29,7 +29,8 @@ public class TranslateReceivedEmailQueryHandlerTests
         _emailId = Guid.NewGuid();
 
         var logger = Substitute.For<ILogger<TranslateReceivedEmailQueryHandler>>();
-        _handler = new TranslateReceivedEmailQueryHandler(_repository, _translationService, logger);
+        _handler = new TranslateReceivedEmailQueryHandler(
+            _repository, EmailVisibilityTestDoubles.SendersWithoutClients(), EmailVisibilityTestDoubles.AllClientsVisible(), _translationService, logger);
     }
 
     [Test]

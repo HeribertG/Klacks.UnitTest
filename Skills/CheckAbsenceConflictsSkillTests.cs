@@ -54,7 +54,7 @@ public class CheckAbsenceConflictsSkillTests
             .Returns(new List<Work>());
 
         _skill = new CheckAbsenceConflictsSkill(
-            _clientRepository, _breakPlaceholderRepository, _breakRepository, _workRepository, _absenceRepository);
+            _clientRepository, SkillClientVisibility.AllVisible(), _breakPlaceholderRepository, _breakRepository, _workRepository, _absenceRepository);
     }
 
     private static Client BuildClient() => new()
@@ -176,5 +176,30 @@ public class CheckAbsenceConflictsSkillTests
         var result = await _skill.ExecuteAsync(Context(), Parameters(from: "2026-08-07", until: "2026-08-03"));
 
         result.Success.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutReadingItsAbsencesOrWork()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new CheckAbsenceConflictsSkill(
+            _clientRepository, guard, _breakPlaceholderRepository, _breakRepository, _workRepository, _absenceRepository);
+        var unknownId = Guid.NewGuid();
+        var unknownParameters = Parameters();
+        unknownParameters["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Context(), Parameters());
+        var unknown = await skill.ExecuteAsync(Context(), unknownParameters);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        hidden.Data.ShouldBeNull();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _clientRepository.DidNotReceive().Get(ClientId);
+        await _breakPlaceholderRepository.DidNotReceiveWithAnyArgs().GetByClientAndRangeAsync(default, default, default, default);
+        await _breakRepository.DidNotReceiveWithAnyArgs().GetByClientAndDateRangeAsync(default, default, default, default);
+        await _workRepository.DidNotReceiveWithAnyArgs().GetByClientAndDateRangeAsync(default, default, default, default);
     }
 }

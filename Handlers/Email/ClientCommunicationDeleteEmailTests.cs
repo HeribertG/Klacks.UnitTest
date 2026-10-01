@@ -103,9 +103,12 @@ public class CommunicationDeleteReassignEmailTests
         _mapper = new AddressCommunicationMapper();
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
+        var clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        clientVisibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+
         var logger = Substitute.For<ILogger<Api.Application.Handlers.Communications.DeleteCommandHandler>>();
         _handler = new Api.Application.Handlers.Communications.DeleteCommandHandler(
-            _communicationRepository, _emailAssignmentService, _mapper, _unitOfWork, logger);
+            _communicationRepository, clientVisibilityGuard, _emailAssignmentService, _mapper, _unitOfWork, logger);
     }
 
     [Test]

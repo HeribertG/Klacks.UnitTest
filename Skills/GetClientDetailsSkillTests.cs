@@ -24,7 +24,7 @@ public class GetClientDetailsSkillTests
     public void Setup()
     {
         _clientRepository = Substitute.For<IClientRepository>();
-        _skill = new GetClientDetailsSkill(_clientRepository);
+        _skill = new GetClientDetailsSkill(_clientRepository, SkillClientVisibility.AllVisible());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -154,5 +154,25 @@ public class GetClientDetailsSkillTests
         Assert.That(result.Success, Is.True, result.Message);
         Assert.That(result.Message, Does.Contain("0 contract(s)"));
         Assert.That(result.Message, Does.Contain("0 group(s)"));
+    }
+
+    [Test]
+    public async Task HiddenClient_IsAnsweredExactlyLikeAnUnknownId_AndIsNeverLoaded()
+    {
+        var id = Guid.NewGuid();
+        var parameters = new Dictionary<string, object> { ["clientId"] = id.ToString() };
+        var unknownRepository = Substitute.For<IClientRepository>();
+        unknownRepository.Get(id).Returns((Client?)null);
+        var unknown = await new GetClientDetailsSkill(unknownRepository, SkillClientVisibility.AllVisible())
+            .ExecuteAsync(Ctx(), parameters);
+        _clientRepository.Get(id).Returns(MakeClientWithChildren(id));
+
+        var hidden = await new GetClientDetailsSkill(_clientRepository, SkillClientVisibility.Hiding(id))
+            .ExecuteAsync(Ctx(), parameters);
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe(unknown.Message);
+        hidden.Data.ShouldBeNull();
+        await _clientRepository.DidNotReceive().Get(Arg.Any<Guid>());
     }
 }

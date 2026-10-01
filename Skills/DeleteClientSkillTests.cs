@@ -35,7 +35,7 @@ public class DeleteClientSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _api = new FakeSelfApi();
         _clientRepository.GetNoTracking(Arg.Any<Guid>()).Returns((Client?)null);
-        _skill = new DeleteClientSkill(_clientRepository, _api.Client, new SelfApiRouteResolver());
+        _skill = new DeleteClientSkill(_clientRepository, SkillClientVisibility.AllVisible(), _api.Client, new SelfApiRouteResolver());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -112,5 +112,24 @@ public class DeleteClientSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("already gone"));
+    }
+
+    [Test]
+    public async Task HiddenClient_IsAnsweredExactlyLikeAnUnknownId_AndNothingIsDeleted()
+    {
+        var id = Guid.NewGuid();
+        _clientRepository.Get(id).Returns((Client?)null);
+        var unknown = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["clientId"] = id.ToString() });
+        var visibleRepository = Substitute.For<IClientRepository>();
+        visibleRepository.Get(id).Returns(MakeClient(id));
+        var hiddenSkill = new DeleteClientSkill(
+            visibleRepository, SkillClientVisibility.Hiding(id), _api.Client, new SelfApiRouteResolver());
+
+        var hidden = await hiddenSkill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["clientId"] = id.ToString() });
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe(unknown.Message);
+        _api.Calls.ShouldBeEmpty();
+        await visibleRepository.DidNotReceive().Get(Arg.Any<Guid>());
     }
 }

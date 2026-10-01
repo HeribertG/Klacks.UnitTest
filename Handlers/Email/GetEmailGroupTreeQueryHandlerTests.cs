@@ -55,7 +55,8 @@ public class GetEmailGroupTreeQueryHandlerTests
             .Returns(ClientUnreadCount);
 
         var logger = Substitute.For<ILogger<GetEmailGroupTreeQueryHandler>>();
-        _handler = new GetEmailGroupTreeQueryHandler(_groupHierarchyService, _emailQueryRepository, logger);
+        _handler = new GetEmailGroupTreeQueryHandler(
+            _groupHierarchyService, _emailQueryRepository, EmailVisibilityTestDoubles.AllClientsVisible(), logger);
     }
 
     [TestCase("de", EmailGroupTreeLabels.UnassignedDe)]

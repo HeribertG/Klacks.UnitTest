@@ -13,6 +13,7 @@ using Klacks.Api.Application.Handlers.Works;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -35,6 +36,7 @@ public class UnconfirmWorkCommandHandlerTests
 
         _handler = new UnconfirmWorkCommandHandler(
             _workRepository,
+            TestGroupWriteVisibility.AllClientsVisible(),
             _unitOfWork,
             new WorkLockLevelService(),
             new ScheduleMapper(),

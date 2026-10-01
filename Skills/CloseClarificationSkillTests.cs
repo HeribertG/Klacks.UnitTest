@@ -42,7 +42,7 @@ public class CloseClarificationSkillTests
         _clients = Substitute.For<IClientRepository>();
         _clients.GetTypeAndDisplayNameAsync(ClientId, Arg.Any<CancellationToken>())
             .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Employee, ClientDisplayName));
-        _skill = new CloseClarificationSkill(_repository, _clients, new SettableTimeProvider(NowUtc));
+        _skill = new CloseClarificationSkill(_repository, _clients, SkillClientVisibility.AllVisible(), new SettableTimeProvider(NowUtc));
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -393,5 +393,23 @@ public class CloseClarificationSkillTests
 
         exception.Message.ShouldNotContain("rolled back");
         exception.Message.ShouldContain("could not be confirmed");
+    }
+
+    [Test]
+    public async Task HiddenEmployee_IsAnsweredLikeNoOpenClarification_WithoutWrite()
+    {
+        _repository.GetOpenByClientAsync(ClientId, Arg.Any<CancellationToken>()).Returns((InboundClarification?)null);
+        var unknown = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["clientId"] = ClientId.ToString() });
+        var hiddenRepository = Substitute.For<IInboundClarificationRepository>();
+        hiddenRepository.GetOpenByClientAsync(ClientId, Arg.Any<CancellationToken>())
+            .Returns(Clarification(InboundClarificationStatus.Open));
+        var hiddenSkill = new CloseClarificationSkill(
+            hiddenRepository, _clients, SkillClientVisibility.Hiding(ClientId), new SettableTimeProvider(NowUtc));
+
+        var hidden = await hiddenSkill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["clientId"] = ClientId.ToString() });
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe(unknown.Message);
+        await hiddenRepository.DidNotReceiveWithAnyArgs().TryResolveAsync(default, default, default, default, default, default);
     }
 }

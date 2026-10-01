@@ -44,7 +44,7 @@ public class CreateShiftSkillTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _defaultShiftMacroResolver = Substitute.For<IDefaultShiftMacroResolver>();
         _skill = new CreateShiftSkill(
-            _shiftRepository, _groupRepository, _clientRepository, _mediator, _unitOfWork, _defaultShiftMacroResolver);
+            _shiftRepository, _groupRepository, _clientRepository, SkillClientVisibility.AllVisible(), _mediator, _unitOfWork, _defaultShiftMacroResolver);
 
         _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client> { new() { Id = ClientId, Name = "Müller", Type = EntityTypeEnum.Customer } });
@@ -160,4 +160,32 @@ public class CreateShiftSkillTests
     private void GivenMacro(Guid macroId, MacroOrigin origin) =>
         _mediator.Send(Arg.Any<ListQuery>(), Arg.Any<CancellationToken>())
             .Returns(new List<MacroResource> { new() { Id = macroId, Name = "Sunday rate", Origin = origin } }.AsEnumerable());
+
+    [Test]
+    public async Task HiddenCustomer_AnswersLikeUnknownId_WithoutLoadingOrPersisting()
+    {
+        _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<IEnumerable<Guid>>().Contains(ClientId)
+                ? new List<Client> { new() { Id = ClientId, Name = "Müller", Type = EntityTypeEnum.Customer } }
+                : new List<Client>());
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var skill = new CreateShiftSkill(
+            _shiftRepository, _groupRepository, _clientRepository, guard, _mediator, _unitOfWork, _defaultShiftMacroResolver);
+        var unknownId = Guid.NewGuid();
+        var unknownParams = Params();
+        unknownParams["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Ctx(), Params());
+        var unknown = await skill.ExecuteAsync(Ctx(), unknownParams);
+
+        Assert.That(hidden.Success, Is.False);
+        Assert.That(unknown.Success, Is.False);
+        Assert.That(SkillClientVisibility.WithoutId(hidden.Message, ClientId),
+            Is.EqualTo(SkillClientVisibility.WithoutId(unknown.Message, unknownId)));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await _clientRepository.DidNotReceive().GetByIdsAsync(
+            Arg.Is<IEnumerable<Guid>>(ids => ids.Contains(ClientId)), Arg.Any<CancellationToken>());
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
 }

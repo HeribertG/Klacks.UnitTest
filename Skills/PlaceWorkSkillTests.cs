@@ -40,7 +40,7 @@ public class PlaceWorkSkillTests
     };
 
     private static (PlaceWorkSkill skill, IMediator mediator, IPreCommitConflictChecker checker) Build(
-        PreCommitCheckResult checkResult)
+        PreCommitCheckResult checkResult, IClientVisibilityGuard? visibilityGuard = null)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
@@ -59,7 +59,10 @@ public class PlaceWorkSkillTests
         checker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(checkResult);
 
-        return (new PlaceWorkSkill(mediator, shiftRepo, checker), mediator, checker);
+        var clientRepo = Substitute.For<IClientRepository>();
+        clientRepo.Exists(ClientId).Returns(true);
+
+        return (new PlaceWorkSkill(mediator, shiftRepo, checker, clientRepo, visibilityGuard ?? SkillClientVisibility.AllVisible()), mediator, checker);
     }
 
     [Test]
@@ -114,5 +117,27 @@ public class PlaceWorkSkillTests
 
         result.Success.ShouldBeTrue();
         await mediator.Received(1).Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HiddenClient_AnswersLikeUnknownId_WithoutCheckingOrCommitting()
+    {
+        var guard = SkillClientVisibility.Hiding(ClientId);
+        var (skill, mediator, checker) = Build(PreCommitCheckResult.Empty, guard);
+        var unknownId = Guid.NewGuid();
+        var unknownParams = Params();
+        unknownParams["clientId"] = unknownId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Ctx(), Params());
+        var unknown = await skill.ExecuteAsync(Ctx(), unknownParams);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        SkillClientVisibility.WithoutId(hidden.Message, ClientId)
+            .ShouldBe(SkillClientVisibility.WithoutId(unknown.Message, unknownId));
+        await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
+        await checker.DidNotReceive().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
     }
 }
