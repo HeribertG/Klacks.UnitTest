@@ -77,6 +77,17 @@ public class CoverAbsenceSkillTests
     }
 
     [Test]
+    public async Task TheUsersLanguage_IsPassedOn_ForTheScenarioName()
+    {
+        var context = Ctx() with { UserLanguage = "nl" };
+
+        await Skill().ExecuteAsync(context, Params());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<CoverAbsenceCommand>(c => c.Language == "nl"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public void MissingAbsenceId_Throws()
     {
         var p = Params();

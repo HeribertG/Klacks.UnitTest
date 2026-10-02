@@ -29,7 +29,6 @@ public class MessengerProactiveTextsTests
     /// </summary>
     private static readonly Dictionary<string, string> KeyPerWakeUpKind = new(StringComparer.OrdinalIgnoreCase)
     {
-        [AgentTriggerKinds.UnstaffedShift] = ProactiveMessageI18nKeys.UnstaffedShift,
         [AgentTriggerKinds.WorkDroppedByErpImport] = ProactiveMessageI18nKeys.WorkDroppedByErpImport,
         [AgentTriggerKinds.OrderImportFailed] = ProactiveMessageI18nKeys.OrderImportFailed,
         [AgentTriggerKinds.EscalationStageAlert] = ProactiveMessageI18nKeys.EscalationStageAlert,

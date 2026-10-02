@@ -117,4 +117,63 @@ public class WizardShiftBuilderTests
         result.Where(s => s.Date == "2026-04-20").Count().ShouldBe(3);
         result.Where(s => s.Date == "2026-04-21").Count().ShouldBe(3);
     }
+
+    [Test]
+    public async Task BuildAsync_Quantity2_SumEmployees3_ProducesSixSingleSeatSlotsPerActiveDay()
+    {
+        var monday = new DateOnly(2026, 4, 20);
+        var shiftId = Guid.NewGuid();
+        _context.Shift.Add(MondayShift(shiftId, monday, quantity: 2, sumEmployees: 3));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(null, monday, monday, null, CancellationToken.None);
+
+        result.Count.ShouldBe(6);
+        result.ShouldAllBe(s => s.Id == shiftId.ToString() && s.Date == "2026-04-20");
+        result.ShouldAllBe(s => s.RequiredAssignments == 1);
+    }
+
+    [Test]
+    public async Task BuildAsync_Quantity1_SumEmployees4_ProducesFourSlots()
+    {
+        var monday = new DateOnly(2026, 4, 20);
+        _context.Shift.Add(MondayShift(Guid.NewGuid(), monday, quantity: 1, sumEmployees: 4));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(null, monday, monday, null, CancellationToken.None);
+
+        result.Count.ShouldBe(4);
+    }
+
+    [Test]
+    public async Task BuildAsync_SporadicShift_ProducesNoDailySlots()
+    {
+        var monday = new DateOnly(2026, 4, 20);
+        var sporadic = MondayShift(Guid.NewGuid(), monday, quantity: 2, sumEmployees: 1);
+        sporadic.IsSporadic = true;
+        var regularId = Guid.NewGuid();
+        _context.Shift.Add(sporadic);
+        _context.Shift.Add(MondayShift(regularId, monday, quantity: 1, sumEmployees: 1));
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(null, monday, monday, null, CancellationToken.None);
+
+        result.Count.ShouldBe(1);
+        result[0].Id.ShouldBe(regularId.ToString());
+    }
+
+    private static Shift MondayShift(Guid id, DateOnly monday, int quantity, int sumEmployees) => new()
+    {
+        Id = id,
+        Name = "Frühdienst",
+        Abbreviation = "FD",
+        FromDate = monday,
+        UntilDate = monday,
+        StartShift = new TimeOnly(6, 0),
+        EndShift = new TimeOnly(14, 0),
+        WorkTime = 8m,
+        Quantity = quantity,
+        SumEmployees = sumEmployees,
+        IsMonday = true,
+    };
 }

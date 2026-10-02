@@ -230,4 +230,34 @@ public class WizardControllerTests
 
         result.Result.ShouldBeOfType<NotFoundObjectResult>();
     }
+
+    [Test]
+    public async Task ApplyAsScenario_ForwardsLanguageToApplyService()
+    {
+        var jobId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        _applyService
+            .ApplyAsScenarioAsync(jobId, groupId, false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), "fr")
+            .Returns((new AnalyseScenarioResource { Name = "Plan" }, new WizardApplyOutcome([], [], [], OverrideApplied: false)));
+
+        var result = await _sut.ApplyAsScenario(new ApplyAsScenarioRequest(jobId, groupId, Language: "fr"), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<OkObjectResult>();
+        await _applyService.Received(1)
+            .ApplyAsScenarioAsync(jobId, groupId, false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), "fr");
+    }
+
+    [Test]
+    public async Task ApplyAsScenario_WithoutLanguage_PassesNullSoTheInstallationLanguageApplies()
+    {
+        var jobId = Guid.NewGuid();
+        _applyService
+            .ApplyAsScenarioAsync(jobId, null, false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>())
+            .Returns((new AnalyseScenarioResource { Name = "Plan" }, new WizardApplyOutcome([], [], [], OverrideApplied: false)));
+
+        await _sut.ApplyAsScenario(new ApplyAsScenarioRequest(jobId, null), CancellationToken.None);
+
+        await _applyService.Received(1)
+            .ApplyAsScenarioAsync(jobId, null, false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), null);
+    }
 }

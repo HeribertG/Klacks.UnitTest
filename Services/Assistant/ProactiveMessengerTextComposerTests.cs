@@ -80,34 +80,34 @@ public class ProactiveMessengerTextComposerTests
         failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
     }
 
-    private static string PackSentence(string pack, string key, string date, string days)
+    private static string PackSentence(string pack, string key, string employee, string date)
     {
         var file = Path.Combine(ApiRoot(), PluginsDirectory, LanguagesDirectory, pack, TranslationsFile);
         return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file))![key]
-            .Replace("{{date}}", date)
-            .Replace("{{days}}", days);
+            .Replace("{{employee}}", employee)
+            .Replace("{{date}}", date);
     }
 
     private sealed record CatalogueEvent(string Key, IReadOnlyDictionary<string, string>? Params) : IAgentTriggerEvent
     {
-        public string Kind => AgentTriggerKinds.UnstaffedShift;
+        public string Kind => AgentTriggerKinds.WorkDroppedByErpImport;
         public string Severity => AgentTriggerSeverity.High;
         public string Summary => ProactiveMessageMarkers.I18nPrefix + Key;
         public IReadOnlyDictionary<string, string>? SummaryParams => Params;
         public IReadOnlyDictionary<string, object?> Payload => new Dictionary<string, object?>();
     }
 
-    private static CatalogueEvent UnstaffedShift(string date = "16.08.2026", string days = "1") =>
-        new(ProactiveMessageI18nKeys.UnstaffedShift, new Dictionary<string, string> { ["date"] = date, ["days"] = days });
+    private static CatalogueEvent WorkDropped(string employee = "Erika", string date = "16.08.2026") =>
+        new(ProactiveMessageI18nKeys.WorkDroppedByErpImport, new Dictionary<string, string> { ["employee"] = employee, ["date"] = date });
 
     [Test]
     public async Task ComposeAsync_GermanInstallation_RendersTheGermanSentenceWithItsValues()
     {
         SetInstallationLanguage("de");
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        Assert.That(text, Is.EqualTo("Eine Schicht am 16.08.2026 (in 1 Tag(en)) ist noch unbesetzt."));
+        Assert.That(text, Is.EqualTo("Der Einsatz von Erika am 16.08.2026 ist entfallen, weil die zugehörige Bestellung per ERP-Import ersetzt wurde. Bitte neu einplanen."));
     }
 
     [Test]
@@ -115,21 +115,21 @@ public class ProactiveMessengerTextComposerTests
     {
         SetInstallationLanguage("fr");
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        Assert.That(text, Does.StartWith("Un service le 16.08.2026"));
+        Assert.That(text, Does.StartWith("L'affectation de Erika le 16.08.2026"));
     }
 
-    [TestCase("de", "Eine Schicht am 16.08.2026 (in 1 Tag(en)) ist noch unbesetzt.")]
-    [TestCase("en", "A shift on 16.08.2026 (in 1 day(s)) is still unstaffed.")]
-    [TestCase("fr", "Un service le 16.08.2026 (dans 1 jour(s)) n'est toujours pas pourvu.")]
-    [TestCase("it", "Un turno il 16.08.2026 (tra 1 giorno/i) è ancora scoperto.")]
+    [TestCase("de", "Der Einsatz von Erika am 16.08.2026 ist entfallen, weil die zugehörige Bestellung per ERP-Import ersetzt wurde. Bitte neu einplanen.")]
+    [TestCase("en", "Erika's assignment on 16.08.2026 was cancelled because its order was replaced by an ERP import. Please re-plan it.")]
+    [TestCase("fr", "L'affectation de Erika le 16.08.2026 a été annulée car la commande correspondante a été remplacée par un import ERP. Merci de replanifier.")]
+    [TestCase("it", "L'incarico di Erika del 16.08.2026 è stato annullato perché l'ordine corrispondente è stato sostituito da un'importazione ERP. Si prega di ripianificare.")]
     public async Task ComposeAsync_EachCoreLanguage_RendersItsOwnSentence(string language, string expected)
     {
         LoadThePacks();
         SetInstallationLanguage(language);
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
         text.ShouldBe(expected);
     }
@@ -143,10 +143,10 @@ public class ProactiveMessengerTextComposerTests
         LoadThePacks();
         SetInstallationLanguage(configured);
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        text.ShouldBe(PackSentence(pack, ProactiveMessageI18nKeys.UnstaffedShift, "16.08.2026", "1"));
-        text.ShouldNotStartWith("A shift on");
+        text.ShouldBe(PackSentence(pack, ProactiveMessageI18nKeys.WorkDroppedByErpImport, "Erika", "16.08.2026"));
+        text.ShouldNotStartWith("Erika's assignment on");
         text.ShouldNotContain("{{");
     }
 
@@ -155,9 +155,9 @@ public class ProactiveMessengerTextComposerTests
     {
         SetInstallationLanguage(Japanese);
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        text.ShouldStartWith("A shift on");
+        text.ShouldStartWith("Erika's assignment on");
     }
 
     [Test]
@@ -167,11 +167,11 @@ public class ProactiveMessengerTextComposerTests
             PackWithoutTheKey, new Dictionary<string, string> { [ProactiveMessageI18nKeys.DailyDigest] = "digest" });
         SetInstallationLanguage(PackWithoutTheKey);
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        text.ShouldStartWith("A shift on");
+        text.ShouldStartWith("Erika's assignment on");
         _logger.Entries.ShouldContain(entry => entry.Level == LogLevel.Warning
-            && entry.Message.Contains(ProactiveMessageI18nKeys.UnstaffedShift, StringComparison.Ordinal)
+            && entry.Message.Contains(ProactiveMessageI18nKeys.WorkDroppedByErpImport, StringComparison.Ordinal)
             && entry.Message.Contains(PackWithoutTheKey, StringComparison.Ordinal));
     }
 
@@ -213,9 +213,9 @@ public class ProactiveMessengerTextComposerTests
     {
         SetInstallationLanguage("de");
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        Assert.That(text, Does.Not.Contain(ProactiveMessageI18nKeys.UnstaffedShift));
+        Assert.That(text, Does.Not.Contain(ProactiveMessageI18nKeys.WorkDroppedByErpImport));
         Assert.That(text, Does.Not.Contain(ProactiveMessageMarkers.I18nPrefix));
     }
 
@@ -224,9 +224,9 @@ public class ProactiveMessengerTextComposerTests
     {
         SetInstallationLanguage(null);
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        Assert.That(text, Is.EqualTo("A shift on 16.08.2026 (in 1 day(s)) is still unstaffed."));
+        Assert.That(text, Is.EqualTo("Erika's assignment on 16.08.2026 was cancelled because its order was replaced by an ERP import. Please re-plan it."));
     }
 
     [Test]
@@ -234,9 +234,9 @@ public class ProactiveMessengerTextComposerTests
     {
         SetInstallationLanguage("kl");
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        Assert.That(text, Does.StartWith("A shift on"));
+        Assert.That(text, Does.StartWith("Erika's assignment on"));
     }
 
     [Test]
@@ -245,9 +245,9 @@ public class ProactiveMessengerTextComposerTests
         _settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns<IReadOnlyDictionary<string, string>>(_ => throw new InvalidOperationException("database unreachable"));
 
-        var text = await _sut.ComposeAsync(UnstaffedShift());
+        var text = await _sut.ComposeAsync(WorkDropped());
 
-        Assert.That(text, Does.StartWith("A shift on"));
+        Assert.That(text, Does.StartWith("Erika's assignment on"));
         Assert.That(_resolverLogger.Entries.Any(e => e.Level == LogLevel.Warning), Is.True,
             "A message that silently went out in the wrong language must leave a trace.");
     }
@@ -257,12 +257,12 @@ public class ProactiveMessengerTextComposerTests
     {
         SetInstallationLanguage("de");
         var incomplete = new CatalogueEvent(
-            ProactiveMessageI18nKeys.UnstaffedShift,
+            ProactiveMessageI18nKeys.WorkDroppedByErpImport,
             new Dictionary<string, string> { ["date"] = "16.08.2026" });
 
         var text = await _sut.ComposeAsync(incomplete);
 
-        Assert.That(text, Does.Contain("{{days}}"),
+        Assert.That(text, Does.Contain("{{employee}}"),
             "Dropping the placeholder would produce a complete sentence asserting a fact nobody supplied.");
     }
 

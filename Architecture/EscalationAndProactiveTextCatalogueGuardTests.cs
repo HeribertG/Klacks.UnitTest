@@ -42,7 +42,7 @@ public class EscalationAndProactiveTextCatalogueGuardTests
     private const string LanguagesDirectory = "Languages";
     private const int ExpectedPluginPacks = 21;
     private const int ExpectedEscalationKeys = 5;
-    private const int ExpectedProactiveKeys = 5;
+    private const int ExpectedProactiveKeys = 4;
     private const int ExpectedAssistantTextsKeys = 30;
     private const string Bold = "**";
     private const char LineBreak = '\n';
@@ -176,7 +176,6 @@ public class EscalationAndProactiveTextCatalogueGuardTests
 
         IAgentTriggerEvent[] events =
         [
-            new UnstaffedShiftTriggerEvent(Guid.NewGuid(), day, 1, group),
             new WorkDroppedByErpImportTriggerEvent(Guid.NewGuid(), AbsenceName, day, group),
             new OrderImportFailedTriggerEvent(Guid.NewGuid(), "orders.csv", "boom"),
             new EscalationStageAlertTriggerEvent(Guid.NewGuid(), Guid.NewGuid().ToString(), AbsenceName, due, due, TimeZoneInfo.Utc),
@@ -446,10 +445,10 @@ public class EscalationAndProactiveTextCatalogueGuardTests
             .ShouldBe(EscalationText(EscalationHandoffTexts.HandoffQuietNote, Portuguese));
         EscalationText(EscalationHandoffTexts.HandoffQuietNote, JapaneseRegional)
             .ShouldBe(EscalationText(EscalationHandoffTexts.HandoffQuietNote, Japanese));
-        ProactiveText(ProactiveMessageI18nKeys.UnstaffedShift, JapaneseRegional)
-            .ShouldBe(ProactiveText(ProactiveMessageI18nKeys.UnstaffedShift, Japanese));
-        ProactiveText(ProactiveMessageI18nKeys.UnstaffedShift, Japanese)
-            .ShouldNotBe(MessengerProactiveTexts.EnglishOf(ProactiveMessageI18nKeys.UnstaffedShift));
+        ProactiveText(ProactiveMessageI18nKeys.WorkDroppedByErpImport, JapaneseRegional)
+            .ShouldBe(ProactiveText(ProactiveMessageI18nKeys.WorkDroppedByErpImport, Japanese));
+        ProactiveText(ProactiveMessageI18nKeys.WorkDroppedByErpImport, Japanese)
+            .ShouldNotBe(MessengerProactiveTexts.EnglishOf(ProactiveMessageI18nKeys.WorkDroppedByErpImport));
     }
 
     [TestCase("zh-cn", ChineseSimplified)]

@@ -22,6 +22,7 @@ using Klacks.Api.Application.Interfaces.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.AutoWizard;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Schedules.AutoWizard;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
@@ -36,6 +37,7 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules.AutoWizard;
 [TestFixture]
 public class AutoWizardJobRunnerHolisticStageTests
 {
+    private const string RequestLanguage = "de";
     private const string TextOnlyReason = "The configured model 'text-model' cannot read the schedule image.";
     private static readonly TimeSpan ChainTimeout = TimeSpan.FromSeconds(20);
     private static readonly DateOnly PeriodFrom = new(2026, 11, 2);
@@ -52,6 +54,8 @@ public class AutoWizardJobRunnerHolisticStageTests
     private IWizardJobRunner _wizardRunner = null!;
     private IHarmonizerJobRunner _harmonizerRunner = null!;
     private IHolisticHarmonizerJobRunner _holisticRunner = null!;
+    private IWizardApplyService _wizardApply = null!;
+    private IHarmonizerApplyService _harmonizerApply = null!;
     private IHolisticHarmonizerApplyService _holisticApply = null!;
     private IHolisticHarmonizerReadinessCheck _readiness = null!;
     private IAnalyseScenarioRepository _scenarioRepository = null!;
@@ -86,16 +90,17 @@ public class AutoWizardJobRunnerHolisticStageTests
             [_holisticScenarioId] = new() { Id = _holisticScenarioId, Name = "AutoWizard-Holistic" }
         };
 
-        var wizardApply = Substitute.For<IWizardApplyService>();
-        wizardApply.ApplyAsScenarioAsync(_wizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), Arg.Any<string?>())
+        _wizardApply = Substitute.For<IWizardApplyService>();
+        _wizardApply.ApplyAsScenarioAsync(
+                _wizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>())
             .Returns((Resource(_wizardScenarioId), new WizardApplyOutcome([], [], [], false)));
-        var harmonizerApply = Substitute.For<IHarmonizerApplyService>();
-        harmonizerApply.ApplyAsScenarioAsync(
-                _harmonizerStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+        _harmonizerApply = Substitute.For<IHarmonizerApplyService>();
+        _harmonizerApply.ApplyAsScenarioAsync(
+                _harmonizerStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns((Resource(_harmonizerScenarioId), (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
         _holisticApply = Substitute.For<IHolisticHarmonizerApplyService>();
         _holisticApply.ApplyAsScenarioAsync(
-                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns((Resource(_holisticScenarioId), (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
 
         _readiness = Substitute.For<IHolisticHarmonizerReadinessCheck>();
@@ -115,8 +120,8 @@ public class AutoWizardJobRunnerHolisticStageTests
             .Returns(EligibilityMatrix.Empty);
 
         var services = new ServiceCollection();
-        services.AddSingleton(wizardApply);
-        services.AddSingleton(harmonizerApply);
+        services.AddSingleton(_wizardApply);
+        services.AddSingleton(_harmonizerApply);
         services.AddSingleton(_holisticApply);
         services.AddSingleton(_readiness);
         services.AddSingleton(_scenarioRepository);
@@ -206,7 +211,7 @@ public class AutoWizardJobRunnerHolisticStageTests
         _readiness.CheckAsync(Arg.Any<CancellationToken>())
             .Returns(HolisticHarmonizerReadiness.Ready(), HolisticHarmonizerReadiness.NotReady(TextOnlyReason));
         _holisticApply.ApplyAsScenarioAsync(
-                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns<(AnalyseScenarioResource, IReadOnlyList<Guid>, ScenarioComplianceReport?)>(
                 _ => throw new InvalidOperationException("no holistic result cached"));
 
@@ -226,7 +231,7 @@ public class AutoWizardJobRunnerHolisticStageTests
         // A transient outage is no longer cached as "not vision-capable", so the re-check stays ready and
         // the failure must surface instead of being dressed up as a skipped stage.
         _holisticApply.ApplyAsScenarioAsync(
-                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns<(AnalyseScenarioResource, IReadOnlyList<Guid>, ScenarioComplianceReport?)>(
                 _ => throw new InvalidOperationException("no holistic result cached"));
 
@@ -260,7 +265,7 @@ public class AutoWizardJobRunnerHolisticStageTests
     public async Task FailedStageThree_NotesTheFailureOnThePartialScenario_AndDeletesOnlyTheIntermediate()
     {
         _holisticApply.ApplyAsScenarioAsync(
-                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+                _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
             .Returns<(AnalyseScenarioResource, IReadOnlyList<Guid>, ScenarioComplianceReport?)>(
                 _ => throw new InvalidOperationException("no holistic result cached"));
 
@@ -269,6 +274,22 @@ public class AutoWizardJobRunnerHolisticStageTests
         await _scenarioRepository.Received(1).Put(Arg.Is<AnalyseScenario>(s => s.Id == _harmonizerScenarioId));
         _scenarios[_harmonizerScenarioId].Description.ShouldBe("harmonized | " + state.Reason);
         DeletedScenarioIds().ShouldBe(new[] { _wizardScenarioId });
+    }
+
+    [Test]
+    public async Task EveryStageScenario_IsNamedWithItsOwnKind_InTheRequestLanguage()
+    {
+        await RunChainAsync();
+
+        await _wizardApply.Received(1).ApplyAsScenarioAsync(
+            _wizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(),
+            ScenarioNameKind.AutoPlan, RequestLanguage);
+        await _harmonizerApply.Received(1).ApplyAsScenarioAsync(
+            _harmonizerStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(),
+            ScenarioNameKind.AutoHarmonizer, RequestLanguage, Arg.Any<bool>(), Arg.Any<bool>());
+        await _holisticApply.Received(1).ApplyAsScenarioAsync(
+            _holisticStageJobId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>(),
+            ScenarioNameKind.Auto, RequestLanguage, Arg.Any<bool>(), Arg.Any<bool>());
     }
 
     [Test]

@@ -39,6 +39,8 @@ public class WizardApplyServiceComplianceTests
     private IWorkSofteningRepository _softeningRepository = null!;
     private IWizardRunCaptureRepository _captureRepository = null!;
     private ICompliancePartitionService _partitionService = null!;
+    private const string GeneratedName = "generated name";
+    private IScenarioNameGenerator _nameGenerator = null!;
     private WizardApplyService _sut = null!;
 
     private readonly List<Guid> _createdIds = new() { Guid.NewGuid() };
@@ -63,6 +65,12 @@ public class WizardApplyServiceComplianceTests
         _scenarioRepository.GetByGroupAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<AnalyseScenario>());
 
+        _nameGenerator = Substitute.For<IScenarioNameGenerator>();
+        _nameGenerator.GenerateAsync(
+                Arg.Any<ScenarioNameKind>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(GeneratedName);
+
         _sut = new WizardApplyService(
             _cache,
             _mediator,
@@ -75,6 +83,7 @@ public class WizardApplyServiceComplianceTests
             BuildInMemoryContext(),
             Substitute.For<IScheduleTimelineService>(),
             new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
+            _nameGenerator,
             NullLogger<WizardApplyService>.Instance);
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same

@@ -13,6 +13,7 @@ internal static class AssistantTextCatalogues
     public static void ResetAll()
     {
         EscalationHandoffTexts.Reset();
+        ScenarioNameTexts.Reset();
         MessengerProactiveTexts.Reset();
         ClarificationTexts.Reset();
         GracefulCorrectionTexts.Reset();

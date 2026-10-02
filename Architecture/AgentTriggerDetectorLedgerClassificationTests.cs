@@ -11,7 +11,7 @@
 /// there the violation is a call inside a method body, which reflection cannot see. Here the property
 /// under test is whether a type implements an interface, which is exactly what reflection does see. A
 /// source scan for cap idioms (".Take(", "MaxFindingsPerTick") was the first idea and is worse: after
-/// the Etappe 3c refactor UnstaffedShift7dDetector's cap is spelled "FilterRowCount" and would match
+/// the Etappe 3c refactor the former UnstaffedShift7dDetector's cap is spelled "FilterRowCount" and would match
 /// no pattern, so the scan would wave through the very detector whose 7-day window is the subtlest cap
 /// of the six.
 ///

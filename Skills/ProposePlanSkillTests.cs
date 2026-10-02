@@ -62,6 +62,17 @@ public class ProposePlanSkillTests
         => JsonSerializer.SerializeToElement(result.Data);
 
     [Test]
+    public async Task TheUsersLanguage_IsPassedOn_ForTheScenarioName()
+    {
+        var context = Ctx() with { UserLanguage = "pl" };
+
+        await Skill().ExecuteAsync(context, Params(OnePlacement()));
+
+        await _mediator.Received(1).Send(
+            Arg.Is<ProposePlanCommand>(c => c.Language == "pl"), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ValidPlacements_DelegatesAndProjects()
     {
         var result = await Skill().ExecuteAsync(Ctx(), Params(OnePlacement()));

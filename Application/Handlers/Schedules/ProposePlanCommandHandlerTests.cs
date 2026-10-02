@@ -36,6 +36,8 @@ public class ProposePlanCommandHandlerTests
     private static readonly Guid ShiftId = Guid.NewGuid();
     private static readonly DateOnly From = new(2026, 3, 2);
     private static readonly DateOnly Until = new(2026, 3, 8);
+    private const string GeneratedName = "generated name";
+    private const string FrenchUser = "fr-CH";
 
     private IShiftRepository _shiftRepo = null!;
     private IAnalyseScenarioRepository _scenarioRepo = null!;
@@ -45,6 +47,7 @@ public class ProposePlanCommandHandlerTests
     private IUnitOfWork _unitOfWork = null!;
     private IComplianceEnforcementResolver _enforcementResolver = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private IScenarioNameGenerator _nameGenerator = null!;
     private ProposePlanCommandHandler _handler = null!;
 
     [SetUp]
@@ -91,8 +94,14 @@ public class ProposePlanCommandHandlerTests
             _httpContextAccessor,
             Substitute.For<ILogger<CompliancePartitionService>>());
 
+        _nameGenerator = Substitute.For<IScenarioNameGenerator>();
+        _nameGenerator.GenerateAsync(
+                Arg.Any<ScenarioNameKind>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(GeneratedName);
+
         _handler = new ProposePlanCommandHandler(
-            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork);
+            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator);
     }
 
     private static ClaimsPrincipal AnonymousUser() => new(new ClaimsIdentity());
@@ -122,6 +131,19 @@ public class ProposePlanCommandHandlerTests
 
     private Task<ProposePlanOutcome> Propose(bool overrideBlock, params PlacementInput[] placements)
         => _handler.Handle(new ProposePlanCommand(GroupId, From, Until, placements, overrideBlock), CancellationToken.None);
+
+    [Test]
+    public async Task ScenarioName_IsAProposalNameInTheUsersLanguage()
+    {
+        var command = new ProposePlanCommand(GroupId, From, Until, [Placement(Guid.NewGuid(), From)], Language: FrenchUser);
+
+        var outcome = await _handler.Handle(command, CancellationToken.None);
+
+        outcome.ScenarioName.ShouldBe(GeneratedName);
+        await _nameGenerator.Received(1).GenerateAsync(
+            ScenarioNameKind.Proposal, From, Until, GroupId, FrenchUser, Arg.Any<CancellationToken>());
+        await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.Name == GeneratedName));
+    }
 
     [Test]
     public async Task CleanPlacements_WriteAll_AndCreateScenario()

@@ -37,6 +37,7 @@ public class AssistantTextsPackCoverageTests
         GracefulCorrectionTexts.Reset();
         ClarificationTexts.Reset();
         EscalationHandoffTexts.Reset();
+        ScenarioNameTexts.Reset();
         MessengerProactiveTexts.Reset();
     }
 

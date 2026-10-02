@@ -41,6 +41,7 @@ public class AssistantTextsPluginLoaderTests
         ClarificationTexts.Reset();
         GracefulCorrectionTexts.Reset();
         EscalationHandoffTexts.Reset();
+        ScenarioNameTexts.Reset();
         MessengerProactiveTexts.Reset();
 
         if (Directory.Exists(_baseDirectory))
@@ -135,14 +136,25 @@ public class AssistantTextsPluginLoaderTests
     }
 
     [Test]
+    public void APackWithTheFile_ConfiguresTheScenarioNameCatalogueToo()
+    {
+        CreatePack(PackWithFile, $"{{\"{ScenarioNameTexts.Proposal}\":\"{SampleText}\"}}");
+
+        AssistantTextsPluginLoader.Load(_baseDirectory);
+
+        ScenarioNameTexts.TryGetOwnText(ScenarioNameTexts.Proposal, PackWithFile, out var text).ShouldBeTrue();
+        text.ShouldBe(SampleText);
+    }
+
+    [Test]
     public void TheProactiveKeysOfATranslationsJson_ConfigureTheMessengerCatalogue_AndNothingElse()
     {
-        var translations = $"{{\"{ProactiveMessageI18nKeys.UnstaffedShift}\":\"{SampleText}\",\"{OtherTranslationKey}\":\"x\"}}";
+        var translations = $"{{\"{ProactiveMessageI18nKeys.WorkDroppedByErpImport}\":\"{SampleText}\",\"{OtherTranslationKey}\":\"x\"}}";
         CreatePack(PackWithFile, null, translations);
 
         AssistantTextsPluginLoader.Load(_baseDirectory, onMissingFile: _ => { });
 
-        MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.UnstaffedShift, PackWithFile, out var text).ShouldBeTrue();
+        MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.WorkDroppedByErpImport, PackWithFile, out var text).ShouldBeTrue();
         text.ShouldBe(SampleText);
         MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.DailyDigest, PackWithFile, out _).ShouldBeFalse();
     }
@@ -154,8 +166,8 @@ public class AssistantTextsPluginLoaderTests
 
         AssistantTextsPluginLoader.Load(_baseDirectory, onMissingFile: _ => { });
 
-        MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.UnstaffedShift, PackWithFile, out var text).ShouldBeTrue();
-        text.ShouldBe(MessengerProactiveTexts.EnglishOf(ProactiveMessageI18nKeys.UnstaffedShift));
+        MessengerProactiveTexts.TryGetText(ProactiveMessageI18nKeys.WorkDroppedByErpImport, PackWithFile, out var text).ShouldBeTrue();
+        text.ShouldBe(MessengerProactiveTexts.EnglishOf(ProactiveMessageI18nKeys.WorkDroppedByErpImport));
     }
 
     [Test]

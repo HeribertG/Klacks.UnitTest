@@ -6,6 +6,7 @@
 /// be reported after the fact. Scenario writes bypass the hard-blocking check like the day-lock guard.
 /// </summary>
 
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
@@ -65,6 +66,37 @@ public class WorkWriteGuardServiceTests
     }
 
     [Test]
+    public async Task EnsureNoSporadicConflictAsync_DayFullyBooked_CarriesCodeAndDetailsForTheClient()
+    {
+        GivenSporadicUsage(engagedAtDay: 2, distinctBookedDays: 1, sumEmployees: 2, quantity: 5);
+
+        var act = async () => await _sut.EnsureNoSporadicConflictAsync(NewWork(), CancellationToken.None);
+
+        var exception = await act.ShouldThrowAsync<WorkWriteConflictException>();
+        exception.ErrorCode.ShouldBe(WorkWriteConflictCodes.SporadicShiftDayFull);
+        exception.Details[WorkWriteConflictCodes.ShiftIdField].ShouldBe(_shiftId);
+        exception.Details[WorkWriteConflictCodes.ShiftNameField].ShouldBe(ShiftName);
+        exception.Details[WorkWriteConflictCodes.DateField].ShouldBe(_date);
+        exception.Details[WorkWriteConflictCodes.EngagedField].ShouldBe(2);
+        exception.Details[WorkWriteConflictCodes.CapacityField].ShouldBe(2);
+    }
+
+    [Test]
+    public async Task EnsureNoSporadicConflictAsync_RangeQuantityExhausted_CarriesCodeAndRange()
+    {
+        GivenSporadicUsage(engagedAtDay: 0, distinctBookedDays: 5, sumEmployees: 2, quantity: 5);
+
+        var act = async () => await _sut.EnsureNoSporadicConflictAsync(NewWork(), CancellationToken.None);
+
+        var exception = await act.ShouldThrowAsync<WorkWriteConflictException>();
+        exception.ErrorCode.ShouldBe(WorkWriteConflictCodes.SporadicShiftRangeExhausted);
+        exception.Details[WorkWriteConflictCodes.BookedField].ShouldBe(5);
+        exception.Details[WorkWriteConflictCodes.CapacityField].ShouldBe(5);
+        exception.Details.ContainsKey(WorkWriteConflictCodes.RangeFromField).ShouldBeTrue();
+        exception.Details.ContainsKey(WorkWriteConflictCodes.RangeUntilField).ShouldBeTrue();
+    }
+
+    [Test]
     public async Task EnsureNoSporadicConflictAsync_RangeQuantityExhaustedOnNewDay_Throws()
     {
         GivenSporadicUsage(engagedAtDay: 0, distinctBookedDays: 5, sumEmployees: 2, quantity: 5);
@@ -105,6 +137,39 @@ public class WorkWriteGuardServiceTests
         var act = async () => await _sut.EnsureNoHardBlockingConflictAsync(NewWork(), CancellationToken.None);
 
         await act.ShouldThrowAsync<ConflictException>();
+    }
+
+    [Test]
+    public async Task EnsureNoHardBlockingConflictAsync_HardBlocking_CarriesTheConflictItemsAndTheShiftName()
+    {
+        _shiftRepository.GetSporadicInfoAsync(_shiftId, Arg.Any<CancellationToken>())
+            .Returns(SporadicInfo(isSporadic: false, sumEmployees: 1, quantity: 1));
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult([Collision(), HardBlocking()]));
+
+        var act = async () => await _sut.EnsureNoHardBlockingConflictAsync(NewWork(), CancellationToken.None);
+
+        var exception = await act.ShouldThrowAsync<WorkWriteConflictException>();
+        exception.ErrorCode.ShouldBe(WorkWriteConflictCodes.BlockedByConflicts);
+        exception.Details[WorkWriteConflictCodes.ShiftIdField].ShouldBe(_shiftId);
+        exception.Details[WorkWriteConflictCodes.ShiftNameField].ShouldBe(ShiftName);
+        var items = exception.Details[WorkWriteConflictCodes.ConflictsField].ShouldBeOfType<List<WorkConflictItem>>();
+        items.Count.ShouldBe(1);
+        items[0].Code.ShouldBe("qualification-missing");
+        items[0].ClientId.ShouldBe(_clientId);
+        items[0].Date.ShouldBe(_date);
+    }
+
+    [Test]
+    public async Task EnsureNoHardBlockingConflictAsync_HardBlockingWithUnknownShift_StillThrowsWithoutShiftName()
+    {
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult([HardBlocking()]));
+
+        var act = async () => await _sut.EnsureNoHardBlockingConflictAsync(NewWork(), CancellationToken.None);
+
+        var exception = await act.ShouldThrowAsync<WorkWriteConflictException>();
+        exception.Details[WorkWriteConflictCodes.ShiftNameField].ShouldBeNull();
     }
 
     [Test]

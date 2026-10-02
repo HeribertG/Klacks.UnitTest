@@ -8,6 +8,8 @@
 /// </summary>
 
 using System.Text.Json;
+using Klacks.Api.Application.Constants;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Infrastructure.Exceptions;
@@ -61,10 +63,91 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task ConflictException_Becomes409WithTheMessageAndNoErrorCode()
+    {
+        var response = await Invoke(new ConflictException("slot taken"));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("detail").GetString().ShouldBe("slot taken");
+        problem.RootElement.TryGetProperty("errorCode", out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task WorkWriteConflictException_Becomes409WithErrorCodeAndDetailsNextToTheMessage()
+    {
+        var details = new Dictionary<string, object?>
+        {
+            [WorkWriteConflictCodes.ShiftNameField] = "Night watch",
+            [WorkWriteConflictCodes.DateField] = new DateOnly(2027, 3, 10),
+            [WorkWriteConflictCodes.EngagedField] = 2,
+            [WorkWriteConflictCodes.CapacityField] = 2,
+        };
+
+        var response = await Invoke(new WorkWriteConflictException(
+            "Sporadic shift is fully booked", WorkWriteConflictCodes.SporadicShiftDayFull, details));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("detail").GetString().ShouldBe("Sporadic shift is fully booked");
+        root.GetProperty("errorCode").GetString().ShouldBe(WorkWriteConflictCodes.SporadicShiftDayFull);
+        root.GetProperty("shiftName").GetString().ShouldBe("Night watch");
+        root.GetProperty("date").GetString().ShouldBe("2027-03-10");
+        root.GetProperty("engaged").GetInt32().ShouldBe(2);
+        root.GetProperty("capacity").GetInt32().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task WorkWriteConflictException_WithConflictItems_WritesThemAsCamelCaseObjects()
+    {
+        var clientId = Guid.NewGuid();
+        var item = new WorkConflictItem(
+            "schedule.error-list.qualification-missing",
+            clientId,
+            new DateOnly(2027, 3, 10),
+            new Dictionary<string, string> { ["qualificationId"] = "q-1", ["minLevel"] = "2" });
+        var details = new Dictionary<string, object?> { [WorkWriteConflictCodes.ConflictsField] = new List<WorkConflictItem> { item } };
+
+        var response = await Invoke(new WorkWriteConflictException(
+            "Work blocked", WorkWriteConflictCodes.BlockedByConflicts, details));
+
+        using var problem = JsonDocument.Parse(response.Body);
+        var conflict = problem.RootElement.GetProperty("conflicts")[0];
+        conflict.GetProperty("code").GetString().ShouldBe("schedule.error-list.qualification-missing");
+        conflict.GetProperty("clientId").GetGuid().ShouldBe(clientId);
+        conflict.GetProperty("date").GetString().ShouldBe("2027-03-10");
+        conflict.GetProperty("params").GetProperty("qualificationId").GetString().ShouldBe("q-1");
+        conflict.GetProperty("params").GetProperty("minLevel").GetString().ShouldBe("2");
+    }
+
+    [Test]
     public async Task InvalidRequestException_StaysA400()
     {
         var response = await Invoke(new InvalidRequestException("this entry is not sealed"));
 
         response.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+    }
+
+    [Test]
+    public async Task ScenarioNotActiveException_Becomes409CarryingItsErrorCode()
+    {
+        var response = await Invoke(new ScenarioNotActiveException("Scenario is no longer active."));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("detail").GetString().ShouldBe("Scenario is no longer active.");
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe(ScenarioNotActiveException.ErrorCode);
+    }
+
+    [Test]
+    public async Task PlainConflictException_StaysA409WithoutErrorCode()
+    {
+        var response = await Invoke(new ConflictException("blocked by compliance"));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("detail").GetString().ShouldBe("blocked by compliance");
+        problem.RootElement.TryGetProperty("errorCode", out _).ShouldBeFalse();
     }
 }

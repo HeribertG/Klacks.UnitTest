@@ -100,8 +100,19 @@ public class AgentTriggerServiceTests
         _planningAudienceResolver.GetPlanningUserIdsForGroupAsync(groupId, Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase));
 
-    private static UnstaffedShiftTriggerEvent MakeEvent(int daysUntil = 2) =>
-        new(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysUntil)), daysUntil, new[] { TestGroupId });
+    private static UnstaffedShiftSummaryTriggerEvent MakeEvent(int daysUntil = 2)
+    {
+        var firstGapDay = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysUntil));
+        return new UnstaffedShiftSummaryTriggerEvent(
+            TestGroupId, "Bern", firstGapDay.AddDays(-daysUntil), firstGapDay.AddDays(7), 3, 2, firstGapDay, daysUntil);
+    }
+
+    /// <summary>
+    /// A high-severity event of a kind MessengerWakeUpPolicy admits, for the tests that exercise the offline
+    /// messenger path. unstaffed_shift no longer wakes anybody (Paket D), so MakeEvent cannot serve them.
+    /// </summary>
+    private static WorkDroppedByErpImportTriggerEvent MakeLoudEvent() =>
+        new(Guid.NewGuid(), "Erika", DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), new[] { TestGroupId });
 
     private sealed record PlainBroadcastEvent(string SeverityValue, string SummaryText) : IAgentTriggerEvent
     {
@@ -206,12 +217,12 @@ public class AgentTriggerServiceTests
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _offlineMessengerNotifier.Received(1).TrySendAsync(
-            "user-a", Arg.Any<string>(), AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>());
+            "user-a", Arg.Any<string>(), AgentTriggerKinds.WorkDroppedByErpImport, Arg.Any<CancellationToken>());
         await _offlineMessengerNotifier.Received(1).TrySendAsync(
-            "user-b", Arg.Any<string>(), AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>());
+            "user-b", Arg.Any<string>(), AgentTriggerKinds.WorkDroppedByErpImport, Arg.Any<CancellationToken>());
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
     }
@@ -223,7 +234,7 @@ public class AgentTriggerServiceTests
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.NoContact);
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
@@ -241,7 +252,7 @@ public class AgentTriggerServiceTests
         SetPlanners("user-a");
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Failed("Telegram", providerError));
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
         var warnings = _logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
@@ -260,7 +271,7 @@ public class AgentTriggerServiceTests
         SetPlanners("user-a");
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Throttled("Telegram", "429 too many requests"));
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         Assert.That(_logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.Contains("rate-limited", StringComparison.Ordinal)), Is.True);
     }
@@ -287,7 +298,7 @@ public class AgentTriggerServiceTests
             .TrySendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<OfflineMessengerDeliveryResult>(_ => throw new InvalidOperationException("provider exploded"));
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-b"), Arg.Any<CancellationToken>());
@@ -304,12 +315,12 @@ public class AgentTriggerServiceTests
             .TrySendAsync(Arg.Any<string>(), Arg.Do<string>(text => sentText = text), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(OfflineMessengerDeliveryResult.Sent("Telegram"));
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         Assert.That(sentText, Is.EqualTo(ComposedMessengerText));
         Assert.That(sentText!.StartsWith(ProactiveMessageMarkers.I18nPrefix, StringComparison.Ordinal), Is.False,
             "A messenger has no i18n runtime, so the raw marker must never reach the recipient.");
-        Assert.That(sentText, Does.Not.Contain(ProactiveMessageI18nKeys.UnstaffedShift),
+        Assert.That(sentText, Does.Not.Contain(ProactiveMessageI18nKeys.WorkDroppedByErpImport),
             "The recipient must read a sentence, not the translation key.");
     }
 
@@ -322,7 +333,7 @@ public class AgentTriggerServiceTests
         _messengerTextComposer.ComposeAsync(Arg.Any<IAgentTriggerEvent>(), Arg.Any<CancellationToken>())
             .Returns<string>(_ => throw new InvalidOperationException("settings unreachable"));
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _dispatchRepository.Received(1).RecordAsync(Arg.Is<ProactiveTriggerDispatchRow>(r => r.UserId == "user-a"), Arg.Any<CancellationToken>());
         await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
@@ -361,6 +372,7 @@ public class AgentTriggerServiceTests
     [TestCase(AgentTriggerKinds.TargetHoursDrift)]
     [TestCase(AgentTriggerKinds.AvailabilityGap)]
     [TestCase(AgentTriggerKinds.LockConflict)]
+    [TestCase(AgentTriggerKinds.UnstaffedShift)]
     public async Task OnEventAsync_HighSeverityButNotWakeWorthy_OfflinePlanner_StaysInTheInbox(string kind)
     {
         _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
@@ -375,7 +387,6 @@ public class AgentTriggerServiceTests
         await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
     }
 
-    [TestCase(AgentTriggerKinds.UnstaffedShift)]
     [TestCase(AgentTriggerKinds.WorkDroppedByErpImport)]
     [TestCase(AgentTriggerKinds.OrderImportFailed)]
     public async Task OnEventAsync_WakeWorthyKindAtHighSeverity_OfflinePlanner_IsReachedOverMessenger(string kind)
@@ -400,7 +411,7 @@ public class AgentTriggerServiceTests
         SetPlanners("user-a");
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
 
-        await _sut.OnEventAsync(new PlannerKindEvent(AgentTriggerKinds.UnstaffedShift, severity));
+        await _sut.OnEventAsync(new PlannerKindEvent(AgentTriggerKinds.WorkDroppedByErpImport, severity));
 
         await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
     }
@@ -414,7 +425,7 @@ public class AgentTriggerServiceTests
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
         _preferenceService.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(false);
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
         await _dispatchRepository.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
@@ -428,10 +439,10 @@ public class AgentTriggerServiceTests
         SetPlanners("user-a");
         SetOfflineMessengerResult(OfflineMessengerDeliveryResult.Sent("Telegram"));
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _offlineMessengerNotifier.Received(1).TrySendAsync(
-            "user-a", ComposedMessengerText, AgentTriggerKinds.UnstaffedShift, Arg.Any<CancellationToken>());
+            "user-a", ComposedMessengerText, AgentTriggerKinds.WorkDroppedByErpImport, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -440,7 +451,7 @@ public class AgentTriggerServiceTests
         _notificationService.GetConnectedUserIdsAsync().Returns(new[] { "user-a", "user-b" });
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
-        await _sut.OnEventAsync(MakeEvent(daysUntil: 1));
+        await _sut.OnEventAsync(MakeLoudEvent());
 
         await _offlineMessengerNotifier.DidNotReceiveWithAnyArgs().TrySendAsync(default!, default!, default!, default);
     }
@@ -561,9 +572,9 @@ public class AgentTriggerServiceTests
 
         await _notificationService.Received(1).SendProactiveMessageAsync(
             "user-a",
-            Arg.Is<string>(s => s == ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.UnstaffedShift),
+            Arg.Is<string>(s => s == ProactiveMessageMarkers.I18nPrefix + ProactiveMessageI18nKeys.UnstaffedShiftSummary),
             Arg.Any<string?>(),
-            Arg.Is<IReadOnlyDictionary<string, string>?>(p => p != null && p.ContainsKey("date") && p.ContainsKey("days")),
+            Arg.Is<IReadOnlyDictionary<string, string>?>(p => p != null && p.ContainsKey("group") && p.ContainsKey("days")),
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<IReadOnlyDictionary<string, string>?>());
     }
 
@@ -639,7 +650,7 @@ public class AgentTriggerServiceTests
         Assert.That(recordedRow.DedupKey, Is.EqualTo(triggerEvent.DedupKey));
         Assert.That(recordedRow.ContentKey, Is.EqualTo(triggerEvent.Summary));
         Assert.That(recordedRow.Severity, Is.EqualTo(triggerEvent.Severity));
-        Assert.That(recordedRow.ContentParamsJson, Does.Contain("date"));
+        Assert.That(recordedRow.ContentParamsJson, Does.Contain("until"));
         Assert.That(recordedRow.Reaction, Is.EqualTo(ProactiveReaction.None));
         Assert.That(recordedRow.ReactionAtUtc, Is.Null);
     }
@@ -789,7 +800,7 @@ public class AgentTriggerServiceTests
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetGroupScopedPlanners(groupId, "scoped-planner");
 
-        var triggerEvent = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { groupId });
+        var triggerEvent = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { groupId });
 
         await _sut.OnEventAsync(triggerEvent);
 
@@ -827,8 +838,7 @@ public class AgentTriggerServiceTests
         SetGroupScopedPlanners(firstGroupId, "admin", "planner-first");
         SetGroupScopedPlanners(secondGroupId, "admin", "planner-second");
 
-        var triggerEvent = new UnstaffedShiftTriggerEvent(
-            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { firstGroupId, secondGroupId });
+        var triggerEvent = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { firstGroupId, secondGroupId });
 
         await _sut.OnEventAsync(triggerEvent);
 
@@ -852,8 +862,7 @@ public class AgentTriggerServiceTests
         SetGroupScopedPlanners(firstGroupId, "planner-both");
         SetGroupScopedPlanners(secondGroupId, "planner-both");
 
-        var triggerEvent = new UnstaffedShiftTriggerEvent(
-            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { firstGroupId, secondGroupId });
+        var triggerEvent = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, new[] { firstGroupId, secondGroupId });
 
         await _sut.OnEventAsync(triggerEvent);
 
@@ -872,8 +881,7 @@ public class AgentTriggerServiceTests
         SetPlanners("planner-a", "planner-b");
         SetAdmins("admin");
 
-        var triggerEvent = new UnstaffedShiftTriggerEvent(
-            Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, Array.Empty<Guid>());
+        var triggerEvent = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), 2, Array.Empty<Guid>());
 
         await _sut.OnEventAsync(triggerEvent);
 
@@ -950,7 +958,8 @@ public class AgentTriggerServiceTests
         // This event carries a GroupId, so ResolveRecipientsAsync now resolves the group-scoped
         // audience instead of the unscoped one (SetPlanners above) -- stub it too.
         SetGroupScopedPlanners(groupId, "user-a");
-        var triggerEvent = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 1, new[] { groupId });
+        var triggerEvent = new UnstaffedShiftSummaryTriggerEvent(
+            groupId, "Bern", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 1, 1, new DateOnly(2026, 8, 3), 1);
 
         await _sut.OnEventAsync(triggerEvent);
 
@@ -1265,7 +1274,8 @@ public class OperationalTriggerEventDedupKeyTests
     {
         var drift = new TargetHoursDriftTriggerEvent([new TargetHoursDriftAffectedClient(Guid.NewGuid(), "Jane", -170m)], "2026-06");
         var period = new PeriodCloseDueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 3);
-        var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, Array.Empty<Guid>());
+        var unstaffed = new UnstaffedShiftSummaryTriggerEvent(
+            Guid.NewGuid(), "GE", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30), 2, 1, new DateOnly(2026, 6, 30), 2);
         var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 2, Array.Empty<Guid>());
         var scenario = new ScenarioPendingTriggerEvent(Guid.NewGuid(), 80, null, "GE");
         var contract = new ContractExpiringSoonTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), "Jane", new DateOnly(2026, 6, 30), 5);
@@ -1364,14 +1374,12 @@ public class OperationalTriggerEventDedupKeyTests
         var clientId = Guid.NewGuid();
         var scenarioId = Guid.NewGuid();
 
-        var unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
+        var unstaffed = new UnstaffedShiftSummaryTriggerEvent(
+            groupId, "GE", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 4, 2, new DateOnly(2026, 8, 3), 2);
         Assert.That(unstaffed.ActionRoute, Is.EqualTo("/workplace/schedule"));
         Assert.That(unstaffed.ActionParams, Is.Not.Null);
         Assert.That(unstaffed.ActionParams!["groupId"], Is.EqualTo(groupId.ToString()));
         Assert.That(unstaffed.ActionParams["date"], Is.EqualTo("2026-08-03"));
-
-        var unstaffedWithoutGroup = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
-        Assert.That(unstaffedWithoutGroup.ActionParams!.Keys, Is.EquivalentTo(new[] { "date" }));
 
         var lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
         Assert.That(lockConflict.ActionRoute, Is.EqualTo("/workplace/schedule"));
@@ -1423,7 +1431,8 @@ public class OperationalTriggerEventDedupKeyTests
         // catch neither the missing bridge nor a broken default.
         var groupId = Guid.NewGuid();
 
-        IAgentTriggerEvent unstaffed = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
+        IAgentTriggerEvent unstaffed = new UnstaffedShiftSummaryTriggerEvent(
+            groupId, "GE", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 4, 2, new DateOnly(2026, 8, 3), 2);
         IAgentTriggerEvent lockConflict = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId });
         IAgentTriggerEvent scenario = new ScenarioPendingTriggerEvent(Guid.NewGuid(), 80, groupId, "GE");
         IAgentTriggerEvent periodClose = new PeriodCloseDueTriggerEvent(groupId, "GE", new DateOnly(2026, 6, 30), 3);
@@ -1434,12 +1443,13 @@ public class OperationalTriggerEventDedupKeyTests
             Assert.That(groupCarrying.GroupIds, Is.EqualTo(new[] { groupId }), $"{groupCarrying.Kind} must expose its group");
         }
 
+        Assert.That(unstaffed.GroupId, Is.EqualTo(groupId));
         Assert.That(scenario.GroupId, Is.EqualTo(groupId));
         Assert.That(periodClose.GroupId, Is.EqualTo(groupId));
         Assert.That(periodOverdue.GroupId, Is.EqualTo(groupId));
 
-        IAgentTriggerEvent unstaffedWithoutGroup = new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
-        Assert.That(unstaffedWithoutGroup.GroupIds, Is.Empty);
+        IAgentTriggerEvent lockConflictWithoutGroup = new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
+        Assert.That(lockConflictWithoutGroup.GroupIds, Is.Empty);
     }
 
     [Test]
@@ -1451,7 +1461,8 @@ public class OperationalTriggerEventDedupKeyTests
 
         IAgentTriggerEvent[] shiftBorne =
         [
-            new UnstaffedShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId }),
+            new UnstaffedShiftSummaryTriggerEvent(
+                groupId, "GE", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 4, 2, new DateOnly(2026, 8, 3), 2),
             new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId }),
             new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 8, 3), null, 3, new[] { groupId }),
             new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 3, new[] { groupId }),
@@ -1492,9 +1503,9 @@ public class OperationalTriggerEventDedupKeyTests
         var firstGroupId = new Guid("00000000-0000-0000-0000-000000000001");
         var secondGroupId = new Guid("00000000-0000-0000-0000-000000000002");
 
-        var twoGroups = new UnstaffedShiftTriggerEvent(
+        var twoGroups = new LockConflictDetectedTriggerEvent(
             Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { secondGroupId, firstGroupId });
-        var noGroup = new UnstaffedShiftTriggerEvent(
+        var noGroup = new LockConflictDetectedTriggerEvent(
             Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, Array.Empty<Guid>());
         var singleGroupKind = new PeriodCloseDueTriggerEvent(firstGroupId, "GE", new DateOnly(2026, 6, 30), 3);
 

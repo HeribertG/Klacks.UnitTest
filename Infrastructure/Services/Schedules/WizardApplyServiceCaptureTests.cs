@@ -33,6 +33,8 @@ public class WizardApplyServiceCaptureTests
     private IWorkSofteningRepository _softeningRepository = null!;
     private IWizardRunCaptureRepository _captureRepository = null!;
     private ICompliancePartitionService _partitionService = null!;
+    private const string GeneratedName = "generated name";
+    private IScenarioNameGenerator _nameGenerator = null!;
     private WizardApplyService _sut = null!;
 
     private readonly List<Guid> _createdIds = new() { Guid.NewGuid(), Guid.NewGuid() };
@@ -60,6 +62,12 @@ public class WizardApplyServiceCaptureTests
                 [],
                 OverrideApplied: false));
 
+        _nameGenerator = Substitute.For<IScenarioNameGenerator>();
+        _nameGenerator.GenerateAsync(
+                Arg.Any<ScenarioNameKind>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(GeneratedName);
+
         _sut = new WizardApplyService(
             _cache,
             _mediator,
@@ -72,6 +80,7 @@ public class WizardApplyServiceCaptureTests
             BuildInMemoryContext(),
             Substitute.For<IScheduleTimelineService>(),
             new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
+            _nameGenerator,
             NullLogger<WizardApplyService>.Instance);
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same
@@ -173,6 +182,9 @@ public class WizardApplyServiceCaptureTests
         var (resource, outcome) = await _sut.ApplyAsScenarioAsync(jobId, groupId, overrideBlock: false, CancellationToken.None);
 
         outcome.CreatedWorkIds.ShouldBe(_createdIds);
+        resource.Name.ShouldBe(GeneratedName);
+        await _nameGenerator.Received(1).GenerateAsync(
+            ScenarioNameKind.Plan, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), groupId, null, Arg.Any<CancellationToken>());
         captured.ShouldNotBeNull();
         captured!.ApplyKind.ShouldBe(WizardApplyKind.Scenario);
         captured.ScenarioId.ShouldBe(scenarioId);

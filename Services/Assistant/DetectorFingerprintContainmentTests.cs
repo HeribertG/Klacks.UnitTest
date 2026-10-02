@@ -23,7 +23,9 @@
 /// Uncapped detectors cannot appear here at all: with no cap, DetectAsync and the fingerprint scan
 /// return the same number of findings, so "fingerprints.Count > events.Count" is unsatisfiable. That is
 /// why TargetHoursDriftDetector is absent, and why AvailabilityGapDetector and
-/// ClientMissingCoreDataDetector left this file when they became aggregates. Their lockstep is pinned
+/// ClientMissingCoreDataDetector left this file when they became aggregates, and why
+/// the capped UnstaffedShift7dDetector case left it when UnstaffedShiftPeriodDetector (one collective
+/// event per root group, Paket D) replaced that detector. Their lockstep is pinned
 /// as set EQUALITY inside their own fixtures instead - a stronger assertion than containment.
 /// </summary>
 
@@ -136,39 +138,6 @@ public class DetectorFingerprintContainmentTests
                 sut.Kind, EmptyContainerTriggerEvent.DedupKeyFor(containerWithTemplate.Id)),
             "The anti-join against ContainerTemplate must apply to the fingerprint scan too, "
             + "or a container that already has a template would keep a ledger row alive forever.");
-    }
-
-    [Test]
-    public async Task UnstaffedShift7dDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
-    {
-        const int cappedShiftCount = 3;
-        var repository = Substitute.For<IShiftScheduleRepository>();
-        var assignments = Enumerable.Range(0, 20)
-            .Select(offset => new ShiftDayAssignment
-            {
-                ShiftId = Guid.NewGuid(),
-                Date = Today.AddDays(offset % 7),
-                Quantity = 2,
-                SumEmployees = 0
-            })
-            .ToList();
-
-        repository.GetShiftScheduleAsync(Arg.Any<ShiftScheduleFilter>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var rowCount = call.ArgAt<ShiftScheduleFilter>(0).RowCount;
-                var pagedShiftIds = assignments
-                    .Select(assignment => assignment.ShiftId)
-                    .Distinct()
-                    .Take(rowCount == int.MaxValue ? int.MaxValue : cappedShiftCount)
-                    .ToHashSet();
-
-                return (assignments.Where(a => pagedShiftIds.Contains(a.ShiftId)).ToList(), pagedShiftIds.Count);
-            });
-
-        var sut = new UnstaffedShift7dDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<UnstaffedShift7dDetector>.Instance);
-
-        await AssertContainmentAsync(sut, sut, expectedCappedCount: cappedShiftCount);
     }
 
     [Test]

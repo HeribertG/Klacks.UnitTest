@@ -1,10 +1,12 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.DTOs.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Interfaces.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Presentation.Controllers.UserBackend.Schedules;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Mvc;
@@ -22,6 +24,7 @@ namespace Klacks.UnitTest.Controllers.Schedules;
 public sealed class HolisticHarmonizerControllerTests
 {
     private IHolisticHarmonizerJobRunner _runner = null!;
+    private IHolisticHarmonizerApplyService _applyService = null!;
     private JobTerminalStateCache<HolisticHarmonizerRunResponse> _stateCache = null!;
     private HolisticHarmonizerController _sut = null!;
 
@@ -29,10 +32,11 @@ public sealed class HolisticHarmonizerControllerTests
     public void SetUp()
     {
         _runner = Substitute.For<IHolisticHarmonizerJobRunner>();
+        _applyService = Substitute.For<IHolisticHarmonizerApplyService>();
         _stateCache = JobTerminalStateCacheTestFactory.Create<HolisticHarmonizerRunResponse>();
         _sut = new HolisticHarmonizerController(
             _runner,
-            Substitute.For<IHolisticHarmonizerApplyService>(),
+            _applyService,
             null!,
             _stateCache);
     }
@@ -130,5 +134,35 @@ public sealed class HolisticHarmonizerControllerTests
 
         ok.Value.ShouldBeOfType<HolisticHarmonizerJobStatusResponse>()
             .Status.ShouldBe(WizardJobStatusValues.Unknown);
+    }
+
+    [Test]
+    public async Task ApplyAsScenario_ForwardsLanguageToApplyService()
+    {
+        var jobId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        _applyService
+            .ApplyAsScenarioAsync(jobId, groupId, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), "it", Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns((new AnalyseScenarioResource { Name = "Piano IA" }, (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
+
+        var result = await _sut.ApplyAsScenario(new ApplyHolisticHarmonizerAsScenarioRequest(jobId, groupId, "it"), CancellationToken.None);
+
+        result.Result.ShouldBeOfType<OkObjectResult>();
+        await _applyService.Received(1)
+            .ApplyAsScenarioAsync(jobId, groupId, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), "it", Arg.Any<bool>(), Arg.Any<bool>());
+    }
+
+    [Test]
+    public async Task ApplyAsScenario_WithoutLanguage_PassesNullSoTheInstallationLanguageApplies()
+    {
+        var jobId = Guid.NewGuid();
+        _applyService
+            .ApplyAsScenarioAsync(jobId, null, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns((new AnalyseScenarioResource { Name = "KI-Plan" }, (IReadOnlyList<Guid>)[], (ScenarioComplianceReport?)null));
+
+        await _sut.ApplyAsScenario(new ApplyHolisticHarmonizerAsScenarioRequest(jobId, null), CancellationToken.None);
+
+        await _applyService.Received(1)
+            .ApplyAsScenarioAsync(jobId, null, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), null, Arg.Any<bool>(), Arg.Any<bool>());
     }
 }

@@ -48,6 +48,8 @@ public class CoverAbsenceCommandHandlerTests
     private static readonly Guid WorkId = Guid.NewGuid();
     private static readonly Guid ClonedWorkId = Guid.NewGuid();
     private static readonly DateOnly Date = new(2026, 3, 10);
+    private const string GeneratedName = "generated name";
+    private const string ItalianUser = "it";
 
     private IAnalyseScenarioRepository _scenarioRepo = null!;
     private IAnalyseScenarioService _scenarioService = null!;
@@ -61,6 +63,7 @@ public class CoverAbsenceCommandHandlerTests
     private IEscalationChainService _escalationChainService = null!;
     private ICompanyClock _companyClock = null!;
     private IClientVisibilityGuard _visibilityGuard = null!;
+    private IScenarioNameGenerator _nameGenerator = null!;
     private CoverAbsenceCommandHandler _handler = null!;
 
     [SetUp]
@@ -117,9 +120,15 @@ public class CoverAbsenceCommandHandlerTests
             _httpContextAccessor,
             Substitute.For<ILogger<CompliancePartitionService>>());
 
+        _nameGenerator = Substitute.For<IScenarioNameGenerator>();
+        _nameGenerator.GenerateAsync(
+                Arg.Any<ScenarioNameKind>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(GeneratedName);
+
         _handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock, _visibilityGuard,
+            partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock, _visibilityGuard, _nameGenerator,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
 
@@ -161,6 +170,18 @@ public class CoverAbsenceCommandHandlerTests
 
     private Task<CoverAbsenceOutcome> Cover()
         => _handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);
+
+    [Test]
+    public async Task ScenarioName_IsAnAbsenceCoverNameInTheUsersLanguage()
+    {
+        var outcome = await _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, Language: ItalianUser), CancellationToken.None);
+
+        outcome.ScenarioName.ShouldBe(GeneratedName);
+        await _nameGenerator.Received(1).GenerateAsync(
+            ScenarioNameKind.AbsenceCover, Date, Date, GroupId, ItalianUser, Arg.Any<CancellationToken>());
+        await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.Name == GeneratedName));
+    }
 
     [Test]
     public async Task CoveredSlot_WritesReplacementWorkChange_OnClonedWork_AndRecordsAbsence()
@@ -415,7 +436,7 @@ public class CoverAbsenceCommandHandlerTests
             Substitute.For<ILogger<CompliancePartitionService>>());
         var handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock, _visibilityGuard,
+            partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock, _visibilityGuard, _nameGenerator,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
 
         await handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);

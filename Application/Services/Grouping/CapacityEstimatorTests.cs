@@ -34,10 +34,16 @@ public class CapacityEstimatorTests
         _oracle = new FakeEligibilityOracle();
     }
 
-    private Guid Shift(int startHour, int endHour, int quantity, params DateOnly[] days)
+    private Guid Shift(int startHour, int endHour, int quantity, params DateOnly[] days) =>
+        Shift(startHour, endHour, quantity, 1, days);
+
+    private Guid Shift(int startHour, int endHour, int quantity, int sumEmployees, params DateOnly[] days)
     {
         var id = Guid.NewGuid();
-        _shifts[id] = new GroupingShiftRecord(id, $"S{startHour}", new TimeOnly(startHour, 0), new TimeOnly(endHour, 0), quantity);
+        _shifts[id] = new GroupingShiftRecord(id, $"S{startHour}", new TimeOnly(startHour, 0), new TimeOnly(endHour, 0), quantity)
+        {
+            SumEmployees = sumEmployees,
+        };
         _runDays[id] = days.Length == 0 ? [Monday] : days;
         _state.AddShift(id, Unit);
         return id;
@@ -109,6 +115,31 @@ public class CapacityEstimatorTests
     public void QuantityZero_CountsAsOne()
     {
         var shift = Shift(6, 14, 0);
+        Client(shift);
+
+        Estimate().ShouldBeEmpty();
+    }
+
+    [Test]
+    public void DemandIsQuantityTimesSumEmployees()
+    {
+        var shift = Shift(6, 14, 2, sumEmployees: 3);
+        Client(shift);
+        Client(shift);
+        Client(shift);
+        Client(shift);
+        Client(shift);
+
+        var finding = Estimate().Single();
+
+        finding.Demand.ShouldBe(6);
+        finding.Supply.ShouldBe(5);
+    }
+
+    [Test]
+    public void SumEmployeesZero_CountsAsOne()
+    {
+        var shift = Shift(6, 14, 1, sumEmployees: 0);
         Client(shift);
 
         Estimate().ShouldBeEmpty();

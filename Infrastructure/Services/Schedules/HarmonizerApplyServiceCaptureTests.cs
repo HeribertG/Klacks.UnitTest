@@ -39,6 +39,9 @@ public class HarmonizerApplyServiceCaptureTests
     private IScenarioComplianceService _scenarioComplianceService = null!;
     private IScheduleTimelineService _timelineService = null!;
     private IScheduleSnapshotMarkerService _snapshotMarkerService = null!;
+    private IScenarioNameGenerator _nameGenerator = null!;
+    private const string GeneratedName = "generated name";
+    private const string SpanishUser = "es";
 
     private readonly Guid _workId = Guid.NewGuid();
     private readonly Guid _shiftId = Guid.NewGuid();
@@ -67,6 +70,11 @@ public class HarmonizerApplyServiceCaptureTests
         _cache = new HarmonizerResultCache();
         _mediator = Substitute.For<IMediator>();
         _scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
+        _nameGenerator = Substitute.For<IScenarioNameGenerator>();
+        _nameGenerator.GenerateAsync(
+                Arg.Any<ScenarioNameKind>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(GeneratedName);
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
 
@@ -101,12 +109,14 @@ public class HarmonizerApplyServiceCaptureTests
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
         _scenarioComplianceService, _timelineService, _snapshotMarkerService,
         new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
+        _nameGenerator,
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HolisticHarmonizerApplyService BuildHolisticSut() => new(
         _cache, _mediator, _scenarioRepository, _scenarioService, _unitOfWork, _context, _captureRepository,
         _scenarioComplianceService, _timelineService, _snapshotMarkerService,
         new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
+        _nameGenerator,
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HarmonyBitmap BestBitmap()
@@ -154,6 +164,37 @@ public class HarmonizerApplyServiceCaptureTests
     }
 
     [Test]
+    public async Task ApplyAsScenarioAsync_NamesTheScenario_HarmonizedByDefault_AiPlanForTheHolisticSubclass()
+    {
+        var harmonizerGroup = Guid.NewGuid();
+        var holisticGroup = Guid.NewGuid();
+
+        var (harmonized, _, _) = await BuildHarmonizerSut().ApplyAsScenarioAsync(
+            StoreScenarioSourceResult(Guid.NewGuid()), harmonizerGroup, CancellationToken.None);
+        await BuildHolisticSut().ApplyAsScenarioAsync(
+            StoreScenarioSourceResult(Guid.NewGuid()), holisticGroup, CancellationToken.None);
+
+        harmonized.Name.ShouldBe(GeneratedName);
+        await _nameGenerator.Received(1).GenerateAsync(
+            ScenarioNameKind.Harmonized, D, D, harmonizerGroup, null, Arg.Any<CancellationToken>());
+        await _nameGenerator.Received(1).GenerateAsync(
+            ScenarioNameKind.Llm, D, D, holisticGroup, null, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_PassesAnExplicitNameKindAndLanguage_ToTheGenerator()
+    {
+        var groupId = Guid.NewGuid();
+
+        await BuildHarmonizerSut().ApplyAsScenarioAsync(
+            StoreScenarioSourceResult(Guid.NewGuid()), groupId, CancellationToken.None,
+            nameKind: ScenarioNameKind.AutoHarmonizer, language: SpanishUser);
+
+        await _nameGenerator.Received(1).GenerateAsync(
+            ScenarioNameKind.AutoHarmonizer, D, D, groupId, SpanishUser, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ApplyAsScenarioAsync_HolisticSubclass_WritesHolisticCapture()
     {
         var jobId = StoreScenarioSourceResult(Guid.NewGuid());
@@ -173,7 +214,7 @@ public class HarmonizerApplyServiceCaptureTests
     {
         var jobId = StoreScenarioSourceResult(Guid.NewGuid());
 
-        await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None, namePrefixOverride: null, captureRun: false);
+        await BuildHarmonizerSut().ApplyAsScenarioAsync(jobId, Guid.NewGuid(), CancellationToken.None, nameKind: null, captureRun: false);
 
         await _captureRepository.DidNotReceive().AddAsync(
             Arg.Any<WizardRunCapture>(), Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>());
@@ -214,7 +255,7 @@ public class HarmonizerApplyServiceCaptureTests
         var jobId = StoreScenarioSourceResult(Guid.NewGuid());
 
         var (_, _, complianceReport) = await BuildHarmonizerSut().ApplyAsScenarioAsync(
-            jobId, Guid.NewGuid(), CancellationToken.None, namePrefixOverride: null, captureRun: true, evaluateCompliance: false);
+            jobId, Guid.NewGuid(), CancellationToken.None, nameKind: null, captureRun: true, evaluateCompliance: false);
 
         complianceReport.ShouldBeNull();
         await _scenarioComplianceService.DidNotReceive().EvaluateAsync(
