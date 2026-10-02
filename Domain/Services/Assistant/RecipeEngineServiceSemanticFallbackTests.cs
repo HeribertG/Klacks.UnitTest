@@ -358,6 +358,47 @@ public class RecipeEngineServiceSemanticFallbackTests
     }
 
     [Test]
+    public async Task LeadingAffirmation_NeverConsultsSemanticFallback()
+    {
+        // Live 2026-10-03: "Ja, übernimm die Gruppen so." confirmed a partition_clients_by_address preview but
+        // ranked into the grey zone of prepare-groups-for-planning and was hijacked into its confirmation gate.
+        var message = "Ja, übernimm die Gruppen so.";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+            .Returns(RecipeResult("onboard-employee", 0.95));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldBeNull();
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task LeadingAffirmation_WithExplicitKeywordTrigger_StillMatchesTheRecipe()
+    {
+        var message = "Ja, onboard einen neuen Mitarbeiter";
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+        plan.NeedsConfirmation.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task CourtesyWordInATerseRequest_StillConsultsSemanticFallback()
+    {
+        var message = "Neuen Mitarbeiter, bitte";
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+            .Returns(RecipeResult("onboard-employee", 0.95));
+
+        var plan = await _service.ResolveAsync(message);
+
+        plan.ShouldNotBeNull();
+        plan!.Name.ShouldBe("onboard-employee");
+    }
+
+    [Test]
     public async Task MessageMatchingKeywordTrigger_NeverConsultsSemanticFallback()
     {
         var message = "Bitte onboard einen neuen Mitarbeiter";

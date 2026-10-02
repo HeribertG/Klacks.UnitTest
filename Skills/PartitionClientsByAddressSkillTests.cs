@@ -194,6 +194,7 @@ public class PartitionClientsByAddressSkillTests
     [TestCase("state", GroupPartitionLevelEnum.State)]
     [TestCase("state_city", GroupPartitionLevelEnum.StateCity)]
     [TestCase("cluster", GroupPartitionLevelEnum.Cluster)]
+    [TestCase("cluster_municipality", GroupPartitionLevelEnum.ClusterMunicipality)]
     public async Task Execute_LevelNames_MapToLevels(string level, GroupPartitionLevelEnum expected)
     {
         var parameters = new Dictionary<string, object> { ["level"] = level };
@@ -213,7 +214,7 @@ public class PartitionClientsByAddressSkillTests
         var result = await Skill().ExecuteAsync(Ctx(), parameters);
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("cluster, state, city, state_city");
+        result.Message.ShouldContain("cluster, cluster_municipality, state, city, state_city");
     }
 
     [Test]
@@ -279,5 +280,60 @@ public class PartitionClientsByAddressSkillTests
 
         await _mediator.Received(1).Send(
             Arg.Is<PartitionClientsByAddressCommand>(c => c.ClusterSharePercent == 25), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SubClusterSharePercent_DefaultsTo15_AndIsForwarded()
+    {
+        await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["level"] = "cluster_municipality" });
+        await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["level"] = "cluster_municipality", ["subClusterSharePercent"] = 25 });
+
+        await _mediator.Received(1).Send(
+            Arg.Is<PartitionClientsByAddressCommand>(cmd => cmd.SubClusterSharePercent == 15), Arg.Any<CancellationToken>());
+        await _mediator.Received(1).Send(
+            Arg.Is<PartitionClientsByAddressCommand>(cmd => cmd.SubClusterSharePercent == 25), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(0)]
+    [TestCase(101)]
+    public async Task ReturnsError_WhenSubClusterSharePercentIsOutOfRange(int share)
+    {
+        var result = await Skill().ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["level"] = "cluster_municipality", ["subClusterSharePercent"] = share });
+
+        result.Success.ShouldBeFalse();
+        await _mediator.DidNotReceive().Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Preview_MunicipalityLevel_ShowsFourLevelTreeAndWhereSmallPlacesWent()
+    {
+        _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new PartitionClientsByAddressResult(
+                false, nameof(GroupPartitionLevelEnum.ClusterMunicipality), "All", 29, 0, 0, 0, 0, 0,
+                new List<PartitionGroupSummary>
+                {
+                    new("Deutschschweiz Zürich", null, false, null, 0),
+                    new("ZH", "Deutschschweiz Zürich", false, null, 0),
+                    new("Winterthur", "ZH", false, null, 14),
+                    new("Seuzach", "Winterthur", false, null, 7)
+                },
+                new List<Klacks.Api.Application.DTOs.Grouping.UnassignablePartitionClient>(),
+                new List<string>(),
+                0,
+                new List<Klacks.Api.Application.DTOs.Grouping.PartitionPlaceAttachment>
+                {
+                    new("Hettlingen", "Winterthur", "Seuzach", true, 2, 2.2),
+                    new("Wülflingen", "Winterthur", "Winterthur", false, 2, null)
+                })));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["level"] = "cluster_municipality" });
+
+        result.Message.ShouldContain("region → state → city cluster");
+        result.Message.ShouldContain("municipality sub-cluster");
+        result.Message.ShouldContain("Seuzach (7, new, in Winterthur)");
+        result.Message.ShouldContain("Hettlingen (2) joins the nearer sub-cluster Seuzach");
+        result.Message.ShouldContain("Wülflingen (2) stays directly in Winterthur");
+        result.Message.ShouldContain("Nothing was changed yet");
     }
 }

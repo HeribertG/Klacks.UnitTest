@@ -378,6 +378,91 @@ public class GroupPartitionPlannerTests
         plan.Unassignable.Single().Reason.ShouldBe("address has no state/province");
     }
 
+    [Test]
+    public void Plan_ClusterMunicipalityLevel_BuildsFourLevelTree_CentreResidentsStayInCityCluster()
+    {
+        var clients = ZurichDemoClients();
+
+        var plan = PlanWith(clients, GroupPartitionLevelEnum.ClusterMunicipality);
+
+        var region = plan.Groups.Single(g => g.Name == "Deutschschweiz Zürich");
+        var state = plan.Groups.Single(g => g.Name == "ZH");
+        var winterthur = plan.Groups.Single(g => g.Name == "Winterthur");
+        var zurich = plan.Groups.Single(g => g.Name == "Zürich");
+        var seuzach = plan.Groups.Single(g => g.Name == "Seuzach");
+        var wiesendangen = plan.Groups.Single(g => g.Name == "Wiesendangen");
+
+        state.ParentKey.ShouldBe(region.Key);
+        winterthur.ParentKey.ShouldBe(state.Key);
+        zurich.ParentKey.ShouldBe(state.Key);
+        seuzach.ParentKey.ShouldBe(winterthur.Key);
+        wiesendangen.ParentKey.ShouldBe(winterthur.Key);
+        plan.Groups.Count.ShouldBe(6);
+        plan.Groups.ShouldNotContain(g => g.Name == "Elsau" || g.Name == "Hettlingen" || g.Name == "Dietikon" || g.Name == "Schlieren");
+
+        winterthur.ClientCount.ShouldBe(14);
+        seuzach.ClientCount.ShouldBe(7);
+        wiesendangen.ClientCount.ShouldBe(8);
+        zurich.ClientCount.ShouldBe(26);
+        seuzach.Latitude.ShouldNotBeNull();
+
+        plan.Assignments.Count.ShouldBe(clients.Count);
+        var places = plan.PlaceAttachments!;
+        places.Single(a => a.Place == "Elsau").TargetGroupName.ShouldBe("Wiesendangen");
+        places.Single(a => a.Place == "Hettlingen").TargetGroupName.ShouldBe("Seuzach");
+        places.Single(a => a.Place == "Dietikon").JoinedSubCluster.ShouldBeFalse();
+        places.Single(a => a.Place == "Dietikon").TargetGroupName.ShouldBe("Zürich");
+        places.Single(a => a.Place == "Schlieren").TargetGroupName.ShouldBe("Zürich");
+    }
+
+    [Test]
+    public void Plan_ClusterMunicipalityLevel_ReRunOnCreatedTree_ReusesEveryGroup()
+    {
+        var clients = ZurichDemoClients();
+        var first = PlanWith(clients, GroupPartitionLevelEnum.ClusterMunicipality);
+
+        var idByKey = first.Groups.ToDictionary(g => g.Key, _ => Guid.NewGuid());
+        var created = first.Groups
+            .Select(g => new Group { Id = idByKey[g.Key], Name = g.Name, Parent = g.ParentKey is null ? null : idByKey[g.ParentKey] })
+            .ToList();
+
+        var second = PlanWith(clients, GroupPartitionLevelEnum.ClusterMunicipality, existingGroups: created, includeAlreadyGrouped: true);
+
+        second.Groups.Count.ShouldBe(first.Groups.Count);
+        second.Groups.ShouldAllBe(g => g.Existed);
+        second.Groups.ShouldAllBe(g => g.ExistingGroupId == idByKey[g.Key]);
+        second.Warnings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Plan_ClusterLevel_HasNoPlaceAttachments()
+    {
+        var plan = PlanWith(ZurichDemoClients(), GroupPartitionLevelEnum.Cluster);
+
+        plan.PlaceAttachments.ShouldBeEmpty();
+        plan.Groups.ShouldNotContain(g => g.Name == "Seuzach");
+    }
+
+    private static List<Client> ZurichDemoClients()
+    {
+        var places = new (string City, int Count, double Lat, double Lon)[]
+        {
+            ("Winterthur", 14, 47.4999, 8.7262),
+            ("Seuzach", 5, 47.5363, 8.7322),
+            ("Wiesendangen", 5, 47.5216, 8.7898),
+            ("Elsau", 3, 47.5033, 8.7972),
+            ("Hettlingen", 2, 47.5466, 8.7067),
+            ("Zürich", 20, 47.3769, 8.5417),
+            ("Dietikon", 3, 47.4048, 8.4010),
+            ("Schlieren", 3, 47.3995, 8.4466)
+        };
+
+        return places
+            .SelectMany(p => Enumerable.Range(0, p.Count)
+                .Select(i => ClientWithAddress($"P{i}", p.City, "ZH", p.City, p.Lat, p.Lon)))
+            .ToList();
+    }
+
     private static Client ClientWithAddress(
         string firstName, string lastName, string state, string city,
         double? latitude = null, double? longitude = null, EntityTypeEnum type = EntityTypeEnum.Employee, string country = "CH")

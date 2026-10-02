@@ -344,6 +344,7 @@
   "open_schedule": "Irreversible",
   "optimize_llm_models_for_klacksy": "Irreversible",
   "partition_clients_by_address": "Irreversible",
+  "partition_clients_by_qualification": "Irreversible",
   "place_work": "Reversible",
   "preview_company_rule": "ReadOnly",
   "preview_planning_profile": "ReadOnly",

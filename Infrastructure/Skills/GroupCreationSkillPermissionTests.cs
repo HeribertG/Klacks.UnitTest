@@ -20,6 +20,7 @@ public class GroupCreationSkillPermissionTests
     private const string CreateGroupSkill = "create_group";
     private const string DeleteGroupSkill = "delete_group";
     private const string PartitionClientsByAddressSkill = "partition_clients_by_address";
+    private const string PartitionClientsByQualificationSkill = "partition_clients_by_qualification";
 
     private const string VersionBumpReminder =
         "Remember the version bump when changing this - SkillSeedLoader skips a seed whose version did " +
@@ -34,7 +35,8 @@ public class GroupCreationSkillPermissionTests
     private static readonly string[] GroupCreatingSkills =
     [
         CreateGroupSkill,
-        PartitionClientsByAddressSkill
+        PartitionClientsByAddressSkill,
+        PartitionClientsByQualificationSkill
     ];
 
     [TestCaseSource(nameof(GroupCreatingSkills))]

@@ -1,0 +1,152 @@
+{
+  "de": {
+    "A": "Gruppiere alle Mitarbeitenden nach ihrer Adresse: Region, Kanton, Stadt und darunter Gemeinden – nur grössere Ansammlungen als eigene Gruppe.",
+    "B": "Gruppiere alle Mitarbeitenden nach Qualifikation – eine Gruppe pro Qualifikation.",
+    "C": "Gruppiere die Mitarbeitenden der Gruppe Winterthur nach Qualifikation – als Untergruppen von Winterthur.",
+    "D": "Ja, übernimm die Gruppen so."
+  },
+  "en": {
+    "A": "Group all employees by their address: region, canton, city and below that municipalities – only larger clusters as their own group.",
+    "B": "Group all employees by qualification – one group per qualification.",
+    "C": "Group the employees of the Winterthur group by qualification – as subgroups of Winterthur.",
+    "D": "Yes, apply the groups like that."
+  },
+  "fr": {
+    "A": "Regroupe tous les employés par leur adresse : région, canton, ville et en dessous les communes – seulement les grandes concentrations comme groupe à part.",
+    "B": "Regroupe tous les employés par qualification – un groupe par qualification.",
+    "C": "Regroupe les employés du groupe Winterthur par qualification – en sous-groupes de Winterthur.",
+    "D": "Oui, reprends les groupes comme ça."
+  },
+  "it": {
+    "A": "Raggruppa tutti i collaboratori per indirizzo: regione, cantone, città e sotto i comuni – solo gli agglomerati più grandi come gruppo a sé.",
+    "B": "Raggruppa tutti i collaboratori per qualifica – un gruppo per ogni qualifica.",
+    "C": "Raggruppa i collaboratori del gruppo Winterthur per qualifica – come sottogruppi di Winterthur.",
+    "D": "Sì, conferma i gruppi così."
+  },
+  "ar": {
+    "A": "جمّع كل الموظفين في مجموعات حسب عنوانهم: المنطقة، الكانتون، المدينة وتحتها البلديات – فقط التجمعات الكبيرة كمجموعة مستقلة.",
+    "B": "جمّع كل الموظفين حسب المؤهلات – مجموعة لكل مؤهل.",
+    "C": "جمّع موظفي مجموعة Winterthur حسب المؤهلات – كمجموعات فرعية من Winterthur.",
+    "D": "نعم، اعتمد المجموعات هكذا."
+  },
+  "cs": {
+    "A": "Seskup všechny zaměstnance podle adresy: region, kanton, město a pod tím obce – jen větší shluky jako samostatnou skupinu.",
+    "B": "Seskup všechny zaměstnance podle kvalifikace – jedna skupina na kvalifikaci.",
+    "C": "Seskup zaměstnance ze skupiny Winterthur podle kvalifikace – jako podskupiny skupiny Winterthur.",
+    "D": "Ano, převezmi skupiny takto."
+  },
+  "da": {
+    "A": "Gruppér alle medarbejdere efter deres adresse: region, kanton, by og derunder kommuner – kun større ansamlinger som egen gruppe.",
+    "B": "Gruppér alle medarbejdere efter kvalifikation – én gruppe pr. kvalifikation.",
+    "C": "Gruppér medarbejderne i gruppen Winterthur efter kvalifikation – som undergrupper af Winterthur.",
+    "D": "Ja, overtag grupperne sådan."
+  },
+  "el": {
+    "A": "Ομαδοποίησε όλους τους εργαζόμενους με βάση τη διεύθυνσή τους: περιοχή, καντόνι, πόλη και από κάτω δήμοι – μόνο μεγαλύτερες συγκεντρώσεις ως δική τους ομάδα.",
+    "B": "Ομαδοποίησε όλους τους εργαζόμενους ανά προσόν – μία ομάδα ανά προσόν.",
+    "C": "Ομαδοποίησε τους εργαζόμενους της ομάδας Winterthur ανά προσόν – ως υποομάδες του Winterthur.",
+    "D": "Ναι, εφάρμοσε τις ομάδες έτσι."
+  },
+  "es": {
+    "A": "Agrupa a todos los empleados por su dirección: región, cantón, ciudad y debajo municipios – solo las concentraciones grandes como grupo propio.",
+    "B": "Agrupa a todos los empleados por cualificación – un grupo por cualificación.",
+    "C": "Agrupa a los empleados del grupo Winterthur por cualificación – como subgrupos de Winterthur.",
+    "D": "Sí, acepta los grupos así."
+  },
+  "fi": {
+    "A": "Ryhmittele kaikki työntekijät osoitteen mukaan: alue, kantoni, kaupunki ja sen alla kunnat – vain suuremmat keskittymät omaksi ryhmäkseen.",
+    "B": "Ryhmittele kaikki työntekijät pätevyyden mukaan – yksi ryhmä per pätevyys.",
+    "C": "Ryhmittele Winterthur-ryhmän työntekijät pätevyyden mukaan – Winterthur-ryhmän alaryhminä.",
+    "D": "Kyllä, hyväksy ryhmät tällaisina."
+  },
+  "he": {
+    "A": "קבץ את כל העובדים לפי הכתובת שלהם: אזור, קנטון, עיר ומתחתיה רשויות מקומיות – רק ריכוזים גדולים יותר כקבוצה נפרדת.",
+    "B": "קבץ את כל העובדים לפי הסמכה – קבוצה אחת לכל הסמכה.",
+    "C": "קבץ את העובדים בקבוצה Winterthur לפי הסמכה – כתת-קבוצות של Winterthur.",
+    "D": "כן, אשר את הקבוצות כך."
+  },
+  "id": {
+    "A": "Kelompokkan semua karyawan berdasarkan alamat mereka: wilayah, kanton, kota, dan di bawahnya komune – hanya kumpulan yang lebih besar dijadikan grup sendiri.",
+    "B": "Kelompokkan semua karyawan berdasarkan kualifikasi – satu grup per kualifikasi.",
+    "C": "Kelompokkan karyawan di grup Winterthur berdasarkan kualifikasi – sebagai subgrup Winterthur.",
+    "D": "Ya, terapkan grup seperti itu."
+  },
+  "ja": {
+    "A": "全従業員を住所でグループ分けして：地域、カントン、都市、その下に市町村 – 大きな集まりだけ独立したグループにして。",
+    "B": "全従業員を資格ごとにグループ分けして – 資格1つにつきグループ1つ。",
+    "C": "Winterthurグループの従業員を資格別にグループ分けして – Winterthurのサブグループとして。",
+    "D": "はい、そのグループで確定して。"
+  },
+  "ko": {
+    "A": "모든 직원을 주소별로 그룹으로 묶어 줘: 지역, 칸톤, 도시, 그 아래 자치단체 – 규모가 큰 밀집 지역만 별도 그룹으로.",
+    "B": "모든 직원을 자격별로 그룹으로 묶어 줘 – 자격마다 그룹 하나씩.",
+    "C": "Winterthur 그룹의 직원을 자격별로 그룹으로 묶어 줘 – Winterthur의 하위 그룹으로.",
+    "D": "네, 그룹을 그대로 적용해 줘."
+  },
+  "ms": {
+    "A": "Kumpulkan semua pekerja mengikut alamat mereka: wilayah, kanton, bandar dan di bawahnya perbandaran – hanya kelompok besar sebagai kumpulan tersendiri.",
+    "B": "Kumpulkan semua pekerja mengikut kelayakan – satu kumpulan bagi setiap kelayakan.",
+    "C": "Kumpulkan pekerja dalam kumpulan Winterthur mengikut kelayakan – sebagai subkumpulan Winterthur.",
+    "D": "Ya, terima kumpulan itu seperti yang dicadangkan."
+  },
+  "nb": {
+    "A": "Grupper alle ansatte etter adressen deres: region, kanton, by og under det kommuner – bare større ansamlinger som egen gruppe.",
+    "B": "Grupper alle ansatte etter kvalifikasjon – én gruppe per kvalifikasjon.",
+    "C": "Grupper de ansatte i gruppen Winterthur etter kvalifikasjon – som undergrupper av Winterthur.",
+    "D": "Ja, overta gruppene slik."
+  },
+  "nl": {
+    "A": "Groepeer alle medewerkers op hun adres: regio, kanton, stad en daaronder gemeenten – alleen grotere concentraties als eigen groep.",
+    "B": "Groepeer alle medewerkers op kwalificatie – één groep per kwalificatie.",
+    "C": "Groepeer de medewerkers van de groep Winterthur op kwalificatie – als subgroepen van Winterthur.",
+    "D": "Ja, neem de groepen zo over."
+  },
+  "pl": {
+    "A": "Pogrupuj wszystkich pracowników według adresu: region, kanton, miasto, a pod nimi gminy – tylko większe skupiska jako osobną grupę.",
+    "B": "Pogrupuj wszystkich pracowników według kwalifikacji – jedna grupa na kwalifikację.",
+    "C": "Pogrupuj pracowników z grupy Winterthur według kwalifikacji – jako podgrupy Winterthur.",
+    "D": "Dobrze, przyjmij te grupy w tej postaci."
+  },
+  "pt": {
+    "A": "Agrupa todos os colaboradores pelo endereço: região, cantão, cidade e por baixo os municípios – só as concentrações maiores como grupo próprio.",
+    "B": "Agrupa todos os colaboradores por qualificação – um grupo por qualificação.",
+    "C": "Agrupa os colaboradores do grupo Winterthur por qualificação – como subgrupos de Winterthur.",
+    "D": "Sim, aceita os grupos assim."
+  },
+  "ro": {
+    "A": "Grupează toți angajații după adresă: regiune, canton, oraș și dedesubt comunele – doar aglomerările mai mari ca grup separat.",
+    "B": "Grupează toți angajații după calificare – un grup pentru fiecare calificare.",
+    "C": "Grupează angajații din grupul Winterthur după calificare – ca subgrupuri ale grupului Winterthur.",
+    "D": "Da, preia grupurile așa."
+  },
+  "sv": {
+    "A": "Gruppera alla anställda efter adress: region, kanton, stad och under det kommuner – bara större ansamlingar som egen grupp.",
+    "B": "Gruppera alla anställda efter kvalifikation – en grupp per kvalifikation.",
+    "C": "Gruppera de anställda i gruppen Winterthur efter kvalifikation – som undergrupper till Winterthur.",
+    "D": "Ja, ta över grupperna så här."
+  },
+  "th": {
+    "A": "จัดกลุ่มพนักงานทั้งหมดตามที่อยู่: ภูมิภาค แคว้น เมือง และด้านล่างเป็นเทศบาล – เฉพาะกลุ่มก้อนที่ใหญ่กว่าให้เป็นกลุ่มของตัวเอง",
+    "B": "จัดกลุ่มพนักงานทั้งหมดตามคุณสมบัติ – หนึ่งกลุ่มต่อหนึ่งคุณสมบัติ",
+    "C": "จัดกลุ่มพนักงานในกลุ่ม Winterthur ตามคุณสมบัติ – เป็นกลุ่มย่อยของ Winterthur",
+    "D": "ใช่ ใช้กลุ่มตามนี้เลย"
+  },
+  "vi": {
+    "A": "Phân nhóm tất cả nhân viên theo địa chỉ: khu vực, canton, thành phố và bên dưới là các xã – chỉ những cụm lớn hơn mới thành nhóm riêng.",
+    "B": "Phân nhóm tất cả nhân viên theo chuyên môn – mỗi chuyên môn một nhóm.",
+    "C": "Phân nhóm nhân viên của nhóm Winterthur theo chuyên môn – thành các nhóm con của Winterthur.",
+    "D": "Vâng, áp dụng các nhóm như vậy đi."
+  },
+  "zh-CN": {
+    "A": "按地址把所有员工分组：地区、州、城市，下面是市镇——只有较大的聚集点才单独成组。",
+    "B": "按资质把所有员工分组——每个资质一个组。",
+    "C": "把Winterthur组的员工按资质分组——作为Winterthur的子组。",
+    "D": "是的，就这样采用这些分组。"
+  },
+  "zh-TW": {
+    "A": "依地址把所有員工分組：地區、州、城市，下面是市鎮——只有較大的聚集點才單獨成組。",
+    "B": "依資質把所有員工分組——每個資質一個組。",
+    "C": "把Winterthur組的員工依資質分組——作為Winterthur的子組。",
+    "D": "是的，就這樣採用這些分組。"
+  }
+}

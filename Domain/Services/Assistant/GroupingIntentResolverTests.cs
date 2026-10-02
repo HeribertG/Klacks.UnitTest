@@ -53,6 +53,40 @@ public class GroupingIntentResolverTests
         result.ShouldContain("partition_clients_by_address");
     }
 
+    [TestCase("Gruppiere die Mitarbeiter nach Qualifikation")]
+    [TestCase("Erstelle Gruppen nach Qualifikationen")]
+    [TestCase("group the employees by qualification")]
+    [TestCase("create one group per qualification")]
+    [TestCase("Regroupe les employés par qualification")]
+    [TestCase("Raggruppa i dipendenti per qualifica")]
+    [TestCase("Crea un gruppo per ogni qualifica")]
+    public void GuaranteedSkillNames_QualificationGroupingIntent_IncludesPartitionClientsByQualification(string message)
+    {
+        var result = GroupingIntentResolver.GuaranteedSkillNames(message);
+
+        result.ShouldContain("partition_clients_by_qualification");
+        result.ShouldContain("list_groups");
+    }
+
+    [TestCase("Welche Qualifikationen hat die Gruppe Bern?")]
+    [TestCase("which qualifications does the group Bern have?")]
+    [TestCase("Bern 组的员工有哪些资格？")]
+    [TestCase("ما هي مؤهلات مجموعة برن؟")]
+    [TestCase("Ποια προσόντα έχει η ομάδα Bern;")]
+    public void GuaranteedSkillNames_Empty_For_QualificationQuestionsAboutAGroup(string message)
+    {
+        GroupingIntentResolver.GuaranteedSkillNames(message).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void GuaranteedSkillNames_GuaranteedSet_StaysSmallEnoughForTheToolCeiling()
+    {
+        var result = GroupingIntentResolver.GuaranteedSkillNames("Gruppiere die Mitarbeiter nach Adresse");
+
+        result.Count.ShouldBe(11);
+        result.Distinct().Count().ShouldBe(result.Count);
+    }
+
     [TestCase("Kannst du Dienste gemäss ihrer Kundenadresse auf die Gruppen aufteilen?")]
     [TestCase("Dienste nach Kundenadresse auf die Gruppen aufteilen")]
     [TestCase("Alle Dienste zu allen Gruppen/Städten")]

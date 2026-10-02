@@ -54,6 +54,7 @@ public class PreviewApplySkillCallsNoWriteTests
 {
     private const string FillGroupByCriteria = "fill_group_by_criteria";
     private const string PartitionClientsByAddress = "partition_clients_by_address";
+    private const string PartitionClientsByQualification = "partition_clients_by_qualification";
     private const string BulkAddShiftsToGroup = "bulk_add_shifts_to_group";
     private const string BulkAddAbsenceForGroup = "bulk_add_absence_for_group";
     private const string AddSelectedClientsToGroup = "add_selected_clients_to_group";
@@ -112,6 +113,7 @@ public class PreviewApplySkillCallsNoWriteTests
             [GroupingSkillNames.Apply] = typeof(ApplyGroupingPlanSkill),
             [FillGroupByCriteria] = typeof(FillGroupByCriteriaSkill),
             [PartitionClientsByAddress] = typeof(PartitionClientsByAddressSkill),
+            [PartitionClientsByQualification] = typeof(PartitionClientsByQualificationSkill),
             [BulkAddShiftsToGroup] = typeof(BulkAddShiftsToGroupSkill),
             [BulkAddAbsenceForGroup] = typeof(BulkAddAbsenceForGroupSkill),
             [AddSelectedClientsToGroup] = typeof(AddSelectedClientsToGroupSkill),
@@ -151,6 +153,8 @@ public class PreviewApplySkillCallsNoWriteTests
             .Returns(ci => ci.Arg<Func<Task<int>>>()());
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<PartitionApplyOutcome>>>())
             .Returns(ci => ci.Arg<Func<Task<PartitionApplyOutcome>>>()());
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<QualificationApplyOutcome>>>())
+            .Returns(ci => ci.Arg<Func<Task<QualificationApplyOutcome>>>()());
         _mediator = Substitute.For<IMediator>();
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(Today);
@@ -272,6 +276,42 @@ public class PreviewApplySkillCallsNoWriteTests
             _mediator,
             [_clientRepository, _groupRepository, _groupItemRepository, regionProvider, countryResolver, stateRepository,
                 settingsReader, visibilityPreservation],
+            _unitOfWork);
+    }
+
+    [Test]
+    public async Task PartitionClientsByQualification_PreviewWritesNothing_InSkillAndHandler([Values(ApplyAbsent, ApplyFalse, ApplyJsonFalse)] string applyShape)
+    {
+        var qualification = new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = CityName } };
+        var holder = EmployeeLivingInCity();
+        holder.Qualifications.Add(new ClientQualification { Id = Guid.NewGuid(), ClientId = holder.Id, QualificationId = qualification.Id });
+        _clientRepository.GetByTypeWithQualificationsAndGroupItemsAsync(Arg.Any<EntityTypeEnum>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { holder });
+        var qualificationRepository = Substitute.For<IQualificationRepository>();
+        qualificationRepository.GetAllAsync(Arg.Any<CancellationToken>()).Returns(new List<Qualification> { qualification });
+        var languageResolver = Substitute.For<IInstallationLanguageResolver>();
+        languageResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns("de");
+        var visibilityPreservation = Substitute.For<IGroupVisibilityPreservationService>();
+        var groupVisibilityRepository = Substitute.For<IGroupVisibilityRepository>();
+        var handler = new PartitionClientsByQualificationCommandHandler(
+            _clientRepository, qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock,
+            languageResolver, groupVisibilityRepository, visibilityPreservation, TestGroupWriteVisibility.UnrestrictedGroups());
+        _mediator.Send(Arg.Any<PartitionClientsByQualificationCommand>(), Arg.Any<CancellationToken>())
+            .Returns(ci => handler.Handle(ci.Arg<PartitionClientsByQualificationCommand>(), ci.Arg<CancellationToken>()));
+        var skill = new PartitionClientsByQualificationSkill(
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), _mediator, _companyClock);
+        var parameters = WithApply(applyShape, new Dictionary<string, object> { ["minMembers"] = 1 });
+
+        var result = await RunPreviewAsync(PartitionClientsByQualification, skill, Ctx(), parameters);
+
+        result.Message.ShouldContain(NothingChangedMarker);
+        var data = result.Data.ShouldBeOfType<PartitionClientsByQualificationResult>();
+        data.Applied.ShouldBeFalse();
+        data.Groups.ShouldNotBeEmpty();
+        await _mediator.Received(1).Send(Arg.Is<PartitionClientsByQualificationCommand>(c => !c.Apply), Arg.Any<CancellationToken>());
+        ShouldNotHaveWritten(
+            _mediator,
+            [_clientRepository, _groupRepository, _groupItemRepository, qualificationRepository, visibilityPreservation, groupVisibilityRepository],
             _unitOfWork);
     }
 
