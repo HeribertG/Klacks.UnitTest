@@ -7,8 +7,11 @@
 /// escalates to an overridable error when the holidayWork rule is configured as Block.
 /// </summary>
 
+using System.Text.Json;
+using Klacks.Api.Application.Helpers;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
@@ -67,8 +70,16 @@ public class HolidayWorkEvaluatorTests
         calculator.IsHoliday(Holiday).Returns(HolidayStatus.OfficialHoliday);
         calculator.IsHoliday(OrdinaryDay).Returns(HolidayStatus.NotAHoliday);
         calculator.IsHoliday(new DateOnly(2026, 12, 24)).Returns(HolidayStatus.UnofficialHoliday);
-        calculator.GetHolidayInfo(Holiday).Returns(new HolidayDate { CurrentName = "Christmas" });
+        calculator.GetHolidayInfo(Holiday).Returns(new HolidayDate { Name = ChristmasName() });
         return calculator;
+    }
+
+    private static MultiLanguage ChristmasName()
+    {
+        var name = new MultiLanguage { De = "Weihnachten", En = "Christmas Day", Fr = "Noël", It = "Natale" };
+        name.SetValue("ja", "クリスマス");
+        name.SetValue("zh-CN", "圣诞节");
+        return name;
     }
 
 
@@ -106,7 +117,31 @@ public class HolidayWorkEvaluatorTests
         entry.Comment.ShouldBe(ScheduleValidationKeys.HolidayWork);
         entry.Date.ShouldBe(Holiday);
         entry.Type.ShouldBe(ScheduleValidationType.Warning);
-        entry.CommentParams["holiday"].ShouldBe("Christmas");
+        entry.CommentParams[LocalizedCommentParamKeys.Holiday].ShouldBe("Weihnachten");
+    }
+
+    [Test]
+    public async Task Evaluate_CarriesTheHolidayNameInEveryLanguageForTheReader()
+    {
+        var entries = await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);
+
+        var names = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            entries.ShouldHaveSingleItem().CommentParams[LocalizedCommentParamKeys.HolidayMultiLanguage])!;
+        names["ja"].ShouldBe("クリスマス");
+        names["zh-cn"].ShouldBe("圣诞节");
+        names["en"].ShouldBe("Christmas Day");
+        names["de"].ShouldBe("Weihnachten");
+    }
+
+    [Test]
+    public async Task Evaluate_ResolvedForAJapaneseReader_NamesTheHolidayInJapanese()
+    {
+        var entries = await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);
+
+        var resolved = LocalizedCommentParams.ForLanguage(entries.ShouldHaveSingleItem().CommentParams, "ja");
+
+        resolved[LocalizedCommentParamKeys.Holiday].ShouldBe("クリスマス");
+        resolved.ShouldNotContainKey(LocalizedCommentParamKeys.HolidayMultiLanguage);
     }
 
     [Test]

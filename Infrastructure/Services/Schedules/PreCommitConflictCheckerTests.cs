@@ -534,7 +534,7 @@ public class PreCommitConflictCheckerTests
 
         var calculator = Substitute.For<IHolidaysListCalculator>();
         calculator.IsHoliday(Day).Returns(HolidayStatus.OfficialHoliday);
-        calculator.GetHolidayInfo(Day).Returns(new HolidayDate { CurrentName = "Holiday" });
+        calculator.GetHolidayInfo(Day).Returns(new HolidayDate { Name = new MultiLanguage { En = "Holiday" } });
 
         var calendarResolver = Substitute.For<IClientHolidayCalendarResolver>();
         calendarResolver.GetCalculatorAsync(Arg.Any<Guid?>(), Arg.Any<int>()).Returns(calculator);

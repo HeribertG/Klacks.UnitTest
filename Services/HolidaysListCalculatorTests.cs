@@ -1153,9 +1153,59 @@ internal class HolidaysListCalculatorTests
 
         // Assert
         holidayInfo.ShouldNotBeNull();
-        holidayInfo!.CurrentName.ShouldBe("Independence Day");
+        holidayInfo!.Name.En.ShouldBe("Independence Day");
+        holidayInfo.Name.De.ShouldBe("Unabhängigkeitstag");
         holidayInfo.CurrentDate.ShouldBe(new DateOnly(2023, 7, 4));
         holidayInfo.Officially.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ComputeHolidays_KeepsTheNameInEveryLanguageOfTheRule()
+    {
+        var name = new MultiLanguage { De = "Weihnachten", En = "Christmas Day", Fr = "Noël", It = "Natale" };
+        name.SetValue("ja", "クリスマス");
+        name.SetValue("zh-cn", "圣诞节");
+        _holidaysListCalculator.Add(new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "12/25",
+            Name = name,
+            State = "ZH",
+            Country = "CH",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        });
+
+        _holidaysListCalculator.CurrentYear = 2026;
+        _holidaysListCalculator.ComputeHolidays();
+        var holiday = _holidaysListCalculator.GetHolidayInfo(new DateOnly(2026, 12, 25));
+
+        holiday.ShouldNotBeNull();
+        holiday!.Name.GetValue("ja").ShouldBe("クリスマス");
+        holiday.Name.GetValue("zh-CN").ShouldBe("圣诞节");
+        holiday.Name.De.ShouldBe("Weihnachten");
+    }
+
+    [Test]
+    public void ComputeHolidays_RuleWithoutName_YieldsAnEmptyName()
+    {
+        _holidaysListCalculator.Add(new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "01/01",
+            Name = null!,
+            State = "ZH",
+            Country = "CH",
+            IsMandatory = true,
+            IsPaid = true,
+            SubRule = string.Empty
+        });
+
+        _holidaysListCalculator.CurrentYear = 2026;
+        _holidaysListCalculator.ComputeHolidays();
+
+        _holidaysListCalculator.GetHolidayInfo(new DateOnly(2026, 1, 1))!.Name.IsEmpty.ShouldBeTrue();
     }
 
     [Test]
