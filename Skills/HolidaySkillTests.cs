@@ -130,6 +130,44 @@ public class HolidaySkillTests
         Assert.That(result.Message, Does.Contain("Neujahr"));
     }
 
+    [TestCase("ja", "元日")]
+    [TestCase("zh-CN", "元旦")]
+    [TestCase("de", "Neujahr")]
+    public async Task ValidateHolidayOverlap_NamesTheHolidayInTheUserLanguage(string language, string expected)
+    {
+        var rule = NewYearRule();
+        rule.Name.SetValue("ja", "元日");
+        rule.Name.SetValue("zh-cn", "元旦");
+        var skill = new ValidateHolidayOverlapSkill(_settingsRepository);
+        _settingsRepository.GetCalendarRuleList().Returns(new List<CalendarRule> { rule });
+        var parameters = new Dictionary<string, object> { ["date"] = "2026-01-01", ["country"] = "CH" };
+
+        var result = await skill.ExecuteAsync(Ctx() with { UserLanguage = language }, parameters);
+
+        Assert.That(result.Message, Does.Contain(expected));
+    }
+
+    [TestCase("ja", "元日")]
+    [TestCase("zh-CN", "元旦")]
+    public async Task ListHolidaysForPeriod_NamesTheHolidayInTheUserLanguage(string language, string expected)
+    {
+        var rule = NewYearRule();
+        rule.Name.SetValue("ja", "元日");
+        rule.Name.SetValue("zh-cn", "元旦");
+        var skill = new ListHolidaysForPeriodSkill(_settingsRepository);
+        _settingsRepository.GetCalendarRuleList().Returns(new List<CalendarRule> { rule });
+        var parameters = new Dictionary<string, object>
+        {
+            ["country"] = "CH",
+            ["fromDate"] = "2026-01-01",
+            ["untilDate"] = "2026-01-31"
+        };
+
+        var result = await skill.ExecuteAsync(Ctx() with { UserLanguage = language }, parameters);
+
+        Assert.That(System.Text.Json.JsonSerializer.Serialize(result.Data, new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), Does.Contain(expected));
+    }
+
     [Test]
     public async Task ValidateHolidayOverlap_ReturnsFalseForNormalDay()
     {
