@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
@@ -82,7 +83,8 @@ public class GoogleTtsServiceTests
         var result = await service.SynthesizeAsync("Hallo", "de-DE-Neural2-C", "de");
 
         result.ShouldBe(audio);
-        handler.LastRequest!.RequestUri!.ToString().ShouldContain("key=AIza-test-key");
+        handler.LastRequest!.RequestUri!.ToString().ShouldNotContain("AIza-test-key");
+        handler.LastRequest.Headers.GetValues(GoogleApiConstants.ApiKeyHeaderName).ShouldBe(["AIza-test-key"]);
         using var doc = JsonDocument.Parse(handler.LastRequestBody!);
         doc.RootElement.GetProperty("voice").GetProperty("name").GetString().ShouldBe("de-DE-Neural2-C");
         doc.RootElement.GetProperty("voice").GetProperty("languageCode").GetString().ShouldBe("de-DE");
