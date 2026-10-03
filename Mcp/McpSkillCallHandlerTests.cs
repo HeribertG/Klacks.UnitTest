@@ -8,6 +8,8 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Mcp;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
+using Klacks.Api.Application.Interfaces.Assistant;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 
 namespace Klacks.UnitTest.Mcp;
 
@@ -17,6 +19,7 @@ public class McpSkillCallHandlerTests
     private IMediator _mediator = null!;
     private ISkillRegistry _skillRegistry = null!;
     private IMcpSkillExposurePolicy _exposurePolicy = null!;
+    private ISkillRiskClassifier _riskClassifier = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
     private McpSkillCallHandler _sut = null!;
 
@@ -27,6 +30,8 @@ public class McpSkillCallHandlerTests
         _skillRegistry = Substitute.For<ISkillRegistry>();
         _exposurePolicy = Substitute.For<IMcpSkillExposurePolicy>();
         _exposurePolicy.IsExposed(Arg.Any<SkillDescriptor>()).Returns(true);
+        _riskClassifier = Substitute.For<ISkillRiskClassifier>();
+        _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.ReadOnly);
         _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(InternalTokenResult.Issued(new BearerToken("mcp-jwt"), new[] { Roles.Authorised }));
@@ -34,6 +39,7 @@ public class McpSkillCallHandlerTests
             _mediator,
             _skillRegistry,
             _exposurePolicy,
+            new McpReadModeToolPolicy(_riskClassifier),
             _tokenIssuer,
             Substitute.For<ILogger<McpSkillCallHandler>>());
     }

@@ -3,6 +3,8 @@
 using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Presentation.Mcp;
+using Klacks.Api.Application.Interfaces.Assistant;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 
 namespace Klacks.UnitTest.Mcp;
 

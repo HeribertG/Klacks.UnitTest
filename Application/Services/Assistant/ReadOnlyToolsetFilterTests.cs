@@ -4,11 +4,16 @@
 /// Proof that the research sub-loop toolset is hard read-only: driven by the REAL SkillRiskClassifier
 /// over descriptors whose categories/names mirror the actual seed, it asserts that concrete mutating
 /// skills (Crud, Sensitive, Reversible) are absent while genuine read-only skills survive, and that the
-/// research skill excludes itself (recursion guard).
+/// research skill excludes itself (recursion guard). The ReadOnly-classified draft writers
+/// (DraftPersistingReadOnlySkills) never reach the sub-loop on any channel, and on behalf of an MCP caller the
+/// toolset is capped to what that caller could call over MCP directly (exposure + read-mode policy); the seed-wide
+/// subset proof against the real policies lives in ReadOnlyToolsetFilterSeedTests.
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 using Klacks.Api.Application.Skills.Meta;
+using Klacks.Api.Domain.Constants;
 
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
@@ -16,13 +21,16 @@ namespace Klacks.UnitTest.Application.Services.Assistant;
 public class ReadOnlyToolsetFilterTests
 {
     private const string RunAnalysis = "run_analysis";
+    private const string ListPersonalAccessTokens = "list_personal_access_tokens";
 
     private ReadOnlyToolsetFilter _filter = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _filter = new ReadOnlyToolsetFilter(new SkillRiskClassifier());
+        var classifier = new SkillRiskClassifier();
+        _filter = new ReadOnlyToolsetFilter(
+            classifier, new McpSkillExposurePolicy(classifier), new McpReadModeToolPolicy(classifier));
     }
 
     private static SkillDescriptor Descriptor(string name, SkillCategory category) =>
@@ -50,7 +58,7 @@ public class ReadOnlyToolsetFilterTests
     [Test]
     public void Filter_KeepsGenuineReadOnlySkills()
     {
-        var result = _filter.Filter(Candidates(), RunAnalysis)
+        var result = _filter.Filter(Candidates(), RunAnalysis, externalAgentAccessMode: null)
             .Select(d => d.Name)
             .ToList();
 
@@ -61,7 +69,7 @@ public class ReadOnlyToolsetFilterTests
     [Test]
     public void Filter_ExcludesEveryMutatingSkill()
     {
-        var result = _filter.Filter(Candidates(), RunAnalysis)
+        var result = _filter.Filter(Candidates(), RunAnalysis, externalAgentAccessMode: null)
             .Select(d => d.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -78,7 +86,7 @@ public class ReadOnlyToolsetFilterTests
     [Test]
     public void Filter_ExcludesTheResearchSkillItself_RecursionGuard()
     {
-        var withGuard = _filter.Filter(Candidates(), RunAnalysis).Select(d => d.Name).ToList();
+        var withGuard = _filter.Filter(Candidates(), RunAnalysis, externalAgentAccessMode: null).Select(d => d.Name).ToList();
         withGuard.ShouldNotContain(RunAnalysis);
     }
 
@@ -86,7 +94,48 @@ public class ReadOnlyToolsetFilterTests
     public void Filter_WithoutExclusion_TreatsResearchSkillAsReadOnly()
     {
         // Proves the exclusion above is the recursion guard, not the risk class: run_analysis IS read-only.
-        var withoutGuard = _filter.Filter(Candidates(), excludeSkillName: null).Select(d => d.Name).ToList();
+        var withoutGuard = _filter.Filter(Candidates(), excludeSkillName: null, externalAgentAccessMode: null).Select(d => d.Name).ToList();
         withoutGuard.ShouldContain(RunAnalysis);
+    }
+
+    [Test]
+    public void Filter_ExcludesEveryDraftPersistingSkill_EvenInTheChat()
+    {
+        var drafts = DraftPersistingReadOnlySkills.Names
+            .Select(name => Descriptor(name, SkillCategory.Action))
+            .ToList();
+
+        var result = _filter.Filter(drafts, RunAnalysis, externalAgentAccessMode: null);
+
+        result.ShouldBeEmpty();
+    }
+
+    [TestCase(PersonalAccessTokenAccessMode.Read)]
+    [TestCase(PersonalAccessTokenAccessMode.Write)]
+    public void Filter_ForAnMcpCaller_DropsSkillsMcpDoesNotExpose(PersonalAccessTokenAccessMode accessMode)
+    {
+        var candidates = new List<SkillDescriptor>
+        {
+            Descriptor("check_absence_conflicts", SkillCategory.Query),
+            Descriptor(ListPersonalAccessTokens, SkillCategory.Query),
+            Descriptor("search_in_list", SkillCategory.UI) with { ExecutionType = LlmExecutionTypes.UiAction }
+        };
+
+        var result = _filter.Filter(candidates, RunAnalysis, accessMode).Select(d => d.Name).ToList();
+
+        result.ShouldBe(new[] { "check_absence_conflicts" });
+    }
+
+    [Test]
+    public void Filter_InTheChat_KeepsTheChatOnlyReadSkills()
+    {
+        var candidates = new List<SkillDescriptor>
+        {
+            Descriptor(ListPersonalAccessTokens, SkillCategory.Query)
+        };
+
+        var result = _filter.Filter(candidates, RunAnalysis, externalAgentAccessMode: null).Select(d => d.Name).ToList();
+
+        result.ShouldContain(ListPersonalAccessTokens);
     }
 }

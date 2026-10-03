@@ -8,11 +8,14 @@
 /// Tool results are framed by the shared ToolResultFormatter, so external content (listed by name or
 /// tainted by the bridge) is flagged untrusted, the system prompt carries the matching rule, and a run that
 /// read external content taints its research result.
-/// The LLM provider and skill bridge are mocked; the real read-only filter + risk classifier are used.
+/// On behalf of an MCP caller the advertised and executable toolset never contains a skill that caller could not
+/// call over MCP directly: no draft writer, no confirm_pending_action, no list_personal_access_tokens.
+/// The LLM provider and skill bridge are mocked; the real read-only filter, MCP policies and risk classifier are used.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant.Skills;
@@ -27,6 +30,7 @@ public class ReadOnlyResearchServiceTests
     private const string ReadOnlySkill = "check_absence_conflicts";
     private const string MutatingSkill = "create_employee";
     private const string UntrustedReadOnlySkill = "web_search";
+    private const string ListPersonalAccessTokensSkill = "list_personal_access_tokens";
     private const string CheapApiModelId = "api-cheap";
 
     private static readonly Guid CallerUserId = Guid.NewGuid();
@@ -68,7 +72,9 @@ public class ReadOnlyResearchServiceTests
     {
         _resolver = Substitute.For<ICheapestModelResolver>();
         _registry = Substitute.For<ISkillRegistry>();
-        _filter = new ReadOnlyToolsetFilter(new SkillRiskClassifier());
+        var classifier = new SkillRiskClassifier();
+        _filter = new ReadOnlyToolsetFilter(
+            classifier, new McpSkillExposurePolicy(classifier), new McpReadModeToolPolicy(classifier));
         _bridge = Substitute.For<ILLMSkillBridge>();
         _provider = Substitute.For<Providers.ILLMProvider>();
         _model = new LLMModel
@@ -269,5 +275,62 @@ public class ReadOnlyResearchServiceTests
         await _provider.Received(1).ProcessAsync(
             Arg.Is<Providers.LLMProviderRequest>(r => r.SystemPrompt.Contains("UNTRUSTED TOOL CONTENT (mandatory):")),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task McpReadCaller_ToolsetHoldsNoSkillTheCallerCouldNotCallOverMcp_AndForcedCallsAreBlocked()
+    {
+        var excluded = DraftPersistingReadOnlySkills.Names
+            .Append(AutonomyDefaults.ConfirmPendingActionSkillName)
+            .Append(ListPersonalAccessTokensSkill)
+            .ToList();
+        ArrangeCatalog(excluded);
+        var forcedCalls = excluded.Select(ToolResponse).ToArray();
+        _provider.ProcessAsync(Arg.Any<Providers.LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(forcedCalls[0], forcedCalls.Skip(1).Append(TextResponse("final")).ToArray());
+
+        await _service.ResearchAsync(
+            "analyze the month", Context() with { ExternalAgentAccessMode = PersonalAccessTokenAccessMode.Read });
+
+        await _provider.Received().ProcessAsync(
+            Arg.Is<Providers.LLMProviderRequest>(r =>
+                r.AvailableFunctions.Count == 1 && r.AvailableFunctions[0].Name == ReadOnlySkill),
+            Arg.Any<CancellationToken>());
+        await _provider.DidNotReceive().ProcessAsync(
+            Arg.Is<Providers.LLMProviderRequest>(r =>
+                r.AvailableFunctions.Any(function => excluded.Contains(function.Name))),
+            Arg.Any<CancellationToken>());
+        await _bridge.DidNotReceive().ExecuteSkillFromLLMCallAsync(
+            Arg.Is<Providers.LLMFunctionCall>(c => excluded.Contains(c.FunctionName)),
+            Arg.Any<SkillExecutionContext>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ChatCaller_ToolsetHoldsNoDraftWriter_ButKeepsChatOnlyReads()
+    {
+        ArrangeCatalog(DraftPersistingReadOnlySkills.Names.Append(ListPersonalAccessTokensSkill).ToList());
+        _provider.ProcessAsync(Arg.Any<Providers.LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(TextResponse("SYNTH"));
+
+        await _service.ResearchAsync("analyze the month", Context());
+
+        await _provider.Received(1).ProcessAsync(
+            Arg.Is<Providers.LLMProviderRequest>(r =>
+                r.AvailableFunctions.Select(function => function.Name)
+                    .OrderBy(name => name)
+                    .SequenceEqual(new[] { ListPersonalAccessTokensSkill, ReadOnlySkill }.OrderBy(name => name))),
+            Arg.Any<CancellationToken>());
+    }
+
+    private void ArrangeCatalog(IReadOnlyList<string> extraQueryLikeSkills)
+    {
+        var descriptors = extraQueryLikeSkills
+            .Select(name => Descriptor(name, SkillCategory.Query))
+            .Append(Descriptor(ReadOnlySkill, SkillCategory.Query))
+            .ToList();
+        _registry.GetSkillsForUser(Arg.Any<IReadOnlyList<string>>()).Returns(descriptors);
+        _bridge.GetSkillsAsLLMFunctions(Arg.Any<IReadOnlyList<string>>())
+            .Returns(descriptors.Select(descriptor => new LLMFunction { Name = descriptor.Name }).ToList());
     }
 }

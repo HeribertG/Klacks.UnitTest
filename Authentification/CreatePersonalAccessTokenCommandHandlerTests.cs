@@ -48,6 +48,41 @@ public class CreatePersonalAccessTokenCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_WithoutAccessMode_CreatesReadToken()
+    {
+        var result = await _handler.Handle(new CreatePersonalAccessTokenCommand(TestUserId, TestTokenName, null), CancellationToken.None);
+
+        _captured.ShouldNotBeNull();
+        _captured!.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Read);
+        result.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Read);
+    }
+
+    [Test]
+    public async Task Handle_WithWriteAccessMode_CreatesWriteToken()
+    {
+        var result = await _handler.Handle(
+            new CreatePersonalAccessTokenCommand(TestUserId, TestTokenName, null, PersonalAccessTokenAccessMode.Write),
+            CancellationToken.None);
+
+        _captured.ShouldNotBeNull();
+        _captured!.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Write);
+        result.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Write);
+    }
+
+    [Test]
+    public async Task Handle_UndefinedAccessMode_ThrowsAndPersistsNothing()
+    {
+        const int undefinedAccessModeValue = 42;
+
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(
+                new CreatePersonalAccessTokenCommand(TestUserId, TestTokenName, null, (PersonalAccessTokenAccessMode)undefinedAccessModeValue),
+                CancellationToken.None));
+
+        _captured.ShouldBeNull();
+    }
+
+    [Test]
     public async Task Handle_WithCustomExpiry_UsesGivenDays()
     {
         var before = DateTime.UtcNow;

@@ -22,6 +22,8 @@ using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Mcp;
+using Klacks.Api.Application.Interfaces.Assistant;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -62,7 +64,8 @@ public class TokenCreationSkillSecretLeakTests
                 "Claude Desktop",
                 PatConstants.TokenPrefix + "MUTATION",
                 DateTime.UtcNow.AddDays(365),
-                PatSentinel));
+                PatSentinel,
+                PersonalAccessTokenAccessMode.Read));
 
         return mediator;
     }

@@ -131,7 +131,7 @@ public class ProfileSelfServiceSkillTests
             .Returns(new List<PersonalAccessTokenListItemDto>
             {
                 new(Guid.NewGuid(), "Claude Desktop", "pat_ab12",
-                    new DateTime(2026, 6, 1), new DateTime(2027, 6, 1), null)
+                    new DateTime(2026, 6, 1), new DateTime(2027, 6, 1), null, PersonalAccessTokenAccessMode.Read)
             });
 
         var skill = new ListPersonalAccessTokensSkill(_mediator);
@@ -167,7 +167,8 @@ public class ProfileSelfServiceSkillTests
     {
         var tokenId = Guid.NewGuid();
         var token = new PersonalAccessTokenListItemDto(
-            tokenId, "Claude Desktop", "pat_ab12", new DateTime(2026, 6, 1), new DateTime(2027, 6, 1), null);
+            tokenId, "Claude Desktop", "pat_ab12", new DateTime(2026, 6, 1), new DateTime(2027, 6, 1), null,
+            PersonalAccessTokenAccessMode.Read);
         _mediator.Send(Arg.Any<GetPersonalAccessTokensQuery>(), Arg.Any<CancellationToken>())
             .Returns(
                 new List<PersonalAccessTokenListItemDto> { token },
@@ -193,7 +194,8 @@ public class ProfileSelfServiceSkillTests
     {
         var tokenId = Guid.NewGuid();
         var token = new PersonalAccessTokenListItemDto(
-            tokenId, "Claude Desktop", "pat_ab12", new DateTime(2026, 6, 1), new DateTime(2027, 6, 1), null);
+            tokenId, "Claude Desktop", "pat_ab12", new DateTime(2026, 6, 1), new DateTime(2027, 6, 1), null,
+            PersonalAccessTokenAccessMode.Read);
         _mediator.Send(Arg.Any<GetPersonalAccessTokensQuery>(), Arg.Any<CancellationToken>())
             .Returns(
                 new List<PersonalAccessTokenListItemDto> { token },

@@ -168,6 +168,7 @@ public class ExchangeOAuthTokenCommandHandlerTests
         _capturedToken.ExpiresAt!.Value.ShouldBeInRange(
             before.AddDays(OAuthConstants.AccessTokenExpiresInDays),
             after.AddDays(OAuthConstants.AccessTokenExpiresInDays));
+        _capturedToken.AccessMode.ShouldBe(PersonalAccessTokenAccessMode.Write);
     }
 
     private static OAuthClient Client(string clientId)

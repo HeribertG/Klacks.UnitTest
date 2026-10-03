@@ -128,6 +128,22 @@ public class PatAuthenticationHandlerTests
         result.Ticket.AuthenticationScheme.ShouldBe(PatConstants.SchemeName);
     }
 
+    [TestCase(PersonalAccessTokenAccessMode.Read)]
+    [TestCase(PersonalAccessTokenAccessMode.Write)]
+    public async Task AuthenticateAsync_ValidPatToken_CarriesTokenIdAndAccessModeClaims(PersonalAccessTokenAccessMode accessMode)
+    {
+        var (plaintext, token) = SetupStoredToken(DateTime.UtcNow.AddDays(1), null);
+        token.AccessMode = accessMode;
+        SetupUser();
+
+        var result = await AuthenticateAsync(BearerPrefix + plaintext);
+
+        result.Succeeded.ShouldBeTrue();
+        var principal = result.Ticket!.Principal;
+        principal.FindFirst(PatConstants.TokenIdClaimType)!.Value.ShouldBe(token.Id.ToString());
+        principal.FindFirst(PatConstants.AccessModeClaimType)!.Value.ShouldBe(accessMode.ToString());
+    }
+
     [Test]
     public async Task AuthenticateAsync_TokenWithoutExpiry_Succeeds()
     {

@@ -45,4 +45,27 @@ public static class McpTestData
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
     }
+
+    public static ClaimsPrincipal PatPrincipal(
+        Guid userId,
+        Guid tenantId,
+        PersonalAccessTokenAccessMode? accessMode,
+        params string[] roles)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(TenantIdClaimType, tenantId.ToString()),
+            new(ClaimTypes.Name, "pat-user"),
+            new(PatConstants.TokenIdClaimType, Guid.NewGuid().ToString())
+        };
+        if (accessMode.HasValue)
+        {
+            claims.Add(new Claim(PatConstants.AccessModeClaimType, accessMode.Value.ToString()));
+        }
+
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, PatConstants.SchemeName));
+    }
 }
