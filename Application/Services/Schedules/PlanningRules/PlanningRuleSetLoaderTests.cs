@@ -117,6 +117,20 @@ public class PlanningRuleSetLoaderTests
     }
 
     [Test]
+    public async Task InvalidHardConstraint_ReportMode_IsListed_AndTheValidRulesStillLoad()
+    {
+        var invalid = Constraint(PlanningConstraintKind.MaxConsecutiveOfKind, PlanningConstraintScopeType.Global, null, """{"schemaVersion":9}""");
+        var valid = Constraint(PlanningConstraintKind.MaxConsecutiveOfKind, PlanningConstraintScopeType.Global, null, MaxRunJson);
+        _constraints.GetApprovedForPeriodAsync(From, Until, null, Arg.Any<CancellationToken>()).Returns([invalid, valid]);
+
+        var set = await _loader.LoadRuleSetAsync(
+            [_agentA], From, Until, null, 0, PlanningRuleSources.PlanningConstraints, InvalidHardRuleHandling.Report);
+
+        set.Rules.ShouldHaveSingleItem().RuleId.ShouldBe(valid.Id);
+        set.InvalidHardRuleIds.ShouldNotBeNull().ShouldBe([invalid.Id]);
+    }
+
+    [Test]
     public async Task GlobalCounterRule_HasNullScope_AndGlobalModeSeverity()
     {
         _enforcement.GetModeAsync(ComplianceRuleNames.CounterRule).Returns(RuleEnforcementMode.Block);

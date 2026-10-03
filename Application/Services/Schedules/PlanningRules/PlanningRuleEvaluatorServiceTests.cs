@@ -36,6 +36,7 @@ public class PlanningRuleEvaluatorServiceTests
     private IPlanningRuleDataReader _reader = null!;
     private List<PlanningRuleWorkSpan> _works = null!;
     private List<PlanRule> _rules = null!;
+    private List<Guid> _invalidRuleIds = null!;
     private PlanningRuleEvaluatorService _sut = null!;
 
     [SetUp]
@@ -43,16 +44,18 @@ public class PlanningRuleEvaluatorServiceTests
     {
         _works = [];
         _rules = [];
+        _invalidRuleIds = [];
         _loader = Substitute.For<IPlanningRuleSetLoader>();
         _loader
             .LoadRuleSetAsync(
                 Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(),
-                Arg.Any<int>(), Arg.Any<PlanningRuleSources>(), Arg.Any<CancellationToken>())
+                Arg.Any<int>(), Arg.Any<PlanningRuleSources>(), Arg.Any<InvalidHardRuleHandling>(), Arg.Any<CancellationToken>())
             .Returns(call => new PlanningRuleSet(
                 _rules,
                 call.ArgAt<IReadOnlyCollection<Guid>>(0).Distinct().Select(id => new RuleAgent(id.ToString(), NightWindow, 100m)).ToList(),
                 [],
-                []));
+                [],
+                _invalidRuleIds));
         _reader = Substitute.For<IPlanningRuleDataReader>();
         _reader
             .GetWorkSpansAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
@@ -73,7 +76,7 @@ public class PlanningRuleEvaluatorServiceTests
 
         await _loader.Received(1).LoadRuleSetAsync(
             Arg.Any<IReadOnlyCollection<Guid>>(), Monday, Monday.AddDays(6), null,
-            Arg.Any<int>(), PlanningRuleSources.PlanningConstraints, Arg.Any<CancellationToken>());
+            Arg.Any<int>(), PlanningRuleSources.PlanningConstraints, InvalidHardRuleHandling.Report, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -227,6 +230,47 @@ public class PlanningRuleEvaluatorServiceTests
 
         (await _sut.EvaluatePlannedChangeAsync([Night(_clientA, Monday)], [], null)).ShouldBeEmpty();
         await _reader.DidNotReceiveWithAnyArgs().GetWorkSpansAsync(default!, default, default, default, default);
+    }
+
+    [Test]
+    public async Task EvaluateRangeAsync_InvalidHardRule_IsAnErrorFinding_NextToTheValidRules()
+    {
+        var invalidId = Guid.NewGuid();
+        _invalidRuleIds.Add(invalidId);
+        _rules.Add(new MaxConsecutiveOfKindRule(Guid.NewGuid(), RuleSeverity.Hard, 1d, RuleShiftKind.Night, 2));
+        SeedNights(_clientA, Monday, 3);
+
+        var entries = await _sut.EvaluateRangeAsync([_clientA], Monday, Monday.AddDays(6), null, new Dictionary<Guid, string>());
+
+        var invalid = entries.Single(e => e.Comment == ScheduleValidationKeys.PlanningRuleInvalid);
+        invalid.Type.ShouldBe(ScheduleValidationType.Error);
+        invalid.CommentParams[PlanningRuleNotificationMapper.RuleIdParam].ShouldBe(invalidId.ToString());
+        entries.ShouldContain(e => e.Comment == ScheduleValidationKeys.PlanningRule);
+    }
+
+    [Test]
+    public async Task EvaluateRangeAsync_OnlyAnInvalidHardRule_StillReportsIt()
+    {
+        _invalidRuleIds.Add(Guid.NewGuid());
+
+        (await _sut.EvaluateRangeAsync([_clientA], Monday, Monday.AddDays(6), null, new Dictionary<Guid, string>()))
+            .ShouldHaveSingleItem().Comment.ShouldBe(ScheduleValidationKeys.PlanningRuleInvalid);
+    }
+
+    [Test]
+    public async Task EvaluatePlannedChangeAsync_InvalidPlusValidHardRule_BlocksOnlyTheViolatingWrite()
+    {
+        _invalidRuleIds.Add(Guid.NewGuid());
+        _rules.Add(new MaxConsecutiveOfKindRule(Guid.NewGuid(), RuleSeverity.Hard, 1d, RuleShiftKind.Night, 2));
+        SeedNights(_clientA, Monday, 2);
+
+        var violating = await _sut.EvaluatePlannedChangeAsync([Night(_clientA, Monday.AddDays(2))], [], null);
+        var unrelated = await _sut.EvaluatePlannedChangeAsync([Early(_clientA, Monday.AddDays(5))], [], null);
+
+        violating.ShouldContain(e => e.Comment == ScheduleValidationKeys.PlanningRule && e.Type == ScheduleValidationType.Error);
+        violating.ShouldContain(e => e.Comment == ScheduleValidationKeys.PlanningRuleInvalid && e.Type == ScheduleValidationType.Warning);
+        unrelated.ShouldHaveSingleItem().Comment.ShouldBe(ScheduleValidationKeys.PlanningRuleInvalid);
+        unrelated.ShouldNotContain(e => e.Type == ScheduleValidationType.Error);
     }
 
     private void SeedNights(Guid clientId, DateOnly first, int count)

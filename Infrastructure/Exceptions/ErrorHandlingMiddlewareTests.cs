@@ -55,6 +55,16 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task PlanningRuleConfigurationException_Becomes422WithErrorCode_NeverA500()
+    {
+        var response = await Invoke(new PlanningRuleConfigurationException(Guid.NewGuid(), "bad json"));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status422UnprocessableEntity);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe(PlanningRuleConfigurationException.ErrorCode);
+    }
+
+    [Test]
     public async Task UnauthorizedException_StaysA401()
     {
         var response = await Invoke(new UnauthorizedException("no session"));
