@@ -58,6 +58,36 @@ public class ReadScheduleStateSkillTests
         return svc;
     }
 
+    private static IClientVisibilityGuard ClientsVisibleExcept(params Guid[] hiddenClientIds)
+    {
+        var hidden = hiddenClientIds.ToHashSet();
+        var guard = Substitute.For<IClientVisibilityGuard>();
+        guard.FilterVisibleAsync(
+                Arg.Any<IReadOnlyCollection<ScheduleCell>>(), Arg.Any<Func<ScheduleCell, Guid>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(ci.Arg<IReadOnlyCollection<ScheduleCell>>()
+                .Where(c => !hidden.Contains(ci.Arg<Func<ScheduleCell, Guid>>()(c)))
+                .ToList()));
+        return guard;
+    }
+
+    private static IGroupVisibilityGuard GroupHidden(Guid hiddenGroupId)
+    {
+        var guard = Substitute.For<IGroupVisibilityGuard>();
+        guard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(ci.Arg<Guid>() != hiddenGroupId));
+        return guard;
+    }
+
+    private static ReadScheduleStateSkill NewSkill(
+        IScheduleEntriesService service,
+        IGroupVisibilityGuard? groupVisibilityGuard = null,
+        IClientVisibilityGuard? clientVisibilityGuard = null)
+        => new(
+            service,
+            groupVisibilityGuard ?? TestGroupWriteVisibility.UnrestrictedGroups(),
+            clientVisibilityGuard ?? ClientsVisibleExcept());
+
     private static Dictionary<string, object> Params(string? analyseToken = null)
     {
         var p = new Dictionary<string, object>
@@ -85,7 +115,7 @@ public class ReadScheduleStateSkillTests
             Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2), clientId: clientA),
             Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Break, new DateTime(2026, 3, 3), clientId: clientA)
         };
-        var skill = new ReadScheduleStateSkill(ServiceReturning(cells));
+        var skill = NewSkill(ServiceReturning(cells));
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
@@ -105,7 +135,7 @@ public class ReadScheduleStateSkillTests
         cell.SourceId = Guid.NewGuid();
         cell.ChangeTime = 1.5m;
         cell.Description = "Correction Tuesday";
-        var skill = new ReadScheduleStateSkill(ServiceReturning(new List<ScheduleCell> { cell }));
+        var skill = NewSkill(ServiceReturning(new List<ScheduleCell> { cell }));
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
@@ -120,7 +150,7 @@ public class ReadScheduleStateSkillTests
     public async Task NonWorkChangeEntry_CarriesIdButNoParentWorkId()
     {
         var cell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2));
-        var skill = new ReadScheduleStateSkill(ServiceReturning(new List<ScheduleCell> { cell }));
+        var skill = NewSkill(ServiceReturning(new List<ScheduleCell> { cell }));
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
@@ -137,7 +167,7 @@ public class ReadScheduleStateSkillTests
             Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2),
                 lockLevel: (int)Klacks.Api.Domain.Enums.WorkLockLevel.Confirmed, groupRestricted: true)
         };
-        var skill = new ReadScheduleStateSkill(ServiceReturning(cells));
+        var skill = NewSkill(ServiceReturning(cells));
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
@@ -154,7 +184,7 @@ public class ReadScheduleStateSkillTests
     {
         var token = Guid.NewGuid();
         var svc = ServiceReturning(new List<ScheduleCell>());
-        var skill = new ReadScheduleStateSkill(svc);
+        var skill = NewSkill(svc);
 
         var result = await skill.ExecuteAsync(Ctx(), Params(token.ToString()));
 
@@ -168,7 +198,7 @@ public class ReadScheduleStateSkillTests
     public async Task RealMode_PassesNullTokenToService()
     {
         var svc = ServiceReturning(new List<ScheduleCell>());
-        var skill = new ReadScheduleStateSkill(svc);
+        var skill = NewSkill(svc);
 
         await skill.ExecuteAsync(Ctx(), Params());
 
@@ -179,7 +209,7 @@ public class ReadScheduleStateSkillTests
     [Test]
     public async Task InvalidFromDate_ReturnsError()
     {
-        var skill = new ReadScheduleStateSkill(ServiceReturning(new List<ScheduleCell>()));
+        var skill = NewSkill(ServiceReturning(new List<ScheduleCell>()));
         var p = Params();
         p["fromDate"] = "not-a-date";
 
@@ -192,7 +222,7 @@ public class ReadScheduleStateSkillTests
     [Test]
     public async Task UntilBeforeFrom_ReturnsError()
     {
-        var skill = new ReadScheduleStateSkill(ServiceReturning(new List<ScheduleCell>()));
+        var skill = NewSkill(ServiceReturning(new List<ScheduleCell>()));
         var p = Params();
         p["untilDate"] = "2026-03-01";
 
@@ -204,7 +234,7 @@ public class ReadScheduleStateSkillTests
     [Test]
     public async Task InvalidAnalyseToken_ReturnsError()
     {
-        var skill = new ReadScheduleStateSkill(ServiceReturning(new List<ScheduleCell>()));
+        var skill = NewSkill(ServiceReturning(new List<ScheduleCell>()));
 
         var result = await skill.ExecuteAsync(Ctx(), Params("not-a-guid"));
 
@@ -218,12 +248,51 @@ public class ReadScheduleStateSkillTests
         var cells = Enumerable.Range(0, MaxEntries + 5)
             .Select(_ => Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2)))
             .ToList();
-        var skill = new ReadScheduleStateSkill(ServiceReturning(cells));
+        var skill = NewSkill(ServiceReturning(cells));
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
         var data = DataAsJson(result);
         data.GetProperty("Truncated").GetBoolean().ShouldBeTrue();
         data.GetProperty("EntryCount").GetInt32().ShouldBe(MaxEntries);
+    }
+
+    [Test]
+    public async Task HiddenGroup_IsAnsweredLikeAMissingGroup_PlanIsNotRead()
+    {
+        var svc = ServiceReturning(new List<ScheduleCell>
+        {
+            Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2))
+        });
+        var skill = NewSkill(svc, GroupHidden(GroupId));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Group with ID {GroupId} not found.");
+        result.Data.ShouldBeNull();
+        svc.DidNotReceiveWithAnyArgs().GetScheduleEntriesQuery(default, default, default, default);
+    }
+
+    [Test]
+    public async Task EntriesOfHiddenClients_AreLeftOut()
+    {
+        var visibleClient = Guid.NewGuid();
+        var hiddenClient = Guid.NewGuid();
+        var visibleCell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2),
+            clientId: visibleClient);
+        var hiddenCell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 3),
+            clientId: hiddenClient);
+        var skill = NewSkill(
+            ServiceReturning(new List<ScheduleCell> { visibleCell, hiddenCell }),
+            clientVisibilityGuard: ClientsVisibleExcept(hiddenClient));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue();
+        var data = DataAsJson(result);
+        data.GetProperty("EntryCount").GetInt32().ShouldBe(1);
+        data.GetProperty("DistinctEmployees").GetInt32().ShouldBe(1);
+        data.GetProperty("Entries")[0].GetProperty("Id").GetGuid().ShouldBe(visibleCell.Id);
     }
 }
