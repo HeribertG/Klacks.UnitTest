@@ -43,9 +43,13 @@ public sealed class HolisticHarmonizerRunServiceOutcomeTests
         settingsReader
             .GetSetting(Arg.Any<string>())
             .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Type = "x", Value = ModelId });
+        settingsReader
+            .GetSetting(Klacks.Api.Application.Constants.Settings.HOLISTIC_HARMONIZER_MODE)
+            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Type = "x", Value = HolisticHarmonizerModes.Llm });
 
         return new HolisticHarmonizerRunService(
             engine,
+            new HolisticHarmonizerDeterministicEngine(contextBuilder, NullLogger<HolisticHarmonizerDeterministicEngine>.Instance),
             resultCache,
             settingsReader,
             Substitute.For<IScheduleSnapshotMarkerService>(),

@@ -11,9 +11,10 @@ using SettingsEntity = Klacks.Api.Domain.Models.Settings.Settings;
 namespace Klacks.UnitTest.Application.Services.Schedules.HolisticHarmonizer;
 
 /// <summary>
-/// The AutoWizard chain asks this check before and after its third stage. A missing model or a model that
-/// already failed the image round-trip must say "not ready" so the chain completes with the Harmonizer
-/// result instead of failing; an unmeasured model must say "ready" because the run measures it itself.
+/// The AutoWizard chain asks this check before and after its third stage. In the default deterministic mode
+/// stage 3 needs no model and is always ready. In LLM mode a missing model or a model that already failed the
+/// image round-trip must say "not ready" so the chain completes with the Harmonizer result instead of failing;
+/// an unmeasured model must say "ready" because the run measures it itself.
 /// </summary>
 [TestFixture]
 public sealed class HolisticHarmonizerReadinessCheckTests
@@ -30,6 +31,47 @@ public sealed class HolisticHarmonizerReadinessCheckTests
         _settingsReader = Substitute.For<ISettingsReader>();
         _capabilityCache = new HolisticHarmonizerModelCapabilityCache();
         _sut = new HolisticHarmonizerReadinessCheck(_settingsReader, _capabilityCache);
+        ConfigureMode(HolisticHarmonizerModes.Llm);
+    }
+
+    private void ConfigureMode(string? mode)
+    {
+        _settingsReader.GetSetting(SettingKeys.HOLISTIC_HARMONIZER_MODE)
+            .Returns(mode == null ? null : new SettingsEntity { Type = SettingKeys.HOLISTIC_HARMONIZER_MODE, Value = mode });
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase(HolisticHarmonizerModes.Deterministic)]
+    [TestCase("unknown-mode")]
+    public async Task DeterministicMode_WithoutModel_IsReady(string? mode)
+    {
+        ConfigureMode(mode);
+        ConfigureModel(null);
+
+        var readiness = await _sut.CheckAsync();
+
+        readiness.IsReady.ShouldBeTrue();
+        readiness.Reason.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task DeterministicMode_IgnoresTextOnlyVerdictOfConfiguredModel()
+    {
+        ConfigureMode(HolisticHarmonizerModes.Deterministic);
+        ConfigureModel(ModelId);
+        _capabilityCache.Store(ModelId, isVisionCapable: false, error: "answered without reading the image");
+
+        (await _sut.CheckAsync()).IsReady.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task LlmModeIsCaseInsensitive()
+    {
+        ConfigureMode("LLM");
+        ConfigureModel(null);
+
+        (await _sut.CheckAsync()).IsReady.ShouldBeFalse();
     }
 
     private void ConfigureModel(string? modelId)

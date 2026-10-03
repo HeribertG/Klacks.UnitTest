@@ -27,7 +27,16 @@ public enum Stage3TargetMode
     Prorated,
 }
 
-public sealed record Stage3Scenario(string Name, DateOnly From, DateOnly Until, decimal MonthlyGuaranteedHours);
+/// <param name="Orders">Parallel orders (3 shifts per day each); null keeps the order-less spec triple.</param>
+/// <param name="DayShiftPerOrder">Adds the fourth (day) slot per order; requires <paramref name="Orders"/>.</param>
+public sealed record Stage3Scenario(
+    string Name,
+    DateOnly From,
+    DateOnly Until,
+    decimal MonthlyGuaranteedHours,
+    int EmployeeCount = AutofillSpecConstants.EmployeeCount,
+    int? Orders = null,
+    bool DayShiftPerOrder = false);
 
 public sealed record Stage3StageOutput(
     BitmapInput Stage1Input,
@@ -52,13 +61,34 @@ public static class Stage3BenchmarkPipeline
     public static readonly Stage3Scenario WeekCalibration = new("week-5x7-150h", WeekFrom, WeekUntil, CalibrationGuaranteedHours);
     public static readonly Stage3Scenario MonthCalibration = new("month-5x31-150h", AutofillSpecConstants.PeriodFrom, AutofillSpecConstants.PeriodUntil, CalibrationGuaranteedHours);
 
+    private const int LiveSizeEmployees = 16;
+    private const int LargeEmployees = 30;
+    private const int MaxOrders = AutofillShiftCatalog.MaxOrderCount;
+    private const decimal LiveSizeGuaranteedHours = 160m;
+    private static readonly DateOnly LiveSizeFrom = new(2026, 3, 2);
+    private static readonly DateOnly LiveSizeUntil = new(2026, 4, 7);
+
+    /// <summary>Live size of the 2026-05 Haiku runs: 16 employees x 37 days, 3 orders x 4 slots = 12 shifts per day.</summary>
+    public static readonly Stage3Scenario LiveSize = new("live-16x37-160h", LiveSizeFrom, LiveSizeUntil, LiveSizeGuaranteedHours, LiveSizeEmployees, MaxOrders, DayShiftPerOrder: true);
+
+    /// <summary>30 employees x 31 days with the same 12 shifts per day (the catalog caps orders at 3), so rows are lightly loaded.</summary>
+    public static readonly Stage3Scenario Large = new("large-30x31-160h", AutofillSpecConstants.PeriodFrom, AutofillSpecConstants.PeriodUntil, LiveSizeGuaranteedHours, LargeEmployees, MaxOrders, DayShiftPerOrder: true);
+
     public static Stage3StageOutput RunStages(Stage3Scenario scenario, int seed, Stage3TargetMode mode)
     {
-        var definition = new AutofillScenarioBuilder()
+        var builder = new AutofillScenarioBuilder()
             .WithPeriod(scenario.From, scenario.Until)
-            .WithEmployees(AutofillSpecConstants.EmployeeCount, (double)scenario.MonthlyGuaranteedHours)
-            .WithRandomSeed(seed)
-            .Build();
+            .WithEmployees(scenario.EmployeeCount, (double)scenario.MonthlyGuaranteedHours)
+            .WithRandomSeed(seed);
+        if (scenario.Orders is { } orders)
+        {
+            builder = builder.WithOrders(orders);
+            if (scenario.DayShiftPerOrder)
+            {
+                builder = builder.WithDayShiftPerOrder();
+            }
+        }
+        var definition = builder.Build();
 
         var stage1Watch = System.Diagnostics.Stopwatch.StartNew();
         var plan = TokenEvolutionLoop.Create().Run(definition.Context, definition.Config);

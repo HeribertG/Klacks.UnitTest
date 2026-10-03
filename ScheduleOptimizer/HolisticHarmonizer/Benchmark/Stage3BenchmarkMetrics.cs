@@ -85,6 +85,22 @@ public static class Stage3BenchmarkMetrics
             workCells);
     }
 
+    /// <summary>Whole-plan recount of the hard rules (consecutive days, pause, weekly hours, weekly rest days).</summary>
+    public static int CountHardViolations(HarmonyBitmap bitmap)
+    {
+        var total = 0;
+        for (var r = 0; r < bitmap.RowCount; r++)
+        {
+            var agent = bitmap.Rows[r];
+            var (weekly, rest) = CountWeeklyViolations(bitmap, r, agent);
+            total += CountConsecutiveViolations(bitmap, r, agent.MaxConsecutiveDays)
+                + CountPauseViolations(bitmap, r, agent.MinPauseHours)
+                + weekly
+                + rest;
+        }
+        return total;
+    }
+
     private static int CountConsecutiveViolations(HarmonyBitmap bitmap, int row, int cap)
     {
         if (cap <= 0)
