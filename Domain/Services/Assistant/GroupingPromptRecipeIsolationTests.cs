@@ -27,6 +27,7 @@ public class GroupingPromptRecipeIsolationTests
 
     private static readonly string[] SemanticCandidateRecipes =
     [
+        "onboard-employee",
         "add-employee-to-group",
         "bulk-add-employees-to-group",
         "create-group",
