@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Diagnostics;
+using System.Reflection;
 using Klacks.ScheduleOptimizer.Constraints.Rules;
 using static Klacks.UnitTest.ScheduleOptimizer.Constraints.Rules.RuleTestFactory;
 
@@ -10,7 +11,8 @@ namespace Klacks.UnitTest.ScheduleOptimizer.Constraints.Rules;
 /// Etappe-1 performance gate: 16 agents x 37 days with 5 rules, plan-wide Evaluate below 1 ms and the
 /// slot-incremental WouldViolate below 20 microseconds. Each sample times a batch of calls after a warm-up
 /// and the median over several samples is asserted, which keeps single scheduler hiccups on a busy CI
-/// runner from failing the gate.
+/// runner from failing the gate. The hard budget is enforced only when the evaluator assembly is JIT-optimized
+/// (Release); a Debug build - as the deploy workflow runs it - only logs and warns.
 /// </summary>
 [TestFixture]
 [Category("Performance")]
@@ -52,10 +54,25 @@ public class PlanRuleEvaluatorPerformanceTests
             }
         }, IncrementalCallsPerSample);
 
-        TestContext.Out.WriteLine($"Evaluate median: {planWide:F2} us/call; WouldViolate median: {incremental:F3} us/call");
+        var optimized = IsJitOptimized();
+        TestContext.Out.WriteLine(
+            $"Evaluate median: {planWide:F2} us/call; WouldViolate median: {incremental:F3} us/call; JIT optimized: {optimized}");
+        if (!optimized)
+        {
+            if (planWide >= PlanWideBudgetMicroseconds || incremental >= IncrementalBudgetMicroseconds)
+            {
+                Assert.Warn($"Debug build over budget (Evaluate {planWide:F2} us, WouldViolate {incremental:F3} us); the gate is only enforced on optimized builds.");
+            }
+
+            return;
+        }
+
         planWide.ShouldBeLessThan(PlanWideBudgetMicroseconds);
         incremental.ShouldBeLessThan(IncrementalBudgetMicroseconds);
     }
+
+    private static bool IsJitOptimized()
+        => typeof(PlanRuleEvaluator).Assembly.GetCustomAttribute<DebuggableAttribute>()?.IsJITOptimizerDisabled != true;
 
     private static double Median(Action batch, int callsPerBatch)
     {

@@ -45,6 +45,44 @@ public class PlanRuleEvaluatorContractTests
     }
 
     [Test]
+    public void EmptyRuleSet_RandomPlansAndCandidates_AlwaysEmptyAndNeverVetoes()
+    {
+        var random = new Random(RandomSeed);
+        for (var round = 0; round < 50; round++)
+        {
+            var agents = Enumerable.Range(0, 1 + random.Next(AgentCount)).Select(i => Agent($"agent-{i}")).ToList();
+            var from = Monday.AddDays(random.Next(400));
+            var dayCount = 1 + random.Next(DayCount);
+            var boundary = agents.Select(a => RandomShift(random, a.Id, from.AddDays(-1 - random.Next(10)))).ToList();
+            var context = new RuleEvaluationContext(from, from.AddDays(dayCount - 1), agents, boundary);
+            var plan = new RulePlan(context);
+            foreach (var agent in agents)
+            {
+                for (var day = 0; day < dayCount; day++)
+                {
+                    if (random.NextDouble() < 0.7)
+                    {
+                        plan.TryAdd(RandomShift(random, agent.Id, from.AddDays(day)));
+                    }
+                }
+            }
+
+            var evaluator = PlanRuleEvaluatorFactory.Create([], context);
+            var result = evaluator.Evaluate(plan);
+
+            result.ShouldBeSameAs(RuleEvaluation.Empty);
+            result.HardCount.ShouldBe(0);
+            result.SoftPenalty.ShouldBe(0d);
+            for (var probe = 0; probe < 20; probe++)
+            {
+                var agentIndex = random.Next(agents.Count);
+                var candidate = Candidate(plan, RandomShift(random, agents[agentIndex].Id, from.AddDays(random.Next(dayCount))));
+                evaluator.WouldViolate(plan, agentIndex, random.Next(dayCount), candidate).ShouldBeFalse();
+            }
+        }
+    }
+
+    [Test]
     public void EmptyRuleSet_EvaluateAndWouldViolate_DoNotAllocate()
     {
         var context = Context(Monday, Monday.AddDays(6));
