@@ -256,6 +256,47 @@ public class SequenceRuleTests
         WouldViolate(evaluator, plan, Early(AgentA, From.AddDays(4))).ShouldBeFalse();
     }
 
+    [Test]
+    public void RestAfterKind_ViolationEntirelyBeforePeriod_IsNotReportedOnEmptyPlan()
+    {
+        var context = Context(From, Until, null, Night(AgentA, From.AddDays(-2)), Early(AgentA, From.AddDays(-1)));
+        var plan = new RulePlan(context);
+        var evaluator = Evaluator(context, RestAfterNights(2));
+
+        var result = evaluator.Evaluate(plan);
+
+        result.Findings.ShouldBeEmpty();
+        result.HardCount.ShouldBe(0);
+        WouldViolate(evaluator, plan, Early(AgentA, From.AddDays(2))).ShouldBeFalse();
+        evaluator.WouldViolate(plan, 0, 0, RuleDay.Free).ShouldBeFalse();
+    }
+
+    [Test]
+    public void RestAfterKind_BlockEndedBeforePeriod_StillReportsWorkInsidePeriod()
+    {
+        var context = Context(From, Until, null, Night(AgentA, From.AddDays(-2)), Early(AgentA, From.AddDays(-1)));
+        var plan = Plan(context, Early(AgentA, From));
+        var evaluator = Evaluator(context, RestAfterNights(2));
+
+        var finding = evaluator.Evaluate(plan).Findings.ShouldHaveSingleItem();
+
+        finding.Date.ShouldBe(From.AddDays(-2));
+        finding.Observed.ShouldBe(1m);
+        evaluator.WouldViolate(plan, 0, 0, Candidate(plan, Early(AgentA, From))).ShouldBeTrue();
+        evaluator.WouldViolate(plan, 0, 0, RuleDay.Free).ShouldBeFalse();
+    }
+
+    [Test]
+    public void SequenceRules_BoundaryOnlyViolationsOutsidePeriod_AreNotReportedOnEmptyPlan()
+    {
+        var context = Context(From, Until, null, Night(AgentA, From.AddDays(-3)), Early(AgentA, From.AddDays(-2)), Night(AgentA, Until.AddDays(2)), Early(AgentA, Until.AddDays(3)));
+        var plan = new RulePlan(context);
+
+        var result = Evaluator(context, MaxNights(0), NightToEarly(3), RestAfterNights(3)).Evaluate(plan);
+
+        result.Findings.ShouldBeEmpty();
+    }
+
     private static MaxConsecutiveOfKindRule MaxNights(int maxRun)
         => new(Guid.NewGuid(), RuleSeverity.Hard, 1, RuleShiftKind.Night, maxRun);
 

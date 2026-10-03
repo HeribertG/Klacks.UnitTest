@@ -18,6 +18,10 @@ public class PlanRuleEvaluatorContractTests
     private const int Placements = 4000;
     private const int AgentCount = 6;
     private const int DayCount = 37;
+    private const int BoundaryDays = 4;
+    private const int MaxBoundaryNightsPerAgent = 1;
+    private const int NightShiftType = 2;
+    private const int PlantedNightOffset = 2;
 
     [Test]
     public void EmptyRuleSet_ReturnsNoOpEvaluator()
@@ -146,20 +150,31 @@ public class PlanRuleEvaluatorContractTests
         var from = new DateOnly(2026, 6, 25);
         var until = from.AddDays(DayCount - 1);
         var random = new Random(RandomSeed);
-        var boundary = new List<RuleSegment>();
+        var boundary = new List<RuleSegment>
+        {
+            Night(agents[0].Id, from.AddDays(-PlantedNightOffset)),
+            Early(agents[0].Id, from.AddDays(-1)),
+        };
         foreach (var agent in agents)
         {
-            for (var offset = 1; offset <= 4; offset++)
+            var planted = agent == agents[0];
+            var nightsLeft = planted ? 0 : MaxBoundaryNightsPerAgent;
+            for (var offset = 1; offset <= BoundaryDays; offset++)
             {
-                var allowNight = offset == 1;
-                if (random.NextDouble() < 0.5)
+                foreach (var date in new[] { from.AddDays(-offset), until.AddDays(offset) })
                 {
-                    boundary.Add(RandomShift(random, agent.Id, from.AddDays(-offset), allowNight));
-                }
+                    if (random.NextDouble() >= 0.5 || (planted && date < from && offset <= PlantedNightOffset))
+                    {
+                        continue;
+                    }
 
-                if (random.NextDouble() < 0.5)
-                {
-                    boundary.Add(RandomShift(random, agent.Id, until.AddDays(offset), allowNight));
+                    var segment = RandomShift(random, agent.Id, date);
+                    if (segment.ShiftTypeIndex == NightShiftType && nightsLeft-- <= 0)
+                    {
+                        continue;
+                    }
+
+                    boundary.Add(segment);
                 }
             }
         }
@@ -200,7 +215,7 @@ public class PlanRuleEvaluatorContractTests
         accepted.ShouldBeGreaterThan(Placements / 10);
     }
 
-    private static RuleSegment RandomShift(Random random, string agentId, DateOnly date, bool allowNight = true) => random.Next(allowNight ? 3 : 2) switch
+    private static RuleSegment RandomShift(Random random, string agentId, DateOnly date) => random.Next(3) switch
     {
         0 => Early(agentId, date),
         1 => Late(agentId, date),
