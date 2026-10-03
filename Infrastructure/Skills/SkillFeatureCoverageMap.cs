@@ -136,6 +136,7 @@ public static class SkillFeatureCoverageMap
 
         ["SchedulingRulesController"] = Covered("list_scheduling_rules", "create_scheduling_rule", "update_scheduling_rule", "delete_scheduling_rule", "get_scheduling_defaults", "update_scheduling_defaults"),
         ["CounterRulesController"] = Excluded("admin settings CRUD for counter rules (compliance event thresholds); admin settings card only, no Klacksy chat skill in this iteration"),
+        ["PlanningConstraintsController"] = Excluded("admin-only planning-constraint CRUD and the approve/reject decisions of the UI pending list; approval is deliberately UI-only (owner decision 2026-10-03), the LLM intake skills that only write Proposed rows follow in stage 7"),
         ["PeriodCapRulesController"] = Excluded("admin settings CRUD for period-cap rules (compliance hour caps); admin settings card only, no Klacksy chat skill in this iteration"),
         ["RestrictedTimeWindowRulesController"] = Excluded("admin settings CRUD for restricted time-window rules (compliance forbidden windows); admin settings card only, no Klacksy chat skill in this iteration"),
         ["IndustryTemplatesController"] = Covered("start_planning_profile_setup", "set_planning_profile_parameters", "preview_planning_profile", "apply_planning_profile", "cancel_planning_profile_setup"),
