@@ -3,6 +3,7 @@
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules.PlanningRules;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Schedules;
@@ -151,14 +152,29 @@ public class PlanningRuleSetLoaderTests
     }
 
     [Test]
-    public async Task InvalidStoredConstraint_IsSkipped()
+    public async Task InvalidStoredHardConstraint_FailsClosed()
     {
-        _constraints.GetApprovedForPeriodAsync(From, Until, null, Arg.Any<CancellationToken>()).Returns(
-        [
-            Constraint(PlanningConstraintKind.MaxConsecutiveOfKind, PlanningConstraintScopeType.Global, null, """{"schemaVersion":9}"""),
-        ]);
+        var invalid = Constraint(PlanningConstraintKind.MaxConsecutiveOfKind, PlanningConstraintScopeType.Global, null, """{"schemaVersion":9}""");
+        _constraints.GetApprovedForPeriodAsync(From, Until, null, Arg.Any<CancellationToken>()).Returns([invalid]);
 
-        (await _loader.LoadAsync([_agentA], From, Until, null)).ShouldBeEmpty();
+        var thrown = await Should.ThrowAsync<PlanningRuleConfigurationException>(() => _loader.LoadAsync([_agentA], From, Until, null));
+
+        thrown.ConstraintId.ShouldBe(invalid.Id);
+    }
+
+    [Test]
+    public async Task InvalidStoredSoftConstraint_IsSkipped_AndReported()
+    {
+        var invalid = Constraint(
+            PlanningConstraintKind.MaxConsecutiveOfKind, PlanningConstraintScopeType.Global, null, """{"schemaVersion":9}""",
+            PlanningConstraintSeverity.Soft);
+        var valid = Constraint(PlanningConstraintKind.MaxConsecutiveOfKind, PlanningConstraintScopeType.Global, null, MaxRunJson);
+        _constraints.GetApprovedForPeriodAsync(From, Until, null, Arg.Any<CancellationToken>()).Returns([invalid, valid]);
+
+        var set = await _loader.LoadRuleSetAsync([_agentA], From, Until, null, coveredBoundaryDays: 0);
+
+        set.Rules.ShouldHaveSingleItem().RuleId.ShouldBe(valid.Id);
+        set.SkippedRuleIds.ShouldBe([invalid.Id]);
     }
 
     [Test]

@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Schedules;
 
@@ -87,6 +88,12 @@ public class PlanningConstraintValidatorTests
     [TestCase("""{"schemaVersion":1,"kind":"Night","maxRun":2.5}""")]
     [TestCase("""{"schemaVersion":1,"kind":"4","maxRun":3}""")]
     [TestCase("""{"schemaVersion":1,"kind":"Midday","maxRun":3}""")]
+    [TestCase("""{"schemaVersion":1,"kind":"Work,Early","maxRun":3}""")]
+    [TestCase("""{"schemaVersion":1,"kind":"Night ","maxRun":3}""")]
+    [TestCase("""{"schemaVersion":1,"kind":" Night","maxRun":3}""")]
+    [TestCase("""{"schemaVersion":1,"kind":"2","maxRun":3}""")]
+    [TestCase("""{"schemaVersion":"1","kind":"Night","maxRun":3}""")]
+    [TestCase("""{"schemaVersion":0,"kind":"Night","maxRun":3}""")]
     [TestCase("""{"schemaVersion":1,"kind":"Night","maxRun":3,"typo":1}""")]
     [TestCase("""[1,2]""")]
     [TestCase("""not json""")]
@@ -98,6 +105,43 @@ public class PlanningConstraintValidatorTests
         result.IsValid.ShouldBeFalse();
         result.Parameters.ShouldBeNull();
         result.Errors.ShouldNotBeEmpty();
+    }
+
+    [TestCase("""["Saturday,Sunday"]""")]
+    [TestCase("""["Saturday "]""")]
+    [TestCase("""["6"]""")]
+    [TestCase("""[6]""")]
+    public void WeekendDays_AcceptOnlyExactDayNames(string weekendDays)
+    {
+        var json = """{"schemaVersion":1,"metric":"WeekendDays","window":"Month","maxSpread":1,"weekendDays":""" + weekendDays + "}";
+
+        _validator.Validate(Fairness(PlanningConstraintSeverity.Soft, PlanningConstraintScopeType.Group, json)).IsValid.ShouldBeFalse();
+    }
+
+    [Test]
+    public void NewerSchemaVersion_IsRefusedAsWrittenByANewerKlacks()
+    {
+        var json = """{"schemaVersion":""" + (PlanningConstraintDefaults.CurrentParametersSchemaVersion + 1) + ""","kind":"Night","maxRun":3}""";
+
+        var result = _validator.Validate(Constraint(PlanningConstraintKind.MaxConsecutiveOfKind, json));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.Contains("newer Klacks", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public void EverySupportedOlderSchemaVersion_HasAnUpgradeStep()
+    {
+        for (var version = PlanningConstraintDefaults.MinimumSupportedParametersSchemaVersion;
+             version < PlanningConstraintDefaults.CurrentParametersSchemaVersion;
+             version++)
+        {
+            PlanningConstraintParametersUpgrader.Steps.ShouldContainKey(
+                version, $"Bumping the parameters schema needs an upgrade step from version {version}.");
+        }
+
+        PlanningConstraintDefaults.MinimumSupportedParametersSchemaVersion
+            .ShouldBeLessThanOrEqualTo(PlanningConstraintDefaults.CurrentParametersSchemaVersion);
     }
 
     [Test]
@@ -133,6 +177,8 @@ public class PlanningConstraintValidatorTests
     [TestCase(PlanningConstraintSeverity.Soft, double.NaN, false)]
     [TestCase(PlanningConstraintSeverity.Hard, 0d, true)]
     [TestCase(PlanningConstraintSeverity.Soft, 2.5d, true)]
+    [TestCase(PlanningConstraintSeverity.Soft, PlanningConstraintDefaults.MaxWeight, true)]
+    [TestCase(PlanningConstraintSeverity.Soft, PlanningConstraintDefaults.MaxWeight + 1, false)]
     public void Weight_IsChecked(PlanningConstraintSeverity severity, double weight, bool expectedValid)
     {
         var constraint = Constraint(PlanningConstraintKind.MaxConsecutiveOfKind, MaxRunNight);

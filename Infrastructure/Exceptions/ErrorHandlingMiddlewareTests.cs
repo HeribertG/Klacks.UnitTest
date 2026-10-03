@@ -141,6 +141,44 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task DbUpdateConcurrencyException_Becomes409WithTheConcurrencyErrorCode()
+    {
+        var response = await Invoke(new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("row changed"));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe(ErrorHandlingMiddleware.ConcurrencyConflictCode);
+    }
+
+    [Test]
+    public async Task ConcurrencyException_Becomes409WithTheConcurrencyErrorCode()
+    {
+        var response = await Invoke(new ConcurrencyException("row changed"));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe(ErrorHandlingMiddleware.ConcurrencyConflictCode);
+    }
+
+    [Test]
+    public async Task OtherDbUpdateException_StaysA400()
+    {
+        var response = await Invoke(new Microsoft.EntityFrameworkCore.DbUpdateException("constraint violated"));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+    }
+
+    [Test]
+    public async Task PlanningConstraintConcurrencyException_Becomes409CarryingItsErrorCode()
+    {
+        var response = await Invoke(new PlanningConstraintConcurrencyException(new ConcurrencyException("row changed")));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe(PlanningConstraintConcurrencyException.ErrorCode);
+    }
+
+    [Test]
     public async Task PlainConflictException_StaysA409WithoutErrorCode()
     {
         var response = await Invoke(new ConflictException("blocked by compliance"));

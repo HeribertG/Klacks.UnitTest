@@ -24,6 +24,7 @@ public class PlanningConstraintCommandHandlerTests
 
     private IPlanningConstraintRepository _repository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IPlanningConstraintReferenceReader _references = null!;
     private TimeProvider _timeProvider = null!;
     private readonly PlanningConstraintMapper _mapper = new();
     private readonly PlanningConstraintValidator _validator = new();
@@ -35,6 +36,9 @@ public class PlanningConstraintCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _timeProvider = Substitute.For<TimeProvider>();
         _timeProvider.GetUtcNow().Returns(new DateTimeOffset(NowUtc));
+        _references = Substitute.For<IPlanningConstraintReferenceReader>();
+        _references.ScopeTargetExistsAsync(Arg.Any<PlanningConstraintScopeType>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(true);
+        _references.ActiveScenarioExistsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
     }
 
     [Test]
@@ -43,7 +47,7 @@ public class PlanningConstraintCommandHandlerTests
         PlanningConstraint? added = null;
         _repository.Add(Arg.Do<PlanningConstraint>(c => added = c));
         var handler = new CreatePlanningConstraintCommandHandler(
-            _repository, _validator, _mapper, _unitOfWork, _timeProvider, NullLogger<CreatePlanningConstraintCommandHandler>.Instance);
+            _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<CreatePlanningConstraintCommandHandler>.Instance);
 
         var result = await handler.Handle(new CreatePlanningConstraintCommand(Write(), Admin), CancellationToken.None);
 
@@ -66,7 +70,7 @@ public class PlanningConstraintCommandHandlerTests
         resource.ScopeId = Guid.NewGuid();
         resource.ParametersJson = """{"schemaVersion":1,"metric":"NightDays","window":"Month","maxSpread":1}""";
         var handler = new CreatePlanningConstraintCommandHandler(
-            _repository, _validator, _mapper, _unitOfWork, _timeProvider, NullLogger<CreatePlanningConstraintCommandHandler>.Instance);
+            _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<CreatePlanningConstraintCommandHandler>.Instance);
 
         await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(new CreatePlanningConstraintCommand(resource, Admin), CancellationToken.None));
 
@@ -85,7 +89,7 @@ public class PlanningConstraintCommandHandlerTests
         var resource = Write();
         resource.ParametersJson = """{"schemaVersion":1,"kind":"Night","maxRun":4}""";
         var handler = new UpdatePlanningConstraintCommandHandler(
-            _repository, _validator, _mapper, _unitOfWork, _timeProvider, NullLogger<UpdatePlanningConstraintCommandHandler>.Instance);
+            _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<UpdatePlanningConstraintCommandHandler>.Instance);
 
         var result = await handler.Handle(new UpdatePlanningConstraintCommand(original.Id, resource, Admin), CancellationToken.None);
 
@@ -109,7 +113,7 @@ public class PlanningConstraintCommandHandlerTests
         var resource = Write();
         resource.Paraphrase = "At most four nights in a row";
         var handler = new UpdatePlanningConstraintCommandHandler(
-            _repository, _validator, _mapper, _unitOfWork, _timeProvider, NullLogger<UpdatePlanningConstraintCommandHandler>.Instance);
+            _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<UpdatePlanningConstraintCommandHandler>.Instance);
 
         var result = await handler.Handle(new UpdatePlanningConstraintCommand(proposal.Id, resource, Admin), CancellationToken.None);
 
@@ -127,7 +131,7 @@ public class PlanningConstraintCommandHandlerTests
         var row = Stored(status);
         _repository.GetAsync(row.Id, Arg.Any<CancellationToken>()).Returns(row);
         var handler = new UpdatePlanningConstraintCommandHandler(
-            _repository, _validator, _mapper, _unitOfWork, _timeProvider, NullLogger<UpdatePlanningConstraintCommandHandler>.Instance);
+            _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<UpdatePlanningConstraintCommandHandler>.Instance);
 
         await Should.ThrowAsync<ConflictException>(() => handler.Handle(new UpdatePlanningConstraintCommand(row.Id, Write(), Admin), CancellationToken.None));
     }
@@ -179,20 +183,76 @@ public class PlanningConstraintCommandHandlerTests
         await Should.ThrowAsync<ConflictException>(() => revoke.Handle(new RevokePlanningConstraintCommand(proposal.Id), CancellationToken.None));
     }
 
-    [Test]
-    public async Task Delete_OfApprovedRow_IsAConflict()
+    [TestCase(RuleApprovalStatus.Approved)]
+    [TestCase(RuleApprovalStatus.Revoked)]
+    public async Task Delete_OfApprovedOrRevokedRow_IsAConflict(RuleApprovalStatus status)
     {
-        var approved = Stored(RuleApprovalStatus.Approved);
-        _repository.GetAsync(approved.Id, Arg.Any<CancellationToken>()).Returns(approved);
-        var handler = new DeletePlanningConstraintCommandHandler(_repository, _mapper, _unitOfWork, NullLogger<DeletePlanningConstraintCommandHandler>.Instance);
+        var row = Stored(status);
+        _repository.GetAsync(row.Id, Arg.Any<CancellationToken>()).Returns(row);
 
-        await Should.ThrowAsync<ConflictException>(() => handler.Handle(new DeletePlanningConstraintCommand(approved.Id), CancellationToken.None));
+        await Should.ThrowAsync<ConflictException>(() => DeleteHandler().Handle(new DeletePlanningConstraintCommand(row.Id), CancellationToken.None));
 
         _repository.DidNotReceiveWithAnyArgs().Remove(default!);
     }
 
+    [TestCase(RuleApprovalStatus.Proposed)]
+    [TestCase(RuleApprovalStatus.Rejected)]
+    public async Task Delete_OfProposedOrRejectedRow_SoftDeletes(RuleApprovalStatus status)
+    {
+        var row = Stored(status);
+        _repository.GetAsync(row.Id, Arg.Any<CancellationToken>()).Returns(row);
+
+        await DeleteHandler().Handle(new DeletePlanningConstraintCommand(row.Id), CancellationToken.None);
+
+        _repository.Received(1).Remove(row);
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Create_WithMissingScopeTarget_IsRejected()
+    {
+        var resource = Write();
+        resource.ScopeType = PlanningConstraintScopeType.Group;
+        resource.ScopeId = Guid.NewGuid();
+        _references.ScopeTargetExistsAsync(PlanningConstraintScopeType.Group, resource.ScopeId, Arg.Any<CancellationToken>()).Returns(false);
+        var handler = new CreatePlanningConstraintCommandHandler(
+            _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<CreatePlanningConstraintCommandHandler>.Instance);
+
+        await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(new CreatePlanningConstraintCommand(resource, Admin), CancellationToken.None));
+
+        _repository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
+    [Test]
+    public async Task Create_ForAnInactiveScenario_IsRejected()
+    {
+        var resource = Write();
+        resource.AnalyseToken = Guid.NewGuid();
+        _references.ActiveScenarioExistsAsync(resource.AnalyseToken.Value, Arg.Any<CancellationToken>()).Returns(false);
+        var handler = new CreatePlanningConstraintCommandHandler(
+            _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<CreatePlanningConstraintCommandHandler>.Instance);
+
+        await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(new CreatePlanningConstraintCommand(resource, Admin), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task Approve_LosingAConcurrentChange_IsAConflictWithItsErrorCode()
+    {
+        var proposal = Stored(RuleApprovalStatus.Proposed);
+        _repository.GetAsync(proposal.Id, Arg.Any<CancellationToken>()).Returns(proposal);
+        _unitOfWork.CompleteAsync().Returns(Task.FromException(new ConcurrencyException("row changed")));
+
+        var thrown = await Should.ThrowAsync<PlanningConstraintConcurrencyException>(
+            () => ApproveHandler().Handle(new ApprovePlanningConstraintCommand(proposal.Id, Admin), CancellationToken.None));
+
+        thrown.ConflictCode.ShouldBe(PlanningConstraintConcurrencyException.ErrorCode);
+    }
+
+    private DeletePlanningConstraintCommandHandler DeleteHandler() => new(
+        _repository, _mapper, _unitOfWork, NullLogger<DeletePlanningConstraintCommandHandler>.Instance);
+
     private ApprovePlanningConstraintCommandHandler ApproveHandler() => new(
-        _repository, _validator, _mapper, _unitOfWork, _timeProvider, NullLogger<ApprovePlanningConstraintCommandHandler>.Instance);
+        _repository, _validator, _references, _mapper, _unitOfWork, _timeProvider, NullLogger<ApprovePlanningConstraintCommandHandler>.Instance);
 
     private static PlanningConstraintWriteResource Write() => new()
     {
