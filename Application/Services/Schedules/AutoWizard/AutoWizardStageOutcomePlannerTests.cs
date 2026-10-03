@@ -111,19 +111,21 @@ public sealed class AutoWizardStageOutcomePlannerTests
     }
 
     [Test]
-    public void HolisticStageFailure_WithMissingPrerequisite_DegradesToSkip()
+    public void HolisticStageFailure_WithMissingPrerequisite_NamesThePrerequisite()
     {
         AutoWizardStageOutcomePlanner
-            .ShouldSkipHolisticStageAfterFailure(HolisticHarmonizerReadiness.NotReady("model is text-only"))
-            .ShouldBeTrue();
+            .HolisticStageFallbackReason(HolisticHarmonizerReadiness.NotReady("model is text-only"), "engine crashed")
+            .ShouldBe("model is text-only");
     }
 
     [Test]
-    public void HolisticStageFailure_WithPrerequisiteMet_StaysAFailure()
+    public void HolisticStageFailure_WithPrerequisiteMet_FallsBackAndCarriesTheFailure()
     {
-        AutoWizardStageOutcomePlanner
-            .ShouldSkipHolisticStageAfterFailure(HolisticHarmonizerReadiness.Ready())
-            .ShouldBeFalse();
+        var reason = AutoWizardStageOutcomePlanner
+            .HolisticStageFallbackReason(HolisticHarmonizerReadiness.Ready(), "engine crashed");
+
+        reason.ShouldContain("engine crashed");
+        reason.ShouldContain("stage 2");
     }
 
     [Test]

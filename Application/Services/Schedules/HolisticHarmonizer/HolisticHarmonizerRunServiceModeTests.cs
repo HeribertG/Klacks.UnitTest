@@ -71,7 +71,7 @@ public sealed class HolisticHarmonizerRunServiceModeTests
 
         // Assert
         outcome.IsSuccess.ShouldBeTrue();
-        outcome.Result!.LlmModelId.ShouldBe(HolisticHarmonizerDeterministicDefaults.EngineLabel);
+        outcome.Result!.LlmModelId.ShouldBe(HolisticHarmonizerDeterministicEngine.EngineLabel);
         outcome.Result.LlmParsingError.ShouldBeNull();
         outcome.Result.AbortedOnUnusableResponses.ShouldBeFalse();
         outcome.Result.FitnessAfter.ShouldBeGreaterThan(outcome.Result.FitnessBefore);

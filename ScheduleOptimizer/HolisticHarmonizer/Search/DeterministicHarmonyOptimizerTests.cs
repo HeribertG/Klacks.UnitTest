@@ -3,9 +3,11 @@
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Evolution;
 using Klacks.ScheduleOptimizer.Harmonizer.Scorer;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Committee;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Loop;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Search;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Validation;
 using Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer.Benchmark;
 using NUnit.Framework;
 using Shouldly;
@@ -302,6 +304,46 @@ public class DeterministicHarmonyOptimizerTests
     }
 
     [Test]
+    public void Run_FinalEvaluationKeepsOnlyAPrefix_RollsThePrefixBack()
+    {
+        // Arrange: a recording run finds a fixture whose single iteration applies a two-step batch and counts
+        // the committee calls of the trial phase; the second run vetoes from the second step of the final
+        // re-evaluation on, which turns the chosen pair into PartiallyAccepted.
+        var singleIteration = Options with { Restarts = 1, MaxIterations = 1, AlternateNeighbourhoods = false };
+        BitmapInput? input = null;
+        long trialCalls = 0;
+        for (var seed = 1; seed <= PairSearchFixtureSeeds && input is null; seed++)
+        {
+            var candidate = DeterministicSearchFixture.BuildInput(seed);
+            var recording = new CommitteeSwitch();
+            var (_, recorded) = RunWithSwitch(candidate, singleIteration, recording);
+            if (recorded.AppliedBatches.Count == 1 && recorded.AppliedBatches[0].AppliedSteps.Count == PairStepCount)
+            {
+                input = candidate;
+                trialCalls = recording.Calls - PairStepCount;
+            }
+        }
+
+        if (input is null)
+        {
+            Assert.Inconclusive("No fixture seed produced a two-step batch in the first iteration.");
+            return;
+        }
+
+        var start = DeterministicSearchFixture.BuildBitmap(input);
+        var vetoSecondFinalStep = new CommitteeSwitch { VetoFromCall = trialCalls + PairStepCount };
+
+        // Act
+        var (final, result) = RunWithSwitch(input, singleIteration, vetoSecondFinalStep);
+
+        // Assert
+        result.AppliedBatches.ShouldBeEmpty();
+        result.StopReason.ShouldBe(DeterministicSearchStopReason.LocalOptimum);
+        Snapshot(final).ShouldBe(Snapshot(start));
+        result.FitnessAfter.ShouldBe(result.FitnessBefore);
+    }
+
+    [Test]
     public void Run_Cancelled_Throws()
     {
         // Arrange
@@ -337,6 +379,48 @@ public class DeterministicHarmonyOptimizerTests
         reports[^1].BestFitness.ShouldBe(result.FitnessAfter);
         reports[^1].AcceptedBatchCount.ShouldBe(result.AppliedBatches.Count);
         reports.ShouldAllBe(r => r.MaxIterations == Options.Restarts && r.RejectedBatchCount == 0);
+    }
+
+    private const int PairSearchFixtureSeeds = 40;
+    private const int PairStepCount = 2;
+
+    private static (HarmonyBitmap Final, DeterministicSearchResult Result) RunWithSwitch(
+        BitmapInput input, DeterministicSearchOptions options, CommitteeSwitch committeeSwitch)
+    {
+        var working = DeterministicSearchFixture.BuildBitmap(input);
+        var fitness = new MemoizedHarmonyFitnessEvaluator(new HarmonyScorer());
+        var components = HolisticHarmonizerComponents.Build(input, fitness, int.MaxValue);
+        var committee = new ConstraintAgentCommittee(new IConstraintAgent[]
+        {
+            new SwitchedAgent("first", committeeSwitch, counts: true),
+            new SwitchedAgent("second", committeeSwitch, counts: false),
+        });
+        var evaluator = new BatchEvaluator(components.Validator, fitness, committee, new TargetHoursDeviationGuard());
+        var optimizer = new DeterministicHarmonyOptimizer(evaluator, components.Pool, fitness, options, sameDayValidator: components.Validator);
+        return (working, optimizer.Run(working, progress: null, CancellationToken.None));
+    }
+
+    private sealed class CommitteeSwitch
+    {
+        public long Calls { get; set; }
+
+        public long? VetoFromCall { get; init; }
+
+        public bool Vetoes => VetoFromCall is { } from && Calls >= from;
+    }
+
+    private sealed class SwitchedAgent(string name, CommitteeSwitch committeeSwitch, bool counts) : IConstraintAgent
+    {
+        public string Name => name;
+
+        public ConstraintAgentVerdict Evaluate(HarmonyBitmap before, PlanCellSwap swap)
+        {
+            if (counts)
+            {
+                committeeSwitch.Calls++;
+            }
+            return new ConstraintAgentVerdict(name, committeeSwitch.Vetoes ? ConstraintAgentVote.Veto : ConstraintAgentVote.Approve, null);
+        }
     }
 
     private static (HarmonyBitmap Final, DeterministicSearchResult Result) Run(
