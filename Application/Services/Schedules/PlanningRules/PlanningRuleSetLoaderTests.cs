@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules.PlanningRules;
 using Klacks.Api.Domain.Constants;
@@ -32,6 +33,7 @@ public class PlanningRuleSetLoaderTests
     private IGetAllClientIdsFromGroupAndSubgroups _groups = null!;
     private IPlanningRuleDataReader _dataReader = null!;
     private IPlanningRuleCarryInLoader _carryIn = null!;
+    private ISettingsReader _settings = null!;
     private PlanningRuleSetLoader _loader = null!;
 
     [SetUp]
@@ -58,8 +60,11 @@ public class PlanningRuleSetLoaderTests
                 Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([]);
 
+        _settings = Substitute.For<ISettingsReader>();
+        _settings.GetSetting(Arg.Any<string>()).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
+
         _loader = new PlanningRuleSetLoader(
-            _counterRules, _constraints, new PlanningConstraintValidator(), _enforcement, _contracts, _groups, _dataReader, _carryIn,
+            _counterRules, _constraints, new PlanningConstraintValidator(), _enforcement, _contracts, _groups, _dataReader, _carryIn, _settings,
             NullLogger<PlanningRuleSetLoader>.Instance);
     }
 
@@ -70,6 +75,45 @@ public class PlanningRuleSetLoaderTests
 
         rules.ShouldBeEmpty();
         await _contracts.DidNotReceiveWithAnyArgs().GetEffectiveContractDataForClientsAsync(default!, default);
+    }
+
+    [Test]
+    public async Task RuleSet_WithoutRules_ReadsNeitherContractsNorCarryIn()
+    {
+        var set = await _loader.LoadRuleSetAsync([_agentA, _agentB], From, Until, null, coveredBoundaryDays: 0, PlanningRuleSources.PlanningConstraints);
+
+        set.Rules.ShouldBeEmpty();
+        set.Agents.Count.ShouldBe(2);
+        await _contracts.DidNotReceiveWithAnyArgs().GetEffectiveContractDataForClientsAsync(default!, default);
+        await _carryIn.DidNotReceiveWithAnyArgs().LoadAsync(default!, default, default, default!, default, default, default);
+    }
+
+    [Test]
+    public async Task RuleSet_PlanningConstraintsOnly_DoesNotLoadCounterRules()
+    {
+        _counterRules.GetAllApprovedAsync(Arg.Any<CancellationToken>()).Returns([Counter(null, null)]);
+
+        var set = await _loader.LoadRuleSetAsync([_agentA], From, Until, null, coveredBoundaryDays: 0, PlanningRuleSources.PlanningConstraints);
+
+        set.Rules.ShouldBeEmpty();
+        await _counterRules.DidNotReceiveWithAnyArgs().GetAllApprovedAsync(default);
+    }
+
+    [TestCase(null, PlanningConstraintDefaults.DefaultNightRuleMinOverlapMinutes)]
+    [TestCase("0", 0)]
+    [TestCase("120", 120)]
+    [TestCase("-5", PlanningConstraintDefaults.DefaultNightRuleMinOverlapMinutes)]
+    [TestCase("abc", PlanningConstraintDefaults.DefaultNightRuleMinOverlapMinutes)]
+    public async Task RuleSet_AgentsCarryTheNightRuleMinimumOverlapSetting(string? value, int expected)
+    {
+        _counterRules.GetAllApprovedAsync(Arg.Any<CancellationToken>()).Returns([Counter(null, null)]);
+        _settings.GetSetting(SettingKeys.NightRuleMinOverlapMinutes).Returns(value is null
+            ? null
+            : new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.NightRuleMinOverlapMinutes, Value = value });
+
+        var set = await _loader.LoadRuleSetAsync([_agentA], From, Until, null, coveredBoundaryDays: 0);
+
+        set.Agents.ShouldHaveSingleItem().NightRuleMinOverlapMinutes.ShouldBe(expected);
     }
 
     [Test]

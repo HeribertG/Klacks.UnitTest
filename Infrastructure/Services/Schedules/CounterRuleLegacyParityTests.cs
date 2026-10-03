@@ -29,6 +29,7 @@ public class CounterRuleLegacyParityTests
     private const int MaxPlannedSlots = 7;
     private const int MaxSegmentsPerDay = 3;
     private const int HalfHourSteps = 48;
+    private const int MinimumScenariosPerCoverageClass = 20;
 
     private static readonly DateOnly CorpusStart = new(2025, 11, 1);
     private static readonly int CorpusDays = 500;
@@ -47,9 +48,10 @@ public class CounterRuleLegacyParityTests
     public async Task GeneratedCorpus_AdapterMatchesLegacyEvaluatorByteForByte()
     {
         var mismatches = new List<string>();
+        var coverage = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var seed = 0; seed < CorpusSize; seed++)
         {
-            var mismatch = await RunScenarioAsync(seed);
+            var mismatch = await RunScenarioAsync(seed, coverage);
             if (mismatch is not null)
             {
                 mismatches.Add(mismatch);
@@ -57,9 +59,34 @@ public class CounterRuleLegacyParityTests
         }
 
         mismatches.ShouldBeEmpty(string.Join(Environment.NewLine, mismatches.Take(5)));
+        TestContext.Out.WriteLine(string.Join(", ", coverage.OrderBy(c => c.Key).Select(c => $"{c.Key}={c.Value}")));
+        foreach (var coverageClass in CoverageClasses)
+        {
+            coverage.GetValueOrDefault(coverageClass).ShouldBeGreaterThanOrEqualTo(
+                MinimumScenariosPerCoverageClass, $"The corpus no longer exercises '{coverageClass}' - the byte comparison would prove little.");
+        }
     }
 
-    private static async Task<string?> RunScenarioAsync(int seed)
+    private static readonly string[] CoverageClasses =
+    [
+        "asOfReported",
+        "plannedReported",
+        "plannedSeveralEntries",
+        "plannedSeveralDates",
+        "errorEntry",
+        "scopedRuleReported",
+        "scenarioTokenReported",
+    ];
+
+    private static void Count(Dictionary<string, int> coverage, string coverageClass, bool condition)
+    {
+        if (condition)
+        {
+            coverage[coverageClass] = coverage.GetValueOrDefault(coverageClass) + 1;
+        }
+    }
+
+    private static async Task<string?> RunScenarioAsync(int seed, Dictionary<string, int> coverage)
     {
         var random = new Random(seed);
         var options = new DbContextOptionsBuilder<DataBaseContext>()
@@ -107,6 +134,15 @@ public class CounterRuleLegacyParityTests
         var slots = BuildPlannedSlots(random);
         var expectedPlanned = await legacy.EvaluatePlannedAsync(clientId, "Anna", slots, analyseToken);
         var actualPlanned = await adapter.EvaluatePlannedAsync(clientId, "Anna", slots, analyseToken);
+
+        var anyReported = expectedAsOf.Count > 0 || expectedPlanned.Count > 0;
+        Count(coverage, "asOfReported", expectedAsOf.Count > 0);
+        Count(coverage, "plannedReported", expectedPlanned.Count > 0);
+        Count(coverage, "plannedSeveralEntries", expectedPlanned.Count > 1);
+        Count(coverage, "plannedSeveralDates", expectedPlanned.Select(e => e.Date).Distinct().Count() > 1);
+        Count(coverage, "errorEntry", expectedAsOf.Concat(expectedPlanned).Any(e => e.Type == ScheduleValidationType.Error));
+        Count(coverage, "scopedRuleReported", anyReported && rules.Any(r => r.SchedulingRuleId.HasValue));
+        Count(coverage, "scenarioTokenReported", anyReported && analyseToken.HasValue);
         return Compare(seed, "EvaluatePlannedAsync", expectedPlanned, actualPlanned);
     }
 
