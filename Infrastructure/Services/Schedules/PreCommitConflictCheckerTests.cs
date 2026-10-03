@@ -48,6 +48,7 @@ public class PreCommitConflictCheckerTests
     private ICounterRuleEvaluator _counterRuleEvaluator = null!;
     private IRestrictedTimeWindowEvaluator _restrictedTimeWindowEvaluator = null!;
     private IHolidayWorkEvaluator _holidayWorkEvaluator = null!;
+    private IPlanningRuleEvaluatorService _planningRuleEvaluator = null!;
     private TimelineCalculationService _timelineCalculator = null!;
     private ISchedulingPolicyResolver _policyResolver = null!;
 
@@ -105,12 +106,17 @@ public class PreCommitConflictCheckerTests
         _compensatoryRestEvaluator = NonReportingCompensatoryRestEvaluator();
         _holidayWorkEvaluator = NonReportingHolidayWorkEvaluator();
 
+        _planningRuleEvaluator = Substitute.For<IPlanningRuleEvaluatorService>();
+        _planningRuleEvaluator
+            .EvaluatePlannedChangeAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto>());
+
         _checker = BuildChecker(_holidayWorkEvaluator);
     }
 
     private PreCommitConflictChecker BuildChecker(IHolidayWorkEvaluator holidayWorkEvaluator)
         => new(_context, _timelineCalculator, _policyResolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, _restrictedTimeWindowEvaluator,
-            _compensatoryRestEvaluator, holidayWorkEvaluator);
+            _compensatoryRestEvaluator, holidayWorkEvaluator, _planningRuleEvaluator);
 
     [TearDown]
     public void TearDown() => _context.Dispose();
@@ -549,6 +555,41 @@ public class PreCommitConflictCheckerTests
             });
 
         return new HolidayWorkEvaluator(exemptionRepository, calendarResolver, contractData, _enforcementResolver);
+    }
+
+    [Test]
+    public async Task PlanningRuleHardFinding_FromEvaluator_IsOverridableBlockingWithoutDoubleEscalation()
+    {
+        _enforcementResolver.GetModeAsync(Arg.Any<string>()).Returns(RuleEnforcementMode.Block);
+        var finding = new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Error,
+            ClientId = ClientA,
+            Date = Day,
+            Comment = ScheduleValidationKeys.PlanningRule,
+            CommentParams = new Dictionary<string, string>
+            {
+                ["kind"] = "RestAfterKind",
+                [ComplianceRuleNames.EnforcementRuleParamKey] = ComplianceRuleNames.PlanningRule,
+            },
+        };
+        _planningRuleEvaluator
+            .EvaluatePlannedChangeAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ScheduleValidationNotificationDto> { finding });
+        var removal = new PlannedRemovalRow(ClientA, Day.AddDays(1), new TimeOnly(8, 0), new TimeOnly(16, 0));
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0), Day.AddDays(5))], [removal]);
+
+        var entry = result.NewConflicts.ShouldHaveSingleItem();
+        entry.Comment.ShouldBe(ScheduleValidationKeys.PlanningRule);
+        entry.CommentParams[ComplianceRuleNames.EnforcementRuleParamKey].ShouldBe(ComplianceRuleNames.PlanningRule);
+        result.HasOverridableBlocking.ShouldBeTrue();
+        result.HasHardBlocking.ShouldBeFalse();
+        await _planningRuleEvaluator.Received(1).EvaluatePlannedChangeAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1),
+            Arg.Is<IReadOnlyList<PlannedRemovalRow>>(rows => rows.Single() == removal),
+            null,
+            Arg.Any<CancellationToken>());
     }
 
     private static IHolidayWorkEvaluator NonReportingHolidayWorkEvaluator()
