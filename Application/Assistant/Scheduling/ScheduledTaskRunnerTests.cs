@@ -13,6 +13,7 @@
 
 using Klacks.Api.Application.Services.Assistant.Scheduling;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Assistant.Scheduling;
@@ -269,6 +270,41 @@ public class ScheduledTaskRunnerTests
                 !c.UserPermissions.Contains(Roles.Admin) &&
                 !c.UserPermissions.Contains(Permissions.CanDeleteClients) &&
                 c.UserPermissions.Contains(Permissions.CanViewClients)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_TaskAuthoredOverMcp_CapsTokenAtAuthorisedAndCarriesAccessMode()
+    {
+        var task = SkillTask("get_user_context");
+        task.ExternalAgentAccessMode = PersonalAccessTokenAccessMode.Write;
+        Due(task);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null, "done"));
+
+        await _runner.RunDueAsync();
+
+        await _tokenIssuer.Received(1).IssueForOwnerAsync(Owner, Roles.Authorised, Arg.Any<CancellationToken>());
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c => c.ExternalAgentAccessMode == PersonalAccessTokenAccessMode.Write),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunDueAsync_TaskAuthoredInChat_MintsWithoutCeilingAndWithoutAccessMode()
+    {
+        var task = SkillTask("get_user_context");
+        Due(task);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null, "done"));
+
+        await _runner.RunDueAsync();
+
+        await _tokenIssuer.Received(1).IssueForOwnerAsync(Owner, null, Arg.Any<CancellationToken>());
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Any<SkillInvocation>(),
+            Arg.Is<SkillExecutionContext>(c => c.ExternalAgentAccessMode == null),
             Arg.Any<CancellationToken>());
     }
 

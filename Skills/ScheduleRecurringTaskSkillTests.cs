@@ -14,6 +14,7 @@
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Skills;
@@ -220,6 +221,49 @@ public class ScheduleRecurringTaskSkillTests
 
         result.Success.ShouldBeTrue();
         await _repository.Received(1).AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SkillAction_AuthoredOverMcp_StoresTheAccessMode()
+    {
+        KnownHarmlessSkill("list_clients");
+        var context = Ctx(permissions: new[] { "Authorised", "CanViewClients" }) with
+        {
+            ExternalAgentAccessMode = PersonalAccessTokenAccessMode.Write
+        };
+
+        var result = await _skill.ExecuteAsync(context, SkillParams());
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(
+            Arg.Is<ScheduledTask>(t => t.ExternalAgentAccessMode == PersonalAccessTokenAccessMode.Write),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SkillAction_AuthoredInChat_StoresNoAccessMode()
+    {
+        KnownHarmlessSkill("list_clients");
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(permissions: new[] { "Authorised", "CanViewClients" }), SkillParams());
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(
+            Arg.Is<ScheduledTask>(t => t.ExternalAgentAccessMode == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ReApplyingOverMcp_SetsTheAccessModeOnTheExistingTask()
+    {
+        var context = Ctx() with { ExternalAgentAccessMode = PersonalAccessTokenAccessMode.Write };
+        var existing = ExistingTask(context.UserId, "weekly check");
+
+        var result = await _skill.ExecuteAsync(context, ReminderParams());
+
+        result.Success.ShouldBeTrue();
+        existing.ExternalAgentAccessMode.ShouldBe(PersonalAccessTokenAccessMode.Write);
     }
 
     private ScheduledTask ExistingTask(Guid ownerUserId, string name, string? pausedReason = null)

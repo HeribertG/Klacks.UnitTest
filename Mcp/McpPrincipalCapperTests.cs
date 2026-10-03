@@ -7,6 +7,7 @@
 
 using System.Security.Claims;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Presentation.Mcp;
 
 namespace Klacks.UnitTest.Mcp;
@@ -76,5 +77,51 @@ public class McpPrincipalCapperTests
 
         Assert.That(capped.FindFirst(ClaimTypes.NameIdentifier)?.Value, Is.EqualTo(userId.ToString()));
         Assert.That(capped.FindFirst(ClaimTypes.Name)?.Value, Is.EqualTo("admin-user"));
+    }
+    [Test]
+    public void AdminPersonalAccessToken_KeepsSchemeAndAccessModeAfterCap()
+    {
+        var principal = McpTestData.PatPrincipal(
+            Guid.NewGuid(), Guid.NewGuid(), PersonalAccessTokenAccessMode.Read, Roles.Admin);
+
+        var capped = McpPrincipalCapper.CapToAuthorised(principal);
+
+        Assert.That(capped.IsInRole(Roles.Admin), Is.False);
+        Assert.That(capped.IsInRole(Roles.Authorised), Is.True);
+        Assert.That(capped.Identity?.AuthenticationType, Is.EqualTo(PatConstants.SchemeName));
+        Assert.That(McpAccessModeResolver.Resolve(capped), Is.EqualTo(PersonalAccessTokenAccessMode.Read));
+    }
+
+    [Test]
+    public void AdminPrincipalWithCustomRoleClaimType_DropsAdminUnderThatType()
+    {
+        const string roleClaimType = "role";
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()), new Claim(roleClaimType, Roles.Admin)],
+            "Bearer",
+            ClaimTypes.Name,
+            roleClaimType);
+        var principal = new ClaimsPrincipal(identity);
+
+        var capped = McpPrincipalCapper.CapToAuthorised(principal);
+
+        Assert.That(capped.IsInRole(Roles.Admin), Is.False);
+        Assert.That(capped.IsInRole(Roles.Authorised), Is.True);
+    }
+
+    [Test]
+    public void AdminPrincipalWithSeveralIdentities_DropsAdminFromEveryIdentity()
+    {
+        var first = new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()), new Claim(ClaimTypes.Role, Roles.Admin)],
+            "Bearer");
+        var second = new ClaimsIdentity([new Claim(ClaimTypes.Role, Roles.Admin)], PatConstants.SchemeName);
+        var principal = new ClaimsPrincipal([first, second]);
+
+        var capped = McpPrincipalCapper.CapToAuthorised(principal);
+
+        Assert.That(capped.IsInRole(Roles.Admin), Is.False);
+        Assert.That(capped.FindAll(ClaimTypes.Role).Count(claim => claim.Value == Roles.Authorised), Is.EqualTo(1));
+        Assert.That(capped.Identities.Select(i => i.AuthenticationType), Is.EqualTo(new[] { "Bearer", PatConstants.SchemeName }));
     }
 }

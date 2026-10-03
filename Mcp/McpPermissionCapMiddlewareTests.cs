@@ -1,8 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for UseMcpPermissionCap: verifies the middleware only downgrades Admin principals
-/// on the /mcp route and leaves every other route's principal untouched.
+/// Unit tests for UseMcpPermissionCap: verifies the middleware downgrades Admin principals only on
+/// endpoints carrying McpPermissionCapMetadata and leaves every other principal untouched. Whether the
+/// middleware sits at the right place in the real pipeline (after UseAuthorization) is proven by
+/// Klacks.IntegrationTest/Mcp/McpPermissionCapPipelineTests; a preset principal cannot show that.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -24,12 +26,17 @@ public class McpPermissionCapMiddlewareTests
         return app.Build();
     }
 
+    private static Endpoint BuildEndpoint(params object[] metadata)
+    {
+        return new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(metadata), "test-endpoint");
+    }
+
     [Test]
-    public async Task McpPath_AdminUser_IsCappedToAuthorised()
+    public async Task MarkedEndpoint_AdminUser_IsCappedToAuthorised()
     {
         var pipeline = BuildPipeline();
         var context = new DefaultHttpContext();
-        context.Request.Path = "/mcp";
+        context.SetEndpoint(BuildEndpoint(McpPermissionCapMetadata.Instance));
         context.User = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "admin-user", Roles.Admin);
 
         await pipeline(context);
@@ -39,17 +46,30 @@ public class McpPermissionCapMiddlewareTests
     }
 
     [Test]
-    public async Task NonMcpPath_AdminUser_IsNotCapped()
+    public async Task UnmarkedEndpoint_AdminUser_IsNotCapped()
     {
         var pipeline = BuildPipeline();
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/backend/works";
+        context.SetEndpoint(BuildEndpoint());
         var principal = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "admin-user", Roles.Admin);
         context.User = principal;
 
         await pipeline(context);
 
         Assert.That(context.User, Is.SameAs(principal));
-        Assert.That(context.User.IsInRole(Roles.Admin), Is.True);
+    }
+
+    [Test]
+    public async Task NoEndpoint_AdminUser_IsNotCapped()
+    {
+        var pipeline = BuildPipeline();
+        var context = new DefaultHttpContext();
+        var principal = McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid(), "admin-user", Roles.Admin);
+        context.User = principal;
+
+        await pipeline(context);
+
+        Assert.That(context.User, Is.SameAs(principal));
     }
 }
