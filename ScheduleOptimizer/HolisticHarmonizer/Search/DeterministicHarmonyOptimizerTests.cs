@@ -218,13 +218,15 @@ public class DeterministicHarmonyOptimizerTests
     [Test]
     public void Run_NoImprovementPossible_StopsAtLocalOptimumWithUnchangedScore()
     {
-        // Arrange
+        // Arrange: one neighbourhood only - with alternation the winning pass is a local optimum of its own
+        // neighbourhood, and a pool-pass winner can still improve in the larger same-day neighbourhood.
         var input = DeterministicSearchFixture.BuildInput(FixtureSeed);
-        var (optimised, first) = Run(input, Options);
+        var poolOnly = Options with { AlternateNeighbourhoods = false };
+        var (optimised, first) = Run(input, poolOnly);
         first.StopReason.ShouldBeOneOf(DeterministicSearchStopReason.LocalOptimum, DeterministicSearchStopReason.NoImprovementLimit);
 
         // Act
-        var (_, second) = RunOn(input, optimised, Options);
+        var (_, second) = RunOn(input, optimised, poolOnly);
 
         // Assert
         second.FitnessAfter.ShouldBe(second.FitnessBefore);
