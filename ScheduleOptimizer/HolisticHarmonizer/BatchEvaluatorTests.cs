@@ -5,6 +5,7 @@ using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
 using Klacks.ScheduleOptimizer.Harmonizer.Evolution;
 using Klacks.ScheduleOptimizer.Harmonizer.Scorer;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Committee;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Loop;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Validation;
 using NUnit.Framework;
@@ -166,6 +167,67 @@ public class BatchEvaluatorTests
         result.Rejections.Single().Reason.ShouldBe(PlanMutationRejectionReason.CommitteeVeto);
         result.Rejections.Single().Detail.ShouldContain("Stub-A");
         result.Rejections.Single().Detail.ShouldContain("Stub-B");
+    }
+
+    [Test]
+    public void Evaluate_ScoreRegresses_ReturnsWouldDegradeWithRealScoreAndRevertedSteps()
+    {
+        // Two homogeneous blocks (row 0 all Early, row 1 all Late); swapping the middle day breaks the
+        // homogeneity of both rows, so the end state must score lower than the start.
+        var bitmap = BuildBitmap(rows: 2, days: 5);
+        for (var d = 0; d < 5; d++)
+        {
+            bitmap.SetCell(0, d, WorkCell(CellSymbol.Early, d));
+            bitmap.SetCell(1, d, WorkCell(CellSymbol.Late, d));
+        }
+        var step = new PlanCellSwap(0, 2, 1, 2, "breaks both homogeneous blocks");
+        var fitness = new HarmonyFitnessEvaluator(new HarmonyScorer());
+        var scoreBefore = fitness.Evaluate(bitmap).Fitness;
+        var probe = BitmapCloner.Clone(bitmap);
+        PlanMutationValidator.Apply(probe, step);
+        var expectedScoreAfter = fitness.Evaluate(probe).Fitness;
+        expectedScoreAfter.ShouldBeLessThan(scoreBefore, "precondition: the swap must degrade the score");
+
+        var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", LlmIteration: 0, Steps: [step]);
+
+        var result = BuildEvaluator().Evaluate(bitmap, batch);
+
+        result.Result.ShouldBe(BatchAcceptance.WouldDegrade);
+        result.ScoreBefore.ShouldBe(scoreBefore, 1e-12);
+        result.ScoreAfter.ShouldBe(expectedScoreAfter, 1e-12);
+        result.AppliedSteps.ShouldBeEmpty();
+        result.RevertedSteps.ShouldBe([step]);
+        bitmap.GetCell(0, 2).Symbol.ShouldBe(CellSymbol.Early);
+        bitmap.GetCell(1, 2).Symbol.ShouldBe(CellSymbol.Late);
+        fitness.Evaluate(bitmap).Fitness.ShouldBe(scoreBefore, 1e-12);
+    }
+
+    [Test]
+    public void Evaluate_WouldDegradeFeedsRejectMemoryWithRealScoreAndForbiddenSwaps()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 5);
+        for (var d = 0; d < 5; d++)
+        {
+            bitmap.SetCell(0, d, WorkCell(CellSymbol.Early, d));
+            bitmap.SetCell(1, d, WorkCell(CellSymbol.Late, d));
+        }
+        var step = new PlanCellSwap(1, 2, 0, 2, "breaks both homogeneous blocks");
+        var batch = new MutationBatch(Guid.NewGuid(), "consolidate_block", LlmIteration: 0, Steps: [step]);
+        var memory = new RejectMemory();
+
+        var result = BuildEvaluator().Evaluate(bitmap, batch);
+        memory.Note(result);
+
+        result.Result.ShouldBe(BatchAcceptance.WouldDegrade);
+        memory.Entries.Single().RejectedSwaps.ShouldBe([step]);
+        memory.Entries.Single().Summary.ShouldContain(result.ScoreAfter.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+        memory.SameDayForbiddenSwapKeys().ShouldContain(new ForbiddenSwapKey(0, 1, 2));
+    }
+
+    private static Cell WorkCell(CellSymbol symbol, int day)
+    {
+        var start = Day0.AddDays(day).ToDateTime(symbol == CellSymbol.Early ? new TimeOnly(6, 0) : new TimeOnly(14, 0));
+        return new Cell(symbol, Guid.NewGuid(), [Guid.NewGuid()], IsLocked: false, StartAt: start, EndAt: start.AddHours(8), Hours: 8m);
     }
 
     private static BatchEvaluator BuildEvaluator()

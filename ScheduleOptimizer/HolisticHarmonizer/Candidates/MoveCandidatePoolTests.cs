@@ -4,6 +4,8 @@ using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Candidates;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Llm;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Loop;
+using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Validation;
 using NUnit.Framework;
 using Shouldly;
@@ -162,6 +164,48 @@ public class MoveCandidatePoolTests
         var result = pool.Generate(bitmap, HolisticIntent.ConsolidateBlock);
 
         result.Select(c => c.Hint).ShouldBe(new[] { "high", "mid", "low" });
+    }
+
+    [Test]
+    public void Generate_WithRejectMemoryKeys_ExcludesForbiddenSameDaySwapsInBothOrientations()
+    {
+        var bitmap = BuildBitmap(rows: 4, days: 2);
+        bitmap.SetCell(0, 0, Work(CellSymbol.Early));
+        bitmap.SetCell(1, 0, Work(CellSymbol.Late));
+        bitmap.SetCell(2, 0, Work(CellSymbol.Night));
+        bitmap.SetCell(3, 0, Work(CellSymbol.Other));
+
+        var fakeGenerator = new FakeGenerator(
+            HolisticIntent.ConsolidateBlock,
+            new MoveCandidate(0, 0, 1, 0, "forbidden", 5.0),
+            new MoveCandidate(3, 0, 2, 0, "forbidden-mirrored", 4.0),
+            new MoveCandidate(0, 0, 3, 0, "allowed", 1.0));
+        var pool = new MoveCandidatePool(BuildValidator(), new[] { (IMoveCandidateGenerator)fakeGenerator });
+        var memory = new RejectMemory();
+        memory.Note(new BatchEvaluation(
+            Guid.NewGuid(), HolisticIntent.ConsolidateBlock, BatchAcceptance.WouldDegrade,
+            AppliedSteps: [], Rejections: [], StoppedAtStep: null, ScoreBefore: 0.5, ScoreAfter: 0.4)
+        {
+            RevertedSteps = [new PlanCellSwap(1, 0, 0, 0, ""), new PlanCellSwap(2, 0, 3, 0, "")],
+        });
+
+        var result = pool.Generate(bitmap, HolisticIntent.ConsolidateBlock, memory.SameDayForbiddenSwapKeys());
+
+        result.Select(c => c.Hint).ShouldBe(new[] { "allowed" });
+    }
+
+    [Test]
+    public void Generate_WithEmptyExclusion_MatchesUnfilteredResult()
+    {
+        var bitmap = BuildBitmap(rows: 2, days: 2);
+        bitmap.SetCell(0, 0, Work(CellSymbol.Early));
+        bitmap.SetCell(1, 0, Work(CellSymbol.Late));
+        var fakeGenerator = new FakeGenerator(HolisticIntent.ConsolidateBlock, new MoveCandidate(0, 0, 1, 0, "only", 1.0));
+        var pool = new MoveCandidatePool(BuildValidator(), new[] { (IMoveCandidateGenerator)fakeGenerator });
+
+        var result = pool.Generate(bitmap, HolisticIntent.ConsolidateBlock, new HashSet<ForbiddenSwapKey>());
+
+        result.Select(c => c.Hint).ShouldBe(new[] { "only" });
     }
 
     private static PlanMutationValidator BuildValidator()

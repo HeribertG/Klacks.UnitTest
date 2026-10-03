@@ -244,7 +244,69 @@ public class ClientContractDataProviderMonthlyTargetHoursTests
         result[February][contractedClientId].GuaranteedHours.ShouldBe(ContractGuaranteedHours);
     }
 
-    private async Task<Guid> SeedAsync(PaymentInterval paymentInterval, decimal? percent, bool withSchedulingRule = false)
+    [Test]
+    public async Task GuaranteedHoursBasisInterval_WeeklyContractInheritingMonthRow_IsCalendarMonth()
+    {
+        var clientId = await SeedAsync(PaymentInterval.Weekly, percent: null, inheritGuaranteedHours: true);
+        await SeedMonthlyTargetHoursAsync(January.Year, January.Month, JanuaryTargetHours);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.GuaranteedHours.ShouldBe(JanuaryTargetHours);
+        result.PaymentInterval.ShouldBe((int)PaymentInterval.Weekly);
+        result.GuaranteedHoursBasisInterval.ShouldBe((int)PaymentInterval.MonthlyTargetHours);
+    }
+
+    [Test]
+    public async Task GuaranteedHoursBasisInterval_WeeklyContractInheritingSettings_IsCompanyInterval()
+    {
+        var clientId = await SeedAsync(PaymentInterval.Weekly, percent: null, inheritGuaranteedHours: true);
+        await SeedGuaranteedHoursSettingAsync();
+        await SeedPaymentIntervalSettingAsync(PaymentInterval.Monthly);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.GuaranteedHours.ShouldBe(SettingsGuaranteedHours);
+        result.GuaranteedHoursBasisInterval.ShouldBe((int)PaymentInterval.Monthly);
+    }
+
+    [Test]
+    public async Task GuaranteedHoursBasisInterval_ExplicitContractValue_IsNull()
+    {
+        var clientId = await SeedAsync(PaymentInterval.Weekly, percent: null);
+        await SeedMonthlyTargetHoursAsync(January.Year, January.Month, JanuaryTargetHours);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.GuaranteedHours.ShouldBe(ContractGuaranteedHours);
+        result.GuaranteedHoursBasisInterval.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GuaranteedHoursBasisInterval_ContractlessClient_MonthRowOnlyWhenRowExists()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        await SeedMonthlyTargetHoursAsync(January.Year, January.Month, JanuaryTargetHours);
+
+        var withRow = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), January);
+        var withoutRow = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), February);
+
+        withRow.GuaranteedHoursBasisInterval.ShouldBe((int)PaymentInterval.MonthlyTargetHours);
+        withoutRow.GuaranteedHoursBasisInterval.ShouldBeNull();
+    }
+
+    private async Task SeedPaymentIntervalSettingAsync(PaymentInterval interval)
+    {
+        _context.Settings.Add(new SettingsEntity
+        {
+            Id = Guid.NewGuid(),
+            Type = SettingKeys.PaymentInterval,
+            Value = ((int)interval).ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
+        await _context.SaveChangesAsync();
+    }
+
+    private async Task<Guid> SeedAsync(PaymentInterval paymentInterval, decimal? percent, bool withSchedulingRule = false, bool inheritGuaranteedHours = false)
     {
         var clientId = Guid.NewGuid();
 
@@ -267,7 +329,7 @@ public class ClientContractDataProviderMonthlyTargetHoursTests
             Name = "Contract",
             PaymentInterval = paymentInterval,
             Percent = percent,
-            GuaranteedHours = ContractGuaranteedHours,
+            GuaranteedHours = inheritGuaranteedHours ? null : ContractGuaranteedHours,
             ValidFrom = new DateTime(2020, 1, 1),
             SchedulingRuleId = ruleId,
         };

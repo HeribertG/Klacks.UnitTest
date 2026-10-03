@@ -90,7 +90,7 @@ public class RejectMemoryTests
     }
 
     [Test]
-    public void Note_WouldDegrade_StoresAllAppliedStepsAsForbidden()
+    public void Note_WouldDegrade_StoresAllRevertedStepsAsForbidden()
     {
         var memory = new RejectMemory();
         var s0 = new PlanCellSwap(1, 3, 4, 3, "");
@@ -100,14 +100,41 @@ public class RejectMemoryTests
             Guid.NewGuid(),
             "consolidate_block",
             BatchAcceptance.WouldDegrade,
-            AppliedSteps: [s0, s1],
+            AppliedSteps: [],
             Rejections: [],
             StoppedAtStep: null,
             ScoreBefore: 0.5,
-            ScoreAfter: 0.45));
+            ScoreAfter: 0.45)
+        {
+            RevertedSteps = [s0, s1],
+        });
 
         var entry = memory.Entries.Single();
-        entry.RejectedSwaps.Count.ShouldBe(2);
+        entry.RejectedSwaps.ShouldBe([s0, s1]);
+        entry.Summary.ShouldContain("0.4500");
+        entry.Summary.ShouldContain("-0.0500");
+        memory.ForbiddenSwapKeys().ShouldBe([new ForbiddenSwapKey(1, 4, 3), new ForbiddenSwapKey(2, 5, 3)]);
+    }
+
+    [Test]
+    public void SameDayForbiddenSwapKeys_IgnoresCrossDaySwaps()
+    {
+        var memory = new RejectMemory();
+        var sameDay = new PlanCellSwap(4, 2, 1, 2, "");
+        var crossDay = new PlanCellSwap(0, 3, 1, 6, "");
+
+        memory.Note(new BatchEvaluation(
+            Guid.NewGuid(), "consolidate_block", BatchAcceptance.WouldDegrade,
+            AppliedSteps: [], Rejections: [], StoppedAtStep: null, ScoreBefore: 0.5, ScoreAfter: 0.4)
+        {
+            RevertedSteps = [sameDay, crossDay],
+        });
+
+        var keys = memory.SameDayForbiddenSwapKeys();
+
+        keys.Count.ShouldBe(1);
+        keys.ShouldContain(new ForbiddenSwapKey(1, 4, 2));
+        keys.ShouldNotContain(new ForbiddenSwapKey(0, 1, 3));
     }
 
     [Test]
