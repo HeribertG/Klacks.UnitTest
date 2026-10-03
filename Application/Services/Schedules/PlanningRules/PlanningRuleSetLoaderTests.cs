@@ -9,6 +9,7 @@ using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Schedules;
 using Klacks.ScheduleOptimizer.Constraints.Rules;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Services.Schedules.PlanningRules;
@@ -34,6 +35,8 @@ public class PlanningRuleSetLoaderTests
     private IPlanningRuleDataReader _dataReader = null!;
     private IPlanningRuleCarryInLoader _carryIn = null!;
     private ISettingsReader _settings = null!;
+    private IPlanningConstraintPresence _presence = null!;
+    private CountingLogger<PlanningRuleSetLoader> _logger = null!;
     private PlanningRuleSetLoader _loader = null!;
 
     [SetUp]
@@ -63,9 +66,13 @@ public class PlanningRuleSetLoaderTests
         _settings = Substitute.For<ISettingsReader>();
         _settings.GetSetting(Arg.Any<string>()).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
 
+        _presence = Substitute.For<IPlanningConstraintPresence>();
+        _presence.AnyApprovedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _logger = new CountingLogger<PlanningRuleSetLoader>();
+
         _loader = new PlanningRuleSetLoader(
-            _counterRules, _constraints, new PlanningConstraintValidator(), _enforcement, _contracts, _groups, _dataReader, _carryIn, _settings,
-            NullLogger<PlanningRuleSetLoader>.Instance);
+            _counterRules, _constraints, new PlanningConstraintValidator(), _enforcement, _contracts, _groups, _dataReader, _carryIn, _settings, _presence,
+            new MemoryCache(new MemoryCacheOptions()), _logger);
     }
 
     [Test]
@@ -99,6 +106,35 @@ public class PlanningRuleSetLoaderTests
         await _counterRules.DidNotReceiveWithAnyArgs().GetAllApprovedAsync(default);
     }
 
+    [Test]
+    public async Task NoApprovedConstraintAnywhere_DoesNotQueryTheConstraintTable()
+    {
+        _presence.AnyApprovedAsync(Arg.Any<CancellationToken>()).Returns(false);
+
+        var set = await _loader.LoadRuleSetAsync([_agentA], From, Until, null, 0, PlanningRuleSources.PlanningConstraints);
+
+        set.Rules.ShouldBeEmpty();
+        await _constraints.DidNotReceiveWithAnyArgs().GetApprovedForPeriodAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task InvalidConstraint_IsLoggedOncePerInterval_NotOnEveryLoad()
+    {
+        var invalid = Constraint(
+            PlanningConstraintKind.MaxConsecutiveOfKind, PlanningConstraintScopeType.Global, null, """{"schemaVersion":9}""",
+            PlanningConstraintSeverity.Soft);
+        _constraints.GetApprovedForPeriodAsync(From, Until, null, Arg.Any<CancellationToken>()).Returns([invalid]);
+
+        for (var load = 0; load < 3; load++)
+        {
+            await _loader.LoadRuleSetAsync([_agentA], From, Until, null, coveredBoundaryDays: 0);
+        }
+
+        _logger.ErrorCount.ShouldBe(1);
+    }
+
+    [TestCase("480", 480)]
+    [TestCase("481", PlanningConstraintDefaults.DefaultNightRuleMinOverlapMinutes)]
     [TestCase(null, PlanningConstraintDefaults.DefaultNightRuleMinOverlapMinutes)]
     [TestCase("0", 0)]
     [TestCase("120", 120)]

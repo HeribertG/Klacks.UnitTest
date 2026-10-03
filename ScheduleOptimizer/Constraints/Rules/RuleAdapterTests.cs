@@ -18,6 +18,9 @@ public class RuleAdapterTests
     private const string AgentId = "agent-1";
     private static readonly DateOnly From = new(2026, 7, 13);
     private static readonly DateOnly Until = From.AddDays(13);
+    private const int NoMinimumOverlap = 0;
+    private const int DefaultMinimumOverlap = 60;
+
     private static readonly CoreNightWindow Window = new(new TimeOnly(23, 0), new TimeOnly(6, 0));
 
     [Test]
@@ -25,7 +28,7 @@ public class RuleAdapterTests
     {
         var wizard = WizardContext([WizardAgent() with { NightWindow = Window, FullTime = 180, GuaranteedHours = 135 }]);
 
-        var context = RuleEvaluationContextFactory.FromWizardContext(wizard);
+        var context = RuleEvaluationContextFactory.FromWizardContext(wizard, NoMinimumOverlap);
 
         var agent = context.Agents.ShouldHaveSingleItem();
         agent.NightWindow.ShouldBe(Window);
@@ -34,9 +37,16 @@ public class RuleAdapterTests
     }
 
     [Test]
+    public void BothFactories_PassTheNightMinimumOverlapOnToEveryAgent()
+    {
+        RuleEvaluationContextFactory.FromWizardContext(WizardContext([WizardAgent()]), DefaultMinimumOverlap)
+            .Agents.ShouldHaveSingleItem().NightRuleMinOverlapMinutes.ShouldBe(DefaultMinimumOverlap);
+    }
+
+    [Test]
     public void FromWizardContext_WithoutFullTime_CountsAsFullTimeAndWithoutWindow()
     {
-        var context = RuleEvaluationContextFactory.FromWizardContext(WizardContext([WizardAgent()]));
+        var context = RuleEvaluationContextFactory.FromWizardContext(WizardContext([WizardAgent()]), NoMinimumOverlap);
 
         context.Agents[0].WorkloadPercent.ShouldBe(100m);
         context.Agents[0].NightWindow.ShouldBeNull();
@@ -54,7 +64,7 @@ public class RuleAdapterTests
             BoundaryExistingWorkBlockers = [new CoreExistingWorkBlocker(AgentId, From.AddDays(-1), At(From.AddDays(-1), 22), At(From, 6))],
             BoundaryBreakBlockers = [new CoreBreakBlocker(AgentId, From.AddDays(-4), From.AddDays(-3), "vacation")],
         };
-        var context = RuleEvaluationContextFactory.FromWizardContext(wizard);
+        var context = RuleEvaluationContextFactory.FromWizardContext(wizard, NoMinimumOverlap);
         var scenario = new CoreScenario { Tokens = [Token(From, 22, 6, 2)] };
         var plan = RulePlanFactory.FromScenario(context, scenario, wizard);
 
@@ -74,7 +84,7 @@ public class RuleAdapterTests
             Agents = [WizardAgent() with { NightWindow = Window }],
             ExistingWorkBlockers = [new CoreExistingWorkBlocker(AgentId, From.AddDays(1), At(From.AddDays(1), 22), At(From.AddDays(2), 6))],
         };
-        var context = RuleEvaluationContextFactory.FromWizardContext(wizard);
+        var context = RuleEvaluationContextFactory.FromWizardContext(wizard, NoMinimumOverlap);
         var scenario = new CoreScenario { Tokens = [Token(From, 22, 6, 2), Token(From.AddDays(2), 22, 6, 2)] };
 
         var plan = RulePlanFactory.FromScenario(context, scenario, wizard);
@@ -126,7 +136,7 @@ public class RuleAdapterTests
                 NightAssignment(From.AddDays(-2)),
             ]);
 
-        var context = RuleEvaluationContextFactory.FromBitmap(input);
+        var context = RuleEvaluationContextFactory.FromBitmap(input, NoMinimumOverlap);
         var plan = RulePlanFactory.FromBitmapInput(context, input);
 
         context.Agents[0].WorkloadPercent.ShouldBe(60m);
@@ -147,7 +157,7 @@ public class RuleAdapterTests
                 new BitmapAssignment(AgentId, From, CellSymbol.Night, Guid.NewGuid(), [Guid.NewGuid()], false, At(From, 0), At(From, 3), 3m),
                 new BitmapAssignment(AgentId, From, CellSymbol.Night, Guid.NewGuid(), [Guid.NewGuid()], false, At(From, 23), At(From.AddDays(1), 2), 3m),
             ]);
-        var context = RuleEvaluationContextFactory.FromBitmap(input);
+        var context = RuleEvaluationContextFactory.FromBitmap(input, NoMinimumOverlap);
         var cells = new Cell[1, 14];
         for (var d = 0; d < 14; d++)
         {
