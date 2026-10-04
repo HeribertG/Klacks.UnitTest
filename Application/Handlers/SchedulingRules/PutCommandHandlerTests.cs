@@ -10,6 +10,7 @@ using Klacks.Api.Application.DTOs.Scheduling;
 using Klacks.Api.Application.Handlers.SchedulingRules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Events;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Scheduling;
 using Microsoft.Extensions.Logging;
 
@@ -54,6 +55,18 @@ public class PutCommandHandlerTests
         await _eventDispatcher.Received(1).DispatchAsync(
             Arg.Is<IDomainEvent>(e => e is SchedulingRuleChangedEvent && ((SchedulingRuleChangedEvent)e).RuleId == ruleId),
             Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(-1)]
+    [TestCase(24.5)]
+    public async Task Handle_DailyFrameOutsideZeroTo24Hours_IsRejectedWithoutSaving(decimal hours)
+    {
+        var resource = new SchedulingRuleResource { Id = Guid.NewGuid(), Name = "Rule", MaxDailySpanHours = hours };
+
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(new PutCommand<SchedulingRuleResource>(resource), CancellationToken.None));
+
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]

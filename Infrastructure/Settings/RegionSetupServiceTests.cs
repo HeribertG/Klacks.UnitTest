@@ -1445,6 +1445,18 @@ public class RegionSetupServiceTests
         AssertWritten(SettingKeys.SchedulingMaxDailySpanHours, "14");
     }
 
+    [TestCase(-1)]
+    [TestCase(25)]
+    public async Task ApplyAsync_WorktimeMaxDailySpanHoursOutsideZeroTo24_IsRejected(decimal hours)
+    {
+        var json = $$"""
+            { "version": 1, "worktime": { "minPauseHours": 11, "maxDailySpanHours": {{hours.ToString(CultureInfo.InvariantCulture)}} } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+    }
+
     [Test]
     public async Task ApplyAsync_PresetWithMaxDailySpanHours_ImportsTheFrameAndHashesIt()
     {

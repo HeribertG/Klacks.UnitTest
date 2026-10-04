@@ -435,6 +435,51 @@ public class ClientTimelineTests
         return block;
     }
 
+    private ScheduleBlock AddUtcWorkWithLocalWallClock(DateTime localStart, DateTime localEnd, TimeSpan utcOffset)
+    {
+        var block = new ScheduleBlock(
+            Guid.NewGuid(),
+            ScheduleBlockType.Work,
+            _clientId,
+            DateTime.SpecifyKind(localStart - utcOffset, DateTimeKind.Utc),
+            DateTime.SpecifyKind(localEnd - utcOffset, DateTimeKind.Utc),
+            LocalStart: localStart,
+            LocalEnd: localEnd);
+        _timeline.AddBlock(block);
+        return block;
+    }
+
+    [Test]
+    public void GetRestViolations_ChFrame_UtcBlocks_SplitDayOnOneLocalDayAcrossUtcMidnight_ReturnsEmpty()
+    {
+        // Arrange: company zone UTC+10; the local split day 07-11 and 17-21 (14h) starts on the previous UTC day.
+        var offset = TimeSpan.FromHours(10);
+        AddUtcWorkWithLocalWallClock(BaseDate.ToDateTime(new TimeOnly(7, 0)), BaseDate.ToDateTime(new TimeOnly(11, 0)), offset);
+        AddUtcWorkWithLocalWallClock(BaseDate.ToDateTime(new TimeOnly(17, 0)), BaseDate.ToDateTime(new TimeOnly(21, 0)), offset);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, ChDailyWorkFrame);
+
+        // Assert
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void GetRestViolations_ChFrame_UtcBlocks_EveningAndNextLocalMorningOnOneUtcDay_ReturnsViolation()
+    {
+        // Arrange: company zone UTC+10; local 17-20 and next local morning 06-07 (14h span, 10h rest) share one UTC day.
+        var offset = TimeSpan.FromHours(10);
+        var nextDay = BaseDate.AddDays(1);
+        AddUtcWorkWithLocalWallClock(BaseDate.ToDateTime(new TimeOnly(17, 0)), BaseDate.ToDateTime(new TimeOnly(20, 0)), offset);
+        AddUtcWorkWithLocalWallClock(nextDay.ToDateTime(new TimeOnly(6, 0)), nextDay.ToDateTime(new TimeOnly(7, 0)), offset);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, ChDailyWorkFrame);
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(10));
+    }
+
     [Test]
     public void GetWorkDuration_SingleShiftOnDate_ReturnsFullDuration()
     {

@@ -213,7 +213,8 @@ public class ApplyPlanningProfileCommandHandlerTests
             Industry = IndustrySlugs.Homecare,
             ImportSourceKey = "homecare/day",
             ImportContentHash = "hash",
-            MaxWeeklyHours = 40m
+            MaxWeeklyHours = 40m,
+            MaxDailySpanHours = 13.5m
         };
         _schedulingRules.GetByIndustryAsync(IndustrySlugs.Homecare).Returns(new List<SchedulingRule> { template });
 
@@ -230,6 +231,7 @@ public class ApplyPlanningProfileCommandHandlerTests
         copy.ImportSourceKey.ShouldBe(string.Empty);
         copy.ImportContentHash.ShouldBe(string.Empty);
         copy.MaxWeeklyHours.ShouldBe(40m);
+        copy.MaxDailySpanHours.ShouldBe(13.5m);
 
         template.Industry.ShouldBe(IndustrySlugs.Homecare);
         template.ImportSourceKey.ShouldBe("homecare/day");
