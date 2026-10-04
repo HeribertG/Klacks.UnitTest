@@ -21,6 +21,8 @@ using Klacks.Api.Application.Interfaces.Schedules.HolisticHarmonizer;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.AutoWizard;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
+using Klacks.Api.Application.Services.Schedules.PlanningRules;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Schedules.AutoWizard;
@@ -66,6 +68,7 @@ public class AutoWizardJobRunnerHolisticStageTests
     private ServiceProvider? _provider;
     private IHarmonizerContextBuilder _contextBuilder = null!;
     private IEligibilityMatrixBuilder _matrixBuilder = null!;
+    private IPlanningRuleSetLoader _ruleSetLoader = null!;
     private WizardResultCache _wizardResults = null!;
     private HarmonizerResultCache _harmonizerResults = null!;
     private AutoWizardJobRunner _runner = null!;
@@ -124,6 +127,10 @@ public class AutoWizardJobRunnerHolisticStageTests
                 Arg.Any<IReadOnlySet<(string, Guid, DateOnly)>?>(), Arg.Any<CancellationToken>())
             .Returns(EligibilityMatrix.Empty);
 
+        _ruleSetLoader = Substitute.For<IPlanningRuleSetLoader>();
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([], [], [], [], []));
+
         _contextBuilder = contextBuilder;
         _matrixBuilder = matrixBuilder;
         _wizardResults = wizardResults;
@@ -144,6 +151,7 @@ public class AutoWizardJobRunnerHolisticStageTests
         services.AddSingleton(_mediator);
         services.AddSingleton(_contextBuilder);
         services.AddSingleton(_matrixBuilder);
+        services.AddSingleton(_ruleSetLoader);
         _provider = services.BuildServiceProvider();
 
         _stateCache = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
@@ -258,6 +266,26 @@ public class AutoWizardJobRunnerHolisticStageTests
         state.Result.HarmonizationSkippedReason!.ShouldContain("Holistic Harmonizer stage did not produce a result.");
         await _hubNotifier.Received(1).NotifyCompletedAsync(jobId, Arg.Is<AutoWizardJobResultDto>(d => d.HarmonizationSkipped));
         await _hubNotifier.DidNotReceiveWithAnyArgs().NotifyFailedAsync(default!);
+    }
+
+    [Test]
+    public async Task InvalidApprovedHardRule_DoesNotStopTheChain_AndIsReportedAsAWarning()
+    {
+        var invalidRuleId = Guid.NewGuid();
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([], [], [], [], [invalidRuleId]));
+
+        var (_, state) = await RunChainAsync();
+
+        state.Status.ShouldBe(WizardJobStatusValues.Completed);
+        state.Result!.FinalScenarioId.ShouldBe(_holisticScenarioId);
+        var warning = state.Result.ComplianceViolations.ShouldHaveSingleItem();
+        warning.Comment.ShouldBe(ScheduleValidationKeys.PlanningRuleInvalid);
+        warning.Type.ShouldBe(ScheduleValidationType.Warning);
+        warning.CommentParams![PlanningRuleNotificationMapper.RuleIdParam].ShouldBe(invalidRuleId.ToString());
+        await _ruleSetLoader.Received(1).LoadRuleSetAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), PeriodFrom, PeriodUntil, Arg.Any<Guid?>(), Arg.Any<int>(),
+            PlanningRuleSources.PlanningConstraints, InvalidHardRuleHandling.Report, Arg.Any<CancellationToken>());
     }
 
     [Test]

@@ -14,6 +14,7 @@ using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Constraints.Rules;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
+using Klacks.ScheduleOptimizer.Harmonizer.Rules;
 using Klacks.ScheduleOptimizer.Harmonizer.Scorer;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Candidates;
 using Klacks.ScheduleOptimizer.Models;
@@ -51,8 +52,8 @@ public class HarmonizerContextBuilderTargetHoursTests
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _contractProvider = Substitute.For<IClientContractDataProvider>();
         _ruleSetLoader = Substitute.For<IPlanningRuleSetLoader>();
-        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default)
-            .ReturnsForAnyArgs(new PlanningRuleSet([], [], [], []));
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([], [], [], [], []));
     }
 
     [TearDown]
@@ -197,13 +198,14 @@ public class HarmonizerContextBuilderTargetHoursTests
         var rule = new MaxConsecutiveOfKindRule(Guid.NewGuid(), RuleSeverity.Hard, 1, RuleShiftKind.Night, 3);
         var insideBoundary = new RuleSegment(agent.ToString(), WeekStart.AddDays(-3), new TimeOnly(22, 0), new TimeOnly(6, 0), 2, 8m);
         var outsideBoundary = new RuleSegment(agent.ToString(), WeekStart.AddDays(-20), new TimeOnly(22, 0), new TimeOnly(6, 0), 2, 8m);
-        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default)
-            .ReturnsForAnyArgs(new PlanningRuleSet([rule], [new RuleAgent(agent.ToString(), window, 80m, 120)], [insideBoundary, outsideBoundary], []));
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([rule], [new RuleAgent(agent.ToString(), window, 80m, 120)], [insideBoundary, outsideBoundary], [], []));
 
         var input = await BuildSut().BuildContextAsync(new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
 
         await _ruleSetLoader.Received(1).LoadRuleSetAsync(
-            Arg.Any<IReadOnlyCollection<Guid>>(), WeekStart, WeekEnd, null, 14, Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<Guid>>(), WeekStart, WeekEnd, null, 14,
+            PlanningRuleSources.All, InvalidHardRuleHandling.Report, Arg.Any<CancellationToken>());
         input.Rules.ShouldNotBeNull();
         input.Rules.Rules.ShouldBe([rule]);
         input.Rules.CarryIn.ShouldBe([outsideBoundary]);
@@ -211,6 +213,40 @@ public class HarmonizerContextBuilderTargetHoursTests
         input.Rules.IgnoredWorkIds!.ShouldBe([subWork.Id]);
         input.Agents.Single().NightWindow.ShouldBe(window);
         input.Agents.Single().WorkloadPercent.ShouldBe(80m);
+    }
+
+    [Test]
+    public async Task BuildContextAsync_InvalidHardRuleNextToAValidOne_KeepsTheValidRuleAndCarriesTheInvalidId()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(PaymentInterval.Monthly, MonthlyGuaranteedHours, agent);
+        var valid = new MaxConsecutiveOfKindRule(Guid.NewGuid(), RuleSeverity.Hard, 1, RuleShiftKind.Night, 3);
+        var invalidRuleId = Guid.NewGuid();
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([valid], [new RuleAgent(agent.ToString(), null, 100m, 60)], [], [], [invalidRuleId]));
+
+        var input = await BuildSut().BuildContextAsync(new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+
+        input.Rules.ShouldNotBeNull();
+        input.Rules.Rules.ShouldBe([valid]);
+        input.Rules.InvalidHardRuleIds.ShouldBe([invalidRuleId]);
+    }
+
+    [Test]
+    public async Task BuildContextAsync_OnlyAnInvalidHardRule_CarriesTheWarningWithoutAnyRuleHook()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(PaymentInterval.Monthly, MonthlyGuaranteedHours, agent);
+        var invalidRuleId = Guid.NewGuid();
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([], [], [], [], [invalidRuleId]));
+
+        var input = await BuildSut().BuildContextAsync(new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+
+        input.Rules.ShouldNotBeNull();
+        input.Rules.InvalidHardRuleIds.ShouldBe([invalidRuleId]);
+        BitmapRuleRuntime.TryCreate(input).ShouldBeNull();
+        input.Agents.Single().NightWindow.ShouldBeNull();
     }
 
     [Test]
@@ -223,7 +259,7 @@ public class HarmonizerContextBuilderTargetHoursTests
             new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null, LoadPlanningRules: false), CancellationToken.None);
 
         input.Rules.ShouldBeNull();
-        await _ruleSetLoader.DidNotReceiveWithAnyArgs().LoadRuleSetAsync(default!, default, default, default, default, default);
+        await _ruleSetLoader.DidNotReceiveWithAnyArgs().LoadRuleSetAsync(default!, default, default, default, default, default, default, default);
     }
 
     [Test]
