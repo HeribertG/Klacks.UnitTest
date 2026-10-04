@@ -216,6 +216,58 @@ public class HarmonizerContextBuilderTargetHoursTests
     }
 
     [Test]
+    public async Task BuildContextAsync_ContainerSubWorkInTheBoundary_IsIgnoredByTheRuleContext()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(PaymentInterval.Monthly, MonthlyGuaranteedHours, agent);
+        var boundaryDate = WeekStart.AddDays(-1);
+        var container = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            ShiftId = Guid.NewGuid(),
+            CurrentDate = boundaryDate,
+            StartTime = new TimeOnly(7, 0),
+            EndTime = new TimeOnly(19, 0),
+            WorkTime = 12m,
+        };
+        var boundarySubWork = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            ShiftId = Guid.NewGuid(),
+            ParentWorkId = container.Id,
+            CurrentDate = boundaryDate,
+            StartTime = new TimeOnly(22, 0),
+            EndTime = new TimeOnly(23, 30),
+            WorkTime = 1.5m,
+        };
+        _context.Work.AddRange(container, boundarySubWork);
+        await _context.SaveChangesAsync();
+        var window = new CoreNightWindow(new TimeOnly(22, 0), new TimeOnly(5, 0));
+        await SeedWorksAsync(agent, workDays: 1);
+        var rule = new ForbiddenTransitionRule(Guid.NewGuid(), RuleSeverity.Hard, 1, RuleShiftKind.Night, RuleShiftKind.Work, 1);
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([rule], [new RuleAgent(agent.ToString(), window, 100m, 60)], [], [], []));
+
+        var input = await BuildSut().BuildContextAsync(new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+
+        input.Rules.ShouldNotBeNull();
+        input.Rules.IgnoredWorkIds!.ShouldBe([boundarySubWork.Id]);
+        input.BoundaryAssignments!.ShouldContain(a => a.WorkIds.Contains(boundarySubWork.Id));
+        var withoutSubWork = input with
+        {
+            BoundaryAssignments = input.BoundaryAssignments!.Where(a => !a.WorkIds.Contains(boundarySubWork.Id)).ToList(),
+            Rules = input.Rules with { IgnoredWorkIds = null },
+        };
+        var bitmap = BitmapBuilder.Build(input);
+        var actual = BitmapRuleRuntime.TryCreate(input)!.Evaluate(bitmap);
+        actual.ShouldBeEquivalentTo(BitmapRuleRuntime.TryCreate(withoutSubWork)!.Evaluate(bitmap));
+        BitmapRuleRuntime.TryCreate(input with { Rules = input.Rules with { IgnoredWorkIds = null } })!
+            .Evaluate(bitmap).HardCount.ShouldBeGreaterThan(actual.HardCount, "a counted sub-work night before the first planned day would be a forbidden transition");
+    }
+
+    [Test]
     public async Task BuildContextAsync_InvalidHardRuleNextToAValidOne_KeepsTheValidRuleAndCarriesTheInvalidId()
     {
         var agent = Guid.NewGuid();
