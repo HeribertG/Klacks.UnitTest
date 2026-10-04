@@ -109,6 +109,43 @@ public class MessagingServiceOutboundClientIdTests
         await _messageRepository.Received(1).AddAsync(Arg.Is<Message>(m => m.ClientId == null));
     }
 
+    [Test]
+    public async Task ResolveRecipientClientIdAsync_UsesTheSameContactMatchAsTheSendPath()
+    {
+        GiveProvider(MessagingConstants.ProviderSms);
+        var clientId = Guid.NewGuid();
+        _messengerContactRepository
+            .GetByTypeAndValueAsync(MessengerType.Sms, Recipient, Arg.Any<CancellationToken>())
+            .Returns(new MessengerContact { Id = Guid.NewGuid(), ClientId = clientId, Type = MessengerType.Sms, Value = Recipient });
+
+        var resolved = await _sut.ResolveRecipientClientIdAsync(MessagingConstants.ProviderSms, Recipient);
+
+        resolved.ShouldBe(clientId);
+    }
+
+    [Test]
+    public async Task ResolveRecipientClientIdAsync_UnknownProvider_Null()
+    {
+        _providerRepository.GetEnabledAsync().Returns(new List<MessagingProvider>());
+
+        var resolved = await _sut.ResolveRecipientClientIdAsync("no-such-provider", Recipient);
+
+        resolved.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SendBroadcastToClientsAsync_EmptyAudience_FailsWithTheRouteSpecificError_NothingSent()
+    {
+        GiveProvider(MessagingConstants.ProviderSms);
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => _sut.SendBroadcastToClientsAsync(
+            MessagingConstants.ProviderSms, Array.Empty<Guid>(), "Hallo", MessagingConstants.DefaultContentType,
+            MessagingConstants.BroadcastGroupEmptyError));
+
+        ex.Message.ShouldBe(MessagingConstants.BroadcastGroupEmptyError);
+        await _messageRepository.DidNotReceiveWithAnyArgs().AddAsync(default!);
+    }
+
     private void GiveProvider(string providerType)
     {
         var provider = new MessagingProvider
