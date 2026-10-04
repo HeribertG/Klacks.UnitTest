@@ -98,7 +98,7 @@ public class RegionPackageCoverageMatrixTests
         "maxWeeklyHours", "maxConsecutiveDays", "defaultWorkingHours", "overtimeThreshold",
         "guaranteedHours", "maximumHours", "minimumHours", "fullTimeHours", "vacationDaysPerYear",
         "nightRate", "holidayRate", "we1Rate", "we2Rate", "we3Rate", "nightStart", "nightEnd",
-        "performsShiftWork", "overtime", "rateRevisions"
+        "performsShiftWork", "overtime", "rateRevisions", "maxDailySpanHours"
     ];
 
     private static readonly (string Scope, Type DtoType, string[] Fields)[] Scopes =

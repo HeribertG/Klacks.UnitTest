@@ -1433,6 +1433,54 @@ public class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_WorktimeMaxDailySpanHours_WritesTheDailyWorkFrameSetting()
+    {
+        var json = """
+            { "version": 1, "worktime": { "minPauseHours": 11, "maxDailySpanHours": 14 } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await service.ApplyAsync();
+
+        AssertWritten(SettingKeys.SchedulingMaxDailySpanHours, "14");
+    }
+
+    [Test]
+    public async Task ApplyAsync_PresetWithMaxDailySpanHours_ImportsTheFrameAndHashesIt()
+    {
+        var withoutFrame = """
+            { "version": 1, "industryProfiles": { "hospitality": {
+                "schedulingRulePresets": [ { "name": "Agreement Standard", "minPauseHours": 11 } ] } } }
+            """;
+        var withFrame = """
+            { "version": 1, "industryProfiles": { "hospitality": {
+                "schedulingRulePresets": [ { "name": "Agreement Standard", "minPauseHours": 11, "maxDailySpanHours": 13.5 } ] } } }
+            """;
+
+        await CreateService(WriteTempFile(withoutFrame)).ApplyAsync();
+        var plain = _addedSchedulingRules.Single();
+        _addedSchedulingRules.Clear();
+        await CreateService(WriteTempFile(withFrame)).ApplyAsync();
+        var framed = _addedSchedulingRules.Single();
+
+        plain.MaxDailySpanHours.ShouldBeNull();
+        framed.MaxDailySpanHours.ShouldBe(13.5m);
+        framed.ImportContentHash.ShouldNotBe(plain.ImportContentHash);
+    }
+
+    [Test]
+    public async Task ApplyAsync_PresetWithMaxDailySpanHoursAbove24_IsRejected()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "hospitality": {
+                "schedulingRulePresets": [ { "name": "Broken", "maxDailySpanHours": 25 } ] } } }
+            """;
+        var service = CreateService(WriteTempFile(json));
+
+        await Should.ThrowAsync<InvalidRequestException>(service.ApplyAsync);
+    }
+
+    [Test]
     public async Task ApplyAsync_SchedulingRulePresetWithFractionalMinRestDays_DeserializesAndImports()
     {
         var json = """
