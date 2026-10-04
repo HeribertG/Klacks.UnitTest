@@ -4,8 +4,11 @@
 /// Unit tests for CreatePlanSkill: the proposal path returns a Confirmation and does NOT auto-start
 /// execution; the confirmed replay (override flag) starts the fire-and-forget execution exactly once
 /// and does NOT loop back into a second Confirmation; ownership, missing-model and idempotency guards.
+/// Over MCP (ExternalAgentAccessMode set) every step and verify skill must be available to the caller over MCP
+/// (real McpDelegatedSkillPolicy) at proposal and again at the confirmed start.
 /// </summary>
 
+using Klacks.Api.Application.Services.Assistant.Mcp;
 using Klacks.Api.Application.Services.Assistant.Planning;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
@@ -29,6 +32,8 @@ public class CreatePlanSkillTests
     private IAgentPlanRepository _planRepository = null!;
     private IPendingConfirmationStore _confirmationStore = null!;
     private ITurnConfirmationScope _turnScope = null!;
+    private ISkillRegistry _skillRegistry = null!;
+    private ISkillRiskClassifier _riskClassifier = null!;
     private CreatePlanSkill _skill = null!;
 
     [SetUp]
@@ -41,7 +46,13 @@ public class CreatePlanSkillTests
         _confirmationStore
             .Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>())
             .Returns("plan-token");
-        _skill = new CreatePlanSkill(_planChatService, _planRepository, _confirmationStore, _turnScope);
+        _skillRegistry = Substitute.For<ISkillRegistry>();
+        _riskClassifier = Substitute.For<ISkillRiskClassifier>();
+        _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.Reversible);
+        _skill = new CreatePlanSkill(
+            _planChatService, _planRepository, _confirmationStore, _turnScope, _skillRegistry,
+            new McpDelegatedSkillPolicy(
+                new McpSkillExposurePolicy(_riskClassifier), new McpReadModeToolPolicy(_riskClassifier)));
     }
 
     private static SkillExecutionContext Ctx(Guid userId) => new()
@@ -237,4 +248,132 @@ public class CreatePlanSkillTests
         [PlanSkillDefaults.PlanIdParameter] = planId.ToString(),
         [PlanSkillDefaults.GoalParameter] = "do X and Y"
     };
+
+    // -- External agent (MCP) ------------------------------------------------------
+
+    private const string HiddenVerifyJson =
+        "[{\"Order\":1,\"Skill\":\"create_employee\",\"Params\":{},\"VerifySkill\":\"list_personal_access_tokens\",\"Reversible\":true}]";
+
+    private void RegisterSkills(params string[] names)
+    {
+        foreach (var name in names)
+        {
+            _skillRegistry.GetSkillByName(name).Returns(new SkillDescriptor(
+                name, "test skill", SkillCategory.Crud,
+                Array.Empty<SkillParameter>(), Array.Empty<string>(), Array.Empty<LLMCapability>(), null));
+        }
+    }
+
+    private static SkillExecutionContext McpCtx(Guid userId) =>
+        Ctx(userId) with { ExternalAgentAccessMode = PersonalAccessTokenAccessMode.Write };
+
+    private void ExecutionProviderAvailable()
+    {
+        _planChatService.ResolveExecutionProviderAsync(Arg.Any<CancellationToken>())
+            .Returns(new PlanProviderResolution(true, LLMProviderType.OpenAI));
+    }
+
+    [Test]
+    public async Task OverMcp_Proposal_WithAHiddenVerifySkill_IsRefused_AndNothingIsStored()
+    {
+        RegisterSkills("create_employee", "list_personal_access_tokens");
+        var userId = Guid.NewGuid();
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(DraftPlan(Guid.NewGuid(), userId, HiddenVerifyJson));
+
+        var result = await _skill.ExecuteAsync(
+            McpCtx(userId),
+            new Dictionary<string, object> { [PlanSkillDefaults.GoalParameter] = "hire and check" });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("list_personal_access_tokens");
+        await _planRepository.DidNotReceive().AddAsync(Arg.Any<AgentPlan>(), Arg.Any<CancellationToken>());
+        _confirmationStore.DidNotReceive().Create(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
+    }
+
+    [Test]
+    public async Task OverMcp_Proposal_WithAnUnregisteredStepSkill_IsRefused()
+    {
+        RegisterSkills("create_employee");
+        var userId = Guid.NewGuid();
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(DraftPlan(Guid.NewGuid(), userId));
+
+        var result = await _skill.ExecuteAsync(
+            McpCtx(userId),
+            new Dictionary<string, object> { [PlanSkillDefaults.GoalParameter] = "hire and plan" });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("create_shift");
+        await _planRepository.DidNotReceive().AddAsync(Arg.Any<AgentPlan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OverMcp_Proposal_WithExposedSkills_ReturnsConfirmation()
+    {
+        RegisterSkills("create_employee", "create_shift", "list_shifts");
+        var userId = Guid.NewGuid();
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(DraftPlan(Guid.NewGuid(), userId));
+
+        var result = await _skill.ExecuteAsync(
+            McpCtx(userId),
+            new Dictionary<string, object> { [PlanSkillDefaults.GoalParameter] = "hire and plan" });
+
+        result.Type.ShouldBe(SkillResultType.Confirmation);
+        await _planRepository.Received(1).AddAsync(Arg.Any<AgentPlan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OverMcp_ConfirmedReplay_OfAPlanWithAHiddenSkill_DoesNotStart()
+    {
+        RegisterSkills("create_employee", "list_personal_access_tokens");
+        var userId = Guid.NewGuid();
+        var planId = Guid.NewGuid();
+        _planRepository.GetByIdAsync(planId, Arg.Any<CancellationToken>())
+            .Returns(DraftPlan(planId, userId, HiddenVerifyJson));
+        ExecutionProviderAvailable();
+
+        var result = await _skill.ExecuteAsync(McpCtx(userId), ExecuteParameters(planId));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("list_personal_access_tokens");
+        _planChatService.DidNotReceive().StartBackgroundExecution(
+            Arg.Any<Guid>(), Arg.Any<SkillExecutionContext>(), Arg.Any<bool>());
+    }
+
+    [Test]
+    public async Task OverMcp_ConfirmedReplay_WithExposedSkills_StartsUnderTheMcpContext()
+    {
+        RegisterSkills("create_employee", "create_shift", "list_shifts");
+        var userId = Guid.NewGuid();
+        var planId = Guid.NewGuid();
+        _planRepository.GetByIdAsync(planId, Arg.Any<CancellationToken>()).Returns(DraftPlan(planId, userId));
+        ExecutionProviderAvailable();
+
+        var result = await _skill.ExecuteAsync(McpCtx(userId), ExecuteParameters(planId));
+
+        result.Success.ShouldBeTrue();
+        _planChatService.Received(1).StartBackgroundExecution(
+            planId,
+            Arg.Is<SkillExecutionContext>(c => c.ExternalAgentAccessMode == PersonalAccessTokenAccessMode.Write
+                && c.TokenRenewalOwnerId == null),
+            false);
+    }
+
+    [Test]
+    public async Task InChat_ConfirmedReplay_OfAPlanWithASkillHiddenFromMcp_StillStarts()
+    {
+        var userId = Guid.NewGuid();
+        var planId = Guid.NewGuid();
+        _planRepository.GetByIdAsync(planId, Arg.Any<CancellationToken>())
+            .Returns(DraftPlan(planId, userId, HiddenVerifyJson));
+        ExecutionProviderAvailable();
+
+        var result = await _skill.ExecuteAsync(Ctx(userId), ExecuteParameters(planId));
+
+        result.Success.ShouldBeTrue();
+        _planChatService.Received(1).StartBackgroundExecution(planId, Arg.Any<SkillExecutionContext>(), false);
+    }
 }

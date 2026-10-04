@@ -9,9 +9,12 @@
 /// The second block covers the way OUT of a pause: the skill is the only surface that can set the
 /// per-task irreversible opt-in at all, and re-applying an existing task by name has to lift the pause -
 /// otherwise the note telling the owner to fix the cause points at a state nothing can leave.
+/// The third block covers external agents: over MCP only a skill the caller could call over MCP directly may be
+/// scheduled (real McpDelegatedSkillPolicy), for a new task and for re-authoring an existing one alike.
 /// </summary>
 
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
@@ -39,7 +42,9 @@ public class ScheduleRecurringTaskSkillTests
         _riskClassifier = Substitute.For<ISkillRiskClassifier>();
         _companyClock = new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
         _skill = new ScheduleRecurringTaskSkill(
-            _repository, _skillRegistry, _riskClassifier, new EffectiveTimeZoneResolver(_companyClock));
+            _repository, _skillRegistry, _riskClassifier, new EffectiveTimeZoneResolver(_companyClock),
+            new McpDelegatedSkillPolicy(
+                new McpSkillExposurePolicy(_riskClassifier), new McpReadModeToolPolicy(_riskClassifier)));
     }
 
     private void CompanyZone(string ianaId) => _companyClock.TimeZone = TimeZoneInfo.FindSystemTimeZoneById(ianaId);
@@ -62,10 +67,10 @@ public class ScheduleRecurringTaskSkillTests
         ["apply"] = true
     };
 
-    private void KnownHarmlessSkill(string name)
+    private void KnownHarmlessSkill(string name, SkillCategory category = SkillCategory.Query)
     {
         _skillRegistry.GetSkillByName(name).Returns(new SkillDescriptor(
-            name, "test skill", SkillCategory.Query,
+            name, "test skill", category,
             Array.Empty<SkillParameter>(), Array.Empty<string>(), Array.Empty<LLMCapability>(), null));
         _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.ReadOnly);
     }
@@ -426,5 +431,99 @@ public class ScheduleRecurringTaskSkillTests
         System.Text.Json.JsonSerializer.Serialize(result.Data)
             .ShouldContain("\"allowIrreversibleUnattended\":true");
         await _repository.DidNotReceive().AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    private static Dictionary<string, object> SkillParamsFor(string skillName)
+    {
+        var p = SkillParams();
+        p["skillName"] = skillName;
+        return p;
+    }
+
+    private static SkillExecutionContext McpCtx(PersonalAccessTokenAccessMode mode) =>
+        Ctx(permissions: new[] { "Authorised", "CanViewClients" }) with { ExternalAgentAccessMode = mode };
+
+    [Test]
+    public async Task OverMcp_SkillHiddenFromMcp_IsRefusedAndNothingIsSaved()
+    {
+        KnownHarmlessSkill("list_personal_access_tokens");
+
+        var result = await _skill.ExecuteAsync(
+            McpCtx(PersonalAccessTokenAccessMode.Write), SkillParamsFor("list_personal_access_tokens"));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("cannot be scheduled by an external agent");
+        result.Message.ShouldContain("list_personal_access_tokens");
+        await _repository.DidNotReceive().AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().UpdateAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OverMcp_UiCategorySkill_IsRefused()
+    {
+        KnownHarmlessSkill("open_settings_page", SkillCategory.UI);
+
+        var result = await _skill.ExecuteAsync(
+            McpCtx(PersonalAccessTokenAccessMode.Write), SkillParamsFor("open_settings_page"));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("cannot be scheduled by an external agent");
+        await _repository.DidNotReceive().AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OverMcp_ReadMode_WritingSkill_IsRefused()
+    {
+        KnownHarmlessSkill("update_client");
+        _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.Irreversible);
+
+        var result = await _skill.ExecuteAsync(
+            McpCtx(PersonalAccessTokenAccessMode.Read), SkillParamsFor("update_client"));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("cannot be scheduled by an external agent");
+        await _repository.DidNotReceive().AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OverMcp_WriteMode_ExposedSkill_IsScheduled()
+    {
+        KnownHarmlessSkill("update_client");
+        _riskClassifier.Classify(Arg.Any<SkillDescriptor>()).Returns(SkillRiskClass.Irreversible);
+
+        var result = await _skill.ExecuteAsync(
+            McpCtx(PersonalAccessTokenAccessMode.Write), SkillParamsFor("update_client"));
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task OverMcp_ReAuthoringAnExistingTaskOntoAHiddenSkill_LeavesTheTaskUnchanged()
+    {
+        KnownHarmlessSkill("list_personal_access_tokens");
+        var context = McpCtx(PersonalAccessTokenAccessMode.Write);
+        var existing = ExistingTask(context.UserId, "weekly report");
+
+        var result = await _skill.ExecuteAsync(context, SkillParamsFor("list_personal_access_tokens"));
+
+        result.Success.ShouldBeFalse();
+        existing.ActionType.ShouldBe(ScheduledTaskActionTypes.Reminder);
+        existing.SkillName.ShouldBeNull();
+        existing.ExternalAgentAccessMode.ShouldBeNull();
+        await _repository.DidNotReceive().UpdateAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InChat_SkillHiddenFromMcp_IsStillScheduled()
+    {
+        KnownHarmlessSkill("list_personal_access_tokens");
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(permissions: new[] { "Authorised", "CanViewClients" }), SkillParamsFor("list_personal_access_tokens"));
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(
+            Arg.Is<ScheduledTask>(t => t.SkillName == "list_personal_access_tokens"), Arg.Any<CancellationToken>());
     }
 }

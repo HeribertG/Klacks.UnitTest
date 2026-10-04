@@ -29,6 +29,7 @@ using Klacks.Api.Application.Handlers.Orders;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Grouping;
 using Klacks.Api.Application.Queries.Shifts;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 using Klacks.Api.Application.Services.Orders;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Attributes;
@@ -497,7 +498,8 @@ public class PreviewApplySkillCallsNoWriteTests
         var riskClassifier = Substitute.For<ISkillRiskClassifier>();
         var skill = new ScheduleRecurringTaskSkill(
             repository, skillRegistry, riskClassifier,
-            new EffectiveTimeZoneResolver(new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc)));
+            new EffectiveTimeZoneResolver(new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc)),
+            new McpDelegatedSkillPolicy(new McpSkillExposurePolicy(riskClassifier), new McpReadModeToolPolicy(riskClassifier)));
         var context = Ctx();
         var existing = new ScheduledTask
         {

@@ -13,6 +13,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Application.Services.Assistant.Autonomy;
+using Klacks.Api.Application.Services.Assistant.Mcp;
 using Klacks.Api.Application.Services.Assistant.Scheduling;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Application.Skills.Meta;
@@ -59,7 +60,9 @@ public class ConfirmPendingActionUnattendedChainTests
             repository,
             _registry,
             new SkillRiskClassifier(),
-            new EffectiveTimeZoneResolver(new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc)));
+            new EffectiveTimeZoneResolver(new FixedCompanyClock(DateTimeOffset.UtcNow, TimeZoneInfo.Utc)),
+            new McpDelegatedSkillPolicy(
+                new McpSkillExposurePolicy(new SkillRiskClassifier()), new McpReadModeToolPolicy(new SkillRiskClassifier())));
 
         var result = await skill.ExecuteAsync(InteractiveContext(), new Dictionary<string, object>
         {
