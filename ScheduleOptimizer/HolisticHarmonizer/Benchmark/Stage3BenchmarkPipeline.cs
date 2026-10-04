@@ -14,6 +14,7 @@ using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Conductor;
 using Klacks.ScheduleOptimizer.Harmonizer.Evolution;
+using Klacks.ScheduleOptimizer.Harmonizer.Rules;
 using Klacks.ScheduleOptimizer.Harmonizer.Scorer;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution;
@@ -108,7 +109,7 @@ public static class Stage3BenchmarkPipeline
     {
         var sorted = RowSorter.Sort(BitmapBuilder.Build(input));
         var scorer = new HarmonyScorer();
-        var validator = new DomainAwareReplaceValidator(input.Availability, input.BoundaryAssignments, input.IneligibleAssignments);
+        var validator = DomainAwareReplaceValidator.ForInput(input, BitmapRuleRuntime.TryCreate(input));
         var fitness = new HarmonyFitnessEvaluator(scorer);
         var stochastic = new StochasticBitmapMutation(validator);
         var config = HarmonizerJobRunner.BuildEvolutionConfig(useEvolution: false, Stage2Budget, seed);

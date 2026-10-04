@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.Schedules;
+using Klacks.ScheduleOptimizer.Constraints.Rules;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.Harmonizer.Scorer;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Candidates;
@@ -39,6 +40,7 @@ public class HarmonizerContextBuilderTargetHoursTests
 
     private DataBaseContext _context = null!;
     private IClientContractDataProvider _contractProvider = null!;
+    private IPlanningRuleSetLoader _ruleSetLoader = null!;
 
     [SetUp]
     public void SetUp()
@@ -48,6 +50,9 @@ public class HarmonizerContextBuilderTargetHoursTests
             .Options;
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _contractProvider = Substitute.For<IClientContractDataProvider>();
+        _ruleSetLoader = Substitute.For<IPlanningRuleSetLoader>();
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([], [], [], []));
     }
 
     [TearDown]
@@ -168,6 +173,72 @@ public class HarmonizerContextBuilderTargetHoursTests
         result[agent].ShouldBe(0m);
     }
 
+    [Test]
+    public async Task BuildContextAsync_WithPlanningRules_CarriesRulesAgentsCarryInOutsideTheBoundaryAndIgnoresSubWorks()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(PaymentInterval.Monthly, MonthlyGuaranteedHours, agent);
+        await SeedWorksAsync(agent, workDays: 2);
+        var parent = _context.Work.First();
+        var subWork = new Work
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            ShiftId = Guid.NewGuid(),
+            ParentWorkId = parent.Id,
+            CurrentDate = parent.CurrentDate,
+            StartTime = new TimeOnly(8, 0),
+            EndTime = new TimeOnly(9, 0),
+            WorkTime = 1m,
+        };
+        _context.Work.Add(subWork);
+        await _context.SaveChangesAsync();
+        var window = new CoreNightWindow(new TimeOnly(22, 0), new TimeOnly(5, 0));
+        var rule = new MaxConsecutiveOfKindRule(Guid.NewGuid(), RuleSeverity.Hard, 1, RuleShiftKind.Night, 3);
+        var insideBoundary = new RuleSegment(agent.ToString(), WeekStart.AddDays(-3), new TimeOnly(22, 0), new TimeOnly(6, 0), 2, 8m);
+        var outsideBoundary = new RuleSegment(agent.ToString(), WeekStart.AddDays(-20), new TimeOnly(22, 0), new TimeOnly(6, 0), 2, 8m);
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([rule], [new RuleAgent(agent.ToString(), window, 80m, 120)], [insideBoundary, outsideBoundary], []));
+
+        var input = await BuildSut().BuildContextAsync(new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+
+        await _ruleSetLoader.Received(1).LoadRuleSetAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), WeekStart, WeekEnd, null, 14, Arg.Any<CancellationToken>());
+        input.Rules.ShouldNotBeNull();
+        input.Rules.Rules.ShouldBe([rule]);
+        input.Rules.CarryIn.ShouldBe([outsideBoundary]);
+        input.Rules.NightRuleMinOverlapMinutes.ShouldBe(120);
+        input.Rules.IgnoredWorkIds!.ShouldBe([subWork.Id]);
+        input.Agents.Single().NightWindow.ShouldBe(window);
+        input.Agents.Single().WorkloadPercent.ShouldBe(80m);
+    }
+
+    [Test]
+    public async Task BuildContextAsync_PlanningRulesSwitchedOff_DoesNotLoadThem()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(PaymentInterval.Monthly, MonthlyGuaranteedHours, agent);
+
+        var input = await BuildSut().BuildContextAsync(
+            new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null, LoadPlanningRules: false), CancellationToken.None);
+
+        input.Rules.ShouldBeNull();
+        await _ruleSetLoader.DidNotReceiveWithAnyArgs().LoadRuleSetAsync(default!, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task BuildContextAsync_WithoutPlanningRules_LeavesInputAndAgentsUnchanged()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(PaymentInterval.Monthly, MonthlyGuaranteedHours, agent);
+
+        var input = await BuildSut().BuildContextAsync(new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+
+        input.Rules.ShouldBeNull();
+        input.Agents.Single().NightWindow.ShouldBeNull();
+        input.Agents.Single().WorkloadPercent.ShouldBeNull();
+    }
+
     private void StubContract(PaymentInterval interval, decimal guaranteedHours, params Guid[] agents)
     {
         var data = new EffectiveContractData
@@ -252,6 +323,6 @@ public class HarmonizerContextBuilderTargetHoursTests
             NegNightToken = "-NIGHT",
         });
 
-        return new HarmonizerContextBuilder(_context, _contractProvider, softening, eligibility, availability, windows, keywords);
+        return new HarmonizerContextBuilder(_context, _contractProvider, softening, eligibility, availability, windows, keywords, _ruleSetLoader);
     }
 }
