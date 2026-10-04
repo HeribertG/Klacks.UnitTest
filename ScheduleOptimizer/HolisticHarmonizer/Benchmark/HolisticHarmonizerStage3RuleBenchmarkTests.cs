@@ -52,6 +52,9 @@ public class HolisticHarmonizerStage3RuleBenchmarkTests
         Stage3BenchmarkPipeline.Month,
         Stage3BenchmarkPipeline.LiveSize,
         Stage3BenchmarkPipeline.Large,
+        Stage3BenchmarkPipeline.Week,
+        Stage3BenchmarkPipeline.WeekCalibration,
+        Stage3BenchmarkPipeline.MonthCalibration,
     ];
 
     private static IReadOnlyList<PlanRule> Rules =>
