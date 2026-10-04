@@ -201,6 +201,68 @@ public class RegionSetupExampleProfileTests
         await Should.NotThrowAsync(service.ApplyAsync, $"semantic validation failed for {Path.GetFileName(path)}");
     }
 
+    // The website downloads are built from Klacks.Marketplace/Resources/RegionProfiles, not from
+    // deploy/onprem/regions, so a field removed from the setup DTOs must also disappear there: the
+    // fresh-install parse is fail-fast and would stop the customer's first boot (2026-10-03: ch.json
+    // still carried worktime.onCall, it.json compensatoryRest.autoPlan).
+    private static IEnumerable<TestCaseData> AllMarketplaceRegionProfilePaths()
+    {
+        var directory = MarketplaceRegionProfilesDirectory();
+        if (!Directory.Exists(directory))
+        {
+            yield return new TestCaseData(string.Empty)
+                .SetName("marketplace-not-checked-out")
+                .Ignore($"'{directory}' is not reachable from this working tree.");
+            yield break;
+        }
+
+        foreach (var path in Directory.GetFiles(directory, "*.json").OrderBy(p => p, StringComparer.Ordinal))
+        {
+            yield return new TestCaseData(path).SetName("marketplace-" + Path.GetFileName(path));
+        }
+    }
+
+    [TestCaseSource(nameof(AllMarketplaceRegionProfilePaths))]
+    public async Task MarketplaceRegionProfile_ParsesAgainstCurrentSchema(string path)
+    {
+        var profile = await RegionSetupFileReader.ReadProfileAsync(path);
+
+        profile.Version.ShouldBe(1);
+        profile.Region.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [TestCaseSource(nameof(AllMarketplaceRegionProfilePaths))]
+    public async Task MarketplaceRegionProfile_PassesSemanticStartupValidation(string path)
+    {
+        var service = CreateFreshInstallationService(path);
+
+        await Should.NotThrowAsync(service.ApplyAsync, $"semantic validation failed for marketplace {Path.GetFileName(path)}");
+    }
+
+    // Surcharges are time credits (hours x rate). The Finnish CBA night allowances are money amounts per
+    // hour, so they grant no time credit; the former preset "nightRate 1.36" + "fixedPerHour" credited
+    // 1.36 h per night hour because fixedPerHour computes exactly like a multiplier. The 0 is a country
+    // fact and therefore the installation default: a preset rate would override every contract.
+    [TestCase("deploy")]
+    [TestCase("marketplace")]
+    public async Task FinnishProfile_DefaultsNightTimeCreditToZeroAtCountryLevel(string source)
+    {
+        var directory = source == "deploy" ? RegionsDirectory() : MarketplaceRegionProfilesDirectory();
+        if (!Directory.Exists(directory))
+        {
+            Assert.Ignore($"'{directory}' is not reachable from this working tree.");
+        }
+
+        var profile = await RegionSetupFileReader.ReadProfileAsync(Path.Combine(directory, "fi.json"));
+
+        var surcharges = profile.Surcharges.ShouldNotBeNull();
+        surcharges.NightRate.ShouldBe(0m);
+        surcharges.RateModes.ShouldBeNull();
+        profile.IndustryProfiles.ShouldNotBeNull().Values
+            .SelectMany(industry => industry.SchedulingRulePresets ?? [])
+            .ShouldAllBe(preset => preset.NightRate == null);
+    }
+
     [Test]
     public async Task ShippedRegionExampleProfile_WithUnknownLanguagePluginCode_ThrowsInvalidRequestException()
     {
@@ -223,6 +285,12 @@ public class RegionSetupExampleProfileTests
     {
         var repoRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", "..", ".."));
         return Path.Combine(repoRoot, "Klacks.Api", "deploy", "onprem", "regions");
+    }
+
+    private static string MarketplaceRegionProfilesDirectory([CallerFilePath] string sourceFile = "")
+    {
+        var repoRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", "..", ".."));
+        return Path.Combine(repoRoot, "Klacks.Marketplace", "Resources", "RegionProfiles");
     }
 
     // Mirrors the real LanguagePluginService discovery: a language plugin exists iff
