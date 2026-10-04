@@ -51,6 +51,11 @@ public class HolisticHarmonizerSkippedRuleWarningTests
             excess.ShouldBeLessThanOrEqualTo(before.GetValueOrDefault(key));
         }
 
+        var remaining = response.PlanningRuleRemaining.ShouldNotBeNull();
+        remaining.HardBefore.ShouldBe(oracle.Evaluate(PlanningRuleBitmapFixture.OraclePlan(context, input, result.OriginalBitmap)).HardCount);
+        remaining.HardAfter.ShouldBe(oracle.Evaluate(PlanningRuleBitmapFixture.OraclePlan(context, input, result.FinalBitmap)).HardCount);
+        remaining.HardAfter.ShouldBeLessThanOrEqualTo(remaining.HardBefore);
+
         var warning = response.PlanningRuleWarnings!.ShouldHaveSingleItem();
         warning.Comment.ShouldBe(ScheduleValidationKeys.PlanningRuleInvalid);
         warning.Type.ShouldBe(ScheduleValidationType.Warning);
@@ -64,6 +69,9 @@ public class HolisticHarmonizerSkippedRuleWarningTests
         var bitmap = new HarmonyBitmap([], [], new Cell[0, 0]);
         var result = new Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations.HolisticHarmonizerRunResult(bitmap, bitmap, [], 0, 0, "x", null, null);
 
-        HolisticHarmonizerResponseMapper.ToResponse(Guid.NewGuid(), result).PlanningRuleWarnings!.ShouldBeEmpty();
+        var response = HolisticHarmonizerResponseMapper.ToResponse(Guid.NewGuid(), result);
+
+        response.PlanningRuleWarnings!.ShouldBeEmpty();
+        response.PlanningRuleRemaining.ShouldBeNull();
     }
 }
