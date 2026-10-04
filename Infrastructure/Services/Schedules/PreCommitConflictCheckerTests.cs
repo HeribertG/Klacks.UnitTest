@@ -320,6 +320,58 @@ public class PreCommitConflictCheckerTests
     }
 
     [Test]
+    public async Task ExpiredMandatoryQualification_DefaultsToWarning_NeverBlocks()
+    {
+        var shiftId = SeedExpiredMandatoryQualification();
+
+        var row = new PlannedWorkRow(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(16, 0), shiftId);
+        var result = await _checker.CheckAsync([row]);
+
+        result.HasBlocking.ShouldBeFalse();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == QualificationValidationKeys.Expired && c.Type == ScheduleValidationType.Warning);
+    }
+
+    [Test]
+    public async Task ExpiredMandatoryQualification_BlocksWhenSettingEnabled()
+    {
+        _settingsReader.GetSetting(SettingKeys.QualificationExpiredMandatoryBlocks)
+            .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.QualificationExpiredMandatoryBlocks, Value = "true" });
+        var shiftId = SeedExpiredMandatoryQualification();
+
+        var row = new PlannedWorkRow(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(16, 0), shiftId);
+        var result = await _checker.CheckAsync([row]);
+
+        result.HasBlocking.ShouldBeTrue();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == QualificationValidationKeys.Expired && c.Type == ScheduleValidationType.Error);
+    }
+
+    private Guid SeedExpiredMandatoryQualification()
+    {
+        var qualificationId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        _context.ShiftRequiredQualification.Add(new Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification
+        {
+            Id = Guid.NewGuid(),
+            ShiftId = shiftId,
+            QualificationId = qualificationId,
+            IsMandatory = true,
+            MinLevel = QualificationLevel.Basic
+        });
+        _context.ClientQualification.Add(new Klacks.Api.Domain.Models.Associations.ClientQualification
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientA,
+            QualificationId = qualificationId,
+            Level = QualificationLevel.Basic,
+            ValidUntil = Day.AddDays(-10)
+        });
+        _context.SaveChanges();
+        return shiftId;
+    }
+
+    [Test]
     public async Task MissingMandatoryQualification_IsHardBlocking_EvenWhenBlockModeConfigured()
     {
         // The one structural Error left that is never overridable and never silently accepted (owner
