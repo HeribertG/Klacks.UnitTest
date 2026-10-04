@@ -6,7 +6,10 @@
 /// group's Nested Set subtree, via its root) covers the event's group, a planner with zero
 /// GroupVisibility rows is excluded (fail-closed rather than "sees everything"), synthetic rows for
 /// other users never widen an unrelated planner's scope, an unresolvable group falls back to
-/// admins-only, and the result is cached like the existing planner/admin sets.
+/// admins-only, and the result is cached like the existing planner/admin sets. The client-scoped
+/// audience follows the client visibility rule: unknown client = admins only, group-less client = every
+/// planner (also one without visibility rows), otherwise the union over the client's non-scenario groups
+/// (subgroups via their root), so a scenario-only client reaches the admins only.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -27,6 +30,7 @@ public class PlanningAudienceResolverTests
     private IMemoryCache _cache = null!;
     private IGroupVisibilityRepository _groupVisibilityRepository = null!;
     private IGroupRepository _groupRepository = null!;
+    private IGroupItemRepository _groupItemRepository = null!;
     private PlanningAudienceResolver _sut = null!;
 
     private static readonly Guid RootGroupId = Guid.NewGuid();
@@ -59,7 +63,10 @@ public class PlanningAudienceResolverTests
         _groupVisibilityRepository = Substitute.For<IGroupVisibilityRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
 
-        _sut = new PlanningAudienceResolver(_userManager, _cache, _groupVisibilityRepository, _groupRepository);
+        _groupItemRepository = Substitute.For<IGroupItemRepository>();
+
+        _sut = new PlanningAudienceResolver(
+            _userManager, _cache, _groupVisibilityRepository, _groupRepository, _groupItemRepository);
     }
 
     [TearDown]
@@ -228,5 +235,85 @@ public class PlanningAudienceResolverTests
         var result = await _sut.GetAdminUserIdsAsync();
 
         result.ShouldBe(new[] { AdminUserId });
+    }
+
+    private static readonly Guid ClientId = Guid.NewGuid();
+
+    private void SetupAllRoles()
+    {
+        SetupRoles(
+            new List<AppUser> { MakeUser(AdminUserId) },
+            new List<AppUser>
+            {
+                MakeUser(ScopedPlannerUserId), MakeUser(ForeignScopedPlannerUserId), MakeUser(NoRowPlannerUserId)
+            });
+        SetupVisibility(ScopedPlannerUserId, RootGroupId);
+        SetupVisibility(ForeignScopedPlannerUserId, ForeignRootGroupId);
+        SetupVisibility(NoRowPlannerUserId);
+        SetupGroup(RootGroupId, null);
+        SetupGroup(ChildGroupId, RootGroupId);
+        SetupGroup(ForeignRootGroupId, null);
+    }
+
+    private void SetupMembership(ClientVisibilityMembership? membership) =>
+        _groupItemRepository.GetVisibilityMembershipAsync(ClientId, Arg.Any<CancellationToken>()).Returns(membership);
+
+    [Test]
+    public async Task GetPlanningUserIdsForClientAsync_UnknownClient_ReachesTheAdminsOnly()
+    {
+        SetupAllRoles();
+        SetupMembership(null);
+
+        var result = await _sut.GetPlanningUserIdsForClientAsync(ClientId);
+
+        result.ShouldBe(new[] { AdminUserId }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task GetPlanningUserIdsForClientAsync_GroupLessClient_ReachesEveryPlanner()
+    {
+        SetupAllRoles();
+        SetupMembership(new ClientVisibilityMembership(false, []));
+
+        var result = await _sut.GetPlanningUserIdsForClientAsync(ClientId);
+
+        result.ShouldBe(
+            new[] { AdminUserId, ScopedPlannerUserId, ForeignScopedPlannerUserId, NoRowPlannerUserId },
+            ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task GetPlanningUserIdsForClientAsync_ClientInSubgroup_ReachesAdminAndPlannerOfThatTreeOnly()
+    {
+        SetupAllRoles();
+        SetupMembership(new ClientVisibilityMembership(true, [ChildGroupId]));
+
+        var result = await _sut.GetPlanningUserIdsForClientAsync(ClientId);
+
+        result.ShouldBe(new[] { AdminUserId, ScopedPlannerUserId }, ignoreOrder: true);
+        result.ShouldNotContain(ForeignScopedPlannerUserId);
+        result.ShouldNotContain(NoRowPlannerUserId);
+    }
+
+    [Test]
+    public async Task GetPlanningUserIdsForClientAsync_ClientInSeveralGroups_ReachesThePlannersOfEveryGroup()
+    {
+        SetupAllRoles();
+        SetupMembership(new ClientVisibilityMembership(true, [ChildGroupId, ForeignRootGroupId]));
+
+        var result = await _sut.GetPlanningUserIdsForClientAsync(ClientId);
+
+        result.ShouldBe(new[] { AdminUserId, ScopedPlannerUserId, ForeignScopedPlannerUserId }, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task GetPlanningUserIdsForClientAsync_ScenarioOnlyClient_ReachesTheAdminsOnly()
+    {
+        SetupAllRoles();
+        SetupMembership(new ClientVisibilityMembership(true, []));
+
+        var result = await _sut.GetPlanningUserIdsForClientAsync(ClientId);
+
+        result.ShouldBe(new[] { AdminUserId }, ignoreOrder: true);
     }
 }

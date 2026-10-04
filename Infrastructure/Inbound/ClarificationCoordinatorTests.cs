@@ -207,6 +207,7 @@ public class ClarificationCoordinatorTests
         await _messengerSender.Received(1).SendAsync(request, Arg.Any<InboundReplyTarget>(), Question, Arg.Any<CancellationToken>());
         await _emailSender.DidNotReceiveWithAnyArgs().SendAsync(default!, default!, default!, default);
         await _notifier.Received(1).NotifyMessageAsync(
+            ClientId,
             Arg.Is<string>(m => m.Contains("Clarification requested") && m.Contains(Question) && m.Contains("2026-09-23 09:00")),
             Arg.Any<CancellationToken>());
     }
@@ -222,6 +223,7 @@ public class ClarificationCoordinatorTests
 
         result.ShouldBe(ClarificationPostAnalysis.Sent);
         await _notifier.Received(1).NotifyMessageAsync(
+            ClientId,
             Arg.Is<string>(m => m.Contains(heading) && m.Contains(Question) && m.Contains("2026-09-23 09:00") && m.Contains(shiftLine)
                                 && !m.Contains("Clarification requested") && !m.Contains("{")),
             Arg.Any<CancellationToken>());
@@ -236,6 +238,7 @@ public class ClarificationCoordinatorTests
         await _coordinator.AfterAnalysisAsync(MessengerRequest(), analysis);
 
         await _notifier.Received(1).NotifyMessageAsync(
+            ClientId,
             Arg.Is<string>(m => m.Contains("The message was unclear: {question} {sender}")), Arg.Any<CancellationToken>());
     }
 
@@ -275,6 +278,7 @@ public class ClarificationCoordinatorTests
 
         result.ShouldBe(ClarificationPostAnalysis.Sent);
         await _notifier.Received(1).NotifyMessageAsync(
+            ClientId,
             Arg.Is<string>(m => m.Contains("Clarification requested")), Arg.Any<CancellationToken>());
     }
 
@@ -297,7 +301,7 @@ public class ClarificationCoordinatorTests
     [Test]
     public async Task After_Ask_NotifierThrowsOnTheStartNotice_StillReturnsSent()
     {
-        _notifier.NotifyMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _notifier.NotifyMessageAsync(Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("smtp down")));
 
         var result = await _coordinator.AfterAnalysisAsync(MessengerRequest(), UnclearAnalysis());
@@ -528,7 +532,7 @@ public class ClarificationCoordinatorTests
             Arg.Is<Guid?>(id => id == null),
             NowUtc,
             Arg.Any<CancellationToken>());
-        await _notifier.DidNotReceiveWithAnyArgs().NotifyMessageAsync(default!, default);
+        await _notifier.DidNotReceiveWithAnyArgs().NotifyMessageAsync(default, default!, default);
     }
 
     [Test]

@@ -97,6 +97,7 @@ public class ClarificationExpirySweepTests
         await _repository.Received(1).TryResolveAsync(
             clarification.Id, InboundClarificationStatus.Expired, null, null, NowUtc, Arg.Any<CancellationToken>());
         await _notifier.Received(1).NotifyMessageAsync(
+            clarification.ClientId,
             Arg.Is<string>(m => m.Contains("Question unanswered") && m.Contains("Anna Muster") && m.Contains(clarification.Question)
                                 && m.Contains("2026-09-23 09:59") && m.Contains("Spätdienst 2026-09-23 14:00-22:00")),
             Arg.Any<CancellationToken>());
@@ -114,6 +115,7 @@ public class ClarificationExpirySweepTests
         await _sweep.RunCycleAsync(CancellationToken.None);
 
         await _notifier.Received(1).NotifyMessageAsync(
+            clarification.ClientId,
             Arg.Is<string>(m => m.Contains(heading) && m.Contains("Anna Muster") && m.Contains("2026-09-23 09:59")
                                 && !m.Contains("Question unanswered") && !m.Contains("{")),
             Arg.Any<CancellationToken>());
@@ -129,7 +131,7 @@ public class ClarificationExpirySweepTests
         var expired = await _sweep.RunCycleAsync(CancellationToken.None);
 
         expired.ShouldBe(0);
-        await _notifier.DidNotReceiveWithAnyArgs().NotifyMessageAsync(default!, default);
+        await _notifier.DidNotReceiveWithAnyArgs().NotifyMessageAsync(default, default!, default);
     }
 
     [Test]
@@ -138,7 +140,7 @@ public class ClarificationExpirySweepTests
         _repository.GetOpenDueAsync(NowUtc, Arg.Any<CancellationToken>()).Returns(Array.Empty<InboundClarification>());
 
         (await _sweep.RunCycleAsync(CancellationToken.None)).ShouldBe(0);
-        await _notifier.DidNotReceiveWithAnyArgs().NotifyMessageAsync(default!, default);
+        await _notifier.DidNotReceiveWithAnyArgs().NotifyMessageAsync(default, default!, default);
     }
 
     [Test]
@@ -150,7 +152,7 @@ public class ClarificationExpirySweepTests
         var expired = await _sweep.RunCycleAsync(CancellationToken.None);
 
         expired.ShouldBe(2);
-        await _notifier.Received(2).NotifyMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _notifier.Received(2).NotifyMessageAsync(Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -159,13 +161,13 @@ public class ClarificationExpirySweepTests
         var first = Due(NowUtc.AddMinutes(-2), "Anna Muster");
         var second = Due(NowUtc.AddMinutes(-1), "Ben Beispiel");
         _repository.GetOpenDueAsync(NowUtc, Arg.Any<CancellationToken>()).Returns(new[] { first, second });
-        _notifier.NotifyMessageAsync(Arg.Is<string>(m => m.Contains("Anna Muster")), Arg.Any<CancellationToken>())
+        _notifier.NotifyMessageAsync(first.ClientId, Arg.Is<string>(m => m.Contains("Anna Muster")), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("notifier down"));
 
         var expired = await _sweep.RunCycleAsync(CancellationToken.None);
 
         expired.ShouldBe(2);
-        await _notifier.Received(1).NotifyMessageAsync(Arg.Is<string>(m => m.Contains("Ben Beispiel")), Arg.Any<CancellationToken>());
+        await _notifier.Received(1).NotifyMessageAsync(second.ClientId, Arg.Is<string>(m => m.Contains("Ben Beispiel")), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -268,7 +270,7 @@ public class ClarificationExpirySweepTests
         var expired = await _sweep.RunCycleAsync(CancellationToken.None);
 
         expired.ShouldBe(1);
-        await _notifier.Received(1).NotifyMessageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _notifier.Received(1).NotifyMessageAsync(Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

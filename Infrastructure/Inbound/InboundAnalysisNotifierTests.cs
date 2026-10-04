@@ -1,7 +1,9 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for InboundAnalysisNotifier — verifies planner/admin audience union, live delivery
+/// Unit tests for InboundAnalysisNotifier — verifies the client-scoped audience (admins always, a
+/// group-restricted supervisor only when the resolver says he may see the message's client, admins only
+/// for a message attributed to no client, the unscoped planner list never consulted), live delivery
 /// to connected users, durable PendingUserNote stashing before every send, acknowledgement of
 /// exactly that note after a successful live send (no double relay), retention of the note when
 /// the send fails despite a positive presence report, that a missing default agent or a
@@ -31,6 +33,9 @@ public class InboundAnalysisNotifierTests
     private static readonly Guid PlannerGuid = Guid.NewGuid();
     private static readonly Guid AdminGuid = Guid.NewGuid();
     private static readonly Guid AgentGuid = Guid.NewGuid();
+    private static readonly Guid ClientGuid = Guid.NewGuid();
+    private static readonly Guid HiddenSupervisorGuid = Guid.NewGuid();
+    private static readonly string HiddenSupervisor = HiddenSupervisorGuid.ToString();
     private static readonly string Planner = PlannerGuid.ToString();
     private static readonly string Admin = AdminGuid.ToString();
 
@@ -47,7 +52,9 @@ public class InboundAnalysisNotifierTests
             .Do(ci => _stashedNotes.Add(ci.ArgAt<PendingUserNote>(0)));
 
         _audienceResolver.GetPlanningUserIdsAsync(Arg.Any<CancellationToken>())
-            .Returns(new HashSet<string> { Planner });
+            .Returns(new HashSet<string> { Planner, HiddenSupervisor, Admin });
+        _audienceResolver.GetPlanningUserIdsForClientAsync(ClientGuid, Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string> { Planner, Admin });
         _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new HashSet<string> { Admin });
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>())
@@ -64,6 +71,7 @@ public class InboundAnalysisNotifierTests
 
     private static InboundAnalysis Analysis() => new()
     {
+        ClientId = ClientGuid,
         Intent = EmailIntent.WorkCancellation,
         Summary = "Mitarbeiter meldet sich für morgen krank.",
         FromDate = new DateOnly(2026, 7, 9),
@@ -285,7 +293,7 @@ public class InboundAnalysisNotifierTests
         _notificationService.IsUserConnectedAsync(Planner).Returns(true);
         _notificationService.IsUserConnectedAsync(Admin).Returns(false);
 
-        await _notifier.NotifyMessageAsync("⏰ **Question unanswered** — Anna Muster");
+        await _notifier.NotifyMessageAsync(ClientGuid, "⏰ **Question unanswered** — Anna Muster");
 
         _stashedNotes.Count.ShouldBe(2);
         _stashedNotes.ShouldAllBe(n => n.Content == "⏰ **Question unanswered** — Anna Muster" && n.Topic == "inbound-analysis");
@@ -298,7 +306,7 @@ public class InboundAnalysisNotifierTests
     [Test]
     public async Task NotifyMessageAsync_BlankText_DoesNothing()
     {
-        await _notifier.NotifyMessageAsync("   ");
+        await _notifier.NotifyMessageAsync(ClientGuid, "   ");
 
         await _pendingNotes.DidNotReceive().AddAsync(Arg.Any<PendingUserNote>(), Arg.Any<CancellationToken>());
     }
@@ -342,5 +350,85 @@ public class InboundAnalysisNotifierTests
             Planner,
             Arg.Is<string>(m => m.Contains("Period: 2026-07-08 – 2026-07-10 (start assumed: received day)")),
             null, null);
+    }
+
+    [Test]
+    public async Task SupervisorWhoCannotSeeTheClient_GetsNeitherNoteNorPush()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyAsync(Source(), Analysis());
+
+        _stashedNotes.ShouldNotContain(n => n.UserId == HiddenSupervisorGuid);
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(
+            HiddenSupervisor, Arg.Any<string>(), null, null);
+        await _audienceResolver.DidNotReceive().GetPlanningUserIdsAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SupervisorWhoCanSeeTheClient_GetsNoteAndPush()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyAsync(Source(), Analysis());
+
+        _stashedNotes.Single(n => n.UserId == PlannerGuid).Content.ShouldContain("Mitarbeiter meldet sich");
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            Planner, Arg.Is<string>(m => m.Contains("Mitarbeiter meldet sich")), null, null);
+        await _audienceResolver.Received(1).GetPlanningUserIdsForClientAsync(ClientGuid, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Admin_IsNotifiedEvenWhenTheClientAudienceLeavesHimOut()
+    {
+        _audienceResolver.GetPlanningUserIdsForClientAsync(ClientGuid, Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string>());
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyAsync(Source(), Analysis());
+
+        _stashedNotes.Select(n => n.UserId).ShouldBe(new Guid?[] { AdminGuid });
+        await _notificationService.Received(1).SendProactiveMessageAsync(Admin, Arg.Any<string>(), null, null);
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(
+            Planner, Arg.Any<string>(), null, null);
+    }
+
+    [Test]
+    public async Task AnalysisWithoutClient_ReachesTheAdminsOnly()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+        var analysis = Analysis();
+        analysis.ClientId = null;
+
+        await _notifier.NotifyAsync(Source(), analysis);
+
+        _stashedNotes.Select(n => n.UserId).ShouldBe(new Guid?[] { AdminGuid });
+        await _notificationService.Received(1).SendProactiveMessageAsync(Admin, Arg.Any<string>(), null, null);
+        await _audienceResolver.DidNotReceiveWithAnyArgs().GetPlanningUserIdsForClientAsync(default, default);
+        await _audienceResolver.DidNotReceive().GetPlanningUserIdsAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NotifyMessageAsync_SupervisorWhoCannotSeeTheClient_GetsNothing()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyMessageAsync(ClientGuid, "❓ **Clarification requested** — Anna Muster");
+
+        _stashedNotes.Select(n => n.UserId).ShouldBe(new Guid?[] { PlannerGuid, AdminGuid }, ignoreOrder: true);
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(
+            HiddenSupervisor, Arg.Any<string>(), null, null);
+    }
+
+    [Test]
+    public async Task NotifyMessageAsync_WithoutClient_ReachesTheAdminsOnly()
+    {
+        _notificationService.IsUserConnectedAsync(Arg.Any<string>()).Returns(true);
+
+        await _notifier.NotifyMessageAsync(null, "⏰ **Question unanswered** — Anna Muster");
+
+        _stashedNotes.Select(n => n.UserId).ShouldBe(new Guid?[] { AdminGuid });
+        await _notificationService.DidNotReceive().SendProactiveMessageAsync(
+            Planner, Arg.Any<string>(), null, null);
     }
 }
