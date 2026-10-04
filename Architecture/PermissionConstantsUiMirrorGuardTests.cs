@@ -31,13 +31,13 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class PermissionConstantsUiMirrorGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string UiProjectDirectory = "Klacks.Ui";
     private const string RoleAdminConstantName = "ROLE_ADMIN";
     private const string PermissionsObjectName = "PERMISSIONS";
@@ -62,11 +62,10 @@ public class PermissionConstantsUiMirrorGuardTests
     [Test]
     public void UiPermissionConstants_MustMirrorTheBackendPermissionsAndAdminRole()
     {
-        var uiProject = LocateUiProject();
-        if (!Directory.Exists(uiProject))
+        var uiProject = RepositoryRootLocator.FindDirectory(UiProjectDirectory);
+        if (uiProject == null)
         {
-            Assert.Inconclusive(
-                $"'{uiProject}' is not reachable from this working tree, so the mirror cannot be compared here.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiProjectDirectory));
             return;
         }
 
@@ -177,32 +176,8 @@ public class PermissionConstantsUiMirrorGuardTests
         return values;
     }
 
-    private static string LocateUiProject()
-    {
-        var apiProject = new DirectoryInfo(LocateApiProject());
-        var repositoryRoot = apiProject.Parent
-            ?? throw new DirectoryNotFoundException(
-                $"The {ApiProjectDirectory} project has no parent directory, so {UiProjectDirectory} " +
-                "cannot be located as its sibling.");
-
-        return Path.Combine(repositoryRoot.FullName, UiProjectDirectory);
-    }
-
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, "Domain", "Services")))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

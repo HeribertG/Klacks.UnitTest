@@ -11,6 +11,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -244,23 +245,7 @@ public class RecipeTriggerVetoQualityTests
 
     private static string LocateDefinitionsFile(string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(DefinitionsRelativePath);
-            segments.Add(fileName);
-            var candidate = Path.Combine(segments.ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', DefinitionsRelativePath)}/{fileName} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, fileName]);
     }
 
     /// <summary>
@@ -470,21 +455,6 @@ public class RecipeTriggerVetoQualityTests
 
     private static string LocatePluginsLanguagesDir()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(PluginsLanguagesRelativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', PluginsLanguagesRelativePath)} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireDirectory(PluginsLanguagesRelativePath);
     }
 }

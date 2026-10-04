@@ -9,6 +9,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -225,21 +226,6 @@ public class SkillSeedDescriptionQualityTests
 
     private static string LocateDefinitionsFile(string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(DefinitionsRelativePath);
-            segments.Add(fileName);
-            var candidate = Path.Combine(segments.ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException($"Could not locate {fileName} above {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, fileName]);
     }
 }

@@ -19,6 +19,7 @@ using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -403,23 +404,7 @@ public class RecipeEngineServiceSemanticAnchorTests
 
     private static string LocatePackFile(string language, string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(PluginsLanguagesRelativePath);
-            segments.Add(language);
-            segments.Add(fileName);
-            var candidate = Path.Combine(segments.ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException($"Could not locate {language}/{fileName} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireFile([.. PluginsLanguagesRelativePath, language, fileName]);
     }
 
     [Test]
@@ -475,21 +460,6 @@ public class RecipeEngineServiceSemanticAnchorTests
 
     private static string LocateDefinitionsFile(string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(DefinitionsRelativePath);
-            segments.Add(fileName);
-            var candidate = Path.Combine(segments.ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException($"Could not locate {fileName} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, fileName]);
     }
 }

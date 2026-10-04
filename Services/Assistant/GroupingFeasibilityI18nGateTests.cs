@@ -12,6 +12,7 @@ using Klacks.Api.Application.DTOs.Grouping;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Common;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Services.Assistant;
 
@@ -60,7 +61,7 @@ public class GroupingFeasibilityI18nGateTests
         var directory = FindDirectory(UiCatalogueRelativePath);
         if (directory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -117,19 +118,6 @@ public class GroupingFeasibilityI18nGateTests
 
     private static string? FindDirectory(string relativePath)
     {
-        var segments = relativePath.Split('/');
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine([directory.FullName, .. segments]);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(relativePath);
     }
 }

@@ -35,7 +35,6 @@ public class EscalationNotifierHandoffTextTests
     private const string UnknownAction = "unknown action";
     private const string Japanese = "ja";
     private const string ChineseSimplified = "zh-CN";
-    private const string ApiDirectory = "Klacks.Api";
     private const string PluginsDirectory = "Plugins";
     private const string LanguagesDirectory = "Languages";
     private const string AssistantTextsFile = "assistant-texts.json";
@@ -96,15 +95,7 @@ public class EscalationNotifierHandoffTextTests
 
     private static string ApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null
-               && !Directory.Exists(Path.Combine(directory.FullName, ApiDirectory, PluginsDirectory, LanguagesDirectory)))
-        {
-            directory = directory.Parent;
-        }
-
-        directory.ShouldNotBeNull();
-        return Path.Combine(directory.FullName, ApiDirectory);
+        return RepositoryRootLocator.ApiProject;
     }
 
     private static void LoadThePacks()

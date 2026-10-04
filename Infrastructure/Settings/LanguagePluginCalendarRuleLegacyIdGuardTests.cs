@@ -9,6 +9,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Application.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Settings;
 
@@ -88,21 +89,6 @@ public class LanguagePluginCalendarRuleLegacyIdGuardTests
 
     private static string LocateDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 }

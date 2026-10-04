@@ -15,13 +15,13 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 
 [TestFixture]
 public class CorrectionGoldsetLabelGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string SkillSeedRelativePath = "Application/Skills/Definitions/skill-seeds.json";
     private const string GoldsetRelativePath = "Application/Skills/Goldsets/correction-v1.json";
 
@@ -100,19 +100,6 @@ public class CorrectionGoldsetLabelGuardTests
 
     private static string LocateApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory, SkillSeedRelativePath);
-            if (File.Exists(candidate))
-            {
-                return Path.Combine(directory.FullName, ApiProjectDirectory);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {ApiProjectDirectory}/{SkillSeedRelativePath} by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

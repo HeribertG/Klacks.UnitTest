@@ -18,14 +18,13 @@
 
 using System.Text;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class ApiKeyInQueryStringGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
-    private const string MarkerDirectory = "Infrastructure";
     private const string SourceFilePattern = "*.cs";
     private const int MinimumScannedFiles = 500;
 
@@ -79,19 +78,6 @@ public class ApiKeyInQueryStringGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, MarkerDirectory)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

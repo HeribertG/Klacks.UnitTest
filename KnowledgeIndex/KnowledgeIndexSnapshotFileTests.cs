@@ -6,6 +6,7 @@ using Klacks.Api.KnowledgeIndex.Application.Services;
 using Klacks.Api.KnowledgeIndex.Domain;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.KnowledgeIndex;
 
@@ -17,8 +18,6 @@ namespace Klacks.UnitTest.KnowledgeIndex;
 [TestFixture]
 public class KnowledgeIndexSnapshotFileTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
-    private const string ProjectFileName = "Klacks.Api.csproj";
     private const int MinimumEntries = 100;
     private const int Sha256Length = 32;
 
@@ -66,22 +65,8 @@ public class KnowledgeIndexSnapshotFileTests
         _document.Entries.Select(e => (e.Kind, e.SourceId)).Distinct().Count().ShouldBe(_document.Entries.Count);
     }
 
-
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (File.Exists(Path.Combine(candidate, ProjectFileName)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

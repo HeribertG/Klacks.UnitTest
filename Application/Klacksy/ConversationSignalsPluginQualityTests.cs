@@ -9,6 +9,7 @@
 /// </summary>
 
 using System.Text.Json;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Klacksy;
 
@@ -106,20 +107,6 @@ public class ConversationSignalsPluginQualityTests
 
     private static string LocatePluginsLanguagesDir()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(PluginsLanguagesRelativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException("Plugins/Languages directory not found from test base directory");
+        return RepositoryRootLocator.RequireDirectory(PluginsLanguagesRelativePath);
     }
 }

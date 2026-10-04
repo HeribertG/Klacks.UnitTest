@@ -10,6 +10,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Application.Klacksy;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -216,21 +217,6 @@ public class DeclineDetectorLanguagePackGuardTests
 
     private static string LocateRepositoryDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"'{Path.Combine(relativePath)}' not found from the test base directory");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 }

@@ -36,6 +36,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Planning;
 
@@ -1305,19 +1306,7 @@ public class PlanStepExecutorTests
 
     private static string LocateSkillSeeds()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine(
-                dir.FullName, "Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException(
-            "Could not locate Klacks.Api/Application/Skills/Definitions/skill-seeds.json by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireFile(["Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json"]);
     }
 
     private sealed class RecordingLogger : ILogger<PlanStepExecutor>

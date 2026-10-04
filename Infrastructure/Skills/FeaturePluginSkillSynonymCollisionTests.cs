@@ -11,6 +11,7 @@
 /// </summary>
 
 using System.Text.Json;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -118,21 +119,7 @@ public class FeaturePluginSkillSynonymCollisionTests
 
     private static string? TryLocateDir(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(relativePath);
     }
 
     private static string LocateFile(string[] relativePath, string fileName)

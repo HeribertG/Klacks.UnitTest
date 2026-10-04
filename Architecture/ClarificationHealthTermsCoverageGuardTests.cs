@@ -19,13 +19,13 @@ using System.Text;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Inbound;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class ClarificationHealthTermsCoverageGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string LanguagesRelativePath = "Plugins/Languages";
     private const int MinimumShippedLanguages = 25;
     private const int MinimumTermsPerLanguage = 12;
@@ -48,19 +48,7 @@ public class ClarificationHealthTermsCoverageGuardTests
 
     private static DirectoryInfo ApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, LanguagesRelativePath)))
-            {
-                return new DirectoryInfo(candidate);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException($"Could not locate {ApiProjectDirectory} from the test base directory.");
+        return new DirectoryInfo(RepositoryRootLocator.ApiProject);
     }
 
     private static IReadOnlyList<string> ShippedLanguages()

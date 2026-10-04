@@ -13,12 +13,14 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.ClientImport;
 
 [TestFixture]
 public class ClientImportUiContractGuardTests
 {
+    private const string UiProjectDirectory = "Klacks.Ui";
     private const string UiConstantsRelativePath = "Klacks.Ui/src/app/domain/constants/client-import.constants.ts";
     private const string StringLiteralPattern = @"'(?<value>[^']+)'";
     private const string ErrorCodeAlreadyCommittedConstant = "CLIENT_IMPORT_ERROR_CODE_ALREADY_COMMITTED";
@@ -98,30 +100,14 @@ public class ClientImportUiContractGuardTests
 
     private static string? ReadUiConstants()
     {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-        var segments = UiConstantsRelativePath.Split('/');
-        var uiRoot = string.Empty;
-
-        while (directory != null)
+        if (RepositoryRootLocator.FindDirectory(UiProjectDirectory) == null)
         {
-            var candidateRoot = Path.Combine(directory.FullName, segments[0]);
-            if (Directory.Exists(candidateRoot))
-            {
-                uiRoot = candidateRoot;
-                break;
-            }
-
-            directory = directory.Parent;
-        }
-
-        if (uiRoot.Length == 0)
-        {
-            Assert.Inconclusive($"'{segments[0]}' is not checked out next to Klacks.Api.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiProjectDirectory));
             return null;
         }
 
-        var path = Path.Combine([directory!.FullName, .. segments]);
-        File.Exists(path).ShouldBeTrue($"'{UiConstantsRelativePath}' is missing in the checked-out Klacks.Ui.");
+        var path = RepositoryRootLocator.FindFile(UiConstantsRelativePath)
+            ?? throw new FileNotFoundException($"'{UiConstantsRelativePath}' is missing in the checked-out Klacks.Ui.");
         return File.ReadAllText(path);
     }
 }

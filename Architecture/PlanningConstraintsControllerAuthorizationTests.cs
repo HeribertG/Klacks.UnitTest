@@ -13,13 +13,13 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Presentation.Controllers.UserBackend.Scheduling;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class PlanningConstraintsControllerAuthorizationTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string SkillsDirectory = "Application/Skills";
     private const string ApproveCommandName = "ApprovePlanningConstraintCommand";
     private const string ApproveRouteFragment = "/approve";
@@ -88,18 +88,6 @@ public class PlanningConstraintsControllerAuthorizationTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException($"{ApiProjectDirectory} was not found above the test directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

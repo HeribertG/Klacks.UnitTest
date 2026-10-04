@@ -13,6 +13,7 @@
 using System.Text.Json;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -83,19 +84,6 @@ public class GroupingFeasibilityTriggerPhraseGateTests
 
     private static string? FindDirectory(string relativePath)
     {
-        var segments = relativePath.Split('/');
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine([directory.FullName, .. segments]);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(relativePath);
     }
 }

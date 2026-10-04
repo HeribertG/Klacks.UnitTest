@@ -43,13 +43,13 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class NavigationManifestPermissionGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string PageCategory = "page";
     private const int MinimumPageKeys = 20;
     private const int MinimumTargets = 100;
@@ -372,20 +372,7 @@ public class NavigationManifestPermissionGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, "Domain", "Services")))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 
     private sealed record PageKeyRecord(

@@ -10,6 +10,7 @@
 using System.Text.Json;
 using Klacks.Api.Domain.Constants;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Constants;
 
@@ -87,18 +88,6 @@ public class PreviewApplySkillCallsTests
 
     private static string LocateSkillSeeds()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine(dir.FullName, "Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException("Could not locate Klacks.Api/Application/Skills/Definitions/skill-seeds.json.");
+        return RepositoryRootLocator.RequireFile(["Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json"]);
     }
 }

@@ -10,6 +10,7 @@
 using System.Text.Json;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -80,18 +81,6 @@ public class PeriodCloseScheduleRoutingTests
 
     private static string LocateDefinitionsFile(string fileName)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine([directory.FullName, .. DefinitionsRelativePath, fileName]);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException($"{fileName} not found above {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, fileName]);
     }
 }

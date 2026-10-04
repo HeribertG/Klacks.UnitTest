@@ -20,13 +20,13 @@
 
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class SkillGeneratedIdGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string SkillsRelativeDirectory = @"Application\Skills";
     private const string GeneratedIdCall = "Guid.NewGuid()";
 
@@ -85,20 +85,7 @@ public class SkillGeneratedIdGuardTests
 
     private static string ApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {ApiProjectDirectory} by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 
     private static string NormalizeSeparators(string path) => path.Replace('/', '\\');

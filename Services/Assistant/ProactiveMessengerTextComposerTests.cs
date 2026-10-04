@@ -30,7 +30,6 @@ public class ProactiveMessengerTextComposerTests
     private const string ChineseSimplified = "zh-CN";
     private const string PackWithoutTheKey = "xx-Partial";
     private const string CounterValue = "3";
-    private const string ApiDirectory = "Klacks.Api";
     private const string PluginsDirectory = "Plugins";
     private const string LanguagesDirectory = "Languages";
     private const string TranslationsFile = "translations.json";
@@ -62,15 +61,7 @@ public class ProactiveMessengerTextComposerTests
 
     private static string ApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null
-               && !Directory.Exists(Path.Combine(directory.FullName, ApiDirectory, PluginsDirectory, LanguagesDirectory)))
-        {
-            directory = directory.Parent;
-        }
-
-        directory.ShouldNotBeNull();
-        return Path.Combine(directory.FullName, ApiDirectory);
+        return RepositoryRootLocator.ApiProject;
     }
 
     private static void LoadThePacks()

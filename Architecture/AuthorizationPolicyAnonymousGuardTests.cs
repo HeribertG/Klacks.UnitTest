@@ -33,13 +33,13 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Presentation.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class AuthorizationPolicyAnonymousGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string ProgramFileName = "Program.cs";
     private const string RegistrationCall = "AddKlacksPolicies";
     private const string DirectPolicyRegistration = "AddPolicy(AuthorizationPolicies.";
@@ -116,19 +116,6 @@ public class AuthorizationPolicyAnonymousGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (File.Exists(Path.Combine(candidate, ProgramFileName)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

@@ -9,13 +9,13 @@
 using System.Text.Json;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Klacksy;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Klacksy;
 
 [TestFixture]
 public class GroupingIntentPluginQualificationTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string QualificationTokensProperty = "qualificationTokens";
     private const string QualificationSkill = "partition_clients_by_qualification";
 
@@ -52,14 +52,6 @@ public class GroupingIntentPluginQualificationTests
 
     private static string ApiDirectory()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory != null
-            ? Path.Combine(directory.FullName, ApiProjectDirectory)
-            : throw new DirectoryNotFoundException("Repository root with Klacks.Api not found.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

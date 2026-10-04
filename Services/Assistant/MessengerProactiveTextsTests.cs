@@ -13,6 +13,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Services.Assistant;
 
@@ -70,8 +71,7 @@ public class MessengerProactiveTextsTests
         var catalogueDirectory = FindUiCatalogueDirectory();
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive(
-                $"'{UiCatalogueRelativePath}' is not reachable from this working tree, so the duplicate cannot be compared here.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -96,18 +96,6 @@ public class MessengerProactiveTextsTests
 
     private static string? FindUiCatalogueDirectory()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, UiCatalogueRelativePath.Replace('/', Path.DirectorySeparatorChar));
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(UiCatalogueRelativePath);
     }
 }

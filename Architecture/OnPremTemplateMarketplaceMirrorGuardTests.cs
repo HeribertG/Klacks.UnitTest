@@ -22,13 +22,13 @@
 /// </summary>
 
 using System.Text;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class OnPremTemplateMarketplaceMirrorGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string MarketplaceProjectDirectory = "Klacks.Marketplace";
     private const string RegionsDirectory = "regions";
     private const string RegionProfileExtension = ".json";
@@ -43,16 +43,14 @@ public class OnPremTemplateMarketplaceMirrorGuardTests
     [Test]
     public void MarketplaceOnPremTemplate_MustMirrorTheApiOnPremBundle()
     {
-        var apiProject = LocateApiProject();
-        var marketplaceProject = Path.Combine(
-            Directory.GetParent(apiProject)!.FullName, MarketplaceProjectDirectory);
-        if (!Directory.Exists(marketplaceProject))
+        var marketplaceProject = RepositoryRootLocator.FindDirectory(MarketplaceProjectDirectory);
+        if (marketplaceProject == null)
         {
-            Assert.Inconclusive(
-                $"'{marketplaceProject}' is not reachable from this working tree, so the template cannot be compared here.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(MarketplaceProjectDirectory));
             return;
         }
 
+        var apiProject = RepositoryRootLocator.ApiProject;
         var apiBundle = Path.Combine(apiProject, Path.Combine(ApiBundleSegments));
         var template = Path.Combine(marketplaceProject, Path.Combine(MarketplaceTemplateSegments));
 
@@ -114,19 +112,6 @@ public class OnPremTemplateMarketplaceMirrorGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, "Domain", "Services")))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

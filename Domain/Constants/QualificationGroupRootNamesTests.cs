@@ -8,13 +8,13 @@
 
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Constants;
 
 [TestFixture]
 public class QualificationGroupRootNamesTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
 
     [Test]
     public void EveryShippedLanguage_HasItsOwnRootName()
@@ -46,14 +46,6 @@ public class QualificationGroupRootNamesTests
 
     private static string ApiDirectory()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory != null
-            ? Path.Combine(directory.FullName, ApiProjectDirectory)
-            : throw new DirectoryNotFoundException("Repository root with Klacks.Api not found.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

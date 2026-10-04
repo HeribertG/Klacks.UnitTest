@@ -12,15 +12,13 @@ using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Domain.Constants;
 using Microsoft.Extensions.Logging;
 using LlmProviders = Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
 [TestFixture]
 public class EmptyAnswerNoticeTextTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
-    private const string PluginsDirectory = "Plugins";
-    private const string LanguagesDirectory = "Languages";
     private const int ShippedLanguages = 25;
     private const string Prose = "Let me check that quickly.";
     private const string OrdinaryAnswer = "Anna works in the groups Bern and Basel.";
@@ -146,19 +144,6 @@ public class EmptyAnswerNoticeTextTests
 
     private static string ApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, PluginsDirectory, LanguagesDirectory)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {ApiProjectDirectory}/{PluginsDirectory}/{LanguagesDirectory} from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

@@ -10,6 +10,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Application.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Services.Assistant;
 
@@ -25,7 +26,7 @@ public class WelcomeFocusI18nGateTests
         var catalogueDirectory = FindUiCatalogueDirectory();
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -50,7 +51,7 @@ public class WelcomeFocusI18nGateTests
         var catalogueDirectory = FindUiCatalogueDirectory();
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -72,7 +73,7 @@ public class WelcomeFocusI18nGateTests
         var catalogueDirectory = FindUiCatalogueDirectory();
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -104,19 +105,6 @@ public class WelcomeFocusI18nGateTests
 
     private static string? FindUiCatalogueDirectory()
     {
-        var relative = UiCatalogueRelativePath.Replace('/', Path.DirectorySeparatorChar);
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, relative);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(UiCatalogueRelativePath);
     }
 }

@@ -22,6 +22,7 @@ using System.Text.Json;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -173,31 +174,8 @@ public class RecipeSynonymRoutingTests
     }
 
     private static string LocatePluginsLanguagesDir() =>
-        TryLocate(PluginsLanguagesRelativePath, Directory.Exists)
-        ?? throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', PluginsLanguagesRelativePath)} by walking up from the test base directory.");
+        RepositoryRootLocator.RequireDirectory(PluginsLanguagesRelativePath);
 
     private static string LocateDefinitionsFile(string fileName) =>
-        TryLocate([.. DefinitionsRelativePath, fileName], File.Exists)
-        ?? throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', DefinitionsRelativePath)}/{fileName} by walking up from the test base directory.");
-
-    private static string? TryLocate(string[] relativeSegments, Func<string, bool> exists)
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativeSegments);
-            var candidate = Path.Combine(segments.ToArray());
-            if (exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
-    }
+        RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, fileName]);
 }

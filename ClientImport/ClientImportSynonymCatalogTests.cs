@@ -8,12 +8,15 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.ClientImport;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.ClientImport;
 
 [TestFixture]
 public class ClientImportSynonymCatalogTests
 {
+    private const string PluginsLanguagesRelativePath = "Plugins/Languages";
+
     private static readonly string[] CoreLanguages = ["de", "en", "fr", "it"];
 
     private ClientImportSynonymCatalog _catalog = null!;
@@ -26,18 +29,9 @@ public class ClientImportSynonymCatalogTests
 
     public static IEnumerable<string> SupportedLanguages()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "Klacks.Api", "Plugins", "Languages")))
-        {
-            directory = directory.Parent;
-        }
+        var languagesDirectory = RepositoryRootLocator.RequireDirectory(RepositoryRootLocator.ApiProjectDirectoryName, PluginsLanguagesRelativePath);
 
-        if (directory == null)
-        {
-            throw new DirectoryNotFoundException("Klacks.Api/Plugins/Languages was not found above the test directory.");
-        }
-
-        var packs = Directory.GetDirectories(Path.Combine(directory.FullName, "Klacks.Api", "Plugins", "Languages"))
+        var packs = Directory.GetDirectories(languagesDirectory)
             .Select(Path.GetFileName)
             .Where(name => !string.IsNullOrEmpty(name))
             .Select(name => name!);

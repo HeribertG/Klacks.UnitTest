@@ -17,6 +17,7 @@
 using System.Text.Json;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -306,21 +307,8 @@ public class RecipeAnchorPackGateTests
 
     private static string LocateFile(string[] relativePath, string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (fileName.Length == 0 ? Directory.Exists(candidate) : File.Exists(Path.Combine(candidate, fileName)))
-            {
-                return fileName.Length == 0 ? candidate : Path.Combine(candidate, fileName);
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)}/{fileName} from {AppContext.BaseDirectory}");
+        return fileName.Length == 0
+            ? RepositoryRootLocator.RequireDirectory(relativePath)
+            : RepositoryRootLocator.RequireFile([.. relativePath, fileName]);
     }
 }

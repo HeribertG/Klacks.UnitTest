@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -199,21 +200,6 @@ public class RecipeTriggerMatcherLeadingPunctuationTests
 
     private static string LocateDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 }

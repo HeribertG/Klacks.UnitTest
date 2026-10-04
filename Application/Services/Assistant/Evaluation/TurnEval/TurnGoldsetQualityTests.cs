@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 [TestFixture]
 public class TurnGoldsetQualityTests
@@ -657,37 +658,11 @@ public class TurnGoldsetQualityTests
 
     private static string LocateRepoDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine([dir.FullName, .. relativePath]);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 
     private static string LocateRepoFile(string[] relativePath, string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine([dir.FullName, .. relativePath, fileName]);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)}/{fileName} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireFile([.. relativePath, fileName]);
     }
 }

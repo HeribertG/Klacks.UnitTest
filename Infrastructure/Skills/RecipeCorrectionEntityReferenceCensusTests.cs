@@ -19,6 +19,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -165,21 +166,6 @@ public class RecipeCorrectionEntityReferenceCensusTests
 
     private static string LocateDefinitionsFile(string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(DefinitionsRelativePath);
-            segments.Add(fileName);
-            var candidate = Path.Combine(segments.ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException($"Could not locate {fileName} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, fileName]);
     }
 }

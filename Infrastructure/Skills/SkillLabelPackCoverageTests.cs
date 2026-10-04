@@ -16,13 +16,13 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Constants;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
 [TestFixture]
 public class SkillLabelPackCoverageTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string SeedRelativePath = "Application/Skills/Definitions/skill-seeds.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -39,20 +39,7 @@ public class SkillLabelPackCoverageTests
 
     private static DirectoryInfo ApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, SeedRelativePath)))
-            {
-                return new DirectoryInfo(candidate);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {ApiProjectDirectory} by walking up from the test base directory.");
+        return new DirectoryInfo(RepositoryRootLocator.ApiProject);
     }
 
     private static HashSet<string> SeededSkillNames()

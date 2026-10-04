@@ -10,12 +10,13 @@
 /// in a plain unit-test run.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class McpPermissionCapPipelineOrderGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string ProgramFileName = "Program.cs";
     private const string UseAuthorizationCall = "app.UseAuthorization();";
     private const string UseMcpPermissionCapCall = "app.UseMcpPermissionCap();";
@@ -45,19 +46,6 @@ public class McpPermissionCapPipelineOrderGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (File.Exists(Path.Combine(candidate, ProgramFileName)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

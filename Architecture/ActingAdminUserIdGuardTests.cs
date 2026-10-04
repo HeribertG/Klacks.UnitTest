@@ -14,13 +14,13 @@
 
 using System.Text;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class ActingAdminUserIdGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string SourceFilePattern = "*.cs";
     private const string LineCommentPrefix = "//";
     private const int MinimumScannedFiles = 500;
@@ -126,20 +126,7 @@ public class ActingAdminUserIdGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (File.Exists(Path.Combine(candidate, ApiProjectDirectory + ".csproj")))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 
     private sealed record ScanResult(

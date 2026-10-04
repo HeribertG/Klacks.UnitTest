@@ -12,6 +12,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -166,21 +167,6 @@ public class KnowledgeHappenSeedParityTests
 
     private static string LocateDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 }

@@ -11,6 +11,7 @@
 /// </summary>
 
 using System.Text.Json;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -252,19 +253,6 @@ public class PluginAssistantSetupI18nGuardTests
 
     private static string ApiRoot()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine([dir.FullName, .. ApiRelativePath]);
-            if (Directory.Exists(Path.Combine([candidate, .. FeaturesRelativePath])))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', ApiRelativePath)} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireDirectory(ApiRelativePath);
     }
 }

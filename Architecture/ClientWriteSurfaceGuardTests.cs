@@ -16,6 +16,7 @@ using System.Collections;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Klacks.Api.Application.DTOs.Staffs;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
@@ -180,20 +181,7 @@ public class ClientWriteSurfaceGuardTests
 
     private static string LocateMapperSource()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, "Klacks.Api", "Application", "Mappers", "ClientMapper.cs");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException("Could not locate ClientMapper.cs above the test directory.");
+        return RepositoryRootLocator.RequireFile(["Klacks.Api", "Application", "Mappers", "ClientMapper.cs"]);
     }
 
     private static bool IsScalar(Type type)

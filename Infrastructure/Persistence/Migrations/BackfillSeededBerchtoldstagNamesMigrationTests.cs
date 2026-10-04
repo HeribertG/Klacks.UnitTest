@@ -15,6 +15,7 @@ using Klacks.Api.Data.Seed;
 using Klacks.Api.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Persistence.Migrations;
 
@@ -162,19 +163,6 @@ public class BackfillSeededBerchtoldstagNamesMigrationTests
 
     private static string LocateDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine(new[] { dir.FullName }.Concat(relativePath).ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 }

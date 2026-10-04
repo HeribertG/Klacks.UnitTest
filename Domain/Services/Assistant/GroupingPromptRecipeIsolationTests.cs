@@ -14,6 +14,7 @@
 using System.Text.Json;
 using Klacks.Api.Application.Klacksy;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -243,12 +244,6 @@ public class GroupingPromptRecipeIsolationTests
 
     private static string RepositoryRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root with Klacks.Api not found.");
+        return RepositoryRootLocator.RequireRoot();
     }
 }

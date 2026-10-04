@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -29,19 +30,7 @@ public class SkillRiskReversibilityPinTests
 
     private static DirectoryInfo RepositoryRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            if (Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
-            {
-                return directory;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {ApiProjectDirectory} by walking up from the test base directory.");
+        return new DirectoryInfo(RepositoryRootLocator.RequireRoot());
     }
 
     private static string BaselinePath() =>

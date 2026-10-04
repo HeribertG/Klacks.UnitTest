@@ -13,6 +13,7 @@
 using System.Reflection;
 using System.Text.Json;
 using Klacks.Plugin.Contracts;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -173,19 +174,6 @@ public class PluginSkillSeedParityTests
 
     private static string LocateFeaturesDir()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine([dir.FullName, .. FeaturesRelativePath]);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', FeaturesRelativePath)} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireDirectory(FeaturesRelativePath);
     }
 }

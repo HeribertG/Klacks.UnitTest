@@ -65,15 +65,8 @@ public class ClarificationTextServiceTests
 
     private static void LoadThePacks()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "Klacks.Api", "Plugins", "Languages")))
-        {
-            directory = directory.Parent;
-        }
-
-        directory.ShouldNotBeNull();
         var failures = new List<string>();
-        AssistantTextsPluginLoader.Load(Path.Combine(directory.FullName, "Klacks.Api"), (file, ex) => failures.Add($"{file}: {ex.Message}"));
+        AssistantTextsPluginLoader.Load(RepositoryRootLocator.ApiProject, (file, ex) => failures.Add($"{file}: {ex.Message}"));
         failures.ShouldBeEmpty(string.Join(Environment.NewLine, failures));
     }
 

@@ -10,6 +10,7 @@
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
@@ -379,19 +380,6 @@ public class SkillMatchingEngineTests
 
     private static string LocateSkillSeedsFile()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(
-                directory.FullName, "Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException("Could not locate skill-seeds.json by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireFile(["Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json"]);
     }
 }

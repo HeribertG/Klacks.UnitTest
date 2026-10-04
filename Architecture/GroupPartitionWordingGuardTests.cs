@@ -1,5 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
@@ -51,12 +53,6 @@ public class GroupPartitionWordingGuardTests
 
     private static string FindRepositoryRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root with Klacks.Api not found.");
+        return RepositoryRootLocator.RequireRoot();
     }
 }

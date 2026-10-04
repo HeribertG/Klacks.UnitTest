@@ -27,13 +27,13 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Inbound;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class ClarificationTextCatalogueGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string PluginsDirectory = "Plugins";
     private const string LanguagesDirectory = "Languages";
     private const int ExpectedPluginPacks = 21;
@@ -90,20 +90,7 @@ public class ClarificationTextCatalogueGuardTests
 
     private static string ApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, PluginsDirectory, LanguagesDirectory)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {ApiProjectDirectory}/{PluginsDirectory}/{LanguagesDirectory} by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 
     private static bool IsEnglish(string language) =>

@@ -11,6 +11,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Authentification;
 
@@ -31,7 +32,6 @@ public class PersonalAccessTokenI18nGateTests
     private const string PluginDocsDirectory = "docs";
     private const string ManualFileName = "personal-access-token-manual.html";
     private const string HtmlExtension = ".html";
-    private const string ApiProjectDirectory = "Klacks.Api";
 
     private static readonly string[] AccessModeLabelKeys =
     [
@@ -47,7 +47,7 @@ public class PersonalAccessTokenI18nGateTests
         var catalogueDirectory = FindDirectory(UiCatalogueRelativePath);
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -60,7 +60,7 @@ public class PersonalAccessTokenI18nGateTests
         var catalogueDirectory = FindDirectory(UiCatalogueRelativePath);
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -78,7 +78,7 @@ public class PersonalAccessTokenI18nGateTests
         var catalogueDirectory = FindDirectory(UiCatalogueRelativePath);
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -104,7 +104,7 @@ public class PersonalAccessTokenI18nGateTests
         var coreManualDirectory = FindDirectory(CoreManualRelativePath);
         if (catalogueDirectory == null || coreManualDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -183,38 +183,8 @@ public class PersonalAccessTokenI18nGateTests
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
 
-    /// <summary>
-    /// Resolves a path relative to the source tree this test was built from: the nearest ancestor of the test
-    /// directory that holds Klacks.Api (the repositories sit next to each other there, locally and in CI). The
-    /// search deliberately stops at that root, so a git worktree without its own Klacks.Ui reports inconclusive
-    /// instead of reading another checkout further up the disk.
-    /// </summary>
     private static string? FindDirectory(string relativePath)
     {
-        var treeRoot = FindTreeRoot();
-        if (treeRoot == null)
-        {
-            return null;
-        }
-
-        var candidate = Path.Combine([treeRoot, .. relativePath.Split('/')]);
-        return Directory.Exists(candidate) ? candidate : null;
-    }
-
-    private static string? FindTreeRoot()
-    {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-
-        while (directory != null)
-        {
-            if (Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(relativePath);
     }
 }

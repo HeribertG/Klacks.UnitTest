@@ -5,6 +5,7 @@ namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 [TestFixture]
 public class FileTurnGoldsetLoaderTests
@@ -204,19 +205,6 @@ public class FileTurnGoldsetLoaderTests
 
     private static string LocateRepoGoldset(string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine([dir.FullName, .. RepoGoldsetRelativePath, fileName]);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', RepoGoldsetRelativePath)}/{fileName} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireFile([.. RepoGoldsetRelativePath, fileName]);
     }
 }

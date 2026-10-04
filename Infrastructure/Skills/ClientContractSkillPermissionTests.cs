@@ -17,6 +17,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -85,21 +86,6 @@ public class ClientContractSkillPermissionTests
 
     private static string LocateDefinitionsFile(string fileName)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory != null)
-        {
-            var candidate = Path.Combine(
-                new[] { directory.FullName }.Concat(DefinitionsRelativePath).Concat([fileName]).ToArray());
-
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException($"Could not locate {fileName} above the test directory.");
+        return RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, fileName]);
     }
 }

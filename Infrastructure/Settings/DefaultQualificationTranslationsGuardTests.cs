@@ -11,6 +11,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Settings;
 
@@ -217,37 +218,11 @@ public class DefaultQualificationTranslationsGuardTests
 
     private static string LocateFile(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine(new[] { dir.FullName }.Concat(relativePath).ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireFile(relativePath);
     }
 
     private static string LocateDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine(new[] { dir.FullName }.Concat(relativePath).ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 }

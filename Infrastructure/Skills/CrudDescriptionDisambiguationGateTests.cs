@@ -13,6 +13,7 @@ namespace Klacks.UnitTest.Infrastructure.Skills;
 using System.Text.Json;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 [TestFixture]
 public class CrudDescriptionDisambiguationGateTests
@@ -137,19 +138,6 @@ public class CrudDescriptionDisambiguationGateTests
 
     private static string LocateSeeds()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine([dir.FullName, .. DefinitionsRelativePath, SkillSeedsFileName]);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {string.Join('/', DefinitionsRelativePath)}/{SkillSeedsFileName} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireFile([.. DefinitionsRelativePath, SkillSeedsFileName]);
     }
 }

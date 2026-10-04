@@ -24,6 +24,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
 
@@ -376,40 +377,11 @@ public class RecipeTriggerWholeWordCollisionTests
 
     private static string? TryLocate(string[] relativePath, string fileName)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            segments.Add(fileName);
-            var candidate = Path.Combine(segments.ToArray());
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindFile([.. relativePath, fileName]);
     }
 
     private static string? TryLocateDir(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var segments = new List<string> { dir.FullName };
-            segments.AddRange(relativePath);
-            var candidate = Path.Combine(segments.ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(relativePath);
     }
 }

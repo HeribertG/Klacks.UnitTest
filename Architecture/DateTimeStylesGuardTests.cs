@@ -20,13 +20,13 @@
 
 using System.Text;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class DateTimeStylesGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string SourceFilePattern = "*.cs";
     private const string LineCommentPrefix = "//";
     private const string DateTimeStylesToken = "DateTimeStyles";
@@ -89,7 +89,6 @@ public class DateTimeStylesGuardTests
                 (1, "Only the boolean result is used (out _) to validate that a draft parameter matches " +
                     "the configured time-of-day format; no value is produced or stored.")
         };
-
 
     /// <summary>
     /// DateOnly/TimeOnly call sites that already existed when the culture rule was introduced. They read
@@ -504,19 +503,6 @@ public class DateTimeStylesGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, "Domain", "Services")))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

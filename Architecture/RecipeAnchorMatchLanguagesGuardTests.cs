@@ -10,6 +10,7 @@
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
@@ -23,20 +24,7 @@ public class RecipeAnchorMatchLanguagesGuardTests
 
     private static DirectoryInfo LanguagesRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory, LanguagesRelativePath);
-            if (Directory.Exists(candidate))
-            {
-                return new DirectoryInfo(candidate);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {ApiProjectDirectory}/{LanguagesRelativePath} from the test base directory.");
+        return new DirectoryInfo(RepositoryRootLocator.RequireDirectory(ApiProjectDirectory, LanguagesRelativePath));
     }
 
     private static IReadOnlyList<string> AnchorPackCodes() =>

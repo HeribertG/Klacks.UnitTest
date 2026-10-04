@@ -12,13 +12,13 @@
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class DomainScheduleOptimizerReferenceGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string DomainDirectory = "Domain";
     private const string SourceFilePattern = "*.cs";
     private const int MinimumScannedFiles = 100;
@@ -69,19 +69,6 @@ public class DomainScheduleOptimizerReferenceGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, DomainDirectory)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

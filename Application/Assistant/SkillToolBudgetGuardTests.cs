@@ -11,6 +11,7 @@
 using System.Text.Json;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Constants;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Assistant;
 
@@ -70,16 +71,6 @@ public class SkillToolBudgetGuardTests
 
     private static string LocateSkillSeeds()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine(dir.FullName, "Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-            dir = dir.Parent;
-        }
-        throw new FileNotFoundException("Could not locate Klacks.Api/Application/Skills/Definitions/skill-seeds.json by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireFile(["Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json"]);
     }
 }

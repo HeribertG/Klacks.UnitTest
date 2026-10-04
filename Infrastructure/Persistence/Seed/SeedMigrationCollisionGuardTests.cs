@@ -37,13 +37,13 @@
 
 using System.Text;
 using System.Text.RegularExpressions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Persistence.Seed;
 
 [TestFixture]
 public class SeedMigrationCollisionGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string MigrationsDirectory = "Infrastructure/Persistence/Migrations";
     private const string SeedDirectory = "Infrastructure/Persistence/Seed";
     private const string SourceFilePattern = "*.cs";
@@ -201,20 +201,7 @@ public class SeedMigrationCollisionGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, MigrationsDirectory)))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 
     private sealed record InsertRow(string File, int Line, string Table, bool IsGuarded, IReadOnlyList<string> RowIds);

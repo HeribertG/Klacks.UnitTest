@@ -14,13 +14,13 @@
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class LanguageDirectiveCoverageGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string LanguagePluginsRelativePath = "Plugins/Languages";
     private const string PluginManifestFileName = "manifest.json";
     private const int ExpectedLanguageCount = 25;
@@ -237,19 +237,6 @@ public class LanguageDirectiveCoverageGuardTests
 
     private static string LocateApiProject()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory);
-            if (Directory.Exists(Path.Combine(candidate, "Domain", "Services")))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the {ApiProjectDirectory} project by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 }

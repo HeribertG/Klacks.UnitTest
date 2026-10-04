@@ -15,6 +15,7 @@ using System.Text.RegularExpressions;
 using Klacks.Api.Data.Seed;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Settings;
 
@@ -258,20 +259,7 @@ public class DefaultCalendarRuleTranslationsGuardTests
 
     private static string LocateDirectory(string[] relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var candidate = Path.Combine(new[] { dir.FullName }.Concat(relativePath).ToArray());
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} from {AppContext.BaseDirectory}");
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 
     private sealed record MasterEntry(string English, List<string> Ids, Dictionary<string, string> Names);

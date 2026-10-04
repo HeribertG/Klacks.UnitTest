@@ -12,6 +12,7 @@ using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using Klacks.Api.Domain.Constants;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 
@@ -204,13 +205,6 @@ public class TurnEvalScorerRetrievalSelectionTests
 
     private static string FindRepositoryRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName
-            ?? throw new DirectoryNotFoundException("Repository root with Klacks.Api not found.");
+        return RepositoryRootLocator.RequireRoot();
     }
 }

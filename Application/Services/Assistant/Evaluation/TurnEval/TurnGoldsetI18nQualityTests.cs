@@ -17,6 +17,7 @@ using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
 using Klacks.Api.Domain.Constants;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 [TestFixture]
 public class TurnGoldsetI18nQualityTests
@@ -122,19 +123,7 @@ public class TurnGoldsetI18nQualityTests
 
     private static string LocateRepoDirectory(string[] relativePath)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine([directory.FullName, .. relativePath, .. GoldsetsRelativePath]);
-            if (Directory.Exists(candidate))
-            {
-                return Path.Combine([directory.FullName, .. relativePath]);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', relativePath)} by walking up from the test base directory.");
+        RepositoryRootLocator.RequireDirectory([.. relativePath, .. GoldsetsRelativePath]);
+        return RepositoryRootLocator.RequireDirectory(relativePath);
     }
 }

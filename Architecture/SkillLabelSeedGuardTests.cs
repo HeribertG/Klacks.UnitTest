@@ -17,13 +17,13 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Constants;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Architecture;
 
 [TestFixture]
 public class SkillLabelSeedGuardTests
 {
-    private const string ApiProjectDirectory = "Klacks.Api";
     private const string SeedRelativePath = "Application/Skills/Definitions/skill-seeds.json";
     private const int ExpectedSkillCount = 484;
 
@@ -210,20 +210,7 @@ public class SkillLabelSeedGuardTests
 
     private static string LocateApiRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory, SeedRelativePath);
-            if (File.Exists(candidate))
-            {
-                return Path.Combine(directory.FullName, ApiProjectDirectory);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {ApiProjectDirectory}/{SeedRelativePath} by walking up from the test base directory.");
+        return RepositoryRootLocator.ApiProject;
     }
 
     private static IEnumerable<(SeededSkill Skill, string Language, string Label)> AuthoredLabels() =>

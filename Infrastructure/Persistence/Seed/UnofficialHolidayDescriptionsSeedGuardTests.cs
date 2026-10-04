@@ -18,6 +18,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Persistence.Seed;
 
@@ -68,24 +69,13 @@ public class UnofficialHolidayDescriptionsSeedGuardTests
 
     private static IReadOnlyList<string> ShippedLanguages()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, ApiProjectDirectory, LanguagesRelativePath);
-            if (Directory.Exists(candidate))
-            {
-                return MultiLanguage.CoreLanguages
-                    .Concat(new DirectoryInfo(candidate).GetDirectories().Select(d => d.Name.ToLowerInvariant()))
-                    .Distinct()
-                    .OrderBy(code => code, StringComparer.Ordinal)
-                    .ToList();
-            }
+        var languagesDirectory = RepositoryRootLocator.RequireDirectory(ApiProjectDirectory, LanguagesRelativePath);
 
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {ApiProjectDirectory}/{LanguagesRelativePath} from the test base directory.");
+        return MultiLanguage.CoreLanguages
+            .Concat(new DirectoryInfo(languagesDirectory).GetDirectories().Select(d => d.Name.ToLowerInvariant()))
+            .Distinct()
+            .OrderBy(code => code, StringComparer.Ordinal)
+            .ToList();
     }
 
     private static Dictionary<string, IReadOnlyDictionary<string, string>> AssignedTexts() =>

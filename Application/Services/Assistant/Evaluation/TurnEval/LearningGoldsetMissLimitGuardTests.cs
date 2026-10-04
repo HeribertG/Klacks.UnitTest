@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 [TestFixture]
 public class LearningGoldsetMissLimitGuardTests
@@ -92,19 +93,6 @@ public class LearningGoldsetMissLimitGuardTests
 
     private static string GoldsetDirectory()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine([directory.FullName, .. RepoGoldsetRelativePath]);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate {string.Join('/', RepoGoldsetRelativePath)} by walking up from the test base directory.");
+        return RepositoryRootLocator.RequireDirectory(RepoGoldsetRelativePath);
     }
 }

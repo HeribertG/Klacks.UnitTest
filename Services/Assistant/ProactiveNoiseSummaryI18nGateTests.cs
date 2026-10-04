@@ -38,7 +38,7 @@ public class ProactiveNoiseSummaryI18nGateTests
         var catalogueDirectory = FindDirectory(UiCatalogueRelativePath);
         if (catalogueDirectory == null)
         {
-            Assert.Inconclusive($"'{UiCatalogueRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
             return;
         }
 
@@ -56,7 +56,7 @@ public class ProactiveNoiseSummaryI18nGateTests
         var languagesDirectory = FindDirectory(PluginLanguagesRelativePath);
         if (languagesDirectory == null)
         {
-            Assert.Inconclusive($"'{PluginLanguagesRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(PluginLanguagesRelativePath));
             return;
         }
 
@@ -96,7 +96,7 @@ public class ProactiveNoiseSummaryI18nGateTests
         var languagesDirectory = FindDirectory(PluginLanguagesRelativePath);
         if (languagesDirectory == null)
         {
-            Assert.Inconclusive($"'{PluginLanguagesRelativePath}' is not reachable from this working tree.");
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(PluginLanguagesRelativePath));
             return;
         }
 
@@ -173,20 +173,6 @@ public class ProactiveNoiseSummaryI18nGateTests
 
     private static string? FindDirectory(string relativePath)
     {
-        var segments = relativePath.Split('/');
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-
-        while (directory != null)
-        {
-            var candidate = Path.Combine([directory.FullName, .. segments]);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
+        return RepositoryRootLocator.FindDirectory(relativePath);
     }
 }
