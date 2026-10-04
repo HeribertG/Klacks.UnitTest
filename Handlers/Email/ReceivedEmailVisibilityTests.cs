@@ -384,6 +384,38 @@ public class ReceivedEmailVisibilityTests
         result.Sum(n => n.EmailCount).ShouldBe(TreeEmailCount);
     }
 
+    [Test]
+    public async Task GroupTree_VisibleClientSharesAddressWithHiddenClient_SharedAddressNotCounted()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var emailQueryRepository = Substitute.For<IEmailQueryRepository>();
+        emailQueryRepository
+            .GetDistinctAssignedEmailAddressesAsync(EmailConstants.ClientAssignedFolder, Arg.Any<CancellationToken>())
+            .Returns(new List<string> { HiddenSender, VisibleSender });
+        emailQueryRepository.GetClientsWithEmailCommunicationsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<ClientEmailInfo>
+            {
+                new() { ClientId = _hiddenClientId, EmailAddress = HiddenSender, ClientDisplayName = "Hidden" },
+                new() { ClientId = visibleClientId, EmailAddress = HiddenSender, ClientDisplayName = "Visible" },
+                new() { ClientId = visibleClientId, EmailAddress = VisibleSender, ClientDisplayName = "Visible" },
+            });
+        emailQueryRepository
+            .CountEmailsByAddressAsync(EmailConstants.ClientAssignedFolder, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(TreeEmailCount);
+        var groupHierarchyService = Substitute.For<IGroupHierarchyService>();
+        groupHierarchyService.GetTreeAsync().Returns(new List<Group>());
+        var handler = new GetEmailGroupTreeQueryHandler(
+            groupHierarchyService, emailQueryRepository, _clientVisibilityGuard,
+            Substitute.For<ILogger<GetEmailGroupTreeQueryHandler>>());
+
+        var result = await handler.Handle(new GetEmailGroupTreeQuery(), CancellationToken.None);
+
+        result.SelectMany(n => n.Children).Select(c => c.Id).ShouldBe(new[] { visibleClientId });
+        result.Sum(n => n.EmailCount).ShouldBe(TreeEmailCount);
+        await emailQueryRepository.DidNotReceive().CountEmailsByAddressAsync(
+            Arg.Any<string>(), HiddenSender, Arg.Any<CancellationToken>());
+    }
+
     private async Task AssertNothingMovedAsync()
     {
         await _repository.DidNotReceive().MoveToFolderAsync(Arg.Any<Guid>(), Arg.Any<string>());
