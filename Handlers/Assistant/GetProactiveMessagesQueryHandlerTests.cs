@@ -13,6 +13,10 @@
 /// was first detected), while a closed or missing condition and a row without one keep the frozen params
 /// untouched. The whole page is resolved with ONE ledger read — the inbox is polled, so a per-row lookup
 /// would be a query per listed message.
+///
+/// A client aggregate kind (AgentTriggerClientAggregateKinds) is the exception: its ledger payload names
+/// every affected employee, so only an Admin reader gets the live merge; a supervisor keeps the narrowed
+/// params frozen onto their own row.
 /// </summary>
 
 using System.Text.Json;
@@ -35,6 +39,7 @@ public class GetProactiveMessagesQueryHandlerTests
 
     private IProactiveTriggerDispatchRepository _dispatchRepository = null!;
     private IAgentConditionRepository _conditionRepository = null!;
+    private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private GetProactiveMessagesQueryHandler _sut = null!;
 
     [SetUp]
@@ -45,8 +50,14 @@ public class GetProactiveMessagesQueryHandlerTests
         _conditionRepository
             .GetByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<AgentCondition>());
-        _sut = new GetProactiveMessagesQueryHandler(_dispatchRepository, _conditionRepository);
+        _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        SetAdmins("admin-x");
+        _sut = new GetProactiveMessagesQueryHandler(_dispatchRepository, _conditionRepository, _planningAudienceResolver);
     }
+
+    private void SetAdmins(params string[] userIds) =>
+        _planningAudienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase));
 
     private static ProactiveTriggerDispatchRow MakeRow(string? contentParamsJson = null, string? actionRoute = null, string? actionParamsJson = null) => new()
     {
@@ -407,5 +418,46 @@ public class GetProactiveMessagesQueryHandlerTests
         Assert.That(dto.ContentParams["count"], Is.EqualTo("40"));
         Assert.That(dto.ActionParams, Is.Not.Null);
         Assert.That(dto.ActionParams!["count"], Is.EqualTo("12"));
+    }
+
+    [TestCase(AgentTriggerKinds.AvailabilityGap)]
+    [TestCase(AgentTriggerKinds.ClientMissingCoreData)]
+    [TestCase(AgentTriggerKinds.TargetHoursDrift)]
+    public async Task Handle_ClientAggregateKind_SupervisorReader_KeepsTheNarrowedFrozenParams(string kind)
+    {
+        var row = GivenRowReportingCondition(AgentConditionStatus.Reported);
+        row.TriggerKind = kind;
+
+        var dto = await HandleSingleAsync();
+
+        Assert.That(dto.ContentParams["count"], Is.EqualTo("12"));
+        Assert.That(dto.ContentParams["names"], Is.EqualTo("Ann"));
+        Assert.That(dto.ContentParams.ContainsKey("missingField"), Is.False);
+    }
+
+    [TestCase(AgentTriggerKinds.AvailabilityGap)]
+    [TestCase(AgentTriggerKinds.ClientMissingCoreData)]
+    [TestCase(AgentTriggerKinds.TargetHoursDrift)]
+    public async Task Handle_ClientAggregateKind_AdminReader_GetsTheLivePayload(string kind)
+    {
+        SetAdmins(UserId);
+        var row = GivenRowReportingCondition(AgentConditionStatus.Reported);
+        row.TriggerKind = kind;
+
+        var dto = await HandleSingleAsync();
+
+        Assert.That(dto.ContentParams["count"], Is.EqualTo("40"));
+        Assert.That(dto.ContentParams["names"], Is.EqualTo("Ann, Bob"));
+    }
+
+    [Test]
+    public async Task Handle_PageWithoutClientAggregateRow_NeverAsksForTheAdminSet()
+    {
+        GivenRowReportingCondition(AgentConditionStatus.Reported);
+
+        var dto = await HandleSingleAsync();
+
+        Assert.That(dto.ContentParams["count"], Is.EqualTo("40"));
+        await _planningAudienceResolver.DidNotReceiveWithAnyArgs().GetAdminUserIdsAsync(default);
     }
 }

@@ -812,8 +812,8 @@ public class AgentTriggerServiceTests
     [Test]
     public async Task OnEventAsync_PlannersOnlyEventThatIsNotGroupScoped_UsesUnscopedAudience_NeverTheGroupScopedResolver()
     {
-        // Installation-wide planner alerts (hours drift, expiring contract, missing client core data)
-        // do not set RequiresGroupScope and must keep reaching every planner.
+        // Planner alerts without personal data that set no RequiresGroupScope keep reaching every planner.
+        // Events naming employees are client-scoped instead (AgentTriggerServiceClientScopeTests).
         _notificationService.GetConnectedUserIdsAsync().Returns(Array.Empty<string>());
         _rateLimiter.ShouldFire(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         SetPlanners("planner-a");

@@ -316,4 +316,41 @@ public class PlanningAudienceResolverTests
 
         result.ShouldBe(new[] { AdminUserId }, ignoreOrder: true);
     }
+
+    private const string FloorUserId = "floor-user";
+
+    [Test]
+    public async Task MaySeeAnyGroupAsync_Admin_SeesEveryGroupEvenWithoutRows()
+    {
+        SetupAllRoles();
+
+        (await _sut.MaySeeAnyGroupAsync(AdminUserId, [ForeignRootGroupId])).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task MaySeeAnyGroupAsync_UserWhoseRootCoversASubgroup_SeesIt_RoleIndependent()
+    {
+        SetupAllRoles();
+        SetupVisibility(FloorUserId, RootGroupId);
+
+        (await _sut.MaySeeAnyGroupAsync(FloorUserId, [ForeignRootGroupId, ChildGroupId])).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task MaySeeAnyGroupAsync_UserOfAnotherTree_DoesNotSeeIt()
+    {
+        SetupAllRoles();
+
+        (await _sut.MaySeeAnyGroupAsync(ForeignScopedPlannerUserId, [ChildGroupId])).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task MaySeeAnyGroupAsync_NoRowsEmptySetOrUnknownGroup_IsFalse_FailClosed()
+    {
+        SetupAllRoles();
+
+        (await _sut.MaySeeAnyGroupAsync(NoRowPlannerUserId, [RootGroupId])).ShouldBeFalse();
+        (await _sut.MaySeeAnyGroupAsync(ScopedPlannerUserId, [])).ShouldBeFalse();
+        (await _sut.MaySeeAnyGroupAsync(ScopedPlannerUserId, [Guid.NewGuid()])).ShouldBeFalse();
+    }
 }

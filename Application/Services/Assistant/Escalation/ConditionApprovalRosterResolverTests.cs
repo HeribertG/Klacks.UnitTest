@@ -6,7 +6,8 @@
 /// Anonymous/System audit sentinel) and holds the remediation skill's permissions; client-scoped kinds
 /// and kinds without an EntityId never look at Work rows; a finding without a group asks the admins
 /// only; the audience is rights-filtered and ordered by EscalationRosterOrder with admins held back to
-/// the last stage; nobody appears twice.
+/// the last stage; nobody appears twice. The stage-1 planner must still see one of the finding's groups
+/// today (a narrowed GroupVisibility drops them from stage 1); a finding without a group skips that check.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
@@ -53,6 +54,8 @@ public class ConditionApprovalRosterResolverTests
             .Returns(Task.FromResult<IReadOnlySet<string>>(new HashSet<string> { AdminId }));
         _audienceResolver.GetPlanningUserIdsForGroupAsync(GroupId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlySet<string>>(new HashSet<string> { AdminId, GroupPlannerId }));
+        _audienceResolver.MaySeeAnyGroupAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         SetupUser(AdminId, rosterOrder: 9, blocked: false, Roles.Admin);
         SetupUser(GroupPlannerId, rosterOrder: 2, blocked: false, Roles.Authorised);
@@ -269,5 +272,46 @@ public class ConditionApprovalRosterResolverTests
         var roster = await _sut.ResolveAsync(ShiftCondition(), RequiresShiftCreate);
 
         Assert.That(roster, Is.Empty);
+    }
+
+    [Test]
+    public async Task ShiftKind_PlannerNoLongerSeesTheFindingsGroup_SkipsStageOne()
+    {
+        SetupUser(LastPlannerId, rosterOrder: 5, blocked: false, Roles.Authorised);
+        SetupLastPlanner(LastPlannerId);
+        _audienceResolver.MaySeeAnyGroupAsync(LastPlannerId, Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var roster = await _sut.ResolveAsync(ShiftCondition(), RequiresShiftCreate);
+
+        Assert.That(Ids(roster), Is.EqualTo(new[] { GroupPlannerId, AdminId }));
+    }
+
+    [Test]
+    public async Task ShiftKind_VisibilityIsCheckedAgainstEveryGroupOfTheFinding()
+    {
+        var secondGroupId = Guid.NewGuid();
+        SetupUser(LastPlannerId, rosterOrder: 5, blocked: false, Roles.Authorised);
+        SetupLastPlanner(LastPlannerId);
+        var condition = ShiftCondition();
+        condition.Groups = [new AgentConditionGroup { ConditionId = condition.Id, GroupId = secondGroupId }];
+
+        await _sut.ResolveAsync(condition, RequiresShiftCreate);
+
+        await _audienceResolver.Received(1).MaySeeAnyGroupAsync(
+            LastPlannerId,
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(GroupId) && ids.Contains(secondGroupId)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task FindingWithoutGroup_DoesNotConsultGroupVisibilityForStageOne()
+    {
+        SetupUser(LastPlannerId, rosterOrder: 1, blocked: false, Roles.Authorised);
+        SetupLastPlanner(LastPlannerId);
+
+        await _sut.ResolveAsync(Condition(AgentTriggerKinds.EmptyContainer, ShiftId, groupId: null), RequiresShiftCreate);
+
+        await _audienceResolver.DidNotReceiveWithAnyArgs().MaySeeAnyGroupAsync(default!, default!, default);
     }
 }

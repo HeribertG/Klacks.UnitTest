@@ -36,6 +36,7 @@ public class ProactiveReminderServiceTests
     private IAgentTriggerPreferenceService _preferenceService = null!;
     private IAssistantNotificationService _notificationService = null!;
     private IUserActivityTracker _activityTracker = null!;
+    private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private SettableTimeProvider _timeProvider = null!;
     private RecordingLogger<ProactiveReminderService> _logger = null!;
     private ProactiveReminderService _sut = null!;
@@ -61,6 +62,8 @@ public class ProactiveReminderServiceTests
         _preferenceService = Substitute.For<IAgentTriggerPreferenceService>();
         _notificationService = Substitute.For<IAssistantNotificationService>();
         _activityTracker = Substitute.For<IUserActivityTracker>();
+        _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        SetAdmins("admin-x");
         _timeProvider = new SettableTimeProvider(FakeNow);
         _logger = new RecordingLogger<ProactiveReminderService>();
 
@@ -78,8 +81,12 @@ public class ProactiveReminderServiceTests
 
         _sut = new ProactiveReminderService(
             _dispatchRepository, _conditionRepository, _preferenceService, _notificationService,
-            _activityTracker, _timeProvider, _logger);
+            _activityTracker, _planningAudienceResolver, _timeProvider, _logger);
     }
+
+    private void SetAdmins(params string[] userIds) =>
+        _planningAudienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlySet<string>)new HashSet<string>(userIds, StringComparer.OrdinalIgnoreCase));
 
     [Test]
     public async Task RunAsync_NoDueRows_ReturnsZeroResult()
@@ -483,6 +490,95 @@ public class ProactiveReminderServiceTests
     private void GiveCondition(ProactiveTriggerDispatchRow row, string payloadJson) =>
         _conditionRepository.GetByIdAsync(row.ConditionId!.Value, Arg.Any<CancellationToken>())
             .Returns(new AgentCondition { Status = AgentConditionStatus.Reported, PayloadJson = payloadJson });
+
+    [TestCase(AgentTriggerKinds.AvailabilityGap)]
+    [TestCase(AgentTriggerKinds.ClientMissingCoreData)]
+    [TestCase(AgentTriggerKinds.TargetHoursDrift)]
+    public async Task RunAsync_ClientAggregateKind_SupervisorRow_RepeatsTheNarrowedFrozenParams(string kind)
+    {
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        row.TriggerKind = kind;
+        GiveCondition(row, LivePayloadJson);
+        Connect(UserId);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Reminded, Is.EqualTo(1));
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            UserId,
+            Arg.Any<string>(),
+            conversationId: null,
+            contentParams: Arg.Is<IReadOnlyDictionary<string, string>?>(
+                sent => sent != null
+                    && sent["count"] == "2"
+                    && sent["period"] == "2026-08"
+                    && sent["names"] == "Ann"),
+            messageId: row.Id.ToString(),
+            kind: kind,
+            actionRoute: Arg.Any<string>(),
+            actionParams: Arg.Any<IReadOnlyDictionary<string, string>?>());
+    }
+
+    [Test]
+    public async Task RunAsync_ClientAggregateKind_AdminRow_RendersFromTheLivePayload()
+    {
+        SetAdmins(UserId);
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        row.TriggerKind = AgentTriggerKinds.TargetHoursDrift;
+        GiveCondition(row, LivePayloadJson);
+        Connect(UserId);
+        SetDueRows(row);
+
+        await _sut.RunAsync();
+
+        await _notificationService.Received(1).SendProactiveMessageAsync(
+            UserId,
+            Arg.Any<string>(),
+            conversationId: null,
+            contentParams: Arg.Is<IReadOnlyDictionary<string, string>?>(sent => sent != null && sent["count"] == "5"),
+            messageId: row.Id.ToString(),
+            kind: Arg.Any<string>(),
+            actionRoute: Arg.Any<string>(),
+            actionParams: Arg.Any<IReadOnlyDictionary<string, string>?>());
+    }
+
+    [Test]
+    public async Task RunAsync_ClientAggregateKind_AcknowledgedSupervisorRow_IsNotReminded()
+    {
+        // The narrowed row keeps its condition id, so the acknowledge-stops-the-loop contract is the
+        // compare-and-swap's as for every other row: a lost claim delivers nothing.
+        var row = MakeRow(contentParamsJson: FrozenParamsJson);
+        row.TriggerKind = AgentTriggerKinds.AvailabilityGap;
+        GiveCondition(row, LivePayloadJson);
+        _dispatchRepository.TryAdvanceReminderAsync(
+                row.Id, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        Connect(UserId);
+        SetDueRows(row);
+
+        var result = await _sut.RunAsync();
+
+        Assert.That(result.Lost, Is.EqualTo(1));
+        await _notificationService.DidNotReceiveWithAnyArgs().SendProactiveMessageAsync(default!, default!);
+    }
+
+    [Test]
+    public async Task RunAsync_SeveralClientAggregateRows_ReadTheAdminSetOnce()
+    {
+        var first = MakeRow(contentParamsJson: FrozenParamsJson);
+        first.TriggerKind = AgentTriggerKinds.AvailabilityGap;
+        var second = MakeRow(contentParamsJson: FrozenParamsJson);
+        second.TriggerKind = AgentTriggerKinds.TargetHoursDrift;
+        GiveCondition(first, LivePayloadJson);
+        GiveCondition(second, LivePayloadJson);
+        Connect(UserId);
+        SetDueRows(first, second);
+
+        await _sut.RunAsync();
+
+        await _planningAudienceResolver.Received(1).GetAdminUserIdsAsync(Arg.Any<CancellationToken>());
+    }
 
     private void Connect(string userId) =>
         _notificationService.GetConnectedUserIdsAsync().Returns(new List<string> { userId });
