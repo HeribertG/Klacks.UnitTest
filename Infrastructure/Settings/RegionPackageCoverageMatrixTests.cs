@@ -69,7 +69,7 @@ public class RegionPackageCoverageMatrixTests
     [
         "maximumHours", "minimumHours", "fullTime", "guaranteedHours", "defaultWorkingHours",
         "overtimeThreshold", "vacationDaysPerYear", "maxDailyHours", "maxWeeklyHours",
-        "maxConsecutiveDays", "minRestDays", "minPauseHours"
+        "maxConsecutiveDays", "minRestDays", "minPauseHours", "maxDailySpanHours"
     ];
 
     private static readonly string[] ComplianceFields =

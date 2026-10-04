@@ -318,7 +318,7 @@ public class ScheduleBoardTests
         timeline2.SortBlocks();
 
         // Act
-        var violations = _board.GetAllRestViolations(TimeSpan.FromHours(11));
+        var violations = _board.GetAllRestViolations(TimeSpan.FromHours(11), ClientTimeline.DefaultDailyWorkFrame(TimeSpan.FromHours(11)));
 
         // Assert
         violations.Count().ShouldBe(2);

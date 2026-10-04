@@ -6,6 +6,9 @@ namespace Klacks.UnitTest.Domain.Models.Schedules;
 public class ClientTimelineTests
 {
     private static readonly DateOnly BaseDate = new(2026, 3, 15);
+    private static readonly TimeSpan MinRest = TimeSpan.FromHours(11);
+    private static readonly TimeSpan EuDailyWorkFrame = ClientTimeline.DefaultDailyWorkFrame(MinRest);
+    private static readonly TimeSpan ChDailyWorkFrame = TimeSpan.FromHours(14);
     private Guid _clientId;
     private ClientTimeline _timeline = null!;
 
@@ -131,7 +134,7 @@ public class ClientTimelineTests
         _timeline.SortBlocks();
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.ShouldBeEmpty();
@@ -151,7 +154,7 @@ public class ClientTimelineTests
         _timeline.SortBlocks();
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.Count().ShouldBe(1);
@@ -174,7 +177,7 @@ public class ClientTimelineTests
         _timeline.SortBlocks();
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.Count().ShouldBe(1);
@@ -195,7 +198,7 @@ public class ClientTimelineTests
         _timeline.SortBlocks();
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.ShouldBeEmpty();
@@ -209,7 +212,7 @@ public class ClientTimelineTests
         AddWork(BaseDate, 16, 0, BaseDate, 20, 0);
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.ShouldBeEmpty();
@@ -225,7 +228,7 @@ public class ClientTimelineTests
         var nextStart = AddWork(nextDay, 5, 0, nextDay, 9, 0);
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         var violation = violations.ShouldHaveSingleItem();
@@ -242,7 +245,7 @@ public class ClientTimelineTests
         AddWork(BaseDate, 15, 0, BaseDate, 19, 0);
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.ShouldBeEmpty();
@@ -256,7 +259,7 @@ public class ClientTimelineTests
         AddWork(BaseDate, 15, 0, BaseDate, 19, 1);
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(5));
@@ -271,7 +274,7 @@ public class ClientTimelineTests
         AddWork(nextDay, 10, 0, nextDay, 14, 0);
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(4));
@@ -287,7 +290,7 @@ public class ClientTimelineTests
         AddWork(nextDay, 6, 0, nextDay, 14, 0);
 
         // Act
-        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
 
         // Assert
         var violation = violations.ShouldHaveSingleItem();
@@ -306,13 +309,121 @@ public class ClientTimelineTests
         AddWork(nextDay, 16, 0, nextDay, 20, 0);
 
         // Act
-        var gaps = _timeline.GetRestGaps(TimeSpan.FromHours(11));
+        var gaps = _timeline.GetRestGaps(MinRest, EuDailyWorkFrame);
 
         // Assert
         var gap = gaps.ShouldHaveSingleItem();
         gap.PreviousBlock.End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(20, 0)));
         gap.NextBlock.Start.ShouldBe(nextDay.ToDateTime(new TimeOnly(7, 0)));
         gap.Duration.ShouldBe(TimeSpan.FromHours(11));
+    }
+
+    [Test]
+    public void DefaultDailyWorkFrame_Is24HoursMinusMinRest()
+    {
+        ClientTimeline.DefaultDailyWorkFrame(MinRest).ShouldBe(TimeSpan.FromHours(13));
+    }
+
+    [Test]
+    public void GetRestViolations_ChFrame_SplitShiftWithEveningBlockWithin14Hours_ReturnsEmpty()
+    {
+        // Arrange
+        AddWork(BaseDate, 7, 0, BaseDate, 11, 0);
+        AddWork(BaseDate, 16, 0, BaseDate, 20, 0);
+        AddWork(BaseDate, 20, 30, BaseDate, 21, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, ChDailyWorkFrame);
+
+        // Assert
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void GetRestViolations_EuFrame_SplitShiftWithEveningBlockBeyond13Hours_ReturnsViolation()
+    {
+        // Arrange
+        AddWork(BaseDate, 7, 0, BaseDate, 11, 0);
+        AddWork(BaseDate, 16, 0, BaseDate, 20, 0);
+        AddWork(BaseDate, 20, 30, BaseDate, 21, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, EuDailyWorkFrame);
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromMinutes(30));
+    }
+
+    [Test]
+    public void GetRestViolations_ChFrame_SplitShiftOneMinuteBeyond14Hours_ReturnsViolation()
+    {
+        // Arrange
+        AddWork(BaseDate, 7, 0, BaseDate, 11, 0);
+        AddWork(BaseDate, 16, 0, BaseDate, 21, 1);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, ChDailyWorkFrame);
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(5));
+    }
+
+    [Test]
+    public void GetRestViolations_ChFrame_EveningThenNextMorningWithin14Hours_ReturnsViolation()
+    {
+        // Arrange
+        var nextDay = BaseDate.AddDays(1);
+        AddWork(BaseDate, 19, 0, BaseDate, 23, 0);
+        AddWork(nextDay, 7, 0, nextDay, 9, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, ChDailyWorkFrame);
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(8));
+    }
+
+    [Test]
+    public void GetRestViolations_ChFrame_NightShiftThenEarlyShiftNextMorning_ReturnsViolation()
+    {
+        // Arrange
+        var nextDay = BaseDate.AddDays(1);
+        AddWork(BaseDate, 22, 0, nextDay, 6, 0);
+        AddWork(nextDay, 10, 0, nextDay, 14, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, ChDailyWorkFrame);
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(4));
+    }
+
+    [Test]
+    public void GetRestViolations_ChFrame_SplitShiftEndingAtMidnight_ReturnsEmpty()
+    {
+        // Arrange
+        AddWork(BaseDate, 10, 0, BaseDate, 14, 0);
+        AddWork(BaseDate, 18, 0, BaseDate.AddDays(1), 0, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, ChDailyWorkFrame);
+
+        // Assert
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void GetRestViolations_FrameShorterThanDefault_SplitsTheWorkDay()
+    {
+        // Arrange
+        AddWork(BaseDate, 7, 0, BaseDate, 11, 0);
+        AddWork(BaseDate, 16, 0, BaseDate, 20, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(MinRest, TimeSpan.FromHours(12));
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(5));
     }
 
     private ScheduleBlock AddWork(DateOnly startDate, int startHour, int startMinute, DateOnly endDate, int endHour, int endMinute)

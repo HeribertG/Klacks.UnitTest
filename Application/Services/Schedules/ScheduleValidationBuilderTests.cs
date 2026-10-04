@@ -24,13 +24,14 @@ public class ScheduleValidationBuilderTests
         _entries = [];
     }
 
-    private static SchedulingPolicy Policy(double maxWeeklyHours = 50, decimal minRestDays = 2)
+    private static SchedulingPolicy Policy(double maxWeeklyHours = 50, decimal minRestDays = 2, TimeSpan? maxDailySpan = null)
         => new(
             MinRestHours: TimeSpan.FromHours(11),
             MaxDailyHours: TimeSpan.FromHours(10),
             MaxConsecutiveDays: 6,
             MaxWeeklyHours: TimeSpan.FromHours(maxWeeklyHours),
-            MinRestDays: minRestDays);
+            MinRestDays: minRestDays,
+            MaxDailySpan: maxDailySpan);
 
     private void AddWorkDays(int count)
     {
@@ -302,5 +303,40 @@ public class ScheduleValidationBuilderTests
         ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy());
 
         _entries.Select(e => e.Date).ShouldBe([Monday, Wednesday]);
+    }
+
+    [Test]
+    public void DailyWorkFrame_WithoutLegalFrame_Is24HoursMinusMinRest()
+    {
+        Policy().DailyWorkFrame.ShouldBe(TimeSpan.FromHours(13));
+        Policy(maxDailySpan: TimeSpan.Zero).DailyWorkFrame.ShouldBe(TimeSpan.FromHours(13));
+    }
+
+    [Test]
+    public void DailyWorkFrame_WithLegalFrame_IsTheLegalFrame()
+    {
+        Policy(maxDailySpan: TimeSpan.FromHours(14)).DailyWorkFrame.ShouldBe(TimeSpan.FromHours(14));
+    }
+
+    [Test]
+    public void AddRestViolations_ChFrame_SplitShiftWithin14Hours_IsNotReported()
+    {
+        AddShift(Monday, 7, 11);
+        AddShift(Monday, 16, 21);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy(maxDailySpan: TimeSpan.FromHours(14)));
+
+        _entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void AddRestViolations_DefaultFrame_SameSplitShiftBeyond13Hours_IsReported()
+    {
+        AddShift(Monday, 7, 11);
+        AddShift(Monday, 16, 21);
+
+        ScheduleValidationBuilder.AddRestViolations(_entries, _timeline, "Test", Policy());
+
+        _entries.ShouldHaveSingleItem().CommentParams["actualHours"].ShouldBe("5.0");
     }
 }
