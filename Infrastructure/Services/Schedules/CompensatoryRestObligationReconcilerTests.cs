@@ -257,6 +257,33 @@ public class CompensatoryRestObligationReconcilerTests
     }
 
     [Test]
+    public async Task Reconcile_OpenObligationFromSplitShiftPauseWithLaterLongRest_SoftDeletesInsteadOfFulfilling()
+    {
+        var clientId = Guid.NewGuid();
+        SeedWork(clientId, Jun1, new TimeOnly(7, 0), new TimeOnly(11, 0));
+        SeedWork(clientId, Jun1, new TimeOnly(16, 0), new TimeOnly(20, 0));
+        SeedWork(clientId, Jun1.AddDays(3), new TimeOnly(8, 0), new TimeOnly(16, 0));
+        _context.CompensatoryRestObligation.Add(new CompensatoryRestObligation
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            TriggerDate = Jun1,
+            RestGapStart = Jun1.ToDateTime(new TimeOnly(11, 0)),
+            StandardRestHours = 11m,
+            ShortfallHours = 6m,
+            DueDate = Jun1.AddDays(3),
+        });
+        await _context.SaveChangesAsync();
+
+        await Reconcile(clientId);
+
+        ActiveObligations(clientId).ShouldBeEmpty();
+        var stale = AllObligations(clientId).ShouldHaveSingleItem();
+        stale.IsDeleted.ShouldBeTrue();
+        stale.FulfilledOn.ShouldBeNull();
+    }
+
+    [Test]
     public async Task Reconcile_ContainerWithSubShifts_CountsOnlyTheContainer()
     {
         var clientId = Guid.NewGuid();
