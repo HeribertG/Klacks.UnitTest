@@ -68,4 +68,34 @@ public class GetContractDetailsSkillTests
         result.Message.ShouldNotBeNull();
         result.Message.ShouldContain("not found");
     }
+
+    [Test]
+    public async Task StandardRatesAndShiftWork_AreReportedAsNull_WithTheStandardMeaning()
+    {
+        var contractId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(new ContractResource
+            {
+                Id = contractId,
+                Name = "Standard",
+                NightRate = null,
+                HolidayRate = 0m,
+                PerformsShiftWork = null,
+                ValidFrom = new DateTime(2026, 1, 1)
+            });
+        var skill = new GetContractDetailsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["contractId"] = contractId.ToString()
+        });
+
+        result.Success.ShouldBeTrue();
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("NightRate").ValueKind.ShouldBe(JsonValueKind.Null);
+        data.GetProperty("HolidayRate").GetDecimal().ShouldBe(0m);
+        data.GetProperty("PerformsShiftWork").ValueKind.ShouldBe(JsonValueKind.Null);
+        data.GetProperty("StandardValueNote").GetString()!.ShouldContain("null");
+    }
 }

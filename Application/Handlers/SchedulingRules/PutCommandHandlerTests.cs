@@ -123,4 +123,19 @@ public class PutCommandHandlerTests
         entity.ImportSourceKey.ShouldBeEmpty();
         entity.ImportContentHash.ShouldBeEmpty();
     }
+
+    [Test]
+    public async Task Handle_PerformsShiftWorkChanged_DispatchesSchedulingRuleChangedEvent()
+    {
+        var ruleId = Guid.NewGuid();
+        _repository.Get(ruleId).Returns(new SchedulingRule { Id = ruleId, Name = "Rule", NightRate = 0.10m, PerformsShiftWork = null });
+
+        var resource = new SchedulingRuleResource { Id = ruleId, Name = "Rule", NightRate = 0.10m, PerformsShiftWork = false };
+
+        await _handler.Handle(new PutCommand<SchedulingRuleResource>(resource), CancellationToken.None);
+
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<IDomainEvent>(e => e is SchedulingRuleChangedEvent && ((SchedulingRuleChangedEvent)e).RuleId == ruleId),
+            Arg.Any<CancellationToken>());
+    }
 }

@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Tests the WorkOnMonday..WorkOnSunday/PerformsShiftWork fallback chain (scheduling rule -&gt; contract)
-/// resolved by ClientContractDataProvider. Regression coverage for a bug where these 8 fields read only
-/// contract.X, ignoring a bound SchedulingRule and silently defeating PerformsShiftWork=true on the rule.
+/// Tests the WorkOnMonday..WorkOnSunday fallback chain (scheduling rule -&gt; contract) and the tri-state
+/// PerformsShiftWork chain (contract -&gt; scheduling rule -&gt; settings, owner decision 2026-10-04) resolved
+/// by ClientContractDataProvider. Regression coverage for a bug where the weekday fields read only
+/// contract.X and ignored a bound SchedulingRule.
 /// </summary>
 
 namespace Klacks.UnitTest.Infrastructure.Services.Associations;
@@ -42,10 +43,32 @@ public class ClientContractDataProviderWorkOnDaysTests
     public void TearDown() => _context.Dispose();
 
     [Test]
-    public async Task GetEffectiveContractDataAsync_RulePerformsShiftWorkTrue_OverridesFalseContract()
+    public async Task GetEffectiveContractDataAsync_ContractPerformsShiftWorkFalse_BeatsRuleTrue()
     {
         var clientId = await SeedActiveContractAsync(
             contractPerformsShiftWork: false, rulePerformsShiftWork: true, ruleWorkOnSaturday: null, contractWorkOnSaturday: false);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        result.PerformsShiftWork.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task GetEffectiveContractDataAsync_ContractPerformsShiftWorkNull_TakesRuleValue()
+    {
+        var clientId = await SeedActiveContractAsync(
+            contractPerformsShiftWork: null, rulePerformsShiftWork: false, ruleWorkOnSaturday: null, contractWorkOnSaturday: false);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
+
+        result.PerformsShiftWork.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task GetEffectiveContractDataAsync_ContractAndRulePerformsShiftWorkNull_TakesSettingsDefault()
+    {
+        var clientId = await SeedActiveContractAsync(
+            contractPerformsShiftWork: null, rulePerformsShiftWork: null, ruleWorkOnSaturday: null, contractWorkOnSaturday: false);
 
         var result = await _sut.GetEffectiveContractDataAsync(clientId, new DateOnly(2026, 7, 15));
 
@@ -109,7 +132,7 @@ public class ClientContractDataProviderWorkOnDaysTests
     }
 
     private async Task<Guid> SeedActiveContractAsync(
-        bool contractPerformsShiftWork,
+        bool? contractPerformsShiftWork,
         bool? rulePerformsShiftWork,
         bool? ruleWorkOnSaturday,
         bool contractWorkOnSaturday,

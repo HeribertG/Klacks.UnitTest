@@ -151,11 +151,51 @@ public class PutCommandHandlerTests
             MinimumHours = 80m,
             MaximumHours = 120m,
             NightRate = nightRate,
+            HolidayRate = 0m,
             WE1Rate = 0m,
             WE2Rate = 0m,
             WE3Rate = 0m,
             PaymentInterval = Klacks.Api.Domain.Enums.PaymentInterval.Monthly,
             ValidFrom = validFrom,
         };
+    }
+
+    [TestCase(null, false)]
+    [TestCase(true, false)]
+    [TestCase(false, null)]
+    public async Task Handle_PerformsShiftWorkChanged_DispatchesContractChangedEvent(bool? before, bool? after)
+    {
+        var contractId = Guid.NewGuid();
+        var existing = BuildContract(contractId, validFrom: new DateTime(2026, 4, 1), nightRate: 0.10m);
+        existing.PerformsShiftWork = before;
+        _repository.Get(contractId).Returns(existing);
+
+        var resource = BuildResource(contractId, validFrom: new DateTime(2026, 4, 1), nightRate: 0.10m);
+        resource.PerformsShiftWork = after;
+
+        await _handler.Handle(new PutCommand<ContractResource>(resource), CancellationToken.None);
+
+        existing.PerformsShiftWork.ShouldBe(after);
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<IDomainEvent>(e => e is ContractChangedEvent && ((ContractChangedEvent)e).ContractId == contractId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_NightRateClearedToStandard_DispatchesContractChangedEvent()
+    {
+        var contractId = Guid.NewGuid();
+        var existing = BuildContract(contractId, validFrom: new DateTime(2026, 4, 1), nightRate: 0.10m);
+        _repository.Get(contractId).Returns(existing);
+
+        var resource = BuildResource(contractId, validFrom: new DateTime(2026, 4, 1), nightRate: 0.10m);
+        resource.NightRate = null;
+
+        await _handler.Handle(new PutCommand<ContractResource>(resource), CancellationToken.None);
+
+        existing.NightRate.ShouldBeNull();
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<IDomainEvent>(e => e is ContractChangedEvent && ((ContractChangedEvent)e).ContractId == contractId),
+            Arg.Any<CancellationToken>());
     }
 }

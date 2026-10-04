@@ -283,4 +283,115 @@ public class UpdateContractSkillTests
         result.Success.ShouldBeTrue();
         await mediator.DidNotReceive().Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>());
     }
+
+    private static async Task<(SkillResult Result, IMediator Mediator)> RunAsync(
+        ContractResource existing, Dictionary<string, object> parameters)
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+        mediator.Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<ContractResource>)ci[0]).Resource);
+        var skill = new UpdateContractSkill(mediator, CompanyClock);
+        parameters["contractId"] = existing.Id.ToString();
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+        return (result, mediator);
+    }
+
+    [Test]
+    public async Task ExplicitZeroNightRate_OnStandardContract_IsStoredAsZero()
+    {
+        var existing = Contract(Guid.NewGuid());
+
+        var (result, mediator) = await RunAsync(existing, new Dictionary<string, object> { ["nightRate"] = 0m });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<ContractResource>>(c => c.Resource.NightRate == 0m && c.Resource.HolidayRate == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("clearNightRate")]
+    [TestCase("clearHolidayRate")]
+    [TestCase("clearSaRate")]
+    [TestCase("clearSoRate")]
+    public async Task ClearRate_ResetsTheRateToStandard(string clearFlag)
+    {
+        var existing = Contract(Guid.NewGuid());
+        existing.NightRate = 0.1m;
+        existing.HolidayRate = 0.2m;
+        existing.WE1Rate = 0.3m;
+        existing.WE2Rate = 0.4m;
+
+        var (result, mediator) = await RunAsync(existing, new Dictionary<string, object> { [clearFlag] = true });
+
+        result.Success.ShouldBeTrue(result.Message);
+        var expectedNight = clearFlag == "clearNightRate" ? (decimal?)null : 0.1m;
+        var expectedHoliday = clearFlag == "clearHolidayRate" ? (decimal?)null : 0.2m;
+        var expectedSa = clearFlag == "clearSaRate" ? (decimal?)null : 0.3m;
+        var expectedSo = clearFlag == "clearSoRate" ? (decimal?)null : 0.4m;
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<ContractResource>>(c =>
+                c.Resource.NightRate == expectedNight &&
+                c.Resource.HolidayRate == expectedHoliday &&
+                c.Resource.WE1Rate == expectedSa &&
+                c.Resource.WE2Rate == expectedSo),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NegativeNightRate_ReturnsError_NoMutation()
+    {
+        var (result, mediator) = await RunAsync(Contract(Guid.NewGuid()), new Dictionary<string, object> { ["nightRate"] = -0.1m });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PerformsShiftWorkFalse_IsStoredExplicitly()
+    {
+        var (result, mediator) = await RunAsync(Contract(Guid.NewGuid()), new Dictionary<string, object> { ["performsShiftWork"] = false });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<ContractResource>>(c => c.Resource.PerformsShiftWork == false),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClearPerformsShiftWork_ResetsTheFlagToStandard()
+    {
+        var existing = Contract(Guid.NewGuid());
+        existing.PerformsShiftWork = true;
+
+        var (result, mediator) = await RunAsync(existing, new Dictionary<string, object> { ["clearPerformsShiftWork"] = true });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PutCommand<ContractResource>>(c => c.Resource.PerformsShiftWork == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RateTogetherWithItsClearFlag_ReturnsError_NoMutation()
+    {
+        var (result, mediator) = await RunAsync(
+            Contract(Guid.NewGuid()),
+            new Dictionary<string, object> { ["nightRate"] = 0.2m, ["clearNightRate"] = true });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ShiftWorkTogetherWithItsClearFlag_ReturnsError_NoMutation()
+    {
+        var (result, mediator) = await RunAsync(
+            Contract(Guid.NewGuid()),
+            new Dictionary<string, object> { ["performsShiftWork"] = true, ["clearPerformsShiftWork"] = true });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
 }

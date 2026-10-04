@@ -434,4 +434,79 @@ public class CreateContractSkillTests
         workaroundFinal.MinimumHours.ShouldBe(100m);
         workaroundFinal.MaximumHours.ShouldBe(100m);
     }
+
+    [Test]
+    public async Task OmittedRatesAndShiftWork_AreSentAsNull_SoTheStandardApplies()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator, CompanyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Standard Rates",
+            ["guaranteedHours"] = 160m,
+            ["validFrom"] = "2026-07-01"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c =>
+                c.Resource.NightRate == null &&
+                c.Resource.HolidayRate == null &&
+                c.Resource.WE1Rate == null &&
+                c.Resource.WE2Rate == null &&
+                c.Resource.WE3Rate == null &&
+                c.Resource.PerformsShiftWork == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExplicitZeroRatesAndShiftWork_AreKept()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator, CompanyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "No Credits",
+            ["guaranteedHours"] = 160m,
+            ["validFrom"] = "2026-07-01",
+            ["nightRate"] = 0m,
+            ["holidayRate"] = 0.15m,
+            ["saRate"] = 0m,
+            ["soRate"] = 0.2m,
+            ["performsShiftWork"] = false
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c =>
+                c.Resource.NightRate == 0m &&
+                c.Resource.HolidayRate == 0.15m &&
+                c.Resource.WE1Rate == 0m &&
+                c.Resource.WE2Rate == 0.2m &&
+                c.Resource.PerformsShiftWork == false),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("nightRate")]
+    [TestCase("holidayRate")]
+    [TestCase("saRate")]
+    [TestCase("soRate")]
+    public async Task NegativeRate_ReturnsErrorWithoutMutation(string rate)
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skill = new CreateContractSkill(mediator, CompanyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "Negative",
+            ["guaranteedHours"] = 160m,
+            ["validFrom"] = "2026-07-01",
+            [rate] = -0.1m
+        });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
 }
