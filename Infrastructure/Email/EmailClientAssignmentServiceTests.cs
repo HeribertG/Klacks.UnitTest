@@ -408,6 +408,37 @@ public class EmailClientAssignmentServiceTests
     }
 
     [Test]
+    public async Task ResolveClientAsync_AddressSharedByTwoClients_ReturnsNullInsteadOfGuessing()
+    {
+        await AddClientWithCommunicationAsync("shared@example.com");
+        await AddClientWithCommunicationAsync("SHARED@example.com", CommunicationTypeEnum.OfficeMail);
+
+        var result = await _service.ResolveClientAsync(Email("shared@example.com"), CancellationToken.None);
+
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ResolveClientAsync_SameClientOwnsAddressTwice_StillResolves()
+    {
+        var (client, _) = await AddClientWithCommunicationAsync("twice@example.com");
+        _context.Set<Communication>().Add(new Communication
+        {
+            Id = Guid.NewGuid(),
+            ClientId = client.Id,
+            Client = client,
+            Type = CommunicationTypeEnum.OfficeMail,
+            Value = "twice@example.com",
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _service.ResolveClientAsync(Email("twice@example.com"), CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        result!.Value.ClientId.ShouldBe(client.Id);
+    }
+
+    [Test]
     public async Task GetStoredAddressAsync_AddressSharedByTwoClients_ReturnsNull()
     {
         var (clientA, _) = await AddClientWithCommunicationAsync("shared@example.com");

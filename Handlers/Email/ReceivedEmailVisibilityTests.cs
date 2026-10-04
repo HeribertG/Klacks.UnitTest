@@ -4,7 +4,9 @@
 /// Until 2026-10-01 the received-email endpoints ignored group visibility: a group-restricted user could list,
 /// read, translate, move and delete the emails of any employee, read the email list of any client or group, and
 /// see every client with emails in the group tree. An email whose sender belongs only to hidden clients must now
-/// be answered exactly like a missing email, and nothing may be written for it.
+/// be answered exactly like a missing email, and nothing may be written for it. Since 2026-10-04 the same holds
+/// when a visible client shares the sender address with a hidden one: otherwise putting a hidden employee's
+/// address on a visible client exposed that employee's past and future mail.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Email;
@@ -78,7 +80,7 @@ public class ReceivedEmailVisibilityTests
     }
 
     [Test]
-    public async Task GetById_SenderAlsoOwnedByVisibleClient_IsReturned()
+    public async Task GetById_SenderSharedByHiddenAndVisibleClient_AnsweredLikeMissingEmail()
     {
         var visibleClientId = Guid.NewGuid();
         var handler = new GetReceivedEmailQueryHandler(
@@ -90,8 +92,99 @@ public class ReceivedEmailVisibilityTests
 
         var result = await handler.Handle(new GetReceivedEmailQuery(_email.Id), CancellationToken.None);
 
-        result.ShouldNotBeNull();
-        result!.Id.ShouldBe(_email.Id);
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task List_SenderSharedByHiddenAndVisibleClient_IsExcluded()
+    {
+        _repository.GetFilteredListAsync(
+                Arg.Any<string?>(), Arg.Any<bool?>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<int>(),
+                Arg.Any<IReadOnlyCollection<string>?>())
+            .Returns(new List<ReceivedEmail>());
+        var handler = new GetReceivedEmailsQueryHandler(
+            _repository,
+            EmailVisibilityTestDoubles.SenderOwnedBy(HiddenSender, _hiddenClientId, Guid.NewGuid()),
+            _clientVisibilityGuard,
+            new ReceivedEmailMapper(),
+            Substitute.For<ILogger<GetReceivedEmailsQueryHandler>>());
+
+        await handler.Handle(new GetReceivedEmailsQuery(Skip, Take, null, null, null), CancellationToken.None);
+
+        await _repository.Received(1).GetFilteredListAsync(
+            Arg.Any<string?>(), Arg.Any<bool?>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<int>(),
+            Arg.Is<IReadOnlyCollection<string>?>(a => a != null && a.Single() == HiddenSender));
+    }
+
+    [Test]
+    public async Task ByClient_VisibleClientSharesAddressWithHiddenClient_SharedAddressNotQueried()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var emailQueryRepository = EmailVisibilityTestDoubles.SenderOwnedBy(HiddenSender, _hiddenClientId, visibleClientId);
+        emailQueryRepository.GetEmailAddressesByClientAsync(visibleClientId, Arg.Any<CancellationToken>())
+            .Returns(new List<string> { HiddenSender, VisibleSender });
+        emailQueryRepository.GetEmailsByAddressesAsync(
+                Arg.Any<string>(), Arg.Any<List<string>>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ReceivedEmailQueryResult());
+        var handler = new GetEmailsByClientQueryHandler(
+            emailQueryRepository, _clientVisibilityGuard, new ReceivedEmailMapper(),
+            Substitute.For<ILogger<GetEmailsByClientQueryHandler>>());
+
+        await handler.Handle(new GetEmailsByClientQuery(visibleClientId, Skip, Take), CancellationToken.None);
+
+        await emailQueryRepository.Received(1).GetEmailsByAddressesAsync(
+            EmailConstants.ClientAssignedFolder,
+            Arg.Is<List<string>>(a => a.Single() == VisibleSender),
+            Skip, Take, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ByClient_OnlyAddressSharedWithHiddenClient_AnsweredLikeClientWithoutEmails()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var emailQueryRepository = EmailVisibilityTestDoubles.SenderOwnedBy(HiddenSender, _hiddenClientId, visibleClientId);
+        emailQueryRepository.GetEmailAddressesByClientAsync(visibleClientId, Arg.Any<CancellationToken>())
+            .Returns(new List<string> { HiddenSender });
+        var handler = new GetEmailsByClientQueryHandler(
+            emailQueryRepository, _clientVisibilityGuard, new ReceivedEmailMapper(),
+            Substitute.For<ILogger<GetEmailsByClientQueryHandler>>());
+
+        var result = await handler.Handle(new GetEmailsByClientQuery(visibleClientId, Skip, Take), CancellationToken.None);
+
+        result.Items.ShouldBeEmpty();
+        result.TotalCount.ShouldBe(0);
+        await emailQueryRepository.DidNotReceiveWithAnyArgs()
+            .GetEmailsByAddressesAsync(default!, default!, default, default, default);
+    }
+
+    [Test]
+    public async Task ByGroup_MemberSharesAddressWithHiddenClient_SharedAddressNotQueried()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var visibleClientId = Guid.NewGuid();
+        var groupVisibilityGuard = Substitute.For<IGroupVisibilityGuard>();
+        groupVisibilityGuard.IsGroupVisibleAsync(visibleGroupId, Arg.Any<CancellationToken>()).Returns(true);
+        var groupHierarchyService = Substitute.For<IGroupHierarchyService>();
+        groupHierarchyService.GetDescendantsAsync(visibleGroupId, true)
+            .Returns(new List<Group> { new() { Id = visibleGroupId } });
+        var emailQueryRepository = EmailVisibilityTestDoubles.SenderOwnedBy(HiddenSender, _hiddenClientId, visibleClientId);
+        emailQueryRepository.GetClientIdsByGroupIdsAsync(Arg.Any<HashSet<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { visibleClientId });
+        emailQueryRepository.GetEmailAddressesByClientIdsAsync(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<string> { HiddenSender, VisibleSender });
+        emailQueryRepository.GetEmailsByAddressesAsync(
+                Arg.Any<string>(), Arg.Any<List<string>>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ReceivedEmailQueryResult());
+        var handler = new GetEmailsByGroupQueryHandler(
+            groupHierarchyService, emailQueryRepository, groupVisibilityGuard, _clientVisibilityGuard,
+            new ReceivedEmailMapper(), Substitute.For<ILogger<GetEmailsByGroupQueryHandler>>());
+
+        await handler.Handle(new GetEmailsByGroupQuery(visibleGroupId, Skip, Take), CancellationToken.None);
+
+        await emailQueryRepository.Received(1).GetEmailsByAddressesAsync(
+            EmailConstants.ClientAssignedFolder,
+            Arg.Is<List<string>>(a => a.Single() == VisibleSender),
+            Skip, Take, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -249,7 +342,7 @@ public class ReceivedEmailVisibilityTests
         groupVisibilityGuard.IsGroupVisibleAsync(hiddenGroupId, Arg.Any<CancellationToken>()).Returns(false);
         var groupHierarchyService = Substitute.For<IGroupHierarchyService>();
         var handler = new GetEmailsByGroupQueryHandler(
-            groupHierarchyService, _emailQueryRepository, groupVisibilityGuard, new ReceivedEmailMapper(),
+            groupHierarchyService, _emailQueryRepository, groupVisibilityGuard, _clientVisibilityGuard, new ReceivedEmailMapper(),
             Substitute.For<ILogger<GetEmailsByGroupQueryHandler>>());
 
         var result = await handler.Handle(new GetEmailsByGroupQuery(hiddenGroupId, Skip, Take), CancellationToken.None);

@@ -5,6 +5,7 @@
 /// get_email_analysis, backed by the same channel-neutral IInboundAnalysisRepository.
 /// </summary>
 
+using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Inbound;
@@ -18,12 +19,15 @@ public class GetMessengerAnalysisSkillTests
 {
     private IInboundAnalysisRepository _analysisRepository = null!;
     private IInboundClarificationRepository _clarificationRepository = null!;
+    private IClientVisibilityGuard _clientVisibilityGuard = null!;
 
     [SetUp]
     public void Setup()
     {
         _analysisRepository = Substitute.For<IInboundAnalysisRepository>();
         _clarificationRepository = Substitute.For<IInboundClarificationRepository>();
+        _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _clientVisibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -50,7 +54,7 @@ public class GetMessengerAnalysisSkillTests
                 Summary = "Wants two weeks off in July",
                 AnalyzedAt = new DateTime(2026, 7, 10, 6, 0, 0, DateTimeKind.Utc)
             });
-        var skill = new GetMessengerAnalysisSkill(_analysisRepository, _clarificationRepository);
+        var skill = new GetMessengerAnalysisSkill(_analysisRepository, _clarificationRepository, _clientVisibilityGuard);
 
         var result = await skill.ExecuteAsync(Ctx(), P(id));
 
@@ -60,12 +64,38 @@ public class GetMessengerAnalysisSkillTests
     }
 
     [Test]
+    public async Task GetMessengerAnalysis_ClientHiddenFromCaller_AnsweredLikeNotAnalyzed()
+    {
+        var id = Guid.NewGuid();
+        var hiddenClientId = Guid.NewGuid();
+        _analysisRepository.GetBySourceAsync(InboundSourceKind.Messenger, id, Arg.Any<CancellationToken>())
+            .Returns(new InboundAnalysis
+            {
+                SourceKind = InboundSourceKind.Messenger,
+                SourceId = id,
+                ClientId = hiddenClientId,
+                Intent = EmailIntent.VacationRequest,
+                Summary = "Wants two weeks off in July",
+                AnalyzedAt = new DateTime(2026, 7, 10, 6, 0, 0, DateTimeKind.Utc)
+            });
+        _clientVisibilityGuard.IsVisibleAsync(hiddenClientId, Arg.Any<CancellationToken>()).Returns(false);
+        var skill = new GetMessengerAnalysisSkill(_analysisRepository, _clarificationRepository, _clientVisibilityGuard);
+
+        var result = await skill.ExecuteAsync(Ctx(), P(id));
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("not been analyzed");
+        result.Message.ShouldNotContain("Wants two weeks off in July");
+        await _clarificationRepository.DidNotReceiveWithAnyArgs().GetByAnalysisIdAsync(default, default);
+    }
+
+    [Test]
     public async Task GetMessengerAnalysis_SaysSo_WhenNotAnalyzed()
     {
         var id = Guid.NewGuid();
         _analysisRepository.GetBySourceAsync(InboundSourceKind.Messenger, id, Arg.Any<CancellationToken>())
             .Returns((InboundAnalysis?)null);
-        var skill = new GetMessengerAnalysisSkill(_analysisRepository, _clarificationRepository);
+        var skill = new GetMessengerAnalysisSkill(_analysisRepository, _clarificationRepository, _clientVisibilityGuard);
 
         var result = await skill.ExecuteAsync(Ctx(), P(id));
 
@@ -96,7 +126,7 @@ public class GetMessengerAnalysisSkillTests
                 Question = "Kannst du heute nicht arbeiten?",
                 Status = InboundClarificationStatus.Open
             });
-        var skill = new GetMessengerAnalysisSkill(_analysisRepository, _clarificationRepository);
+        var skill = new GetMessengerAnalysisSkill(_analysisRepository, _clarificationRepository, _clientVisibilityGuard);
 
         var result = await skill.ExecuteAsync(Ctx(), P(id));
 
