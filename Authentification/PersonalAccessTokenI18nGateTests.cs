@@ -6,7 +6,7 @@
 /// in every language plugin (owner rule: all 25 languages, no English fallback), with the same {{placeholders}}
 /// as the English source, and that every token manual names both access modes with the exact UI labels of its
 /// language. Follows ClientImportI18nGateTests: the Klacks.Ui half reports inconclusive when that repository is
-/// not checked out next to Klacks.Api.
+/// not checked out next to the Klacks.Api of the same source tree (a git worktree without Klacks.Ui included).
 /// </summary>
 
 using System.Text.Json;
@@ -31,6 +31,7 @@ public class PersonalAccessTokenI18nGateTests
     private const string PluginDocsDirectory = "docs";
     private const string ManualFileName = "personal-access-token-manual.html";
     private const string HtmlExtension = ".html";
+    private const string ApiProjectDirectory = "Klacks.Api";
 
     private static readonly string[] AccessModeLabelKeys =
     [
@@ -182,17 +183,33 @@ public class PersonalAccessTokenI18nGateTests
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
 
+    /// <summary>
+    /// Resolves a path relative to the source tree this test was built from: the nearest ancestor of the test
+    /// directory that holds Klacks.Api (the repositories sit next to each other there, locally and in CI). The
+    /// search deliberately stops at that root, so a git worktree without its own Klacks.Ui reports inconclusive
+    /// instead of reading another checkout further up the disk.
+    /// </summary>
     private static string? FindDirectory(string relativePath)
     {
-        var segments = relativePath.Split('/');
+        var treeRoot = FindTreeRoot();
+        if (treeRoot == null)
+        {
+            return null;
+        }
+
+        var candidate = Path.Combine([treeRoot, .. relativePath.Split('/')]);
+        return Directory.Exists(candidate) ? candidate : null;
+    }
+
+    private static string? FindTreeRoot()
+    {
         var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
 
         while (directory != null)
         {
-            var candidate = Path.Combine([directory.FullName, .. segments]);
-            if (Directory.Exists(candidate))
+            if (Directory.Exists(Path.Combine(directory.FullName, ApiProjectDirectory)))
             {
-                return candidate;
+                return directory.FullName;
             }
 
             directory = directory.Parent;
