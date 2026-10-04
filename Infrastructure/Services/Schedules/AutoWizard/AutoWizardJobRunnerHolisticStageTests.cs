@@ -10,6 +10,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.AnalyseScenarios;
+using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.DTOs.Schedules.AutoWizard;
@@ -279,13 +280,50 @@ public class AutoWizardJobRunnerHolisticStageTests
 
         state.Status.ShouldBe(WizardJobStatusValues.Completed);
         state.Result!.FinalScenarioId.ShouldBe(_holisticScenarioId);
-        var warning = state.Result.ComplianceViolations.ShouldHaveSingleItem();
+        state.Result.ComplianceViolations.ShouldBeEmpty();
+        var warning = state.Result.PlanningRuleWarnings.ShouldNotBeNull().ShouldHaveSingleItem();
         warning.Comment.ShouldBe(ScheduleValidationKeys.PlanningRuleInvalid);
         warning.Type.ShouldBe(ScheduleValidationType.Warning);
         warning.CommentParams![PlanningRuleNotificationMapper.RuleIdParam].ShouldBe(invalidRuleId.ToString());
         await _ruleSetLoader.Received(1).LoadRuleSetAsync(
             Arg.Any<IReadOnlyCollection<Guid>>(), PeriodFrom, PeriodUntil, Arg.Any<Guid?>(), Arg.Any<int>(),
             PlanningRuleSources.PlanningConstraints, InvalidHardRuleHandling.Report, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InvalidApprovedHardRule_IsKeptApartFromTheWizardComplianceViolations()
+    {
+        var wizardViolation = new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Warning,
+            ClientId = Guid.NewGuid(),
+            Date = PeriodFrom,
+            Comment = ScheduleValidationKeys.PlanningRule,
+        };
+        _wizardApply.ApplyAsScenarioAsync(
+                _wizardStageJobId, Arg.Any<Guid?>(), false, Arg.Any<CancellationToken>(), Arg.Any<ScenarioNameKind?>(), Arg.Any<string?>())
+            .Returns((Resource(_wizardScenarioId), new WizardApplyOutcome([], [wizardViolation], [], false)));
+        var invalidRuleIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        _ruleSetLoader.LoadRuleSetAsync(default!, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PlanningRuleSet([], [], [], [], invalidRuleIds));
+
+        var (jobId, state) = await RunChainAsync();
+
+        var violation = state.Result!.ComplianceViolations.ShouldHaveSingleItem();
+        violation.Comment.ShouldBe(wizardViolation.Comment);
+        violation.ClientId.ShouldBe(wizardViolation.ClientId);
+        state.Result.PlanningRuleWarnings.ShouldNotBeNull().Count.ShouldBe(invalidRuleIds.Length);
+        state.Result.PlanningRuleWarnings!.ShouldAllBe(w => w.Comment == ScheduleValidationKeys.PlanningRuleInvalid);
+        await _hubNotifier.Received(1).NotifyCompletedAsync(jobId, Arg.Is<AutoWizardJobResultDto>(d =>
+            d.ComplianceViolations.Count == 1 && d.PlanningRuleWarnings!.Count == invalidRuleIds.Length));
+    }
+
+    [Test]
+    public async Task NoInvalidRule_ReportsNoPlanningRuleWarning()
+    {
+        var (_, state) = await RunChainAsync();
+
+        state.Result!.PlanningRuleWarnings.ShouldNotBeNull().ShouldBeEmpty();
     }
 
     [Test]
