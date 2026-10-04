@@ -202,6 +202,129 @@ public class ClientTimelineTests
     }
 
     [Test]
+    public void GetRestViolations_SplitShiftSameDay_ReturnsEmpty()
+    {
+        // Arrange
+        AddWork(BaseDate, 7, 0, BaseDate, 11, 0);
+        AddWork(BaseDate, 16, 0, BaseDate, 20, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+
+        // Assert
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void GetRestViolations_SplitShiftThenNextDayTooEarly_MeasuresFromEndOfLastPart()
+    {
+        // Arrange
+        var nextDay = BaseDate.AddDays(1);
+        AddWork(BaseDate, 7, 0, BaseDate, 11, 0);
+        var lastPart = AddWork(BaseDate, 16, 0, BaseDate, 20, 0);
+        var nextStart = AddWork(nextDay, 5, 0, nextDay, 9, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+
+        // Assert
+        var violation = violations.ShouldHaveSingleItem();
+        violation.PreviousBlock.ShouldBe(lastPart);
+        violation.NextBlock.ShouldBe(nextStart);
+        violation.ActualRest.ShouldBe(TimeSpan.FromHours(9));
+    }
+
+    [Test]
+    public void GetRestViolations_SplitShiftSpanExactlyDailyFrame_ReturnsEmpty()
+    {
+        // Arrange
+        AddWork(BaseDate, 6, 0, BaseDate, 10, 0);
+        AddWork(BaseDate, 15, 0, BaseDate, 19, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+
+        // Assert
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void GetRestViolations_SplitShiftSpanBeyondDailyFrame_ReturnsViolation()
+    {
+        // Arrange
+        AddWork(BaseDate, 6, 0, BaseDate, 10, 0);
+        AddWork(BaseDate, 15, 0, BaseDate, 19, 1);
+
+        // Act
+        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(5));
+    }
+
+    [Test]
+    public void GetRestViolations_NightShiftThenEarlyShiftNextMorning_ReturnsViolation()
+    {
+        // Arrange
+        var nextDay = BaseDate.AddDays(1);
+        AddWork(BaseDate, 22, 0, nextDay, 6, 0);
+        AddWork(nextDay, 10, 0, nextDay, 14, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+
+        // Assert
+        violations.ShouldHaveSingleItem().ActualRest.ShouldBe(TimeSpan.FromHours(4));
+    }
+
+    [Test]
+    public void GetRestViolations_ContainedBlock_MeasuresFromLatestEnd()
+    {
+        // Arrange
+        var nextDay = BaseDate.AddDays(1);
+        var longBlock = AddWork(BaseDate, 8, 0, BaseDate, 20, 0);
+        AddWork(BaseDate, 9, 0, BaseDate, 10, 0);
+        AddWork(nextDay, 6, 0, nextDay, 14, 0);
+
+        // Act
+        var violations = _timeline.GetRestViolations(TimeSpan.FromHours(11));
+
+        // Assert
+        var violation = violations.ShouldHaveSingleItem();
+        violation.PreviousBlock.ShouldBe(longBlock);
+        violation.ActualRest.ShouldBe(TimeSpan.FromHours(10));
+    }
+
+    [Test]
+    public void GetRestGaps_SplitShiftDays_ReturnsOnlyGapsBetweenWorkDays()
+    {
+        // Arrange
+        var nextDay = BaseDate.AddDays(1);
+        AddWork(BaseDate, 7, 0, BaseDate, 11, 0);
+        AddWork(BaseDate, 16, 0, BaseDate, 20, 0);
+        AddWork(nextDay, 7, 0, nextDay, 11, 0);
+        AddWork(nextDay, 16, 0, nextDay, 20, 0);
+
+        // Act
+        var gaps = _timeline.GetRestGaps(TimeSpan.FromHours(11));
+
+        // Assert
+        var gap = gaps.ShouldHaveSingleItem();
+        gap.PreviousBlock.End.ShouldBe(BaseDate.ToDateTime(new TimeOnly(20, 0)));
+        gap.NextBlock.Start.ShouldBe(nextDay.ToDateTime(new TimeOnly(7, 0)));
+        gap.Duration.ShouldBe(TimeSpan.FromHours(11));
+    }
+
+    private ScheduleBlock AddWork(DateOnly startDate, int startHour, int startMinute, DateOnly endDate, int endHour, int endMinute)
+    {
+        var block = CreateWorkBlock(
+            startDate.ToDateTime(new TimeOnly(startHour, startMinute)),
+            endDate.ToDateTime(new TimeOnly(endHour, endMinute)));
+        _timeline.AddBlock(block);
+        return block;
+    }
+
+    [Test]
     public void GetWorkDuration_SingleShiftOnDate_ReturnsFullDuration()
     {
         // Arrange

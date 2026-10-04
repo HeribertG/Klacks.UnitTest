@@ -221,6 +221,58 @@ public class CompensatoryRestObligationReconcilerTests
     }
 
     [Test]
+    public async Task Reconcile_SplitShiftSameDay_CreatesNoObligation()
+    {
+        var clientId = Guid.NewGuid();
+        SeedWork(clientId, Jun1, new TimeOnly(7, 0), new TimeOnly(11, 0));
+        SeedWork(clientId, Jun1, new TimeOnly(16, 0), new TimeOnly(20, 0));
+
+        await Reconcile(clientId);
+
+        AllObligations(clientId).ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task Reconcile_OpenObligationFromSplitShiftPause_SoftDeletesIt()
+    {
+        var clientId = Guid.NewGuid();
+        SeedWork(clientId, Jun1, new TimeOnly(7, 0), new TimeOnly(11, 0));
+        SeedWork(clientId, Jun1, new TimeOnly(16, 0), new TimeOnly(20, 0));
+        _context.CompensatoryRestObligation.Add(new CompensatoryRestObligation
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            TriggerDate = Jun1,
+            RestGapStart = Jun1.ToDateTime(new TimeOnly(11, 0)),
+            StandardRestHours = 11m,
+            ShortfallHours = 6m,
+            DueDate = Jun1.AddDays(3),
+        });
+        await _context.SaveChangesAsync();
+
+        await Reconcile(clientId);
+
+        ActiveObligations(clientId).ShouldBeEmpty();
+        AllObligations(clientId).ShouldHaveSingleItem().IsDeleted.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task Reconcile_ContainerWithSubShifts_CountsOnlyTheContainer()
+    {
+        var clientId = Guid.NewGuid();
+        var container = SeedWork(clientId, Jun1, new TimeOnly(7, 0), new TimeOnly(20, 0));
+        SeedChildWork(clientId, container.Id, Jun1, new TimeOnly(7, 0), new TimeOnly(11, 0));
+        SeedChildWork(clientId, container.Id, Jun1, new TimeOnly(16, 0), new TimeOnly(20, 0));
+        SeedWork(clientId, Jun1.AddDays(1), new TimeOnly(6, 0), new TimeOnly(14, 0));
+
+        await Reconcile(clientId);
+
+        var obligation = ActiveObligations(clientId).ShouldHaveSingleItem();
+        obligation.RestGapStart.ShouldBe(Jun1.ToDateTime(new TimeOnly(20, 0)));
+        obligation.ShortfallHours.ShouldBe(1m);
+    }
+
+    [Test]
     public async Task Reconcile_FeatureDisabled_IsNoOp()
     {
         SetEnabled(false);
@@ -293,6 +345,14 @@ public class CompensatoryRestObligationReconcilerTests
         _context.Work.Add(work);
         _context.SaveChanges();
         return work;
+    }
+
+    private void SeedChildWork(Guid clientId, Guid parentWorkId, DateOnly date, TimeOnly start, TimeOnly end)
+    {
+        var child = SeedWork(clientId, date, start, end);
+        child.ParentWorkId = parentWorkId;
+        _context.Work.Update(child);
+        _context.SaveChanges();
     }
 
     private void SetMinRestHours(double hours)
