@@ -6,6 +6,7 @@
 /// in the list, but excluded from macroData.Holiday), while sibling calendars in the same selection keep
 /// their inherited official status. Also guards that the underlying CalendarRule.IsMandatory is never
 /// mutated in-place (which would persist the override globally through the shared scoped DbContext).
+/// All seeded rules are paid, because macroData.Holiday additionally requires CalendarRule.IsPaid.
 /// </summary>
 
 namespace Klacks.UnitTest.Infrastructure.Services.Macros;
@@ -42,6 +43,8 @@ public class MacroDataProviderOfficialOverrideTests
 
     private static readonly DateOnly OverrideHolidayDate = new(TestYear, 7, 4);
     private static readonly DateOnly SiblingHolidayDate = new(TestYear, 8, 1);
+    private const string SharedHolidayRule = "12.25";
+    private static readonly DateOnly SharedHolidayDate = new(TestYear, 12, 25);
 
     private DataBaseContext _context = null!;
     private IHolidayCalculatorCache _holidayCache = null!;
@@ -105,6 +108,37 @@ public class MacroDataProviderOfficialOverrideTests
         calculator.IsHoliday(OverrideHolidayDate).ShouldBe(HolidayStatus.OfficialHoliday);
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task GetMacroDataAsync_ReminderAndOfficialCalendarShareDate_OfficialWins(bool seedReminderRuleFirst)
+    {
+        await SeedSelectionAsync(overrideForUs: false);
+        var reminderRule = CreateRule(OverrideCountry, OverrideState, SharedHolidayRule, "Christmas Day");
+        var officialRule = CreateRule(SiblingCountry, SiblingState, SharedHolidayRule, "Weihnachten");
+        _context.CalendarRule.AddRange(seedReminderRuleFirst
+            ? new[] { reminderRule, officialRule }
+            : new[] { officialRule, reminderRule });
+        await _context.SaveChangesAsync();
+
+        var macroData = await _sut.GetMacroDataAsync(CreateWork(SharedHolidayDate));
+
+        macroData.Holiday.ShouldBeTrue();
+        var calculator = await GetCachedCalculatorAsync();
+        calculator.IsHoliday(SharedHolidayDate).ShouldBe(HolidayStatus.OfficialHoliday);
+        calculator.GetHolidayInfo(SharedHolidayDate)!.Name.En.ShouldBe("Weihnachten");
+    }
+
+    private static CalendarRule CreateRule(string country, string state, string rule, string name) => new()
+    {
+        Id = Guid.NewGuid(),
+        Country = country,
+        State = state,
+        Name = new MultiLanguage { En = name },
+        Rule = rule,
+        IsMandatory = true,
+        IsPaid = true
+    };
+
     private async Task<IHolidaysListCalculator> GetCachedCalculatorAsync()
     {
         return await _holidayCache.GetOrCreateAsync(
@@ -152,7 +186,8 @@ public class MacroDataProviderOfficialOverrideTests
                 State = OverrideState,
                 Name = new MultiLanguage { En = "Independence Day" },
                 Rule = "07.04",
-                IsMandatory = true
+                IsMandatory = true,
+                IsPaid = true
             },
             new CalendarRule
             {
@@ -161,7 +196,8 @@ public class MacroDataProviderOfficialOverrideTests
                 State = SiblingState,
                 Name = new MultiLanguage { En = "Swiss National Day" },
                 Rule = "08.01",
-                IsMandatory = true
+                IsMandatory = true,
+                IsPaid = true
             });
 
         await _context.SaveChangesAsync();

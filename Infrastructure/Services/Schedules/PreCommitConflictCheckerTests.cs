@@ -581,6 +581,65 @@ public class PreCommitConflictCheckerTests
         result.NewConflicts.ShouldBeEmpty();
     }
 
+    [Test]
+    public async Task HolidayWork_NightShiftIntoHoliday_ReportsOnTheWorkedHolidayDate()
+    {
+        var checker = BuildChecker(RealHolidayWorkEvaluator());
+
+        var result = await checker.CheckAsync([Row(new TimeOnly(22, 0), new TimeOnly(6, 0), Day.AddDays(-1))]);
+
+        var entry = result.NewConflicts.Where(c => c.Comment == ScheduleValidationKeys.HolidayWork).ShouldHaveSingleItem();
+        entry.Date.ShouldBe(Day);
+        entry.Type.ShouldBe(ScheduleValidationType.Warning);
+    }
+
+    [Test]
+    public async Task HolidayWork_NightShiftIntoHolidayAndDayShiftOnHoliday_ReportsTheDateOnce()
+    {
+        var checker = BuildChecker(RealHolidayWorkEvaluator());
+
+        var result = await checker.CheckAsync([
+            Row(new TimeOnly(22, 0), new TimeOnly(6, 0), Day.AddDays(-1)),
+            Row(new TimeOnly(18, 0), new TimeOnly(21, 0), Day)
+        ]);
+
+        result.NewConflicts.Where(c => c.Comment == ScheduleValidationKeys.HolidayWork).ShouldHaveSingleItem().Date.ShouldBe(Day);
+    }
+
+    [Test]
+    public async Task HolidayWork_ShiftEndingAtMidnightBeforeHoliday_IsNotReported()
+    {
+        var checker = BuildChecker(RealHolidayWorkEvaluator());
+
+        var result = await checker.CheckAsync([Row(new TimeOnly(16, 0), TimeOnly.MinValue, Day.AddDays(-1))]);
+
+        result.NewConflicts.ShouldNotContain(c => c.Comment == ScheduleValidationKeys.HolidayWork);
+    }
+
+    [Test]
+    public async Task HolidayWork_NightShiftIntoHolidayWithGlobalExemption_IsNotReported()
+    {
+        var checker = BuildChecker(RealHolidayWorkEvaluator(new HolidayWorkExemptionRule { SchedulingRuleId = null }));
+
+        var result = await checker.CheckAsync([Row(new TimeOnly(22, 0), new TimeOnly(6, 0), Day.AddDays(-1))]);
+
+        result.NewConflicts.ShouldNotContain(c => c.Comment == ScheduleValidationKeys.HolidayWork);
+    }
+
+    [Test]
+    public async Task HolidayWork_NightShiftIntoHolidayInBlockMode_IsOverridableError()
+    {
+        _enforcementResolver.GetModeAsync(ComplianceRuleNames.HolidayWork).Returns(RuleEnforcementMode.Block);
+        var checker = BuildChecker(RealHolidayWorkEvaluator());
+
+        var result = await checker.CheckAsync([Row(new TimeOnly(22, 0), new TimeOnly(6, 0), Day.AddDays(-1))]);
+
+        var entry = result.NewConflicts.Where(c => c.Comment == ScheduleValidationKeys.HolidayWork).ShouldHaveSingleItem();
+        entry.Date.ShouldBe(Day);
+        entry.Type.ShouldBe(ScheduleValidationType.Error);
+        result.HasOverridableBlocking.ShouldBeTrue();
+    }
+
     /// <summary>
     /// The real evaluator on stubbed dependencies: Day is an official holiday for ClientA, whose
     /// contract references no scheduling rule, so only a global exemption can cover it.
@@ -603,6 +662,7 @@ public class PreCommitConflictCheckerTests
                 Arg.Any<List<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<int?>())
             .Returns(new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>
             {
+                [Day.AddDays(-1)] = new() { [ClientA] = new EffectiveContractData { SchedulingRuleId = null } },
                 [Day] = new() { [ClientA] = new EffectiveContractData { SchedulingRuleId = null } },
             });
 

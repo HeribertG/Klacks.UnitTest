@@ -1,9 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for list_holidays_for_period, validate_holiday_overlap and import_calendar_rules.
-/// Uses an in-memory ISettingsRepository mock with two simple Swiss rules so the
-/// HolidaysListCalculator path runs end-to-end.
+/// Unit tests for import_calendar_rules. list_holidays_for_period and validate_holiday_overlap moved to
+/// HolidayCalendarLookupSkillTests when they were rebuilt on the production calendar resolution.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
@@ -23,12 +22,14 @@ public class HolidaySkillTests
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ICompanyClock _companyClock = null!;
+    private IHolidayCalculatorCache _holidayCache = null!;
 
     [SetUp]
     public void Setup()
     {
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _holidayCache = Substitute.For<IHolidayCalculatorCache>();
         _companyClock = new FixedCompanyClock(new DateTimeOffset(2026, 1, 15, 0, 0, 0, TimeSpan.Zero));
     }
 
@@ -78,117 +79,9 @@ public class HolidaySkillTests
     }
 
     [Test]
-    public async Task ListHolidaysForPeriod_ReturnsHolidaysInRange()
-    {
-        var skill = new ListHolidaysForPeriodSkill(_settingsRepository);
-        _settingsRepository.GetCalendarRuleList().Returns(new List<CalendarRule> { NewYearRule(), LaborDayRule() });
-        var parameters = new Dictionary<string, object>
-        {
-            ["country"] = "CH",
-            ["state"] = "BE",
-            ["fromDate"] = "2026-01-01",
-            ["untilDate"] = "2026-12-31"
-        };
-
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("2 holiday(s)"));
-    }
-
-    [Test]
-    public async Task ListHolidaysForPeriod_RejectsInvertedRange()
-    {
-        var skill = new ListHolidaysForPeriodSkill(_settingsRepository);
-        var parameters = new Dictionary<string, object>
-        {
-            ["country"] = "CH",
-            ["fromDate"] = "2026-12-31",
-            ["untilDate"] = "2026-01-01"
-        };
-
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Message, Does.Contain("on or after"));
-    }
-
-    [Test]
-    public async Task ValidateHolidayOverlap_ReturnsTrueForNewYear()
-    {
-        var skill = new ValidateHolidayOverlapSkill(_settingsRepository);
-        _settingsRepository.GetCalendarRuleList().Returns(new List<CalendarRule> { NewYearRule() });
-        var parameters = new Dictionary<string, object>
-        {
-            ["date"] = "2026-01-01",
-            ["country"] = "CH"
-        };
-
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("Neujahr"));
-    }
-
-    [TestCase("ja", "元日")]
-    [TestCase("zh-CN", "元旦")]
-    [TestCase("de", "Neujahr")]
-    public async Task ValidateHolidayOverlap_NamesTheHolidayInTheUserLanguage(string language, string expected)
-    {
-        var rule = NewYearRule();
-        rule.Name.SetValue("ja", "元日");
-        rule.Name.SetValue("zh-cn", "元旦");
-        var skill = new ValidateHolidayOverlapSkill(_settingsRepository);
-        _settingsRepository.GetCalendarRuleList().Returns(new List<CalendarRule> { rule });
-        var parameters = new Dictionary<string, object> { ["date"] = "2026-01-01", ["country"] = "CH" };
-
-        var result = await skill.ExecuteAsync(Ctx() with { UserLanguage = language }, parameters);
-
-        Assert.That(result.Message, Does.Contain(expected));
-    }
-
-    [TestCase("ja", "元日")]
-    [TestCase("zh-CN", "元旦")]
-    public async Task ListHolidaysForPeriod_NamesTheHolidayInTheUserLanguage(string language, string expected)
-    {
-        var rule = NewYearRule();
-        rule.Name.SetValue("ja", "元日");
-        rule.Name.SetValue("zh-cn", "元旦");
-        var skill = new ListHolidaysForPeriodSkill(_settingsRepository);
-        _settingsRepository.GetCalendarRuleList().Returns(new List<CalendarRule> { rule });
-        var parameters = new Dictionary<string, object>
-        {
-            ["country"] = "CH",
-            ["fromDate"] = "2026-01-01",
-            ["untilDate"] = "2026-01-31"
-        };
-
-        var result = await skill.ExecuteAsync(Ctx() with { UserLanguage = language }, parameters);
-
-        Assert.That(System.Text.Json.JsonSerializer.Serialize(result.Data, new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), Does.Contain(expected));
-    }
-
-    [Test]
-    public async Task ValidateHolidayOverlap_ReturnsFalseForNormalDay()
-    {
-        var skill = new ValidateHolidayOverlapSkill(_settingsRepository);
-        _settingsRepository.GetCalendarRuleList().Returns(new List<CalendarRule> { NewYearRule() });
-        var parameters = new Dictionary<string, object>
-        {
-            ["date"] = "2026-03-15",
-            ["country"] = "CH"
-        };
-
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
-
-        Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("NOT a holiday"));
-    }
-
-    [Test]
     public async Task ImportCalendarRules_RejectsInvalidJson()
     {
-        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock);
+        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock, _holidayCache);
         var parameters = new Dictionary<string, object>
         {
             ["country"] = "CH",
@@ -205,7 +98,7 @@ public class HolidaySkillTests
     [Test]
     public async Task ImportCalendarRules_RejectsEmptyArray()
     {
-        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock);
+        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock, _holidayCache);
         var parameters = new Dictionary<string, object>
         {
             ["country"] = "CH",
@@ -221,7 +114,7 @@ public class HolidaySkillTests
     [Test]
     public async Task ImportCalendarRules_AddsValidRulesAndPersists()
     {
-        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock);
+        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock, _holidayCache);
         var rulesJson = """
             [
               { "rule": "01.01", "nameDe": "Neujahr", "nameEn": "New Year" },
@@ -240,5 +133,25 @@ public class HolidaySkillTests
         Assert.That(result.Success, Is.True);
         _settingsRepository.Received(2).AddCalendarRule(Arg.Any<CalendarRule>());
         await _unitOfWork.Received(1).CompleteAsync();
+        Received.InOrder(() =>
+        {
+            _unitOfWork.CompleteAsync();
+            _holidayCache.InvalidateAll();
+        });
+    }
+
+    [Test]
+    public async Task ImportCalendarRules_RejectedBatch_DoesNotInvalidateHolidayCalculators()
+    {
+        var skill = new ImportCalendarRulesSkill(_settingsRepository, _unitOfWork, _companyClock, _holidayCache);
+        var parameters = new Dictionary<string, object>
+        {
+            ["country"] = "CH",
+            ["rulesJson"] = "{ this is not valid json }"
+        };
+
+        await skill.ExecuteAsync(Ctx(), parameters);
+
+        _holidayCache.DidNotReceive().InvalidateAll();
     }
 }

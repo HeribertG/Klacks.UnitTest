@@ -3,7 +3,10 @@
 using System.Text.Json;
 using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Application.Queries;
+using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -34,7 +37,7 @@ public class GetContractDetailsSkillTests
                 MaximumHours = 180m,
                 ValidFrom = new DateTime(2026, 1, 1)
             });
-        var skill = new GetContractDetailsSkill(mediator);
+        var skill = new GetContractDetailsSkill(mediator, SourceResolver());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -57,7 +60,7 @@ public class GetContractDetailsSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
             .Returns<ContractResource>(_ => throw new KeyNotFoundException());
-        var skill = new GetContractDetailsSkill(mediator);
+        var skill = new GetContractDetailsSkill(mediator, SourceResolver());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -84,7 +87,7 @@ public class GetContractDetailsSkillTests
                 PerformsShiftWork = null,
                 ValidFrom = new DateTime(2026, 1, 1)
             });
-        var skill = new GetContractDetailsSkill(mediator);
+        var skill = new GetContractDetailsSkill(mediator, SourceResolver());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -97,5 +100,49 @@ public class GetContractDetailsSkillTests
         data.GetProperty("HolidayRate").GetDecimal().ShouldBe(0m);
         data.GetProperty("PerformsShiftWork").ValueKind.ShouldBe(JsonValueKind.Null);
         data.GetProperty("StandardValueNote").GetString()!.ShouldContain("null");
+    }
+    private static IHolidayCalendarSourceResolver SourceResolver(ResolvedHolidayCalendarSource? resolved = null)
+    {
+        var resolver = Substitute.For<IHolidayCalendarSourceResolver>();
+        resolver.ResolveAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(resolved ?? new ResolvedHolidayCalendarSource(HolidayCalendarSource.None, null, null, null, null));
+        return resolver;
+    }
+
+    [Test]
+    public async Task HolidayCalendar_IsReportedByNameAndSource_NotById()
+    {
+        var contractId = Guid.NewGuid();
+        var selectionId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(new ContractResource { Id = contractId, Name = "Botschaft", CalendarSelectionId = selectionId, ValidFrom = new DateTime(2026, 1, 1) });
+        var resolver = SourceResolver(new ResolvedHolidayCalendarSource(HolidayCalendarSource.Contract, selectionId, "Bern + USA", null, null));
+        var skill = new GetContractDetailsSkill(mediator, resolver);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["contractId"] = contractId.ToString() });
+
+        result.Success.ShouldBeTrue();
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("HolidayCalendarName").GetString().ShouldBe("Bern + USA");
+        data.GetProperty("HolidayCalendarSource").GetString().ShouldBe(nameof(HolidayCalendarSource.Contract));
+        data.TryGetProperty("CalendarSelectionId", out _).ShouldBeFalse();
+        await resolver.Received(1).ResolveAsync(selectionId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HolidayCalendar_WithoutOwnSelection_ReportsCompanyFallback()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(new ContractResource { Id = Guid.NewGuid(), Name = "Standard", ValidFrom = new DateTime(2026, 1, 1) });
+        var skill = new GetContractDetailsSkill(mediator,
+            SourceResolver(new ResolvedHolidayCalendarSource(HolidayCalendarSource.CompanyCountryState, null, null, "CH", "BE")));
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["contractId"] = Guid.NewGuid().ToString() });
+
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("HolidayCalendarSource").GetString().ShouldBe(nameof(HolidayCalendarSource.CompanyCountryState));
+        data.GetProperty("HolidayCalendarName").GetString().ShouldBe("CH-BE");
     }
 }

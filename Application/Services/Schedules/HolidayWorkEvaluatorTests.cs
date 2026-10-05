@@ -121,6 +121,27 @@ public class HolidayWorkEvaluatorTests
     }
 
     [Test]
+    public async Task Evaluate_WorkOnOfficialButUnpaidHoliday_IsStillReported()
+    {
+        var calculator = new HolidaysListCalculator { CurrentYear = Holiday.Year };
+        calculator.Add(new CalendarRule
+        {
+            Id = Guid.NewGuid(),
+            Rule = "12.25",
+            SubRule = string.Empty,
+            Name = ChristmasName(),
+            IsMandatory = true,
+            IsPaid = false
+        });
+        calculator.ComputeHolidays();
+        _calendarResolver.GetCalculatorAsync(Arg.Any<Guid?>(), Arg.Any<int>()).Returns(calculator);
+
+        var entries = await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);
+
+        entries.ShouldHaveSingleItem().Comment.ShouldBe(ScheduleValidationKeys.HolidayWork);
+    }
+
+    [Test]
     public async Task Evaluate_CarriesTheHolidayNameInEveryLanguageForTheReader()
     {
         var entries = await _sut.EvaluateAsync(_clientId, "Probe", [Holiday]);

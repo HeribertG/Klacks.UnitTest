@@ -104,11 +104,15 @@ OUTPUT 12, BonusWeekend2
 OUTPUT 14, BonusHoliday
 ";
 
+    private const string SegmentEndMidnight = @"FromHour, ""00:00""";
+    private const string SeededSegmentEndMidnight = @"FromHour, ""24:00""";
+    private static readonly string SeededMidnightMacro = AllShiftMacro.Replace(SegmentEndMidnight, SeededSegmentEndMidnight);
+
     private static List<ResultMessage> Run(
         string fromHour, string untilHour, int weekday, bool holiday, bool holidayNextDay,
-        decimal nightRate, decimal holidayRate, decimal we1Rate, decimal we2Rate)
+        decimal nightRate, decimal holidayRate, decimal we1Rate, decimal we2Rate, string macro = AllShiftMacro)
     {
-        var compiled = CompiledScript.Compile(AllShiftMacro);
+        var compiled = CompiledScript.Compile(macro);
         Assert.That(compiled.HasError, Is.False, $"Compile error: {compiled.Error?.Description}");
 
         compiled.SetExternalValue("hour", 0m);
@@ -171,5 +175,67 @@ OUTPUT 14, BonusHoliday
         Assert.That(Amount(messages, MacroTypeEnum.SurchargeNight), Is.EqualTo(0m));
         Assert.That(Amount(messages, MacroTypeEnum.SurchargeWeekend2), Is.EqualTo(0m));
         Assert.That(Amount(messages, MacroTypeEnum.SurchargeHoliday), Is.EqualTo(0m));
+    }
+
+    private const string DayShiftFrom = "08:00";
+    private const string DayShiftUntil = "16:00";
+    private const string SundayNightFrom = "20:00";
+    private const string SundayNightUntil = "04:00";
+    private const int Wednesday = 3;
+    private const int Sunday = 7;
+
+    private static List<ResultMessage> RunDayShift(bool holiday) =>
+        Run(DayShiftFrom, DayShiftUntil, Wednesday, holiday, false, 0.25m, 0.15m, 0.1m, 0.1m);
+
+    private static List<ResultMessage> RunSundayNight(bool holidayNextDay, string macro = AllShiftMacro) =>
+        Run(SundayNightFrom, SundayNightUntil, Sunday, false, holidayNextDay, 0.25m, 0.5m, 0.1m, 0.3m, macro);
+
+    [Test]
+    public void DayShiftOnFlaggedHoliday_CreditsHolidaySurchargeForTheWholeShift()
+    {
+        var messages = RunDayShift(holiday: true);
+
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeHoliday), Is.EqualTo(1.2m));
+        Assert.That(Amount(messages, MacroTypeEnum.DefaultResult), Is.EqualTo(1.2m));
+    }
+
+    [Test]
+    public void DayShiftWithoutHolidayFlag_CreditsNoHolidaySurcharge()
+    {
+        var messages = RunDayShift(holiday: false);
+
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeHoliday), Is.EqualTo(0m));
+        Assert.That(Amount(messages, MacroTypeEnum.DefaultResult), Is.EqualTo(0m));
+    }
+
+    [Test]
+    public void SundayNightWithOnlyHolidayNextDay_CreditsHolidayOnlyAfterMidnight()
+    {
+        var messages = RunSundayNight(holidayNextDay: true);
+
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeHoliday), Is.EqualTo(2.0m));
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeWeekend2), Is.EqualTo(1.2m));
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeNight), Is.EqualTo(0m));
+        Assert.That(Amount(messages, MacroTypeEnum.DefaultResult), Is.EqualTo(3.2m));
+    }
+
+    [Test]
+    public void SundayNightWithOnlyHolidayNextDay_SeededSegmentEnd2400_GivesTheSameSplit()
+    {
+        var messages = RunSundayNight(holidayNextDay: true, SeededMidnightMacro);
+
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeHoliday), Is.EqualTo(2.0m));
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeWeekend2), Is.EqualTo(1.2m));
+        Assert.That(Amount(messages, MacroTypeEnum.DefaultResult), Is.EqualTo(3.2m));
+    }
+
+    [Test]
+    public void SundayNightWithoutHolidayNextDay_CreditsNightInsteadOfHoliday()
+    {
+        var messages = RunSundayNight(holidayNextDay: false);
+
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeHoliday), Is.EqualTo(0m));
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeNight), Is.EqualTo(1.0m));
+        Assert.That(Amount(messages, MacroTypeEnum.SurchargeWeekend2), Is.EqualTo(1.2m));
     }
 }

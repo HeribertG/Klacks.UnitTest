@@ -125,6 +125,7 @@
   "delete_work": "Reversible",
   "delete_workchange": "Irreversible",
   "detect_conflicts": "ReadOnly",
+  "diagnose_holiday_outcome": "ReadOnly",
   "disable_feature_plugin": "Irreversible",
   "dismiss_skill_relation": "Irreversible",
   "email_schedule_to_client": "ReadOnly",

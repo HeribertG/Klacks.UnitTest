@@ -25,7 +25,7 @@ namespace Klacks.UnitTest.Architecture;
 public class SkillLabelSeedGuardTests
 {
     private const string SeedRelativePath = "Application/Skills/Definitions/skill-seeds.json";
-    private const int ExpectedSkillCount = 484;
+    private const int ExpectedSkillCount = 485;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 

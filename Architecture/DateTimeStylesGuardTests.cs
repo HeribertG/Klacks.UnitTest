@@ -114,7 +114,6 @@ public class DateTimeStylesGuardTests
             ["Application/Skills/CutShiftSkill.cs"] = 2,
             ["Application/Skills/DetectConflictsSkill.cs"] = 2,
             ["Application/Skills/GeneratePeriodSummarySkill.cs"] = 2,
-            ["Application/Skills/ListHolidaysForPeriodSkill.cs"] = 2,
             ["Application/Skills/PlaceWorkSkill.cs"] = 2,
             ["Application/Skills/ProposePlanSkill.cs"] = 3,
             ["Application/Skills/ReadScheduleStateSkill.cs"] = 2,
@@ -127,7 +126,6 @@ public class DateTimeStylesGuardTests
             ["Application/Skills/UpdateShiftSkill.cs"] = 4,
             ["Application/Skills/UpdateWorkChangeSkill.cs"] = 2,
             ["Application/Skills/UpdateWorkSkill.cs"] = 2,
-            ["Application/Skills/ValidateHolidayOverlapSkill.cs"] = 1,
             ["Domain/Services/Assistant/Grounding/ToolResultGroundingPoolBuilder.cs"] = 1
         };
 
