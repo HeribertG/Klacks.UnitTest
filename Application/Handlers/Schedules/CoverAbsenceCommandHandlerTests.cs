@@ -387,6 +387,51 @@ public class CoverAbsenceCommandHandlerTests
     }
 
     [Test]
+    public async Task EscalationRoster_IsWokenByDefault_ForUnattendedCallers()
+    {
+        await Cover();
+
+        await _escalationChainService.Received(1).StartChainAsync(
+            Arg.Is<StartEscalationChainRequest>(r => r.AbsentClientId == ClientId && r.WorkId == WorkId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EscalationRoster_StaysQuiet_WhenThePlannerHandlesTheAbsenceInteractively()
+    {
+        var outcome = await _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, NotifyEscalationRoster: false),
+            CancellationToken.None);
+
+        // The proposal itself is unaffected; only the call list stays silent.
+        outcome.Covered.Count.ShouldBe(1);
+        await _escalationChainService.DidNotReceive().StartChainAsync(
+            Arg.Any<StartEscalationChainRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CoveredSlot_CarriesTheClonedWorkAndItsTimes_ForTheAlternativesLookup()
+    {
+        var outcome = await Cover();
+
+        outcome.Covered[0].WorkId.ShouldBe(ClonedWorkId);
+        outcome.Covered[0].StartTime.ShouldBe(new TimeOnly(8, 0));
+        outcome.Covered[0].EndTime.ShouldBe(new TimeOnly(16, 0));
+    }
+
+    [Test]
+    public async Task LockedSlot_CarriesTheClonedWorkAndItsTimes()
+    {
+        UseSnapshot(WithFreeCandidate(locked: true));
+
+        var outcome = await Cover();
+
+        outcome.Uncovered[0].WorkId.ShouldBe(ClonedWorkId);
+        outcome.Uncovered[0].StartTime.ShouldBe(new TimeOnly(8, 0));
+        outcome.Uncovered[0].EndTime.ShouldBe(new TimeOnly(16, 0));
+    }
+
+    [Test]
     public async Task CoveredSlot_CarriesTheEscalationTierItNeeded()
     {
         var outcome = await Cover();

@@ -13,7 +13,9 @@ namespace Klacks.UnitTest.Controllers.Schedules;
 /// <summary>
 /// Freezes the admin gate on every autofill entry point. These controllers start background jobs that
 /// mutate the schedule and can consume LLM credits, so losing the role requirement would silently open
-/// them to any authenticated user.
+/// them to any authenticated user. RecoveryController is deliberately not in this list: cover-absence
+/// proposes a scenario without a background job or LLM credits and is open to every authenticated user
+/// (owner decision 2026-10-06), pinned in RecoveryControllerAuthorizationTests.
 /// </summary>
 [TestFixture]
 public sealed class AutofillControllerAuthorizationTests
@@ -24,7 +26,6 @@ public sealed class AutofillControllerAuthorizationTests
         yield return typeof(HarmonizerController);
         yield return typeof(HolisticHarmonizerController);
         yield return typeof(AutoWizardController);
-        yield return typeof(RecoveryController);
     }
 
     [TestCaseSource(nameof(AutofillControllers))]

@@ -25,7 +25,9 @@ public sealed class ScheduleJobControllerAuthorizationTests
         yield return typeof(HarmonizerController);
         yield return typeof(HolisticHarmonizerController);
         yield return typeof(AutoWizardController);
-        yield return typeof(RecoveryController);
+        // RecoveryController is not listed: it proposes a single-absence scenario instead of running an
+        // engine job over the whole group and is open to every authenticated user (owner decision
+        // 2026-10-06), see RecoveryControllerAuthorizationTests.
     }
 
     [TestCaseSource(nameof(ScheduleJobControllers))]
