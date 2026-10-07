@@ -138,4 +138,38 @@ public sealed class RecoverySnapshotBuilderIneligibleTests
 
         days[(AgentA, KeywordDay)].ShouldBe(ScheduleCommandKeyword.Free);
     }
+
+    private static ScheduleCommandKeyword ExtractOne(params string[] keywords)
+    {
+        var commands = keywords
+            .Select(k => new ScheduleCommand { ClientId = AgentA, CurrentDate = KeywordDay, CommandKeyword = k })
+            .ToList();
+
+        return RecoverySnapshotBuilder.ExtractKeywordDays(commands, DefaultKeywordMap)[(AgentA, KeywordDay)];
+    }
+
+    [Test]
+    public void ExtractKeywordDays_NoEarlyAndNoNight_LeavesOnlyLate()
+    {
+        ExtractOne("-EARLY", "-NIGHT").ShouldBe(ScheduleCommandKeyword.OnlyLate);
+        ExtractOne("-NIGHT", "-EARLY").ShouldBe(ScheduleCommandKeyword.OnlyLate);
+    }
+
+    [Test]
+    public void ExtractKeywordDays_NotFreeAndNoNight_KeepsNoNight()
+    {
+        ExtractOne("-FREE", "-NIGHT").ShouldBe(ScheduleCommandKeyword.NoNight);
+    }
+
+    [Test]
+    public void ExtractKeywordDays_OnlyEarlyAndOnlyLate_ClosesDay()
+    {
+        ExtractOne("EARLY", "LATE").ShouldBe(ScheduleCommandKeyword.Free);
+    }
+
+    [Test]
+    public void ExtractKeywordDays_OnlyNotFree_StaysAKeywordDay()
+    {
+        ExtractOne("-FREE").ShouldBe(ScheduleCommandKeyword.NotFree);
+    }
 }
