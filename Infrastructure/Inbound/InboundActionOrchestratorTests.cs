@@ -337,6 +337,24 @@ public class InboundActionOrchestratorTests
     }
 
     [Test]
+    public async Task CoverScenario_PassesTheMessageReceiveTimeOnTheTrustedContext_NotInTheParameters()
+    {
+        AdminLevel(AutonomyLevel.Autonomous);
+        var receivedAt = new DateTime(2026, 7, 10, 5, 42, 0, DateTimeKind.Utc);
+        var source = new InboundSource(
+            Guid.NewGuid(), InboundSourceKind.Messenger, "Messenger:Telegram", "Anna", null, "Bin krank", receivedAt);
+
+        await _orchestrator.ExecuteAsync(ClientId, source, Analysis(EmailIntent.WorkCancellation));
+
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Is<SkillInvocation>(i =>
+                i.SkillName == "cover_absence"
+                && !i.Parameters.ContainsKey("source")
+                && !i.Parameters.ContainsKey("reportedAtUtc")),
+            Arg.Is<SkillExecutionContext>(c => c.InboundReceivedAtUtc == receivedAt),
+            Arg.Any<CancellationToken>());
+    }
+    [Test]
     public async Task FullyAutonomous_ExecutesAllThreeIntents()
     {
         AdminLevel(AutonomyLevel.FullyAutonomous);

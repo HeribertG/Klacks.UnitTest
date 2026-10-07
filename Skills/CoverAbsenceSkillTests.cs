@@ -95,4 +95,44 @@ public class CoverAbsenceSkillTests
 
         Should.Throw<ArgumentException>(async () => await Skill().ExecuteAsync(Ctx(), p));
     }
+
+    [Test]
+    public async Task InboundContext_PassesReceiveTimeAndMessengerSource()
+    {
+        var receivedAt = new DateTime(2026, 3, 10, 5, 12, 0, DateTimeKind.Utc);
+
+        await Skill().ExecuteAsync(Ctx() with { InboundReceivedAtUtc = receivedAt }, Params());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<CoverAbsenceCommand>(c => c.ReportedAtUtc == receivedAt && c.Source == ReplacementRequestSource.Messenger),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ChatCaller_IgnoresSourceAndReportTimeSuppliedByTheModel()
+    {
+        var parameters = Params();
+        parameters["source"] = ReplacementRequestSource.Messenger.ToString();
+        parameters["reportedAtUtc"] = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        await Skill().ExecuteAsync(Ctx(), parameters);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<CoverAbsenceCommand>(c => c.Source == ReplacementRequestSource.RecoveryEngine && c.ReportedAtUtc == null),
+            Arg.Any<CancellationToken>());
+    }
+    [Test]
+    public async Task Projection_NeverExposesThePhoneNumber()
+    {
+        _mediator.Send(Arg.Any<CoverAbsenceCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new CoverAbsenceOutcome(
+                Guid.NewGuid(), Guid.NewGuid(), "Absence cover",
+                new List<CoveredSlot> { new(ShiftId, new DateOnly(2026, 3, 10), Guid.NewGuid(), "Bob", Phone: "079 555 55 55") },
+                new List<UncoveredSlot>(),
+                new List<Klacks.Api.Application.DTOs.Notifications.ScheduleValidationNotificationDto>()));
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params());
+
+        JsonSerializer.Serialize(result.Data).ShouldNotContain("079 555 55 55");
+    }
 }

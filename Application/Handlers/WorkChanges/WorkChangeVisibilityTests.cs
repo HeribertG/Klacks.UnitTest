@@ -31,6 +31,7 @@ public class WorkChangeVisibilityTests
     private IScheduleCompletionService _completionService = null!;
     private IWorkChangeResultService _resultService = null!;
     private IDayLockService _dayLockService = null!;
+    private IReplacementRequestRecorder _recorder = null!;
     private Guid _visibleClientId;
     private Guid _hiddenClientId;
 
@@ -44,6 +45,7 @@ public class WorkChangeVisibilityTests
         _completionService = Substitute.For<IScheduleCompletionService>();
         _resultService = Substitute.For<IWorkChangeResultService>();
         _dayLockService = Substitute.For<IDayLockService>();
+        _recorder = Substitute.For<IReplacementRequestRecorder>();
 
         _visibleClientId = Guid.NewGuid();
         _hiddenClientId = Guid.NewGuid();
@@ -192,7 +194,8 @@ public class WorkChangeVisibilityTests
         var handler = new DeleteCommandHandler(
             _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
-            Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<ILogger<DeleteCommandHandler>>());
+            Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IReplacementRequestRecorder>(),
+            Substitute.For<ILogger<DeleteCommandHandler>>());
 
         var result = await handler.Handle(new DeleteCommand<WorkChangeResource>(stored.Id), CancellationToken.None);
 
@@ -201,18 +204,54 @@ public class WorkChangeVisibilityTests
         await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
     }
 
+    [Test]
+    public async Task Put_VisibleChange_KeepsTheManualReplacementRowInStep()
+    {
+        var work = NewWork(_visibleClientId);
+        var stored = NewChange(work.Id);
+        _workChangeRepository.GetNoTracking(stored.Id).Returns(stored);
+        _workChangeRepository.Put(Arg.Any<WorkChange>()).Returns(ci => ci.ArgAt<WorkChange>(0));
+        _workRepository.GetNoTracking(work.Id).Returns(work);
+        _workRepository.Get(work.Id).Returns(work);
+
+        await NewPutHandler().Handle(
+            new PutCommand<WorkChangeResource>(NewResource(stored.Id, work.Id, _visibleClientId)), CancellationToken.None);
+
+        await _recorder.Received(1).SyncManualReplacementAsync(
+            work, Arg.Is<WorkChange>(c => c.Id == stored.Id), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Delete_VisibleChange_DiscardsItsManualReplacementRow()
+    {
+        var work = NewWork(_visibleClientId);
+        var stored = NewChange(work.Id);
+        _workChangeRepository.Get(stored.Id).Returns(stored);
+        _workRepository.GetNoTracking(work.Id).Returns(work);
+        _workRepository.Get(work.Id).Returns(work);
+        var handler = new DeleteCommandHandler(
+            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
+            Substitute.For<IHttpContextAccessor>(), _dayLockService, _recorder,
+            Substitute.For<ILogger<DeleteCommandHandler>>());
+
+        await handler.Handle(new DeleteCommand<WorkChangeResource>(stored.Id), CancellationToken.None);
+
+        await _recorder.Received(1).DiscardManualReplacementAsync(stored.Id, Arg.Any<CancellationToken>());
+    }
     private PostCommandHandler NewPostHandler()
         => new(
             _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
             Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IPreCommitConflictChecker>(),
-            Substitute.For<ISupervisorOverrideAuthorizer>(), Substitute.For<ILogger<PostCommandHandler>>());
+            Substitute.For<ISupervisorOverrideAuthorizer>(), Substitute.For<IReplacementRequestRecorder>(),
+            Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler()
         => new(
             _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             _completionService, _resultService, Substitute.For<IWorkNotificationFacade>(), _dayLockService,
-            Substitute.For<ILogger<PutCommandHandler>>());
+            _recorder, Substitute.For<ILogger<PutCommandHandler>>());
 
     private static Work NewWork(Guid clientId)
         => new() { Id = Guid.NewGuid(), ClientId = clientId, ShiftId = Guid.NewGuid(), CurrentDate = Day };

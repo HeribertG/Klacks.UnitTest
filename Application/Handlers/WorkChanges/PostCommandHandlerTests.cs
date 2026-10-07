@@ -38,6 +38,7 @@ public class PostCommandHandlerTests
     private IDayLockService _dayLockService = null!;
     private IPreCommitConflictChecker _conflictChecker = null!;
     private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
+    private IReplacementRequestRecorder _recorder = null!;
     private PostCommandHandler _handler = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
@@ -59,6 +60,7 @@ public class PostCommandHandlerTests
         _dayLockService = Substitute.For<IDayLockService>();
         _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
+        _recorder = Substitute.For<IReplacementRequestRecorder>();
 
         _workRepository.GetNoTracking(_workId).Returns(ParentWork(null));
         _periodHoursService.GetPeriodBoundariesAsync(_date)
@@ -81,6 +83,7 @@ public class PostCommandHandlerTests
             _dayLockService,
             _conflictChecker,
             _overrideAuthorizer,
+            _recorder,
             Substitute.For<ILogger<PostCommandHandler>>());
     }
 
@@ -200,6 +203,31 @@ public class PostCommandHandlerTests
         await _workChangeRepository.Received(1).Add(Arg.Any<WorkChange>());
     }
 
+    [Test]
+    public async Task Handle_ScenarioReplacement_HandsTheChangeWithTheScenarioTokenToTheRequestBook()
+    {
+        var token = Guid.NewGuid();
+        _workRepository.GetNoTracking(_workId).Returns(ParentWork(token));
+
+        await _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None);
+
+        await _recorder.Received(1).RecordManualReplacementAsync(
+            Arg.Is<Work>(w => w.Id == _workId),
+            Arg.Is<WorkChange>(c => c.AnalyseToken == token && c.ReplaceClientId == _replaceClientId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_RefusedReplacement_RecordsNothingInTheRequestBook()
+    {
+        GivenConflicts(EscalatedError());
+
+        await Should.ThrowAsync<ConflictException>(
+            () => _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None));
+
+        await _recorder.DidNotReceiveWithAnyArgs().RecordManualReplacementAsync(
+            Arg.Any<Work>(), Arg.Any<WorkChange>(), Arg.Any<CancellationToken>());
+    }
     [Test]
     public async Task Handle_MissingParentWork_IsRefusedBeforeAnyGuardRuns()
     {

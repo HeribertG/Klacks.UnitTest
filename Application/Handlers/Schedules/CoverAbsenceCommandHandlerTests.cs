@@ -68,6 +68,7 @@ public class CoverAbsenceCommandHandlerTests
     private IClientVisibilityGuard _visibilityGuard = null!;
     private IGroupVisibilityGuard _groupVisibilityGuard = null!;
     private IScenarioNameGenerator _nameGenerator = null!;
+    private IReplacementRequestRecorder _recorder = null!;
     private CoverAbsenceCommandHandler _handler = null!;
 
     [SetUp]
@@ -132,11 +133,18 @@ public class CoverAbsenceCommandHandlerTests
                 Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(GeneratedName);
 
+        _recorder = Substitute.For<IReplacementRequestRecorder>();
+        _recorder.RecordProposalsAsync(
+                Arg.Any<ReplacementProposalContext>(), Arg.Any<IReadOnlyList<CoveredSlot>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.ArgAt<IReadOnlyList<CoveredSlot>>(1)
+                .Select(slot => slot with { RequestId = Guid.NewGuid(), Outcome = ReplacementRequestOutcome.Proposed })
+                .ToList());
+
         _handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
             partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock, _visibilityGuard,
             _groupVisibilityGuard, _nameGenerator,
-            NullLogger<CoverAbsenceCommandHandler>.Instance);
+            _recorder, NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
 
     private void SetVisibleAgents(Func<Guid, bool> isVisible)
@@ -210,6 +218,42 @@ public class CoverAbsenceCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task CoveredSlot_IsRecordedOnceInTheRequestBook_AsAProposalOfTheScenario()
+    {
+        var reportedAt = new DateTime(2026, 3, 10, 5, 30, 0, DateTimeKind.Utc);
+
+        var outcome = await _handler.Handle(
+            new CoverAbsenceCommand(
+                ClientId, Date, GroupId, AbsenceId,
+                ReportedAtUtc: reportedAt, Source: ReplacementRequestSource.Messenger),
+            CancellationToken.None);
+
+        await _recorder.Received(1).RecordProposalsAsync(
+            Arg.Is<ReplacementProposalContext>(c =>
+                c.AbsentClientId == ClientId
+                && c.AbsenceId == AbsenceId
+                && c.GroupId == GroupId
+                && c.AnalyseToken == outcome.Token
+                && c.Source == ReplacementRequestSource.Messenger
+                && c.ReportedAtUtc == reportedAt),
+            Arg.Is<IReadOnlyList<CoveredSlot>>(slots => slots.Count == 1 && slots[0].ReplacementClientId == CandidateId),
+            Arg.Any<CancellationToken>());
+        outcome.Covered.ShouldHaveSingleItem().RequestId.ShouldNotBeNull();
+        outcome.Covered[0].Outcome.ShouldBe(ReplacementRequestOutcome.Proposed);
+    }
+
+    [Test]
+    public async Task DefaultCommand_RecordsTheRecoveryEngineAsSource()
+    {
+        await Cover();
+
+        await _recorder.Received(1).RecordProposalsAsync(
+            Arg.Is<ReplacementProposalContext>(c =>
+                c.Source == ReplacementRequestSource.RecoveryEngine && c.ReportedAtUtc == null),
+            Arg.Any<IReadOnlyList<CoveredSlot>>(),
+            Arg.Any<CancellationToken>());
+    }
     [Test]
     public async Task LockedSlot_Reported_NotCovered()
     {
@@ -556,7 +600,7 @@ public class CoverAbsenceCommandHandlerTests
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
             partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock, _visibilityGuard,
             _groupVisibilityGuard, _nameGenerator,
-            NullLogger<CoverAbsenceCommandHandler>.Instance);
+            _recorder, NullLogger<CoverAbsenceCommandHandler>.Instance);
 
         await handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);
 

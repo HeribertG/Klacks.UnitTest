@@ -41,4 +41,21 @@ public sealed class RecoveryControllerAuthorizationTests
         method.ShouldNotBeNull();
         method!.GetCustomAttribute<HttpGetAttribute>().ShouldNotBeNull();
     }
+
+    [Test]
+    public void RequestBookEndpoints_UseTheExpectedVerbs_AndAddNoRoleRestriction()
+    {
+        var list = typeof(RecoveryController).GetMethod(nameof(RecoveryController.Requests));
+        var setOutcome = typeof(RecoveryController).GetMethod(nameof(RecoveryController.SetOutcome));
+        var recordContact = typeof(RecoveryController).GetMethod(nameof(RecoveryController.RecordContact));
+
+        list!.GetCustomAttribute<HttpGetAttribute>()!.Template.ShouldBe("Requests");
+        setOutcome!.GetCustomAttribute<HttpPutAttribute>()!.Template.ShouldBe("Requests/{id:guid}/Outcome");
+        recordContact!.GetCustomAttribute<HttpPostAttribute>()!.Template.ShouldBe("Requests");
+        new[] { list, setOutcome, recordContact }
+            .SelectMany(m => m.GetCustomAttributes<AuthorizeAttribute>())
+            .ShouldBeEmpty("the request book inherits the controller's scheme-pinned gate; visibility is checked in the handlers");
+        new[] { list, setOutcome, recordContact }
+            .ShouldAllBe(m => m.GetCustomAttribute<AllowAnonymousAttribute>() == null);
+    }
 }
