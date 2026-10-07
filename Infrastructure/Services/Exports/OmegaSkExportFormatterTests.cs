@@ -65,11 +65,11 @@ public class OmegaSkExportFormatterTests
     }
 
     [Test]
-    public void Format_WritesTaxableExpense_AsReimbursementItemType()
+    public void Format_WritesNonTaxableExpense_AsReimbursementItemType()
     {
         var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
         [
-            new ExpensesExportEntry { Amount = 12m, Description = "Travel", Taxable = true },
+            new ExpensesExportEntry { Amount = 12m, Description = "Train ticket", Taxable = false },
         ]));
 
         var expenseLine = lines.Where(l => l.StartsWith("R02;")).ElementAt(1);
@@ -77,15 +77,27 @@ public class OmegaSkExportFormatterTests
     }
 
     [Test]
-    public void Format_WritesNonTaxableExpense_AsReductionItemType()
+    public void Format_WritesTaxableAllowance_AsAccountingEntryItemType()
     {
         var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
         [
-            new ExpensesExportEntry { Amount = 12m, Description = "Refund", Taxable = false },
+            new ExpensesExportEntry { Amount = 12m, Description = "Allowance", Taxable = true },
         ]));
 
         var expenseLine = lines.Where(l => l.StartsWith("R02;")).ElementAt(1);
-        expenseLine.Split(';')[1].ShouldBe("2");
+        expenseLine.Split(';')[1].ShouldBe("0");
+    }
+
+    [Test]
+    public void Format_NeverWritesReductionItemType_ForExpenses()
+    {
+        var lines = FormatLines(BuildData(o => o.WorkEntries[0].Expenses =
+        [
+            new ExpensesExportEntry { Amount = 12m, Description = "Train ticket", Taxable = false },
+            new ExpensesExportEntry { Amount = 5m, Description = "Allowance", Taxable = true },
+        ]));
+
+        lines.Where(l => l.StartsWith("R02;")).ShouldAllBe(l => l.Split(';')[1] != "2");
     }
 
     [Test]
