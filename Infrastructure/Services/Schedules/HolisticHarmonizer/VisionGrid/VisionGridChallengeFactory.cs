@@ -7,11 +7,14 @@
 /// Names are invented; the first names start with distinct letters so every row has unique initials.
 /// </summary>
 /// <param name="random">Source of the plan and the asked cells; seeded in tests and calibration</param>
+/// <param name="scale">Render scale of the plan image (1 = production size)</param>
+/// <param name="markAskedCells">True rings the asked cells with numbered badges and refers to them by number</param>
 
 using System.Globalization;
 using System.Text;
 using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Bitmap;
+using Klacks.ScheduleOptimizer.Rendering.Grid;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Schedules.HolisticHarmonizer.VisionGrid;
 
@@ -42,7 +45,7 @@ public static class VisionGridChallengeFactory
 
     private static readonly CellSymbol[] WorkSymbols = [CellSymbol.Early, CellSymbol.Late, CellSymbol.Night, CellSymbol.Other];
 
-    public static VisionGridChallenge Create(Random random)
+    public static VisionGridChallenge Create(Random random, float scale = 1f, bool markAskedCells = false)
     {
         ArgumentNullException.ThrowIfNull(random);
 
@@ -65,9 +68,16 @@ public static class VisionGridChallengeFactory
 
         var bitmap = new HarmonyBitmap(rows, days, cells);
         var questions = PickQuestions(random, bitmap);
-        var png = new HarmonyBitmapPngRenderer().Render(bitmap);
-        return new VisionGridChallenge(png, questions, BuildUserMessage(questions));
+        var markers = markAskedCells
+            ? questions.Select((q, i) => new GridImageMarker(RowIndex(q.RowLabel), q.Day - 1, MarkerLabel(i))).ToList()
+            : [];
+        var png = new HarmonyBitmapPngRenderer(new HarmonyBitmapPngRenderOptions(Scale: scale)).Render(bitmap, markers);
+        return new VisionGridChallenge(png, questions, BuildUserMessage(questions, markAskedCells));
     }
+
+    internal static int RowIndex(string rowLabel) => Array.FindIndex(FirstNames, n => n[0] == rowLabel[0]);
+
+    private static string MarkerLabel(int questionIndex) => (questionIndex + 1).ToString(CultureInfo.InvariantCulture);
 
     internal static string Initials(string displayName)
     {
@@ -131,13 +141,16 @@ public static class VisionGridChallengeFactory
         return questions;
     }
 
-    private static string BuildUserMessage(IReadOnlyList<VisionGridQuestion> questions)
+    private static string BuildUserMessage(IReadOnlyList<VisionGridQuestion> questions, bool markAskedCells)
     {
         var builder = new StringBuilder();
         builder.AppendLine("Read these cells of the attached schedule image:");
         for (var i = 0; i < questions.Count; i++)
         {
-            builder.AppendLine(CultureInfo.InvariantCulture, $"{i + 1}. row {questions[i].RowLabel}, day {questions[i].Day}");
+            var cell = string.Create(CultureInfo.InvariantCulture, $"row {questions[i].RowLabel}, day {questions[i].Day}");
+            builder.AppendLine(markAskedCells
+                ? string.Create(CultureInfo.InvariantCulture, $"{i + 1}. the cell marked {MarkerLabel(i)} ({cell})")
+                : string.Create(CultureInfo.InvariantCulture, $"{i + 1}. {cell}"));
         }
 
         builder.Append("Reply with the JSON object only.");

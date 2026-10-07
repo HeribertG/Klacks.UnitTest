@@ -49,14 +49,29 @@ public class VisionGridChallengeTests
     [TestCase(21)]
     public void Create_ExpectedAnswersMatchThePaintedCellColours(int seed)
     {
-        var challenge = VisionGridChallengeFactory.Create(new Random(seed));
+        AssertAnswersMatchPixels(VisionGridChallengeFactory.Create(new Random(seed)), 1);
+    }
+
+    [TestCase(3)]
+    [TestCase(8)]
+    public void Create_UpscaledWithMarkers_ExpectedAnswersMatchThePaintedCellColours(int seed)
+    {
+        var challenge = VisionGridChallengeFactory.Create(new Random(seed), 2f, markAskedCells: true);
+
+        AssertAnswersMatchPixels(challenge, 2);
+        challenge.UserMessage.ShouldContain("the cell marked 1");
+    }
+
+    private static void AssertAnswersMatchPixels(VisionGridChallenge challenge, int scale)
+    {
         using var bitmap = SKBitmap.Decode(challenge.Png);
+        bitmap.Width.ShouldBe(ProductionWidth * scale);
 
         foreach (var question in challenge.Questions)
         {
             var row = question.RowLabel[0] - 'A';
-            var x = HeaderSize + ((question.Day - 1) * CellSize) + CellInset;
-            var y = HeaderSize + (row * CellSize) + CellInset;
+            var x = (scale * (HeaderSize + ((question.Day - 1) * CellSize))) + (CellInset * scale) - 1;
+            var y = (scale * (HeaderSize + (row * CellSize))) + (CellInset * scale) - 1;
             var pixel = bitmap.GetPixel(x, y);
 
             var expectedColours = question.Expected switch

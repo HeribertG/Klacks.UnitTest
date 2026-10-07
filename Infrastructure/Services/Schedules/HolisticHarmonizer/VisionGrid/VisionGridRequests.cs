@@ -17,7 +17,7 @@ public static class VisionGridRequests
         "The attached PNG is a staff schedule. Rows are employees, labelled with their initials in the left header. " +
         "Columns are days, numbered in the top header.\n" +
         "Every cell shows one bold letter: E (yellow), L (orange), N (dark blue), O (grey) or B (red hatched). " +
-        "A white cell without a letter is free.\n" +
+        "A white cell without a letter is free. Asked cells may be ringed in magenta with a numbered badge.\n" +
         "For each asked cell give its letter, or \"-\" for a free cell, in the order asked.\n" +
         "Reply with ONE JSON object and nothing else: {\"answers\":[\"...\",\"...\",\"...\"]}.\n" +
         "No prose, no markdown, no code fences, no commentary.\n" +

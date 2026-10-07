@@ -6,7 +6,8 @@
 /// single reads through the production request + evaluator to measure the per-read pass / misread /
 /// inconclusive rates, then runs the full probe several times to observe the cached verdict. CalibrateGrid sends
 /// production-size schedules (VisionGridChallengeFactory) and measures how many asked cells each model reads correctly;
-/// KLACKS_VISION_CAL_GRID_READS (default 20) sets its sample size.
+/// KLACKS_VISION_CAL_GRID_READS (default 20) sets its sample size, KLACKS_VISION_CAL_GRID_VARIANT the image variant
+/// (base, x2 = double render scale, markers = asked cells ringed and numbered, x2markers = both).
 /// Known vision models must never be reported as "not vision-capable"; known text-only models must never pass.
 /// Keys come only from environment variables (KLACKS_VISION_CAL_KEY_ANTHROPIC, _GOOGLE, _MISTRAL, _OPENAI,
 /// _GROQ, _DEEPSEEK); a model without key is skipped. KLACKS_VISION_CAL_READS (default 20) and
@@ -43,6 +44,8 @@ public class VisionCapabilityLiveCalibrationTests
     private const string ReadsEnv = "KLACKS_VISION_CAL_READS";
     private const string ProbesEnv = "KLACKS_VISION_CAL_PROBES";
     private const string GridReadsEnv = "KLACKS_VISION_CAL_GRID_READS";
+    private const string GridVariantEnv = "KLACKS_VISION_CAL_GRID_VARIANT";
+    private const float UpscaledRender = 2f;
     private const string OutEnv = "KLACKS_VISION_CAL_OUT";
     private const int DefaultReads = 20;
     private const int DefaultProbes = 5;
@@ -156,6 +159,9 @@ public class VisionCapabilityLiveCalibrationTests
         var provider = CreateProvider(providerId, baseUrl, apiKey!);
         var model = new LLMModel { ModelId = apiModelId, ApiModelId = apiModelId, ProviderId = providerId };
         var reads = ReadInt(GridReadsEnv, DefaultReads);
+        var variant = Environment.GetEnvironmentVariable(GridVariantEnv) ?? "base";
+        var scale = variant.StartsWith("x2", StringComparison.Ordinal) ? UpscaledRender : 1f;
+        var markAskedCells = variant.EndsWith("markers", StringComparison.Ordinal);
 
         var passed = 0;
         var misread = 0;
@@ -167,7 +173,7 @@ public class VisionCapabilityLiveCalibrationTests
         var samples = new List<string>();
         for (var i = 0; i < reads; i++)
         {
-            var challenge = VisionGridChallengeFactory.Create(new Random(i));
+            var challenge = VisionGridChallengeFactory.Create(new Random(i), scale, markAskedCells);
             var stopwatch = Stopwatch.StartNew();
             var response = await provider.ProcessAsync(VisionGridRequests.Create(model, challenge), CancellationToken.None);
             latencies.Add(stopwatch.ElapsedMilliseconds);
@@ -202,10 +208,10 @@ public class VisionCapabilityLiveCalibrationTests
         inputTokens.Sort();
         var row = string.Format(
             CultureInfo.InvariantCulture,
-            "| grid | {0} | {1} | {2} | {3}/{4} | {5} | {6} | {7}/{8} cells | {9} ms | {10} in-tokens | {11} |",
+            "| grid-{12} | {0} | {1} | {2} | {3}/{4} | {5} | {6} | {7}/{8} cells | {9} ms | {10} in-tokens | {11} |",
             providerId, apiModelId, vision ? "vision" : "text-only", passed, reads, misread, inconclusive,
             correctCells, answeredCells, latencies[latencies.Count / 2], inputTokens[inputTokens.Count / 2],
-            string.Join(" / ", samples).Replace("|", "/").Replace("\n", " "));
+            string.Join(" / ", samples).Replace("|", "/").Replace("\n", " "), variant);
         TestContext.Out.WriteLine(row);
         AppendReport(row);
 
