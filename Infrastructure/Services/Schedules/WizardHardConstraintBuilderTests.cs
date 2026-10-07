@@ -228,6 +228,30 @@ public class WizardHardConstraintBuilderTests
     }
 
     [Test]
+    public async Task BuildAsync_ContainerSubBreak_IsNoBreakBlocker()
+    {
+        var agent = Guid.NewGuid();
+        var absenceId = Guid.NewGuid();
+        _context.Absence.Add(new Absence { Id = absenceId, Name = new MultiLanguage { De = "Pause" } });
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            CurrentDate = new DateOnly(2026, 4, 21),
+            AbsenceId = absenceId,
+            ParentWorkId = Guid.NewGuid(),
+            StartTime = new TimeOnly(12, 0),
+            EndTime = new TimeOnly(12, 30),
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync(
+            new[] { agent }, new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), analyseToken: null, CancellationToken.None);
+
+        result.BreakBlockers.ShouldBeEmpty("a container sub-break is part of the container work, not an absence");
+    }
+
+    [Test]
     public async Task BuildAsync_FiltersScheduleCommandsForMainScenario_WhenAnalyseTokenIsNull()
     {
         var agent = Guid.NewGuid();
