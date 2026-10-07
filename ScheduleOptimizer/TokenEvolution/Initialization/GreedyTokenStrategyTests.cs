@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
@@ -183,5 +183,121 @@ public class GreedyTokenStrategyTests
         var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
 
         scenario.Tokens.ShouldNotContain(t => t.AgentId == "A" && !t.IsLocked);
+    }
+
+    private static readonly DateOnly VetoDate = new(2026, 4, 20);
+
+    private static CoreShift MakeSlot(string id, string start, string end)
+        => new(id, "FD", VetoDate.ToString("yyyy-MM-dd"), start, end, 8, 1, 0);
+
+    private static CoreWizardContext SingleSlotContext(
+        CoreAgent agent,
+        CoreShift slot,
+        IReadOnlyList<CoreScheduleCommand>? commands = null,
+        IReadOnlyList<CoreShiftPreference>? preferences = null,
+        IReadOnlyList<CoreBreakBlocker>? breaks = null,
+        IReadOnlyList<CoreContractDay>? contractDays = null,
+        IReadOnlyList<CoreRestrictedTimeWindow>? windows = null) => new()
+    {
+        PeriodFrom = VetoDate,
+        PeriodUntil = VetoDate,
+        Agents = [agent],
+        Shifts = [slot],
+        ScheduleCommands = commands ?? [],
+        ShiftPreferences = preferences ?? [],
+        BreakBlockers = breaks ?? [],
+        ContractDays = contractDays ?? [],
+        RestrictedTimeWindows = windows ?? [],
+        SchedulingMaxConsecutiveDays = 6,
+    };
+
+    private static IReadOnlyList<CoreToken> PlannedTokens(CoreWizardContext context)
+        => new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0)).Tokens
+            .Where(t => !t.IsLocked)
+            .ToList();
+
+    [Test]
+    public void ForcedCoverage_RespectsFreeKeyword()
+    {
+        var context = SingleSlotContext(MakeAgent("A", fullTime: 8), MakeSlot(Guid.NewGuid().ToString(), "06:00", "14:00"), commands: [new CoreScheduleCommand("A", VetoDate, ScheduleCommandKeyword.Free)]);
+
+        PlannedTokens(context).ShouldBeEmpty("a FREE day is absolute: forced coverage must leave the slot open");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsOnlyEarly_OnANightSlot()
+    {
+        var context = SingleSlotContext(MakeAgent("A", fullTime: 8), MakeSlot(Guid.NewGuid().ToString(), "23:00", "07:00"), commands: [new CoreScheduleCommand("A", VetoDate, ScheduleCommandKeyword.OnlyEarly)]);
+
+        PlannedTokens(context).ShouldBeEmpty("OnlyEarly forbids a night shift even under forced coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsNoNight()
+    {
+        var context = SingleSlotContext(MakeAgent("A", fullTime: 8), MakeSlot(Guid.NewGuid().ToString(), "23:00", "07:00"), commands: [new CoreScheduleCommand("A", VetoDate, ScheduleCommandKeyword.NoNight)]);
+
+        PlannedTokens(context).ShouldBeEmpty("NoNight forbids a night shift even under forced coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsShiftBlacklist()
+    {
+        var shiftId = Guid.NewGuid();
+        var context = SingleSlotContext(MakeAgent("A", fullTime: 8), MakeSlot(shiftId.ToString(), "06:00", "14:00"), preferences: [new CoreShiftPreference("A", shiftId, ShiftPreferenceKind.Blacklist)]);
+
+        PlannedTokens(context).ShouldBeEmpty("a blacklisted shift is never assigned, not even to force coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsBreakBlocker()
+    {
+        var context = SingleSlotContext(MakeAgent("A", fullTime: 8), MakeSlot(Guid.NewGuid().ToString(), "06:00", "14:00"), breaks: [new CoreBreakBlocker("A", VetoDate, VetoDate, "Vacation", 8m)]);
+
+        PlannedTokens(context).ShouldBeEmpty("an agent on vacation is never assigned, not even to force coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsContractDayWithoutWork()
+    {
+        var context = SingleSlotContext(MakeAgent("A", fullTime: 8), MakeSlot(Guid.NewGuid().ToString(), "06:00", "14:00"), contractDays: [new CoreContractDay("A", VetoDate, WorksOnDay: false, PerformsShiftWork: true, FullTimeShare: 1, MaximumHoursPerDay: 0, ContractId: Guid.NewGuid())]);
+
+        PlannedTokens(context).ShouldBeEmpty("a day without an active contract is not workable, not even to force coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsStaticWeekdayFlag()
+    {
+        var agent = MakeAgent("A", fullTime: 8) with { WorkOnMonday = false };
+        var context = SingleSlotContext(agent, MakeSlot(Guid.NewGuid().ToString(), "06:00", "14:00"));
+
+        PlannedTokens(context).ShouldBeEmpty("a weekday the agent does not work is not workable, not even to force coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsShiftWorkFlag()
+    {
+        var agent = MakeAgent("A", fullTime: 8) with { PerformsShiftWork = false };
+        var context = SingleSlotContext(agent, MakeSlot(Guid.NewGuid().ToString(), "23:00", "07:00"));
+
+        PlannedTokens(context).ShouldBeEmpty("a non-shift worker never gets a night shift, not even to force coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_RespectsRestrictedTimeWindow()
+    {
+        var shiftId = Guid.NewGuid();
+        var context = SingleSlotContext(MakeAgent("A", fullTime: 8), MakeSlot(shiftId.ToString(), "06:00", "14:00"), windows: [new CoreRestrictedTimeWindow(1, 1, 12, 31, 10 * 60, 12 * 60, new HashSet<Guid> { shiftId })]);
+
+        PlannedTokens(context).ShouldBeEmpty("a restricted time window is a hard veto, also under forced coverage");
+    }
+
+    [Test]
+    public void ForcedCoverage_StillRelaxesMaximumHours()
+    {
+        var agent = MakeAgent("A", fullTime: 8) with { MaximumHours = 4 };
+        var context = SingleSlotContext(agent, MakeSlot(Guid.NewGuid().ToString(), "06:00", "14:00"));
+
+        PlannedTokens(context).Count.ShouldBe(1, "MaximumHours stays relaxable: coverage beats the hour cap");
     }
 }
