@@ -3,23 +3,32 @@
 /// <summary>
 /// Unit tests for FindReplacementQueryHandler: hard-exclusion on collision / rest-time / blacklist /
 /// absence / explicit unavailability, soft-ranking by aggregate findings (less headroom -> lower rank),
-/// preferred-first ordering.
+/// preferred-first ordering, and group visibility: a hidden group is answered exactly like an unknown one and
+/// the candidate and excluded lists only ever contain clients the caller may see (real guards over substituted scopes).
 /// </summary>
 
+using System.Text.Json;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Queries.Schedules;
+using Klacks.Api.Application.Services.Clients;
+using Klacks.Api.Application.Services.Groups;
+using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
+using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Services.Common;
+using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -46,6 +55,10 @@ public class FindReplacementQueryHandlerTests
     private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IAbsenceRepository _absenceRepo = null!;
+    private IGroupVisibilityService _groupVisibilityService = null!;
+    private IUserService _userService = null!;
+    private IClientSearchRepository _clientSearchRepo = null!;
+    private IClientGroupFilterService _clientGroupFilter = null!;
     private FindReplacementQueryHandler _handler = null!;
     private static readonly Guid OnCallAbsenceId = Guid.NewGuid();
     private static readonly Guid SickAbsenceId = Guid.NewGuid();
@@ -80,10 +93,20 @@ public class FindReplacementQueryHandlerTests
         _absenceRepo.GetOnCallAbsenceIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new HashSet<Guid> { OnCallAbsenceId });
 
+        _userService = Substitute.For<IUserService>();
+        _userService.GetIdString().Returns(Guid.NewGuid().ToString());
+        _groupVisibilityService = Substitute.For<IGroupVisibilityService>();
+        _clientSearchRepo = Substitute.For<IClientSearchRepository>();
+        _clientGroupFilter = Substitute.For<IClientGroupFilterService>();
+        SetAdminCaller();
+
         _handler = new FindReplacementQueryHandler(
             _clientRepo, _groupRepo, _groupClientService, _checker, _prefRepo, _scheduleEntries,
             _availabilityRepo, _periodHours,
-            _overrideAuthorizer, _httpContextAccessor, _absenceRepo, NullLogger<FindReplacementQueryHandler>.Instance);
+            _overrideAuthorizer, _httpContextAccessor, _absenceRepo,
+            new GroupVisibilityGuard(_groupVisibilityService, _userService),
+            new ClientVisibilityGuard(_clientSearchRepo, _clientGroupFilter),
+            NullLogger<FindReplacementQueryHandler>.Instance);
     }
 
     private static ScheduleCell BreakCell(Guid clientId, Guid absenceId, int startHour = 0, int endHour = 0) => new()
@@ -654,5 +677,187 @@ public class FindReplacementQueryHandlerTests
 
         result.Eligible.ShouldBeEmpty();
         result.Excluded.ShouldBeEmpty();
+    }
+
+    private void SetAdminCaller()
+    {
+        _groupVisibilityService.GetVisibilityScopeAsync().Returns(GroupVisibilityScope.Unrestricted());
+        _clientGroupFilter.IsCallerUnrestrictedAsync().Returns(true);
+    }
+
+    private void SetRestrictedCaller(IReadOnlyList<Guid> visibleGroupIds, IReadOnlyCollection<Guid> visibleClientIds)
+    {
+        _groupVisibilityService.GetVisibilityScopeAsync()
+            .Returns(GroupVisibilityScope.Restricted(visibleGroupIds, visibleGroupIds));
+        _clientGroupFilter.IsCallerUnrestrictedAsync().Returns(false);
+        _clientSearchRepo.FilterVisibleToCallerAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlySet<Guid>)ci.Arg<IReadOnlyCollection<Guid>>()
+                .Where(visibleClientIds.Contains).ToHashSet());
+    }
+
+    [Test]
+    public async Task HiddenGroup_ReturnsEmpty_AndNeverLoadsThePool()
+    {
+        SetMembers(Member(Guid.NewGuid(), "Anna"), Member(Guid.NewGuid(), "Bea"));
+        SetRestrictedCaller([Guid.NewGuid()], []);
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.ShouldBeEmpty();
+        await _groupRepo.DidNotReceive().Get(Arg.Any<Guid>());
+        await _clientRepo.DidNotReceive().GetActiveClientsWithAddressesForGroupsAsync(
+            Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>());
+        await _checker.DidNotReceive().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HiddenGroup_IsAnsweredExactlyLikeAnUnknownGroup()
+    {
+        var unknownGroupId = Guid.NewGuid();
+        _groupRepo.Get(unknownGroupId).Returns((Group?)null);
+        SetMembers(Member(Guid.NewGuid(), "Anna"));
+        SetRestrictedCaller([unknownGroupId], []);
+
+        var unknown = await FindIn(unknownGroupId);
+        var hidden = await Find();
+
+        hidden.Eligible.Count.ShouldBe(unknown.Eligible.Count);
+        hidden.Excluded.Count.ShouldBe(unknown.Excluded.Count);
+        hidden.Eligible.ShouldBeEmpty();
+        hidden.Excluded.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task VisibleGroup_OffersOnlyClientsTheCallerMaySee()
+    {
+        var visible = Guid.NewGuid();
+        var hidden = Guid.NewGuid();
+        SetMembers(Member(visible, "Anna"), Member(hidden, "Bea"));
+        SetRestrictedCaller([GroupId], [visible]);
+
+        var result = await Find();
+
+        result.Eligible.Single().ClientId.ShouldBe(visible);
+        result.Excluded.ShouldBeEmpty();
+        await _checker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.All(r => r.ClientId == visible)),
+            Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _periodHours.Received(1).GetPeriodHoursAsync(
+            Arg.Is<List<Guid>>(ids => ids.SequenceEqual(new[] { visible })),
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>());
+    }
+
+    [Test]
+    public async Task ExcludedList_NeverNamesAHiddenClient()
+    {
+        var visibleAbsent = Guid.NewGuid();
+        var hiddenAbsent = Guid.NewGuid();
+        var hiddenBlacklisted = Guid.NewGuid();
+        SetMembers(Member(visibleAbsent, "Anna"), Member(hiddenAbsent, "Bea"), Member(hiddenBlacklisted, "Cara"));
+        SetOnLeave(BreakCell(visibleAbsent, SickAbsenceId), BreakCell(hiddenAbsent, SickAbsenceId));
+        SetPreferences(new ClientShiftPreference
+        {
+            ClientId = hiddenBlacklisted,
+            ShiftId = ShiftId,
+            PreferenceType = ShiftPreferenceType.Blacklist
+        });
+        SetRestrictedCaller([GroupId], [visibleAbsent]);
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.Single().ClientId.ShouldBe(visibleAbsent);
+    }
+
+    [Test]
+    public async Task RestrictedCallerWithoutAnyVisibleClient_GetsNothing()
+    {
+        SetMembers(Member(Guid.NewGuid(), "Anna"), Member(Guid.NewGuid(), "Bea"));
+        SetRestrictedCaller([GroupId], []);
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
+        result.Excluded.ShouldBeEmpty();
+        await _checker.DidNotReceive().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SkillPath_FindReplacement_OnlyReportsVisibleClients()
+    {
+        var visible = Guid.NewGuid();
+        var hidden = Guid.NewGuid();
+        var hiddenAbsent = Guid.NewGuid();
+        SetMembers(Member(visible, "Anna"), Member(hidden, "Bea"), Member(hiddenAbsent, "Cara"));
+        SetOnLeave(BreakCell(hiddenAbsent, SickAbsenceId));
+        SetRestrictedCaller([GroupId], [visible]);
+        var skill = SkillDispatchingToRealHandler();
+
+        var result = await skill.ExecuteAsync(SkillContext(), SkillParams(GroupId));
+
+        result.Success.ShouldBeTrue();
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("EligibleCount").GetInt32().ShouldBe(1);
+        data.GetProperty("ExcludedCount").GetInt32().ShouldBe(0);
+        data.GetProperty("Candidates")[0].GetProperty("ClientId").GetGuid().ShouldBe(visible);
+    }
+
+    [Test]
+    public async Task SkillPath_FindReplacement_HiddenGroupReportsNoOne()
+    {
+        SetMembers(Member(Guid.NewGuid(), "Anna"));
+        SetRestrictedCaller([Guid.NewGuid()], []);
+        var skill = SkillDispatchingToRealHandler();
+
+        var result = await skill.ExecuteAsync(SkillContext(), SkillParams(GroupId));
+
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("EligibleCount").GetInt32().ShouldBe(0);
+        data.GetProperty("ExcludedCount").GetInt32().ShouldBe(0);
+    }
+
+    private FindReplacementSkill SkillDispatchingToRealHandler()
+    {
+        var shiftRepo = Substitute.For<IShiftRepository>();
+        shiftRepo.Get(ShiftId).Returns(new Shift { Id = ShiftId, Name = "Night", StartShift = Start, EndShift = End });
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<FindReplacementQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ci => _handler.Handle(ci.Arg<FindReplacementQuery>(), ci.Arg<CancellationToken>()));
+        return new FindReplacementSkill(
+            shiftRepo, mediator, new GroupVisibilityGuard(_groupVisibilityService, _userService));
+    }
+
+    private static SkillExecutionContext SkillContext() => new()
+    {
+        UserId = Guid.NewGuid(),
+        TenantId = Guid.NewGuid(),
+        UserName = "planner",
+        UserPermissions = new List<string>()
+    };
+
+    private static Dictionary<string, object> SkillParams(Guid groupId) => new()
+    {
+        ["shiftId"] = ShiftId.ToString(),
+        ["date"] = Date,
+        ["groupId"] = groupId.ToString()
+    };
+
+    [Test]
+    public async Task Admin_IsNotLimitedByVisibility()
+    {
+        var anna = Guid.NewGuid();
+        var bea = Guid.NewGuid();
+        SetMembers(Member(anna, "Anna"), Member(bea, "Bea"));
+        SetOnLeave(BreakCell(bea, SickAbsenceId));
+
+        var result = await Find();
+
+        result.Eligible.Single().ClientId.ShouldBe(anna);
+        result.Excluded.Single().ClientId.ShouldBe(bea);
+        await _clientSearchRepo.DidNotReceive().FilterVisibleToCallerAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
     }
 }

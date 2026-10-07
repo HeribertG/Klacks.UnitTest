@@ -19,12 +19,14 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
+using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.ScheduleRecovery.Engine;
@@ -64,6 +66,7 @@ public class CoverAbsenceCommandHandlerTests
     private IEscalationChainService _escalationChainService = null!;
     private ICompanyClock _companyClock = null!;
     private IClientVisibilityGuard _visibilityGuard = null!;
+    private IGroupVisibilityGuard _groupVisibilityGuard = null!;
     private IScenarioNameGenerator _nameGenerator = null!;
     private CoverAbsenceCommandHandler _handler = null!;
 
@@ -114,6 +117,8 @@ public class CoverAbsenceCommandHandlerTests
         _visibilityGuard = Substitute.For<IClientVisibilityGuard>();
         _visibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         SetVisibleAgents(_ => true);
+        _groupVisibilityGuard = Substitute.For<IGroupVisibilityGuard>();
+        _groupVisibilityGuard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
 
         var partitionService = new CompliancePartitionService(
             _conflictChecker,
@@ -129,7 +134,8 @@ public class CoverAbsenceCommandHandlerTests
 
         _handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock, _visibilityGuard, _nameGenerator,
+            partitionService, _mediator, _unitOfWork, _escalationChainService, _companyClock, _visibilityGuard,
+            _groupVisibilityGuard, _nameGenerator,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
     }
 
@@ -548,7 +554,8 @@ public class CoverAbsenceCommandHandlerTests
             Substitute.For<ILogger<CompliancePartitionService>>());
         var handler = new CoverAbsenceCommandHandler(
             _scenarioRepo, _scenarioService, _scheduleEntries, _snapshotBuilder, new LocalRepairEngine(),
-            partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock, _visibilityGuard, _nameGenerator,
+            partitionService, _mediator, _unitOfWork, _escalationChainService, zurichClock, _visibilityGuard,
+            _groupVisibilityGuard, _nameGenerator,
             NullLogger<CoverAbsenceCommandHandler>.Instance);
 
         await handler.Handle(new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId), CancellationToken.None);
@@ -571,6 +578,71 @@ public class CoverAbsenceCommandHandlerTests
         await _unitOfWork.DidNotReceive().CompleteAsync();
         await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GroupOutsideTheCallersVisibility_IsRefusedLikeAMissingGroup_BeforeAnythingIsWritten()
+    {
+        _groupVisibilityGuard.IsGroupVisibleAsync(GroupId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => Cover());
+
+        ex.Message.ShouldBe($"Group with ID {GroupId} not found");
+        await AssertNothingWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task GroupOutsideTheCallersVisibility_IsRefused_EvenWhenTheAbsentClientIsVisible()
+    {
+        _visibilityGuard.IsVisibleAsync(ClientId, Arg.Any<CancellationToken>()).Returns(true);
+        _groupVisibilityGuard.IsGroupVisibleAsync(GroupId, Arg.Any<CancellationToken>()).Returns(false);
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => Cover());
+
+        await _snapshotBuilder.DidNotReceive().BuildAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<CancellationToken>());
+        await AssertNothingWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task SkillPath_CoverAbsence_HiddenGroupCreatesNoScenario()
+    {
+        _groupVisibilityGuard.IsGroupVisibleAsync(GroupId, Arg.Any<CancellationToken>()).Returns(false);
+        var skillMediator = Substitute.For<IMediator>();
+        skillMediator.Send(Arg.Any<CoverAbsenceCommand>(), Arg.Any<CancellationToken>())
+            .Returns(ci => _handler.Handle(ci.Arg<CoverAbsenceCommand>(), ci.Arg<CancellationToken>()));
+        var skill = new CoverAbsenceSkill(skillMediator);
+        var parameters = new Dictionary<string, object>
+        {
+            ["clientId"] = ClientId.ToString(),
+            ["groupId"] = GroupId.ToString(),
+            ["absenceId"] = AbsenceId.ToString(),
+            ["date"] = Date
+        };
+        var context = new SkillExecutionContext
+        {
+            UserId = Guid.NewGuid(),
+            TenantId = Guid.NewGuid(),
+            UserName = "planner",
+            UserPermissions = new List<string>()
+        };
+
+        await Should.ThrowAsync<KeyNotFoundException>(() => skill.ExecuteAsync(context, parameters));
+
+        await AssertNothingWasWrittenAsync();
+    }
+
+    private async Task AssertNothingWasWrittenAsync()
+    {
+        await _scenarioRepo.DidNotReceive().Add(Arg.Any<AnalyseScenario>());
+        await _scenarioService.DidNotReceive().CloneScenarioDataWithMapsAsync(
+            Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+            Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+        await _escalationChainService.DidNotReceive().StartChainAsync(
+            Arg.Any<StartEscalationChainRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
