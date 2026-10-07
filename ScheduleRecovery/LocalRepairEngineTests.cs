@@ -58,7 +58,7 @@ public sealed class LocalRepairEngineTests
         delta.ToAgentId.ShouldBe(Agent(2));
         delta.Tier.ShouldBe(EscalationTier.InGroupFree);
         proposal.Uncovered.ShouldBeEmpty();
-        proposal.Objective.ShouldBe(new RecoveryObjective(0, 0, 1, 1));
+        proposal.Objective.ShouldBe(new RecoveryObjective(0, 0, RulesetDefaults.WeightInGroupFree, 1));
         proposal.HighestTier.ShouldBe(EscalationTier.InGroupFree);
     }
 

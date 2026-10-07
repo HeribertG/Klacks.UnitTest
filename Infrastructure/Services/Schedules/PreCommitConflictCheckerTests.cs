@@ -12,6 +12,7 @@ using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
@@ -152,6 +153,72 @@ public class PreCommitConflictCheckerTests
         result.HasBlocking.ShouldBeTrue();
         result.NewConflicts.ShouldContain(c =>
             c.Comment == "schedule.error-list.collision" && c.Type == ScheduleValidationType.Error);
+    }
+
+    private void SeedFullDayBreak(Guid clientId, DateOnly date, bool isOnCall)
+    {
+        var absence = new Absence
+        {
+            Id = Guid.NewGuid(),
+            Name = new MultiLanguage { De = isOnCall ? "Pikett" : "Krank" },
+            Description = new MultiLanguage(),
+            Abbreviation = new MultiLanguage(),
+            IsOnCall = isOnCall
+        };
+        _context.Absence.Add(absence);
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            AbsenceId = absence.Id,
+            CurrentDate = date,
+            StartTime = new TimeOnly(0, 0),
+            EndTime = new TimeOnly(0, 0),
+            WorkTime = 8,
+            ParentWorkId = null,
+            AnalyseToken = null
+        });
+        _context.SaveChanges();
+    }
+
+    [Test]
+    public async Task WorkOverOnCallBreak_IsOnCallOverlapWarning_NotBlocking()
+    {
+        SeedFullDayBreak(ClientA, Day, isOnCall: true);
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(10, 0), new TimeOnly(14, 0))]);
+
+        result.HasBlocking.ShouldBeFalse();
+        result.NewConflicts.ShouldNotContain(c => c.Comment == ScheduleValidationKeys.Collision);
+        var warning = result.NewConflicts.Single(c => c.Comment == ScheduleValidationKeys.OnCallOverlap);
+        warning.Type.ShouldBe(ScheduleValidationType.Warning);
+        warning.CommentParams["workTimeRange"].ShouldBe("10:00 - 14:00");
+    }
+
+    [Test]
+    public async Task WorkOverSickBreak_StaysBlockingCollision()
+    {
+        SeedFullDayBreak(ClientA, Day, isOnCall: false);
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(10, 0), new TimeOnly(14, 0))]);
+
+        result.HasBlocking.ShouldBeTrue();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == ScheduleValidationKeys.Collision && c.Type == ScheduleValidationType.Error);
+        result.NewConflicts.ShouldNotContain(c => c.Comment == ScheduleValidationKeys.OnCallOverlap);
+    }
+
+    [Test]
+    public async Task WorkOverOnCallBreak_StillCollidesWithAnotherWork()
+    {
+        SeedFullDayBreak(ClientA, Day, isOnCall: true);
+        SeedWork(ClientA, Day, new TimeOnly(8, 0), new TimeOnly(12, 0));
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(10, 0), new TimeOnly(14, 0))]);
+
+        result.HasBlocking.ShouldBeTrue();
+        result.NewConflicts.ShouldContain(c =>
+            c.Comment == ScheduleValidationKeys.Collision && c.Type == ScheduleValidationType.Error);
     }
 
     [Test]

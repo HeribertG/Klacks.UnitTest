@@ -8,7 +8,10 @@
 
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Domain.Common;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Scheduling;
+using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Domain.Services.Schedules;
@@ -122,6 +125,42 @@ public class PeriodValidationLoaderHolidayWorkDatesTests
             Arg.Any<string>(),
             Arg.Is<IReadOnlyCollection<DateOnly>>(dates => dates.SequenceEqual(new[] { day, day.AddDays(1) })),
             Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(true, "OnCallOverlap", ScheduleValidationType.Warning)]
+    [TestCase(false, "Collision", ScheduleValidationType.Error)]
+    public async Task LoadAsync_WorkOverFullDayBreak_IsOnCallOverlapOnlyForOnCallTypes(
+        bool isOnCall, string expectedCode, ScheduleValidationType expectedSeverity)
+    {
+        var clientId = SeedClient();
+        var day = new DateOnly(2026, 7, 14);
+        SeedWork(clientId, day, new TimeOnly(10, 0), new TimeOnly(14, 0));
+        var absence = new Absence
+        {
+            Id = Guid.NewGuid(),
+            Name = new MultiLanguage { De = "Typ" },
+            Description = new MultiLanguage(),
+            Abbreviation = new MultiLanguage(),
+            IsOnCall = isOnCall
+        };
+        _context.Absence.Add(absence);
+        _context.Break.Add(new Break
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            AbsenceId = absence.Id,
+            CurrentDate = day,
+            StartTime = new TimeOnly(0, 0),
+            EndTime = new TimeOnly(0, 0),
+            WorkTime = 8m
+        });
+        await _context.SaveChangesAsync();
+
+        var issues = await _sut.LoadAsync(From, To, null);
+
+        var issue = issues.Single(i => i.Code is "OnCallOverlap" or "Collision");
+        issue.Code.ShouldBe(expectedCode);
+        issue.Severity.ShouldBe(expectedSeverity);
     }
 
     private Guid SeedClient()

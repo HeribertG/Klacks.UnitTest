@@ -68,7 +68,7 @@ public sealed class RecoverySnapshotBuilderKeywordTests
     public void BuildAvailability_DayWithoutKeyword_StaysOpen()
     {
         var availability = RecoverySnapshotBuilder.BuildAvailability(
-            [AgentA], Contracts(), new HashSet<(Guid, DateOnly)>(), Keywords(null), Day, Day);
+            [AgentA], Contracts(), RecoveryBreakDays.Empty(), Keywords(null), Day, Day);
 
         var cell = availability[new CellKey(AgentA, Day)];
         cell.HasFreeCommand.ShouldBeFalse();
@@ -80,7 +80,7 @@ public sealed class RecoverySnapshotBuilderKeywordTests
     public void BuildAvailability_BreakDay_StaysBlockedRegardlessOfKeyword()
     {
         var availability = RecoverySnapshotBuilder.BuildAvailability(
-            [AgentA], Contracts(), new HashSet<(Guid, DateOnly)> { (AgentA, Day) },
+            [AgentA], Contracts(), new RecoveryBreakDays([(AgentA, Day)], []),
             Keywords(ScheduleCommandKeyword.NotFree), Day, Day);
 
         availability[new CellKey(AgentA, Day)].HasBreakBlocker.ShouldBeTrue();
@@ -89,7 +89,7 @@ public sealed class RecoverySnapshotBuilderKeywordTests
 
     private static Dictionary<CellKey, DayAvailability> Build(ScheduleCommandKeyword keyword)
         => RecoverySnapshotBuilder.BuildAvailability(
-            [AgentA], Contracts(), new HashSet<(Guid, DateOnly)>(), Keywords(keyword), Day, Day);
+            [AgentA], Contracts(), RecoveryBreakDays.Empty(), Keywords(keyword), Day, Day);
 
     private static Dictionary<Guid, EffectiveContractData> Contracts()
         => new() { [AgentA] = new EffectiveContractData { HasActiveContract = false } };

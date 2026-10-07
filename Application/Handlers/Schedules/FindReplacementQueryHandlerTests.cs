@@ -12,6 +12,7 @@ using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Queries.Schedules;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Associations;
@@ -44,7 +45,10 @@ public class FindReplacementQueryHandlerTests
     private IPeriodHoursService _periodHours = null!;
     private ISupervisorOverrideAuthorizer _overrideAuthorizer = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private IAbsenceRepository _absenceRepo = null!;
     private FindReplacementQueryHandler _handler = null!;
+    private static readonly Guid OnCallAbsenceId = Guid.NewGuid();
+    private static readonly Guid SickAbsenceId = Guid.NewGuid();
 
     [SetUp]
     public void Setup()
@@ -72,10 +76,53 @@ public class FindReplacementQueryHandlerTests
         _overrideAuthorizer = Substitute.For<ISupervisorOverrideAuthorizer>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
 
+        _absenceRepo = Substitute.For<IAbsenceRepository>();
+        _absenceRepo.GetOnCallAbsenceIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid> { OnCallAbsenceId });
+
         _handler = new FindReplacementQueryHandler(
             _clientRepo, _groupRepo, _groupClientService, _checker, _prefRepo, _scheduleEntries,
             _availabilityRepo, _periodHours,
-            _overrideAuthorizer, _httpContextAccessor, NullLogger<FindReplacementQueryHandler>.Instance);
+            _overrideAuthorizer, _httpContextAccessor, _absenceRepo, NullLogger<FindReplacementQueryHandler>.Instance);
+    }
+
+    private static ScheduleCell BreakCell(Guid clientId, Guid absenceId, int startHour = 0, int endHour = 0) => new()
+    {
+        ClientId = clientId,
+        EntryType = (int)ScheduleEntryType.Break,
+        EntryDate = Date.ToDateTime(TimeOnly.MinValue),
+        EntryId = absenceId,
+        StartTime = TimeSpan.FromHours(startHour),
+        EndTime = TimeSpan.FromHours(endHour)
+    };
+
+    [Test]
+    public async Task OnCallBreakOutsideTheSlot_NeitherExcludesNorPrefers()
+    {
+        var onCallMorning = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        SetMembers(Member(onCallMorning, "Anna"), Member(other, "Bea"));
+        SetOnLeave(BreakCell(onCallMorning, OnCallAbsenceId, 8, 12));
+
+        var result = await Find();
+
+        result.Excluded.ShouldBeEmpty();
+        result.Eligible.Count.ShouldBe(2);
+        result.Eligible.ShouldAllBe(c => !c.IsOnCall);
+    }
+
+    [Test]
+    public async Task OnCallBreakCrossingMidnight_OverlappingTheNightSlot_IsOnCall()
+    {
+        var onCallNight = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        SetMembers(Member(other, "Anna"), Member(onCallNight, "Zora"));
+        SetOnLeave(BreakCell(onCallNight, OnCallAbsenceId, 23, 1));
+
+        var result = await Find();
+
+        result.Eligible[0].ClientId.ShouldBe(onCallNight);
+        result.Eligible[0].IsOnCall.ShouldBeTrue();
     }
 
     private void SetPeriodHours(Dictionary<Guid, PeriodHoursResource>? byClient = null)
@@ -405,6 +452,52 @@ public class FindReplacementQueryHandlerTests
         var result = await Find();
 
         result.Eligible.Single().ClientId.ShouldBe(free);
+        result.Excluded.Single().Reason.ShouldBe("absent");
+    }
+
+    [Test]
+    public async Task OnCallMember_IsEligible_FlaggedAndRankedFirst()
+    {
+        var onCall = Guid.NewGuid();
+        var preferred = Guid.NewGuid();
+        SetMembers(Member(preferred, "Anna"), Member(onCall, "Zora"));
+        SetPreferences(new ClientShiftPreference { ClientId = preferred, ShiftId = ShiftId, PreferenceType = ShiftPreferenceType.Preferred });
+        SetPeriodHours(new Dictionary<Guid, PeriodHoursResource> { [preferred] = Hours(160m, 40m) });
+        SetOnLeave(BreakCell(onCall, OnCallAbsenceId));
+
+        var result = await Find();
+
+        result.Excluded.ShouldBeEmpty();
+        result.Eligible.Count.ShouldBe(2);
+        result.Eligible[0].ClientId.ShouldBe(onCall);
+        result.Eligible[0].IsOnCall.ShouldBeTrue();
+        result.Eligible[1].IsOnCall.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task OnCallMember_WithOnCallOverlapWarning_IsNotExcluded()
+    {
+        var onCall = Guid.NewGuid();
+        SetMembers(Member(onCall, "Zora"));
+        SetOnLeave(BreakCell(onCall, OnCallAbsenceId));
+        SetConflicts(Conflict(onCall, ScheduleValidationType.Warning, ScheduleValidationKeys.OnCallOverlap));
+
+        var result = await Find();
+
+        result.Eligible.Single().ClientId.ShouldBe(onCall);
+        result.Eligible.Single().IsOnCall.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task OnCallAndSickOnTheSameDay_IsExcludedAsAbsent()
+    {
+        var both = Guid.NewGuid();
+        SetMembers(Member(both, "Lena"));
+        SetOnLeave(BreakCell(both, OnCallAbsenceId), BreakCell(both, SickAbsenceId));
+
+        var result = await Find();
+
+        result.Eligible.ShouldBeEmpty();
         result.Excluded.Single().Reason.ShouldBe("absent");
     }
 

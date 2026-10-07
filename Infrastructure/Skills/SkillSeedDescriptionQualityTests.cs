@@ -38,7 +38,8 @@ public class SkillSeedDescriptionQualityTests
         "create_contract", "create_employee", "update_scheduling_defaults", "create_scheduling_rule",
         "create_shift", "update_client", "update_qualification", "update_contract",
         "create_identity_provider", "update_identity_provider", "update_compliance_enforcement_settings",
-        "update_surcharge_mode_settings", "update_grid_color_settings", "update_speech_settings"
+        "update_surcharge_mode_settings", "update_grid_color_settings", "update_speech_settings",
+        "update_absence_type"
     };
 
     [Test]

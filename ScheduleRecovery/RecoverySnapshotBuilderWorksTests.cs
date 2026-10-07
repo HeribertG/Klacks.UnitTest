@@ -53,7 +53,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
             Cell((int)ScheduleEntryType.Break, BreakOwner, 0, 0),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, out var breakDates);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out var breakDays);
 
         // The substitute's replacement cover is present and immutable.
         works.ContainsKey(new CellKey(Substitute, Day)).ShouldBeTrue();
@@ -65,7 +65,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
         works[new CellKey(Original, Day)].ShouldHaveSingleItem().Hours.ShouldBe(8m);
 
         // The break is recorded as a break date, not as occupancy.
-        breakDates.ShouldContain((BreakOwner, Day));
+        breakDays.Blocking.ShouldContain((BreakOwner, Day));
         works.ContainsKey(new CellKey(BreakOwner, Day)).ShouldBeFalse();
     }
 
@@ -80,7 +80,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
                 isReplacementEntry: false, workChangeType: ApiWorkChangeType.ReplacementWithin),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
 
         // The original only still works 08:00-10:00 and 12:00-16:00 → two segments, not the full shift.
         var segments = works[new CellKey(Original, Day)];
@@ -101,7 +101,7 @@ public sealed class RecoverySnapshotBuilderWorksTests
             Cell((int)ScheduleEntryType.WorkChange, Substitute, 8, 16, isReplacementEntry: true),
         };
 
-        var works = RecoverySnapshotBuilder.BuildWorks(cells, out _);
+        var works = RecoverySnapshotBuilder.BuildWorks(cells, new HashSet<Guid>(), out _);
 
         // The original is fully covered → no demand would be raised for them.
         works.ContainsKey(new CellKey(Original, Day)).ShouldBeFalse();

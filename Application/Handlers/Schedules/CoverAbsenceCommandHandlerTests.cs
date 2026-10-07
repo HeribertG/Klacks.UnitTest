@@ -19,6 +19,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -440,6 +441,72 @@ public class CoverAbsenceCommandHandlerTests
         // A free in-group candidate is the cheapest tier; the UI shows how far the engine had to reach.
         outcome.Covered[0].Tier.ShouldBe(0);
         outcome.HighestTier.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task OnCallCandidate_IsCovered_AheadOfAFreeCandidate_AndItsOverlapOnlyWarns()
+    {
+        var onCallId = new Guid("ffffffff-ffff-ffff-ffff-fffffffffff0");
+        var snapshot = new SnapshotBuilder()
+            .Days(Date)
+            .Agent(ClientId, "Absent")
+            .Agent(CandidateId, "Free")
+            .Agent(onCallId, "OnCall")
+            .Availability(onCallId, Date, new DayAvailability(true, false, false, IsOnCall: true))
+            .Work(ClientId, Date, ShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(8, 0)), Date.ToDateTime(new TimeOnly(16, 0)), 8m, false, WorkId)
+            .Build();
+        UseSnapshot(snapshot);
+        var overlapWarning = new ScheduleValidationNotificationDto
+        {
+            Type = ScheduleValidationType.Warning,
+            ClientId = onCallId,
+            Date = Date,
+            Comment = ScheduleValidationKeys.OnCallOverlap
+        };
+        _conflictChecker.CheckAsync(
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult([overlapWarning]));
+
+        var outcome = await Cover();
+
+        var covered = outcome.Covered.ShouldHaveSingleItem();
+        covered.ReplacementClientId.ShouldBe(onCallId);
+        covered.Tier.ShouldBe((int)EscalationTier.InGroupOnCall);
+        outcome.HighestTier.ShouldBe((int)EscalationTier.InGroupOnCall);
+        outcome.Uncovered.ShouldBeEmpty();
+        outcome.ComplianceWarnings.ShouldContain(w => w.Comment == ScheduleValidationKeys.OnCallOverlap);
+        await _mediator.Received(1).Send(
+            Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.ReplaceClientId == onCallId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HighestTier_OfAnOnCallAndAFreeCover_IsInGroupFree_NotTheLargerEnumValue()
+    {
+        var nextDay = Date.AddDays(1);
+        var onCallId = new Guid("ffffffff-ffff-ffff-ffff-fffffffffff0");
+        var snapshot = new SnapshotBuilder()
+            .Days(Date, nextDay)
+            .Agent(ClientId, "Absent")
+            .Agent(CandidateId, "Free")
+            .Agent(onCallId, "OnCall")
+            .Availability(onCallId, Date, new DayAvailability(true, false, false, IsOnCall: true))
+            .Unavailable(onCallId, nextDay)
+            .Work(ClientId, Date, ShiftId, ShiftCategory.Early,
+                Date.ToDateTime(new TimeOnly(8, 0)), Date.ToDateTime(new TimeOnly(16, 0)), 8m, false, WorkId)
+            .Work(ClientId, nextDay, ShiftId, ShiftCategory.Early,
+                nextDay.ToDateTime(new TimeOnly(8, 0)), nextDay.ToDateTime(new TimeOnly(16, 0)), 8m, false, WorkId)
+            .Build();
+        UseSnapshot(snapshot);
+
+        var outcome = await _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, nextDay), CancellationToken.None);
+
+        outcome.Covered.Select(c => c.Tier).ShouldBe(
+            [(int)EscalationTier.InGroupOnCall, (int)EscalationTier.InGroupFree], ignoreOrder: true);
+        outcome.HighestTier.ShouldBe((int)EscalationTier.InGroupFree);
     }
 
     [Test]
