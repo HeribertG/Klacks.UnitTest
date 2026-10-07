@@ -76,4 +76,96 @@ public class PlanMutationValidatorCrossDayBypassTests
             "pushes agent A to 18h over the 16h weekly cap because it only checks coverage + qualification, " +
             "never the per-row hard constraints the same-day path enforces. Flip this assertion when H3 is fixed.");
     }
+
+    private static Cell Shift(CellSymbol symbol, Guid? shiftId = null) =>
+        new(symbol, shiftId ?? Guid.NewGuid(), [], false, default, default, 8m);
+
+    private static HarmonyBitmap TwoByTwo(BitmapAgent agentA, Cell aMon, Cell aTue, Cell bMon, Cell bTue)
+    {
+        var cells = new Cell[2, 2];
+        cells[0, 0] = aMon;
+        cells[0, 1] = aTue;
+        cells[1, 0] = bMon;
+        cells[1, 1] = bTue;
+        return new HarmonyBitmap([agentA, Agent("B", 100m)], [Monday, Tuesday], cells);
+    }
+
+    private static PlanMutationValidator ValidatorWith(string agentId, DateOnly date, DayAvailability availability) =>
+        new(new DomainAwareReplaceValidator(new Dictionary<(string, DateOnly), DayAvailability>
+        {
+            [(agentId, date)] = availability,
+        }));
+
+    [Test]
+    public void CrossDaySwap_BringingALateShiftOntoAnOnlyEarlyDay_IsRejected()
+    {
+        var bitmap = TwoByTwo(Agent("A", 100m), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Late));
+        var validator = ValidatorWith("A", Monday, new DayAvailability(true, false, false, RequiredSymbol: CellSymbol.Early));
+
+        var rejection = validator.Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 1, Reason: "test"));
+
+        rejection.ShouldNotBeNull("agent A may only work early on Monday; a cross-day swap must not hand A the late shift");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+    }
+
+    [Test]
+    public void CrossDaySwap_BringingANightShiftOntoANoNightDay_IsRejected()
+    {
+        var bitmap = TwoByTwo(Agent("A", 100m), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Night));
+        var validator = ValidatorWith("A", Monday, new DayAvailability(true, false, false, ForbiddenSymbol: CellSymbol.Night));
+
+        var rejection = validator.Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 1, Reason: "test"));
+
+        rejection.ShouldNotBeNull("agent A must not work nights on Monday; a cross-day swap must not hand A the night shift");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+    }
+
+    [Test]
+    public void CrossDaySwap_BringingAFreeDayCommandIntoWork_IsRejected()
+    {
+        var bitmap = TwoByTwo(Agent("A", 100m), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Late));
+        var validator = ValidatorWith("A", Monday, new DayAvailability(true, true, false));
+
+        var rejection = validator.Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 1, Reason: "test"));
+
+        rejection.ShouldNotBeNull("a FREE day must not receive work through a cross-day swap");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+    }
+
+    [Test]
+    public void CrossDaySwap_BringingABlacklistedShift_IsRejected()
+    {
+        var blacklisted = Guid.NewGuid();
+        var agentA = Agent("A", 100m) with { BlacklistedShiftIds = new HashSet<Guid> { blacklisted } };
+        var bitmap = TwoByTwo(agentA, Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Late, blacklisted));
+        var validator = new PlanMutationValidator(new DomainAwareReplaceValidator(availability: null));
+
+        var rejection = validator.Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 1, Reason: "test"));
+
+        rejection.ShouldNotBeNull("agent A has blacklisted the shift; a cross-day swap must not hand it to A");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+    }
+
+    [Test]
+    public void CrossDaySwap_WithinOneRow_OntoAnOnlyEarlyDay_IsRejected()
+    {
+        var bitmap = TwoByTwo(Agent("A", 100m), Shift(CellSymbol.Early), Shift(CellSymbol.Late), Shift(CellSymbol.Early), Shift(CellSymbol.Early));
+        var validator = ValidatorWith("A", Monday, new DayAvailability(true, false, false, RequiredSymbol: CellSymbol.Early));
+
+        var rejection = validator.Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 0, DayB: 1, Reason: "test"));
+
+        rejection.ShouldNotBeNull("moving A's own late shift onto A's OnlyEarly Monday violates the directive too");
+        rejection!.Reason.ShouldBe(PlanMutationRejectionReason.HardConstraintViolation);
+    }
+
+    [Test]
+    public void CrossDaySwap_RespectingTheDirective_IsAccepted()
+    {
+        var bitmap = TwoByTwo(Agent("A", 100m), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Early), Shift(CellSymbol.Early));
+        var validator = ValidatorWith("A", Monday, new DayAvailability(true, false, false, RequiredSymbol: CellSymbol.Early));
+
+        var rejection = validator.Validate(bitmap, new PlanCellSwap(RowA: 0, DayA: 0, RowB: 1, DayB: 1, Reason: "test"));
+
+        rejection.ShouldBeNull("an early shift on an OnlyEarly day is allowed");
+    }
 }
