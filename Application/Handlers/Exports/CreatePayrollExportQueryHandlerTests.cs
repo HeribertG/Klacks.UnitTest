@@ -39,6 +39,7 @@ public class CreatePayrollExportQueryHandlerTests
     private IExportLogRepository _exportLogRepository = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IGroupVisibilityGuard _groupVisibilityGuard = null!;
+    private IExportFormatOverrideApplier _overrideApplier = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<CreatePayrollExportQueryHandler> _logger = null!;
     private CreatePayrollExportQueryHandler _handler = null!;
@@ -53,6 +54,7 @@ public class CreatePayrollExportQueryHandlerTests
         _exportLogRepository = Substitute.For<IExportLogRepository>();
         _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _groupVisibilityGuard = TestGroupWriteVisibility.UnrestrictedGroups();
+        _overrideApplier = Substitute.For<IExportFormatOverrideApplier>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<CreatePayrollExportQueryHandler>>();
 
@@ -96,6 +98,7 @@ public class CreatePayrollExportQueryHandlerTests
             _exportLogRepository,
             _httpContextAccessor,
             _groupVisibilityGuard,
+            _overrideApplier,
             _unitOfWork,
             _logger);
 
@@ -221,5 +224,33 @@ public class CreatePayrollExportQueryHandlerTests
         await _mediator.DidNotReceive().Send(Arg.Any<GetPayrollPeriodDataQuery>(), Arg.Any<CancellationToken>());
         await _configRepository.DidNotReceive().GetByGroupAsync(GroupId, Arg.Any<CancellationToken>());
         await _exportLogRepository.DidNotReceive().AddAsync(Arg.Any<ExportLog>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_AppliesOverride_AndReportsAndPersistsSkipCounters()
+    {
+        _overrideApplier.ApplyAsync(PayrollExportConstants.FormatKeyDatevLug, Arg.Any<PayrollExportGroupConfig>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        _formatter.Format(Arg.Any<PayrollExportData>(), Arg.Any<PayrollExportGroupConfig>())
+            .Returns(new PayrollExportResult
+            {
+                Content = [1],
+                RecordCount = 1,
+                EmittedEntryCount = 1,
+                SkippedAbsenceCount = 2,
+                SkippedUnsupportedUnitCount = 3,
+                AbsenceMappingInvalid = true,
+            });
+
+        var result = await _handler.Handle(new CreatePayrollExportQuery(ValidFilter()), CancellationToken.None);
+
+        result.SkippedEntryCount.ShouldBe(5);
+        result.AbsenceMappingInvalid.ShouldBeTrue();
+        await _exportLogRepository.Received(1).AddAsync(
+            Arg.Is<ExportLog>(log => log.OverrideApplied
+                && log.SkippedAbsenceCount == 2
+                && log.SkippedUnsupportedUnitCount == 3
+                && log.AbsenceMappingInvalid),
+            Arg.Any<CancellationToken>());
     }
 }

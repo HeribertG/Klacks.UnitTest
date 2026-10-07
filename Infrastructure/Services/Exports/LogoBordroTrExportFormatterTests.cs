@@ -127,6 +127,44 @@ public class LogoBordroTrExportFormatterTests
         sheet.Cell(3, 6).GetValue<decimal>().ShouldBe(8m);
     }
 
+    [Test]
+    public void Format_DayEntryOnACodeThatAlsoCarriesHours_IsCountedNotAdded()
+    {
+        var onCallId = Guid.NewGuid();
+        var mapping = $"{{\"{onCallId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"{BaseWageType}\"}}}}";
+        var data = new PayrollExportData
+        {
+            GroupId = Guid.NewGuid(),
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 1, 31),
+            Employees =
+            [
+                new PayrollEmployee
+                {
+                    ClientId = Guid.NewGuid(),
+                    IdNumber = 7,
+                    FullName = "Ayse Yilmaz",
+                    Entries =
+                    [
+                        new PayrollDayEntry { Date = new DateOnly(2026, 1, 5), Kind = PayrollEntryKind.WorkHours, Quantity = 8m },
+                        new PayrollDayEntry
+                        {
+                            Date = new DateOnly(2026, 1, 11),
+                            Kind = PayrollEntryKind.Absence,
+                            Quantity = 1m,
+                            Unit = PayrollQuantityUnit.Days,
+                            AbsenceId = onCallId,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        var result = _formatter.Format(data, Config(mapping));
+
+        result.EmittedEntryCount.ShouldBe(1);
+        result.SkippedUnsupportedUnitCount.ShouldBe(1);
+    }
     private static IXLWorksheet OpenSheet(PayrollExportResult result)
     {
         using var stream = new MemoryStream(result.Content);

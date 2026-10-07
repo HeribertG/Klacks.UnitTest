@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Unit tests for ReopenPeriodByGroupCommandHandler: reason validation, permission check, and audit log writing.
@@ -29,6 +29,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
     private IPeriodAuditLogRepository _auditLogRepository = null!;
     private ISealedDayRepository _sealedDayRepository = null!;
     private IUserService _userService = null!;
+    private IGroupVisibilityGuard _groupVisibilityGuard = null!;
     private IUnitOfWork _unitOfWork = null!;
     private ILogger<ReopenPeriodByGroupCommandHandler> _logger = null!;
     private ReopenPeriodByGroupCommandHandler _handler = null!;
@@ -44,6 +45,8 @@ public class ReopenPeriodByGroupCommandHandlerTests
         _sealedDayRepository = Substitute.For<ISealedDayRepository>();
         _userService = Substitute.For<IUserService>();
         _userService.GetDisplayName().Returns("Ada Lovelace");
+        _groupVisibilityGuard = Substitute.For<IGroupVisibilityGuard>();
+        _groupVisibilityGuard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<ReopenPeriodByGroupCommandHandler>>();
 
@@ -58,6 +61,7 @@ public class ReopenPeriodByGroupCommandHandlerTests
             _auditLogRepository,
             _sealedDayRepository,
             _userService,
+            _groupVisibilityGuard,
             _unitOfWork,
             _logger);
     }
@@ -177,5 +181,58 @@ public class ReopenPeriodByGroupCommandHandlerTests
         await _auditLogRepository.Received(1).AddAsync(
             Arg.Is<PeriodAuditLog>(log => log.AffectedCount == 44 && log.GroupId == groupId),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_GroupOutsideCallersVisibility_ReopensNothingAndWritesNoAudit()
+    {
+        var groupId = Guid.NewGuid();
+        PeriodClosingTestHelpers.GivenUserIsAdmin(_httpContextAccessor, "admin-user");
+        _lockLevelService.CanUnseal(Arg.Any<WorkLockLevel>(), Arg.Any<bool>(), Arg.Any<bool>()).Returns(true);
+        _groupVisibilityGuard.IsGroupVisibleAsync(groupId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var command = new ReopenPeriodByGroupCommand(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            groupId,
+            "Customer correction");
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.AffectedCount.ShouldBe(0);
+        await _breakRepository.DidNotReceive().UnsealByPeriodAndGroup(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<WorkLockLevel>(), Arg.Any<CancellationToken>());
+        await _workRepository.DidNotReceive().UnsealByPeriodAndGroup(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<WorkLockLevel>(), Arg.Any<CancellationToken>());
+        await _sealedDayRepository.DidNotReceive().SoftDeleteRangeAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _auditLogRepository.DidNotReceive().AddAsync(Arg.Any<PeriodAuditLog>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_PlannerWithoutAdminRole_CannotReopenGroupPeriod()
+    {
+        var groupId = Guid.NewGuid();
+        PeriodClosingTestHelpers.GivenUserIsNotAdmin(_httpContextAccessor);
+        var realLockLevelService = new Klacks.Api.Domain.Services.Schedules.WorkLockLevelService();
+        var handler = new ReopenPeriodByGroupCommandHandler(
+            _workRepository,
+            _breakRepository,
+            realLockLevelService,
+            _httpContextAccessor,
+            _auditLogRepository,
+            _sealedDayRepository,
+            _userService,
+            _groupVisibilityGuard,
+            _unitOfWork,
+            _logger);
+
+        var command = new ReopenPeriodByGroupCommand(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            groupId,
+            "Customer correction");
+
+        Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("permission");
+        await _breakRepository.DidNotReceive().UnsealByPeriodAndGroup(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<WorkLockLevel>(), Arg.Any<CancellationToken>());
     }
 }

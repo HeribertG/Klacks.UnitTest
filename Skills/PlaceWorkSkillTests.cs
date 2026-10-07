@@ -40,7 +40,7 @@ public class PlaceWorkSkillTests
     };
 
     private static (PlaceWorkSkill skill, IMediator mediator, IPreCommitConflictChecker checker) Build(
-        PreCommitCheckResult checkResult, IClientVisibilityGuard? visibilityGuard = null)
+        PreCommitCheckResult checkResult, IClientVisibilityGuard? visibilityGuard = null, bool daySealed = false)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
@@ -62,7 +62,10 @@ public class PlaceWorkSkillTests
         var clientRepo = Substitute.For<IClientRepository>();
         clientRepo.Exists(ClientId).Returns(true);
 
-        return (new PlaceWorkSkill(mediator, shiftRepo, checker, clientRepo, visibilityGuard ?? SkillClientVisibility.AllVisible()), mediator, checker);
+        var sealedDays = Substitute.For<ISealedDayRepository>();
+        sealedDays.IsDayLockedAsync(Arg.Any<DateOnly>(), ClientId, Arg.Any<CancellationToken>()).Returns(daySealed);
+
+        return (new PlaceWorkSkill(mediator, shiftRepo, checker, clientRepo, visibilityGuard ?? SkillClientVisibility.AllVisible(), sealedDays), mediator, checker);
     }
 
     [Test]
@@ -84,6 +87,20 @@ public class PlaceWorkSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("blocked");
+        await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SealedDayBlocksPlacement_ReturnsErrorAndDoesNotCommit()
+    {
+        var (skill, mediator, checker) = Build(PreCommitCheckResult.Empty, daySealed: true);
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("sealed");
+        await checker.DidNotReceive().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
     }
 

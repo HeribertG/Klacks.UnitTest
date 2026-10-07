@@ -211,4 +211,27 @@ public class GenericDelimitedPayrollExportFormatterTests
         _formatter.ContentType.ShouldBe(PayrollExportConstants.ContentTypeCsv);
         _formatter.FileExtension.ShouldBe(PayrollExportConstants.FileExtensionCsv);
     }
+
+    [Test]
+    public void Format_OnCallDay_WritesMappedWageTypeWithQuantityOne()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"PIKETT\"}}}}";
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 18),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 1m,
+            Unit = PayrollQuantityUnit.Days,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var lines = Lines(result.Content);
+
+        lines.Length.ShouldBe(2);
+        lines[1].ShouldBe("42;2026-01-18;PIKETT;1.00");
+        result.RecordCount.ShouldBe(1);
+        result.SkippedAbsenceCount.ShouldBe(0);
+    }
 }

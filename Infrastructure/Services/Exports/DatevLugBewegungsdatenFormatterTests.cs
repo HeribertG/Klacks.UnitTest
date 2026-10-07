@@ -187,4 +187,54 @@ public class DatevLugBewegungsdatenFormatterTests
         _formatter.ContentType.ShouldBe(PayrollExportConstants.ContentTypeCsv);
         _formatter.FileExtension.ShouldBe(PayrollExportConstants.FileExtensionCsv);
     }
+
+    [Test]
+    public void Format_OnCallDay_WritesDayCountIntoTagesanzahlAndLeavesStundenanzahlEmpty()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"4711\"}}}}";
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 18),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 1m,
+            Unit = PayrollQuantityUnit.Days,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var fields = Decode(result.Content)
+            .Replace(PayrollExportConstants.LineEnding, string.Empty)
+            .Split(PayrollExportConstants.DefaultDelimiter);
+
+        fields.Length.ShouldBe(PayrollExportConstants.DatevLugFieldCount);
+        fields[1].ShouldBe("18012026");
+        fields[3].ShouldBe("4711");
+        fields[4].ShouldBe(string.Empty);
+        fields[5].ShouldBe("1,00");
+        result.RecordCount.ShouldBe(1);
+    }
+
+    [Test]
+    public void Format_HourBasedAbsence_KeepsQuantityInStundenanzahl()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"U\",\"wageType\":\"3000\"}}}}";
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 19),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 8.4m,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var fields = Decode(result.Content)
+            .Replace(PayrollExportConstants.LineEnding, string.Empty)
+            .Split(PayrollExportConstants.DefaultDelimiter);
+
+        fields[2].ShouldBe("U");
+        fields[4].ShouldBe("8,40");
+        fields[5].ShouldBe(string.Empty);
+    }
 }

@@ -48,6 +48,7 @@ public class ProposePlanCommandHandlerTests
     private IComplianceEnforcementResolver _enforcementResolver = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IScenarioNameGenerator _nameGenerator = null!;
+    private ISealedDayRepository _sealedDayRepo = null!;
     private ProposePlanCommandHandler _handler = null!;
 
     [SetUp]
@@ -100,8 +101,12 @@ public class ProposePlanCommandHandlerTests
                 Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(GeneratedName);
 
+        _sealedDayRepo = Substitute.For<ISealedDayRepository>();
+        _sealedDayRepo.GetLockedPairsAsync(Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(), Arg.Any<CancellationToken>())
+            .Returns(new HashSet<(DateOnly Date, Guid ClientId)>());
+
         _handler = new ProposePlanCommandHandler(
-            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator);
+            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator, _sealedDayRepo);
     }
 
     private static ClaimsPrincipal AnonymousUser() => new(new ClaimsIdentity());
@@ -143,6 +148,22 @@ public class ProposePlanCommandHandlerTests
         await _nameGenerator.Received(1).GenerateAsync(
             ScenarioNameKind.Proposal, From, Until, GroupId, FrenchUser, Arg.Any<CancellationToken>());
         await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.Name == GeneratedName));
+    }
+
+    [Test]
+    public async Task SealedDayBlocksPlacement_RejectedAndNotWritten()
+    {
+        var sealedClient = Guid.NewGuid();
+        var freeClient = Guid.NewGuid();
+        _sealedDayRepo.GetLockedPairsAsync(Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(), Arg.Any<CancellationToken>())
+            .Returns(new HashSet<(DateOnly Date, Guid ClientId)> { (From, sealedClient) });
+
+        var outcome = await Propose(Placement(sealedClient, From), Placement(freeClient, From));
+
+        outcome.Written.Count.ShouldBe(1);
+        outcome.Rejected.ShouldHaveSingleItem().ClientId.ShouldBe(sealedClient);
+        await _mediator.Received(1).Send(
+            Arg.Is<BulkAddWorksCommand>(c => c.Request.Works.All(w => w.ClientId == freeClient)), Arg.Any<CancellationToken>());
     }
 
     [Test]

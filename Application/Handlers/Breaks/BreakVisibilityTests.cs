@@ -13,6 +13,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Breaks;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries;
+using Klacks.Api.Domain.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -191,7 +192,7 @@ public class BreakVisibilityTests
         _breakRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Break> { visible, hidden });
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         var handler = new BulkDeleteBreaksCommandHandler(
-            _breakRepository, _clientVisibilityGuard, _periodHoursService, _completionService,
+            _breakRepository, _clientVisibilityGuard, _periodHoursService, _completionService, _dayLockService,
             Substitute.For<ILogger<BulkDeleteBreaksCommandHandler>>());
 
         var response = await handler.Handle(
@@ -235,6 +236,45 @@ public class BreakVisibilityTests
             _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
             _groupContextResolver, _dayLockService, Substitute.For<ILogger<PutCommandHandler>>());
 
+    [Test]
+    public async Task Put_OfAClosedBreak_ByNonAdmin_IsRefused_NothingWritten()
+    {
+        var stored = NewBreak(_visibleClientId);
+        stored.LockLevel = WorkLockLevel.Closed;
+        _breakRepository.GetNoTracking(stored.Id).Returns(stored);
+        Klacks.UnitTest.Application.Handlers.PeriodClosing.PeriodClosingTestHelpers.GivenUserIsNotAdmin(_httpContextAccessor);
+        var handler = NewPutHandler();
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(
+            new PutCommand<BreakResource>(NewResource(stored.Id, _visibleClientId)), CancellationToken.None));
+
+        ex.Message.ShouldContain("closed");
+        await _breakRepository.DidNotReceive().Put(Arg.Any<Break>());
+    }
+
+    [Test]
+    public async Task BulkDelete_OnASealedDay_IsRefused_NothingRemoved()
+    {
+        var visible = NewBreak(_visibleClientId);
+        _breakRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Break> { visible });
+        _dayLockService.EnsureNoneLockedAsync(
+                Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId, Guid? AnalyseToken)>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidRequestException("Day is sealed and cannot be modified.")));
+        var handler = new BulkDeleteBreaksCommandHandler(
+            _breakRepository, _clientVisibilityGuard, _periodHoursService, _completionService, _dayLockService,
+            Substitute.For<ILogger<BulkDeleteBreaksCommandHandler>>());
+
+        await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(
+            new BulkDeleteBreaksCommand(new BulkDeleteBreaksRequest
+            {
+                BreakIds = [visible.Id],
+                PeriodStart = Day,
+                PeriodEnd = Day
+            }),
+            CancellationToken.None));
+
+        _breakRepository.DidNotReceive().Remove(Arg.Any<Break>());
+    }
     private static Break NewBreak(Guid clientId)
         => new() { Id = Guid.NewGuid(), ClientId = clientId, AbsenceId = Guid.NewGuid(), CurrentDate = Day };
 

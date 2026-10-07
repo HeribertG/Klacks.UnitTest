@@ -26,6 +26,7 @@ public class ApproveDayCommandHandlerTests
     private IPeriodAuditLogRepository _auditLogRepository = null!;
     private IUserService _userService = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private ISealedDayRepository _sealedDayRepository = null!;
     private ApproveDayCommandHandler _handler = null!;
 
     [SetUp]
@@ -38,6 +39,8 @@ public class ApproveDayCommandHandlerTests
         _userService = Substitute.For<IUserService>();
         _userService.GetDisplayName().Returns("Ada Lovelace");
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _sealedDayRepository = Substitute.For<ISealedDayRepository>();
+        _sealedDayRepository.GetDayApprovalsAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(new List<SealedDay>());
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
             .Returns(ci => ci.ArgAt<Func<Task<int>>>(0)());
@@ -50,6 +53,7 @@ public class ApproveDayCommandHandlerTests
             _httpContextAccessor,
             _auditLogRepository,
             _userService,
+            _sealedDayRepository,
             _unitOfWork,
             Substitute.For<ILogger<ApproveDayCommandHandler>>());
     }
@@ -130,5 +134,33 @@ public class ApproveDayCommandHandlerTests
         await _auditLogRepository.Received(1).AddAsync(
             Arg.Is<PeriodAuditLog>(log => log.ApprovedByUserId == null && log.PerformedBy == "authorised-user"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_StoresTheApprovalAsDayRow_SoAnEmptyDayIsLocked()
+    {
+        WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        var groupId = Guid.NewGuid();
+        var day = new DateOnly(2026, 1, 15);
+
+        await _handler.Handle(new ApproveDayCommand(day, groupId), CancellationToken.None);
+
+        await _sealedDayRepository.Received(1).AddAsync(
+            Arg.Is<SealedDay>(s => s.Date == day && s.GroupId == groupId && s.Level == WorkLockLevel.Approved),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_DoesNotStoreASecondApprovalRow_ForTheSameGroupAndDay()
+    {
+        WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, "authorised-user");
+        var groupId = Guid.NewGuid();
+        var day = new DateOnly(2026, 1, 15);
+        _sealedDayRepository.GetDayApprovalsAsync(day, Arg.Any<CancellationToken>())
+            .Returns(new List<SealedDay> { new() { Date = day, GroupId = groupId, Level = WorkLockLevel.Approved } });
+
+        await _handler.Handle(new ApproveDayCommand(day, groupId), CancellationToken.None);
+
+        await _sealedDayRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
     }
 }

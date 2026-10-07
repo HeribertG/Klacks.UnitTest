@@ -201,7 +201,7 @@ public class WorkVisibilityTests
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         var handler = new BulkDeleteWorksCommandHandler(
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService, _completionService,
-            _notificationFacade, _overtimeCascadeService, Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
+            _notificationFacade, _overtimeCascadeService, _dayLockService, Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
 
         var response = await handler.Handle(
             new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = [visible.Id, hidden.Id, missingId] }),
@@ -390,7 +390,7 @@ public class WorkVisibilityTests
             .Returns(ci => ci.ArgAt<Func<Task<int>>>(0)());
         var handler = new ApproveDayCommandHandler(
             _workRepository, groupVisibilityGuard, breakRepository, new WorkLockLevelService(), httpContextAccessor,
-            auditLogRepository, Substitute.For<IUserService>(), _unitOfWork,
+            auditLogRepository, Substitute.For<IUserService>(), Substitute.For<ISealedDayRepository>(), _unitOfWork,
             Substitute.For<ILogger<ApproveDayCommandHandler>>());
 
         var affected = await handler.Handle(new ApproveDayCommand(Day, Guid.NewGuid()), CancellationToken.None);
@@ -411,7 +411,7 @@ public class WorkVisibilityTests
         var breakRepository = Substitute.For<IBreakRepository>();
         var handler = new RevokeDayApprovalCommandHandler(
             _workRepository, groupVisibilityGuard, breakRepository, new WorkLockLevelService(), httpContextAccessor,
-            Substitute.For<ILogger<RevokeDayApprovalCommandHandler>>());
+            Substitute.For<ISealedDayRepository>(), Substitute.For<ILogger<RevokeDayApprovalCommandHandler>>());
 
         var affected = await handler.Handle(new RevokeDayApprovalCommand(Day, Guid.NewGuid()), CancellationToken.None);
 

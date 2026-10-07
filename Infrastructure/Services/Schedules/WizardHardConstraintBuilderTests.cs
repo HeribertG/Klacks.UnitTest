@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Shouldly;
 using Klacks.Api.Domain.Common;
@@ -151,6 +151,46 @@ public class WizardHardConstraintBuilderTests
         result.LockedWorks[0].TotalHours.ShouldBe(8m);
     }
 
+    [Test]
+    public async Task SealedDayBlocksPlacement_MemberOfSealedGroup_GetsZeroHourBlocker()
+    {
+        var member = Guid.NewGuid();
+        var outsider = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        var sealedDate = new DateOnly(2026, 4, 22);
+
+        _context.Membership.Add(new Membership
+        {
+            Id = Guid.NewGuid(),
+            ClientId = member,
+            ValidFrom = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+        _context.GroupItem.Add(new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ClientId = member });
+        _context.SealedDay.Add(new SealedDay { Id = Guid.NewGuid(), Date = sealedDate, GroupId = groupId, Level = WorkLockLevel.Closed });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([member, outsider], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), null, CancellationToken.None);
+
+        var blocker = result.BreakBlockers.ShouldHaveSingleItem();
+        blocker.AgentId.ShouldBe(member.ToString());
+        blocker.FromInclusive.ShouldBe(sealedDate);
+        blocker.UntilInclusive.ShouldBe(sealedDate);
+        blocker.Hours.ShouldBe(0m);
+    }
+
+    [Test]
+    public async Task SealedDayBlocksPlacement_GlobalSeal_BlocksEveryAgent()
+    {
+        var agentA = Guid.NewGuid();
+        var agentB = Guid.NewGuid();
+        _context.SealedDay.Add(new SealedDay { Id = Guid.NewGuid(), Date = new DateOnly(2026, 4, 21), GroupId = null, Level = WorkLockLevel.Closed });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([agentA, agentB], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), null, CancellationToken.None);
+
+        result.BreakBlockers.Select(b => b.AgentId).OrderBy(a => a)
+            .ShouldBe(new[] { agentA.ToString(), agentB.ToString() }.OrderBy(a => a));
+    }
     [Test]
     public async Task BuildAsync_BreakBlocker_CarriesWorkTimeIntoHours()
     {

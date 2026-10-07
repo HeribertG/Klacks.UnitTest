@@ -224,4 +224,27 @@ public class BrightpayIeUkExportFormatterTests
         _formatter.ContentType.ShouldBe(PayrollExportConstants.ContentTypeCsv);
         _formatter.FileExtension.ShouldBe(PayrollExportConstants.FileExtensionCsv);
     }
+
+    [Test]
+    public void Format_OnCallDay_IsNotWrittenAsHoursAndIsCountedAsUnsupportedUnit()
+    {
+        var absenceId = Guid.NewGuid();
+        var mapping = $"{{\"{absenceId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"On Call\"}}}}";
+        var data = DataWith(new PayrollDayEntry
+        {
+            Date = new DateOnly(2026, 1, 18),
+            Kind = PayrollEntryKind.Absence,
+            Quantity = 1m,
+            Unit = PayrollQuantityUnit.Days,
+            AbsenceId = absenceId,
+        });
+
+        var result = _formatter.Format(data, Config(absenceMappingJson: mapping));
+        var lines = Lines(result.Content);
+
+        lines.Length.ShouldBe(1);
+        result.RecordCount.ShouldBe(0);
+        result.SkippedAbsenceCount.ShouldBe(0);
+        result.SkippedUnsupportedUnitCount.ShouldBe(1);
+    }
 }
