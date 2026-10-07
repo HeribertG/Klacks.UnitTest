@@ -29,4 +29,22 @@ public sealed record RotationMetrics(
     /// entries are reported and never asserted into a direction. Empty without absences.
     /// </summary>
     public IReadOnlyList<ContinuityAcrossAbsence> ContinuityAcrossAbsence { get; init; } = [];
+
+    /// <summary>
+    /// Rotation as SPEC.md decision 12b states it: inside a block the kind never falls. This is the
+    /// reading the baseline guard pins. Empty means "no pair", which holds no violation.
+    /// </summary>
+    public BlockRotationCompliance BlockCompliance { get; init; } = new(0, 0, 1);
+
+    /// <summary>
+    /// Naive cyclic reading over every consecutive package pair, comparing the START kind of each
+    /// package — exactly the comparison the engine's block-ordering fitness term makes. Reported only.
+    /// </summary>
+    public CyclicRotationCounts CyclicStartToStart { get; init; } = new(0, 0, 0, 0, 0);
+
+    /// <summary>
+    /// Naive cyclic reading over every consecutive package pair, comparing the LAST kind of a package with
+    /// the first kind of the next one — the transition a reader of the plan actually sees. Reported only.
+    /// </summary>
+    public CyclicRotationCounts CyclicLastToFirst { get; init; } = new(0, 0, 0, 0, 0);
 }

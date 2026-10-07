@@ -69,6 +69,9 @@ namespace Klacks.UnitTest.Autofill.Analysis;
 public static class AutofillPlanAnalyzer
 {
     private const int ShiftKindCount = 3;
+
+    /// <summary>Cyclic distance from a kind to its rotation successor (early to late, late to night, night to early).</summary>
+    private const int CyclicSuccessorStep = 1;
     private const string LengthHistogramOverflowBucket = "7+";
     private const int LengthHistogramLastNamedBucket = 6;
     private const string AssignmentTimeFormat = "yyyy-MM-dd HH:mm";
@@ -222,6 +225,9 @@ public static class AutofillPlanAnalyzer
             Rotation: BuildRotation(packagesByEmployee, definition) with
             {
                 ContinuityAcrossAbsence = AbsenceAnalyzer.BuildContinuity(packagesByEmployee, definition),
+                BlockCompliance = BuildBlockCompliance(withCarryIn, definition),
+                CyclicStartToStart = BuildCyclicRotation(packagesByEmployee, definition, useLastKind: false),
+                CyclicLastToFirst = BuildCyclicRotation(packagesByEmployee, definition, useLastKind: true),
             },
             Hours: hours,
             Fairness: BuildFairness(byEmployee, definition),
@@ -858,7 +864,10 @@ public static class AutofillPlanAnalyzer
                 ShiftType: days[0].Kinds[0],
                 MixedTypes: kinds.Count > 1,
                 FirstStartAt: days.Min(d => d.EarliestStart),
-                LastEndAt: days.Max(d => d.LatestEnd)));
+                LastEndAt: days.Max(d => d.LatestEnd))
+            {
+                LastShiftType = days[^1].Kinds[^1],
+            });
         }
 
         return packages;
@@ -1027,6 +1036,102 @@ public static class AutofillPlanAnalyzer
             UnexplainedDeviations: transitions.Count(
                 t => string.Equals(t.Reason, RotationTransitionReason.Unexplained, StringComparison.Ordinal)),
             RestSeparatedCount: restSeparated);
+    }
+
+    /// <summary>
+    /// Measures SPEC.md decision 12b directly on the shift sequence: two consecutive shifts of one
+    /// employee with less than the configured rest between them belong to the same block, and inside a
+    /// block the kind must not fall. The carry-in month is included so the seam is judged, but a pair is
+    /// only counted when its second shift lies in the period — the previous month's plan is not ours.
+    /// </summary>
+    /// <param name="shiftsByEmployee">All shifts per employee, carry-in days included, sorted by start</param>
+    /// <param name="definition">Scenario that produced the plan</param>
+    private static BlockRotationCompliance BuildBlockCompliance(
+        IReadOnlyDictionary<string, List<PlannedShift>> shiftsByEmployee,
+        AutofillScenarioDefinition definition)
+    {
+        var pairs = 0;
+        var descending = 0;
+        foreach (var employee in definition.EmployeesInListOrder)
+        {
+            var shifts = shiftsByEmployee.TryGetValue(employee, out var found) ? found : [];
+            for (var i = 0; i + 1 < shifts.Count; i++)
+            {
+                var next = shifts[i + 1];
+                if (next.Date < definition.PeriodFrom)
+                {
+                    continue;
+                }
+
+                var restHours = (next.StartAt - shifts[i].EndAt).TotalHours;
+                if (restHours >= AutofillSpecConstants.MinRestHoursBetweenPackages)
+                {
+                    continue;
+                }
+
+                pairs++;
+                if ((int)AutofillShiftCatalog.ShiftClassOf(next.Kind)
+                    < (int)AutofillShiftCatalog.ShiftClassOf(shifts[i].Kind))
+                {
+                    descending++;
+                }
+            }
+        }
+
+        return new BlockRotationCompliance(
+            PairCount: pairs,
+            DescendingCount: descending,
+            CompliantRate: pairs == 0 ? 1 : (double)(pairs - descending) / pairs);
+    }
+
+    /// <summary>
+    /// The naive cyclic reading over every consecutive package pair of an employee, rest ignored.
+    /// </summary>
+    /// <param name="packagesByEmployee">Cross-boundary packages per employee</param>
+    /// <param name="definition">Scenario that produced the plan</param>
+    /// <param name="useLastKind">
+    /// True compares the last kind of a package with the first kind of the next one; false compares the
+    /// two start kinds, as the engine's block-ordering fitness term does
+    /// </param>
+    private static CyclicRotationCounts BuildCyclicRotation(
+        IReadOnlyDictionary<string, IReadOnlyList<WorkPackage>> packagesByEmployee,
+        AutofillScenarioDefinition definition,
+        bool useLastKind)
+    {
+        var forward = 0;
+        var same = 0;
+        var backward = 0;
+        foreach (var employee in definition.EmployeesInListOrder)
+        {
+            var packages = packagesByEmployee.TryGetValue(employee, out var found) ? found : [];
+            for (var i = 0; i + 1 < packages.Count; i++)
+            {
+                var from = (int)AutofillShiftCatalog.ShiftClassOf(
+                    useLastKind ? packages[i].LastShiftType : packages[i].ShiftType);
+                var to = (int)AutofillShiftCatalog.ShiftClassOf(packages[i + 1].ShiftType);
+                var step = ((to - from) % ShiftKindCount + ShiftKindCount) % ShiftKindCount;
+                if (step == 0)
+                {
+                    same++;
+                }
+                else if (step == CyclicSuccessorStep)
+                {
+                    forward++;
+                }
+                else
+                {
+                    backward++;
+                }
+            }
+        }
+
+        var total = forward + same + backward;
+        return new CyclicRotationCounts(
+            PairCount: total,
+            ForwardCount: forward,
+            SameCount: same,
+            BackwardCount: backward,
+            ForwardRate: total == 0 ? 0 : (double)forward / total);
     }
 
     private static HoursMetrics BuildHours(

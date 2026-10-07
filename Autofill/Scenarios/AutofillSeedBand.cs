@@ -39,8 +39,10 @@ public static class AutofillSeedBand
 
     private const string RoundTripFormat = "R";
 
+    private const string NotPinned = "not pinned";
+
     private const string ReportNote =
-        "Diagnosis only, never asserted. 'worst' is the value a guard should be pinned to: the lowest forwardRate, "
+        "Diagnosis only, never asserted. 'worst' is the value a guard should be pinned to: the lowest blockRotationCompliance, "
         + "idealShare, topRanksPlannedHours and carryInOkCount and the highest mixedTypeCount, shortPackageShare, "
         + "packagesOverIdealLength, shiftKindSpread and monotonicityViolations over the seeds listed under 'samples'. "
         + "A guard still checks the run of the first seed only; the band decides how far that run may move before the "
@@ -106,7 +108,8 @@ public static class AutofillSeedBand
     /// <param name="carryInOkCount">The carry-in pin, or null in a scenario without a previous month</param>
     public static AutofillBandValues PinnedValuesOf(AutofillBaseline baseline, int? carryInOkCount)
         => new(
-            ForwardRate: baseline.MinForwardRate,
+            BlockRotationCompliance: baseline.MinBlockRotationCompliance,
+            CyclicForwardRate: null,
             MixedTypeCount: baseline.MaxMixedTypeCount,
             ShortPackageShare: baseline.MaxShortPackageShare,
             PackagesOverIdealLength: baseline.MaxPackagesOverIdealLength,
@@ -152,7 +155,9 @@ public static class AutofillSeedBand
     private static string Describe(AutofillBandValues values)
     {
         var text = new StringBuilder()
-            .Append("forwardRate=").Append(Number(values.ForwardRate))
+            .Append("blockRotationCompliance=").Append(Number(values.BlockRotationCompliance))
+            .Append(", cyclicForwardRate=")
+            .Append(values.CyclicForwardRate is null ? NotPinned : Number(values.CyclicForwardRate.Value))
             .Append(", mixedTypeCount=").Append(Number(values.MixedTypeCount))
             .Append(", shortPackageShare=").Append(Number(values.ShortPackageShare))
             .Append(", packagesOverIdealLength=").Append(Number(values.PackagesOverIdealLength))

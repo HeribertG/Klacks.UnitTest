@@ -17,7 +17,10 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// 0 is pinned as a floor exactly because it cannot get worse.
 /// </para>
 /// </summary>
-/// <param name="MinForwardRate">rotation.forwardRate must stay at least this high</param>
+/// <param name="MinBlockRotationCompliance">
+/// rotation.blockCompliance.compliantRate (SPEC.md decision 12b: inside a block the kind never falls)
+/// must stay at least this high
+/// </param>
 /// <param name="MaxMixedTypeCount">packages.mixedTypeCount must stay at most this high</param>
 /// <param name="MaxShortPackageShare">Share of packages of at most two days must stay at most this high</param>
 /// <param name="MaxPackagesOverIdealLength">Packages longer than the five-day ideal must stay at most this many</param>
@@ -29,7 +32,7 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// must stay at least this high
 /// </param>
 public sealed record AutofillBaseline(
-    double MinForwardRate,
+    double MinBlockRotationCompliance,
     int MaxMixedTypeCount,
     double MaxShortPackageShare,
     int MaxPackagesOverIdealLength,

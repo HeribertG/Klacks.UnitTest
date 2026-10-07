@@ -372,6 +372,10 @@ public abstract class Scenario1AssertionsBase : AutofillBaselineTestBase
             + $"{FormatShare(AutofillSpecConstants.ShortPackageShareTolerance)}), "
             + $"lengths={FormatHistogram(final.Packages.LengthHistogram)}, "
             + $"forwardRate={FormatShare(final.Rotation.ForwardRate)}, "
+            + $"blockCompliance={FormatShare(final.Rotation.BlockCompliance.CompliantRate)} "
+            + $"({final.Rotation.BlockCompliance.DescendingCount}/{final.Rotation.BlockCompliance.PairCount} falling), "
+            + $"cyclicForward={FormatShare(final.Rotation.CyclicLastToFirst.ForwardRate)} "
+            + $"({final.Rotation.CyclicLastToFirst.ForwardCount}/{final.Rotation.CyclicLastToFirst.PairCount}), "
             + $"spread E={final.Fairness.SpreadPerType.Early}/L={final.Fairness.SpreadPerType.Late}/"
             + $"N={final.Fairness.SpreadPerType.Night}");
         TestContext.Out.WriteLine($"[{ScenarioName}] final hours: {FormatHoursPerEmployee()}");

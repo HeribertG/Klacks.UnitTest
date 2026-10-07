@@ -11,7 +11,13 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// describes one engine run; the band of a scenario is the span these eight numbers cover over the
 /// seeds the baseline was measured with.
 /// </summary>
-/// <param name="ForwardRate">rotation.forwardRate — higher is better</param>
+/// <param name="BlockRotationCompliance">
+/// rotation.blockCompliance.compliantRate (SPEC.md decision 12b) — higher is better; the pinned rotation value
+/// </param>
+/// <param name="CyclicForwardRate">
+/// rotation.cyclicLastToFirst.forwardRate, the naive cyclic reading — higher is better; reported, never pinned,
+/// so the pinned side of a band report leaves it null
+/// </param>
 /// <param name="MixedTypeCount">packages.mixedTypeCount — lower is better</param>
 /// <param name="ShortPackageShare">Share of packages of at most two days — lower is better</param>
 /// <param name="PackagesOverIdealLength">Packages longer than the five-day ideal — lower is better</param>
@@ -26,7 +32,8 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// Continued carry-in packages — higher is better; null in a scenario without a previous month
 /// </param>
 public sealed record AutofillBandValues(
-    double ForwardRate,
+    double BlockRotationCompliance,
+    double? CyclicForwardRate,
     int MixedTypeCount,
     double ShortPackageShare,
     int PackagesOverIdealLength,
@@ -44,7 +51,8 @@ public sealed record AutofillBandValues(
         var spread = metrics.Fairness.SpreadPerType;
 
         return new AutofillBandValues(
-            ForwardRate: metrics.Rotation.ForwardRate,
+            BlockRotationCompliance: metrics.Rotation.BlockCompliance.CompliantRate,
+            CyclicForwardRate: metrics.Rotation.CyclicLastToFirst.ForwardRate,
             MixedTypeCount: metrics.Packages.MixedTypeCount,
             ShortPackageShare: AutofillPlanAnalyzer.ShortPackageShare(
                 metrics.Packages, AutofillSpecConstants.ShortPackageMaxLength),
@@ -92,10 +100,17 @@ public sealed record AutofillBandValues(
             throw new ArgumentException("A band needs at least one measurement.", nameof(values));
         }
 
+        var cyclic = values
+            .Where(v => v.CyclicForwardRate is not null)
+            .Select(v => v.CyclicForwardRate!.Value)
+            .ToList();
         var carryIn = values.Where(v => v.CarryInOkCount is not null).Select(v => v.CarryInOkCount!.Value).ToList();
 
         return new AutofillBandValues(
-            ForwardRate: worst ? values.Min(v => v.ForwardRate) : values.Max(v => v.ForwardRate),
+            BlockRotationCompliance: worst
+                ? values.Min(v => v.BlockRotationCompliance)
+                : values.Max(v => v.BlockRotationCompliance),
+            CyclicForwardRate: cyclic.Count == 0 ? null : worst ? cyclic.Min() : cyclic.Max(),
             MixedTypeCount: worst ? values.Max(v => v.MixedTypeCount) : values.Min(v => v.MixedTypeCount),
             ShortPackageShare: worst ? values.Max(v => v.ShortPackageShare) : values.Min(v => v.ShortPackageShare),
             PackagesOverIdealLength: worst

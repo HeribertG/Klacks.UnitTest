@@ -26,4 +26,8 @@ public sealed record WorkPackage(
     AutofillShiftKind ShiftType,
     bool MixedTypes,
     DateTime FirstStartAt,
-    DateTime LastEndAt);
+    DateTime LastEndAt)
+{
+    /// <summary>Kind of the last shift of the package; equals <see cref="ShiftType"/> unless the package mixes kinds.</summary>
+    public AutofillShiftKind LastShiftType { get; init; } = ShiftType;
+}

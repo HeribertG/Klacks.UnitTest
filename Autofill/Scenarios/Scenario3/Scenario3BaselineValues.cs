@@ -29,12 +29,14 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario3;
 public static class Scenario3BaselineValues
 {
     /// <summary>
-    /// Measured on L1, seed 42, under the decision-12b measurement rework of 2026-08-13: all 27
-    /// package pairs are free restarts across enough rest, the rotation-bound set is empty and the
-    /// rate has no subject (the guard holds vacuously). The old floor 0.5185 measured free restarts.
-    /// Spec target of the former A7 is 0.80 (SPEC.md).
+    /// Rotation pin under SPEC.md decision 12b, measured on the shift sequence (in-block pairs: less than
+    /// MinRestDays x 24 h between two shifts; the kind must not fall). Measured 2026-10-07 on L1, seed 42,
+    /// Api 6f90aa144 / Optimizer 8035a10: 0 of 70 in-block pairs fall, so the pin is 1 and sharp. Scenario 3
+    /// has no seed band, so this is a single-run value. Replaces the vacuous package-pair ForwardRate pin
+    /// of 0 (F1 of tests/autofill/STOPPGATE-2026-10-07.md). The naive cyclic forward rate (L1: 9 of 22
+    /// package pairs, 0.4091) is reported in the metrics artifact but not pinned.
     /// </summary>
-    private const double ForwardRate = 0;
+    private const double BlockRotationCompliance = 1;
 
     /// <summary>
     /// Measured on L1, seed 42, after the M11 fairness stage of 2026-08-13: 5 of 26 packages mix
@@ -95,7 +97,7 @@ public static class Scenario3BaselineValues
 
     /// <summary>The floor scenario 3 must not fall below.</summary>
     public static AutofillBaseline Baseline { get; } = new(
-        MinForwardRate: ForwardRate,
+        MinBlockRotationCompliance: BlockRotationCompliance,
         MaxMixedTypeCount: MixedTypeCount,
         MaxShortPackageShare: ShortPackageShare,
         MaxPackagesOverIdealLength: PackagesOverIdealLength,

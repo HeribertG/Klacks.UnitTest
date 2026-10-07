@@ -39,14 +39,15 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario2;
 public static class Scenario2BaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44 under the decision-12b measurement rework of 2026-08-13: only two
-    /// rotation-bound transitions survive on seed 42 (MA-3 night to late across 32 h, MA-4 night to
-    /// night across 40 h — both under the configured rest, an engine rest gap the GA operators can
-    /// assemble because stage 0 never counts the package rest), and neither runs forward, so the
-    /// floor is 0. The old floor 0.3462 measured mostly free restarts. Spec target of the former A7
-    /// is 0.80 and stays documented in SPEC.md.
+    /// Rotation pin under SPEC.md decision 12b, measured on the shift sequence (in-block pairs: less than
+    /// MinRestDays x 24 h between two shifts; the kind must not fall). Band over seeds 42/43/44 measured
+    /// 2026-10-07 on Api 6f90aa144 / Optimizer 8035a10: 1/1/1, so the floor is 1 and the pin is sharp — a
+    /// single falling in-block pair turns it red. Replaces the vacuous package-pair ForwardRate pin of 0
+    /// (F1 of tests/autofill/STOPPGATE-2026-10-07.md). The naive cyclic forward rate over all package
+    /// pairs is reported in the band artifact (0.4615/0.6538/0.4348) but not pinned: which rotation definition binds is
+    /// an open owner decision.
     /// </summary>
-    private const double ForwardRate = 0;
+    private const double BlockRotationCompliance = 1;
 
     /// <summary>
     /// Band over seeds 42/43/44, re-measured after the calendar-package crossover of the decision-13
@@ -117,7 +118,7 @@ public static class Scenario2BaselineValues
 
     /// <summary>The floor scenario 2 must not fall below.</summary>
     public static AutofillBaseline Baseline { get; } = new(
-        MinForwardRate: ForwardRate,
+        MinBlockRotationCompliance: BlockRotationCompliance,
         MaxMixedTypeCount: MixedTypeCount,
         MaxShortPackageShare: ShortPackageShare,
         MaxPackagesOverIdealLength: PackagesOverIdealLength,

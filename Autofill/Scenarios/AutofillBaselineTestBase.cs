@@ -62,29 +62,34 @@ public abstract class AutofillBaselineTestBase
     /// </summary>
     protected virtual int? PinnedCarryInOkCount => null;
 
+    /// <summary>
+    /// Guards rotation as SPEC.md decision 12b defines it: inside a block (shifts without the configured
+    /// rest days times 24 hours between them) the kind may stay or rise but never fall; across enough
+    /// rest a block restarts freely. Until 2026-10-07 this guard read the package-to-package
+    /// <see cref="RotationMetrics.ForwardRate"/> instead, which was vacuous twice over: the rest hardening
+    /// leaves no package pair under the rest bound, so the guard returned early, and its pinned floor of
+    /// 0 could not fail anyway. That rate also judged by the cyclic rule (night to early counted as
+    /// forward, the same kind as a deviation), which contradicts 12b, and never looked at kind changes
+    /// inside a package. The measurement now runs on the shift sequence, so a kind falling inside a
+    /// package is a subject as well; with no pair at all the rate is 1, which holds no violation.
+    /// The naive cyclic readings are reported next to it in the metrics artifact and the band, never asserted:
+    /// which rotation definition is binding is an open owner decision.
+    /// </summary>
     [Test]
     public void Baseline_ForwardRotationRateDidNotFall()
     {
-        var rotation = BaselineMetrics.Rotation;
+        var block = BaselineMetrics.Rotation.BlockCompliance;
+        var cyclic = BaselineMetrics.Rotation.CyclicLastToFirst;
 
-        // Owner ruling 2026-08-12 (SPEC.md decision 12b): a pair separated by enough rest owes no
-        // rotation, and since the rest hardening keeps at least that distance between packages,
-        // most or all pairs land in RestSeparatedCount. With no rotation-bound transition left the
-        // rate has no subject and the floor holds vacuously.
-        if (rotation.Transitions.Count == 0)
-        {
-            return;
-        }
-
-        rotation.ForwardRate.ShouldBeGreaterThanOrEqualTo(
-            Baseline.MinForwardRate - ComparisonEpsilon,
-            $"Baseline: the forward rotation rate must not fall below the band floor {Share(Baseline.MinForwardRate)}, "
-            + $"but it is {Share(rotation.ForwardRate)} "
-            + $"({Count(rotation.Transitions.Count - rotation.BackwardOrSkipCount)} of "
-            + $"{Count(rotation.Transitions.Count)} rotation-bound package transitions run early to late to night "
-            + $"to early; {Count(rotation.RestSeparatedCount)} pair(s) are free restarts across enough rest). "
-            + "This is not the specification target of A7 — the floor is the lowest rate the current engine reached "
-            + "over the band seeds, so a red here means the change rotates worse than any seed did before it.");
+        block.CompliantRate.ShouldBeGreaterThanOrEqualTo(
+            Baseline.MinBlockRotationCompliance - ComparisonEpsilon,
+            $"Baseline: the share of in-block shift pairs whose kind does not fall (SPEC.md decision 12b) must not "
+            + $"fall below the band floor {Share(Baseline.MinBlockRotationCompliance)}, but it is "
+            + $"{Share(block.CompliantRate)} ({Count(block.DescendingCount)} of {Count(block.PairCount)} in-block "
+            + "pair(s) fall from late or night to an earlier kind). "
+            + $"For comparison only, the naive cyclic forward rate over all {Count(cyclic.PairCount)} package pairs "
+            + $"is {Share(cyclic.ForwardRate)}. The floor is the lowest rate the current engine reached over the band "
+            + "seeds, so a red here means the change rotates worse than any seed did before it.");
     }
 
     [Test]

@@ -26,12 +26,15 @@ namespace Klacks.UnitTest.Autofill.Scenarios.Scenario1;
 public static class Scenario1bBaselineValues
 {
     /// <summary>
-    /// Band over seeds 42/43/44 under the decision-12b measurement rework of 2026-08-13: the
-    /// rotation-bound set is empty on every seed (all package pairs are free restarts across enough
-    /// rest), so the rate has no subject and the guard holds vacuously. The old floor 0.4643
-    /// measured free restarts. Spec target of the former A7 is 0.80 and stays documented in SPEC.md.
+    /// Rotation pin under SPEC.md decision 12b, measured on the shift sequence (in-block pairs: less than
+    /// MinRestDays x 24 h between two shifts; the kind must not fall). Band over seeds 42/43/44 measured
+    /// 2026-10-07 on Api 6f90aa144 / Optimizer 8035a10: 1/1/1, so the floor is 1 and the pin is sharp — a
+    /// single falling in-block pair turns it red. Replaces the vacuous package-pair ForwardRate pin of 0
+    /// (F1 of tests/autofill/STOPPGATE-2026-10-07.md). The naive cyclic forward rate over all package
+    /// pairs is reported in the band artifact (0.3/0.4167/0.381) but not pinned: which rotation definition binds is
+    /// an open owner decision.
     /// </summary>
-    private const double ForwardRate = 0;
+    private const double BlockRotationCompliance = 1;
 
     /// <summary>
     /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 3/18/14, so the
@@ -95,7 +98,7 @@ public static class Scenario1bBaselineValues
 
     /// <summary>The floor variant 1b must not fall below.</summary>
     public static AutofillBaseline Baseline { get; } = new(
-        MinForwardRate: ForwardRate,
+        MinBlockRotationCompliance: BlockRotationCompliance,
         MaxMixedTypeCount: MixedTypeCount,
         MaxShortPackageShare: ShortPackageShare,
         MaxPackagesOverIdealLength: PackagesOverIdealLength,
