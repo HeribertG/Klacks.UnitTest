@@ -25,7 +25,7 @@ namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
 
 /// <summary>
 /// Wizard 2 reads the same scope as Wizard 1: a shift preference set on an order reaches the cut pieces that are
-/// actually staffed (K16).
+/// actually staffed (K16), and days outside the company membership are closed (M6).
 /// </summary>
 [TestFixture]
 public class HarmonizerContextBuilderScopeTests
@@ -87,6 +87,31 @@ public class HarmonizerContextBuilderScopeTests
             new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
 
         input.Agents.Single().PreferredShiftSymbols.ShouldBe([CellSymbol.Early, CellSymbol.Late], ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task MembershipExit_ClosesEveryDayAfterTheExit()
+    {
+        var agent = Guid.NewGuid();
+        StubContract(agent);
+        var lastMemberDay = WeekStart.AddDays(2);
+        _context.Membership.Add(new Membership
+        {
+            Id = Guid.NewGuid(),
+            ClientId = agent,
+            ValidFrom = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ValidUntil = lastMemberDay.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+        });
+        await _context.SaveChangesAsync();
+
+        var input = await BuildSut().BuildContextAsync(
+            new HarmonizerContextRequest(WeekStart, WeekEnd, [agent], AnalyseToken: null), CancellationToken.None);
+
+        for (var date = WeekStart; date <= WeekEnd; date = date.AddDays(1))
+        {
+            input.Availability![(agent.ToString(), date)].WorksOnDay.ShouldBe(
+                date <= lastMemberDay, $"{date:yyyy-MM-dd}: a member works per contract, after the exit the day is closed");
+        }
     }
 
     private (Guid Order, Guid Root, Guid Child) SeedCutOrder(TimeOnly rootStart, TimeOnly rootEnd, TimeOnly childStart, TimeOnly childEnd)

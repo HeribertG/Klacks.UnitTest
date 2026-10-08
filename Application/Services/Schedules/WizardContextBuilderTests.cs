@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
@@ -49,7 +49,11 @@ public class WizardContextBuilderTests
                 MaxWeeklyHours = 50,
             });
 
-        var agentBuilder = new WizardAgentSnapshotBuilder(_contractProvider);
+        var membershipReader = Substitute.For<IMembershipWindowReader>();
+        membershipReader
+            .GetWindowsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyDictionary<Guid, MembershipWindow>)new Dictionary<Guid, MembershipWindow>());
+        var agentBuilder = new WizardAgentSnapshotBuilder(_contractProvider, membershipReader);
         var eligibilityBuilder = Substitute.For<IEligibilityMatrixBuilder>();
         eligibilityBuilder
             .BuildAsync(

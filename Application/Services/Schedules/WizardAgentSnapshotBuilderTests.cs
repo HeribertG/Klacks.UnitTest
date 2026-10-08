@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
@@ -16,14 +16,117 @@ namespace Klacks.UnitTest.Application.Services.Schedules;
 public class WizardAgentSnapshotBuilderTests
 {
     private IClientContractDataProvider _contractProvider = null!;
+    private IMembershipWindowReader _membershipReader = null!;
     private WizardAgentSnapshotBuilder _sut = null!;
 
     [SetUp]
     public void SetUp()
     {
         _contractProvider = Substitute.For<IClientContractDataProvider>();
-        _sut = new WizardAgentSnapshotBuilder(_contractProvider);
+        _membershipReader = Substitute.For<IMembershipWindowReader>();
+        StubMembership(new Dictionary<Guid, MembershipWindow>());
+        _sut = new WizardAgentSnapshotBuilder(_contractProvider, _membershipReader);
     }
+
+    [Test]
+    public async Task BuildAsync_MembershipEndingMidPeriod_ClosesEveryDayAfterTheExit()
+    {
+        var agentId = Guid.NewGuid();
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = AllWeekContract() });
+        StubMembership(new Dictionary<Guid, MembershipWindow>
+        {
+            [agentId] = new(new DateOnly(2020, 1, 1), new DateOnly(2026, 3, 15)),
+        });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, new DateOnly(2026, 3, 13), new DateOnly(2026, 3, 17),
+            new Dictionary<Guid, double>(), CancellationToken.None);
+
+        result.ContractDays.Where(d => d.WorksOnDay).Select(d => d.Date).ShouldBe(
+            [new DateOnly(2026, 3, 13), new DateOnly(2026, 3, 14), new DateOnly(2026, 3, 15)],
+            "The exit day itself is still a member day (inclusive), the days after it are closed.");
+        result.ContractDays.Count.ShouldBe(5);
+    }
+
+    [Test]
+    public async Task BuildAsync_MembershipStartingMidPeriod_ClosesTheDaysBeforeTheEntryAndTakesTheMasterDataFromTheEntryDay()
+    {
+        var agentId = Guid.NewGuid();
+        var entry = new DateOnly(2026, 3, 10);
+        StubContractData(date => new Dictionary<Guid, EffectiveContractData>
+        {
+            [agentId] = AllWeekContract(guaranteedHours: date < entry ? 10 : 120),
+        });
+        StubMembership(new Dictionary<Guid, MembershipWindow> { [agentId] = new(entry, null) });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 12),
+            new Dictionary<Guid, double>(), CancellationToken.None);
+
+        result.ContractDays.Where(d => !d.WorksOnDay).Select(d => d.Date).ShouldBe(
+            [new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 9)]);
+        result.Agents.Single().GuaranteedHours.ShouldBe(120, "Master data comes from the first member day with a contract.");
+    }
+
+    [Test]
+    public async Task BuildAsync_OutsideTheMembershipWithoutContractData_StillEmitsAClosedDay()
+    {
+        var agentId = Guid.NewGuid();
+        var lastMemberDay = new DateOnly(2026, 3, 15);
+        StubContractData(date => date <= lastMemberDay
+            ? new Dictionary<Guid, EffectiveContractData> { [agentId] = AllWeekContract() }
+            : new Dictionary<Guid, EffectiveContractData>());
+        StubMembership(new Dictionary<Guid, MembershipWindow> { [agentId] = new(new DateOnly(2020, 1, 1), lastMemberDay) });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, new DateOnly(2026, 3, 15), new DateOnly(2026, 3, 16),
+            new Dictionary<Guid, double>(), CancellationToken.None);
+
+        result.ContractDays.Single(d => d.Date == new DateOnly(2026, 3, 16)).WorksOnDay.ShouldBeFalse(
+            "Without a contract day the engine would fall back to the weekday flags and plan the agent after the exit.");
+    }
+
+    [Test]
+    public async Task BuildAsync_MembershipEndedBeforeThePeriod_ExcludesTheAgent()
+    {
+        var agentId = Guid.NewGuid();
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = AllWeekContract() });
+        StubMembership(new Dictionary<Guid, MembershipWindow>
+        {
+            [agentId] = new(new DateOnly(2020, 1, 1), new DateOnly(2026, 2, 28)),
+        });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 3),
+            new Dictionary<Guid, double>(), CancellationToken.None);
+
+        result.Agents.ShouldBeEmpty();
+        result.ContractDays.ShouldAllBe(d => !d.WorksOnDay);
+    }
+
+    private void StubMembership(Dictionary<Guid, MembershipWindow> windows)
+    {
+        _membershipReader
+            .GetWindowsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyDictionary<Guid, MembershipWindow>)windows);
+    }
+
+    private static EffectiveContractData AllWeekContract(decimal guaranteedHours = 120) => new()
+    {
+        HasActiveContract = true,
+        ContractId = Guid.NewGuid(),
+        FullTime = 160,
+        GuaranteedHours = guaranteedHours,
+        MaxDailyHours = 10,
+        WorkOnMonday = true,
+        WorkOnTuesday = true,
+        WorkOnWednesday = true,
+        WorkOnThursday = true,
+        WorkOnFriday = true,
+        WorkOnSaturday = true,
+        WorkOnSunday = true,
+        PerformsShiftWork = true,
+    };
 
     [Test]
     public async Task BuildAsync_ReturnsOneAgentAndOneContractDayPerDate()
