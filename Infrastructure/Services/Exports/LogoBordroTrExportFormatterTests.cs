@@ -134,7 +134,6 @@ public class LogoBordroTrExportFormatterTests
         var mapping = $"{{\"{onCallId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"{BaseWageType}\"}}}}";
         var data = new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 1, 31),
             Employees =
@@ -176,7 +175,6 @@ public class LogoBordroTrExportFormatterTests
     {
         return new PayrollExportGroupConfig
         {
-            GroupId = Guid.NewGuid(),
             TargetSystem = PayrollExportConstants.FormatKeyLogoBordroTr,
             BaseWageType = BaseWageType,
             SurchargeWageType = SurchargeWageType,
@@ -188,7 +186,6 @@ public class LogoBordroTrExportFormatterTests
     {
         return new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 1, 31),
             Employees =

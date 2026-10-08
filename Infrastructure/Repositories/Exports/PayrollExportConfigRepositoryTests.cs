@@ -1,19 +1,14 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for PayrollExportConfigRepository against an in-memory EF Core database, verifying
-/// that an existing config row wins over the DEFAULT_PAYROLL_TARGET_SYSTEM setting and that the
-/// generated default falls back to DATEV when the setting is missing, blank or unknown.
+/// Unit tests for PayrollExportConfigRepository, verifying that the installation-wide default comes from the
+/// DEFAULT_PAYROLL_TARGET_SYSTEM setting and falls back to DATEV when the setting is missing, blank or unknown.
 /// </summary>
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Exports;
 using Klacks.Api.Domain.Interfaces.Settings;
-using Klacks.Api.Domain.Models.Exports.Payroll;
-using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Exports;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Shouldly;
@@ -24,17 +19,12 @@ namespace Klacks.UnitTest.Infrastructure.Repositories.Exports;
 [TestFixture]
 public class PayrollExportConfigRepositoryTests
 {
-    private DataBaseContext _context = null!;
     private ISettingsReader _settingsReader = null!;
     private PayrollExportConfigRepository _repository = null!;
 
     [SetUp]
     public void Setup()
     {
-        var options = new DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
         _settingsReader = Substitute.For<ISettingsReader>();
 
         var meritPalkFormatter = Substitute.For<IPayrollExportFormatter>();
@@ -43,43 +33,17 @@ public class PayrollExportConfigRepositoryTests
         datevFormatter.FormatKey.Returns(PayrollExportConstants.FormatKeyDatevLug);
 
         _repository = new PayrollExportConfigRepository(
-            _context,
             _settingsReader,
             new[] { datevFormatter, meritPalkFormatter },
             Substitute.For<ILogger<PayrollExportConfigRepository>>());
     }
 
-    [TearDown]
-    public void TearDown()
-    {
-        _context.Dispose();
-    }
-
     [Test]
-    public async Task GetByGroupAsync_ConfigRowExists_IgnoresDefaultTargetSystemSetting()
-    {
-        var groupId = Guid.NewGuid();
-        _context.PayrollExportGroupConfig.Add(new PayrollExportGroupConfig
-        {
-            Id = Guid.NewGuid(),
-            GroupId = groupId,
-            TargetSystem = PayrollExportConstants.FormatKeyPaxmlSe,
-        });
-        await _context.SaveChangesAsync();
-        StubSettingValue(PayrollExportConstants.FormatKeyMeritPalkEe);
-
-        var result = await _repository.GetByGroupAsync(groupId);
-
-        result.TargetSystem.ShouldBe(PayrollExportConstants.FormatKeyPaxmlSe);
-        await _settingsReader.DidNotReceive().GetSetting(Arg.Any<string>());
-    }
-
-    [Test]
-    public async Task GetByGroupAsync_NoRowAndSettingSet_UsesSettingAsTargetSystem()
+    public async Task GetAsync_SettingSet_UsesSettingAsTargetSystem()
     {
         StubSettingValue(PayrollExportConstants.FormatKeyMeritPalkEe);
 
-        var result = await _repository.GetByGroupAsync(Guid.NewGuid());
+        var result = await _repository.GetAsync();
 
         result.TargetSystem.ShouldBe(PayrollExportConstants.FormatKeyMeritPalkEe);
         result.Delimiter.ShouldBe(PayrollExportConstants.DefaultDelimiter);
@@ -87,42 +51,42 @@ public class PayrollExportConfigRepositoryTests
     }
 
     [Test]
-    public async Task GetByGroupAsync_NoRowAndNoSetting_FallsBackToDatev()
+    public async Task GetAsync_NoSetting_FallsBackToDatev()
     {
         _settingsReader.GetSetting(SettingKeys.DefaultPayrollTargetSystem)
             .Returns(Task.FromResult<SettingsEntity?>(null));
 
-        var result = await _repository.GetByGroupAsync(Guid.NewGuid());
+        var result = await _repository.GetAsync();
 
         result.TargetSystem.ShouldBe(PayrollExportConstants.FormatKeyDatevLug);
     }
 
     [Test]
-    public async Task GetByGroupAsync_NoRowAndBlankSetting_FallsBackToDatev()
+    public async Task GetAsync_BlankSetting_FallsBackToDatev()
     {
         StubSettingValue("   ");
 
-        var result = await _repository.GetByGroupAsync(Guid.NewGuid());
+        var result = await _repository.GetAsync();
 
         result.TargetSystem.ShouldBe(PayrollExportConstants.FormatKeyDatevLug);
     }
 
     [Test]
-    public async Task GetByGroupAsync_NoRowAndUnknownSettingValue_FallsBackToDatev()
+    public async Task GetAsync_UnknownSettingValue_FallsBackToDatev()
     {
         StubSettingValue("not-a-known-format");
 
-        var result = await _repository.GetByGroupAsync(Guid.NewGuid());
+        var result = await _repository.GetAsync();
 
         result.TargetSystem.ShouldBe(PayrollExportConstants.FormatKeyDatevLug);
     }
 
     [Test]
-    public async Task GetByGroupAsync_NoRowAndSettingWithDifferentCasing_UsesCanonicalFormatKey()
+    public async Task GetAsync_SettingWithDifferentCasing_UsesCanonicalFormatKey()
     {
         StubSettingValue(PayrollExportConstants.FormatKeyMeritPalkEe.ToUpperInvariant());
 
-        var result = await _repository.GetByGroupAsync(Guid.NewGuid());
+        var result = await _repository.GetAsync();
 
         result.TargetSystem.ShouldBe(PayrollExportConstants.FormatKeyMeritPalkEe);
     }

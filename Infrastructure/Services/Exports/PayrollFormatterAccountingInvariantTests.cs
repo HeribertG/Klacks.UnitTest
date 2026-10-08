@@ -131,7 +131,6 @@ public class PayrollFormatterAccountingInvariantTests
     {
         return new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = PeriodStart,
             EndDate = PeriodEnd,
             Employees =
@@ -151,7 +150,6 @@ public class PayrollFormatterAccountingInvariantTests
     {
         return new PayrollExportGroupConfig
         {
-            GroupId = Guid.NewGuid(),
             TargetSystem = formatKey,
             Delimiter = PayrollExportConstants.DefaultDelimiter,
             Encoding = PayrollExportConstants.DefaultEncoding,

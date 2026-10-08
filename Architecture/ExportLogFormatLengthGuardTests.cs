@@ -3,7 +3,7 @@
 /// <summary>
 /// Guards the column width of ExportLog.Format against every key that is written into it: the export format keys
 /// (ExportConstants.Format*), the payroll target-system keys (PayrollExportConstants.FormatKey*) and, because the
-/// payroll hook copies it verbatim, the declared width of PayrollExportGroupConfig.TargetSystem. Live 2026-09-26 the
+/// payroll export copies it verbatim, the declared width of PayrollExportGroupConfig.TargetSystem. Live 2026-09-26 the
 /// former width of 16 made every payroll export after a group seal fail with PostgreSQL 22001 on
 /// datev-lug-bewegungsdaten (24 characters). The EF model is checked as well, so the attribute cannot drift from the
 /// migrated column.
@@ -55,6 +55,12 @@ public class ExportLogFormatLengthGuardTests
         MaxLengthOf(typeof(ExportLog), nameof(ExportLog.Format)).ShouldBe(ExportLogLimits.FormatMaxLength);
         MaxLengthOf(typeof(PayrollExportGroupConfig), nameof(PayrollExportGroupConfig.TargetSystem))
             .ShouldBeLessThanOrEqualTo(ExportLogLimits.FormatMaxLength);
+    }
+
+    [Test]
+    public void ExportLogItemFormat_HasTheSameWidthAsExportLogFormat()
+    {
+        MaxLengthOf(typeof(ExportLogItem), nameof(ExportLogItem.Format)).ShouldBe(ExportLogLimits.FormatMaxLength);
     }
 
     [Test]

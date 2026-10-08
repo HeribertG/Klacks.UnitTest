@@ -9,6 +9,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Application.DTOs.Exports;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Domain.Exceptions;
@@ -177,5 +178,66 @@ public class ErrorHandlingMiddlewareTests
         using var problem = JsonDocument.Parse(response.Body);
         problem.RootElement.GetProperty("detail").GetString().ShouldBe("blocked by compliance");
         problem.RootElement.TryGetProperty("errorCode", out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task PayrollExportBlockedException_Becomes409WithErrorCodeBlockersAndTotal()
+    {
+        var clientId = Guid.NewGuid();
+        var completeness = new PayrollCompletenessResult
+        {
+            BlockerTotal = 7,
+            Blockers =
+            [
+                new PayrollExportBlockerDto
+                {
+                    ClientId = clientId,
+                    ClientName = "Muster, Max",
+                    IdNumber = 42,
+                    Date = new DateOnly(2027, 3, 10),
+                    Reason = PayrollExportBlockReason.DayNotLocked,
+                    RequiresGlobalClose = true,
+                    EntryCount = 2
+                }
+            ]
+        };
+
+        var response = await Invoke(new PayrollExportBlockedException(completeness));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("errorCode").GetString().ShouldBe("payrollExportBlocked");
+        root.GetProperty("blockerTotal").GetInt32().ShouldBe(7);
+        var blocker = root.GetProperty("blockers")[0];
+        blocker.GetProperty("clientId").GetGuid().ShouldBe(clientId);
+        blocker.GetProperty("clientName").GetString().ShouldBe("Muster, Max");
+        blocker.GetProperty("date").GetString().ShouldBe("2027-03-10");
+        blocker.GetProperty("reason").GetString().ShouldBe("DayNotLocked");
+        blocker.GetProperty("requiresGlobalClose").GetBoolean().ShouldBeTrue();
+        blocker.GetProperty("entryCount").GetInt32().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task PayrollExportNothingNewException_Becomes409WithCodeAndNoBlockers()
+    {
+        var response = await Invoke(new PayrollExportNothingNewException());
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe("payrollExportNothingNew");
+        problem.RootElement.TryGetProperty("blockers", out _).ShouldBeFalse();
+        problem.RootElement.TryGetProperty("blockerTotal", out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task PayrollExportConcurrentException_Becomes409WithCodeAndNoBlockers()
+    {
+        var response = await Invoke(new PayrollExportConcurrentException());
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe("payrollExportConcurrent");
+        problem.RootElement.TryGetProperty("blockers", out _).ShouldBeFalse();
     }
 }

@@ -53,7 +53,6 @@ public class PohodaCzExportFormatterTests
     {
         return new PayrollExportGroupConfig
         {
-            GroupId = Guid.NewGuid(),
             TargetSystem = PayrollExportConstants.FormatKeyPohodaCz,
             SurchargeWageType = surchargeWageType,
             AbsenceMappingJson = absenceMappingJson,
@@ -75,7 +74,6 @@ public class PohodaCzExportFormatterTests
     {
         return new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 1, 31),
             Employees = employees.ToList(),

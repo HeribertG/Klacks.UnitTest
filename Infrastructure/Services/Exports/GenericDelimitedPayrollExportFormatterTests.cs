@@ -40,7 +40,6 @@ public class GenericDelimitedPayrollExportFormatterTests
     {
         return new PayrollExportGroupConfig
         {
-            GroupId = Guid.NewGuid(),
             TargetSystem = PayrollExportConstants.FormatKeyGenericPayrollCsv,
             Delimiter = delimiter,
             Encoding = encoding,
@@ -54,7 +53,6 @@ public class GenericDelimitedPayrollExportFormatterTests
     {
         return new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 1, 31),
             Employees =

@@ -32,7 +32,6 @@ public class WinmentorRoExportFormatterTests
     {
         return new PayrollExportGroupConfig
         {
-            GroupId = Guid.NewGuid(),
             TargetSystem = PayrollExportConstants.FormatKeyWinmentorRo,
             AbsenceMappingJson = absenceMappingJson,
         };
@@ -42,7 +41,6 @@ public class WinmentorRoExportFormatterTests
     {
         return new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = start,
             EndDate = end,
             Employees =

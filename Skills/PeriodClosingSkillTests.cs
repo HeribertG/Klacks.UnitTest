@@ -70,7 +70,7 @@ public class PeriodClosingSkillTests
     }
 
     [Test]
-    public async Task ClosePeriod_WithGroup_SealsViaGroupCommand_AndMentionsPayrollHook()
+    public async Task ClosePeriod_WithGroup_SealsViaGroupCommand_AndStartsNoPayrollExport()
     {
         _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>()).Returns(42);
         _mediator.Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>())
@@ -81,14 +81,14 @@ public class PeriodClosingSkillTests
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldContain("verified");
-        result.Message.ShouldContain("payroll/ERP export hook was triggered");
+        result.Message.ShouldNotContain("payroll", Case.Insensitive);
         await _mediator.Received(1).Send(
             Arg.Is<ClosePeriodByGroupCommand>(c => c.GroupId == _group.Id),
             Arg.Any<CancellationToken>());
     }
 
     [Test]
-    public async Task ClosePeriod_Global_WarnsThatNoPayrollExportFires()
+    public async Task ClosePeriod_Global_SealsWithoutGroup()
     {
         _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>()).Returns(10);
         _mediator.Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>())
@@ -98,7 +98,7 @@ public class PeriodClosingSkillTests
         var result = await skill.ExecuteAsync(Ctx(), Range());
 
         result.Success.ShouldBeTrue(result.Message);
-        result.Message.ShouldContain("No payroll/ERP export fires");
+        result.Message.ShouldContain("ALL groups (global)");
         await _mediator.Received(1).Send(
             Arg.Is<ClosePeriodByGroupCommand>(c => c.GroupId == null),
             Arg.Any<CancellationToken>());

@@ -38,7 +38,6 @@ public class DatevLugBewegungsdatenFormatterTests
     {
         return new PayrollExportGroupConfig
         {
-            GroupId = Guid.NewGuid(),
             TargetSystem = PayrollExportConstants.FormatKeyDatevLug,
             Delimiter = PayrollExportConstants.DefaultDelimiter,
             Encoding = PayrollExportConstants.DefaultEncoding,
@@ -52,7 +51,6 @@ public class DatevLugBewegungsdatenFormatterTests
     {
         return new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 1, 31),
             Employees =

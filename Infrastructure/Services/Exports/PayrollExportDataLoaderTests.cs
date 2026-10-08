@@ -1,9 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for PayrollExportDataLoader against an in-memory EF Core database: absences of group members are
-/// exported on days without any work (on-call days as one day, ordinary absences in hours), borrowed staff keep
-/// the same-day-work attribution, and soft-deleted, scenario, unsealed and foreign-group absences stay out.
+/// Unit tests for the person-based PayrollExportDataLoader against an in-memory EF Core database: every person with
+/// closed entries is exported exactly once whatever groups they belong to (or none), employees and external
+/// employees are included, customers, scenario, soft-deleted and unsealed entries stay out, a break is exported once,
+/// and an on-call absence is one day.
 /// </summary>
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Models.Exports.Payroll;
@@ -24,13 +25,15 @@ public class PayrollExportDataLoaderTests
     private static readonly DateOnly OnCallSunday = new(2026, 1, 18);
     private static readonly DateOnly VacationMonday = new(2026, 1, 19);
     private static readonly DateOnly WorkDay = new(2026, 1, 20);
+    private static readonly DateOnly OutsidePeriodDay = new(2026, 2, 3);
 
     private DataBaseContext _context = null!;
     private PayrollExportDataLoader _loader = null!;
 
-    private readonly Guid _groupId = Guid.NewGuid();
-    private readonly Guid _otherGroupId = Guid.NewGuid();
-    private readonly Guid _groupShiftId = Guid.NewGuid();
+    private readonly Guid _groupAId = Guid.NewGuid();
+    private readonly Guid _groupBId = Guid.NewGuid();
+    private readonly Guid _shiftAId = Guid.NewGuid();
+    private readonly Guid _shiftBId = Guid.NewGuid();
     private readonly Guid _onCallAbsenceId = Guid.NewGuid();
     private readonly Guid _vacationAbsenceId = Guid.NewGuid();
 
@@ -51,7 +54,8 @@ public class PayrollExportDataLoaderTests
 
         _context.Absence.Add(NewAbsence(_onCallAbsenceId, "PIK", isOnCall: true));
         _context.Absence.Add(NewAbsence(_vacationAbsenceId, "FER", isOnCall: false));
-        _context.GroupItem.Add(new GroupItem { Id = Guid.NewGuid(), GroupId = _groupId, ShiftId = _groupShiftId });
+        _context.GroupItem.Add(new GroupItem { Id = Guid.NewGuid(), GroupId = _groupAId, ShiftId = _shiftAId });
+        _context.GroupItem.Add(new GroupItem { Id = Guid.NewGuid(), GroupId = _groupBId, ShiftId = _shiftBId });
         _context.SaveChanges();
     }
 
@@ -62,13 +66,148 @@ public class PayrollExportDataLoaderTests
     }
 
     [Test]
+    public async Task LoadAsync_PersonWithWorkInTwoGroups_IsExportedOnceWithSummedHours()
+    {
+        var clientId = AddClient(101);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        AddWork(clientId, WorkDay, _shiftBId, workTime: 2m);
+        AddWork(clientId, WorkDay.AddDays(1), _shiftBId, workTime: 4m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var employee = data.Employees.ShouldHaveSingleItem();
+        employee.ClientId.ShouldBe(clientId);
+        employee.Entries.Count(e => e.Kind == PayrollEntryKind.WorkHours).ShouldBe(2);
+        employee.Entries.Single(e => e.Date == WorkDay && e.Kind == PayrollEntryKind.WorkHours).Quantity.ShouldBe(10m);
+        employee.Entries.Single(e => e.Date == WorkDay.AddDays(1)).Quantity.ShouldBe(4m);
+    }
+
+    [Test]
+    public async Task LoadAsync_PersonWithoutAnyGroup_IsIncluded()
+    {
+        var clientId = AddClient(102);
+        AddWork(clientId, WorkDay, Guid.NewGuid(), workTime: 8m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldHaveSingleItem().ClientId.ShouldBe(clientId);
+    }
+
+    [Test]
+    public async Task LoadAsync_ExternEmp_IsIncluded()
+    {
+        var clientId = AddClient(103, EntityTypeEnum.ExternEmp);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldHaveSingleItem().ClientId.ShouldBe(clientId);
+    }
+
+    [Test]
+    public async Task LoadAsync_CustomerClient_IsNotExported()
+    {
+        var customerId = AddClient(104, EntityTypeEnum.Customer);
+        AddWork(customerId, WorkDay, _shiftAId, workTime: 8m);
+        AddBreak(customerId, _vacationAbsenceId, VacationMonday, workTime: 8m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task LoadAsync_ScenarioWork_IsNotExported()
+    {
+        var clientId = AddClient(105);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m, analyseToken: Guid.NewGuid());
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task LoadAsync_NotClosedWork_IsNotExported()
+    {
+        var clientId = AddClient(106);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m, lockLevel: WorkLockLevel.Approved);
+        AddWork(clientId, WorkDay.AddDays(1), _shiftAId, workTime: 8m, lockLevel: WorkLockLevel.None);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task LoadAsync_SoftDeletedWork_IsNotExported()
+    {
+        var clientId = AddClient(107);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m, isDeleted: true);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task LoadAsync_WorkOutsidePeriod_IsNotExported()
+    {
+        var clientId = AddClient(108);
+        AddWork(clientId, OutsidePeriodDay, _shiftAId, workTime: 8m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task LoadAsync_BreakOfPersonInTwoGroups_IsExportedOnce()
+    {
+        var clientId = AddClient(109);
+        AddMembership(clientId);
+        AddGroupMembership(clientId, _groupAId);
+        AddGroupMembership(clientId, _groupBId);
+        AddBreak(clientId, _vacationAbsenceId, VacationMonday, workTime: 8.4m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        var entry = data.Employees.ShouldHaveSingleItem().Entries.ShouldHaveSingleItem();
+        entry.Kind.ShouldBe(PayrollEntryKind.Absence);
+        entry.AbsenceId.ShouldBe(_vacationAbsenceId);
+        entry.Quantity.ShouldBe(8.4m);
+        entry.Unit.ShouldBe(PayrollQuantityUnit.Hours);
+    }
+
+    [Test]
+    public async Task LoadAsync_BreakOfPersonWithoutGroup_IsExported()
+    {
+        var clientId = AddClient(110);
+        AddBreak(clientId, _vacationAbsenceId, VacationMonday, workTime: 8m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
+
+        data.Employees.ShouldHaveSingleItem().Entries.ShouldHaveSingleItem().Quantity.ShouldBe(8m);
+    }
+
+    [Test]
     public async Task LoadAsync_OnCallSundayWithoutWork_IsExportedAsOneDay()
     {
-        var clientId = AddMember(101, _groupId);
+        var clientId = AddClient(111);
         AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m);
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
 
         var employee = data.Employees.ShouldHaveSingleItem();
         employee.ClientId.ShouldBe(clientId);
@@ -83,12 +222,12 @@ public class PayrollExportDataLoaderTests
     [Test]
     public async Task LoadAsync_TwoOnCallBreaksOnSameDay_CountAsOneDay()
     {
-        var clientId = AddMember(101, _groupId);
+        var clientId = AddClient(112);
         AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m);
         AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m);
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
 
         var entry = data.Employees.ShouldHaveSingleItem().Entries.ShouldHaveSingleItem();
         entry.Quantity.ShouldBe(1m);
@@ -96,56 +235,28 @@ public class PayrollExportDataLoaderTests
     }
 
     [Test]
-    public async Task LoadAsync_VacationDayWithoutWork_IsExportedInHours()
+    public async Task LoadAsync_WorkAndBreakOnSameDay_KeepBoth()
     {
-        var clientId = AddMember(101, _groupId);
-        AddBreak(clientId, _vacationAbsenceId, VacationMonday, workTime: 8.4m);
-        await _context.SaveChangesAsync();
-
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
-
-        var entry = data.Employees.ShouldHaveSingleItem().Entries.ShouldHaveSingleItem();
-        entry.AbsenceId.ShouldBe(_vacationAbsenceId);
-        entry.Quantity.ShouldBe(8.4m);
-        entry.Unit.ShouldBe(PayrollQuantityUnit.Hours);
-    }
-
-    [Test]
-    public async Task LoadAsync_BorrowedEmployeeWithSameDayGroupWork_KeepsAbsence()
-    {
-        var clientId = AddClient(201);
-        AddWork(clientId, WorkDay);
+        var clientId = AddClient(113);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
         AddBreak(clientId, _vacationAbsenceId, WorkDay, workTime: 2m);
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
 
         var employee = data.Employees.ShouldHaveSingleItem();
         employee.Entries.Count(e => e.Kind == PayrollEntryKind.WorkHours).ShouldBe(1);
-        var absence = employee.Entries.Single(e => e.Kind == PayrollEntryKind.Absence);
-        absence.Quantity.ShouldBe(2m);
-    }
-
-    [Test]
-    public async Task LoadAsync_BreakOfClientOutsideGroup_IsNotExported()
-    {
-        var foreignClientId = AddMember(301, _otherGroupId);
-        AddBreak(foreignClientId, _onCallAbsenceId, OnCallSunday, workTime: 0m);
-        await _context.SaveChangesAsync();
-
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
-
-        data.Employees.ShouldBeEmpty();
+        employee.Entries.Single(e => e.Kind == PayrollEntryKind.Absence).Quantity.ShouldBe(2m);
     }
 
     [Test]
     public async Task LoadAsync_SoftDeletedBreak_IsNotExported()
     {
-        var clientId = AddMember(101, _groupId);
+        var clientId = AddClient(114);
         AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m, isDeleted: true);
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
 
         data.Employees.ShouldBeEmpty();
     }
@@ -153,11 +264,11 @@ public class PayrollExportDataLoaderTests
     [Test]
     public async Task LoadAsync_ScenarioBreak_IsNotExported()
     {
-        var clientId = AddMember(101, _groupId);
+        var clientId = AddClient(115);
         AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m, analyseToken: Guid.NewGuid());
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
 
         data.Employees.ShouldBeEmpty();
     }
@@ -165,86 +276,71 @@ public class PayrollExportDataLoaderTests
     [Test]
     public async Task LoadAsync_UnsealedBreak_IsNotExported()
     {
-        var clientId = AddMember(101, _groupId);
+        var clientId = AddClient(116);
         AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m, lockLevel: WorkLockLevel.None);
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
 
         data.Employees.ShouldBeEmpty();
     }
 
     [Test]
-    public async Task LoadAsync_MembershipEndedBeforeBreak_IsNotExported()
+    public async Task LoadAsync_ClientIdFilter_RestrictsToTheGivenPersons()
     {
-        var clientId = AddMember(101, _groupId, groupItemUntil: new DateTime(2026, 1, 10, 0, 0, 0, DateTimeKind.Utc));
-        AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m);
+        var wanted = AddClient(117);
+        var other = AddClient(118);
+        AddWork(wanted, WorkDay, _shiftAId, workTime: 8m);
+        AddWork(other, WorkDay, _shiftAId, workTime: 8m);
+        AddBreak(other, _vacationAbsenceId, VacationMonday, workTime: 8m);
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, [wanted]);
+
+        data.Employees.ShouldHaveSingleItem().ClientId.ShouldBe(wanted);
+    }
+
+    [Test]
+    public async Task LoadAsync_EmptyClientIdFilter_ExportsNobody()
+    {
+        var clientId = AddClient(119);
+        AddWork(clientId, WorkDay, _shiftAId, workTime: 8m);
+        await _context.SaveChangesAsync();
+
+        var data = await _loader.LoadAsync(FromDate, UntilDate, []);
 
         data.Employees.ShouldBeEmpty();
     }
 
     [Test]
-    public async Task LoadAsync_ScenarioMembership_DoesNotAttributeBreak()
+    public async Task LoadAsync_PersonsAreOrderedByNameThenId()
     {
-        var clientId = AddClient(101);
-        AddMembership(clientId);
-        _context.GroupItem.Add(new GroupItem
-        {
-            Id = Guid.NewGuid(),
-            GroupId = _groupId,
-            ClientId = clientId,
-            AnalyseToken = Guid.NewGuid(),
-        });
-        AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m);
+        var zed = AddClient(120, name: "Zed");
+        var ann = AddClient(121, name: "Ann");
+        AddWork(zed, WorkDay, _shiftAId, workTime: 8m);
+        AddWork(ann, WorkDay, _shiftAId, workTime: 8m);
         await _context.SaveChangesAsync();
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
 
-        data.Employees.ShouldBeEmpty();
+        data.Employees.Select(e => e.ClientId).ShouldBe([ann, zed]);
     }
 
-    [Test]
-    public async Task LoadAsync_ScenarioWorkOfGroupShift_DoesNotAttributeBreak()
-    {
-        var clientId = AddClient(402);
-        _context.Work.Add(new Work
-        {
-            Id = Guid.NewGuid(),
-            ClientId = clientId,
-            ShiftId = _groupShiftId,
-            CurrentDate = WorkDay,
-            StartTime = new TimeOnly(8, 0),
-            EndTime = new TimeOnly(16, 0),
-            WorkTime = 8m,
-            LockLevel = WorkLockLevel.None,
-            AnalyseToken = Guid.NewGuid(),
-        });
-        AddBreak(clientId, _vacationAbsenceId, WorkDay, workTime: 8m);
-        await _context.SaveChangesAsync();
-
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
-
-        data.Employees.ShouldBeEmpty();
-    }
     [Test]
     public async Task LoadAsync_OnCallSunday_FlowsIntoDatevLugAsTagesanzahl()
     {
-        var clientId = AddMember(101, _groupId);
+        var clientId = AddClient(101);
         AddBreak(clientId, _onCallAbsenceId, OnCallSunday, workTime: 0m);
         await _context.SaveChangesAsync();
         var config = new PayrollExportGroupConfig
         {
-            GroupId = _groupId,
             TargetSystem = PayrollExportConstants.FormatKeyDatevLug,
             Delimiter = PayrollExportConstants.DefaultDelimiter,
             Encoding = PayrollExportConstants.DefaultEncoding,
             AbsenceMappingJson = $"{{\"{_onCallAbsenceId}\":{{\"ausfallschluessel\":\"\",\"wageType\":\"4711\"}}}}",
         };
 
-        var data = await _loader.LoadAsync(_groupId, FromDate, UntilDate);
+        var data = await _loader.LoadAsync(FromDate, UntilDate, null);
         var result = new DatevLugBewegungsdatenFormatter().Format(data, config);
 
         var line = Encoding.GetEncoding(PayrollExportConstants.Windows1252CodePage)
@@ -266,15 +362,15 @@ public class PayrollExportDataLoaderTests
         };
     }
 
-    private Guid AddClient(int idNumber)
+    private Guid AddClient(int idNumber, EntityTypeEnum type = EntityTypeEnum.Employee, string? name = null)
     {
         var clientId = Guid.NewGuid();
         _context.Client.Add(new Client
         {
             Id = clientId,
-            Type = EntityTypeEnum.Employee,
+            Type = type,
             IdNumber = idNumber,
-            Name = $"Employee{idNumber}",
+            Name = name ?? $"Employee{idNumber}",
             FirstName = "Test",
         });
         return clientId;
@@ -290,32 +386,37 @@ public class PayrollExportDataLoaderTests
         });
     }
 
-    private Guid AddMember(int idNumber, Guid groupId, DateTime? groupItemUntil = null)
+    private void AddGroupMembership(Guid clientId, Guid groupId)
     {
-        var clientId = AddClient(idNumber);
-        AddMembership(clientId);
         _context.GroupItem.Add(new GroupItem
         {
             Id = Guid.NewGuid(),
             GroupId = groupId,
             ClientId = clientId,
-            ValidUntil = groupItemUntil,
         });
-        return clientId;
     }
 
-    private void AddWork(Guid clientId, DateOnly date)
+    private void AddWork(
+        Guid clientId,
+        DateOnly date,
+        Guid shiftId,
+        decimal workTime,
+        bool isDeleted = false,
+        Guid? analyseToken = null,
+        WorkLockLevel lockLevel = WorkLockLevel.Closed)
     {
         _context.Work.Add(new Work
         {
             Id = Guid.NewGuid(),
             ClientId = clientId,
-            ShiftId = _groupShiftId,
+            ShiftId = shiftId,
             CurrentDate = date,
             StartTime = new TimeOnly(8, 0),
             EndTime = new TimeOnly(16, 0),
-            WorkTime = 8m,
-            LockLevel = WorkLockLevel.Closed,
+            WorkTime = workTime,
+            LockLevel = lockLevel,
+            AnalyseToken = analyseToken,
+            IsDeleted = isDeleted,
         });
     }
 

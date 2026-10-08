@@ -71,7 +71,6 @@ public class BrightpayIeUkDailyExportFormatterTests
     {
         return new PayrollExportGroupConfig
         {
-            GroupId = Guid.NewGuid(),
             TargetSystem = PayrollExportConstants.FormatKeyBrightpayIeUkDaily,
             Delimiter = string.Empty,
             Encoding = "utf-8",
@@ -83,7 +82,6 @@ public class BrightpayIeUkDailyExportFormatterTests
     {
         return new PayrollExportData
         {
-            GroupId = Guid.NewGuid(),
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 1, 31),
             Employees =
