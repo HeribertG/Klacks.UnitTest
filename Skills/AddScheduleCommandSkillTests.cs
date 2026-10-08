@@ -72,6 +72,20 @@ public class AddScheduleCommandSkillTests
         await _unitOfWork.Received(1).CompleteAsync();
     }
 
+    [TestCase("not-a-uuid")]
+    [TestCase("00000000-0000-0000-0000-000000000000")]
+    public async Task InvalidAnalyseToken_ReturnsError_WithoutWrite(string analyseToken)
+    {
+        var parameters = Parameters();
+        parameters["analyseToken"] = analyseToken;
+
+        var result = await _skill.ExecuteAsync(Context(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("analyseToken");
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+    }
+
     [Test]
     public async Task InvalidKeyword_ReturnsError_WithoutWrite()
     {

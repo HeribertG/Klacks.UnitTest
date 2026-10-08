@@ -36,6 +36,7 @@ using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
+using CoverRun = (Klacks.Api.Application.DTOs.Schedules.CoverAbsenceOutcome Outcome, Klacks.ScheduleRecovery.Model.RecoverySnapshot Snapshot, System.Collections.Generic.IReadOnlyList<(System.DateOnly Date, System.Guid? WorkId, System.DateTime? ShiftStartUtc, System.Guid? BreakId)> AbsenceDays);
 
 namespace Klacks.UnitTest.Application.Handlers.Schedules;
 
@@ -70,6 +71,27 @@ public class CoverAbsenceCommandHandlerTests
     private IScenarioNameGenerator _nameGenerator = null!;
     private IReplacementRequestRecorder _recorder = null!;
     private CoverAbsenceCommandHandler _handler = null!;
+
+    private const string TransactionBegin = "tx-begin";
+    private const string TransactionCommit = "tx-commit";
+    private const string TransactionRollback = "tx-rollback";
+    private const string EscalationStarted = "escalation";
+    private readonly List<string> _transactionEvents = new();
+
+    private async Task<CoverRun> RunInsideTransactionAsync(Func<Task<CoverRun>> operation)
+    {
+        try
+        {
+            var result = await operation();
+            _transactionEvents.Add(TransactionCommit);
+            return result;
+        }
+        catch
+        {
+            _transactionEvents.Add(TransactionRollback);
+            throw;
+        }
+    }
 
     [SetUp]
     public void Setup()
@@ -106,6 +128,13 @@ public class CoverAbsenceCommandHandlerTests
             .Returns(new WorkChangeResource());
 
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<CoverRun>>>())
+            .Returns(ci =>
+            {
+                _transactionEvents.Add(TransactionBegin);
+                return RunInsideTransactionAsync(ci.Arg<Func<Task<CoverRun>>>());
+            });
+        _transactionEvents.Clear();
 
         _escalationChainService = Substitute.For<IEscalationChainService>();
         _escalationChainService.StartChainAsync(Arg.Any<StartEscalationChainRequest>(), Arg.Any<CancellationToken>())
@@ -435,6 +464,43 @@ public class CoverAbsenceCommandHandlerTests
 
         order.IndexOf("clone").ShouldBeLessThan(order.IndexOf("complete"));
         order.IndexOf("complete").ShouldBeLessThan(order.IndexOf("snapshot"));
+    }
+
+    [Test]
+    public async Task AllCoverWrites_RunInsideOneTransaction_AndTheEscalationStartsOnlyAfterTheCommit()
+    {
+        var events = _transactionEvents;
+        _scenarioRepo.When(r => r.Add(Arg.Any<AnalyseScenario>())).Do(_ => events.Add("scenario"));
+        _mediator.When(m => m.Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>()))
+            .Do(_ => events.Add("workchange"));
+        _recorder.When(r => r.RecordProposalsAsync(
+                Arg.Any<ReplacementProposalContext>(), Arg.Any<IReadOnlyList<CoveredSlot>>(), Arg.Any<CancellationToken>()))
+            .Do(_ => events.Add("request-book"));
+        _escalationChainService.When(s => s.StartChainAsync(Arg.Any<StartEscalationChainRequest>(), Arg.Any<CancellationToken>()))
+            .Do(_ => events.Add(EscalationStarted));
+
+        await Cover();
+
+        events.IndexOf(TransactionBegin).ShouldBe(0);
+        events.IndexOf("scenario").ShouldBeGreaterThan(events.IndexOf(TransactionBegin));
+        events.IndexOf("workchange").ShouldBeLessThan(events.IndexOf(TransactionCommit));
+        events.IndexOf("request-book").ShouldBeLessThan(events.IndexOf(TransactionCommit));
+        events.IndexOf(EscalationStarted).ShouldBeGreaterThan(events.IndexOf(TransactionCommit));
+    }
+
+    [Test]
+    public async Task FailingReplacementPost_RollsTheWholeCoverBack_AndStartsNoEscalation()
+    {
+        _mediator.Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>())
+            .Returns<WorkChangeResource?>(_ => throw new InvalidOperationException("simulated mid-loop failure"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => Cover());
+
+        _transactionEvents.ShouldContain(TransactionRollback);
+        _transactionEvents.ShouldNotContain(TransactionCommit);
+        await _recorder.DidNotReceiveWithAnyArgs().RecordProposalsAsync(default!, default!, default);
+        await _escalationChainService.DidNotReceive().StartChainAsync(
+            Arg.Any<StartEscalationChainRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

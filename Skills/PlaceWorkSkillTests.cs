@@ -104,6 +104,22 @@ public class PlaceWorkSkillTests
         await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
     }
 
+    [TestCase("not-a-uuid")]
+    [TestCase("00000000-0000-0000-0000-000000000000")]
+    public async Task InvalidAnalyseToken_ReturnsError_WithoutCheckingOrCommitting(string analyseToken)
+    {
+        var (skill, mediator, checker) = Build(PreCommitCheckResult.Empty);
+        var parameters = Params();
+        parameters["analyseToken"] = analyseToken;
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("analyseToken");
+        await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+        await checker.DidNotReceiveWithAnyArgs().CheckAsync(default!, default, default);
+    }
+
     [Test]
     public async Task CleanPlacement_Commits()
     {

@@ -108,6 +108,20 @@ public class AddBreakSkillTests
             Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), AbsenceId, token, Arg.Any<CancellationToken>());
     }
 
+    [TestCase("not-a-uuid")]
+    [TestCase("00000000-0000-0000-0000-000000000000")]
+    public async Task InvalidAnalyseToken_ReturnsError_WithoutSendingCommand(string analyseToken)
+    {
+        var parameters = Params();
+        parameters["analyseToken"] = analyseToken;
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("analyseToken"));
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task UnknownClient_ReturnsError_WithoutSendingCommand()
     {

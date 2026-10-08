@@ -2,7 +2,7 @@
 
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Schedules;
-using Klacks.Api.Application.Queries;
+using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Mediator;
@@ -36,7 +36,7 @@ public class UpdateWorkChangeSkillTests
     {
         var id = Guid.NewGuid();
         var mediator = Substitute.For<IMediator>();
-        mediator.Send(Arg.Any<GetQuery<WorkChangeResource>>(), Arg.Any<CancellationToken>())
+        mediator.Send(Arg.Any<GetWorkChangeInScopeQuery>(), Arg.Any<CancellationToken>())
             .Returns(Change(id));
         mediator.Send(Arg.Any<PutCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<WorkChangeResource>)ci[0]).Resource);
@@ -62,7 +62,7 @@ public class UpdateWorkChangeSkillTests
     public async Task UnknownWorkChange_ReturnsError_NoMutation()
     {
         var mediator = Substitute.For<IMediator>();
-        mediator.Send(Arg.Any<GetQuery<WorkChangeResource>>(), Arg.Any<CancellationToken>())
+        mediator.Send(Arg.Any<GetWorkChangeInScopeQuery>(), Arg.Any<CancellationToken>())
             .Returns<WorkChangeResource>(_ => throw new KeyNotFoundException());
         var skill = new UpdateWorkChangeSkill(mediator);
 
@@ -73,6 +73,49 @@ public class UpdateWorkChangeSkillTests
         });
 
         result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Update_WithAScenarioToken_ReadsTheChangeInThatScenario()
+    {
+        var id = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetWorkChangeInScopeQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Change(id));
+        mediator.Send(Arg.Any<PutCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PutCommand<WorkChangeResource>)ci[0]).Resource);
+        var skill = new UpdateWorkChangeSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["workChangeId"] = id.ToString(),
+            ["changeTime"] = 1m,
+            ["analyseToken"] = token.ToString()
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<GetWorkChangeInScopeQuery>(q => q.Id == id && q.AnalyseToken == token),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Update_WithAnInvalidToken_ReturnsError_NoReadNoWrite()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skill = new UpdateWorkChangeSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["workChangeId"] = Guid.NewGuid().ToString(),
+            ["changeTime"] = 1m,
+            ["analyseToken"] = "not-a-uuid"
+        });
+
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<GetWorkChangeInScopeQuery>(), Arg.Any<CancellationToken>());
         await mediator.DidNotReceive().Send(Arg.Any<PutCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());
     }
 }

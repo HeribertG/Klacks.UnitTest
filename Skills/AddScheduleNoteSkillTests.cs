@@ -50,6 +50,49 @@ public class AddScheduleNoteSkillTests
             Arg.Any<CancellationToken>());
     }
 
+    [TestCase("not-a-uuid")]
+    [TestCase("00000000-0000-0000-0000-000000000000")]
+    public async Task AddScheduleNote_InvalidAnalyseToken_ReturnsError_NoDispatch(string analyseToken)
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skill = new AddScheduleNoteSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = Guid.NewGuid().ToString(),
+            ["date"] = new DateOnly(2026, 6, 15),
+            ["content"] = "Scenario note",
+            ["analyseToken"] = analyseToken
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("analyseToken");
+        await mediator.DidNotReceive().Send(
+            Arg.Any<PostCommand<ScheduleNoteResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AddScheduleNote_WithAScenarioToken_WritesIntoThatScenario()
+    {
+        var token = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<PostCommand<ScheduleNoteResource>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ((PostCommand<ScheduleNoteResource>)ci[0]).Resource);
+        var skill = new AddScheduleNoteSkill(mediator);
+
+        await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = Guid.NewGuid().ToString(),
+            ["date"] = new DateOnly(2026, 6, 15),
+            ["content"] = "Scenario note",
+            ["analyseToken"] = token.ToString()
+        });
+
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ScheduleNoteResource>>(c => c.Resource.AnalyseToken == token),
+            Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task AddScheduleNote_MissingContent_ReturnsError_NoDispatch()
     {

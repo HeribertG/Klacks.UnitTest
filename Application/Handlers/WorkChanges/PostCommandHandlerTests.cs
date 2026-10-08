@@ -247,7 +247,7 @@ public class PostCommandHandlerTests
             }),
             CancellationToken.None);
 
-        await Should.ThrowAsync<InvalidRequestException>(act);
+        await Should.ThrowAsync<KeyNotFoundException>(act);
     }
 
     private Work ParentWork(Guid? analyseToken) => new()

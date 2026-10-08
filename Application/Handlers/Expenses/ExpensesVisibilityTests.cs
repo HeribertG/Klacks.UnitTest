@@ -62,7 +62,8 @@ public class ExpensesVisibilityTests
         var hiddenWork = NewWork(_hiddenClientId);
         var visible = NewExpense(visibleWork);
         var hidden = NewExpense(hiddenWork);
-        _expensesRepository.List().Returns(new List<ExpensesEntity> { visible, hidden });
+        _expensesRepository.ListInScopeAsync(null, Arg.Any<CancellationToken>())
+            .Returns(new List<ExpensesEntity> { visible, hidden });
         _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work> { visibleWork, hiddenWork });
         var handler = new ListQueryHandler(
             _expensesRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(),
@@ -71,6 +72,44 @@ public class ExpensesVisibilityTests
         var result = (await handler.Handle(new ListQuery<ExpensesResource>(), CancellationToken.None)).ToList();
 
         result.Select(r => r.Id).ShouldBe(new[] { visible.Id });
+    }
+
+    [Test]
+    public async Task List_ForAScenario_ReadsOnlyThatScope_AndStillLeavesOutHiddenClients()
+    {
+        var token = Guid.NewGuid();
+        var visibleWork = NewWork(_visibleClientId);
+        var hiddenWork = NewWork(_hiddenClientId);
+        var visible = NewExpense(visibleWork);
+        var hidden = NewExpense(hiddenWork);
+        _expensesRepository.ListInScopeAsync(token, Arg.Any<CancellationToken>())
+            .Returns(new List<ExpensesEntity> { visible, hidden });
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work> { visibleWork, hiddenWork });
+        var handler = new ListQueryHandler(
+            _expensesRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(),
+            Substitute.For<ILogger<ListQueryHandler>>());
+
+        var result = (await handler.Handle(
+            new Klacks.Api.Application.Queries.Schedules.ListExpensesInScopeQuery(token), CancellationToken.None)).ToList();
+
+        result.Select(r => r.Id).ShouldBe(new[] { visible.Id });
+        await _expensesRepository.DidNotReceive().ListInScopeAsync(null, Arg.Any<CancellationToken>());
+        await _expensesRepository.DidNotReceive().List();
+    }
+
+    [Test]
+    public async Task List_OfTheMainPlan_NeverReadsAScenarioScope()
+    {
+        _expensesRepository.ListInScopeAsync(null, Arg.Any<CancellationToken>()).Returns(new List<ExpensesEntity>());
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work>());
+        var handler = new ListQueryHandler(
+            _expensesRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(),
+            Substitute.For<ILogger<ListQueryHandler>>());
+
+        await handler.Handle(new ListQuery<ExpensesResource>(), CancellationToken.None);
+
+        await _expensesRepository.Received(1).ListInScopeAsync(null, Arg.Any<CancellationToken>());
+        await _expensesRepository.DidNotReceive().List();
     }
 
     [Test]

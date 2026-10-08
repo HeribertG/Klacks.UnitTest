@@ -109,12 +109,14 @@ public class WorkChangeVisibilityTests
         _workRepository.GetNoTracking(missingWorkId).Returns((Work?)null);
         var handler = NewPostHandler();
 
-        var hiddenEx = await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(
+        var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
             new PostCommand<WorkChangeResource>(NewResource(Guid.NewGuid(), hiddenWork.Id, null)), CancellationToken.None));
-        var missingEx = await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(
+        var missingEx = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
             new PostCommand<WorkChangeResource>(NewResource(Guid.NewGuid(), missingWorkId, null)), CancellationToken.None));
 
-        hiddenEx.Message.ShouldBe(missingEx.Message.Replace(missingWorkId.ToString(), hiddenWork.Id.ToString()));
+        hiddenEx.Message.ShouldBe($"Work with ID {hiddenWork.Id} not found");
+        missingEx.Message.ShouldBe($"Work with ID {missingWorkId} not found");
+        hiddenEx.Message.ShouldNotContain(_hiddenClientId.ToString());
         await _workChangeRepository.DidNotReceive().Add(Arg.Any<WorkChange>());
         await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
     }
@@ -125,7 +127,7 @@ public class WorkChangeVisibilityTests
         var visibleWork = NewWork(_visibleClientId);
         _workRepository.GetNoTracking(visibleWork.Id).Returns(visibleWork);
 
-        await Should.ThrowAsync<InvalidRequestException>(() => NewPostHandler().Handle(
+        await Should.ThrowAsync<KeyNotFoundException>(() => NewPostHandler().Handle(
             new PostCommand<WorkChangeResource>(NewResource(Guid.NewGuid(), visibleWork.Id, _hiddenClientId)),
             CancellationToken.None));
 
