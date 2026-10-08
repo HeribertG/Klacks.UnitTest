@@ -126,12 +126,35 @@ public sealed class ShiftScopeExpanderTests
     }
 
     [Test]
-    public void InheritanceSourcesOf_AGrandchildInheritsFromItsOrderAndEveryCutAncestor()
+    public void ExpandPreferences_PreferredOnAMidPiece_DoesNotLiftTheOrderBlacklistForItsChildren()
     {
-        var sources = ShiftScopeExpander.InheritanceSourcesOf([Grandchild, Child2, OtherShift], Rows);
+        var expanded = ShiftScopeExpander.ExpandPreferences(
+            [
+                new ScopedShiftPreference(Client, Order, ShiftPreferenceType.Blacklist),
+                new ScopedShiftPreference(Client, Child1, ShiftPreferenceType.Preferred),
+            ],
+            Rows);
 
-        sources[Grandchild].ShouldBe([Order, Root, Child1], ignoreOrder: true);
-        sources[Child2].ShouldBe([Order, Root], ignoreOrder: true);
-        sources[OtherShift].ShouldBe([OtherOrder]);
+        expanded.Single(p => p.ShiftId == Child1).PreferenceType.ShouldBe(
+            ShiftPreferenceType.Preferred, "the explicit entry on the mid piece itself wins");
+        expanded.Single(p => p.ShiftId == Grandchild).PreferenceType.ShouldBe(
+            ShiftPreferenceType.Blacklist, "owner rule: Blacklist wins across all levels, not nearest-wins");
+        expanded.Single(p => p.ShiftId == Child2).PreferenceType.ShouldBe(ShiftPreferenceType.Blacklist);
+    }
+
+    [Test]
+    public void ReceiversOf_ParentIdCycle_Terminates()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var rows = new List<ShiftTreeRow>
+        {
+            new(a, ShiftStatus.SplitShift, Order, b, a),
+            new(b, ShiftStatus.SplitShift, Order, a, a),
+        };
+
+        ShiftScopeExpander.ReceiversOf(a, rows).ShouldBe([a, b], ignoreOrder: true);
+        ShiftScopeExpander.ExpandPreferences([new ScopedShiftPreference(Client, a, ShiftPreferenceType.Blacklist)], rows)
+            .Select(p => p.ShiftId).ShouldBe([a, b], ignoreOrder: true);
     }
 }

@@ -92,7 +92,7 @@ public class SourceFileSizeGuardTests
         [@"Domain\Services\Assistant\LLMService.cs::HistoryBudgetFor"] = 235,
         [@"Infrastructure\Services\Assistant\LLMModelSyncService.cs::SyncProviderAsync"] = 174,
         [@"Infrastructure\Services\Schedules\HarmonizerJobRunner.cs::RunJobAsync"] = 181,
-        [@"Infrastructure\Services\Schedules\WizardJobRunner.cs::RunJobAsync"] = 206,
+        [@"Infrastructure\Services\Schedules\WizardJobRunner.cs::RunJobAsync"] = 192,
         [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs::RunKindAsync"] = 152,
         [@"Application\Services\Schedules\HolisticHarmonizer\HolisticHarmonizerEngine.cs::RunAsync"] = 294,
         [@"Domain\Services\Assistant\Skills\SkillExecutorService.cs::ExecuteAsync"] = 178,

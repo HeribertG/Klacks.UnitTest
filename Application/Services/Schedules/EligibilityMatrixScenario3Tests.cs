@@ -5,8 +5,8 @@
 /// decisions S3-1/S3-2): EligibilityMatrixBuilder.BuildAsync against real ClientQualification /
 /// ShiftRequiredQualification rows for the March 2026 fixture (5 employees, early/late/night,
 /// NACHT-BEF / OBJEKT-A / ERSTE-HILFE). Documents production findings K1 (expired mandatory
-/// qualification is only a Warning by default), K2 (no requirement inheritance from the order
-/// root shift to its cut shifts) and K7 (expired AND below MinLevel falls back to Missing and
+/// qualification is only a Warning by default), K2 (order-to-cut inheritance, fixed 2026-10-08 in the repository via ShiftRequirementSourceResolver;
+/// the builder itself applies only what the repository resolves) and K7 (expired AND below MinLevel falls back to Missing and
 /// becomes a hard veto even at default settings).
 /// </summary>
 
@@ -91,8 +91,6 @@ public sealed class EligibilityMatrixScenario3Tests
     {
         _clientRepo = Substitute.For<IClientQualificationRepository>();
         _shiftRepo = Substitute.For<IShiftRequiredQualificationRepository>();
-        _shiftRepo.GetInheritedByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ShiftRequiredQualification>());
         _settingsReader = Substitute.For<ISettingsReader>();
         _sut = new EligibilityMatrixBuilder(_clientRepo, _shiftRepo, _settingsReader);
     }
@@ -215,9 +213,9 @@ public sealed class EligibilityMatrixScenario3Tests
         var matrix = await BuildAllSlotsAsync();
 
         matrix.Ineligible.ShouldBeEmpty(
-            $"Production finding K2: a qualification requirement attached to the order root shift is never inherited by its cut/child shifts - the lookup is exact by shift id (ShiftRequiredQualificationRepository.GetByShiftIdsAsync) and the cut path copies nothing, so {ObjektAName} on the order vetoes nobody on any of the three shifts, not even MA-4 who does not hold {ObjektAName} at all");
+            $"K2, builder in isolation: the builder applies only the rows the repository resolves for the staffed shift ids (the order-tree rule lives in ShiftRequirementSourceResolver behind GetEffectiveByShiftIdsAsync); a row the repository does not resolve to a staffed shift, here {ObjektAName} on an unrelated shift, vetoes nobody, not even MA-4 who does not hold {ObjektAName}");
         matrix.Gaps.ShouldBeEmpty(
-            "Production finding K2: the order-level requirement does not even surface as a Warning gap on the child shifts - it is completely invisible to the eligibility matrix");
+            "K2, builder in isolation: an unresolved row does not even surface as a Warning gap");
     }
 
     [Test]
@@ -307,11 +305,13 @@ public sealed class EligibilityMatrixScenario3Tests
 
     private void GivenRequirements(params ShiftRequiredQualification[] rows)
     {
-        // Mirrors the exact-id filter of the production repository
-        // (ShiftRequiredQualificationRepository.GetByShiftIdsAsync: Where(ids.Contains(srq.ShiftId))) -
-        // a requirement on a shift id that is not among the slot shift ids is never returned.
-        _shiftRepo.GetByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(ci => rows.Where(r => ci.Arg<IReadOnlyCollection<Guid>>().Contains(r.ShiftId)).ToList());
+        // Every shift is its own source here (flat shifts, no order tree): a requirement on a shift id that is not
+        // among the slot shift ids is never returned, as GetEffectiveByShiftIdsAsync does for shifts without a tree.
+        _shiftRepo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => rows
+                .Where(r => ci.Arg<IReadOnlyCollection<Guid>>().Contains(r.ShiftId))
+                .Select(r => new EffectiveShiftRequirement(r.ShiftId, r.ShiftId.ToString(), r.ShiftId, r))
+                .ToList());
     }
 
     private void GivenHeld(IReadOnlyCollection<ClientQualification> rows)

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Unit tests for the WizardJobRunner.MapTokens static method, verifying filtering of locked tokens
@@ -8,7 +8,10 @@
 using Shouldly;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
+using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Controller;
 using Klacks.ScheduleOptimizer.TokenEvolution.Diagnostics;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
@@ -94,8 +97,33 @@ public class WizardJobRunnerTokenTests
         slot.ShiftId.ShouldBe(shiftId.ToString());
         slot.Date.ShouldBe("2026-04-22");
         slot.MissingSeats.ShouldBe(1);
-        slot.FeasibleAgentCount.ShouldBe(0);
-        slot.VetoCounts["BreakBlocker"].ShouldBe(2);
+        slot.EligibleAgentCount.ShouldBe(0);
+        slot.PlaceableAgentCount.ShouldBe(0);
+        slot.EligibilityVetoCounts[Stage0RuleNames.BreakBlocker].ShouldBe(2);
+        slot.PlacementVetoCounts.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void DiagnoseUnfilledSlots_CancelledDiagnosis_LeavesTheResultUndiagnosedAndWarns()
+    {
+        var day = new DateOnly(2026, 4, 22);
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = day,
+            PeriodUntil = day,
+            Agents = [VacationAgent("agent-1")],
+            Shifts = [new CoreShift(Guid.NewGuid().ToString(), "FD", "2026-04-22", "06:00", "14:00", 8, 1, 0)],
+        };
+        var logger = Substitute.For<ILogger>();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var result = WizardJobRunner.DiagnoseUnfilledSlots(Guid.NewGuid(), context, [], logger, cancellation.Token);
+
+        result.ShouldBeNull("a finished run must not fail or time out because its diagnosis was cut short");
+        logger.ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(ILogger.Log) && (LogLevel)call.GetArguments()[0]! == LogLevel.Warning)
+            .ShouldBe(1);
     }
 
     private static CoreAgent VacationAgent(string id) => new(

@@ -33,27 +33,8 @@ public sealed class EligibilityMatrixBuilderTests
     {
         _clientRepo = Substitute.For<IClientQualificationRepository>();
         _shiftRepo = Substitute.For<IShiftRequiredQualificationRepository>();
-        _shiftRepo.GetInheritedByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ShiftRequiredQualification>());
         _settingsReader = Substitute.For<ISettingsReader>();
         _sut = new EligibilityMatrixBuilder(_clientRepo, _shiftRepo, _settingsReader);
-    }
-
-    private void GivenShiftRequires(bool mandatory, QualificationLevel minLevel)
-    {
-        _shiftRepo.GetByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ShiftRequiredQualification>
-            {
-                new()
-                {
-                    ShiftId = Shift,
-                    QualificationId = Qual,
-                    IsMandatory = mandatory,
-                    MinLevel = minLevel,
-                    Qualification = new Qualification { Name = new MultiLanguage { De = "Pflege" }, Emoji = "🩺" },
-                    Shift = new Klacks.Api.Domain.Models.Schedules.Shift { Name = "Care", Abbreviation = "C" },
-                },
-            });
     }
 
     private void GivenClientHolds(params ClientQualification[] held)
@@ -219,8 +200,7 @@ public sealed class EligibilityMatrixBuilderTests
     [Test]
     public async Task NoRequiredQualifications_EmptyMatrix()
     {
-        _shiftRepo.GetByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ShiftRequiredQualification>());
+        GivenEffectiveRequirements();
         GivenClientHolds();
 
         var matrix = await Build();
@@ -229,60 +209,35 @@ public sealed class EligibilityMatrixBuilderTests
     }
 
     [Test]
-    public async Task CutPiece_WithoutOwnRequirement_InheritsTheMandatoryRequirementOfItsOrder()
+    public async Task RowOfAnotherShiftOfTheTree_VetoesOnTheStaffedPieceAndNamesThePiece()
     {
-        _shiftRepo.GetByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ShiftRequiredQualification>());
-        GivenShiftInherits(mandatory: true, QualificationLevel.Proficient);
+        var order = Guid.NewGuid();
+        GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Piece", order, Requirement(order, mandatory: true, QualificationLevel.Proficient)));
         GivenClientHolds();
 
         var matrix = await Build();
 
         matrix.Ineligible.ShouldContain(
             (Agent.ToString(), Shift, Date),
-            "A cut piece carries no requirement rows of its own; the order's mandatory qualification must still veto.");
-        matrix.ShiftNames[Shift].ShouldBe("Piece", "The report names the staffed piece, not the order.");
+            "A cut piece carries no requirement rows of its own; the rows of the nearest link of its tree must still veto.");
+        matrix.ShiftNames[Shift].ShouldBe("Piece", "The report names the staffed piece, not the shift that carries the row.");
     }
 
-    [Test]
-    public async Task OwnOptionalAndInheritedMandatoryRequirement_MergeIntoOneMandatoryRequirement()
+    private void GivenShiftRequires(bool mandatory, QualificationLevel minLevel)
+        => GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Care", Shift, Requirement(Shift, mandatory, minLevel)));
+
+    private void GivenEffectiveRequirements(params EffectiveShiftRequirement[] requirements)
     {
-        GivenShiftRequires(mandatory: false, QualificationLevel.Proficient);
-        GivenShiftInherits(mandatory: true, QualificationLevel.Proficient);
-        GivenClientHolds();
-
-        var matrix = await Build();
-
-        matrix.Ineligible.ShouldContain((Agent.ToString(), Shift, Date));
-        matrix.Gaps[(Agent.ToString(), Shift, Date)].ShouldHaveSingleItem().IsMandatory.ShouldBeTrue();
+        _shiftRepo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(requirements.ToList());
     }
 
-    [Test]
-    public async Task InheritedRequirement_RaisesTheMinimumLevelOfTheOwnRequirement()
+    private static ShiftRequiredQualification Requirement(Guid carrierShiftId, bool mandatory, QualificationLevel minLevel) => new()
     {
-        GivenShiftRequires(mandatory: true, QualificationLevel.Proficient);
-        GivenShiftInherits(mandatory: true, QualificationLevel.Expert);
-        GivenClientHolds(new ClientQualification { ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Proficient });
-
-        var matrix = await Build();
-
-        matrix.Gaps[(Agent.ToString(), Shift, Date)].ShouldHaveSingleItem().Reason.ShouldBe(QualificationGapReason.InsufficientLevel);
-    }
-
-    private void GivenShiftInherits(bool mandatory, QualificationLevel minLevel)
-    {
-        _shiftRepo.GetInheritedByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ShiftRequiredQualification>
-            {
-                new()
-                {
-                    ShiftId = Shift,
-                    QualificationId = Qual,
-                    IsMandatory = mandatory,
-                    MinLevel = minLevel,
-                    Qualification = new Qualification { Name = new MultiLanguage { De = "Pflege" }, Emoji = "🩺" },
-                    Shift = new Klacks.Api.Domain.Models.Schedules.Shift { Name = "Piece", Abbreviation = "P" },
-                },
-            });
-    }
+        ShiftId = carrierShiftId,
+        QualificationId = Qual,
+        IsMandatory = mandatory,
+        MinLevel = minLevel,
+        Qualification = new Qualification { Name = new MultiLanguage { De = "Pflege" }, Emoji = "🩺" },
+    };
 }
