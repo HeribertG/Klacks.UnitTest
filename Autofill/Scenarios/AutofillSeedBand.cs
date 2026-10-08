@@ -43,7 +43,7 @@ public static class AutofillSeedBand
 
     private const string ReportNote =
         "Diagnosis only, never asserted. 'worst' is the value a guard should be pinned to: the lowest blockRotationCompliance, "
-        + "idealShare, topRanksPlannedHours and carryInOkCount and the highest mixedTypeCount, shortPackageShare, "
+        + "blockRotationPairCount, idealShare, topRanksPlannedHours and carryInOkCount and the highest mixedTypeCount, shortPackageShare, "
         + "packagesOverIdealLength, shiftKindSpread and monotonicityViolations over the seeds listed under 'samples'. "
         + "A guard still checks the run of the first seed only; the band decides how far that run may move before the "
         + "guard turns red.";
@@ -109,6 +109,7 @@ public static class AutofillSeedBand
     public static AutofillBandValues PinnedValuesOf(AutofillBaseline baseline, int? carryInOkCount)
         => new(
             BlockRotationCompliance: baseline.MinBlockRotationCompliance,
+            BlockRotationPairCount: baseline.MinBlockRotationPairCount,
             CyclicForwardRate: null,
             MixedTypeCount: baseline.MaxMixedTypeCount,
             ShortPackageShare: baseline.MaxShortPackageShare,
@@ -156,6 +157,7 @@ public static class AutofillSeedBand
     {
         var text = new StringBuilder()
             .Append("blockRotationCompliance=").Append(Number(values.BlockRotationCompliance))
+            .Append(", blockRotationPairCount=").Append(Number(values.BlockRotationPairCount))
             .Append(", cyclicForwardRate=")
             .Append(values.CyclicForwardRate is null ? NotPinned : Number(values.CyclicForwardRate.Value))
             .Append(", mixedTypeCount=").Append(Number(values.MixedTypeCount))

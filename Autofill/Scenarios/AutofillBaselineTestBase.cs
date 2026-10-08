@@ -71,8 +71,9 @@ public abstract class AutofillBaselineTestBase
     /// 0 could not fail anyway. That rate also judged by the cyclic rule (night to early counted as
     /// forward, the same kind as a deviation), which contradicts 12b, and never looked at kind changes
     /// inside a package. The measurement now runs on the shift sequence, so a kind falling inside a
-    /// package is a subject as well; with no pair at all the rate is 1, which holds no violation.
-    /// The naive cyclic readings are reported next to it in the metrics artifact and the band, never asserted:
+    /// package is a subject as well; with no pair at all the rate is 1, which holds no violation, so the
+    /// number of measured in-block pairs is pinned as well (2026-10-08): a plan that leaves nothing to measure
+    /// cannot pass as compliant. The naive cyclic readings are reported next to it in the metrics artifact and the band, never asserted:
     /// which rotation definition is binding is an open owner decision.
     /// </summary>
     [Test]
@@ -80,6 +81,13 @@ public abstract class AutofillBaselineTestBase
     {
         var block = BaselineMetrics.Rotation.BlockCompliance;
         var cyclic = BaselineMetrics.Rotation.CyclicLastToFirst;
+
+        block.PairCount.ShouldBeGreaterThanOrEqualTo(
+            Baseline.MinBlockRotationPairCount,
+            $"Baseline: the rotation rate must be measured on at least {Count(Baseline.MinBlockRotationPairCount)} in-block "
+            + $"shift pair(s), but only {Count(block.PairCount)} were found. The rate is 1 when there is no pair at all, so "
+            + "without this floor a plan that leaves nothing to measure would pass the rotation pin. The floor is the lowest "
+            + "pair count the current engine produced over the band seeds.");
 
         block.CompliantRate.ShouldBeGreaterThanOrEqualTo(
             Baseline.MinBlockRotationCompliance - ComparisonEpsilon,

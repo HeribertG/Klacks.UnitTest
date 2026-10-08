@@ -39,6 +39,14 @@ public static class Scenario3BaselineValues
     private const double BlockRotationCompliance = 1;
 
     /// <summary>
+    /// Floor of the in-block pairs the rotation pin is measured on (rotation.blockCompliance.pairCount). Scenario 3 has no
+    /// seed band, so this is the single measurement of L1, seed 42, on 2026-10-08 (Api 104c0b418 / Optimizer 43529c2 plus
+    /// the SlotConstraintFilter refactor, plans byte-identical): 70 pairs. Sharp like the other scenario 3 pins. Without it
+    /// the rotation pin of 1 would also pass a plan with no in-block pair at all.
+    /// </summary>
+    private const int BlockRotationPairCount = 70;
+
+    /// <summary>
     /// Measured on L1, seed 42, after the M11 fairness stage of 2026-08-13: 5 of 26 packages mix
     /// shift kinds. TIGHTENED from 10. Spec target of the former A4 is 0 (SPEC.md).
     /// </summary>
@@ -98,6 +106,7 @@ public static class Scenario3BaselineValues
     /// <summary>The floor scenario 3 must not fall below.</summary>
     public static AutofillBaseline Baseline { get; } = new(
         MinBlockRotationCompliance: BlockRotationCompliance,
+        MinBlockRotationPairCount: BlockRotationPairCount,
         MaxMixedTypeCount: MixedTypeCount,
         MaxShortPackageShare: ShortPackageShare,
         MaxPackagesOverIdealLength: PackagesOverIdealLength,

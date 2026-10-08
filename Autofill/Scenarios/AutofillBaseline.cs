@@ -21,6 +21,10 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// rotation.blockCompliance.compliantRate (SPEC.md decision 12b: inside a block the kind never falls)
 /// must stay at least this high
 /// </param>
+/// <param name="MinBlockRotationPairCount">
+/// rotation.blockCompliance.pairCount must stay at least this high. The rotation rate is 1 when there is no in-block pair,
+/// so without this floor a plan that measures nothing would pass the rotation pin
+/// </param>
 /// <param name="MaxMixedTypeCount">packages.mixedTypeCount must stay at most this high</param>
 /// <param name="MaxShortPackageShare">Share of packages of at most two days must stay at most this high</param>
 /// <param name="MaxPackagesOverIdealLength">Packages longer than the five-day ideal must stay at most this many</param>
@@ -33,6 +37,7 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// </param>
 public sealed record AutofillBaseline(
     double MinBlockRotationCompliance,
+    int MinBlockRotationPairCount,
     int MaxMixedTypeCount,
     double MaxShortPackageShare,
     int MaxPackagesOverIdealLength,

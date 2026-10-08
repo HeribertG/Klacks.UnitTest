@@ -14,6 +14,10 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// <param name="BlockRotationCompliance">
 /// rotation.blockCompliance.compliantRate (SPEC.md decision 12b) — higher is better; the pinned rotation value
 /// </param>
+/// <param name="BlockRotationPairCount">
+/// rotation.blockCompliance.pairCount — higher is better; the number of in-block pairs the rotation rate is measured
+/// on, pinned so a rate of 1 over no pair at all cannot pass as compliance
+/// </param>
 /// <param name="CyclicForwardRate">
 /// rotation.cyclicLastToFirst.forwardRate, the naive cyclic reading — higher is better; reported, never pinned,
 /// so the pinned side of a band report leaves it null
@@ -33,6 +37,7 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// </param>
 public sealed record AutofillBandValues(
     double BlockRotationCompliance,
+    int BlockRotationPairCount,
     double? CyclicForwardRate,
     int MixedTypeCount,
     double ShortPackageShare,
@@ -52,6 +57,7 @@ public sealed record AutofillBandValues(
 
         return new AutofillBandValues(
             BlockRotationCompliance: metrics.Rotation.BlockCompliance.CompliantRate,
+            BlockRotationPairCount: metrics.Rotation.BlockCompliance.PairCount,
             CyclicForwardRate: metrics.Rotation.CyclicLastToFirst.ForwardRate,
             MixedTypeCount: metrics.Packages.MixedTypeCount,
             ShortPackageShare: AutofillPlanAnalyzer.ShortPackageShare(
@@ -110,6 +116,9 @@ public sealed record AutofillBandValues(
             BlockRotationCompliance: worst
                 ? values.Min(v => v.BlockRotationCompliance)
                 : values.Max(v => v.BlockRotationCompliance),
+            BlockRotationPairCount: worst
+                ? values.Min(v => v.BlockRotationPairCount)
+                : values.Max(v => v.BlockRotationPairCount),
             CyclicForwardRate: cyclic.Count == 0 ? null : worst ? cyclic.Min() : cyclic.Max(),
             MixedTypeCount: worst ? values.Max(v => v.MixedTypeCount) : values.Min(v => v.MixedTypeCount),
             ShortPackageShare: worst ? values.Max(v => v.ShortPackageShare) : values.Min(v => v.ShortPackageShare),

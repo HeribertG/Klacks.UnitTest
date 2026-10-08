@@ -45,6 +45,14 @@ public static class Scenario1BaselineValues
     private const double BlockRotationCompliance = 1;
 
     /// <summary>
+    /// Floor of the in-block pairs the rotation pin is measured on (rotation.blockCompliance.pairCount). Band over seeds
+    /// 42/43/44 measured 2026-10-08 on Api 104c0b418 / Optimizer 43529c2 plus the SlotConstraintFilter refactor (plans
+    /// byte-identical): 66/65/64, so the floor is 64. Without it the rotation pin of 1 would also pass a plan with no
+    /// in-block pair at all, because the rate is 1 when there is nothing to measure.
+    /// </summary>
+    private const int BlockRotationPairCount = 64;
+
+    /// <summary>
     /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 6/11/9, so the ceiling
     /// is 11. TIGHTENED from 16 — the night tie-break and the continuation priority leave far
     /// fewer mixed packages. Spec target of the former A4 is 0 and stays documented in SPEC.md.
@@ -111,6 +119,7 @@ public static class Scenario1BaselineValues
     /// <summary>The floor scenario 1 must not fall below.</summary>
     public static AutofillBaseline Baseline { get; } = new(
         MinBlockRotationCompliance: BlockRotationCompliance,
+        MinBlockRotationPairCount: BlockRotationPairCount,
         MaxMixedTypeCount: MixedTypeCount,
         MaxShortPackageShare: ShortPackageShare,
         MaxPackagesOverIdealLength: PackagesOverIdealLength,
