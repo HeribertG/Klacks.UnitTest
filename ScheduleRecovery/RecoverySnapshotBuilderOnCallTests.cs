@@ -1,11 +1,13 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.Recovery;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleRecovery.Model;
+using Klacks.UnitTest.TestHelpers;
 using NUnit.Framework;
 using Shouldly;
 
@@ -110,6 +112,27 @@ public sealed class RecoverySnapshotBuilderOnCallTests
 
         cell.HasFreeCommand.ShouldBeTrue();
         cell.IsAvailable.ShouldBeFalse();
+    }
+
+    [Test]
+    public void OnCallWithOnlyEarlyAndOnlyLateOnTheSameDay_StaysBlocked()
+    {
+        RecoverySnapshotBuilder.BuildWorks([BreakCell(OnCallAbsence)], OnCallIds, out var breakDays);
+        var commands = new List<ScheduleCommand>
+        {
+            new() { ClientId = AgentA, CurrentDate = Sunday, CommandKeyword = "EARLY" },
+            new() { ClientId = AgentA, CurrentDate = Sunday, CommandKeyword = "LATE" },
+        };
+        var keywords = RecoverySnapshotBuilder.ExtractKeywordDays(
+            commands, ScheduleCommandKeywordMapper.BuildMap(ScheduleCommandKeywordTestFactory.Default));
+
+        var cell = RecoverySnapshotBuilder.BuildAvailability(
+            [AgentA], WeekdayContract(), breakDays, keywords, Sunday, Sunday)[new CellKey(AgentA, Sunday)];
+
+        cell.IsOnCall.ShouldBeTrue("the on-call duty itself is not lost");
+        cell.WorksOnDay.ShouldBeTrue("the on-call duty still lifts the contract's free Sunday");
+        cell.HasFreeCommand.ShouldBeTrue("only early and only late on one day leave no shift kind");
+        cell.IsAvailable.ShouldBeFalse("contradictory planning wishes close the day even on an on-call day");
     }
 
     private static DayAvailability Availability(
