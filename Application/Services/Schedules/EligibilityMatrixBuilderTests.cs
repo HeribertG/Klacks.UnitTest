@@ -33,6 +33,8 @@ public sealed class EligibilityMatrixBuilderTests
     {
         _clientRepo = Substitute.For<IClientQualificationRepository>();
         _shiftRepo = Substitute.For<IShiftRequiredQualificationRepository>();
+        _shiftRepo.GetInheritedByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ShiftRequiredQualification>());
         _settingsReader = Substitute.For<ISettingsReader>();
         _sut = new EligibilityMatrixBuilder(_clientRepo, _shiftRepo, _settingsReader);
     }
@@ -224,5 +226,63 @@ public sealed class EligibilityMatrixBuilderTests
         var matrix = await Build();
 
         matrix.Ineligible.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task CutPiece_WithoutOwnRequirement_InheritsTheMandatoryRequirementOfItsOrder()
+    {
+        _shiftRepo.GetByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ShiftRequiredQualification>());
+        GivenShiftInherits(mandatory: true, QualificationLevel.Proficient);
+        GivenClientHolds();
+
+        var matrix = await Build();
+
+        matrix.Ineligible.ShouldContain(
+            (Agent.ToString(), Shift, Date),
+            "A cut piece carries no requirement rows of its own; the order's mandatory qualification must still veto.");
+        matrix.ShiftNames[Shift].ShouldBe("Piece", "The report names the staffed piece, not the order.");
+    }
+
+    [Test]
+    public async Task OwnOptionalAndInheritedMandatoryRequirement_MergeIntoOneMandatoryRequirement()
+    {
+        GivenShiftRequires(mandatory: false, QualificationLevel.Proficient);
+        GivenShiftInherits(mandatory: true, QualificationLevel.Proficient);
+        GivenClientHolds();
+
+        var matrix = await Build();
+
+        matrix.Ineligible.ShouldContain((Agent.ToString(), Shift, Date));
+        matrix.Gaps[(Agent.ToString(), Shift, Date)].ShouldHaveSingleItem().IsMandatory.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task InheritedRequirement_RaisesTheMinimumLevelOfTheOwnRequirement()
+    {
+        GivenShiftRequires(mandatory: true, QualificationLevel.Proficient);
+        GivenShiftInherits(mandatory: true, QualificationLevel.Expert);
+        GivenClientHolds(new ClientQualification { ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Proficient });
+
+        var matrix = await Build();
+
+        matrix.Gaps[(Agent.ToString(), Shift, Date)].ShouldHaveSingleItem().Reason.ShouldBe(QualificationGapReason.InsufficientLevel);
+    }
+
+    private void GivenShiftInherits(bool mandatory, QualificationLevel minLevel)
+    {
+        _shiftRepo.GetInheritedByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ShiftRequiredQualification>
+            {
+                new()
+                {
+                    ShiftId = Shift,
+                    QualificationId = Qual,
+                    IsMandatory = mandatory,
+                    MinLevel = minLevel,
+                    Qualification = new Qualification { Name = new MultiLanguage { De = "Pflege" }, Emoji = "🩺" },
+                    Shift = new Klacks.Api.Domain.Models.Schedules.Shift { Name = "Piece", Abbreviation = "P" },
+                },
+            });
     }
 }

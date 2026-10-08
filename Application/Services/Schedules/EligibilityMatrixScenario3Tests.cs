@@ -91,6 +91,8 @@ public sealed class EligibilityMatrixScenario3Tests
     {
         _clientRepo = Substitute.For<IClientQualificationRepository>();
         _shiftRepo = Substitute.For<IShiftRequiredQualificationRepository>();
+        _shiftRepo.GetInheritedByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ShiftRequiredQualification>());
         _settingsReader = Substitute.For<ISettingsReader>();
         _sut = new EligibilityMatrixBuilder(_clientRepo, _shiftRepo, _settingsReader);
     }
