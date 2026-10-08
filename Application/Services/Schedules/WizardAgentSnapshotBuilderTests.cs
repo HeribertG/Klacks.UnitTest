@@ -65,7 +65,9 @@ public class WizardAgentSnapshotBuilderTests
 
         result.ContractDays.Where(d => !d.WorksOnDay).Select(d => d.Date).ShouldBe(
             [new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 9)]);
-        result.Agents.Single().GuaranteedHours.ShouldBe(120, "Master data comes from the first member day with a contract.");
+        result.Agents.Single().GuaranteedHours.ShouldBe(
+            120.0 * 3 / 5,
+            "Master data comes from the first member day with a contract (120, not 10), prorated to the 3 member days of the 5-day period.");
     }
 
     [Test]
@@ -102,6 +104,59 @@ public class WizardAgentSnapshotBuilderTests
 
         result.Agents.ShouldBeEmpty();
         result.ContractDays.ShouldAllBe(d => !d.WorksOnDay);
+    }
+
+    private const double Tolerance = 1e-9;
+    private static readonly DateOnly MarchFirst = new(2026, 3, 1);
+    private static readonly DateOnly MarchLast = new(2026, 3, 31);
+
+    private async Task<CoreAgent> MarchAgentAsync(MembershipWindow? window)
+    {
+        var agentId = Guid.NewGuid();
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData>
+        {
+            [agentId] = AllWeekContract(guaranteedHours: 124) with { FullTime = 155, MinimumHours = 62, MaximumHours = 186 },
+        });
+        StubMembership(window is null
+            ? new Dictionary<Guid, MembershipWindow>()
+            : new Dictionary<Guid, MembershipWindow> { [agentId] = window });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, MarchFirst, MarchLast, new Dictionary<Guid, double>(), CancellationToken.None);
+        return result.Agents.Single();
+    }
+
+    [Test]
+    public async Task BuildAsync_ExitOnThe15th_ProratesTheTargetsTo15Of31_AndKeepsTheMaximum()
+    {
+        var agent = await MarchAgentAsync(new MembershipWindow(new DateOnly(2020, 1, 1), new DateOnly(2026, 3, 15)));
+
+        agent.GuaranteedHours.ShouldBe((double)(124m * 15 / 31), Tolerance);
+        agent.FullTime.ShouldBe((double)(155m * 15 / 31), Tolerance);
+        agent.MinimumHours.ShouldBe((double)(62m * 15 / 31), Tolerance);
+        agent.MaximumHours.ShouldBe(186, "MaximumHours is a hard ceiling and is never prorated");
+    }
+
+    [Test]
+    public async Task BuildAsync_EntryOnThe10th_ProratesTheTargetsTo22Of31()
+    {
+        var agent = await MarchAgentAsync(new MembershipWindow(new DateOnly(2026, 3, 10), null));
+
+        agent.GuaranteedHours.ShouldBe((double)(124m * 22 / 31), Tolerance);
+        agent.FullTime.ShouldBe((double)(155m * 22 / 31), Tolerance);
+        agent.MaximumHours.ShouldBe(186);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task BuildAsync_WithoutAMembershipBoundaryInThePeriod_KeepsTheTargetsUnchanged(bool withMembershipRow)
+    {
+        var agent = await MarchAgentAsync(withMembershipRow ? new MembershipWindow(new DateOnly(2020, 1, 1), new DateOnly(2027, 1, 1)) : null);
+
+        agent.GuaranteedHours.ShouldBe(124);
+        agent.FullTime.ShouldBe(155);
+        agent.MinimumHours.ShouldBe(62);
+        agent.MaximumHours.ShouldBe(186);
     }
 
     private void StubMembership(Dictionary<Guid, MembershipWindow> windows)

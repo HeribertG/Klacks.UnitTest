@@ -162,6 +162,52 @@ public class HarmonizerContextBuilderTargetHoursTests
         result[agent].ShouldBe(MonthlyGuaranteedHours * 7m / 31m, 0.0000001m);
     }
 
+    private static Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>> MarchMonthly(Guid agent, decimal hours)
+    {
+        var data = new Dictionary<DateOnly, Dictionary<Guid, EffectiveContractData>>();
+        for (var date = new DateOnly(2026, 3, 1); date <= new DateOnly(2026, 3, 31); date = date.AddDays(1))
+        {
+            data[date] = new Dictionary<Guid, EffectiveContractData>
+            {
+                [agent] = new() { GuaranteedHours = hours, PaymentInterval = (int)PaymentInterval.Monthly },
+            };
+        }
+
+        return data;
+    }
+
+    [TestCase(15, null, 15)]
+    [TestCase(null, 10, 22)]
+    public void ComputePeriodTargetHours_MembershipBoundaryInsideTheMonth_ProratesByMemberDays(int? exitDay, int? entryDay, int memberDays)
+    {
+        var agent = Guid.NewGuid();
+        var window = new MembershipWindow(
+            entryDay is { } entry ? new DateOnly(2026, 3, entry) : new DateOnly(2020, 1, 1),
+            exitDay is { } exit ? new DateOnly(2026, 3, exit) : null);
+
+        var result = HarmonizerContextBuilder.ComputePeriodTargetHours(
+            [agent], new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), MarchMonthly(agent, 124m),
+            new Dictionary<Guid, IReadOnlyCollection<Period>>(), new Dictionary<Guid, MembershipWindow> { [agent] = window });
+
+        result[agent].ShouldBe(124m * memberDays / 31m, 0.0000001m);
+    }
+
+    [Test]
+    public void ComputePeriodTargetHours_MembershipCoveringTheMonth_KeepsTheTarget()
+    {
+        var agent = Guid.NewGuid();
+        var data = MarchMonthly(agent, 124m);
+        var periods = new Dictionary<Guid, IReadOnlyCollection<Period>>();
+
+        var withWindow = HarmonizerContextBuilder.ComputePeriodTargetHours(
+            [agent], new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), data, periods,
+            new Dictionary<Guid, MembershipWindow> { [agent] = new(new DateOnly(2020, 1, 1), null) });
+        var without = HarmonizerContextBuilder.ComputePeriodTargetHours(
+            [agent], new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), data, periods);
+
+        withWindow[agent].ShouldBe(without[agent]);
+    }
+
     [Test]
     public void ComputePeriodTargetHours_AgentWithoutData_IsZero()
     {
