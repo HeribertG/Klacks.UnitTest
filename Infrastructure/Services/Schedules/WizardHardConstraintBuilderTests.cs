@@ -419,4 +419,54 @@ public class WizardHardConstraintBuilderTests
             LockLevel = lockLevel,
             AnalyseToken = null,
         });
+
+    [Test]
+    public async Task BuildAsync_BlacklistOnTheOrder_ReachesEveryCutPiece()
+    {
+        var agent = Guid.NewGuid();
+        var order = Guid.NewGuid();
+        var root = Guid.NewGuid();
+        var child = Guid.NewGuid();
+        var foreignShift = Guid.NewGuid();
+        _context.Shift.Add(new Shift { Id = order, Name = "Order", Status = ShiftStatus.SealedOrder });
+        _context.Shift.Add(new Shift { Id = root, Name = "Root", Status = ShiftStatus.SplitShift, OriginalId = order, RootId = root });
+        _context.Shift.Add(new Shift { Id = child, Name = "Child", Status = ShiftStatus.SplitShift, OriginalId = order, ParentId = root, RootId = root });
+        _context.Shift.Add(new Shift { Id = foreignShift, Name = "Other", Status = ShiftStatus.OriginalShift });
+        _context.ClientShiftPreference.Add(new ClientShiftPreference
+        {
+            Id = Guid.NewGuid(), ClientId = agent, ShiftId = order, PreferenceType = ShiftPreferenceType.Blacklist,
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([agent], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), null, CancellationToken.None);
+
+        result.ShiftPreferences.Select(p => p.ShiftRefId).ShouldBe([order, root, child], ignoreOrder: true);
+        result.ShiftPreferences.ShouldAllBe(p => p.Kind == ShiftPreferenceKind.Blacklist && p.AgentId == agent.ToString());
+    }
+
+    [Test]
+    public async Task BuildAsync_ScenarioPreference_IsExpandedOverTheScenarioClonesOnly()
+    {
+        var agent = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var realRoot = Guid.NewGuid();
+        var cloneRoot = Guid.NewGuid();
+        var cloneChild = Guid.NewGuid();
+        _context.Shift.Add(new Shift { Id = realRoot, Name = "Root", Status = ShiftStatus.SplitShift, RootId = realRoot });
+        _context.Shift.Add(new Shift { Id = cloneRoot, Name = "Root", Status = ShiftStatus.SplitShift, RootId = cloneRoot, AnalyseToken = token, ScenarioSourceShiftId = realRoot });
+        _context.Shift.Add(new Shift { Id = cloneChild, Name = "Child", Status = ShiftStatus.SplitShift, ParentId = cloneRoot, RootId = cloneRoot, AnalyseToken = token });
+        _context.ClientShiftPreference.Add(new ClientShiftPreference
+        {
+            Id = Guid.NewGuid(), ClientId = agent, ShiftId = realRoot, PreferenceType = ShiftPreferenceType.Blacklist,
+        });
+        _context.ClientShiftPreference.Add(new ClientShiftPreference
+        {
+            Id = Guid.NewGuid(), ClientId = agent, ShiftId = cloneRoot, PreferenceType = ShiftPreferenceType.Blacklist, AnalyseToken = token,
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _sut.BuildAsync([agent], new DateOnly(2026, 4, 20), new DateOnly(2026, 4, 24), token, CancellationToken.None);
+
+        result.ShiftPreferences.Select(p => p.ShiftRefId).ShouldBe([cloneRoot, cloneChild], ignoreOrder: true);
+    }
 }
