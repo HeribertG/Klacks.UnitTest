@@ -33,11 +33,19 @@ public class ScheduleValidationKeysI18nGateTests
 
     private static readonly Regex Placeholder = new(PlaceholderPattern, RegexOptions.CultureInvariant);
 
+    private const string DayDirectiveKindKeyPrefix = "day-directive-kind.";
+
+    /// <summary>
+    /// The finding keys plus one name per day directive: the error list translates the directive param of
+    /// <see cref="ScheduleValidationKeys.DayDirective"/> via day-directive-kind.{lower-cased enum name}.
+    /// </summary>
     private static IReadOnlyList<string> Keys() =>
         new[] { typeof(ScheduleValidationKeys), typeof(QualificationValidationKeys) }
             .SelectMany(type => type.GetFields(BindingFlags.Public | BindingFlags.Static))
             .Where(field => field.IsLiteral && field.FieldType == typeof(string))
             .Select(field => (string)field.GetRawConstantValue()!)
+            .Concat(Enum.GetNames<Klacks.ScheduleOptimizer.Models.ScheduleCommandKeyword>()
+                .Select(name => DayDirectiveKindKeyPrefix + name.ToLowerInvariant()))
             .Distinct()
             .ToList();
 
