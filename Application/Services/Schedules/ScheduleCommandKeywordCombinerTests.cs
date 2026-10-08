@@ -106,6 +106,45 @@ public class ScheduleCommandKeywordCombinerTests
         mismatches.ShouldBeEmpty();
     }
 
+    [Test]
+    public void Allows_AgreesWithWizard1_ForEveryPairAndTripleAndShiftKind()
+    {
+        var mismatches = new List<string>();
+        foreach (var combination in PairsAndTriples())
+        {
+            var combined = ScheduleCommandKeywordCombiner.Combine(combination)!.Value;
+            foreach (var kind in ShiftKinds)
+            {
+                var wizard1 = Wizard1Allows(combination, kind.Index, kind.Start, kind.End);
+                if (ScheduleCommandKeywordCombiner.Allows(combined, kind.Index) != wizard1)
+                {
+                    mismatches.Add($"{string.Join("+", combination)} {kind.Symbol}: wizard1 {wizard1}");
+                }
+            }
+        }
+
+        mismatches.ShouldBeEmpty("find_replacement and the pre-commit guardrail must judge a directive like Wizard 1");
+    }
+
+    [Test]
+    public void CombinePerDay_IgnoresUnknownTokens_AndKeysByClientAndDay()
+    {
+        var keywordMap = ScheduleCommandKeywordMapper.BuildMap(ScheduleCommandKeywordTestFactory.Default);
+        var other = Guid.NewGuid();
+
+        var combined = ScheduleCommandKeywordCombiner.CombinePerDay(
+        [
+            new ScheduleCommand { ClientId = Agent, CurrentDate = Day, CommandKeyword = "-EARLY" },
+            new ScheduleCommand { ClientId = Agent, CurrentDate = Day, CommandKeyword = "-NIGHT" },
+            new ScheduleCommand { ClientId = Agent, CurrentDate = Day.AddDays(1), CommandKeyword = "UNKNOWN" },
+            new ScheduleCommand { ClientId = other, CurrentDate = Day, CommandKeyword = "FREE" },
+        ], keywordMap);
+
+        combined.Count.ShouldBe(2);
+        combined[(Agent, Day)].ShouldBe(ScheduleCommandKeyword.OnlyLate);
+        combined[(other, Day)].ShouldBe(ScheduleCommandKeyword.Free);
+    }
+
     private static BitmapAgent BitmapAgentFor() => new(AgentId, AgentId, 0m, new HashSet<CellSymbol>());
 
     private static DomainAwareReplaceValidator HarmonizerAvailability(IEnumerable<ScheduleCommandKeyword> combination)

@@ -117,7 +117,78 @@ public class PreCommitConflictCheckerTests
 
     private PreCommitConflictChecker BuildChecker(IHolidayWorkEvaluator holidayWorkEvaluator)
         => new(_context, new Klacks.Api.Infrastructure.Repositories.Associations.ShiftRequiredQualificationRepository(_context, Substitute.For<ILogger<Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification>>()), _timelineCalculator, _policyResolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, _restrictedTimeWindowEvaluator,
-            _compensatoryRestEvaluator, holidayWorkEvaluator, _planningRuleEvaluator);
+            _compensatoryRestEvaluator, holidayWorkEvaluator, _planningRuleEvaluator, BuildDayDirectiveEvaluator());
+
+    private DayDirectiveConflictEvaluator BuildDayDirectiveEvaluator()
+    {
+        var keywordProvider = Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IScheduleCommandKeywordProvider>();
+        keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(Klacks.UnitTest.TestHelpers.ScheduleCommandKeywordTestFactory.Default);
+        return new DayDirectiveConflictEvaluator(
+            new Klacks.Api.Infrastructure.Repositories.Schedules.ScheduleCommandRepository(_context, Substitute.For<ILogger<ScheduleCommand>>()),
+            keywordProvider);
+    }
+
+    private void SeedCommand(string keyword, Guid? analyseToken = null)
+    {
+        _context.Set<ScheduleCommand>().Add(new ScheduleCommand
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientA,
+            CurrentDate = Day,
+            CommandKeyword = keyword,
+            AnalyseToken = analyseToken
+        });
+        _context.SaveChanges();
+    }
+
+    [Test]
+    public async Task FreeDirective_IsAnError_ThatExcludesButDoesNotHardBlockADirectWrite()
+    {
+        SeedCommand("FREE");
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0))]);
+
+        result.NewConflicts.ShouldContain(c => c.Comment == ScheduleValidationKeys.DayDirective && c.Type == ScheduleValidationType.Error);
+        result.HasBlocking.ShouldBeTrue("place_work blocks on any Error");
+        result.HasNonOverridableBlocking.ShouldBeTrue("the plan partition must not let an override ride it through");
+        result.HasOverridableBlocking.ShouldBeFalse();
+        result.HasHardBlocking.ShouldBeFalse("a planner's direct write may knowingly go against a wish, like a collision");
+    }
+
+    [TestCase(8, 16, true)]
+    [TestCase(15, 22, true)]
+    [TestCase(23, 5, false)]
+    public async Task SeveralDirectivesOfADay_RestrictCumulatively(int startHour, int endHour, bool expectConflict)
+    {
+        SeedCommand("-EARLY");
+        SeedCommand("-LATE");
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(startHour, 0), new TimeOnly(endHour, 0))]);
+
+        result.NewConflicts.Any(c => c.Comment == ScheduleValidationKeys.DayDirective).ShouldBe(
+            expectConflict, "-EARLY and -LATE leave only the night shift");
+    }
+
+    [Test]
+    public async Task ScenarioDirective_OnlyGovernsItsScenario()
+    {
+        var token = Guid.NewGuid();
+        SeedCommand("FREE", token);
+        var row = Row(new TimeOnly(8, 0), new TimeOnly(16, 0));
+
+        (await _checker.CheckAsync([row])).NewConflicts.ShouldNotContain(c => c.Comment == ScheduleValidationKeys.DayDirective);
+        (await _checker.CheckAsync([row], token)).NewConflicts.ShouldContain(c => c.Comment == ScheduleValidationKeys.DayDirective);
+    }
+
+    [Test]
+    public async Task NotFreeDirective_AllowsEveryShift()
+    {
+        SeedCommand("-FREE");
+
+        var result = await _checker.CheckAsync([Row(new TimeOnly(8, 0), new TimeOnly(16, 0))]);
+
+        result.NewConflicts.ShouldNotContain(c => c.Comment == ScheduleValidationKeys.DayDirective);
+    }
 
     [TearDown]
     public void TearDown() => _context.Dispose();
