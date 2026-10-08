@@ -39,7 +39,7 @@ public class WizardAgentSnapshotBuilderTests
         });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, new DateOnly(2026, 3, 13), new DateOnly(2026, 3, 17),
+            new[] { agentId }, new DateOnly(2026, 3, 13), new DateOnly(2026, 3, 17), new DateOnly(2026, 3, 13), new DateOnly(2026, 3, 17),
             new Dictionary<Guid, double>(), CancellationToken.None);
 
         result.ContractDays.Where(d => d.WorksOnDay).Select(d => d.Date).ShouldBe(
@@ -60,7 +60,7 @@ public class WizardAgentSnapshotBuilderTests
         StubMembership(new Dictionary<Guid, MembershipWindow> { [agentId] = new(entry, null) });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 12),
+            new[] { agentId }, new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 12), new DateOnly(2026, 3, 8), new DateOnly(2026, 3, 12),
             new Dictionary<Guid, double>(), CancellationToken.None);
 
         result.ContractDays.Where(d => !d.WorksOnDay).Select(d => d.Date).ShouldBe(
@@ -81,7 +81,7 @@ public class WizardAgentSnapshotBuilderTests
         StubMembership(new Dictionary<Guid, MembershipWindow> { [agentId] = new(new DateOnly(2020, 1, 1), lastMemberDay) });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, new DateOnly(2026, 3, 15), new DateOnly(2026, 3, 16),
+            new[] { agentId }, new DateOnly(2026, 3, 15), new DateOnly(2026, 3, 16), new DateOnly(2026, 3, 15), new DateOnly(2026, 3, 16),
             new Dictionary<Guid, double>(), CancellationToken.None);
 
         result.ContractDays.Single(d => d.Date == new DateOnly(2026, 3, 16)).WorksOnDay.ShouldBeFalse(
@@ -99,7 +99,7 @@ public class WizardAgentSnapshotBuilderTests
         });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 3),
+            new[] { agentId }, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 3), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 3),
             new Dictionary<Guid, double>(), CancellationToken.None);
 
         result.Agents.ShouldBeEmpty();
@@ -122,7 +122,7 @@ public class WizardAgentSnapshotBuilderTests
             : new Dictionary<Guid, MembershipWindow> { [agentId] = window });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, MarchFirst, MarchLast, new Dictionary<Guid, double>(), CancellationToken.None);
+            new[] { agentId }, MarchFirst, MarchLast, MarchFirst, MarchLast, new Dictionary<Guid, double>(), CancellationToken.None);
         return result.Agents.Single();
     }
 
@@ -145,6 +145,38 @@ public class WizardAgentSnapshotBuilderTests
         agent.GuaranteedHours.ShouldBe((double)(124m * 22 / 31), Tolerance);
         agent.FullTime.ShouldBe((double)(155m * 22 / 31), Tolerance);
         agent.MaximumHours.ShouldBe(186);
+    }
+
+    [Test]
+    public async Task BuildAsync_LastWeekOfTheMonthWithExitOnThe27th_ProratesAgainstThePayPeriodNotThePlannedRange()
+    {
+        var agentId = Guid.NewGuid();
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = AllWeekContract(guaranteedHours: 124) });
+        StubMembership(new Dictionary<Guid, MembershipWindow>
+        {
+            [agentId] = new(new DateOnly(2020, 1, 1), new DateOnly(2026, 3, 27)),
+        });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, new DateOnly(2026, 3, 25), MarchLast, MarchFirst, MarchLast,
+            new Dictionary<Guid, double>(), CancellationToken.None);
+
+        result.Agents.Single().GuaranteedHours.ShouldBe((double)(124m * 27 / 31), Tolerance,
+            "CurrentHours carries 01.-24.03., so the target stays a pay-period target (27/31), not 3/7 of it.");
+    }
+
+    [Test]
+    public async Task BuildAsync_EntryBeforeAPartialPlannedRange_StillProratesAgainstThePayPeriod()
+    {
+        var agentId = Guid.NewGuid();
+        StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = AllWeekContract(guaranteedHours: 124) });
+        StubMembership(new Dictionary<Guid, MembershipWindow> { [agentId] = new(new DateOnly(2026, 3, 10), null) });
+
+        var result = await _sut.BuildAsync(
+            new[] { agentId }, new DateOnly(2026, 3, 15), MarchLast, MarchFirst, MarchLast,
+            new Dictionary<Guid, double>(), CancellationToken.None);
+
+        result.Agents.Single().GuaranteedHours.ShouldBe((double)(124m * 22 / 31), Tolerance);
     }
 
     [TestCase(false)]
@@ -211,7 +243,7 @@ public class WizardAgentSnapshotBuilderTests
         StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, from, until,
+            new[] { agentId }, from, until, from, until,
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
@@ -247,7 +279,7 @@ public class WizardAgentSnapshotBuilderTests
         StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, date, date,
+            new[] { agentId }, date, date, date, date,
             new Dictionary<Guid, double> { [agentId] = 12.5 },
             CancellationToken.None);
 
@@ -283,7 +315,7 @@ public class WizardAgentSnapshotBuilderTests
             });
 
         var result = await _sut.BuildAsync(
-            new[] { firstId, secondId, thirdId }, date, date,
+            new[] { firstId, secondId, thirdId }, date, date, date, date,
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
@@ -326,7 +358,7 @@ public class WizardAgentSnapshotBuilderTests
         });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, from, until,
+            new[] { agentId }, from, until, from, until,
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
@@ -353,7 +385,7 @@ public class WizardAgentSnapshotBuilderTests
         });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, date, date.AddDays(2),
+            new[] { agentId }, date, date.AddDays(2), date, date.AddDays(2),
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
@@ -378,7 +410,7 @@ public class WizardAgentSnapshotBuilderTests
         StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, monday, sunday,
+            new[] { agentId }, monday, sunday, monday, sunday,
             new Dictionary<Guid, double>(),
             CancellationToken.None);
 
@@ -411,7 +443,7 @@ public class WizardAgentSnapshotBuilderTests
         StubContractData(_ => new Dictionary<Guid, EffectiveContractData> { [agentId] = contractData });
 
         var result = await _sut.BuildAsync(
-            new[] { agentId }, monday, monday, new Dictionary<Guid, double>(), CancellationToken.None);
+            new[] { agentId }, monday, monday, monday, monday, new Dictionary<Guid, double>(), CancellationToken.None);
 
         var agent = result.Agents.Single();
         agent.NightRate.ShouldBe(12m);
@@ -435,7 +467,7 @@ public class WizardAgentSnapshotBuilderTests
         });
 
         await _sut.BuildAsync(
-            new[] { agentId }, from, until, new Dictionary<Guid, double>(), CancellationToken.None);
+            new[] { agentId }, from, until, from, until, new Dictionary<Guid, double>(), CancellationToken.None);
 
         await _contractProvider.Received(1).GetEffectiveContractDataForClientsRangeAsync(
             Arg.Any<List<Guid>>(), from, until, Arg.Any<int?>());
