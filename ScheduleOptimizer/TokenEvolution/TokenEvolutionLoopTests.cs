@@ -3,6 +3,7 @@
 using Shouldly;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution;
+using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Controller;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution;
@@ -10,7 +11,7 @@ namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution;
 [TestFixture]
 public class TokenEvolutionLoopTests
 {
-    private static CoreAgent MakeAgent(string id, double fullTime = 40)
+    private static CoreAgent MakeAgent(string id, double fullTime = 40, bool worksWeekends = false)
     {
         return new CoreAgent(
             Id: id,
@@ -30,14 +31,16 @@ public class TokenEvolutionLoopTests
             WorkOnWednesday = true,
             WorkOnThursday = true,
             WorkOnFriday = true,
+            WorkOnSaturday = worksWeekends,
+            WorkOnSunday = worksWeekends,
         };
     }
 
-    private static CoreWizardContext BuildContext(int agentCount, int dayCount)
+    private static CoreWizardContext BuildContext(int agentCount, int dayCount, bool worksWeekends = false)
     {
         var date = new DateOnly(2026, 4, 20);
         var agents = Enumerable.Range(0, agentCount)
-            .Select(i => MakeAgent($"agent-{i}"))
+            .Select(i => MakeAgent($"agent-{i}", worksWeekends: worksWeekends))
             .ToList();
         var shifts = Enumerable.Range(0, dayCount)
             .Select(i => new CoreShift(Guid.NewGuid().ToString(), "FD", date.AddDays(i).ToString("yyyy-MM-dd"), "08:00", "16:00", 8, 1, 0))
@@ -136,7 +139,9 @@ public class TokenEvolutionLoopTests
         // M7 play-sequence transaction: several single-operator draws on one child, only the end
         // state is compared. A dominant sequence weight must neither break feasibility nor the
         // seeded replay — the transaction draws all its randomness from the run's one rng.
-        var context = BuildContext(agentCount: 3, dayCount: 7);
+        // The week runs Monday to Sunday, so the agents must be contracted for the weekend: otherwise no
+        // legal plan covers Saturday and Sunday and Stage0 = 0 is unreachable by construction.
+        var context = BuildContext(agentCount: 3, dayCount: 7, worksWeekends: true);
         TokenEvolutionConfig Config() => new()
         {
             PopulationSize = 8,
@@ -151,6 +156,8 @@ public class TokenEvolutionLoopTests
         var second = TokenEvolutionLoop.Create().Run(context, Config());
 
         first.FitnessStage0.ShouldBe(0);
+        new Stage0HardConstraintChecker().ValidateScenario(first.Tokens, context).ShouldBeNull(
+            "Stage0 = 0 must mean no absolute veto is broken, not only that every slot is covered");
         static List<(string, DateOnly, Guid)> KeyOf(CoreScenario s) => s.Tokens
             .Select(t => (t.AgentId, t.Date, t.ShiftRefId))
             .OrderBy(x => x.AgentId).ThenBy(x => x.Date).ThenBy(x => x.ShiftRefId)
