@@ -91,6 +91,41 @@ public class TokenConstraintCheckerTests
     }
 
     [Test]
+    public void Check_WorkOnDayViolation_WithoutContractDays_FallsBackToWeekdayFlags()
+    {
+        var saturday = new DateOnly(2026, 4, 25);
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = saturday,
+            PeriodUntil = saturday,
+            Agents = [MakeAgent("A")],
+        };
+        var scenario = new CoreScenario { Id = "s", Tokens = [MakeToken("A", saturday)] };
+
+        var result = new TokenConstraintChecker().Check(scenario, context);
+
+        result.Count(v => v.Kind == ViolationKind.WorkOnDayViolation).ShouldBe(1);
+    }
+
+    [Test]
+    public void Check_ContractDayWorking_OverridesWeekdayFlags()
+    {
+        var saturday = new DateOnly(2026, 4, 25);
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = saturday,
+            PeriodUntil = saturday,
+            Agents = [MakeAgent("A")],
+            ContractDays = [new CoreContractDay("A", saturday, WorksOnDay: true, PerformsShiftWork: true, FullTimeShare: 1, MaximumHoursPerDay: 10, ContractId: Guid.NewGuid())],
+        };
+        var scenario = new CoreScenario { Id = "s", Tokens = [MakeToken("A", saturday)] };
+
+        var result = new TokenConstraintChecker().Check(scenario, context);
+
+        result.ShouldNotContain(v => v.Kind == ViolationKind.WorkOnDayViolation);
+    }
+
+    [Test]
     public void Check_PerformsShiftWorkViolation_ForNonShiftAgentOnLateShift()
     {
         var date = new DateOnly(2026, 4, 20);
