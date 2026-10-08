@@ -537,33 +537,49 @@ public static class AutofillPlanAnalyzer
         var requiredPerOrder = new SortedDictionary<int, int>();
         var filledPerOrder = new SortedDictionary<int, int>();
 
+        // Production expands a shift with several seats into several rows with the same id and date, and the
+        // engine sums them into one slot of that capacity. Coverage is therefore measured per (shift, date)
+        // key against the summed demand, and every missing seat is reported on its own.
+        var slots = new List<(CoreShift Row, DateOnly Date, int Required)>();
+        var slotIndexByKey = new Dictionary<(string ShiftId, DateOnly Date), int>();
         foreach (var shift in context.Shifts)
         {
             var date = DateOnly.ParseExact(shift.Date, AutofillSpecConstants.IsoDateFormat);
+            if (slotIndexByKey.TryGetValue((shift.Id, date), out var index))
+            {
+                var slot = slots[index];
+                slots[index] = slot with { Required = slot.Required + shift.RequiredAssignments };
+                continue;
+            }
+
+            slotIndexByKey[(shift.Id, date)] = slots.Count;
+            slots.Add((shift, date, shift.RequiredAssignments));
+        }
+
+        foreach (var (shift, date, required) in slots)
+        {
             var order = AutofillShiftCatalog.OrderOf(Guid.Parse(shift.Id));
-            totalRequired += shift.RequiredAssignments;
+            totalRequired += required;
             assignmentsPerSlot.TryGetValue((shift.Id, date), out var assigned);
 
-            var filledHere = Math.Min(assigned, shift.RequiredAssignments);
+            var filledHere = Math.Min(assigned, required);
             filled += filledHere;
 
             requiredPerOrder.TryGetValue(order, out var requiredSoFar);
-            requiredPerOrder[order] = requiredSoFar + shift.RequiredAssignments;
+            requiredPerOrder[order] = requiredSoFar + required;
             filledPerOrder.TryGetValue(order, out var filledSoFar);
             filledPerOrder[order] = filledSoFar + filledHere;
 
-            if (assigned > shift.RequiredAssignments)
+            if (assigned > required)
             {
                 oversupplied++;
             }
 
-            if (assigned < shift.RequiredAssignments)
+            var kind = AutofillShiftCatalog.FromShiftTypeIndex(
+                ShiftTypeInference.FromSpanString(shift.StartTime, shift.EndTime));
+            for (var openSeat = assigned; openSeat < required; openSeat++)
             {
-                unfilled.Add(new UnfilledShift(
-                    date,
-                    AutofillShiftCatalog.FromShiftTypeIndex(
-                        ShiftTypeInference.FromSpanString(shift.StartTime, shift.EndTime)),
-                    order));
+                unfilled.Add(new UnfilledShift(date, kind, order));
             }
         }
 
