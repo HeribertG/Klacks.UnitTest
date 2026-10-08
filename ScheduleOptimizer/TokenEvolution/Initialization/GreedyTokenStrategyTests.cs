@@ -130,6 +130,55 @@ public class GreedyTokenStrategyTests
 
         scenario.Tokens.Where(t => !t.IsLocked).Count().ShouldBe(3);
     }
+
+    [Test]
+    public void BuildScenario_HourlyAgentWithoutGuarantee_OnlyFillsAfterTheGuaranteeHolder()
+    {
+        var hourly = MakeAgent("HOURLY", fullTime: 0);
+        var holder = MakeAgent("HOLDER", fullTime: 16) with { GuaranteedHours = 16 };
+        var date1 = new DateOnly(2026, 4, 20);
+        var date2 = new DateOnly(2026, 4, 21);
+
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date1,
+            PeriodUntil = date2,
+            Agents = [hourly, holder],
+            Shifts = [MakeShift(date1, Guid.NewGuid().ToString()), MakeShift(date2, Guid.NewGuid().ToString())],
+            SchedulingMaxConsecutiveDays = 6,
+        };
+
+        var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
+
+        scenario.Tokens.Count.ShouldBe(2);
+        scenario.Tokens.ShouldAllBe(
+            t => t.AgentId == "HOLDER",
+            "An agent without guaranteed hours is a gap filler: it only takes what the guarantee holders leave.");
+    }
+
+    [Test]
+    public void BuildScenario_HourlyAgentWithoutGuarantee_StillTakesTheSlotsLeftOver()
+    {
+        var hourly = MakeAgent("HOURLY", fullTime: 0);
+        var holder = MakeAgent("HOLDER", fullTime: 8) with { GuaranteedHours = 8 };
+        var date1 = new DateOnly(2026, 4, 20);
+        var date2 = new DateOnly(2026, 4, 21);
+
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = date1,
+            PeriodUntil = date2,
+            Agents = [hourly, holder],
+            Shifts = [MakeShift(date1, Guid.NewGuid().ToString()), MakeShift(date2, Guid.NewGuid().ToString())],
+            SchedulingMaxConsecutiveDays = 6,
+        };
+
+        var scenario = new GreedyTokenStrategy { Epsilon = 0 }.BuildScenario(context, new Random(0));
+
+        scenario.Tokens.Count(t => t.AgentId == "HOLDER").ShouldBe(1);
+        scenario.Tokens.Count(t => t.AgentId == "HOURLY").ShouldBe(1, "The slot left after the guarantee is the gap filler's.");
+    }
+
     [Test]
     public void BuildScenario_ForcedCoverage_NeverDoubleBooksTheOnlyAgent()
     {
