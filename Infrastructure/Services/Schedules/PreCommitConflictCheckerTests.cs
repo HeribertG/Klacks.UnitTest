@@ -116,7 +116,7 @@ public class PreCommitConflictCheckerTests
     }
 
     private PreCommitConflictChecker BuildChecker(IHolidayWorkEvaluator holidayWorkEvaluator)
-        => new(_context, _timelineCalculator, _policyResolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, _restrictedTimeWindowEvaluator,
+        => new(_context, new Klacks.Api.Infrastructure.Repositories.Associations.ShiftRequiredQualificationRepository(_context, Substitute.For<ILogger<Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification>>()), _timelineCalculator, _policyResolver, new ComplianceEscalationService(_enforcementResolver), _settingsReader, _periodCapEvaluator, _restDayRotationEvaluator, _counterRuleEvaluator, _restrictedTimeWindowEvaluator,
             _compensatoryRestEvaluator, holidayWorkEvaluator, _planningRuleEvaluator);
 
     [TearDown]
@@ -360,6 +360,7 @@ public class PreCommitConflictCheckerTests
         _settingsReader.GetSetting(SettingKeys.QualificationExpiryWarningDays)
             .Returns(new Klacks.Api.Domain.Models.Settings.Settings { Type = SettingKeys.QualificationExpiryWarningDays, Value = "30" });
 
+        SeedQualification(qualificationId);
         _context.ShiftRequiredQualification.Add(new Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification
         {
             Id = Guid.NewGuid(),
@@ -414,10 +415,19 @@ public class PreCommitConflictCheckerTests
             c.Comment == QualificationValidationKeys.Expired && c.Type == ScheduleValidationType.Error);
     }
 
+    /// <summary>The requirement rows are resolved with their Qualification, so the qualification row must exist.</summary>
+    private void SeedQualification(Guid qualificationId)
+        => _context.Qualification.Add(new Klacks.Api.Domain.Models.Staffs.Qualification
+        {
+            Id = qualificationId,
+            Name = new Klacks.Api.Domain.Common.MultiLanguage { De = "Qualification" }
+        });
+
     private Guid SeedExpiredMandatoryQualification()
     {
         var qualificationId = Guid.NewGuid();
         var shiftId = Guid.NewGuid();
+        SeedQualification(qualificationId);
         _context.ShiftRequiredQualification.Add(new Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification
         {
             Id = Guid.NewGuid(),
@@ -447,11 +457,13 @@ public class PreCommitConflictCheckerTests
         // unlike a collision, it was never gated on one.
         _enforcementResolver.GetModeAsync(Arg.Any<string>()).Returns(RuleEnforcementMode.Block);
         var shiftId = Guid.NewGuid();
+        var missingQualificationId = Guid.NewGuid();
+        SeedQualification(missingQualificationId);
         _context.ShiftRequiredQualification.Add(new Klacks.Api.Domain.Models.Associations.ShiftRequiredQualification
         {
             Id = Guid.NewGuid(),
             ShiftId = shiftId,
-            QualificationId = Guid.NewGuid(),
+            QualificationId = missingQualificationId,
             IsMandatory = true,
             MinLevel = QualificationLevel.Basic
         });
