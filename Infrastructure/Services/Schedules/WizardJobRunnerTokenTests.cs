@@ -8,6 +8,7 @@
 using Shouldly;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
+using Klacks.ScheduleOptimizer.TokenEvolution.Diagnostics;
 using NUnit.Framework;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Schedules;
@@ -67,4 +68,48 @@ public class WizardJobRunnerTokenTests
 
         result.ShouldBeEmpty();
     }
+
+    [Test]
+    public void MapUnfilledSlots_ProjectsTheDiagnosisOfAnUnsolvableSlot()
+    {
+        var shiftId = Guid.NewGuid();
+        var day = new DateOnly(2026, 4, 22);
+        var context = new CoreWizardContext
+        {
+            PeriodFrom = day,
+            PeriodUntil = day,
+            Agents = [VacationAgent("agent-1"), VacationAgent("agent-2")],
+            Shifts = [new CoreShift(shiftId.ToString(), "FD", "2026-04-22", "06:00", "14:00", 8, 1, 0)],
+            BreakBlockers =
+            [
+                new CoreBreakBlocker("agent-1", day, day, "Vacation", 8m),
+                new CoreBreakBlocker("agent-2", day, day, "Vacation", 8m),
+            ],
+            SchedulingMaxConsecutiveDays = 6,
+        };
+
+        var result = WizardJobRunner.MapUnfilledSlots(UnfilledSlotDiagnostics.Diagnose(context, []));
+
+        var slot = result.ShouldHaveSingleItem();
+        slot.ShiftId.ShouldBe(shiftId.ToString());
+        slot.Date.ShouldBe("2026-04-22");
+        slot.MissingSeats.ShouldBe(1);
+        slot.FeasibleAgentCount.ShouldBe(0);
+        slot.VetoCounts["BreakBlocker"].ShouldBe(2);
+    }
+
+    private static CoreAgent VacationAgent(string id) => new(
+        Id: id,
+        CurrentHours: 0,
+        GuaranteedHours: 0,
+        MaxConsecutiveDays: 6,
+        MinRestHours: 11,
+        Motivation: 0.5,
+        MaxDailyHours: 10,
+        MaxWeeklyHours: 50,
+        MaxOptimalGap: 2)
+    {
+        PerformsShiftWork = true,
+        WorkOnWednesday = true,
+    };
 }
