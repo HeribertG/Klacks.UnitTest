@@ -228,6 +228,7 @@ public static class AutofillPlanAnalyzer
                 BlockCompliance = BuildBlockCompliance(withCarryIn, definition),
                 CyclicStartToStart = BuildCyclicRotation(packagesByEmployee, definition, useLastKind: false),
                 CyclicLastToFirst = BuildCyclicRotation(packagesByEmployee, definition, useLastKind: true),
+                Spec = RotationSpecAnalyzer.Measure(withCarryIn, definition),
             },
             Hours: hours,
             Fairness: BuildFairness(byEmployee, definition),

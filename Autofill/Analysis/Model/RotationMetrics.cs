@@ -47,4 +47,10 @@ public sealed record RotationMetrics(
     /// the first kind of the next one — the transition a reader of the plan actually sees. Reported only.
     /// </summary>
     public CyclicRotationCounts CyclicLastToFirst { get; init; } = new(0, 0, 0, 0, 0);
+
+    /// <summary>
+    /// Rotation as the owner defined it on 2026-10-08 (SPEC-ROTATION-2026-10-08, replaces decision 12b): block purity,
+    /// ideal block changes and unforced deviations. The reading the round-4 guards pin.
+    /// </summary>
+    public RotationSpecMetrics Spec { get; init; } = RotationSpecMetrics.Empty;
 }

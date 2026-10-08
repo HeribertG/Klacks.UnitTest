@@ -35,6 +35,12 @@ namespace Klacks.UnitTest.Autofill.Scenarios;
 /// <param name="CarryInOkCount">
 /// Continued carry-in packages — higher is better; null in a scenario without a previous month
 /// </param>
+/// <param name="IdealTransitionRate">
+/// rotation.spec.idealTransitionRate (SPEC-ROTATION-2026-10-08) — higher is better; reported, not yet pinned
+/// </param>
+/// <param name="TransitionCount">rotation.spec.transitionCount — the block changes the rate is measured on; reported</param>
+/// <param name="UnforcedDeviations">rotation.spec.unforcedDeviations — lower is better; reported, not yet pinned</param>
+/// <param name="BlockPurity">rotation.spec.blockPurity — higher is better; reported, not yet pinned</param>
 public sealed record AutofillBandValues(
     double BlockRotationCompliance,
     int BlockRotationPairCount,
@@ -46,7 +52,11 @@ public sealed record AutofillBandValues(
     int ShiftKindSpread,
     int MonotonicityViolations,
     double TopRanksPlannedHours,
-    int? CarryInOkCount)
+    int? CarryInOkCount,
+    double? IdealTransitionRate = null,
+    int? TransitionCount = null,
+    int? UnforcedDeviations = null,
+    double? BlockPurity = null)
 {
     /// <summary>Reads the eight numbers off a measurement, exactly as the guards read them.</summary>
     /// <param name="metrics">Measurement of one engine run</param>
@@ -68,7 +78,11 @@ public sealed record AutofillBandValues(
             ShiftKindSpread: Math.Max(spread.Early, Math.Max(spread.Late, spread.Night)),
             MonotonicityViolations: metrics.Hours.MonotonicityViolations.Count,
             TopRanksPlannedHours: TopRanksPlannedHoursOf(metrics),
-            CarryInOkCount: hasCarryIn ? metrics.CarryIn.Count(c => c.Ok) : null);
+            CarryInOkCount: hasCarryIn ? metrics.CarryIn.Count(c => c.Ok) : null,
+            IdealTransitionRate: metrics.Rotation.Spec.IdealTransitionRate,
+            TransitionCount: metrics.Rotation.Spec.TransitionCount,
+            UnforcedDeviations: metrics.Rotation.Spec.UnforcedDeviations,
+            BlockPurity: metrics.Rotation.Spec.BlockPurity);
     }
 
     /// <summary>
@@ -133,6 +147,21 @@ public sealed record AutofillBandValues(
             TopRanksPlannedHours: worst
                 ? values.Min(v => v.TopRanksPlannedHours)
                 : values.Max(v => v.TopRanksPlannedHours),
-            CarryInOkCount: carryIn.Count == 0 ? null : worst ? carryIn.Min() : carryIn.Max());
+            CarryInOkCount: carryIn.Count == 0 ? null : worst ? carryIn.Min() : carryIn.Max(),
+            IdealTransitionRate: FoldOptional(values.Select(v => v.IdealTransitionRate), higherIsBetter: true, worst),
+            TransitionCount: (int?)FoldOptional(values.Select(v => (double?)v.TransitionCount), higherIsBetter: true, worst),
+            UnforcedDeviations: (int?)FoldOptional(values.Select(v => (double?)v.UnforcedDeviations), higherIsBetter: false, worst),
+            BlockPurity: FoldOptional(values.Select(v => v.BlockPurity), higherIsBetter: true, worst));
+    }
+
+    private static double? FoldOptional(IEnumerable<double?> values, bool higherIsBetter, bool worst)
+    {
+        var present = values.Where(v => v is not null).Select(v => v!.Value).ToList();
+        if (present.Count == 0)
+        {
+            return null;
+        }
+
+        return higherIsBetter == worst ? present.Min() : present.Max();
     }
 }

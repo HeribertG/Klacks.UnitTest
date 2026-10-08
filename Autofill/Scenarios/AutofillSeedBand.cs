@@ -173,6 +173,14 @@ public static class AutofillSeedBand
             text.Append(", carryInOkCount=").Append(Number(values.CarryInOkCount.Value));
         }
 
+        if (values.IdealTransitionRate is not null)
+        {
+            text.Append(", spec.idealTransitionRate=").Append(Number(values.IdealTransitionRate.Value))
+                .Append(", spec.transitionCount=").Append(Number(values.TransitionCount ?? 0))
+                .Append(", spec.unforcedDeviations=").Append(Number(values.UnforcedDeviations ?? 0))
+                .Append(", spec.blockPurity=").Append(Number(values.BlockPurity ?? 0));
+        }
+
         return text.ToString();
     }
 
