@@ -15,6 +15,7 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Queries.Works;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -39,6 +40,7 @@ public class WorkVisibilityTests
     private IOvertimeCascadeService _overtimeCascadeService = null!;
     private IPreCommitConflictChecker _conflictChecker = null!;
     private IWorkWriteGuard _writeGuard = null!;
+    private IHttpContextAccessor _httpContextAccessor = null!;
     private Guid _visibleClientId;
     private Guid _hiddenClientId;
 
@@ -58,6 +60,7 @@ public class WorkVisibilityTests
         _overtimeCascadeService = Substitute.For<IOvertimeCascadeService>();
         _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
         _writeGuard = Substitute.For<IWorkWriteGuard>();
+        _httpContextAccessor = Substitute.For<IHttpContextAccessor>();
 
         _visibleClientId = Guid.NewGuid();
         _hiddenClientId = Guid.NewGuid();
@@ -98,7 +101,7 @@ public class WorkVisibilityTests
         var handler = new PostCommandHandler(
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade,
-            Substitute.For<IShiftExpensesRepository>(), Substitute.For<IExpensesRepository>(),
+            Substitute.For<IShiftDefaultExpensesApplier>(),
             Substitute.For<IContainerWorkExpansionService>(), _groupContextResolver, _dayLockService, _unitOfWork,
             _overtimeCascadeService, _writeGuard, Substitute.For<ILogger<PostCommandHandler>>());
 
@@ -142,6 +145,24 @@ public class WorkVisibilityTests
     }
 
     [Test]
+    public async Task Put_WithAForgedScenarioToken_KeepsTheStoredMainPlanToken_AndIsStillDayLocked()
+    {
+        var stored = NewWork(_visibleClientId);
+        _workRepository.GetNoTracking(stored.Id).Returns(stored);
+        _dayLockService.EnsureNotLockedAsync(Arg.Any<DateOnly>(), Arg.Any<Guid>(), null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidRequestException("Day is sealed and cannot be modified.")));
+        var resource = NewResource(stored.Id, _visibleClientId);
+        resource.AnalyseToken = Guid.NewGuid();
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewPutHandler().Handle(
+            new PutCommand<WorkResource>(resource), CancellationToken.None));
+
+        await _dayLockService.Received().EnsureNotLockedAsync(Day, _visibleClientId, null, Arg.Any<CancellationToken>());
+        await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
     public async Task Delete_WorkOfHiddenClient_IsRefusedLikeAMissingWork_NothingDeleted()
     {
         var hidden = NewWork(_hiddenClientId);
@@ -150,6 +171,7 @@ public class WorkVisibilityTests
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
+            Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
@@ -167,7 +189,8 @@ public class WorkVisibilityTests
         var handler = new BulkAddWorksCommandHandler(
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService, _completionService,
             _notificationFacade, Substitute.For<IContainerWorkExpansionService>(), _overtimeCascadeService,
-            _dayLockService, _conflictChecker, Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
+            _dayLockService, _conflictChecker, Substitute.For<IShiftDefaultExpensesApplier>(),
+            Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
         var request = new BulkAddWorksRequest
         {
             PeriodStart = Day,
@@ -201,7 +224,9 @@ public class WorkVisibilityTests
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         var handler = new BulkDeleteWorksCommandHandler(
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService, _completionService,
-            _notificationFacade, _overtimeCascadeService, _dayLockService, Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
+            _notificationFacade, _overtimeCascadeService, _dayLockService,
+            Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
+            Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
 
         var response = await handler.Handle(
             new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = [visible.Id, hidden.Id, missingId] }),
@@ -425,6 +450,7 @@ public class WorkVisibilityTests
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
+            _httpContextAccessor, new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<PutCommandHandler>>());
 
     private ReassignWorkClientCommandHandler NewReassignHandler()

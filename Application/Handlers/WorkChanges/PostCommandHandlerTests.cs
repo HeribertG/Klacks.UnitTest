@@ -16,6 +16,7 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Services.Schedules;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -84,6 +85,7 @@ public class PostCommandHandlerTests
             _conflictChecker,
             _overrideAuthorizer,
             _recorder,
+            new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<PostCommandHandler>>());
     }
 

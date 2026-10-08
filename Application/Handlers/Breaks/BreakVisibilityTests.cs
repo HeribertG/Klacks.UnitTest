@@ -253,6 +253,23 @@ public class BreakVisibilityTests
     }
 
     [Test]
+    public async Task Put_WithAForgedScenarioToken_KeepsTheStoredMainPlanToken_AndIsStillDayLocked()
+    {
+        var stored = NewBreak(_visibleClientId);
+        _breakRepository.GetNoTracking(stored.Id).Returns(stored);
+        _dayLockService.EnsureNotLockedAsync(Arg.Any<DateOnly>(), Arg.Any<Guid>(), null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidRequestException("Day is sealed and cannot be modified.")));
+        var resource = NewResource(stored.Id, _visibleClientId);
+        resource.AnalyseToken = Guid.NewGuid();
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewPutHandler().Handle(
+            new PutCommand<BreakResource>(resource), CancellationToken.None));
+
+        await _dayLockService.Received().EnsureNotLockedAsync(Day, _visibleClientId, null, Arg.Any<CancellationToken>());
+        await _breakRepository.DidNotReceive().Put(Arg.Any<Break>());
+    }
+
+    [Test]
     public async Task BulkDelete_OnASealedDay_IsRefused_NothingRemoved()
     {
         var visible = NewBreak(_visibleClientId);

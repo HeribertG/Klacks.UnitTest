@@ -189,12 +189,12 @@ public class WorkChangeVisibilityTests
     {
         var hiddenWork = NewWork(_hiddenClientId);
         var stored = NewChange(hiddenWork.Id);
-        _workChangeRepository.Get(stored.Id).Returns(stored);
+        _workChangeRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
         _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
         var handler = new DeleteCommandHandler(
             _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
-            Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IReplacementRequestRecorder>(),
+            Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IReplacementRequestRecorder>(), Substitute.For<IParentWorkLockGuard>(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
         var result = await handler.Handle(new DeleteCommand<WorkChangeResource>(stored.Id), CancellationToken.None);
@@ -226,13 +226,13 @@ public class WorkChangeVisibilityTests
     {
         var work = NewWork(_visibleClientId);
         var stored = NewChange(work.Id);
-        _workChangeRepository.Get(stored.Id).Returns(stored);
+        _workChangeRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
         _workRepository.GetNoTracking(work.Id).Returns(work);
         _workRepository.Get(work.Id).Returns(work);
         var handler = new DeleteCommandHandler(
             _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
-            Substitute.For<IHttpContextAccessor>(), _dayLockService, _recorder,
+            Substitute.For<IHttpContextAccessor>(), _dayLockService, _recorder, Substitute.For<IParentWorkLockGuard>(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
         await handler.Handle(new DeleteCommand<WorkChangeResource>(stored.Id), CancellationToken.None);
@@ -245,13 +245,14 @@ public class WorkChangeVisibilityTests
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
             Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IPreCommitConflictChecker>(),
             Substitute.For<ISupervisorOverrideAuthorizer>(), Substitute.For<IReplacementRequestRecorder>(),
-            Substitute.For<ILogger<PostCommandHandler>>());
+            Substitute.For<IParentWorkLockGuard>(), Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler()
         => new(
             _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
             _completionService, _resultService, Substitute.For<IWorkNotificationFacade>(), _dayLockService,
-            _recorder, Substitute.For<ILogger<PutCommandHandler>>());
+            _recorder, Substitute.For<IHttpContextAccessor>(), Substitute.For<IParentWorkLockGuard>(),
+            Substitute.For<ILogger<PutCommandHandler>>());
 
     private static Work NewWork(Guid clientId)
         => new() { Id = Guid.NewGuid(), ClientId = clientId, ShiftId = Guid.NewGuid(), CurrentDate = Day };

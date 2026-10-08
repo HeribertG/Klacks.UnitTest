@@ -119,6 +119,20 @@ public class ScheduleNoteVisibilityTests
     }
 
     [Test]
+    public async Task Put_WithAForgedScenarioToken_KeepsTheStoredMainPlanToken()
+    {
+        var stored = NewNote(_visibleClientId);
+        _repository.GetNoTracking(stored.Id).Returns(stored);
+        _repository.Put(Arg.Any<ScheduleNote>()).Returns(ci => ci.Arg<ScheduleNote>());
+        var resource = NewResource(stored.Id, _visibleClientId);
+        resource.AnalyseToken = Guid.NewGuid();
+
+        await NewPutHandler().Handle(new PutCommand<ScheduleNoteResource>(resource), CancellationToken.None);
+
+        await _repository.Received(1).Put(Arg.Is<ScheduleNote>(n => n.AnalyseToken == null));
+    }
+
+    [Test]
     public async Task Delete_NoteOfHiddenClient_AnsweredLikeMissingNote_NothingDeleted()
     {
         var hidden = NewNote(_hiddenClientId);

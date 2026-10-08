@@ -171,6 +171,35 @@ public class ScheduleCommandVisibilityTests
     }
 
     [Test]
+    public async Task Put_WithAForgedScenarioToken_KeepsTheStoredMainPlanToken()
+    {
+        var stored = NewCommand(_visibleClientId);
+        _repository.GetNoTracking(stored.Id).Returns(stored);
+        _repository.Put(Arg.Any<ScheduleCommand>()).Returns(ci => ci.Arg<ScheduleCommand>());
+        var resource = NewResource(stored.Id, _visibleClientId);
+        resource.AnalyseToken = Guid.NewGuid();
+
+        await NewPutHandler().Handle(new PutCommand<ScheduleCommandResource>(resource), CancellationToken.None);
+
+        await _repository.Received(1).Put(Arg.Is<ScheduleCommand>(c => c.AnalyseToken == null));
+    }
+
+    [Test]
+    public async Task Put_OfAScenarioCommand_KeepsTheScenarioTokenWhenThePayloadDropsIt()
+    {
+        var token = Guid.NewGuid();
+        var stored = NewCommand(_visibleClientId);
+        stored.AnalyseToken = token;
+        _repository.GetNoTracking(stored.Id).Returns(stored);
+        _repository.Put(Arg.Any<ScheduleCommand>()).Returns(ci => ci.Arg<ScheduleCommand>());
+
+        await NewPutHandler().Handle(
+            new PutCommand<ScheduleCommandResource>(NewResource(stored.Id, _visibleClientId)), CancellationToken.None);
+
+        await _repository.Received(1).Put(Arg.Is<ScheduleCommand>(c => c.AnalyseToken == token));
+    }
+
+    [Test]
     public async Task Delete_CommandOfHiddenClient_IsAnsweredLikeAMissingCommand_NothingDeleted()
     {
         var hidden = NewCommand(_hiddenClientId);

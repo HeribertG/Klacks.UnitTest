@@ -102,7 +102,8 @@ public class ExpensesVisibilityTests
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
             Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
-            _workRepository, _dayLockService, Substitute.For<ILogger<PostCommandHandler>>());
+            _workRepository, _dayLockService, Substitute.For<IParentWorkLockGuard>(),
+            Substitute.For<ILogger<PostCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
             new PostCommand<ExpensesResource>(NewResource(Guid.NewGuid(), hiddenWork.Id)), CancellationToken.None));
@@ -153,13 +154,13 @@ public class ExpensesVisibilityTests
     public async Task Delete_ExpenseOnAWorkOfAHiddenClient_IsAnsweredLikeAMissingExpense_NothingDeleted()
     {
         var stored = NewExpense(NewWork(_hiddenClientId));
-        _expensesRepository.Get(stored.Id).Returns(stored);
+        _expensesRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
         var handler = new DeleteCommandHandler(
             _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
             Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
-            _dayLockService, Substitute.For<ILogger<DeleteCommandHandler>>());
+            _dayLockService, Substitute.For<IParentWorkLockGuard>(), Substitute.For<ILogger<DeleteCommandHandler>>());
 
         var result = await handler.Handle(new DeleteCommand<ExpensesResource>(stored.Id), CancellationToken.None);
 
@@ -175,7 +176,8 @@ public class ExpensesVisibilityTests
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
             Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
-            _workRepository, _dayLockService, Substitute.For<ILogger<PutCommandHandler>>());
+            _workRepository, _dayLockService, Substitute.For<IParentWorkLockGuard>(),
+            Substitute.For<ILogger<PutCommandHandler>>());
 
     private static Work NewWork(Guid clientId)
         => new() { Id = Guid.NewGuid(), ClientId = clientId, ShiftId = Guid.NewGuid(), CurrentDate = Day };
