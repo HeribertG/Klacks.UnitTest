@@ -60,4 +60,20 @@ public class DeleteContractSkillTests
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<DeleteCommand<ContractResource>>(), Arg.Any<CancellationToken>());
     }
+
+    [TestCase("Vollzeit 160 BE")]
+    [TestCase("123e4567-e89b-12d3-a456-42661417400Z")]
+    [TestCase("")]
+    public async Task NameOrMalformedId_ReturnsCleanError_NoQueryNoDeletion(string raw)
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skill = new DeleteContractSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["contractId"] = raw });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("contractId");
+        await mediator.DidNotReceive().Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>());
+        await mediator.DidNotReceive().Send(Arg.Any<DeleteCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
 }

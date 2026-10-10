@@ -2,8 +2,10 @@
 
 /// <summary>
 /// Unit tests for the follow-through guarantee of SkillToolsetGuaranteeResolver: after a turn that ran a KnowHow
-/// (Explain) skill the Act skills with an active ExplainedBy edge to it, plus the Advise skills with an active
-/// AdvisesFor edge to those Act skills, stay in the toolset; after an Advise skill its AdvisesFor targets do.
+/// (Explain) skill only the Act skills with an active ExplainedBy edge to it that are also fronted by an Advise
+/// skill (an advisory chain), plus those Advise skills, stay in the toolset - an Explain skill whose Act skills
+/// have no adviser guarantees nothing, because a KnowHow answer is often plain curiosity; after an Advise skill
+/// its AdvisesFor targets stay.
 /// The previous skill's class is its curated Effect, only permitted skills qualify, inactive edges are ignored,
 /// the claim is capped and ordered deterministically, and no relation read happens unless the previous turn
 /// contained an Explain or Advise skill.
@@ -284,6 +286,78 @@ public class SkillToolsetGuaranteeResolverFollowThroughTests
             Edge(AdviseSkill, UnrelatedMutateSkill, SkillRelationType.AdvisesFor));
 
         var names = await Resolve(skills, [ExplainSkill]);
+
+        names.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task PreviousExplainSkill_WhoseActsHaveNoAdviser_GuaranteesNothing()
+    {
+        const string contractsExplain = "explain_contracts";
+        var skills = new List<AgentSkill>
+        {
+            Skill(contractsExplain, SkillEffect.Explain),
+            Skill("update_contract", SkillEffect.Mutate),
+            Skill("get_contract_details", SkillEffect.Read),
+            Skill("delete_contract", SkillEffect.Mutate)
+        };
+        GivenEdges(
+            Edge("update_contract", contractsExplain, SkillRelationType.ExplainedBy),
+            Edge("get_contract_details", contractsExplain, SkillRelationType.ExplainedBy),
+            Edge("delete_contract", contractsExplain, SkillRelationType.ExplainedBy));
+
+        var names = await Resolve(skills, [contractsExplain]);
+
+        names.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task PreviousExplainSkill_WithMixedActs_GuaranteesOnlyTheAdvisedActAndItsAdvisers()
+    {
+        var skills = ContractSkills();
+        skills.Add(Skill("update_contract", SkillEffect.Mutate));
+        GivenEdges(
+            Edge(ActSkill, ExplainSkill, SkillRelationType.ExplainedBy),
+            Edge("update_contract", ExplainSkill, SkillRelationType.ExplainedBy),
+            Edge(UnrelatedMutateSkill, ExplainSkill, SkillRelationType.ExplainedBy),
+            Edge(AdviseSkill, ActSkill, SkillRelationType.AdvisesFor));
+
+        var names = await Resolve(skills, [ExplainSkill]);
+
+        names.ShouldBe(new[] { ActSkill, AdviseSkill }.OrderBy(n => n, StringComparer.Ordinal));
+        names.ShouldNotContain("update_contract");
+        names.ShouldNotContain(UnrelatedMutateSkill);
+    }
+
+    [Test]
+    public async Task PreviousExplainSkill_WhoseOnlyAdviserIsUnpermitted_GuaranteesNothing()
+    {
+        GivenEdges(ContractEdges());
+        var permitted = ContractSkills().Where(s => s.Name != AdviseSkill).ToList();
+
+        var names = await Resolve(permitted, [ExplainSkill]);
+
+        names.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task PreviousExplainSkill_WhoseOnlyAdviserEdgeIsInactive_GuaranteesNothing()
+    {
+        GivenEdges(
+            Edge(ActSkill, ExplainSkill, SkillRelationType.ExplainedBy),
+            Edge(AdviseSkill, ActSkill, SkillRelationType.AdvisesFor, SkillRelationStatus.Candidate));
+
+        var names = await Resolve(ContractSkills(), [ExplainSkill]);
+
+        names.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task PreviousAdviseSkill_StillGuaranteesTargetsWithoutTheirOwnAdviser()
+    {
+        GivenEdges(Edge(AdviseSkill, ActSkill, SkillRelationType.AdvisesFor));
+
+        var names = await Resolve(ContractSkills(), [AdviseSkill]);
 
         names.ShouldBe(new[] { ActSkill });
     }

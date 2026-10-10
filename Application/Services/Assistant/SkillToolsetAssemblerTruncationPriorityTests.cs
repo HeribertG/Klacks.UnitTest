@@ -24,6 +24,7 @@ public class SkillToolsetAssemblerTruncationPriorityTests
     private const string AlwaysOnSkill = "navigate_to";
     private const string ExplainSkill = "explain_contract_setup";
     private const string FollowThroughSkill = "create_contract_from_template";
+    private const string AdviseSkill = "evaluate_contract_templates";
     private const string KeywordSkill = "list_open_shifts";
     private const string KeywordPhrase = "offene dienste";
     private const string Message = "Zeig mir die offene dienste";
@@ -44,6 +45,7 @@ public class SkillToolsetAssemblerTruncationPriorityTests
                 Skill(AlwaysOnSkill, SkillEffect.Mutate, alwaysOn: true),
                 Skill(ExplainSkill, SkillEffect.Explain),
                 Skill(FollowThroughSkill, SkillEffect.Mutate),
+                Skill(AdviseSkill, SkillEffect.Advise),
                 Skill(KeywordSkill, SkillEffect.Read, triggerKeywords: $"[\"{KeywordPhrase}\"]")
             });
 
@@ -72,6 +74,14 @@ public class SkillToolsetAssemblerTruncationPriorityTests
                 SkillAName = FollowThroughSkill,
                 SkillBName = ExplainSkill,
                 Type = SkillRelationType.ExplainedBy,
+                Status = SkillRelationStatus.Active
+            },
+            new()
+            {
+                AgentId = _agent.Id,
+                SkillAName = AdviseSkill,
+                SkillBName = FollowThroughSkill,
+                Type = SkillRelationType.AdvisesFor,
                 Status = SkillRelationStatus.Active
             }
         });
@@ -151,6 +161,7 @@ public class SkillToolsetAssemblerTruncationPriorityTests
         names.ShouldContain(AlwaysOnSkill);
         names.ShouldContain(KeywordSkill);
         names.ShouldNotContain(FollowThroughSkill);
+        names.ShouldNotContain(AdviseSkill);
         names.Count.ShouldBe(2);
     }
 

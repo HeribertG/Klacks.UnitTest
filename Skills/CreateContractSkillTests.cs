@@ -458,7 +458,7 @@ public class CreateContractSkillTests
                 workaroundFinal = resource;
                 return resource;
             });
-        var updateSkill = new UpdateContractSkill(updateMediator, CompanyClock);
+        var updateSkill = new UpdateContractSkill(updateMediator, CompanyClock, Substitute.For<ICalendarSelectionRepository>(), Substitute.For<ICountryResolver>(), Substitute.For<IContractRepository>());
 
         var updateResult = await updateSkill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

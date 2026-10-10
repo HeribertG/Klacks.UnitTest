@@ -7,6 +7,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -37,7 +38,7 @@ public class GetContractDetailsSkillTests
                 MaximumHours = 180m,
                 ValidFrom = new DateTime(2026, 1, 1)
             });
-        var skill = new GetContractDetailsSkill(mediator, SourceResolver());
+        var skill = new GetContractDetailsSkill(mediator, SourceResolver(), Substitute.For<IContractRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -60,7 +61,7 @@ public class GetContractDetailsSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
             .Returns<ContractResource>(_ => throw new KeyNotFoundException());
-        var skill = new GetContractDetailsSkill(mediator, SourceResolver());
+        var skill = new GetContractDetailsSkill(mediator, SourceResolver(), Substitute.For<IContractRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -87,7 +88,7 @@ public class GetContractDetailsSkillTests
                 PerformsShiftWork = null,
                 ValidFrom = new DateTime(2026, 1, 1)
             });
-        var skill = new GetContractDetailsSkill(mediator, SourceResolver());
+        var skill = new GetContractDetailsSkill(mediator, SourceResolver(), Substitute.For<IContractRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -118,7 +119,7 @@ public class GetContractDetailsSkillTests
         mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
             .Returns(new ContractResource { Id = contractId, Name = "Botschaft", CalendarSelectionId = selectionId, ValidFrom = new DateTime(2026, 1, 1) });
         var resolver = SourceResolver(new ResolvedHolidayCalendarSource(HolidayCalendarSource.Contract, selectionId, "Bern + USA", null, null));
-        var skill = new GetContractDetailsSkill(mediator, resolver);
+        var skill = new GetContractDetailsSkill(mediator, resolver, Substitute.For<IContractRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["contractId"] = contractId.ToString() });
 
@@ -137,12 +138,40 @@ public class GetContractDetailsSkillTests
         mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
             .Returns(new ContractResource { Id = Guid.NewGuid(), Name = "Standard", ValidFrom = new DateTime(2026, 1, 1) });
         var skill = new GetContractDetailsSkill(mediator,
-            SourceResolver(new ResolvedHolidayCalendarSource(HolidayCalendarSource.CompanyCountryState, null, null, "CH", "BE")));
+            SourceResolver(new ResolvedHolidayCalendarSource(HolidayCalendarSource.CompanyCountryState, null, null, "CH", "BE")),
+            Substitute.For<IContractRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["contractId"] = Guid.NewGuid().ToString() });
 
         var data = JsonSerializer.SerializeToElement(result.Data);
         data.GetProperty("HolidayCalendarSource").GetString().ShouldBe(nameof(HolidayCalendarSource.CompanyCountryState));
         data.GetProperty("HolidayCalendarName").GetString().ShouldBe("CH-BE");
+    }
+
+    [Test]
+    public async Task ContractGivenByNameWithATypo_ResolvesWithTheFuzzyStages()
+    {
+        var contractId = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>())
+            .Returns(call => new ContractResource
+            {
+                Id = call.Arg<GetQuery<ContractResource>>().Id,
+                Name = "Vollzeit 160 BE",
+                ValidFrom = new DateTime(2026, 1, 1)
+            });
+        var contracts = Substitute.For<IContractRepository>();
+        contracts.List().Returns(new List<Contract>
+        {
+            new() { Id = contractId, Name = "Vollzeit 160 BE" },
+            new() { Id = Guid.NewGuid(), Name = "Teilzeit 0 Std BE" }
+        });
+        var skill = new GetContractDetailsSkill(mediator, SourceResolver(), contracts);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["contractId"] = "Volzeit 160 BE" });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<GetQuery<ContractResource>>(q => q.Id == contractId), Arg.Any<CancellationToken>());
     }
 }

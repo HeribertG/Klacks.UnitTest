@@ -671,9 +671,9 @@ public class CreateContractFromTemplateSkillTests
         await AssertNotPosted();
     }
 
-    [TestCase("")]
-    [TestCase("not-a-guid")]
-    public async Task InvalidTemplateId_ReturnsErrorInsteadOfThrowing(string raw)
+    [TestCase("", "Missing required parameter")]
+    [TestCase("not-a-guid", "No contract found matching")]
+    public async Task InvalidTemplateReference_ReturnsErrorInsteadOfThrowing(string raw, string expected)
     {
         Setup(FixedHoursTemplate());
 
@@ -685,8 +685,23 @@ public class CreateContractFromTemplateSkillTests
         });
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain(ContractFieldNames.TemplateContractId);
+        result.Message.ShouldContain(expected);
         await AssertNotPosted();
+    }
+
+    [Test]
+    public async Task TemplateGivenByName_ResolvesToTheNamedContract()
+    {
+        var named = new Contract { Id = TemplateId, Name = "Vollzeit 160 BE" };
+        Setup(FixedHoursTemplate(), existing: [named]);
+
+        var result = await Run(new Dictionary<string, object>
+        {
+            [ContractFieldNames.TemplateContractId] = "vollzeit 160 be"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message!.ShouldContain("copy of template 'Vollzeit 160 BE'");
     }
 
     [Test]
