@@ -129,6 +129,7 @@ public class SkillToolsetAssemblerExclusionTests
             PendingStoreTestFactory.CreateConfirmationStore(),
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             NoLearnedPhrases(),
+            Substitute.For<ISkillRelationRepository>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>()),
         Substitute.For<ILogger<SkillToolsetAssembler>>());
 
@@ -151,7 +152,8 @@ public class SkillToolsetAssemblerExclusionTests
         IReadOnlyCollection<string>? pinned) =>
         CreateAssembler().AssembleAsync(
             _agent, userRights, userMessage, null, null, Guid.NewGuid().ToString(), "de",
-            KnowledgeIndexConstants.MaxToolsForProvider, true, excluded, pinned, CancellationToken.None);
+            KnowledgeIndexConstants.MaxToolsForProvider, true, excluded, pinned, previousTurnSkillNames: null,
+            CancellationToken.None);
 
     [Test]
     public async Task ExcludedSkill_IsNotInTheToolset()

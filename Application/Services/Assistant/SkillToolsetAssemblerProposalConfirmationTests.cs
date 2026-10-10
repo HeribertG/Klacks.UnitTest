@@ -214,6 +214,7 @@ public class SkillToolsetAssemblerProposalConfirmationTests
                 _pendingUserNoteRepository, _recipeEngine, _confirmationStore,
                 PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
                 NoLearnedPhrases(),
+                Substitute.For<ISkillRelationRepository>(),
                 Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>()),
             Substitute.For<ILogger<SkillToolsetAssembler>>());
 

@@ -44,6 +44,7 @@ public class ClientContractSkillPermissionTests
         new(StringComparer.Ordinal)
         {
             ["create_contract"] = Permissions.CanCreateContracts,
+            ["create_contract_from_template"] = Permissions.CanCreateContracts,
             ["delete_contract"] = Permissions.CanDeleteContracts
         };
 

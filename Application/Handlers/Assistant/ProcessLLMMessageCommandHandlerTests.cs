@@ -109,6 +109,7 @@ public class ProcessLLMMessageCommandHandlerTests
             PendingStoreTestFactory.CreateConfirmationStore(),
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             NoLearnedPhrases(),
+            Substitute.For<ISkillRelationRepository>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         return new SkillToolsetAssembler(

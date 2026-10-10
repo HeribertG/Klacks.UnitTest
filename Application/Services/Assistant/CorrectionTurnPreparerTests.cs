@@ -80,7 +80,8 @@ public class CorrectionTurnPreparerTests
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new SkillToolsetResult());
 
         _turnPreparation = Substitute.For<ITurnPreparationService>();
@@ -181,7 +182,8 @@ public class CorrectionTurnPreparerTests
                 excluded => withExclusion
                     ? excluded != null && excluded.Contains(ExcludedSkillName)
                     : excluded == null),
-            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Any<CancellationToken>());
 
     private Task AssemblerPinned(string skillName) =>
         _assembler.Received(1).AssembleAsync(
@@ -189,7 +191,7 @@ public class CorrectionTurnPreparerTests
             Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
             Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
             Arg.Is<IReadOnlyCollection<string>?>(pinned => pinned != null && pinned.Contains(skillName)),
-            Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>());
 
     private void TheCandidatesWerePinned() =>
         _lastActionStore.Received(1).SaveClarificationCandidates(
@@ -242,6 +244,56 @@ public class CorrectionTurnPreparerTests
         await Prepare();
 
         await AssemblerPinned(PinnedSkillName);
+    }
+
+    [Test]
+    public async Task ExecutedSkillsOfThePreviousTurn_ReachTheAssemblerAsPreviousTurnSkillNames()
+    {
+        GivenAStoredAnchor();
+
+        await Prepare();
+
+        await _assembler.Received(1).AssembleAsync(
+            Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+            Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Is<IReadOnlyCollection<string>?>(previous => previous != null && previous.Contains(ExcludedSkillName)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ASupersededAnchor_StillOffersItsSuccessfulCalls_ButNotItsFailedOnes()
+    {
+        var lastAction = GivenAStoredAnchor();
+        lastAction.SupersededAtUtc = DateTime.UtcNow;
+        lastAction.Calls =
+        [
+            new AssistantLastActionCall { SkillName = ExcludedSkillName, Success = true },
+            new AssistantLastActionCall { SkillName = "failed_skill", Success = false }
+        ];
+
+        await Prepare();
+
+        await _assembler.Received(1).AssembleAsync(
+            Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+            Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Is<IReadOnlyCollection<string>?>(
+                previous => previous != null && previous.Contains(ExcludedSkillName) && !previous.Contains("failed_skill")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutAStoredAnchor_NoPreviousTurnSkillNamesAreOffered()
+    {
+        await Prepare();
+
+        await _assembler.Received(1).AssembleAsync(
+            Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+            Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Is<IReadOnlyCollection<string>?>(previous => previous == null),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

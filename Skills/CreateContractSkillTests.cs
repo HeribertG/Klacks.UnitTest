@@ -355,6 +355,47 @@ public class CreateContractSkillTests
         await mediator.DidNotReceive().Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>());
     }
 
+    [TestCase("Biweekly,Monthly")]
+    [TestCase("3")]
+    [TestCase("99")]
+    public async Task PaymentInterval_ListOrNumber_IsRejected_InsteadOfBecomingAnotherInterval(string raw)
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skill = new CreateContractSkill(mediator, CompanyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "X",
+            ["guaranteedHours"] = 100m,
+            ["validFrom"] = "2026-07-01",
+            ["paymentInterval"] = raw
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Invalid paymentInterval");
+        await mediator.DidNotReceive().Send(Arg.Any<PostCommand<ContractResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PaymentInterval_MonthlyTargetHours_IsAccepted()
+    {
+        var mediator = MediatorReturningCreated();
+        var skill = new CreateContractSkill(mediator, CompanyClock);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["name"] = "X",
+            ["validFrom"] = "2026-07-01",
+            ["percent"] = 80m,
+            ["paymentInterval"] = "monthlytargethours"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<PostCommand<ContractResource>>(c => c.Resource.PaymentInterval == PaymentInterval.MonthlyTargetHours),
+            Arg.Any<CancellationToken>());
+    }
+
     /// <summary>
     /// The direct path-2 create (guaranteedHours omitted) must NOT reproduce what the old
     /// workaround produced (create with an invented guaranteedHours, then

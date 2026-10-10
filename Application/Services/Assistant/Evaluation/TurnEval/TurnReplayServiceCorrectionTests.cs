@@ -67,7 +67,8 @@ public class TurnReplayServiceCorrectionTests
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(new SkillToolsetResult());
 
         _turnPreparation = Substitute.For<ITurnPreparationService>();
@@ -247,6 +248,7 @@ public class TurnReplayServiceCorrectionTests
             Arg.Any<bool>(),
             Arg.Is<IReadOnlyCollection<string>?>(excluded => excluded != null && excluded.Contains(PreviousSkill)),
             Arg.Is<IReadOnlyCollection<string>?>(pinned => pinned == null),
+            Arg.Is<IReadOnlyCollection<string>?>(previous => previous != null && previous.Contains(PreviousSkill)),
             Arg.Any<CancellationToken>());
     }
 
@@ -290,7 +292,8 @@ public class TurnReplayServiceCorrectionTests
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 SpinForAssemblyDelay();

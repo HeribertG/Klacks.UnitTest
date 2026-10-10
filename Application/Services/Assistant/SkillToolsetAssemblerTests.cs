@@ -169,6 +169,7 @@ public class SkillToolsetAssemblerTests
             PendingStoreTestFactory.CreateConfirmationStore(),
             _planningProfileDraftStore,
             _skillPhrases,
+            Substitute.For<ISkillRelationRepository>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         return new SkillToolsetAssembler(
