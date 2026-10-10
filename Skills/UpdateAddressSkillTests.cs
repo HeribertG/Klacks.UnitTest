@@ -11,6 +11,7 @@ using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Mediator;
 
 using Klacks.UnitTest.TestHelpers;
@@ -52,7 +53,7 @@ public class UpdateAddressSkillTests
             .Returns(address);
         mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -84,7 +85,7 @@ public class UpdateAddressSkillTests
             .Returns(address);
         mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -111,7 +112,7 @@ public class UpdateAddressSkillTests
             .Returns(address);
         mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -132,7 +133,7 @@ public class UpdateAddressSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(Address(id));
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -151,7 +152,7 @@ public class UpdateAddressSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns<AddressResource>(_ => throw new KeyNotFoundException());
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -176,7 +177,7 @@ public class UpdateAddressSkillTests
             .Returns(_ => calls++ == 0 ? loaded : stale);
         mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -200,7 +201,7 @@ public class UpdateAddressSkillTests
             .Returns(_ => calls++ == 0 ? loaded : throw new KeyNotFoundException());
         mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -220,7 +221,7 @@ public class UpdateAddressSkillTests
         mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>()).Returns(Address(id));
         mediator.Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<AddressResource>)ci[0]).Resource);
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -241,7 +242,7 @@ public class UpdateAddressSkillTests
         var id = Guid.NewGuid();
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>()).Returns(Address(id));
-        var skill = new UpdateAddressSkill(mediator, TestCompanyClock());
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -250,6 +251,33 @@ public class UpdateAddressSkillTests
         });
 
         result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateType_ToBusinessAddress_IsRejected_ForEmployee_WithoutDispatching()
+    {
+        var id = Guid.NewGuid();
+        var clientId = Guid.NewGuid();
+        var address = Address(id);
+        address.ClientId = clientId;
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
+            .Returns(address);
+        var clientRepository = Substitute.For<IClientRepository>();
+        clientRepository.GetTypeAndDisplayNameAsync(clientId, Arg.Any<CancellationToken>())
+            .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Employee, "Hans Muster"));
+        var skill = new UpdateAddressSkill(mediator, TestCompanyClock(), clientRepository);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["addressId"] = id.ToString(),
+            ["type"] = (int)AddressTypeEnum.Workplace
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldNotBeNull();
+        result.Message!.ShouldContain("not allowed");
         await mediator.DidNotReceive().Send(Arg.Any<PutCommand<AddressResource>>(), Arg.Any<CancellationToken>());
     }
 }

@@ -11,6 +11,7 @@ using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.Api.Domain.Models.Staffs;
 
 using Klacks.UnitTest.TestHelpers;
 
@@ -50,7 +51,7 @@ public class CreateAddressSkillTests
     {
         var clientId = Guid.NewGuid();
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -77,7 +78,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_PassesValidFromThrough()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -98,7 +99,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_ValidFrom_PersistsKindUtc_SoNpgsqlAcceptsTheTimestamptzWrite()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -117,7 +118,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_ValidFromWithOffset_KeepsTheWrittenCalendarDay()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -138,7 +139,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_InvalidValidFrom_ReturnsError_NoPost()
     {
         var mediator = Substitute.For<IMediator>();
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -158,7 +159,7 @@ public class CreateAddressSkillTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<PostCommand<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns((AddressResource?)null);
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -177,7 +178,7 @@ public class CreateAddressSkillTests
             .Returns(ci => ((PostCommand<AddressResource>)ci[0]).Resource);
         mediator.Send(Arg.Any<GetQuery<AddressResource>>(), Arg.Any<CancellationToken>())
             .Returns<AddressResource>(_ => throw new KeyNotFoundException());
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -203,7 +204,7 @@ public class CreateAddressSkillTests
             State = posted.State,
             Type = posted.Type
         });
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -220,7 +221,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_RelativeValidFromWord_ResolvesAgainstTheCompanyDay()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -240,7 +241,7 @@ public class CreateAddressSkillTests
     public async Task CreateAddress_UnreadableValidFrom_IsRejected()
     {
         var mediator = MediatorWithEchoingPostAndReRead();
-        var skill = new CreateAddressSkill(mediator, TestCompanyClock());
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), Substitute.For<IClientRepository>());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -251,5 +252,46 @@ public class CreateAddressSkillTests
 
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<PostCommand<AddressResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CreateAddress_RejectsInvoicingAddress_ForEmployee_WithoutDispatching()
+    {
+        var clientId = Guid.NewGuid();
+        var mediator = MediatorWithEchoingPostAndReRead();
+        var clientRepository = Substitute.For<IClientRepository>();
+        clientRepository.GetTypeAndDisplayNameAsync(clientId, Arg.Any<CancellationToken>())
+            .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.Employee, "Hans Muster"));
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), clientRepository);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = clientId.ToString(),
+            ["type"] = (int)AddressTypeEnum.InvoicingAddress
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldNotBeNull();
+        result.Message!.ShouldContain("not allowed");
+        await mediator.DidNotReceive().Send(Arg.Any<PostCommand<AddressResource>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CreateAddress_AcceptsBusinessAddress_ForExternalEmployee()
+    {
+        var clientId = Guid.NewGuid();
+        var mediator = MediatorWithEchoingPostAndReRead();
+        var clientRepository = Substitute.For<IClientRepository>();
+        clientRepository.GetTypeAndDisplayNameAsync(clientId, Arg.Any<CancellationToken>())
+            .Returns(new ClientTypeAndDisplayName(EntityTypeEnum.ExternEmp, "Extern"));
+        var skill = new CreateAddressSkill(mediator, TestCompanyClock(), clientRepository);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["clientId"] = clientId.ToString(),
+            ["type"] = (int)AddressTypeEnum.Workplace
+        });
+
+        result.Success.ShouldBeTrue();
     }
 }

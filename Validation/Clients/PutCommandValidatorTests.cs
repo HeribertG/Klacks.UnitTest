@@ -31,7 +31,7 @@ public class PutCommandValidatorTests
         _shiftRepository.HasWorksForClientInGroupAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
-        _validator = new PutCommandValidator(geocoding, stateResolver, countryResolver, addressRepository, _shiftRepository);
+        _validator = new PutCommandValidator(geocoding, stateResolver, countryResolver, addressRepository, _shiftRepository, Substitute.For<IClientRepository>());
     }
 
     private static PutCommand<ClientResource> CommandWithMembership(Guid clientId, Guid groupId, DateTime? validUntil)
