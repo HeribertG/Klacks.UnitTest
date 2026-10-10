@@ -113,6 +113,54 @@ public sealed class ShiftRotationTests
         day.LastKindIndex.ShouldBe(Night);
     }
 
+    [Test]
+    public void Fit_InsideABlock_PrefersTheBlocksStartKind()
+    {
+        var track = Track((1, Early), (2, Early));
+
+        Fit(track, 3, Early).ShouldBe(RotationFit.Conform);
+        Fit(track, 3, Late).ShouldBe(RotationFit.InBlockChange);
+    }
+
+    [Test]
+    public void Fit_AcrossABlockBoundary_PrefersTheIdealSuccessor()
+    {
+        var track = Track((1, Night), (2, Night));
+
+        Fit(track, 6, Early).ShouldBe(RotationFit.Conform, "Night to early is the cycle step.");
+        Fit(track, 6, Night).ShouldBe(RotationFit.NonIdealTransition);
+    }
+
+    [Test]
+    public void Fit_ASecondShiftOnTheLatestDay_IsASplitDuty()
+    {
+        Fit(Track((1, Early)), 1, Night).ShouldBe(RotationFit.Conform);
+    }
+
+    [Test]
+    public void Fit_WithoutHistory_Conforms()
+    {
+        ShiftRotation.Fit(null, Night, Day1, Day1.ToDateTime(new TimeOnly(22, 0)), AllAllowed).ShouldBe(RotationFit.Conform);
+    }
+
+    private static RotationTrack? Track(params (int Day, int Kind)[] shifts)
+    {
+        RotationTrack? track = null;
+        foreach (var (dayNumber, kind) in shifts)
+        {
+            var day = Shift(dayNumber, kind);
+            track = ShiftRotation.Advance(track, day.Date, kind, day.FirstStart, day.LastEnd);
+        }
+
+        return track;
+    }
+
+    private static RotationFit Fit(RotationTrack? track, int dayNumber, int kind)
+    {
+        var day = Shift(dayNumber, kind);
+        return ShiftRotation.Fit(track, kind, day.Date, day.FirstStart, AllAllowed);
+    }
+
     private static RotationDay Shift(int dayNumber, int kind)
     {
         var date = Day1.AddDays(dayNumber - 1);

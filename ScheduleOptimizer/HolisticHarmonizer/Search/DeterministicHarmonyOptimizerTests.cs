@@ -28,6 +28,16 @@ public class DeterministicHarmonyOptimizerTests
         Seed = SearchSeed,
     };
 
+    /// <summary>
+    /// Options whose overall evaluation budget cannot end a pass early, for the tests about the passes themselves.
+    /// Since the rotation rule of 2026-10-08 drives the scorer and the rotation agent, a pass finds more improving steps,
+    /// and the default overall budget ended this fixture after six of eight passes.
+    /// </summary>
+    private static DeterministicSearchOptions EveryPassOptions => Options with
+    {
+        MaxTotalEvaluations = Options.MaxEvaluations * Options.Restarts,
+    };
+
     [TestCase(FixtureSeed)]
     [TestCase(OtherFixtureSeed)]
     public void Run_SameInputAndSeed_ProducesIdenticalPlanAndBatches(int fixtureSeed)
@@ -294,11 +304,11 @@ public class DeterministicHarmonyOptimizerTests
         var input = DeterministicSearchFixture.BuildInput(fixtureSeed);
 
         // Act
-        var (_, single) = Run(input, Options with { Restarts = 1 });
-        var (_, multi) = Run(input, Options);
+        var (_, single) = Run(input, EveryPassOptions with { Restarts = 1 });
+        var (_, multi) = Run(input, EveryPassOptions);
 
         // Assert
-        multi.RestartsRun.ShouldBe(Options.Restarts);
+        multi.RestartsRun.ShouldBe(EveryPassOptions.Restarts);
         multi.FitnessAfter.ShouldBeGreaterThanOrEqualTo(single.FitnessAfter);
         multi.Evaluations.ShouldBeGreaterThan(single.Evaluations);
     }
@@ -367,7 +377,7 @@ public class DeterministicHarmonyOptimizerTests
         var reports = new List<HolisticHarmonizerProgress>();
         var fitness = new MemoizedHarmonyFitnessEvaluator(new HarmonyScorer());
         var components = HolisticHarmonizerComponents.Build(input, fitness, int.MaxValue);
-        var optimizer = new DeterministicHarmonyOptimizer(components, Options);
+        var optimizer = new DeterministicHarmonyOptimizer(components, EveryPassOptions);
 
         // Act
         var result = optimizer.Run(DeterministicSearchFixture.BuildBitmap(input), new SynchronousProgress(reports), CancellationToken.None);

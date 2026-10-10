@@ -41,8 +41,10 @@ public static class Scenario1bBaselineValues
     /// 42/43/44 measured 2026-10-08 on Api 104c0b418 / Optimizer 43529c2 plus the SlotConstraintFilter refactor (plans
     /// byte-identical): 68/64/67, so the floor is 64. Without it the rotation pin of 1 would also pass a plan with no
     /// in-block pair at all, because the rate is 1 when there is nothing to measure.
+    /// 2026-10-10: lowered 64 to 62 by owner decision; the rotation round 4 (SPEC-ROTATION-2026-10-08 end passes)
+    /// leaves 62 in-block pairs on the asserted seed.
     /// </summary>
-    private const int BlockRotationPairCount = 64;
+    private const int BlockRotationPairCount = 62;
 
     /// <summary>
     /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 3/18/14, so the
@@ -70,8 +72,10 @@ public static class Scenario1bBaselineValues
     /// the floor is 0.0323. TIGHTENED from 0 — the first non-zero ideal floor of this variant
     /// since decision 13 called its zero "the harshest splintering price in the suite"; the
     /// asserted seed reaches 0.16.
+    /// 2026-10-10: lowered to 0 by owner decision; after the rotation round 4 (rotation outranks purity,
+    /// SPEC-ROTATION-2026-10-08) the asserted seed holds 0 of 31 five-two packages. A floor of 0 cannot fail.
     /// </summary>
-    private const double IdealShare = 0.032258064516129031;
+    private const double IdealShare = 0;
 
     /// <summary>
     /// Band over seeds 42/43/44 after the M11 fairness stage of 2026-08-13: 8/9/6, so the ceiling

@@ -83,18 +83,19 @@ public class HarmonyScorerSmokeTests
     [Test]
     public void Score_ReverseTransition_HasLowerComplianceThanForward()
     {
-        var forward = BuildSingleRowBitmap(9, day => day switch
+        // Two free days between the pairs: more than 48 h of rest, so three rotation blocks each.
+        var forward = BuildSingleRowBitmap(11, day => day switch
         {
             0 or 1 => CellSymbol.Early,
-            3 or 4 => CellSymbol.Late,
-            6 or 7 => CellSymbol.Night,
+            4 or 5 => CellSymbol.Late,
+            8 or 9 => CellSymbol.Night,
             _ => CellSymbol.Free,
         });
-        var backward = BuildSingleRowBitmap(9, day => day switch
+        var backward = BuildSingleRowBitmap(11, day => day switch
         {
             0 or 1 => CellSymbol.Night,
-            3 or 4 => CellSymbol.Late,
-            6 or 7 => CellSymbol.Early,
+            4 or 5 => CellSymbol.Late,
+            8 or 9 => CellSymbol.Early,
             _ => CellSymbol.Free,
         });
         var scorer = new HarmonyScorer();

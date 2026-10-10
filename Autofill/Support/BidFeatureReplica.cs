@@ -2,8 +2,10 @@
 
 using System.Globalization;
 using Klacks.ScheduleOptimizer.Common.Fuzzy;
+using Klacks.ScheduleOptimizer.Common.Rotation;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Agent;
+using Klacks.ScheduleOptimizer.TokenEvolution.Fitness;
 using Klacks.ScheduleOptimizer.TokenEvolution.Initialization;
 
 namespace Klacks.UnitTest.Autofill.Support;
@@ -93,7 +95,29 @@ public static class BidFeatureReplica
             [WeeklyLoad] = weeklyLoad,
             [IndexBonus] = ResolveIndexBonus(agent, context),
             [NewBlockSameType] = ResolveNewBlockSameType(agent, state, slotTypeIndex, startsNewBlock),
+            [RotationFitFeature] = (double)ResolveRotationFit(agent, slot, state, context, slotTypeIndex),
         };
+    }
+
+    /// <summary>Rotation fit of the slot per the shared rotation rule (0 conform, 1 in-block change, 2 non-ideal block change).</summary>
+    public const string RotationFitFeature = FuzzyBiddingAgent.RotationFitVariable;
+
+    private static RotationFit ResolveRotationFit(
+        CoreAgent agent, CoreShift slot, AgentRuntimeState state, CoreWizardContext context, int slotTypeIndex)
+    {
+        if (!agent.PerformsShiftWork || !DateOnly.TryParse(slot.Date, out var slotDate))
+        {
+            return RotationFit.Conform;
+        }
+
+        var start = TimeOnly.TryParse(slot.StartTime, out var parsed) ? parsed : TimeOnly.MinValue;
+        var rotation = RotationContext.For(context);
+        return ShiftRotation.Fit(
+            state.Rotation,
+            slotTypeIndex,
+            slotDate,
+            slotDate.ToDateTime(start),
+            kind => !rotation.IsClosed(agent.Id, kind, slotDate));
     }
 
     /// <summary>True when the slot would open a new work block instead of continuing the current one.</summary>

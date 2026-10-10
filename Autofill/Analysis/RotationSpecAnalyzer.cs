@@ -137,6 +137,44 @@ public static class RotationSpecAnalyzer
             Deviations: deviations);
     }
 
+    /// <summary>
+    /// The unforced deviations at the month boundary: for each given employee, the deviation of the first block that starts
+    /// inside the period, judged against the carried-in block (A13 under SPEC-ROTATION-2026-10-08). An employee whose
+    /// first period block conforms, owes no rotation, or deviates for a hard reason contributes nothing.
+    /// </summary>
+    /// <param name="spec">Rotation measurement of the plan</param>
+    /// <param name="shiftsByEmployee">All shifts per employee, carry-in included</param>
+    /// <param name="employees">Employees whose carried-in package closed before the period</param>
+    /// <param name="periodFrom">First day of the period</param>
+    public static List<RotationSpecDeviation> UnforcedBoundaryDeviations(
+        RotationSpecMetrics spec,
+        IReadOnlyDictionary<string, IReadOnlyList<PlannedShift>> shiftsByEmployee,
+        IEnumerable<string> employees,
+        DateOnly periodFrom)
+    {
+        var result = new List<RotationSpecDeviation>();
+        foreach (var employee in employees)
+        {
+            if (!shiftsByEmployee.TryGetValue(employee, out var shifts))
+            {
+                continue;
+            }
+
+            var firstInPeriod = shifts.Where(s => !s.IsCarryIn && s.Date >= periodFrom).OrderBy(s => s.StartAt).FirstOrDefault();
+            if (firstInPeriod is null)
+            {
+                continue;
+            }
+
+            result.AddRange(spec.Deviations.Where(d =>
+                !d.Forced
+                && string.Equals(d.Employee, employee, StringComparison.Ordinal)
+                && d.Date == firstInPeriod.Date));
+        }
+
+        return result;
+    }
+
     internal static List<List<PlannedShift>> BlocksOf(IReadOnlyList<PlannedShift> shifts)
     {
         var blocks = new List<List<PlannedShift>>();

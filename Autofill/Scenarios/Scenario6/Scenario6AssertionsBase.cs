@@ -250,12 +250,11 @@ public abstract class Scenario6AssertionsBase : Scenario5AssertionsBase
     }
 
     /// <summary>
-    /// S6-5. What the rotation did across the long absence — MEASURED and reported, never asserted
-    /// into a direction. The discovery of 2026-08-14 found no documented rotation reset after an
-    /// absence anywhere in the engine and no owner decision names one, so asserting either
-    /// "continues forwards" or "restarts on early" would invent a specification. What IS asserted is
-    /// that the measurement exists: a window with packages on both sides must produce an entry, or the
-    /// report would be silent about the question it was built to answer.
+    /// S6-5. What the rotation did across the long absence — measured and reported here. The direction has been decided
+    /// since 2026-10-08 (SPEC-ROTATION-2026-10-08 rule 7): after at least seven free calendar days the cycle restarts at
+    /// the first allowed kind from early, which the rotation oracle judges in rotation.spec (unforcedDeviations,
+    /// longPauseRestartCount) for every block change, the ones across this absence included. This test still only
+    /// guarantees that each absence window produces a continuity entry in the artifact.
     /// </summary>
     [Test]
     public void S6_5_TheRotationAcrossTheAbsenceIsMeasured()
@@ -267,8 +266,8 @@ public abstract class Scenario6AssertionsBase : Scenario5AssertionsBase
         entries.Count.ShouldBe(
             Absences.Entries.Count,
             "S6-5: every absence window needs one continuity entry, whether or not it has packages on both sides. "
-            + "The direction itself is a finding and not a rule — no reset is documented in the engine and none was "
-            + "decided — so this assertion only guarantees the question is answered in the artifact.");
+            + "The direction is judged by the rotation oracle (restart at early after seven free days, "
+            + "SPEC-ROTATION-2026-10-08), so this assertion only guarantees the question is answered in the artifact.");
     }
 
     /// <summary>

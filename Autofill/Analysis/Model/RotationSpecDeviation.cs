@@ -12,7 +12,7 @@ namespace Klacks.UnitTest.Autofill.Analysis.Model;
 /// <param name="From">Last shift class of the previous block</param>
 /// <param name="To">First shift class of the new block</param>
 /// <param name="Ideal">Shift class the spec would have chosen</param>
-/// <param name="Forced">True when a hard rule or full coverage made the ideal kind impossible on that day</param>
+/// <param name="Forced">True when a hard rule closed the ideal kind, or no single swap with a holder of the ideal kind respects the hard rules</param>
 /// <param name="Cause">hardRule, coverage or unforced</param>
 public sealed record RotationSpecDeviation(
     string Employee,

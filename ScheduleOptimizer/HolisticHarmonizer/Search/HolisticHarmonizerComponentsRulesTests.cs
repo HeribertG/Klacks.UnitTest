@@ -148,8 +148,10 @@ public class HolisticHarmonizerComponentsRulesTests
         var swap = new PlanCellSwap(0, 2, 1, 2, string.Empty);
         var governed = new PlanningRuleRunGovernance([new MaxConsecutiveOfKindRule(Guid.NewGuid(), RuleSeverity.Hard, 1, RuleShiftKind.Early, 5)]);
 
-        new RotationConstraintAgent().Evaluate(bitmap, swap).Vote.ShouldBe(ConstraintAgentVote.Veto);
-        new RotationConstraintAgent(governed).Evaluate(bitmap, swap).Vote.ShouldBe(ConstraintAgentVote.Veto, "row b still builds L L L, Late is not governed");
+        new RotationConstraintAgent().Evaluate(bitmap, swap).Vote.ShouldBe(
+            ConstraintAgentVote.Approve, "the swap makes both blocks pure (SPEC-ROTATION-2026-10-08)");
+        new RotationConstraintAgent(governed).Evaluate(bitmap, swap).Vote.ShouldBe(
+            ConstraintAgentVote.Abstain, "row a receives an early shift, whose run length the rule governs");
         var governsBoth = new PlanningRuleRunGovernance([new MaxConsecutiveOfKindRule(Guid.NewGuid(), RuleSeverity.Soft, 1, RuleShiftKind.Work, 5)]);
         new RotationConstraintAgent(governsBoth).Evaluate(bitmap, swap).Vote.ShouldBe(ConstraintAgentVote.Abstain);
     }

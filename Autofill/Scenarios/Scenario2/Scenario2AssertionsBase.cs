@@ -311,109 +311,32 @@ public abstract class Scenario2AssertionsBase : AutofillBaselineTestBase
     }
 
     /// <summary>
-    /// A13, reduced to a pinned measurement on 2026-08-12 (SPEC.md decision 11): the number of closed
-    /// carry-in packages whose first package of the period fails to rotate must not exceed
-    /// <see cref="MaxBoundaryRotationMisses"/>. The specification target of 0 stays binding in
-    /// tests/autofill/SPEC.md and is quoted in the failure message; the boundary rotation was never
-    /// implemented in the engine's fitness, which is why the assertion was permanently red and guarded
-    /// nothing. Since the owner ruling 2026-08-12 (SPEC.md decision 12b) a first period package that
-    /// starts at least the configured rest days times 24 hours after the closed package's last shift
-    /// end is a free block restart and owes no rotation — only tighter restarts are judged.
+    /// A13 under SPEC-ROTATION-2026-10-08: the first block of the period of an employee whose carried-in package closed
+    /// before the period is judged against that package like any other block change — the ideal successor of its last
+    /// kind, a kind the employee may not work skipped, a restart at early after a long pause. Until 2026-10-09 a start
+    /// with at least 48 h of rest counted as a free restart (decision 12b); the new rule makes exactly that a block
+    /// boundary that owes rotation. A deviation the oracle proves forced (a hard rule, or no feasible swap) is allowed;
+    /// at most <see cref="MaxBoundaryRotationMisses"/> unforced ones are.
     /// </summary>
     [Test]
     public void A13_ClosedPackagesRotateAcrossTheMonthBoundary()
     {
         var closed = Definition.CarryIns
             .Where(c => !c.IsOpenAt(Definition.PeriodFrom))
+            .Select(c => c.AgentId)
             .ToList();
-        var problems = new List<string>();
         var shiftsByEmployee = AutofillPlanAnalyzer.BuildPlannedShifts(Run.Plan, Definition, includeCarryIn: true);
+        var misses = RotationSpecAnalyzer.UnforcedBoundaryDeviations(
+            Metrics.Rotation.Spec, shiftsByEmployee, closed, Definition.PeriodFrom);
 
-        foreach (var carryIn in closed)
-        {
-            var measured = Metrics.CarryIn
-                .FirstOrDefault(c => string.Equals(c.Employee, carryIn.AgentId, StringComparison.Ordinal));
-            if (measured is null)
-            {
-                problems.Add($"{carryIn.AgentId} was not measured at all, which means the fixture and the metrics disagree");
-                continue;
-            }
-
-            if (measured.ActualFirstShiftType == carryIn.ExpectedFirstShiftKind)
-            {
-                continue;
-            }
-
-            var restHours = BoundaryRestHoursOf(carryIn.AgentId, shiftsByEmployee);
-            if (restHours >= AutofillSpecConstants.MinRestHoursBetweenPackages)
-            {
-                continue;
-            }
-
-            var firstPackage = Scenario2Diagnostics.FirstPackageOf(Metrics, carryIn.AgentId);
-            problems.Add(
-                $"{carryIn.AgentId} closed a {carryIn.Kind} package on {carryIn.PackageEndInclusive:yyyy-MM-dd}, so "
-                + $"its first package of the period must rotate to {carryIn.ExpectedFirstShiftKind}, but it is "
-                + $"{(measured.ActualFirstShiftType?.ToString() ?? "absent — the employee received no in-period shift")} "
-                + (restHours.HasValue
-                    ? $"after only {restHours.Value.ToString(NumberFormat, CultureInfo.InvariantCulture)} h of rest "
-                    : string.Empty)
-                + $"({Scenario2Diagnostics.PackageLine(firstPackage)})");
-        }
-
-        problems.Count.ShouldBeLessThanOrEqualTo(
+        misses.Count.ShouldBeLessThanOrEqualTo(
             MaxBoundaryRotationMisses,
-            "A13: pinned measurement 2026-08-12 — at most "
-            + $"{MaxBoundaryRotationMisses.ToString(CultureInfo.InvariantCulture)} of the closed carry-in packages "
-            + "may fail to rotate. The specification target is 0 and stays binding (SPEC.md): a package that ended "
-            + "in the previous month must not restart at the same kind; MA-4 rotates early to late and is expected "
-            + $"to start again on {Scenario2SpecValues.Ma4ExpectedNewPackageStart:yyyy-MM-dd}, MA-5 rotates late to "
-            + $"night and is expected to start again on {Scenario2SpecValues.Ma5ExpectedNewPackageStart:yyyy-MM-dd} "
-            + "— the assertion itself only judges the shift kind, and since decision 12b only when the first "
-            + "period package starts within "
-            + $"{AutofillSpecConstants.MinRestHoursBetweenPackages.ToString(CultureInfo.InvariantCulture)} hours "
-            + "of the closed package's last shift end; a later start is a free block restart. The engine's "
-            + "fitness never scores a boundary rotation, so this is a target, not a guard, and only the count is "
-            + "pinned. Same measurement on the auction seed plan: "
-            + $"{Scenario2Diagnostics.DescribeSeedCarryIn(Run.SeedMetrics, closed.Select(c => c.AgentId))}. "
-            + Describe(problems));
-    }
-
-    /// <summary>
-    /// Rest between the last previous-month shift end and the first period shift start of one
-    /// employee, in hours; null when either side holds no shift.
-    /// </summary>
-    private double? BoundaryRestHoursOf(
-        string employee, IReadOnlyDictionary<string, IReadOnlyList<PlannedShift>> shiftsByEmployee)
-    {
-        if (!shiftsByEmployee.TryGetValue(employee, out var shifts))
-        {
-            return null;
-        }
-
-        DateTime? lastPreviousEnd = null;
-        DateTime? firstPeriodStart = null;
-        foreach (var shift in shifts)
-        {
-            if (shift.Date < Definition.PeriodFrom)
-            {
-                if (!lastPreviousEnd.HasValue || shift.EndAt > lastPreviousEnd.Value)
-                {
-                    lastPreviousEnd = shift.EndAt;
-                }
-            }
-            else if (!firstPeriodStart.HasValue || shift.StartAt < firstPeriodStart.Value)
-            {
-                firstPeriodStart = shift.StartAt;
-            }
-        }
-
-        if (!lastPreviousEnd.HasValue || !firstPeriodStart.HasValue)
-        {
-            return null;
-        }
-
-        return (firstPeriodStart.Value - lastPreviousEnd.Value).TotalHours;
+            "A13: a package that ended in the previous month hands its last kind to the first block of the period, which "
+            + "must start with the ideal successor (early to late, late to night, night to early) unless the oracle proves "
+            + "the deviation forced. Unforced: "
+            + string.Join("; ", misses.Select(m => $"{m.Employee} {m.Date:yyyy-MM-dd} {m.From} to {m.To}, ideal {m.Ideal}"))
+            + ". Same measurement on the auction seed plan: "
+            + $"{Scenario2Diagnostics.DescribeSeedCarryIn(Run.SeedMetrics, closed)}.");
     }
 
     [Test]

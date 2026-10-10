@@ -65,13 +65,17 @@ public class RowFeatureExtractorTests
         features.TransitionCompliance.ShouldBe(1.0);
     }
 
+    /// <summary>
+    /// Two free days put more than 48 h of rest between the shifts, so these are three rotation blocks; night to late and
+    /// late to early both miss the ideal successor (SPEC-ROTATION-2026-10-08).
+    /// </summary>
     [Test]
     public void Extract_BackwardTransition_DropsCompliance()
     {
         var bitmap = BuildRow(new[]
         {
-            CellSymbol.Night, CellSymbol.Free,
-            CellSymbol.Late, CellSymbol.Free,
+            CellSymbol.Night, CellSymbol.Free, CellSymbol.Free,
+            CellSymbol.Late, CellSymbol.Free, CellSymbol.Free,
             CellSymbol.Early,
         });
 
@@ -79,6 +83,30 @@ public class RowFeatureExtractorTests
 
         features.WorkBlockCount.ShouldBe(3);
         features.TransitionCompliance.ShouldBe(0.0);
+    }
+
+    [Test]
+    public void Extract_NightToEarlyAcrossABlockBoundary_IsTheIdealCycleStep()
+    {
+        var bitmap = BuildRow(new[] { CellSymbol.Night, CellSymbol.Free, CellSymbol.Free, CellSymbol.Early });
+
+        RowFeatureExtractor.Extract(bitmap, 0).TransitionCompliance.ShouldBe(1.0);
+    }
+
+    /// <summary>
+    /// One free day leaves about 32 h of rest: under the rotation rule that is one block, and a block that changes its kind
+    /// is not pure, even though the calendar sees two separate runs.
+    /// </summary>
+    [Test]
+    public void Extract_OneFreeDayBetweenTwoKinds_IsOneImpureBlock()
+    {
+        var bitmap = BuildRow(new[] { CellSymbol.Late, CellSymbol.Free, CellSymbol.Early });
+
+        var features = RowFeatureExtractor.Extract(bitmap, 0);
+
+        features.WorkBlockCount.ShouldBe(2);
+        features.BlockHomogeneity.ShouldBe(0.0);
+        features.TransitionCompliance.ShouldBe(1.0, "There is no block change to judge.");
     }
 
     [Test]

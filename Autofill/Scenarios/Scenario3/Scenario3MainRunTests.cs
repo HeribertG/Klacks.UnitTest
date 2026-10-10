@@ -481,8 +481,10 @@ public class Scenario3MainRunTests : Scenario2AssertionsBase
     /// stays binding; the count — never the concrete slots, which are search-path noise — is pinned
     /// at 6 (up from 4: the new mutation weight shifts the draw sequence of treatment and control
     /// differently, which the attribution reads as unexplained slots).
+    /// 2026-10-10: re-pinned 6 to 23 by owner decision; the rotation round 4 (SPEC-ROTATION-2026-10-08:
+    /// rotation outranks package stability) ripples the night restriction into early/late swaps.
     /// </summary>
-    private const int MaxUnattributableChanges = 6;
+    private const int MaxUnattributableChanges = 23;
 
     [Test]
     public void A24_EveryDifferenceToScenario2IsAttributableToTheNightRestriction()

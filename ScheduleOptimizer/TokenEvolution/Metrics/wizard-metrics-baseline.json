@@ -1,29 +1,29 @@
 {
   "BernFiveFullTimeHomogeneous": {
     "CoveragePercent": 1,
-    "TargetReachedPercent": 0.4,
-    "SlotGini": 0.043010752688172046,
-    "ShiftTypeEntropyAvg": 1.4515751923656341,
-    "Stage1EscalationCount": 8,
+    "TargetReachedPercent": 0.2,
+    "SlotGini": 0.030107526881720432,
+    "ShiftTypeEntropyAvg": 1.41972095472365,
+    "Stage1EscalationCount": 0,
     "MaxConsecutiveBlockLen": 5,
-    "RosterFidelityInversionRate": 0.6
+    "RosterFidelityInversionRate": 0.5
   },
   "HeterogeneousMix": {
     "CoveragePercent": 1,
     "TargetReachedPercent": 0.8,
-    "SlotGini": 0.06451612903225806,
-    "ShiftTypeEntropyAvg": 1.4708898779612523,
-    "Stage1EscalationCount": 11,
+    "SlotGini": 0.047311827956989246,
+    "ShiftTypeEntropyAvg": 1.3630951530065434,
+    "Stage1EscalationCount": 0,
     "MaxConsecutiveBlockLen": 5,
-    "RosterFidelityInversionRate": 0.2
+    "RosterFidelityInversionRate": 0.1
   },
   "BoundaryWithPriorWorks": {
-    "CoveragePercent": 0.7380952380952381,
+    "CoveragePercent": 0.8333333333333334,
     "TargetReachedPercent": 0,
-    "SlotGini": 0.021505376344086023,
-    "ShiftTypeEntropyAvg": 0.8441252254211814,
+    "SlotGini": 0.01904761904761905,
+    "ShiftTypeEntropyAvg": 0.9546520462183765,
     "Stage1EscalationCount": 7,
-    "MaxConsecutiveBlockLen": 5,
-    "RosterFidelityInversionRate": 0.6666666666666666
+    "MaxConsecutiveBlockLen": 6,
+    "RosterFidelityInversionRate": 1
   }
 }

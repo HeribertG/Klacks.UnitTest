@@ -20,7 +20,15 @@ namespace Klacks.UnitTest.ScheduleOptimizer.TokenEvolution.Metrics;
 /// regresses.
 /// </summary>
 /// <remarks>To refresh the baseline after a deliberate change, run the explicit
-/// <see cref="GenerateBaseline"/> test once and commit the updated JSON.</remarks>
+/// <see cref="GenerateBaseline"/> test once and commit the updated JSON.
+/// <para>
+/// Refreshed 2026-10-09 (autofill round 4, owner decision): the auction bids by the shared rotation rule
+/// (SPEC-ROTATION-2026-10-08) instead of R20–R23, which rejected the continuation of a block's kind. The raw
+/// auction plan of BernFiveFullTimeHomogeneous reaches the target for one employee less (40 % → 20 %) and the kind
+/// mix per employee of HeterogeneousMix falls (1.47 → 1.36, purer blocks); coverage of BoundaryWithPriorWorks rose
+/// (74 % → 83 %) and the escalations of the other two fell to 0. The finished Wizard 1 plans keep every hours pin of
+/// the autofill scenarios (top ranks gained), measured over the band seeds before the refresh.
+/// </para></remarks>
 [TestFixture]
 public sealed class WizardRegressionTests
 {

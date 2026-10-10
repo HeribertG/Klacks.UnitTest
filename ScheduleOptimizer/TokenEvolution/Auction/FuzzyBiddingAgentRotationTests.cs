@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.ScheduleOptimizer.Common.Rotation;
 using Klacks.ScheduleOptimizer.Models;
 using Klacks.ScheduleOptimizer.TokenEvolution.Auction.Agent;
 using NUnit.Framework;
@@ -39,13 +40,43 @@ public sealed class FuzzyBiddingAgentRotationTests
         Agents = [agent],
     };
 
-    private static AgentRuntimeState StateAfterEarlyBlock() => new(
-        AgentId: "A",
-        HoursAssignedThisRun: 24,
-        CurrentBlockLength: 3,
-        LastWorkedDate: new DateOnly(2026, 6, 3),
-        DaysSinceShiftType: [3, int.MaxValue, int.MaxValue],
-        CurrentBlockStartShiftType: 0);
+    private static AgentRuntimeState StateAfterEarlyBlock()
+    {
+        RotationTrack? track = null;
+        for (var day = 1; day <= 3; day++)
+        {
+            var date = new DateOnly(2026, 6, day);
+            track = ShiftRotation.Advance(track, date, 0, date.ToDateTime(new TimeOnly(7, 0)), date.ToDateTime(new TimeOnly(15, 0)));
+        }
+
+        return new AgentRuntimeState(
+            AgentId: "A",
+            HoursAssignedThisRun: 24,
+            CurrentBlockLength: 3,
+            LastWorkedDate: new DateOnly(2026, 6, 3),
+            DaysSinceShiftType: [0, int.MaxValue, int.MaxValue],
+            CurrentBlockStartShiftType: 0,
+            Rotation: track);
+    }
+
+    /// <summary>
+    /// Inside a block the kind stays (SPEC-ROTATION-2026-10-08): continuing early the next day must outbid switching
+    /// to late — the former R22 rejected exactly the continuation.
+    /// </summary>
+    [Test]
+    public void Evaluate_InsideABlock_TheSameKindBidsHigherThanAChange()
+    {
+        var sut = new FuzzyBiddingAgent();
+        var agent = MakeAgent();
+        var context = MakeContext(agent);
+        var state = StateAfterEarlyBlock();
+
+        var earlySlot = new CoreShift("s1", "F10", "2026-06-04", "07:00", "15:00", 8, 1, 0);
+        var lateSlot = new CoreShift("s2", "S10", "2026-06-04", "15:00", "23:00", 8, 1, 0);
+
+        sut.Evaluate(agent, earlySlot, state, context).Score
+            .ShouldBeGreaterThan(sut.Evaluate(agent, lateSlot, state, context).Score);
+    }
 
     [Test]
     public void Evaluate_NewBlock_SameTypeBidsLowerThanRotatedType()

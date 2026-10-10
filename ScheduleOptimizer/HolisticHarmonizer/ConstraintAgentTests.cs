@@ -149,18 +149,43 @@ public class ConstraintAgentTests
         verdict.Vote.ShouldBe(ConstraintAgentVote.Veto);
     }
 
+    /// <summary>
+    /// Three equal shifts in a row are the pure block SPEC-ROTATION-2026-10-08 asks for; until round 4 this agent vetoed it.
+    /// </summary>
     [Test]
-    public void Rotation_SwapCreatesThreeInARow_Vetoes()
+    public void Rotation_SwapCreatesThreeEqualShiftsInARow_IsNoLongerVetoed()
     {
-        // rowA day0 = Free, rowA day1 = Early, rowA day2 = Early.
-        // rowB day0 = Early. After swap rowA = Early Early Early → 3 in a row.
         var bitmap = BuildBitmapNDays(
             days: 3,
             row0: (target: 0m, max: 0, cells: new[] { FreeCell, WorkCell(CellSymbol.Early, 8m), WorkCell(CellSymbol.Early, 8m) }),
             row1: (target: 0m, max: 0, cells: new[] { WorkCell(CellSymbol.Early, 8m), FreeCell, FreeCell }));
 
         var verdict = new RotationConstraintAgent().Evaluate(bitmap, new PlanCellSwap(0, 0, 1, 0, "test"));
+        verdict.Vote.ShouldNotBe(ConstraintAgentVote.Veto);
+    }
+
+    [Test]
+    public void Rotation_SwapPutsAForeignKindIntoABlock_Vetoes()
+    {
+        var bitmap = BuildBitmapNDays(
+            days: 3,
+            row0: (target: 0m, max: 0, cells: new[] { FreeCell, WorkCell(CellSymbol.Early, 8m), WorkCell(CellSymbol.Early, 8m) }),
+            row1: (target: 0m, max: 0, cells: new[] { WorkCell(CellSymbol.Late, 8m), FreeCell, FreeCell }));
+
+        var verdict = new RotationConstraintAgent().Evaluate(bitmap, new PlanCellSwap(0, 0, 1, 0, "test"));
         verdict.Vote.ShouldBe(ConstraintAgentVote.Veto);
+    }
+
+    [Test]
+    public void Rotation_SwapMakesABlockPure_Approves()
+    {
+        var bitmap = BuildBitmapNDays(
+            days: 3,
+            row0: (target: 0m, max: 0, cells: new[] { WorkCell(CellSymbol.Late, 8m), WorkCell(CellSymbol.Early, 8m), WorkCell(CellSymbol.Early, 8m) }),
+            row1: (target: 0m, max: 0, cells: new[] { WorkCell(CellSymbol.Early, 8m), FreeCell, FreeCell }));
+
+        var verdict = new RotationConstraintAgent().Evaluate(bitmap, new PlanCellSwap(0, 0, 1, 0, "test"));
+        verdict.Vote.ShouldBe(ConstraintAgentVote.Approve);
     }
 
     [Test]
