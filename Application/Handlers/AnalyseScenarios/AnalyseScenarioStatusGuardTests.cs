@@ -65,6 +65,7 @@ public class AnalyseScenarioStatusGuardTests
         Substitute.For<IHttpContextAccessor>(),
         Substitute.For<IPeriodHoursService>(),
         Substitute.For<IWorkNotificationService>(),
+        Substitute.For<IEscalationChainService>(),
         NullLogger<AcceptAnalyseScenarioCommandHandler>.Instance);
 
     private RejectAnalyseScenarioCommandHandler CreateRejectHandler() => new(

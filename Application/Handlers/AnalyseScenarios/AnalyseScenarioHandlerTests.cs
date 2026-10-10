@@ -242,7 +242,7 @@ public class AcceptAnalyseScenarioCommandHandlerTests
             complianceService, overrideAuthorizer, timelineService,
             conditionRepository, ledgerService, httpContextAccessor,
             Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
-            Substitute.For<IWorkNotificationService>(), logger);
+            Substitute.For<IWorkNotificationService>(), Substitute.For<IEscalationChainService>(), logger);
     }
 
     [Test]
