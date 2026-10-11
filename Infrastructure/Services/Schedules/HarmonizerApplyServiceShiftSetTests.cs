@@ -66,7 +66,7 @@ public class HarmonizerApplyServiceShiftSetTests
         _scenarioService
             .CloneScenarioDataWithMapsAsync(
                 Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(),
-                Arg.Do<IReadOnlyCollection<Guid>?>(ids => _clonedShiftIds = ids), Arg.Any<CancellationToken>())
+                Arg.Do<IReadOnlyCollection<Guid>?>(ids => _clonedShiftIds = ids), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns((new Dictionary<Guid, Guid> { [_bitmapShiftId] = Guid.NewGuid() }, new Dictionary<Guid, Guid>()));
     }
 
@@ -86,7 +86,7 @@ public class HarmonizerApplyServiceShiftSetTests
 
         var scenarioRepository = Substitute.For<IAnalyseScenarioRepository>();
         scenarioRepository.GetByTokenAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid() });
+            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid(), FromDate = D, UntilDate = D });
 
         var nameGenerator = Substitute.For<IScenarioNameGenerator>();
         nameGenerator
@@ -156,6 +156,28 @@ public class HarmonizerApplyServiceShiftSetTests
         _clonedShiftIds!.ShouldBe(
             new[] { first, second, _bitmapShiftId }, ignoreOrder: true,
             "all live shifts of the source scenario plus the bitmap's own, none of a deleted or foreign scenario");
+    }
+
+    [Test]
+    public async Task ApplyOfAScenarioSource_ClonesFromThatScenario()
+    {
+        var sourceToken = Guid.NewGuid();
+
+        await BuildSut().ApplyAsScenarioAsync(StoreResult(sourceToken), Guid.NewGuid(), CancellationToken.None);
+
+        await _scenarioService.Received(1).CloneScenarioDataWithMapsAsync(
+            Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(),
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Is<Guid?>(t => t == sourceToken), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApplyOfTheRealPlan_ClonesTheRealPlan()
+    {
+        await BuildSut().ApplyAsScenarioAsync(StoreResult(null), Guid.NewGuid(), CancellationToken.None);
+
+        await _scenarioService.Received(1).CloneScenarioDataWithMapsAsync(
+            Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(),
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Is<Guid?>(t => t == null), Arg.Any<CancellationToken>());
     }
 
     [Test]

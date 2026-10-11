@@ -94,12 +94,12 @@ public class HarmonizerApplyServiceCaptureTests
         _mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
             .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
         _scenarioService.CloneScenarioDataWithMapsAsync(Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns((new Dictionary<Guid, Guid> { [_shiftId] = Guid.NewGuid() }, new Dictionary<Guid, Guid>()));
         _scenarioRepository.GetByGroupAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<AnalyseScenario>());
         _scenarioRepository.GetByTokenAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid() });
+            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid(), FromDate = D, UntilDate = D });
     }
 
     [TearDown]

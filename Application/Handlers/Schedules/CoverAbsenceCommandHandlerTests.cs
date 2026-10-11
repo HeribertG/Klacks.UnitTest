@@ -14,6 +14,7 @@ using Klacks.Api.Application.Commands.Breaks;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.DTOs.Notifications;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Schedules;
@@ -103,7 +104,7 @@ public class CoverAbsenceCommandHandlerTests
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         _scenarioService.CloneScenarioDataWithMapsAsync(
                 Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns((new Dictionary<Guid, Guid>(), new Dictionary<Guid, Guid> { [WorkId] = ClonedWorkId }));
 
         _scheduleEntries = Substitute.For<IScheduleEntriesService>();
@@ -188,7 +189,8 @@ public class CoverAbsenceCommandHandlerTests
 
     private void UseSnapshot(RecoverySnapshot snapshot)
         => _snapshotBuilder.BuildAsync(
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(),
+                Arg.Any<CancellationToken>())
             .Returns(snapshot);
 
     private static RecoverySnapshot WithFreeCandidate(bool locked = false, bool candidateEligible = true)
@@ -453,11 +455,11 @@ public class CoverAbsenceCommandHandlerTests
         var order = new List<string>();
         _scenarioService.When(s => s.CloneScenarioDataWithMapsAsync(
                 Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>()))
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()))
             .Do(_ => order.Add("clone"));
         _unitOfWork.When(u => u.CompleteAsync()).Do(_ => order.Add("complete"));
         _snapshotBuilder.When(s => s.BuildAsync(
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<CancellationToken>()))
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<CancellationToken>()))
             .Do(_ => order.Add("snapshot"));
 
         await Cover();
@@ -710,7 +712,7 @@ public class CoverAbsenceCommandHandlerTests
         await Should.ThrowAsync<KeyNotFoundException>(() => Cover());
 
         await _snapshotBuilder.DidNotReceive().BuildAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Any<ScenarioSourceScope?>(), Arg.Any<CancellationToken>());
         await AssertNothingWasWrittenAsync();
     }
 
@@ -742,12 +744,150 @@ public class CoverAbsenceCommandHandlerTests
         await AssertNothingWasWrittenAsync();
     }
 
+    private static readonly Guid SourceToken = Guid.NewGuid();
+    private static readonly Guid RootShiftId = Guid.NewGuid();
+
+    private void UseSourceScenario(
+        AnalyseScenarioStatus status = AnalyseScenarioStatus.Active, Guid? scenarioGroupId = null, DateOnly? sourceUntil = null)
+    {
+        _scenarioRepo.GetByTokenAsync(SourceToken, Arg.Any<CancellationToken>())
+            .Returns(new AnalyseScenario
+            {
+                Id = Guid.NewGuid(),
+                Token = SourceToken,
+                GroupId = scenarioGroupId ?? GroupId,
+                FromDate = Date,
+                UntilDate = sourceUntil ?? Date,
+                Status = status
+            });
+        _scenarioService.GetGroupHierarchyIdsAsync(scenarioGroupId ?? GroupId, Arg.Any<CancellationToken>())
+            .Returns([scenarioGroupId ?? GroupId]);
+        _scenarioService.ResolveRootShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, Guid> { [ShiftId] = RootShiftId });
+        _scenarioService.GetScenarioShiftIdsWithRootsAsync(SourceToken, Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid> { ShiftId, RootShiftId });
+    }
+
+    private Task<CoverAbsenceOutcome> CoverInSourceScenario()
+        => _handler.Handle(
+            new CoverAbsenceCommand(ClientId, Date, GroupId, AbsenceId, AnalyseToken: SourceToken), CancellationToken.None);
+
+    [Test]
+    public async Task CoverInAScenario_ClonesAndReadsTheSourceScenario_AndRecordsItsLineage()
+    {
+        UseSourceScenario();
+
+        var outcome = await CoverInSourceScenario();
+
+        await _scenarioService.Received(1).CloneScenarioDataWithMapsAsync(
+            GroupId, Date, Date, outcome.Token, null, SourceToken, Arg.Any<CancellationToken>());
+        await _snapshotBuilder.Received(1).BuildAsync(
+            GroupId, ClientId, Arg.Any<IReadOnlyList<DateOnly>>(), Arg.Is<ScenarioSourceScope?>(s => s != null && s.Token == SourceToken && s.FromDate == Date && s.UntilDate == Date
+                && s.OwnedShiftIds.Contains(ShiftId) && s.OwnedShiftIds.Contains(RootShiftId)),
+            Arg.Any<CancellationToken>());
+        await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == SourceToken && s.Token == outcome.Token));
+        _scheduleEntries.Received().GetScheduleEntriesQuery(Date, Date, Arg.Any<List<Guid>?>(), SourceToken);
+        await _mediator.Received(1).Send(
+            Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.WorkId == ClonedWorkId && c.Resource.ReplaceClientId == CandidateId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CoverInAWiderScenario_SpansTheWholeSourceScenario_ButCoversOnlyTheAbsenceDays()
+    {
+        var sourceUntil = Date.AddDays(20);
+        UseSourceScenario(sourceUntil: sourceUntil);
+
+        var outcome = await CoverInSourceScenario();
+
+        await _scenarioService.Received(1).CloneScenarioDataWithMapsAsync(
+            GroupId, Date, sourceUntil, outcome.Token, null, SourceToken, Arg.Any<CancellationToken>());
+        await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.FromDate == Date && s.UntilDate == sourceUntil));
+        await _snapshotBuilder.Received(1).BuildAsync(
+            GroupId, ClientId, Arg.Is<IReadOnlyList<DateOnly>>(d => d.Count == 1 && d[0] == Date), Arg.Any<ScenarioSourceScope?>(),
+            Arg.Any<CancellationToken>());
+        await _mediator.Received(1).Send(
+            Arg.Is<BulkAddBreaksCommand>(c => c.Request.Breaks.Count == 1 && c.Request.Breaks[0].CurrentDate == Date),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CoverInAScenario_ReportsAndRecordsTheRealRootShift()
+    {
+        UseSourceScenario();
+
+        var outcome = await CoverInSourceScenario();
+
+        outcome.Covered.ShouldHaveSingleItem().ShiftId.ShouldBe(RootShiftId);
+        await _recorder.Received(1).RecordProposalsAsync(
+            Arg.Any<ReplacementProposalContext>(),
+            Arg.Is<IReadOnlyList<CoveredSlot>>(slots => slots.Count == 1 && slots[0].ShiftId == RootShiftId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CoverOnTheRealPlan_ClonesTheRealPlan_WithoutLineage()
+    {
+        var outcome = await Cover();
+
+        await _scenarioService.Received(1).CloneScenarioDataWithMapsAsync(
+            GroupId, Date, Date, outcome.Token, null, null, Arg.Any<CancellationToken>());
+        await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == null));
+        await _scenarioService.DidNotReceive().ResolveRootShiftIdsAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+        _scheduleEntries.DidNotReceive().GetScheduleEntriesQuery(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Is<Guid?>(t => t != null));
+        outcome.Covered.ShouldHaveSingleItem().ShiftId.ShouldBe(ShiftId);
+    }
+
+    [Test]
+    public async Task CoverInAnUnknownOrHiddenScenario_IsRefusedLikeAMissingOne_AndWritesNothing()
+    {
+        _scenarioRepo.GetByTokenAsync(SourceToken, Arg.Any<CancellationToken>()).Returns((AnalyseScenario?)null);
+
+        await Should.ThrowAsync<KeyNotFoundException>(CoverInSourceScenario);
+
+        await AssertNothingWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task CoverInAScenarioOfAHiddenGroup_IsRefusedLikeAMissingOne_AndWritesNothing()
+    {
+        var hiddenGroupId = Guid.NewGuid();
+        UseSourceScenario(scenarioGroupId: hiddenGroupId);
+        _groupVisibilityGuard.IsGroupVisibleAsync(hiddenGroupId, Arg.Any<CancellationToken>()).Returns(false);
+
+        await Should.ThrowAsync<KeyNotFoundException>(CoverInSourceScenario);
+
+        await AssertNothingWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task CoverInADecidedScenario_IsRefused_AndWritesNothing()
+    {
+        UseSourceScenario(AnalyseScenarioStatus.Accepted);
+
+        await Should.ThrowAsync<ScenarioNotActiveException>(CoverInSourceScenario);
+
+        await AssertNothingWasWrittenAsync();
+    }
+
+    [Test]
+    public async Task CoverInAScenarioOfAnotherGroup_IsRefused_AndWritesNothing()
+    {
+        UseSourceScenario(scenarioGroupId: Guid.NewGuid());
+
+        await Should.ThrowAsync<ConflictException>(CoverInSourceScenario);
+
+        await AssertNothingWasWrittenAsync();
+    }
+
     private async Task AssertNothingWasWrittenAsync()
     {
         await _scenarioRepo.DidNotReceive().Add(Arg.Any<AnalyseScenario>());
         await _scenarioService.DidNotReceive().CloneScenarioDataWithMapsAsync(
             Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-            Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
         await _mediator.DidNotReceive().Send(Arg.Any<BulkAddBreaksCommand>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<PostCommand<WorkChangeResource>>(), Arg.Any<CancellationToken>());

@@ -30,6 +30,7 @@ public class WizardApplyServiceComplianceTests
 
     private static readonly DateOnly Day1 = new(2026, 4, 20);
     private static readonly DateOnly Day2 = new(2026, 4, 21);
+    private static readonly DateOnly SourceUntil = new(2026, 4, 30);
 
     private WizardResultCache _cache = null!;
     private IMediator _mediator = null!;
@@ -60,7 +61,7 @@ public class WizardApplyServiceComplianceTests
         _mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
             .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
         _scenarioService.CloneScenarioDataAsync(Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, Guid>());
         _scenarioRepository.GetByGroupAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new List<AnalyseScenario>());
@@ -270,7 +271,7 @@ public class WizardApplyServiceComplianceTests
         var jobId = Guid.NewGuid();
         _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1)] }, sourceToken);
         _scenarioRepository.GetByTokenAsync(sourceToken, Arg.Any<CancellationToken>())
-            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid() });
+            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid(), FromDate = Day1, UntilDate = Day1 });
         SetPartitionPassThrough();
 
         Guid? partitionToken = null;
@@ -350,6 +351,88 @@ public class WizardApplyServiceComplianceTests
 
         // A transient failure must not consume the run - retrying should still be possible.
         _cache.TryGet(jobId, out _, out _, out _, out _, out _).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_FromASourceScenario_ClonesThatScenarioOverItsWholeRange_AndMapsItsShifts()
+    {
+        var sourceToken = Guid.NewGuid();
+        var sourceShiftId = Guid.NewGuid();
+        var foreignShiftId = Guid.NewGuid();
+        var cloneShiftId = Guid.NewGuid();
+        var mappedAgent = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var tokens = new List<CoreToken>
+        {
+            MakeToken(mappedAgent, Day1) with { ShiftRefId = sourceShiftId },
+            MakeToken(Guid.NewGuid(), Day2) with { ShiftRefId = foreignShiftId },
+        };
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = tokens }, sourceToken);
+        _scenarioRepository.GetByTokenAsync(sourceToken, Arg.Any<CancellationToken>())
+            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid(), FromDate = Day1, UntilDate = SourceUntil });
+        _scenarioService.CloneScenarioDataAsync(Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), sourceToken, Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, Guid> { [sourceShiftId] = cloneShiftId });
+        SetPartitionPassThrough();
+
+        BulkAddWorksCommand? sent = null;
+        _mediator.Send(Arg.Do<BulkAddWorksCommand>(c => sent = c), Arg.Any<CancellationToken>())
+            .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
+
+        var (resource, outcome) = await _sut.ApplyAsScenarioAsync(jobId, null, overrideBlock: false, CancellationToken.None);
+
+        await _scenarioService.Received(1).CloneScenarioDataAsync(
+            null, Day1, SourceUntil, resource.Token, null, sourceToken, Arg.Any<CancellationToken>());
+        var skipped = outcome.SkippedPlacements.ShouldHaveSingleItem();
+        skipped.ShiftId.ShouldBe(foreignShiftId);
+        skipped.Date.ShouldBe(Day2);
+        skipped.ReasonKey.ShouldBe("schedule.error-list.shift-not-in-scenario");
+        resource.FromDate.ShouldBe(Day1);
+        resource.UntilDate.ShouldBe(SourceUntil, "the child spans the whole source scenario, not only the planned days");
+        await _scenarioRepository.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == sourceToken));
+        sent.ShouldNotBeNull();
+        var work = sent!.Request.Works.ShouldHaveSingleItem("a placement on a shift without a clone must not land on a foreign scenario's shift");
+        work.ShiftId.ShouldBe(cloneShiftId);
+        work.ClientId.ShouldBe(mappedAgent);
+        work.AnalyseToken.ShouldBe(resource.Token);
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_WithoutGroup_OnAGroupedSource_InheritsTheSourceGroup()
+    {
+        var sourceToken = Guid.NewGuid();
+        var sourceGroupId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1)] }, sourceToken);
+        _scenarioRepository.GetByTokenAsync(sourceToken, Arg.Any<CancellationToken>())
+            .Returns(new AnalyseScenario { RunGroupId = Guid.NewGuid(), GroupId = sourceGroupId, FromDate = Day1, UntilDate = Day1 });
+        SetPartitionPassThrough();
+
+        var (resource, _) = await _sut.ApplyAsScenarioAsync(jobId, null, overrideBlock: false, CancellationToken.None);
+
+        resource.GroupId.ShouldBe(sourceGroupId);
+        await _scenarioService.Received(1).CloneScenarioDataAsync(
+            sourceGroupId, Day1, Day1, resource.Token, null, sourceToken, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_FromTheRealPlan_KeepsTheShiftFallback_AndNoLineage()
+    {
+        var realShiftId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(Guid.NewGuid(), Day1) with { ShiftRefId = realShiftId }] }, null);
+        SetPartitionPassThrough();
+
+        BulkAddWorksCommand? sent = null;
+        _mediator.Send(Arg.Do<BulkAddWorksCommand>(c => sent = c), Arg.Any<CancellationToken>())
+            .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
+
+        var (resource, _) = await _sut.ApplyAsScenarioAsync(jobId, null, overrideBlock: false, CancellationToken.None);
+
+        await _scenarioService.Received(1).CloneScenarioDataAsync(
+            null, Day1, Day1, resource.Token, null, null, Arg.Any<CancellationToken>());
+        await _scenarioRepository.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == null));
+        sent!.Request.Works.ShouldHaveSingleItem().ShiftId.ShouldBe(realShiftId);
     }
 
     private static DataBaseContext BuildInMemoryContext()

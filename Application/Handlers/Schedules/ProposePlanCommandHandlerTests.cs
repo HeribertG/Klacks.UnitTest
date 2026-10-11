@@ -70,7 +70,7 @@ public class ProposePlanCommandHandlerTests
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
         _scenarioService.CloneScenarioDataAsync(
                 Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<Guid, Guid>());
 
         _checker = Substitute.For<IPreCommitConflictChecker>();
@@ -187,7 +187,7 @@ public class ProposePlanCommandHandlerTests
         var order = new List<string>();
         _scenarioService.When(s => s.CloneScenarioDataAsync(
                 Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>()))
+                Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()))
             .Do(_ => order.Add("clone"));
         _unitOfWork.When(u => u.CompleteAsync()).Do(_ => order.Add("complete"));
         _checker.When(c => c.CheckAsync(
