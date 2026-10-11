@@ -22,9 +22,11 @@
 
 using System.Reflection;
 using Klacks.Api.Presentation.Controllers.UserBackend;
+using Klacks.Api.Presentation.Extensions;
 using Klacks.Api.Presentation.Filters;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Klacks.UnitTest.Architecture;
 
@@ -32,7 +34,7 @@ namespace Klacks.UnitTest.Architecture;
 public class ScenarioTokenFilterCoverageGuardTests
 {
     private const string ProgramFileName = "Program.cs";
-    private const string FilterRegistration = "options.Filters.Add<Klacks.Api.Presentation.Filters.ScenarioTokenAccessFilter>()";
+    private const string FilterRegistration = "options.Filters.AddKlacksGlobalFilters()";
     private const string TokenNameFragment = "token";
     private const string ScannableNamespacePrefix = "Klacks.";
     private const int MinimumTokenCarryingParameters = 10;
@@ -73,7 +75,13 @@ public class ScenarioTokenFilterCoverageGuardTests
         var source = File.ReadAllText(Path.Combine(RepositoryRootLocator.ApiProject, ProgramFileName));
 
         source.ShouldContain(FilterRegistration, customMessage:
-            "ScenarioTokenAccessFilter must stay a global MVC filter; without it every endpoint accepts any analyseToken.");
+            "Program.cs must register the global MVC filters through AddKlacksGlobalFilters.");
+
+        var filters = new FilterCollection().AddKlacksGlobalFilters();
+
+        filters.OfType<TypeFilterAttribute>().Select(filter => filter.ImplementationType)
+            .ShouldContain(typeof(ScenarioTokenAccessFilter),
+                "ScenarioTokenAccessFilter must stay a global MVC filter; without it every endpoint accepts any analyseToken.");
     }
 
     [Test]
