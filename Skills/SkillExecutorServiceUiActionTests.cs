@@ -71,6 +71,7 @@ public class SkillExecutorServiceUiActionTests
         gate,
         _entityChangeNotifier,
         _recentEntityRegistrar,
+        Substitute.For<Klacks.Api.Domain.Interfaces.Assistant.ISkillScenarioScopeGuard>(),
         Substitute.For<ILogger<SkillExecutorService>>());
 
     private SkillExecutorService CreateExecutorWithRealGate()

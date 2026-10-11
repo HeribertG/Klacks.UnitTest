@@ -46,7 +46,7 @@ public class EvaluateScenarioQueryHandlerTests
             .Returns(new List<PeriodIssueDto>());
     }
 
-    private EvaluateScenarioQueryHandler Handler() => new(_scenarioRepo, _entries, _loader);
+    private EvaluateScenarioQueryHandler Handler() => new(_scenarioRepo, _entries, _loader, TestGroupWriteVisibility.UnrestrictedGroups());
 
     private static AnalyseScenario Scenario() => new()
     {

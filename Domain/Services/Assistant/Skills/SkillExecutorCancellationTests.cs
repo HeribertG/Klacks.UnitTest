@@ -52,6 +52,7 @@ public class SkillExecutorCancellationTests
             Substitute.For<IAutonomyGate>(),
             Substitute.For<IEntityChangeNotifier>(),
             Substitute.For<IRecentEntityRegistrar>(),
+            Substitute.For<Klacks.Api.Domain.Interfaces.Assistant.ISkillScenarioScopeGuard>(),
             NullLogger<SkillExecutorService>.Instance);
     }
 

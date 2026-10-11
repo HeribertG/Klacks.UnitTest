@@ -21,6 +21,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.AnalyseScenarios;
 
@@ -88,6 +89,7 @@ public class AcceptAnalyseScenarioLedgerWriteBackTests
             Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IEscalationChainService>(),
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>());
     }
 

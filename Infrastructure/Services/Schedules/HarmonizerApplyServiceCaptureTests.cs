@@ -110,6 +110,7 @@ public class HarmonizerApplyServiceCaptureTests
         _scenarioComplianceService, _timelineService, _snapshotMarkerService,
         new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
         _nameGenerator,
+        Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HolisticHarmonizerApplyService BuildHolisticSut() => new(
@@ -117,6 +118,7 @@ public class HarmonizerApplyServiceCaptureTests
         _scenarioComplianceService, _timelineService, _snapshotMarkerService,
         new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
         _nameGenerator,
+        Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
         NullLogger<HarmonizerApplyService>.Instance);
 
     private HarmonyBitmap BestBitmap()

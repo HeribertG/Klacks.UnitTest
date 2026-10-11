@@ -13,6 +13,7 @@ using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.AnalyseScenarios;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Microsoft.AspNetCore.Http;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Handlers.AnalyseScenarios;
@@ -66,6 +67,7 @@ public class AnalyseScenarioStatusGuardTests
         Substitute.For<IPeriodHoursService>(),
         Substitute.For<IWorkNotificationService>(),
         Substitute.For<IEscalationChainService>(),
+        TestGroupWriteVisibility.UnrestrictedGroups(),
         NullLogger<AcceptAnalyseScenarioCommandHandler>.Instance);
 
     private RejectAnalyseScenarioCommandHandler CreateRejectHandler() => new(
@@ -76,6 +78,7 @@ public class AnalyseScenarioStatusGuardTests
         _conditionRepository,
         Substitute.For<IAgentConditionLedgerService>(),
         Substitute.For<IHttpContextAccessor>(),
+        TestGroupWriteVisibility.UnrestrictedGroups(),
         NullLogger<RejectAnalyseScenarioCommandHandler>.Instance);
 
     [TestCase(AnalyseScenarioStatus.Accepted)]

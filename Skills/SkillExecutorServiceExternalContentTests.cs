@@ -59,6 +59,7 @@ public class SkillExecutorServiceExternalContentTests
             _autonomyGate,
             Substitute.For<IEntityChangeNotifier>(),
             Substitute.For<IRecentEntityRegistrar>(),
+            Substitute.For<Klacks.Api.Domain.Interfaces.Assistant.ISkillScenarioScopeGuard>(),
             Substitute.For<ILogger<SkillExecutorService>>());
 
         _registry.GetSkillByName(UntrustedSkillName).Returns(GenericDescriptor(UntrustedSkillName));

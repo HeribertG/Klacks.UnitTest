@@ -21,6 +21,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -34,7 +35,7 @@ public class ListScenariosSkillTests
     private DataBaseContext _context = null!;
     private IAnalyseScenarioRepository _repo = null!;
     private IGroupRepository _groupRepository = null!;
-    private IGroupScopeGuard _scopeGuard = null!;
+    private IGroupVisibilityGuard _visibilityGuard = null!;
 
     [SetUp]
     public async Task Setup()
@@ -63,9 +64,7 @@ public class ListScenariosSkillTests
         _groupRepository.Get(Arg.Any<Guid>()).Returns(call =>
             new[] { _winterthur, _winterthurSub, _bern }.FirstOrDefault(g => g.Id == call.Arg<Guid>()));
 
-        _scopeGuard = Substitute.For<IGroupScopeGuard>();
-        _scopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
-            .Returns(GroupScopeAccess.Unrestricted());
+        _visibilityGuard = TestGroupWriteVisibility.UnrestrictedGroups();
     }
 
     [TearDown]
@@ -81,8 +80,16 @@ public class ListScenariosSkillTests
     };
 
     private void RestrictToWinterthur() =>
-        _scopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
-            .Returns(GroupScopeAccess.Restricted(new[] { _winterthur.Id }, new[] { _winterthur.Name }));
+        Restrict(GroupVisibilityScope.Restricted(new[] { _winterthur.Id }, new[] { _winterthur.Id, _winterthurSub.Id }));
+
+    private void Restrict(GroupVisibilityScope scope)
+    {
+        _visibilityGuard = Substitute.For<IGroupVisibilityGuard>();
+        _visibilityGuard.IsUnrestrictedAsync(Arg.Any<CancellationToken>()).Returns(false);
+        _visibilityGuard.GetScopeAsync(Arg.Any<CancellationToken>()).Returns(scope);
+        _visibilityGuard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(ci => scope.VisibleGroupIds.Contains(ci.ArgAt<Guid>(0)));
+    }
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -92,7 +99,7 @@ public class ListScenariosSkillTests
         UserPermissions = new List<string> { "CanViewClients" }
     };
 
-    private ListScenariosSkill Skill() => new(_repo, _groupRepository, _scopeGuard);
+    private ListScenariosSkill Skill() => new(_repo, _groupRepository, _visibilityGuard);
 
     private static JsonElement DataAsJson(SkillResult result)
         => JsonSerializer.SerializeToElement(result.Data);
@@ -185,6 +192,17 @@ public class ListScenariosSkillTests
         });
 
         Names(DataAsJson(result)).ShouldBe(new[] { "Auto Winterthur Nord" });
+    }
+
+    [Test]
+    public async Task RestrictedUserWithoutVisibilityRows_SeesNoScenarios_LikeTheHttpList()
+    {
+        Restrict(GroupVisibilityScope.Restricted([], []));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["onlyOpen"] = "false" });
+
+        result.Success.ShouldBeTrue();
+        DataAsJson(result).GetProperty("Count").GetInt32().ShouldBe(0);
     }
 
     [Test]

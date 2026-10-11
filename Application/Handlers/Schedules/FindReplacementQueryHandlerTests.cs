@@ -106,6 +106,7 @@ public class FindReplacementQueryHandlerTests
             _overrideAuthorizer, _httpContextAccessor, _absenceRepo,
             new GroupVisibilityGuard(_groupVisibilityService, _userService),
             new ClientVisibilityGuard(_clientSearchRepo, _clientGroupFilter),
+            Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
             NullLogger<FindReplacementQueryHandler>.Instance);
     }
 

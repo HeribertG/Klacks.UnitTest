@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.AnalyseScenarios;
 
@@ -34,7 +35,7 @@ public class CreateAnalyseScenarioCommandHandlerTests
         _scenarioService = Substitute.For<IAnalyseScenarioService>();
 
         var logger = Substitute.For<ILogger<CreateAnalyseScenarioCommandHandler>>();
-        _handler = new CreateAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, logger);
+        _handler = new CreateAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]
@@ -93,7 +94,7 @@ public class ListAnalyseScenariosQueryHandlerTests
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         var logger = Substitute.For<ILogger<ListAnalyseScenariosQueryHandler>>();
-        _handler = new ListAnalyseScenariosQueryHandler(_repository, logger);
+        _handler = new ListAnalyseScenariosQueryHandler(_repository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]
@@ -160,7 +161,7 @@ public class GetAnalyseScenarioQueryHandlerTests
     {
         _repository = Substitute.For<IAnalyseScenarioRepository>();
         var logger = Substitute.For<ILogger<GetAnalyseScenarioQueryHandler>>();
-        _handler = new GetAnalyseScenarioQueryHandler(_repository, logger);
+        _handler = new GetAnalyseScenarioQueryHandler(_repository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]
@@ -242,7 +243,7 @@ public class AcceptAnalyseScenarioCommandHandlerTests
             complianceService, overrideAuthorizer, timelineService,
             conditionRepository, ledgerService, httpContextAccessor,
             Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
-            Substitute.For<IWorkNotificationService>(), Substitute.For<IEscalationChainService>(), logger);
+            Substitute.For<IWorkNotificationService>(), Substitute.For<IEscalationChainService>(), TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]
@@ -302,6 +303,7 @@ public class RejectAnalyseScenarioCommandHandlerTests
             Substitute.For<IAgentConditionRepository>(),
             Substitute.For<IAgentConditionLedgerService>(),
             Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>(),
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             logger);
     }
 
@@ -460,7 +462,7 @@ public class DeleteAnalyseScenarioCommandHandlerTests
         _captureRepository = Substitute.For<IWizardRunCaptureRepository>();
 
         var logger = Substitute.For<ILogger<DeleteAnalyseScenarioCommandHandler>>();
-        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, _captureRepository, logger);
+        _handler = new DeleteAnalyseScenarioCommandHandler(_repository, _scenarioService, _unitOfWork, _captureRepository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     [Test]
@@ -586,7 +588,7 @@ public class DeleteAllAnalyseScenariosCommandHandlerTests
 
         var logger = Substitute.For<ILogger<DeleteAllAnalyseScenariosCommandHandler>>();
         _handler = new DeleteAllAnalyseScenariosCommandHandler(
-            _repository, _scenarioService, _unitOfWork, _captureRepository, logger);
+            _repository, _scenarioService, _unitOfWork, _captureRepository, TestGroupWriteVisibility.UnrestrictedGroups(), logger);
     }
 
     private static AnalyseScenario Scenario() => new()

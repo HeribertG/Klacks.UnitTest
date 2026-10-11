@@ -293,6 +293,7 @@ public class ReplacementCoverProtectionTests
         Substitute.For<IScheduleSnapshotMarkerService>(),
         Substitute.For<ICompanyClock>(),
         Substitute.For<IScenarioNameGenerator>(),
+        Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
         Substitute.For<ILogger<HarmonizerApplyService>>());
 
     private Work AddWork(Guid client, DateOnly date, Guid? token)

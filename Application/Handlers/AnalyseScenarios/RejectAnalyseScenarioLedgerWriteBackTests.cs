@@ -12,6 +12,7 @@ using System.Security.Claims;
 using Klacks.Api.Application.Commands.AnalyseScenarios;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.AnalyseScenarios;
 
@@ -56,6 +57,7 @@ public class RejectAnalyseScenarioLedgerWriteBackTests
             _conditionRepository,
             _ledgerService,
             _httpContextAccessor,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             NullLogger<Klacks.Api.Application.Handlers.AnalyseScenarios.RejectAnalyseScenarioCommandHandler>.Instance);
     }
 

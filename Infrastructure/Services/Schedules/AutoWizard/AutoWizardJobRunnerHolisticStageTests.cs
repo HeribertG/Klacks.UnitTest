@@ -153,6 +153,8 @@ public class AutoWizardJobRunnerHolisticStageTests
         services.AddSingleton(_contextBuilder);
         services.AddSingleton(_matrixBuilder);
         services.AddSingleton(_ruleSetLoader);
+        services.AddSingleton(TestGroupWriteVisibility.UnrestrictedGroups());
+        services.AddSingleton(TestScenarioTokenAccess.AllVisible());
         _provider = services.BuildServiceProvider();
 
         _stateCache = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();

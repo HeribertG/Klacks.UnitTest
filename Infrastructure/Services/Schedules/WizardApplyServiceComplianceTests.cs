@@ -85,6 +85,7 @@ public class WizardApplyServiceComplianceTests
             Substitute.For<IScheduleTimelineService>(),
             new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
             _nameGenerator,
+            Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
             NullLogger<WizardApplyService>.Instance);
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same

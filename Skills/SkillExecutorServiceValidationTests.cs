@@ -45,6 +45,7 @@ public class SkillExecutorServiceValidationTests
             _autonomyGate,
             _entityChangeNotifier,
             _recentEntityRegistrar,
+            Substitute.For<Klacks.Api.Domain.Interfaces.Assistant.ISkillScenarioScopeGuard>(),
             Substitute.For<ILogger<SkillExecutorService>>());
 
         var descriptor = new SkillDescriptor(

@@ -14,6 +14,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.AnalyseScenarios;
 
@@ -70,6 +71,7 @@ public class AcceptAnalyseScenarioComplianceGateTests
             Substitute.For<Klacks.Api.Domain.Interfaces.Schedules.IPeriodHoursService>(),
             Substitute.For<IWorkNotificationService>(),
             Substitute.For<IEscalationChainService>(),
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>());
     }
 

@@ -73,7 +73,7 @@ public class HarmonizerApplyServiceShiftSetTests
     [TearDown]
     public void TearDown() => _context.Dispose();
 
-    private HarmonizerApplyService BuildSut()
+    private HarmonizerApplyService BuildSut(IScenarioTokenAccessGuard? scenarioTokenAccessGuard = null)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
@@ -105,7 +105,7 @@ public class HarmonizerApplyServiceShiftSetTests
             Substitute.For<IWizardRunCaptureRepository>(), complianceService,
             Substitute.For<IScheduleTimelineService>(), Substitute.For<IScheduleSnapshotMarkerService>(),
             new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
-            nameGenerator, NullLogger<HarmonizerApplyService>.Instance);
+            nameGenerator, scenarioTokenAccessGuard ?? Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(), NullLogger<HarmonizerApplyService>.Instance);
     }
 
     private HarmonyBitmap Bitmap()
@@ -156,6 +156,18 @@ public class HarmonizerApplyServiceShiftSetTests
         _clonedShiftIds!.ShouldBe(
             new[] { first, second, _bitmapShiftId }, ignoreOrder: true,
             "all live shifts of the source scenario plus the bitmap's own, none of a deleted or foreign scenario");
+    }
+
+    [Test]
+    public async Task ApplyOfAHiddenSourceScenario_IsRefusedLikeAMissingOne_AndClonesNothing()
+    {
+        var hiddenToken = Guid.NewGuid();
+        var sut = BuildSut(Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.Hiding(hiddenToken));
+
+        var act = () => sut.ApplyAsScenarioAsync(StoreResult(hiddenToken), Guid.NewGuid(), CancellationToken.None);
+
+        (await Should.ThrowAsync<KeyNotFoundException>(act)).Message.ShouldBe($"Scenario with token {hiddenToken} not found");
+        await _scenarioService.DidNotReceiveWithAnyArgs().CloneScenarioDataWithMapsAsync(default, default, default, default, default, default, default);
     }
 
     [Test]

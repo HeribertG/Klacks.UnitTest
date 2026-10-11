@@ -20,6 +20,7 @@ using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.AnalyseScenarios;
 
@@ -77,6 +78,7 @@ public class AcceptAnalyseScenarioEscalationChainTests
             Substitute.For<IPeriodHoursService>(),
             Substitute.For<IWorkNotificationService>(),
             _escalationChainService,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
             Substitute.For<ILogger<AcceptAnalyseScenarioCommandHandler>>());
     }
 

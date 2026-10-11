@@ -26,6 +26,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Infrastructure.Services.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Schedules;
 
@@ -106,7 +107,7 @@ public class ProposePlanCommandHandlerTests
             .Returns(new HashSet<(DateOnly Date, Guid ClientId)>());
 
         _handler = new ProposePlanCommandHandler(
-            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator, _sealedDayRepo);
+            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator, _sealedDayRepo, TestGroupWriteVisibility.UnrestrictedGroups());
     }
 
     private static ClaimsPrincipal AnonymousUser() => new(new ClaimsIdentity());

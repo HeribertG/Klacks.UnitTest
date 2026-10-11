@@ -300,7 +300,7 @@ public class ReplacementRequestHandlersTests
             new SettableTimeProvider(Now), _httpContextAccessor);
 
     private ListReplacementRequestsQueryHandler ListHandler()
-        => new(_repository, _visibilityGuard, _settingsReader);
+        => new(_repository, _visibilityGuard, _settingsReader, Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible());
 
     private static RecordReplacementContactRequest Contact(Guid candidateId, Guid token, ReplacementRequestOutcome outcome)
         => new(AbsentId, candidateId, ShiftId, Day, new TimeOnly(8, 0), new TimeOnly(16, 0), null, null, token, outcome);
