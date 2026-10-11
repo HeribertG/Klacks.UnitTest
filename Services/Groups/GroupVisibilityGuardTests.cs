@@ -89,6 +89,34 @@ public class GroupVisibilityGuardTests
     }
 
     [Test]
+    public async Task RepeatedChecksOfTheSameUser_ResolveTheScopeOnce()
+    {
+        var root = Guid.NewGuid();
+        ScopeIs(GroupVisibilityScope.Restricted([root], [root]));
+
+        await _guard.IsUnrestrictedAsync();
+        await _guard.IsGroupVisibleAsync(root);
+        await _guard.AreAllGroupsVisibleAsync([root, Guid.NewGuid()]);
+        await _guard.GetScopeAsync();
+
+        await _groupVisibilityService.Received(1).GetVisibilityScopeAsync();
+    }
+
+    [Test]
+    public async Task ChangedUserWithinTheScope_ResolvesTheirOwnScope()
+    {
+        var root = Guid.NewGuid();
+        ScopeIs(GroupVisibilityScope.Restricted([root], [root]));
+        (await _guard.IsUnrestrictedAsync()).ShouldBeFalse();
+
+        _userService.GetIdString().Returns("admin-1");
+        ScopeIs(GroupVisibilityScope.Unrestricted());
+
+        (await _guard.IsUnrestrictedAsync()).ShouldBeTrue();
+        await _groupVisibilityService.Received(2).GetVisibilityScopeAsync();
+    }
+
+    [Test]
     public async Task EmptyCollection_IsTriviallyVisible()
     {
         ScopeIs(GroupVisibilityScope.Restricted([], []));
