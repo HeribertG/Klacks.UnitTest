@@ -5,7 +5,9 @@
 /// harmonizer hands to another agent keeps its expenses (taxable and non-taxable) in the new scenario and after accept;
 /// a corrected work is fixed and stays with its employee together with its correction (payroll export must never lose an expense). A bitmap day outside the source
 /// scenario's range (the clone takes the real plan there) is correlated through Work.ClonedFromWorkId and keeps the
-/// real work's expense; a legacy source without that link still materialises the work from the bitmap.
+/// real work's expense; a legacy source without that link is correlated by key (client, root shift, date, times) when the
+/// match is unique and otherwise materialises the work from the bitmap. A real work moved after the source scenario was
+/// made keeps its real-plan state (and expense) instead of being pulled back to the bitmap's date.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Works;
@@ -159,10 +161,24 @@ public class HarmonizerApplyServiceScenarioSourceChildrenTests
     }
 
     [Test]
-    public async Task ApplyFromScenario_LegacySourceWithoutClonedFromWorkId_RecreatesTheBoundaryWorkFromTheBitmap()
+    public async Task ApplyFromScenario_LegacySourceWithoutClonedFromWorkId_IsCorrelatedByKey_AndKeepsItsExpense()
     {
-        var legacyCopy = await _context.Work.SingleAsync(w => w.Id == _sourceBoundaryWork.Id);
-        legacyCopy.ClonedFromWorkId = null;
+        await ClearLegacyLinkAsync();
+
+        var token = await ApplyAsync();
+
+        _bulkCommands.SelectMany(c => c.Request.Works).ShouldBeEmpty("a unique key match re-points instead of recreating");
+        var work = (await LiveWorksOf(token)).Where(w => w.CurrentDate == OutsideSourceDay).ToList().ShouldHaveSingleItem();
+        work.ClientId.ShouldBe(AgentB);
+        var expense = await _context.Expenses.SingleAsync(e => e.WorkId == work.Id && !e.IsDeleted);
+        expense.Amount.ShouldBe(BoundaryAmount);
+    }
+
+    [Test]
+    public async Task ApplyFromScenario_LegacySourceWithAnAmbiguousKey_RecreatesTheBoundaryWorkFromTheBitmap()
+    {
+        await ClearLegacyLinkAsync();
+        AddRealWork(OutsideSourceDay);
         await _context.SaveChangesAsync();
 
         var token = await ApplyAsync();
@@ -171,7 +187,32 @@ public class HarmonizerApplyServiceScenarioSourceChildrenTests
         item.ClientId.ShouldBe(AgentB);
         item.AnalyseToken.ShouldBe(token);
         (await LiveWorksOf(token)).ShouldNotContain(
-            w => w.CurrentDate == OutsideSourceDay, "the real-plan clone of that day is replaced by the bitmap's work, not doubled");
+            w => w.CurrentDate == OutsideSourceDay, "the real-plan clones of that day are replaced by the bitmap's work, not doubled");
+    }
+
+    [Test]
+    public async Task ApplyFromScenario_RealWorkMovedAfterTheSourceScenario_KeepsTheRealPlanState_AndItsExpense()
+    {
+        var movedDay = SourceUntil.AddDays(1);
+        var real = await _context.Work.SingleAsync(w => w.Id == _realBoundaryWork.Id);
+        real.CurrentDate = movedDay;
+        await _context.SaveChangesAsync();
+
+        var token = await ApplyAsync();
+
+        var clone = (await LiveWorksOf(token)).Where(w => w.CurrentDate == movedDay).ToList().ShouldHaveSingleItem();
+        clone.ClientId.ShouldBe(AgentA, "the real plan moved the work after the source scenario was made; that state wins");
+        clone.ClonedFromWorkId.ShouldBe(_realBoundaryWork.Id);
+        (await _context.Expenses.SingleAsync(e => e.WorkId == clone.Id && !e.IsDeleted)).Amount.ShouldBe(BoundaryAmount);
+        _bulkCommands.SelectMany(c => c.Request.Works).ShouldNotContain(i => i.CurrentDate == OutsideSourceDay);
+        (await LiveWorksOf(token)).ShouldNotContain(w => w.CurrentDate == OutsideSourceDay);
+    }
+
+    private async Task ClearLegacyLinkAsync()
+    {
+        var legacyCopy = await _context.Work.SingleAsync(w => w.Id == _sourceBoundaryWork.Id);
+        legacyCopy.ClonedFromWorkId = null;
+        await _context.SaveChangesAsync();
     }
 
     [Test]
