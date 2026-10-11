@@ -96,10 +96,24 @@ public class GroupVisibilityGuardTests
 
         await _guard.IsUnrestrictedAsync();
         await _guard.IsGroupVisibleAsync(root);
-        await _guard.AreAllGroupsVisibleAsync([root, Guid.NewGuid()]);
-        await _guard.GetScopeAsync();
+        await _guard.AreAllGroupsVisibleAsync([root]);
+        await _guard.IsUnrestrictedAsync();
 
         await _groupVisibilityService.Received(1).GetVisibilityScopeAsync();
+    }
+
+    [Test]
+    public async Task GroupCreatedAfterTheScopeWasCached_IsSeenOnTheNextCheck()
+    {
+        var root = Guid.NewGuid();
+        var created = Guid.NewGuid();
+        ScopeIs(GroupVisibilityScope.Restricted([root], [root]));
+        (await _guard.IsGroupVisibleAsync(root)).ShouldBeTrue();
+
+        ScopeIs(GroupVisibilityScope.Restricted([root], [root, created]));
+
+        (await _guard.IsGroupVisibleAsync(created)).ShouldBeTrue();
+        (await _guard.GetScopeAsync()).VisibleGroupIds.ShouldContain(created);
     }
 
     [Test]
