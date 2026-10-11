@@ -297,7 +297,7 @@ public class ExpensesSealAndScopeTests
 
     private PostCommandHandler NewPostHandler()
         => new(
-            _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _expensesRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), _unitOfWork,
             _periodHoursService, _scheduleEntriesService,
             Substitute.For<IWorkNotificationService>(), _httpContextAccessor,
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
@@ -305,7 +305,7 @@ public class ExpensesSealAndScopeTests
 
     private PutCommandHandler NewPutHandler()
         => new(
-            _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _expensesRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), _unitOfWork,
             _periodHoursService, _scheduleEntriesService,
             Substitute.For<IWorkNotificationService>(), _httpContextAccessor,
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
@@ -313,7 +313,7 @@ public class ExpensesSealAndScopeTests
 
     private DeleteCommandHandler NewDeleteHandler()
         => new(
-            _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _expensesRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), _unitOfWork,
             _periodHoursService, _scheduleEntriesService,
             Substitute.For<IWorkNotificationService>(), _httpContextAccessor,
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),

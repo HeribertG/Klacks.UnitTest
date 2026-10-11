@@ -18,6 +18,7 @@ using Klacks.Api.Domain.Services.Schedules;
 using Klacks.UnitTest.Application.Handlers.Works;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.WorkChanges;
 
@@ -236,7 +237,7 @@ public class WorkChangeScopeTests
 
     private PutCommandHandler NewPutHandler()
         => new(
-            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(),
+            _workChangeRepository, _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkChangeResultService>(), Substitute.For<IWorkNotificationFacade>(), _dayLockService,
             Substitute.For<IReplacementRequestRecorder>(), _httpContextAccessor, NewGuard(),
@@ -249,7 +250,7 @@ public class WorkChangeScopeTests
                 Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(PreCommitCheckResult.Empty);
         return new(
-            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(),
+            _workChangeRepository, _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             Substitute.For<IPeriodHoursService>(), Substitute.For<IWorkNotificationService>(),
             Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkChangeResultService>(),
             _httpContextAccessor, _dayLockService, conflictChecker, Substitute.For<ISupervisorOverrideAuthorizer>(),
@@ -258,7 +259,7 @@ public class WorkChangeScopeTests
 
     private DeleteCommandHandler NewDeleteHandler()
         => new(
-            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(),
+            _workChangeRepository, _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
             Substitute.For<IPeriodHoursService>(), Substitute.For<IWorkNotificationService>(),
             Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkChangeResultService>(),
             _httpContextAccessor, _dayLockService, Substitute.For<IReplacementRequestRecorder>(), NewGuard(),

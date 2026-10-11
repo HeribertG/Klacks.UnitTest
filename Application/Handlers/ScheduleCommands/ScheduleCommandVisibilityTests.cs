@@ -13,6 +13,7 @@ using Klacks.Api.Application.Handlers.ScheduleCommands;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.ScheduleCommands;
 
@@ -24,6 +25,8 @@ public class ScheduleCommandVisibilityTests
 
     private IScheduleCommandRepository _repository = null!;
     private IClientVisibilityGuard _clientVisibilityGuard = null!;
+    private IScheduleRowAccessGuard _rowAccessGuard = null!;
+    private Guid _hiddenToken;
     private IUnitOfWork _unitOfWork = null!;
     private Guid _visibleClientId;
     private Guid _hiddenClientId;
@@ -34,6 +37,8 @@ public class ScheduleCommandVisibilityTests
         _repository = Substitute.For<IScheduleCommandRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _hiddenToken = Guid.NewGuid();
+        _rowAccessGuard = TestScheduleRowAccess.Hiding(_clientVisibilityGuard, _hiddenToken);
 
         _visibleClientId = Guid.NewGuid();
         _hiddenClientId = Guid.NewGuid();
@@ -80,6 +85,26 @@ public class ScheduleCommandVisibilityTests
     }
 
     [Test]
+    public async Task Get_CommandOfVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingCommand()
+    {
+        var hidden = NewCommand(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        var missingId = Guid.NewGuid();
+        _repository.Get(hidden.Id).Returns(hidden);
+        _repository.Get(missingId).Returns((ScheduleCommand?)null);
+        var handler = new GetQueryHandler(
+            _repository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+
+        var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new GetQuery<ScheduleCommandResource>(hidden.Id), CancellationToken.None));
+        var missingEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new GetQuery<ScheduleCommandResource>(missingId), CancellationToken.None));
+
+        hiddenEx.Message.ShouldBe($"ScheduleCommand with ID {hidden.Id} not found");
+        missingEx.Message.ShouldBe($"ScheduleCommand with ID {missingId} not found");
+    }
+
+    [Test]
     public async Task Get_CommandOfHiddenClient_IsAnsweredLikeAMissingCommand()
     {
         var hidden = NewCommand(_hiddenClientId);
@@ -87,7 +112,7 @@ public class ScheduleCommandVisibilityTests
         _repository.Get(hidden.Id).Returns(hidden);
         _repository.Get(missingId).Returns((ScheduleCommand?)null);
         var handler = new GetQueryHandler(
-            _repository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+            _repository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
 
         var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new GetQuery<ScheduleCommandResource>(hidden.Id), CancellationToken.None));
@@ -104,7 +129,7 @@ public class ScheduleCommandVisibilityTests
         var visible = NewCommand(_visibleClientId);
         _repository.Get(visible.Id).Returns(visible);
         var handler = new GetQueryHandler(
-            _repository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+            _repository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
 
         var result = await handler.Handle(new GetQuery<ScheduleCommandResource>(visible.Id), CancellationToken.None);
 
@@ -137,6 +162,22 @@ public class ScheduleCommandVisibilityTests
         result.ShouldNotBeNull();
         await _repository.Received(1).Add(Arg.Is<ScheduleCommand>(c => c.ClientId == _visibleClientId));
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Put_OfACommandOwnedByAVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingCommand_NothingWritten()
+    {
+        var stored = NewCommand(_visibleClientId);
+        stored.AnalyseToken = _hiddenToken;
+        _repository.GetNoTracking(stored.Id).Returns(stored);
+        var handler = NewPutHandler();
+
+        var result = await handler.Handle(
+            new PutCommand<ScheduleCommandResource>(NewResource(stored.Id, _visibleClientId)), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _repository.DidNotReceive().Put(Arg.Any<ScheduleCommand>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -215,6 +256,22 @@ public class ScheduleCommandVisibilityTests
     }
 
     [Test]
+    public async Task Delete_CommandOfVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingCommand_NothingDeleted()
+    {
+        var hidden = NewCommand(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        _repository.Get(hidden.Id).Returns(hidden);
+        var handler = NewDeleteHandler();
+
+        var result = await handler.Handle(
+            new DeleteCommand<ScheduleCommandResource>(hidden.Id), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _repository.DidNotReceive().Delete(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
     public async Task Delete_CommandOfHiddenClient_IsAnsweredLikeAMissingCommand_NothingDeleted()
     {
         var hidden = NewCommand(_hiddenClientId);
@@ -249,11 +306,11 @@ public class ScheduleCommandVisibilityTests
         Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler() => new(
-        _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+        _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
         Substitute.For<ILogger<PutCommandHandler>>());
 
     private DeleteCommandHandler NewDeleteHandler() => new(
-        _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+        _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
         Substitute.For<ILogger<DeleteCommandHandler>>());
 
     private static ScheduleCommand NewCommand(Guid clientId) => new()

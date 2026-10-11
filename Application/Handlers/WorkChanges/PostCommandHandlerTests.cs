@@ -74,7 +74,7 @@ public class PostCommandHandlerTests
         _handler = new PostCommandHandler(
             _workChangeRepository,
             _workRepository,
-            TestGroupWriteVisibility.AllClientsVisible(),
+            TestScheduleRowAccess.Over(TestGroupWriteVisibility.AllClientsVisible()),
             new ScheduleMapper(),
             _periodHoursService,
             _notificationService,

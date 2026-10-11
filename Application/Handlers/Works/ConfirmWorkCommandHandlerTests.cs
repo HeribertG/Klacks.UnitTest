@@ -40,7 +40,7 @@ public class ConfirmWorkCommandHandlerTests
 
         _handler = new ConfirmWorkCommandHandler(
             _workRepository,
-            TestGroupWriteVisibility.AllClientsVisible(),
+            TestScheduleRowAccess.Over(TestGroupWriteVisibility.AllClientsVisible()),
             _unitOfWork,
             _lockLevelService,
             new ScheduleMapper(),

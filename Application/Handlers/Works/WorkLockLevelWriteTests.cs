@@ -18,6 +18,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Works;
 
@@ -167,7 +168,7 @@ public class WorkLockLevelWriteTests
 
     private PutCommandHandler NewPutHandler()
         => new(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
+            _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
@@ -176,7 +177,7 @@ public class WorkLockLevelWriteTests
 
     private DeleteCommandHandler NewDeleteHandler()
         => new(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
+            _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,

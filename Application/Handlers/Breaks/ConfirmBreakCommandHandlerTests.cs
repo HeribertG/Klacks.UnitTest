@@ -10,6 +10,7 @@ using Klacks.Api.Application.Commands.Breaks;
 using Klacks.Api.Application.Handlers.Breaks;
 using Klacks.Api.Application.Mappers;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Breaks;
 
@@ -44,7 +45,7 @@ public class ConfirmBreakCommandHandlerTests
 
         _handler = new ConfirmBreakCommandHandler(
             _breakRepository,
-            _clientVisibilityGuard,
+            TestScheduleRowAccess.Over(_clientVisibilityGuard),
             _unitOfWork,
             _lockLevelService,
             new ScheduleMapper(),

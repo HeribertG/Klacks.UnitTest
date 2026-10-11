@@ -19,6 +19,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Works;
 
@@ -29,6 +30,8 @@ public class WorkVisibilityTests
 
     private IWorkRepository _workRepository = null!;
     private IClientVisibilityGuard _clientVisibilityGuard = null!;
+    private IScheduleRowAccessGuard _rowAccessGuard = null!;
+    private Guid _hiddenToken;
     private IPeriodHoursService _periodHoursService = null!;
     private IScheduleEntriesService _scheduleEntriesService = null!;
     private IScheduleCompletionService _completionService = null!;
@@ -49,6 +52,8 @@ public class WorkVisibilityTests
     {
         _workRepository = Substitute.For<IWorkRepository>();
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _hiddenToken = Guid.NewGuid();
+        _rowAccessGuard = TestScheduleRowAccess.Hiding(_clientVisibilityGuard, _hiddenToken);
         _periodHoursService = Substitute.For<IPeriodHoursService>();
         _scheduleEntriesService = Substitute.For<IScheduleEntriesService>();
         _completionService = Substitute.For<IScheduleCompletionService>();
@@ -77,6 +82,26 @@ public class WorkVisibilityTests
     }
 
     [Test]
+    public async Task Get_WorkOfVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingWork()
+    {
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        var missingId = Guid.NewGuid();
+        _workRepository.Get(hidden.Id).Returns(hidden);
+        _workRepository.Get(missingId).Returns((Work?)null);
+        var handler = new GetQueryHandler(
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+
+        var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new GetQuery<WorkResource>(hidden.Id), CancellationToken.None));
+        var missingEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new GetQuery<WorkResource>(missingId), CancellationToken.None));
+
+        hiddenEx.Message.ShouldBe($"Work with ID {hidden.Id} not found");
+        missingEx.Message.ShouldBe($"Work with ID {missingId} not found");
+    }
+
+    [Test]
     public async Task Get_WorkOfHiddenClient_IsAnsweredLikeAMissingWork()
     {
         var hidden = NewWork(_hiddenClientId);
@@ -84,7 +109,7 @@ public class WorkVisibilityTests
         _workRepository.Get(hidden.Id).Returns(hidden);
         _workRepository.Get(missingId).Returns((Work?)null);
         var handler = new GetQueryHandler(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
 
         var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new GetQuery<WorkResource>(hidden.Id), CancellationToken.None));
@@ -112,6 +137,22 @@ public class WorkVisibilityTests
         await _workRepository.DidNotReceive().Add(Arg.Any<Work>());
         await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
         await _writeGuard.DidNotReceiveWithAnyArgs().EnsureNoSporadicConflictAsync(default!, default);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Put_OfAWorkOwnedByAVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingWork_NothingWritten()
+    {
+        var stored = NewWork(_visibleClientId);
+        stored.AnalyseToken = _hiddenToken;
+        _workRepository.GetNoTracking(stored.Id).Returns(stored);
+
+        var result = await NewPutHandler().Handle(
+            new PutCommand<WorkResource>(NewResource(stored.Id, _visibleClientId)), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
@@ -163,12 +204,34 @@ public class WorkVisibilityTests
     }
 
     [Test]
+    public async Task Delete_WorkOfVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingDeleted()
+    {
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        _workRepository.Get(hidden.Id).Returns(hidden);
+        var handler = new DeleteCommandHandler(
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
+            _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
+            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
+            Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
+            Substitute.For<ILogger<DeleteCommandHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new DeleteWorkCommand(hidden.Id, Day, Day), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Work with ID {hidden.Id} not found.");
+        await _workRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+        await _cascadeService.DidNotReceive().DeleteChildrenAsync(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
     public async Task Delete_WorkOfHiddenClient_IsRefusedLikeAMissingWork_NothingDeleted()
     {
         var hidden = NewWork(_hiddenClientId);
         _workRepository.Get(hidden.Id).Returns(hidden);
         var handler = new DeleteCommandHandler(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
@@ -269,13 +332,14 @@ public class WorkVisibilityTests
     }
 
     [Test]
-    public async Task Confirm_WorkOfHiddenClient_IsRefusedLikeAMissingWork_NothingSealed()
+    public async Task Confirm_WorkOfVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingSealed()
     {
-        var hidden = NewWork(_hiddenClientId);
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
         _workRepository.Get(hidden.Id).Returns(hidden);
         var lockLevelService = Substitute.For<IWorkLockLevelService>();
         var handler = new ConfirmWorkCommandHandler(
-            _workRepository, _clientVisibilityGuard, _unitOfWork, lockLevelService, new ScheduleMapper(),
+            _workRepository, _rowAccessGuard, _unitOfWork, lockLevelService, new ScheduleMapper(),
             Substitute.For<IHttpContextAccessor>(), _cascadeService, Substitute.For<IPeriodAuditLogRepository>(),
             Substitute.For<IUserService>(), Substitute.For<ILogger<ConfirmWorkCommandHandler>>());
 
@@ -289,13 +353,34 @@ public class WorkVisibilityTests
     }
 
     [Test]
-    public async Task Unconfirm_WorkOfHiddenClient_IsRefusedLikeAMissingWork_BeforeTheSealStateCheck()
+    public async Task Confirm_WorkOfHiddenClient_IsRefusedLikeAMissingWork_NothingSealed()
     {
         var hidden = NewWork(_hiddenClientId);
+        _workRepository.Get(hidden.Id).Returns(hidden);
+        var lockLevelService = Substitute.For<IWorkLockLevelService>();
+        var handler = new ConfirmWorkCommandHandler(
+            _workRepository, _rowAccessGuard, _unitOfWork, lockLevelService, new ScheduleMapper(),
+            Substitute.For<IHttpContextAccessor>(), _cascadeService, Substitute.For<IPeriodAuditLogRepository>(),
+            Substitute.For<IUserService>(), Substitute.For<ILogger<ConfirmWorkCommandHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new ConfirmWorkCommand(hidden.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Work with ID {hidden.Id} not found.");
+        lockLevelService.DidNotReceiveWithAnyArgs().Seal(default!, default, default!, default, default);
+        await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Unconfirm_WorkOfVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_BeforeTheSealStateCheck()
+    {
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
         hidden.LockLevel = WorkLockLevel.None;
         _workRepository.Get(hidden.Id).Returns(hidden);
         var handler = new UnconfirmWorkCommandHandler(
-            _workRepository, _clientVisibilityGuard, _unitOfWork, new WorkLockLevelService(), new ScheduleMapper(),
+            _workRepository, _rowAccessGuard, _unitOfWork, new WorkLockLevelService(), new ScheduleMapper(),
             Substitute.For<IHttpContextAccessor>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
@@ -303,6 +388,48 @@ public class WorkVisibilityTests
 
         ex.Message.ShouldBe($"Work with ID {hidden.Id} not found.");
         await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Unconfirm_WorkOfHiddenClient_IsRefusedLikeAMissingWork_BeforeTheSealStateCheck()
+    {
+        var hidden = NewWork(_hiddenClientId);
+        hidden.LockLevel = WorkLockLevel.None;
+        _workRepository.Get(hidden.Id).Returns(hidden);
+        var handler = new UnconfirmWorkCommandHandler(
+            _workRepository, _rowAccessGuard, _unitOfWork, new WorkLockLevelService(), new ScheduleMapper(),
+            Substitute.For<IHttpContextAccessor>(), Substitute.For<ILogger<UnconfirmWorkCommandHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new UnconfirmWorkCommand(hidden.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Work with ID {hidden.Id} not found.");
+        await _workRepository.DidNotReceive().Put(Arg.Any<Work>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Restore_WorkOfVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingRestored()
+    {
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        hidden.DeletedTime = DateTime.UtcNow;
+        _workRepository.GetDeletedAsync(hidden.Id, Arg.Any<CancellationToken>()).Returns(hidden);
+        var authorizer = Substitute.For<IWorkRestoreAuthorizer>();
+        authorizer.Resolve(Arg.Any<Work>()).Returns(WorkRestoreAccess.Owner);
+        var handler = new RestoreWorkCommandHandler(
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
+            _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
+            Substitute.For<IWorkSofteningRepository>(), _groupContextResolver, _dayLockService, _writeGuard,
+            authorizer, _unitOfWork, _overtimeCascadeService, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new RestoreWorkCommand(hidden.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Deleted work with ID {hidden.Id} not found.");
+        await _workRepository.DidNotReceive().RestoreAsync(Arg.Any<Work>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
@@ -315,7 +442,7 @@ public class WorkVisibilityTests
         var authorizer = Substitute.For<IWorkRestoreAuthorizer>();
         authorizer.Resolve(Arg.Any<Work>()).Returns(WorkRestoreAccess.Owner);
         var handler = new RestoreWorkCommandHandler(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             Substitute.For<IWorkSofteningRepository>(), _groupContextResolver, _dayLockService, _writeGuard,
             authorizer, _unitOfWork, _overtimeCascadeService, Substitute.For<ILogger<RestoreWorkCommandHandler>>());
@@ -447,7 +574,7 @@ public class WorkVisibilityTests
 
     private PutCommandHandler NewPutHandler()
         => new(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
             _httpContextAccessor, new ParentWorkLockGuard(new WorkLockLevelService()),

@@ -36,7 +36,7 @@ public class UnconfirmWorkCommandHandlerTests
 
         _handler = new UnconfirmWorkCommandHandler(
             _workRepository,
-            TestGroupWriteVisibility.AllClientsVisible(),
+            TestScheduleRowAccess.Over(TestGroupWriteVisibility.AllClientsVisible()),
             _unitOfWork,
             new WorkLockLevelService(),
             new ScheduleMapper(),

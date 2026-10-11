@@ -12,6 +12,7 @@ using Klacks.Api.Application.Handlers.ScheduleNotes;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.ScheduleNotes;
 
@@ -22,6 +23,8 @@ public class ScheduleNoteVisibilityTests
 
     private IScheduleNoteRepository _repository = null!;
     private IClientVisibilityGuard _clientVisibilityGuard = null!;
+    private IScheduleRowAccessGuard _rowAccessGuard = null!;
+    private Guid _hiddenToken;
     private IUnitOfWork _unitOfWork = null!;
     private Guid _visibleClientId;
     private Guid _hiddenClientId;
@@ -31,6 +34,8 @@ public class ScheduleNoteVisibilityTests
     {
         _repository = Substitute.For<IScheduleNoteRepository>();
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _hiddenToken = Guid.NewGuid();
+        _rowAccessGuard = TestScheduleRowAccess.Hiding(_clientVisibilityGuard, _hiddenToken);
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _visibleClientId = Guid.NewGuid();
         _hiddenClientId = Guid.NewGuid();
@@ -76,12 +81,27 @@ public class ScheduleNoteVisibilityTests
     }
 
     [Test]
+    public async Task Get_NoteOfVisibleClientInAHiddenScenario_AnsweredLikeMissingNote()
+    {
+        var hidden = NewNote(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        _repository.Get(hidden.Id).Returns(hidden);
+        var handler = new GetQueryHandler(
+            _repository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() =>
+            handler.Handle(new GetQuery<ScheduleNoteResource>(hidden.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"ScheduleNote with ID {hidden.Id} not found");
+    }
+
+    [Test]
     public async Task Get_NoteOfHiddenClient_AnsweredLikeMissingNote()
     {
         var hidden = NewNote(_hiddenClientId);
         _repository.Get(hidden.Id).Returns(hidden);
         var handler = new GetQueryHandler(
-            _repository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+            _repository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() =>
             handler.Handle(new GetQuery<ScheduleNoteResource>(hidden.Id), CancellationToken.None));
@@ -103,6 +123,21 @@ public class ScheduleNoteVisibilityTests
         ex.Message.ShouldBe($"Client with ID {_hiddenClientId} not found");
         await _repository.DidNotReceive().Add(Arg.Any<ScheduleNote>());
         await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Put_StoredRowInAHiddenScenario_AnsweredLikeMissingNote_NothingWritten()
+    {
+        var stored = NewNote(_visibleClientId);
+        stored.AnalyseToken = _hiddenToken;
+        _repository.GetNoTracking(stored.Id).Returns(stored);
+        var handler = NewPutHandler();
+
+        var result = await handler.Handle(
+            new PutCommand<ScheduleNoteResource>(NewResource(stored.Id, _visibleClientId)), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await AssertNothingPutAsync();
     }
 
     [Test]
@@ -148,12 +183,29 @@ public class ScheduleNoteVisibilityTests
     }
 
     [Test]
+    public async Task Delete_NoteOfVisibleClientInAHiddenScenario_AnsweredLikeMissingNote_NothingDeleted()
+    {
+        var hidden = NewNote(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        _repository.Get(hidden.Id).Returns(hidden);
+        var handler = new DeleteCommandHandler(
+            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+            Substitute.For<ILogger<DeleteCommandHandler>>());
+
+        var result = await handler.Handle(new DeleteCommand<ScheduleNoteResource>(hidden.Id), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _repository.DidNotReceive().Delete(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
     public async Task Delete_NoteOfHiddenClient_AnsweredLikeMissingNote_NothingDeleted()
     {
         var hidden = NewNote(_hiddenClientId);
         _repository.Get(hidden.Id).Returns(hidden);
         var handler = new DeleteCommandHandler(
-            _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
         var result = await handler.Handle(new DeleteCommand<ScheduleNoteResource>(hidden.Id), CancellationToken.None);
@@ -166,7 +218,7 @@ public class ScheduleNoteVisibilityTests
     private PutCommandHandler NewPutHandler()
     {
         return new PutCommandHandler(
-            _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
             Substitute.For<ILogger<PutCommandHandler>>());
     }
 

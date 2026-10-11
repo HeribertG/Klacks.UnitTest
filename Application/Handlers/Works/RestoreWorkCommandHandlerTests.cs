@@ -97,7 +97,7 @@ public class RestoreWorkCommandHandlerTests
 
         _handler = new RestoreWorkCommandHandler(
             _workRepository,
-            TestGroupWriteVisibility.AllClientsVisible(),
+            TestScheduleRowAccess.Over(TestGroupWriteVisibility.AllClientsVisible()),
             new ScheduleMapper(),
             _periodHoursService,
             _scheduleEntriesService,

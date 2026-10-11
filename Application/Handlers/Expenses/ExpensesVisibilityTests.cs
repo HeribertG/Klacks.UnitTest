@@ -15,6 +15,7 @@ using Klacks.Api.Application.Queries;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using ExpensesEntity = Klacks.Api.Domain.Models.Schedules.Expenses;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Expenses;
 
@@ -26,6 +27,8 @@ public class ExpensesVisibilityTests
     private IExpensesRepository _expensesRepository = null!;
     private IWorkRepository _workRepository = null!;
     private IClientVisibilityGuard _clientVisibilityGuard = null!;
+    private IScheduleRowAccessGuard _rowAccessGuard = null!;
+    private Guid _hiddenToken;
     private IUnitOfWork _unitOfWork = null!;
     private IDayLockService _dayLockService = null!;
     private Guid _visibleClientId;
@@ -37,6 +40,8 @@ public class ExpensesVisibilityTests
         _expensesRepository = Substitute.For<IExpensesRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _hiddenToken = Guid.NewGuid();
+        _rowAccessGuard = TestScheduleRowAccess.Hiding(_clientVisibilityGuard, _hiddenToken);
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _dayLockService = Substitute.For<IDayLockService>();
 
@@ -132,12 +137,13 @@ public class ExpensesVisibilityTests
     }
 
     [Test]
-    public async Task Post_OnAWorkOfAHiddenClient_IsRefusedLikeAMissingWork_NothingWritten()
+    public async Task Post_OnAWorkOfAVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingWritten()
     {
-        var hiddenWork = NewWork(_hiddenClientId);
+        var hiddenWork = NewWork(_visibleClientId);
+        hiddenWork.AnalyseToken = _hiddenToken;
         _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
         var handler = new PostCommandHandler(
-            _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _expensesRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
             Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
@@ -150,6 +156,47 @@ public class ExpensesVisibilityTests
         ex.Message.ShouldBe($"Work with ID {hiddenWork.Id} not found");
         ex.Message.ShouldNotContain(_hiddenClientId.ToString());
         await _expensesRepository.DidNotReceive().Add(Arg.Any<ExpensesEntity>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Post_OnAWorkOfAHiddenClient_IsRefusedLikeAMissingWork_NothingWritten()
+    {
+        var hiddenWork = NewWork(_hiddenClientId);
+        _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
+        var handler = new PostCommandHandler(
+            _expensesRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+            Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
+            Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
+            Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
+            _workRepository, _dayLockService, Substitute.For<IParentWorkLockGuard>(),
+            Substitute.For<ILogger<PostCommandHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new PostCommand<ExpensesResource>(NewResource(Guid.NewGuid(), hiddenWork.Id)), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Work with ID {hiddenWork.Id} not found");
+        ex.Message.ShouldNotContain(_hiddenClientId.ToString());
+        await _expensesRepository.DidNotReceive().Add(Arg.Any<ExpensesEntity>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Put_OfAnExpenseOnAWorkOfAVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingExpense_NothingWritten()
+    {
+        var hiddenWork = NewWork(_visibleClientId);
+        hiddenWork.AnalyseToken = _hiddenToken;
+        var stored = NewExpense(hiddenWork);
+        _expensesRepository.GetNoTracking(stored.Id).Returns(stored);
+        _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
+
+        var result = await NewPutHandler().Handle(
+            new PutCommand<ExpensesResource>(NewResource(stored.Id, hiddenWork.Id)), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _expensesRepository.DidNotReceive().Put(Arg.Any<ExpensesEntity>());
         await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
         await _unitOfWork.DidNotReceive().CompleteAsync();
     }
@@ -190,12 +237,33 @@ public class ExpensesVisibilityTests
     }
 
     [Test]
+    public async Task Delete_ExpenseOnAWorkOfAVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingExpense_NothingDeleted()
+    {
+        var scenarioWork = NewWork(_visibleClientId);
+        scenarioWork.AnalyseToken = _hiddenToken;
+        var stored = NewExpense(scenarioWork);
+        _expensesRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
+        var handler = new DeleteCommandHandler(
+            _expensesRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+            Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
+            Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
+            Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
+            _dayLockService, Substitute.For<IParentWorkLockGuard>(), Substitute.For<ILogger<DeleteCommandHandler>>());
+
+        var result = await handler.Handle(new DeleteCommand<ExpensesResource>(stored.Id), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _expensesRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
     public async Task Delete_ExpenseOnAWorkOfAHiddenClient_IsAnsweredLikeAMissingExpense_NothingDeleted()
     {
         var stored = NewExpense(NewWork(_hiddenClientId));
         _expensesRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
         var handler = new DeleteCommandHandler(
-            _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _expensesRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
             Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),
@@ -211,7 +279,7 @@ public class ExpensesVisibilityTests
 
     private PutCommandHandler NewPutHandler()
         => new(
-            _expensesRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _expensesRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
             Substitute.For<IPeriodHoursService>(), Substitute.For<IScheduleEntriesService>(),
             Substitute.For<IWorkNotificationService>(), Substitute.For<IHttpContextAccessor>(),
             Substitute.For<IScheduleChangeTracker>(), Substitute.For<ISelectedGroupContextResolver>(),

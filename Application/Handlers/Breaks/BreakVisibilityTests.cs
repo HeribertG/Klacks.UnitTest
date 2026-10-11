@@ -16,6 +16,7 @@ using Klacks.Api.Application.Queries;
 using Klacks.Api.Domain.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Breaks;
 
@@ -26,6 +27,8 @@ public class BreakVisibilityTests
 
     private IBreakRepository _breakRepository = null!;
     private IClientVisibilityGuard _clientVisibilityGuard = null!;
+    private IScheduleRowAccessGuard _rowAccessGuard = null!;
+    private Guid _hiddenToken;
     private IBreakMacroService _breakMacroService = null!;
     private IPeriodHoursService _periodHoursService = null!;
     private IScheduleEntriesService _scheduleEntriesService = null!;
@@ -42,6 +45,8 @@ public class BreakVisibilityTests
     {
         _breakRepository = Substitute.For<IBreakRepository>();
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _hiddenToken = Guid.NewGuid();
+        _rowAccessGuard = TestScheduleRowAccess.Hiding(_clientVisibilityGuard, _hiddenToken);
         _breakMacroService = Substitute.For<IBreakMacroService>();
         _periodHoursService = Substitute.For<IPeriodHoursService>();
         _scheduleEntriesService = Substitute.For<IScheduleEntriesService>();
@@ -95,6 +100,26 @@ public class BreakVisibilityTests
     }
 
     [Test]
+    public async Task Get_BreakOfVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingBreak()
+    {
+        var hidden = NewBreak(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        var missingId = Guid.NewGuid();
+        _breakRepository.Get(hidden.Id).Returns(hidden);
+        _breakRepository.Get(missingId).Returns((Break?)null);
+        var handler = new GetQueryHandler(
+            _breakRepository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+
+        var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new GetQuery<BreakResource>(hidden.Id), CancellationToken.None));
+        var missingEx = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new GetQuery<BreakResource>(missingId), CancellationToken.None));
+
+        hiddenEx.Message.ShouldBe($"Break with ID {hidden.Id} not found");
+        missingEx.Message.ShouldBe($"Break with ID {missingId} not found");
+    }
+
+    [Test]
     public async Task Get_BreakOfHiddenClient_IsAnsweredLikeAMissingBreak()
     {
         var hidden = NewBreak(_hiddenClientId);
@@ -102,7 +127,7 @@ public class BreakVisibilityTests
         _breakRepository.Get(hidden.Id).Returns(hidden);
         _breakRepository.Get(missingId).Returns((Break?)null);
         var handler = new GetQueryHandler(
-            _breakRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
+            _breakRepository, _rowAccessGuard, new ScheduleMapper(), Substitute.For<ILogger<GetQueryHandler>>());
 
         var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(new GetQuery<BreakResource>(hidden.Id), CancellationToken.None));
@@ -127,6 +152,21 @@ public class BreakVisibilityTests
         ex.Message.ShouldBe($"Client with ID {_hiddenClientId} not found");
         await _breakRepository.DidNotReceive().Add(Arg.Any<Break>());
         await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task Put_OfABreakOwnedByAVisibleClientInAHiddenScenario_IsRefusedLikeAMissingBreak_NothingWritten()
+    {
+        var stored = NewBreak(_visibleClientId);
+        stored.AnalyseToken = _hiddenToken;
+        _breakRepository.GetNoTracking(stored.Id).Returns(stored);
+        var handler = NewPutHandler();
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new PutCommand<BreakResource>(NewResource(stored.Id, _visibleClientId)), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Break with ID {stored.Id} not found");
+        await _breakRepository.DidNotReceive().Put(Arg.Any<Break>());
     }
 
     [Test]
@@ -158,12 +198,30 @@ public class BreakVisibilityTests
     }
 
     [Test]
+    public async Task Delete_BreakOfVisibleClientInAHiddenScenario_IsRefusedLikeAMissingBreak_NothingDeleted()
+    {
+        var hidden = NewBreak(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        _breakRepository.Get(hidden.Id).Returns(hidden);
+        var handler = new DeleteCommandHandler(
+            _breakRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
+            _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
+            _groupContextResolver, _dayLockService, Substitute.For<ILogger<DeleteCommandHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new DeleteBreakCommand(hidden.Id, Day, Day), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Break with ID {hidden.Id} not found.");
+        await _breakRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+    }
+
+    [Test]
     public async Task Delete_BreakOfHiddenClient_IsRefusedLikeAMissingBreak_NothingDeleted()
     {
         var hidden = NewBreak(_hiddenClientId);
         _breakRepository.Get(hidden.Id).Returns(hidden);
         var handler = new DeleteCommandHandler(
-            _breakRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _breakRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
             _groupContextResolver, _dayLockService, Substitute.For<ILogger<DeleteCommandHandler>>());
 
@@ -226,6 +284,27 @@ public class BreakVisibilityTests
     }
 
     [Test]
+    public async Task Unconfirm_BreakOfVisibleClientInAHiddenScenario_IsRefusedLikeAMissingBreak_NothingWritten()
+    {
+        var hidden = NewBreak(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        _breakRepository.Get(hidden.Id).Returns(hidden);
+        var lockLevelService = Substitute.For<IWorkLockLevelService>();
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        var handler = new UnconfirmBreakCommandHandler(
+            _breakRepository, _rowAccessGuard, unitOfWork, lockLevelService, new ScheduleMapper(),
+            Substitute.For<IBreakUserContextProvider>(), Substitute.For<ILogger<UnconfirmBreakCommandHandler>>());
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(
+            () => handler.Handle(new UnconfirmBreakCommand(hidden.Id), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Break with ID {hidden.Id} not found.");
+        lockLevelService.DidNotReceiveWithAnyArgs().Unseal(default!, default, default);
+        await _breakRepository.DidNotReceive().Put(Arg.Any<Break>());
+        await unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
     public async Task Unconfirm_BreakOfHiddenClient_IsRefusedLikeAMissingBreak_NothingWritten()
     {
         var hidden = NewBreak(_hiddenClientId);
@@ -233,7 +312,7 @@ public class BreakVisibilityTests
         var lockLevelService = Substitute.For<IWorkLockLevelService>();
         var unitOfWork = Substitute.For<IUnitOfWork>();
         var handler = new UnconfirmBreakCommandHandler(
-            _breakRepository, _clientVisibilityGuard, unitOfWork, lockLevelService, new ScheduleMapper(),
+            _breakRepository, _rowAccessGuard, unitOfWork, lockLevelService, new ScheduleMapper(),
             Substitute.For<IBreakUserContextProvider>(), Substitute.For<ILogger<UnconfirmBreakCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
@@ -247,7 +326,7 @@ public class BreakVisibilityTests
 
     private PutCommandHandler NewPutHandler()
         => new(
-            _breakRepository, _clientVisibilityGuard, _breakMacroService, new ScheduleMapper(), _periodHoursService,
+            _breakRepository, _rowAccessGuard, _breakMacroService, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _notificationService, _completionService, _httpContextAccessor,
             _groupContextResolver, _dayLockService, Substitute.For<ILogger<PutCommandHandler>>());
 

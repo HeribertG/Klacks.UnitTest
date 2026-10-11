@@ -16,6 +16,7 @@ using Klacks.Api.Application.Queries;
 using Klacks.Api.Domain.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.WorkChanges;
 
@@ -27,6 +28,8 @@ public class WorkChangeVisibilityTests
     private IWorkChangeRepository _workChangeRepository = null!;
     private IWorkRepository _workRepository = null!;
     private IClientVisibilityGuard _clientVisibilityGuard = null!;
+    private IScheduleRowAccessGuard _rowAccessGuard = null!;
+    private Guid _hiddenToken;
     private IPeriodHoursService _periodHoursService = null!;
     private IScheduleCompletionService _completionService = null!;
     private IWorkChangeResultService _resultService = null!;
@@ -41,6 +44,8 @@ public class WorkChangeVisibilityTests
         _workChangeRepository = Substitute.For<IWorkChangeRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
+        _hiddenToken = Guid.NewGuid();
+        _rowAccessGuard = TestScheduleRowAccess.Hiding(_clientVisibilityGuard, _hiddenToken);
         _periodHoursService = Substitute.For<IPeriodHoursService>();
         _completionService = Substitute.For<IScheduleCompletionService>();
         _resultService = Substitute.For<IWorkChangeResultService>();
@@ -121,6 +126,28 @@ public class WorkChangeVisibilityTests
     }
 
     [Test]
+    public async Task Post_OnAWorkOfAVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingWritten()
+    {
+        var hiddenWork = NewWork(_visibleClientId);
+        hiddenWork.AnalyseToken = _hiddenToken;
+        var missingWorkId = Guid.NewGuid();
+        _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
+        _workRepository.GetNoTracking(missingWorkId).Returns((Work?)null);
+        var handler = NewPostHandler();
+
+        var hiddenEx = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new PostCommand<WorkChangeResource>(NewResource(Guid.NewGuid(), hiddenWork.Id, null)), CancellationToken.None));
+        var missingEx = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new PostCommand<WorkChangeResource>(NewResource(Guid.NewGuid(), missingWorkId, null)), CancellationToken.None));
+
+        hiddenEx.Message.ShouldBe($"Work with ID {hiddenWork.Id} not found");
+        missingEx.Message.ShouldBe($"Work with ID {missingWorkId} not found");
+        hiddenEx.Message.ShouldNotContain(_hiddenClientId.ToString());
+        await _workChangeRepository.DidNotReceive().Add(Arg.Any<WorkChange>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+    }
+
+    [Test]
     public async Task Post_OnAWorkOfAHiddenClient_IsRefusedLikeAMissingWork_NothingWritten()
     {
         var hiddenWork = NewWork(_hiddenClientId);
@@ -152,6 +179,23 @@ public class WorkChangeVisibilityTests
             CancellationToken.None));
 
         await _workChangeRepository.DidNotReceive().Add(Arg.Any<WorkChange>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task Put_OfAChangeOnAWorkOfAVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingChange_NothingWritten()
+    {
+        var hiddenWork = NewWork(_visibleClientId);
+        hiddenWork.AnalyseToken = _hiddenToken;
+        var stored = NewChange(hiddenWork.Id);
+        _workChangeRepository.GetNoTracking(stored.Id).Returns(stored);
+        _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
+
+        var result = await NewPutHandler().Handle(
+            new PutCommand<WorkChangeResource>(NewResource(stored.Id, hiddenWork.Id, null)), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _workChangeRepository.DidNotReceive().Put(Arg.Any<WorkChange>());
         await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
     }
 
@@ -207,6 +251,27 @@ public class WorkChangeVisibilityTests
     }
 
     [Test]
+    public async Task Delete_ChangeOnAWorkOfAVisibleClientInAHiddenScenario_IsAnsweredLikeAMissingChange_NothingDeleted()
+    {
+        var hiddenWork = NewWork(_visibleClientId);
+        hiddenWork.AnalyseToken = _hiddenToken;
+        var stored = NewChange(hiddenWork.Id);
+        _workChangeRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
+        _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
+        var handler = new DeleteCommandHandler(
+            _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
+            Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
+            Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IReplacementRequestRecorder>(), Substitute.For<IParentWorkLockGuard>(),
+            Substitute.For<ILogger<DeleteCommandHandler>>());
+
+        var result = await handler.Handle(new DeleteCommand<WorkChangeResource>(stored.Id), CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _workChangeRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+    }
+
+    [Test]
     public async Task Delete_ChangeOnAWorkOfAHiddenClient_IsAnsweredLikeAMissingChange_NothingDeleted()
     {
         var hiddenWork = NewWork(_hiddenClientId);
@@ -214,7 +279,7 @@ public class WorkChangeVisibilityTests
         _workChangeRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
         _workRepository.GetNoTracking(hiddenWork.Id).Returns(hiddenWork);
         var handler = new DeleteCommandHandler(
-            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
             Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IReplacementRequestRecorder>(), Substitute.For<IParentWorkLockGuard>(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
@@ -252,7 +317,7 @@ public class WorkChangeVisibilityTests
         _workRepository.GetNoTracking(work.Id).Returns(work);
         _workRepository.Get(work.Id).Returns(work);
         var handler = new DeleteCommandHandler(
-            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
             Substitute.For<IHttpContextAccessor>(), _dayLockService, _recorder, Substitute.For<IParentWorkLockGuard>(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
@@ -263,7 +328,7 @@ public class WorkChangeVisibilityTests
     }
     private PostCommandHandler NewPostHandler()
         => new(
-            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             Substitute.For<IWorkNotificationService>(), _completionService, _resultService,
             Substitute.For<IHttpContextAccessor>(), _dayLockService, Substitute.For<IPreCommitConflictChecker>(),
             Substitute.For<ISupervisorOverrideAuthorizer>(), Substitute.For<IReplacementRequestRecorder>(),
@@ -271,7 +336,7 @@ public class WorkChangeVisibilityTests
 
     private PutCommandHandler NewPutHandler()
         => new(
-            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workChangeRepository, _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _completionService, _resultService, Substitute.For<IWorkNotificationFacade>(), _dayLockService,
             _recorder, Substitute.For<IHttpContextAccessor>(), Substitute.For<IParentWorkLockGuard>(),
             Substitute.For<ILogger<PutCommandHandler>>());
