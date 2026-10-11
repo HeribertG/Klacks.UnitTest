@@ -10,6 +10,7 @@ using Klacks.Api.Application.Commands.AnalyseScenarios;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -44,7 +45,7 @@ public class ScenarioSkillsVisibilityTests
     {
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
             .Returns<bool>(_ => throw new KeyNotFoundException($"AnalyseScenario with ID {_scenarioId} not found"));
-        var skill = new AcceptScenarioSkill(_mediator);
+        var skill = new AcceptScenarioSkill(_mediator, Substitute.For<IPendingConfirmationStore>(), Substitute.For<ITurnConfirmationScope>(), Substitute.For<ICompanyClock>());
 
         var result = await skill.ExecuteAsync(Ctx(), ScenarioParams());
 

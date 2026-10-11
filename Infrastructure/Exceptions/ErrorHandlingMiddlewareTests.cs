@@ -152,6 +152,23 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task ScenarioStaleException_Becomes409CarryingItsCodeAndWhatChanged()
+    {
+        var staleness = new ScenarioStaleness(3, new DateTime(2026, 4, 20, 10, 0, 0, DateTimeKind.Utc), ["Plan B"]);
+
+        var response = await Invoke(new ScenarioStaleException(staleness));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("errorCode").GetString().ShouldBe(ScenarioStaleException.ErrorCode);
+        root.GetProperty(ScenarioStaleException.ChangedEntryCountField).GetInt32().ShouldBe(3);
+        root.GetProperty(ScenarioStaleException.LastChangeUtcField).GetDateTime().ShouldBe(staleness.LastChangeUtc);
+        root.GetProperty(ScenarioStaleException.LastChangeUtcField).GetString()!.ShouldEndWith("Z");
+        root.GetProperty(ScenarioStaleException.AcceptedScenarioNamesField)[0].GetString().ShouldBe("Plan B");
+    }
+
+    [Test]
     public async Task OtherDbUpdateException_StaysA400()
     {
         var response = await Invoke(new Microsoft.EntityFrameworkCore.DbUpdateException("constraint violated"));
