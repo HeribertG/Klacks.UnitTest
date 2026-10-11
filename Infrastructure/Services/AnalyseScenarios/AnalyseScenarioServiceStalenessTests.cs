@@ -3,8 +3,9 @@
 /// <summary>
 /// Tests for the staleness check before an accept (FindRealPlanChangesSinceCreationAsync): real rows inside the scope the
 /// accept replaces that were created, updated or deleted after the scenario was created make it stale - whether another
-/// scenario was accepted in between, an entry was edited by hand or deleted. Changes outside the scope (other group,
-/// outside the range, locked works, scenario rows) do not count, because the accept does not overwrite them.
+/// scenario was accepted in between, an entry was edited, sealed or deleted. Changes outside the scope (other group,
+/// outside the range, children of locked works, scenario rows) do not count, because the accept does not overwrite them.
+/// A scenario built on another scenario compares with the earliest creation along its SourceToken chain.
 /// The "created" instant is taken between two save batches, so baseline rows are older and later changes newer.
 /// </summary>
 
@@ -181,15 +182,12 @@ public class AnalyseScenarioServiceStalenessTests
     {
         var otherGroupWork = AddWork(_otherShiftId, InsideDay);
         var outsideRangeWork = AddWork(_shiftId, OutsideDay);
-        var lockedWork = AddWork(_shiftId, InsideDay);
-        lockedWork.LockLevel = WorkLockLevel.Confirmed;
         var otherClientBreak = AddBreak(_otherClientId, InsideDay);
         await _context.SaveChangesAsync();
         var scenario = await MarkScenarioCreatedAsync();
 
         otherGroupWork.StartTime = new TimeOnly(9, 0);
         outsideRangeWork.StartTime = new TimeOnly(9, 0);
-        lockedWork.StartTime = new TimeOnly(9, 0);
         _context.Break.Remove(otherClientBreak);
         AddWork(_shiftId, InsideDay, analyseToken: scenario.Token);
         AddBreak(_clientId, InsideDay, analyseToken: scenario.Token);
@@ -197,6 +195,74 @@ public class AnalyseScenarioServiceStalenessTests
         await _context.SaveChangesAsync();
 
         (await _service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task WorkSealedAfterCreation_IsStale()
+    {
+        var work = AddWork(_shiftId, InsideDay);
+        await _context.SaveChangesAsync();
+        var scenario = await MarkScenarioCreatedAsync();
+
+        work.LockLevel = WorkLockLevel.Confirmed;
+        await _context.SaveChangesAsync();
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None);
+
+        staleness.ShouldNotBeNull("the accept keeps the sealed real work and promotes its movable clone next to it");
+        staleness.ChangedEntryCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ExpenseAddedToALockedWorkAfterCreation_IsNotStale()
+    {
+        var lockedWork = AddWork(_shiftId, InsideDay);
+        lockedWork.LockLevel = WorkLockLevel.Confirmed;
+        await _context.SaveChangesAsync();
+        var scenario = await MarkScenarioCreatedAsync();
+
+        AddExpense(lockedWork.Id);
+        await _context.SaveChangesAsync();
+
+        (await _service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None)).ShouldBeNull(
+            "children of a locked work are never overwritten by the accept");
+    }
+
+    [Test]
+    public async Task ChildCreatedAfterARealEdit_FromAParentCreatedBeforeIt_IsStale()
+    {
+        var work = AddWork(_shiftId, InsideDay);
+        await _context.SaveChangesAsync();
+        var parent = await AddPersistedScenarioAsync(sourceToken: null);
+
+        work.StartTime = new TimeOnly(9, 0);
+        await _context.SaveChangesAsync();
+        await Task.Delay(ClockGapMilliseconds);
+        var child = NewScenario(DateTime.UtcNow, parent.Token);
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(child, CancellationToken.None);
+
+        staleness.ShouldNotBeNull("the child took the parent's snapshot, older than the edit");
+        staleness.ChangedEntryCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task SourceChainWithACycle_Terminates_AndUsesTheEarliestCreation()
+    {
+        var work = AddWork(_shiftId, InsideDay);
+        await _context.SaveChangesAsync();
+        var first = await AddPersistedScenarioAsync(sourceToken: null);
+        work.StartTime = new TimeOnly(9, 0);
+        await _context.SaveChangesAsync();
+        var second = await AddPersistedScenarioAsync(first.Token);
+        first.SourceToken = second.Token;
+        await _context.SaveChangesAsync();
+        await Task.Delay(ClockGapMilliseconds);
+        var child = NewScenario(DateTime.UtcNow, second.Token);
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(child, CancellationToken.None);
+
+        staleness.ShouldNotBeNull();
     }
 
     [Test]
@@ -217,7 +283,17 @@ public class AnalyseScenarioServiceStalenessTests
         return scenario;
     }
 
-    private AnalyseScenario NewScenario(DateTime? createTime) => new()
+    private async Task<AnalyseScenario> AddPersistedScenarioAsync(Guid? sourceToken)
+    {
+        await Task.Delay(ClockGapMilliseconds);
+        var scenario = NewScenario(null, sourceToken);
+        _context.AnalyseScenarios.Add(scenario);
+        await _context.SaveChangesAsync();
+        await Task.Delay(ClockGapMilliseconds);
+        return scenario;
+    }
+
+    private AnalyseScenario NewScenario(DateTime? createTime, Guid? sourceToken = null) => new()
     {
         Id = Guid.NewGuid(),
         Name = "Scenario A",
@@ -226,7 +302,8 @@ public class AnalyseScenarioServiceStalenessTests
         FromDate = FromDate,
         UntilDate = UntilDate,
         Status = AnalyseScenarioStatus.Active,
-        CreateTime = createTime
+        CreateTime = createTime,
+        SourceToken = sourceToken
     };
 
     private Work AddWork(Guid shiftId, DateOnly date, Guid? analyseToken = null)

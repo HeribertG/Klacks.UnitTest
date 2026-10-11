@@ -4,8 +4,8 @@
 /// Proves that every query of the staleness check translates to SQL on the real Npgsql provider (the in-memory provider
 /// of the behaviour tests evaluates any C# expression). The connection is never opened: an interceptor suppresses the
 /// open and answers every command with an empty result, so each query is translated and "executed" in turn and an
-/// untranslatable expression would surface as "could not be translated". The first change-time query (real works) is
-/// answered with one changed row, which makes the scenario stale and so also runs the accepted-sibling query.
+/// untranslatable expression would surface as "could not be translated". The first change count (real works) is answered
+/// with one changed row, which makes the scenario stale and so also runs the MAX and accepted-sibling queries.
 /// </summary>
 
 using System.Data;
@@ -45,9 +45,10 @@ public class AnalyseScenarioServiceStalenessNpgsqlTranslationTests
     [TearDown]
     public void TearDown() => _context.Dispose();
 
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task StalenessCheck_TranslatesEveryQuery(bool grouped)
+    [TestCase(true, false)]
+    [TestCase(false, false)]
+    [TestCase(true, true)]
+    public async Task StalenessCheck_TranslatesEveryQuery(bool grouped, bool builtOnAScenario)
     {
         var service = new AnalyseScenarioService(_context);
         var scenario = new AnalyseScenario
@@ -58,25 +59,38 @@ public class AnalyseScenarioServiceStalenessNpgsqlTranslationTests
             FromDate = new DateOnly(2026, 3, 9),
             UntilDate = new DateOnly(2026, 3, 15),
             Status = AnalyseScenarioStatus.Active,
-            CreateTime = new DateTime(2026, 3, 1, 8, 0, 0, DateTimeKind.Utc)
+            CreateTime = new DateTime(2026, 3, 1, 8, 0, 0, DateTimeKind.Utc),
+            SourceToken = builtOnAScenario ? Guid.NewGuid() : null
         };
 
         var staleness = await service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None);
 
         staleness.ShouldNotBeNull();
         staleness.ChangedEntryCount.ShouldBe(1);
+        staleness.LastChangeUtc.ShouldBe(EmptyResultInterceptor.ChangedAt);
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("analyse_scenario"));
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("work_change"));
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("expenses"));
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("schedule_note"));
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("break"));
+        _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("max("), "the latest change is aggregated in the database");
+        if (builtOnAScenario)
+        {
+            _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("source_token"));
+        }
     }
 
+    /// <summary>
+    /// Answers by statement shape: the first COUNT (real works) reports one changed row, every other COUNT none; every MAX
+    /// reports the change instant; anything else (source chain, accepted siblings) is empty.
+    /// </summary>
     private sealed class EmptyResultInterceptor : DbCommandInterceptor, IDbConnectionInterceptor
     {
-        private const string ChangeTimeColumn = "create_time";
+        private const string CountMarker = "count(";
 
-        private static readonly DateTime ChangedAt = new(2026, 3, 2, 8, 0, 0, DateTimeKind.Utc);
+        private const string MaxMarker = "max(";
+
+        public static readonly DateTime ChangedAt = new(2026, 3, 2, 8, 0, 0, DateTimeKind.Utc);
 
         private bool _changedRowServed;
 
@@ -86,14 +100,18 @@ public class AnalyseScenarioServiceStalenessNpgsqlTranslationTests
             DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
         {
             ExecutedCommands.Add(command.CommandText);
+            var sql = command.CommandText.ToLowerInvariant();
             var table = new DataTable();
-            if (!_changedRowServed && command.CommandText.Contains(ChangeTimeColumn))
+            if (sql.Contains(CountMarker))
             {
+                table.Columns.Add("count", typeof(int));
+                table.Rows.Add(_changedRowServed ? 0 : 1);
                 _changedRowServed = true;
-                table.Columns.Add("create_time", typeof(DateTime));
-                table.Columns.Add("update_time", typeof(DateTime));
-                table.Columns.Add("deleted_time", typeof(DateTime));
-                table.Rows.Add(ChangedAt, DBNull.Value, DBNull.Value);
+            }
+            else if (sql.Contains(MaxMarker))
+            {
+                table.Columns.Add("max", typeof(DateTime));
+                table.Rows.Add(ChangedAt);
             }
 
             return InterceptionResult<DbDataReader>.SuppressWithResult(table.CreateDataReader());
