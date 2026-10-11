@@ -91,7 +91,7 @@ public class ReassignWorkClientCommandHandlerTests
 
         _handler = new ReassignWorkClientCommandHandler(
             _workRepository,
-            TestGroupWriteVisibility.AllClientsVisible(),
+            TestScheduleRowAccess.Over(TestGroupWriteVisibility.AllClientsVisible()),
             new ScheduleMapper(),
             _periodHoursService,
             _scheduleEntriesService,

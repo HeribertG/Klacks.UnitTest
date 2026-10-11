@@ -186,7 +186,7 @@ public class WorkLockLevelWriteTests
 
     private BulkDeleteWorksCommandHandler NewBulkDeleteHandler()
         => new(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
+            _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
             Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkNotificationFacade>(),
             Substitute.For<IOvertimeCascadeService>(), Substitute.For<IDayLockService>(), _httpContextAccessor,
             NewGuard(), Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());

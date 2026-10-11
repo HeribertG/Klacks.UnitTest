@@ -257,6 +257,34 @@ public class BreakVisibilityTests
     }
 
     [Test]
+    public async Task BulkDelete_BreaksOfVisibleClientsInAHiddenScenario_AreTreatedLikeMissingIds_NotRemoved()
+    {
+        var visible = NewBreak(_visibleClientId);
+        var hidden = NewBreak(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        var missingId = Guid.NewGuid();
+        _breakRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Break> { visible, hidden });
+        _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
+        var handler = new BulkDeleteBreaksCommandHandler(
+            _breakRepository, _rowAccessGuard, _periodHoursService, _completionService, _dayLockService,
+            Substitute.For<ILogger<BulkDeleteBreaksCommandHandler>>());
+
+        var response = await handler.Handle(
+            new BulkDeleteBreaksCommand(new BulkDeleteBreaksRequest
+            {
+                BreakIds = [visible.Id, hidden.Id, missingId],
+                PeriodStart = Day,
+                PeriodEnd = Day
+            }),
+            CancellationToken.None);
+
+        _breakRepository.Received(1).Remove(visible);
+        _breakRepository.DidNotReceive().Remove(hidden);
+        response.DeletedIds.ShouldBe(new[] { visible.Id });
+        response.FailedCount.ShouldBe(2);
+    }
+
+    [Test]
     public async Task BulkDelete_BreaksOfHiddenClients_AreTreatedLikeMissingIds_NotRemoved()
     {
         var visible = NewBreak(_visibleClientId);
@@ -265,7 +293,7 @@ public class BreakVisibilityTests
         _breakRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Break> { visible, hidden });
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         var handler = new BulkDeleteBreaksCommandHandler(
-            _breakRepository, _clientVisibilityGuard, _periodHoursService, _completionService, _dayLockService,
+            _breakRepository, _rowAccessGuard, _periodHoursService, _completionService, _dayLockService,
             Substitute.For<ILogger<BulkDeleteBreaksCommandHandler>>());
 
         var response = await handler.Handle(
@@ -372,7 +400,7 @@ public class BreakVisibilityTests
                 Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId, Guid? AnalyseToken)>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidRequestException("Day is sealed and cannot be modified.")));
         var handler = new BulkDeleteBreaksCommandHandler(
-            _breakRepository, _clientVisibilityGuard, _periodHoursService, _completionService, _dayLockService,
+            _breakRepository, _rowAccessGuard, _periodHoursService, _completionService, _dayLockService,
             Substitute.For<ILogger<BulkDeleteBreaksCommandHandler>>());
 
         await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(

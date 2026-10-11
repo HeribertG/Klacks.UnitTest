@@ -278,15 +278,16 @@ public class WorkVisibilityTests
     }
 
     [Test]
-    public async Task BulkDelete_WorksOfHiddenClients_AreTreatedLikeMissingIds_NotRemoved()
+    public async Task BulkDelete_WorksOfVisibleClientsInAHiddenScenario_AreTreatedLikeMissingIds_NotRemoved()
     {
         var visible = NewWork(_visibleClientId);
-        var hidden = NewWork(_hiddenClientId);
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
         var missingId = Guid.NewGuid();
         _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work> { visible, hidden });
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         var handler = new BulkDeleteWorksCommandHandler(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService, _completionService,
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService, _completionService,
             _notificationFacade, _overtimeCascadeService, _dayLockService,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
@@ -299,6 +300,46 @@ public class WorkVisibilityTests
         _workRepository.DidNotReceive().Remove(hidden);
         response.DeletedIds.ShouldBe(new[] { visible.Id });
         response.FailedCount.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task BulkDelete_WorksOfHiddenClients_AreTreatedLikeMissingIds_NotRemoved()
+    {
+        var visible = NewWork(_visibleClientId);
+        var hidden = NewWork(_hiddenClientId);
+        var missingId = Guid.NewGuid();
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work> { visible, hidden });
+        _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
+        var handler = new BulkDeleteWorksCommandHandler(
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService, _completionService,
+            _notificationFacade, _overtimeCascadeService, _dayLockService,
+            Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
+            Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
+
+        var response = await handler.Handle(
+            new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = [visible.Id, hidden.Id, missingId] }),
+            CancellationToken.None);
+
+        _workRepository.Received(1).Remove(visible);
+        _workRepository.DidNotReceive().Remove(hidden);
+        response.DeletedIds.ShouldBe(new[] { visible.Id });
+        response.FailedCount.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task Reassign_AwayFromAVisibleClientInAHiddenScenario_IsRefusedLikeAMissingWork_NothingWritten()
+    {
+        var stored = NewWork(_visibleClientId);
+        stored.AnalyseToken = _hiddenToken;
+        _workRepository.GetNoTracking(stored.Id).Returns(stored);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => NewReassignHandler().Handle(
+            new ReassignWorkClientCommand(stored.Id, _visibleClientId), CancellationToken.None));
+
+        ex.Message.ShouldBe($"Work with ID {stored.Id} not found.");
+        await _dayLockService.DidNotReceiveWithAnyArgs().EnsureNotLockedAsync(default, default, default, default);
+        await _workRepository.DidNotReceive().Get(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -457,13 +498,14 @@ public class WorkVisibilityTests
     }
 
     [Test]
-    public async Task GetContainerChildren_OfAHiddenContainer_IsAnsweredLikeAMissingContainer()
+    public async Task GetContainerChildren_OfAContainerInAHiddenScenario_IsAnsweredLikeAMissingContainer()
     {
-        var hidden = NewWork(_hiddenClientId);
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
         var childrenReadRepository = Substitute.For<IContainerWorkChildrenReadRepository>();
         childrenReadRepository.GetParentWorkNoTracking(hidden.Id, Arg.Any<CancellationToken>()).Returns(hidden);
         var handler = new GetContainerWorkChildrenQueryHandler(
-            childrenReadRepository, _clientVisibilityGuard, new ScheduleMapper(),
+            childrenReadRepository, _rowAccessGuard, new ScheduleMapper(),
             Substitute.For<ILogger<GetContainerWorkChildrenQueryHandler>>());
 
         var result = await handler.Handle(new GetContainerWorkChildrenQuery(hidden.Id, false), CancellationToken.None);
@@ -474,6 +516,43 @@ public class WorkVisibilityTests
         result.ParentStartBase.ShouldBeNull();
         await childrenReadRepository.DidNotReceive()
             .GetChildBreaksWithAbsence(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GetContainerChildren_OfAHiddenContainer_IsAnsweredLikeAMissingContainer()
+    {
+        var hidden = NewWork(_hiddenClientId);
+        var childrenReadRepository = Substitute.For<IContainerWorkChildrenReadRepository>();
+        childrenReadRepository.GetParentWorkNoTracking(hidden.Id, Arg.Any<CancellationToken>()).Returns(hidden);
+        var handler = new GetContainerWorkChildrenQueryHandler(
+            childrenReadRepository, _rowAccessGuard, new ScheduleMapper(),
+            Substitute.For<ILogger<GetContainerWorkChildrenQueryHandler>>());
+
+        var result = await handler.Handle(new GetContainerWorkChildrenQuery(hidden.Id, false), CancellationToken.None);
+
+        result.SubWorks.ShouldBeEmpty();
+        result.SubBreaks.ShouldBeEmpty();
+        result.SubWorkChanges.ShouldBeEmpty();
+        result.ParentStartBase.ShouldBeNull();
+        await childrenReadRepository.DidNotReceive()
+            .GetChildBreaksWithAbsence(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateContainerChildren_OfAContainerInAHiddenScenario_IsRefusedLikeAMissingContainer_NothingWritten()
+    {
+        var hidden = NewWork(_visibleClientId);
+        hidden.AnalyseToken = _hiddenToken;
+        var (handler, childrenManager) = NewUpdateContainerHandler(hidden);
+
+        var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
+            new UpdateContainerWorkChildrenCommand(hidden.Id, new UpdateContainerWorkChildrenResource()),
+            CancellationToken.None));
+
+        ex.Message.ShouldBe($"Work with ID {hidden.Id} not found.");
+        await childrenManager.DidNotReceiveWithAnyArgs()
+            .UpdateChildrenAsync(default, default, default, default, default, default!, default!, default!, default);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
     }
 
     [Test]
@@ -582,7 +661,7 @@ public class WorkVisibilityTests
 
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
-            _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService,
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
@@ -598,7 +677,7 @@ public class WorkVisibilityTests
             .Returns(true);
         var childrenManager = Substitute.For<IContainerWorkChildrenManager>();
         var handler = new UpdateContainerWorkChildrenCommandHandler(
-            childrenReadRepository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork, _notificationFacade,
+            childrenReadRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, _notificationFacade,
             lockRepository, Substitute.For<IUserService>(), childrenManager, _overtimeCascadeService,
             Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager);
