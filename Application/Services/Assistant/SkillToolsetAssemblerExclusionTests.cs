@@ -152,7 +152,7 @@ public class SkillToolsetAssemblerExclusionTests
         IReadOnlyCollection<string>? pinned) =>
         CreateAssembler().AssembleAsync(
             _agent, userRights, userMessage, null, null, Guid.NewGuid().ToString(), "de",
-            KnowledgeIndexConstants.MaxToolsForProvider, true, excluded, pinned, previousTurnSkillNames: null,
+            KnowledgeIndexConstants.MaxToolsForProvider, true, excluded, pinned, previousTurnSkillNames: null, continuationSkillNames: null,
             CancellationToken.None);
 
     [Test]

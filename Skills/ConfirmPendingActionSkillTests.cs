@@ -164,4 +164,92 @@ public class ConfirmPendingActionSkillTests
         await _skillExecutor.DidNotReceive().ExecuteAsync(
             Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task ValidToken_CarriesTheReplayedSkillNameInTheResultMetadata()
+    {
+        var context = Ctx();
+        var token = _store.Create(context.UserId, "update_contract", new Dictionary<string, object>());
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ok = true }, "done"));
+
+        var result = await _sut.ExecuteAsync(context, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Metadata, Is.Not.Null);
+        Assert.That(result.Metadata![SkillResultMetadataKeys.ReplayedSkillName], Is.EqualTo("update_contract"));
+    }
+
+    [Test]
+    public async Task ValidToken_KeepsTheReplayedResultsOwnMetadata()
+    {
+        var context = Ctx();
+        var token = _store.Create(context.UserId, "update_contract", new Dictionary<string, object>());
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.Confirmation("Please confirm.", "inner-token"));
+
+        var result = await _sut.ExecuteAsync(context, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(result.Metadata![SkillResultMetadataKeys.ConfirmationToken], Is.EqualTo("inner-token"));
+        Assert.That(result.Metadata[SkillResultMetadataKeys.ReplayedSkillName], Is.EqualTo("update_contract"));
+    }
+
+    [Test]
+    public async Task ARedeemedCorrectionUndo_RunsTheInverse_ButCarriesNoReplayedSkillName()
+    {
+        var context = Ctx();
+        var token = _store.Create(
+            context.UserId, "remove_shift_from_group", new Dictionary<string, object>(),
+            PendingConfirmationPurposes.CorrectionUndo);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ok = true }, "undone"));
+
+        var result = await _sut.ExecuteAsync(context, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(result.Success, Is.True);
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Is<SkillInvocation>(i => i.SkillName == "remove_shift_from_group"),
+            Arg.Any<SkillExecutionContext>(),
+            Arg.Any<CancellationToken>());
+        Assert.That(result.Metadata?.ContainsKey(SkillResultMetadataKeys.ReplayedSkillName) ?? false, Is.False);
+    }
+
+    [TestCase("correctionundo", false)]
+    [TestCase("CORRECTIONUNDO", false)]
+    [TestCase("   ", true)]
+    [TestCase("GateReplay", true)]
+    public async Task ThePurposeOfTheRedeemedToken_IsComparedNormalized(string purpose, bool carriesReplayedName)
+    {
+        var context = Ctx();
+        var token = _store.Create(context.UserId, "update_contract", new Dictionary<string, object>(), purpose);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { ok = true }, "done"));
+
+        var result = await _sut.ExecuteAsync(context, new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        Assert.That(result.Metadata?.ContainsKey(SkillResultMetadataKeys.ReplayedSkillName) ?? false, Is.EqualTo(carriesReplayedName));
+    }
+
+    [Test]
+    public async Task InvalidToken_CarriesNoReplayedSkillName()
+    {
+        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            [AutonomyDefaults.ConfirmationTokenParameter] = "no-such-token"
+        });
+
+        Assert.That(result.Metadata?.ContainsKey(SkillResultMetadataKeys.ReplayedSkillName) ?? false, Is.False);
+    }
 }

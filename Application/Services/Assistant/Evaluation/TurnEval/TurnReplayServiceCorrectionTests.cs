@@ -12,6 +12,7 @@ using System.Diagnostics;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Application.Services.Assistant.Evaluation.TurnEval;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Settings;
@@ -67,7 +68,8 @@ public class TurnReplayServiceCorrectionTests
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<IReadOnlyList<string>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new SkillToolsetResult());
 
@@ -248,8 +250,8 @@ public class TurnReplayServiceCorrectionTests
             Arg.Any<bool>(),
             Arg.Is<IReadOnlyCollection<string>?>(excluded => excluded != null && excluded.Contains(PreviousSkill)),
             Arg.Is<IReadOnlyCollection<string>?>(pinned => pinned == null),
-            Arg.Is<IReadOnlyCollection<string>?>(previous => previous != null && previous.Contains(PreviousSkill)),
-            Arg.Any<CancellationToken>());
+            Arg.Is<IReadOnlyList<string>?>(previous => previous != null && previous.Contains(PreviousSkill)),
+            Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -292,7 +294,8 @@ public class TurnReplayServiceCorrectionTests
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<IReadOnlyList<string>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -463,4 +466,60 @@ public class TurnReplayServiceCorrectionTests
 
         TurnReplayService.BuildReplayLastAction(item, UserId)!.Calls.Single().SkillLabels.ShouldBeNull();
     }
+
+    [Test]
+    public async Task WithoutACorrection_AConfirmedHeldActionIsTheContinuationCandidate()
+    {
+        await Replay(ConfirmedHeldActionItem());
+
+        await AssemblerReceived(
+            previous => previous != null && previous.SequenceEqual(new[] { AutonomyDefaults.ConfirmPendingActionSkillName }),
+            continuation => continuation != null && continuation.SequenceEqual(new[] { WritePreviousSkill }));
+    }
+
+    [Test]
+    public async Task WithACorrection_NoContinuationCandidateIsOffered()
+    {
+        GivenACorrectionIsPlanned(null);
+
+        await Replay(ConfirmedHeldActionItem());
+
+        await AssemblerReceived(previous => previous != null, continuation => continuation == null);
+    }
+
+    [Test]
+    public void BuildReplayLastAction_CarriesTheReplayedSkill_AndNullWithoutOne()
+    {
+        var call = TurnReplayService.BuildReplayLastAction(ConfirmedHeldActionItem(), UserId)!.Calls.Single();
+        call.SkillName.ShouldBe(AutonomyDefaults.ConfirmPendingActionSkillName);
+        call.ReplayedSkillName.ShouldBe(WritePreviousSkill);
+
+        TurnReplayService.BuildReplayLastAction(Item(), UserId)!.Calls.Single().ReplayedSkillName.ShouldBeNull();
+    }
+
+    [Test]
+    public void BuildReplayLastAction_IgnoresAReplayedSkillOfAnyCallOtherThanConfirmPendingAction()
+    {
+        var item = Item(WritePreviousSkill);
+        item.PreviousTurn!.ReplayedSkill = UndoSkill;
+
+        TurnReplayService.BuildReplayLastAction(item, UserId)!.Calls.Single().ReplayedSkillName.ShouldBeNull();
+    }
+
+    private static TurnGoldsetItem ConfirmedHeldActionItem()
+    {
+        var item = Item(AutonomyDefaults.ConfirmPendingActionSkillName);
+        item.PreviousTurn!.ReplayedSkill = WritePreviousSkill;
+        return item;
+    }
+
+    private Task AssemblerReceived(
+        Func<IReadOnlyList<string>?, bool> previousMatches, Func<IReadOnlyList<string>?, bool> continuationMatches) =>
+        _assembler.Received(1).AssembleAsync(
+            Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+            Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Is<IReadOnlyList<string>?>(previous => previousMatches(previous)),
+            Arg.Is<IReadOnlyList<string>?>(continuation => continuationMatches(continuation)),
+            Arg.Any<CancellationToken>());
 }

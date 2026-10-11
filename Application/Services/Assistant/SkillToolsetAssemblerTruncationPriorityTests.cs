@@ -4,7 +4,8 @@
 /// Verifies the order in which guaranteed skills survive the provider cap: after always-on skills and the
 /// guaranteed flag, the strength of the guarantee decides (recipe over learned phrase over keyword over hint),
 /// and the follow-through guarantee of the previous turn comes last. With a tiny budget the current message's
-/// own keyword guarantee must therefore survive over a skill that was only kept for the follow-through.
+/// own keyword guarantee must therefore survive over a skill that was only kept for the follow-through. Within the
+/// follow-through source the same-skill continuation ranks last, so the advised skills outlive it.
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Assistant;
@@ -26,6 +27,7 @@ public class SkillToolsetAssemblerTruncationPriorityTests
     private const string FollowThroughSkill = "create_contract_from_template";
     private const string AdviseSkill = "evaluate_contract_templates";
     private const string KeywordSkill = "list_open_shifts";
+    private const string ContinuationSkill = "update_contract";
     private const string KeywordPhrase = "offene dienste";
     private const string Message = "Zeig mir die offene dienste";
     private const string UserId = "user-1";
@@ -46,7 +48,8 @@ public class SkillToolsetAssemblerTruncationPriorityTests
                 Skill(ExplainSkill, SkillEffect.Explain),
                 Skill(FollowThroughSkill, SkillEffect.Mutate),
                 Skill(AdviseSkill, SkillEffect.Advise),
-                Skill(KeywordSkill, SkillEffect.Read, triggerKeywords: $"[\"{KeywordPhrase}\"]")
+                Skill(KeywordSkill, SkillEffect.Read, triggerKeywords: $"[\"{KeywordPhrase}\"]"),
+                Skill(ContinuationSkill, SkillEffect.Mutate)
             });
 
         var retrieval = Substitute.For<IKnowledgeRetrievalService>();
@@ -134,11 +137,11 @@ public class SkillToolsetAssemblerTruncationPriorityTests
         TriggerKeywords = triggerKeywords
     };
 
-    private Task<SkillToolsetResult> Assemble(int maxTools) =>
+    private Task<SkillToolsetResult> Assemble(int maxTools, IReadOnlyList<string>? continuation = null) =>
         _assembler.AssembleAsync(
             _agent, new List<string>(), Message, conversationId: null, currentRoute: null, UserId, language: "de",
             maxTools, applyLearnedPhraseGuarantee: false, excludedSkillNames: null, pinnedSkillNames: null,
-            previousTurnSkillNames: [ExplainSkill], CancellationToken.None);
+            previousTurnSkillNames: [ExplainSkill], continuationSkillNames: continuation, CancellationToken.None);
 
     [Test]
     public async Task WithRoomForBoth_TheKeywordAndTheFollowThroughSkillAreOffered()
@@ -172,5 +175,34 @@ public class SkillToolsetAssemblerTruncationPriorityTests
     public void SourcePriority_IsStrictlyOrdered(ToolsetSkillSource stronger, ToolsetSkillSource weaker)
     {
         stronger.Priority().ShouldBeGreaterThan(weaker.Priority());
+    }
+
+    [Test]
+    public async Task WithRoomForAll_TheContinuationSkillIsOfferedAsFollowThrough()
+    {
+        var result = await Assemble(maxTools: 10, continuation: [ContinuationSkill]);
+
+        result.Functions.Single(f => f.Name == ContinuationSkill).ToolsetSource.ShouldBe(ToolsetSkillSource.FollowThrough);
+        result.Functions.Select(f => f.Name).ShouldContain(FollowThroughSkill);
+        result.Functions.Select(f => f.Name).ShouldContain(AdviseSkill);
+    }
+
+    [Test]
+    public async Task WithOneSlotTooFew_TheContinuationSkillIsDroppedBeforeTheAdvisedFollowThroughSkills()
+    {
+        var result = await Assemble(maxTools: 4, continuation: [ContinuationSkill]);
+
+        var names = result.Functions.Select(f => f.Name).ToList();
+        names.ShouldBe(
+            new[] { AlwaysOnSkill, KeywordSkill, FollowThroughSkill, AdviseSkill }, ignoreOrder: true);
+        names.ShouldNotContain(ContinuationSkill);
+    }
+
+    [Test]
+    public async Task WithATinyBudget_TheKeywordGuaranteeStillSurvives_OverEveryFollowThroughSkill()
+    {
+        var result = await Assemble(maxTools: 2, continuation: [ContinuationSkill]);
+
+        result.Functions.Select(f => f.Name).ShouldBe(new[] { AlwaysOnSkill, KeywordSkill }, ignoreOrder: true);
     }
 }

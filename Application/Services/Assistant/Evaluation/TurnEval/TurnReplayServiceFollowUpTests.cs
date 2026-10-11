@@ -53,7 +53,8 @@ public class TurnReplayServiceFollowUpTests
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<IReadOnlyList<string>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new SkillToolsetResult
             {

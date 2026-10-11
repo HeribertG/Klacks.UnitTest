@@ -31,6 +31,7 @@ public class CorrectionTurnPreparerTests
     private const string PreviousMessage = "Trag alle Mitarbeitenden in die Gruppe Zürich ein.";
     private const string Composite = "composite of both messages";
     private const string ExcludedSkillName = "find_customer_candidates";
+    private const string ReplayedSkillName = "update_contract";
     private const string ContextNote = "CORRECTION - the previous turn searched for customers.";
 
     private const string PinnedSkillName = "add_clients_to_group";
@@ -80,7 +81,8 @@ public class CorrectionTurnPreparerTests
                 Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
                 Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
                 Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<IReadOnlyList<string>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new SkillToolsetResult());
 
@@ -182,7 +184,7 @@ public class CorrectionTurnPreparerTests
                 excluded => withExclusion
                     ? excluded != null && excluded.Contains(ExcludedSkillName)
                     : excluded == null),
-            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyList<string>?>(), Arg.Any<IReadOnlyList<string>?>(),
             Arg.Any<CancellationToken>());
 
     private Task AssemblerPinned(string skillName) =>
@@ -191,7 +193,7 @@ public class CorrectionTurnPreparerTests
             Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
             Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
             Arg.Is<IReadOnlyCollection<string>?>(pinned => pinned != null && pinned.Contains(skillName)),
-            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<string>?>(), Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>());
 
     private void TheCandidatesWerePinned() =>
         _lastActionStore.Received(1).SaveClarificationCandidates(
@@ -257,8 +259,8 @@ public class CorrectionTurnPreparerTests
             Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
             Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
-            Arg.Is<IReadOnlyCollection<string>?>(previous => previous != null && previous.Contains(ExcludedSkillName)),
-            Arg.Any<CancellationToken>());
+            Arg.Is<IReadOnlyList<string>?>(previous => previous != null && previous.Contains(ExcludedSkillName)),
+            Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -278,9 +280,9 @@ public class CorrectionTurnPreparerTests
             Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
             Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
-            Arg.Is<IReadOnlyCollection<string>?>(
+            Arg.Is<IReadOnlyList<string>?>(
                 previous => previous != null && previous.Contains(ExcludedSkillName) && !previous.Contains("failed_skill")),
-            Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -292,8 +294,8 @@ public class CorrectionTurnPreparerTests
             Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
             Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
             Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
-            Arg.Is<IReadOnlyCollection<string>?>(previous => previous == null),
-            Arg.Any<CancellationToken>());
+            Arg.Is<IReadOnlyList<string>?>(previous => previous == null),
+            Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -531,4 +533,68 @@ public class CorrectionTurnPreparerTests
         await AssembledOn(CorrectionMessage, withExclusion: false);
         result.Correction.ShouldBeNull();
     }
+
+    [Test]
+    public async Task OnAnOrdinaryTurn_AConfirmedHeldActionIsTheContinuationCandidate_AndKeepsTheWrapperForFollowThrough()
+    {
+        GivenAConfirmedHeldActionAnchor();
+
+        await Prepare("Und stell bei dem Vertrag den Feiertagskalender auf Zürich um.");
+
+        await AssemblerReceived(
+            previous => previous != null && previous.SequenceEqual(new[] { AutonomyDefaults.ConfirmPendingActionSkillName }),
+            continuation => continuation != null && continuation.SequenceEqual(new[] { ReplayedSkillName }));
+    }
+
+    [Test]
+    public async Task ASupersededAnchor_OffersNoContinuationCandidate_ButKeepsItsFollowThroughNames()
+    {
+        var lastAction = GivenAConfirmedHeldActionAnchor();
+        lastAction.SupersededAtUtc = DateTime.UtcNow;
+
+        await Prepare("Und stell bei dem Vertrag den Feiertagskalender auf Zürich um.");
+
+        await AssemblerReceived(
+            previous => previous != null && previous.Contains(AutonomyDefaults.ConfirmPendingActionSkillName),
+            continuation => continuation == null);
+    }
+
+    [Test]
+    public async Task OnACorrectionTurn_NoContinuationCandidateIsOffered()
+    {
+        GivenACorrectionIsPlanned();
+        var lastAction = _lastActionStore.Peek(Guid.Parse(UserId), ConversationId)!;
+        lastAction.Calls = ConfirmedHeldActionCalls();
+
+        await Prepare();
+
+        await AssemblerReceived(previous => previous != null, continuation => continuation == null);
+    }
+
+    private AssistantLastAction GivenAConfirmedHeldActionAnchor()
+    {
+        var lastAction = GivenAStoredAnchor();
+        lastAction.Calls = ConfirmedHeldActionCalls();
+        return lastAction;
+    }
+
+    private static List<AssistantLastActionCall> ConfirmedHeldActionCalls() =>
+    [
+        new AssistantLastActionCall
+        {
+            SkillName = AutonomyDefaults.ConfirmPendingActionSkillName,
+            ReplayedSkillName = ReplayedSkillName,
+            Success = true
+        }
+    ];
+
+    private Task AssemblerReceived(
+        Func<IReadOnlyList<string>?, bool> previousMatches, Func<IReadOnlyList<string>?, bool> continuationMatches) =>
+        _assembler.Received(1).AssembleAsync(
+            Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+            Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Is<IReadOnlyList<string>?>(previous => previousMatches(previous)),
+            Arg.Is<IReadOnlyList<string>?>(continuation => continuationMatches(continuation)),
+            Arg.Any<CancellationToken>());
 }

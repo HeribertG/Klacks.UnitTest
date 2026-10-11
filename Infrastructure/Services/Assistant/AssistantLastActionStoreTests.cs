@@ -283,4 +283,38 @@ public class AssistantLastActionStoreTests
 
         _store.Peek(_userId, "conv-2").ShouldBeNull();
     }
+
+    [Test]
+    public void Save_ThenPeek_KeepsTheReplayedSkillName_AndTheWrapperAsSkillName()
+    {
+        var action = Action("Ja, bitte.", AutonomyDefaults.ConfirmPendingActionSkillName);
+        action.Calls[0].ReplayedSkillName = "update_contract";
+
+        _store.Save(action);
+
+        var call = _store.Peek(_userId, ConversationId)!.Calls.Single();
+        call.SkillName.ShouldBe(AutonomyDefaults.ConfirmPendingActionSkillName);
+        call.ReplayedSkillName.ShouldBe("update_contract");
+    }
+
+    [Test]
+    public void Peek_ARecordWrittenBeforeTheReplayedSkillNameExisted_ReadsItAsNull()
+    {
+        _context.AssistantLastActions.Add(new AssistantLastActionRow
+        {
+            UserId = _userId,
+            ConversationId = ConversationId,
+            UserMessage = "old",
+            CallsJson = """[{"SkillName":"update_contract","ArgumentsJson":"{}","ResultDataJson":"{}","IsReadOnly":false,"Success":true}]""",
+            CreateTimeUtc = DateTime.UtcNow,
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(GracefulCorrectionDefaults.LastActionTtlMinutes)
+        });
+        _context.SaveChanges();
+
+        var call = _store.Peek(_userId, ConversationId)!.Calls.Single();
+
+        call.SkillName.ShouldBe("update_contract");
+        call.Success.ShouldBeTrue();
+        call.ReplayedSkillName.ShouldBeNull();
+    }
 }

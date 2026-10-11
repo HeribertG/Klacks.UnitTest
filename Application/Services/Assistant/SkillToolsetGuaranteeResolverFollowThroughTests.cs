@@ -110,11 +110,11 @@ public class SkillToolsetGuaranteeResolverFollowThroughTests
     ];
 
     private async Task<List<string>> Resolve(
-        IReadOnlyList<AgentSkill> permitted, IReadOnlyCollection<string>? previous)
+        IReadOnlyList<AgentSkill> permitted, IReadOnlyList<string>? previous)
     {
         var request = new SkillToolsetGuaranteeRequest(
             _agentId, permitted, [], UserMessage, "conv", null, Guid.NewGuid().ToString(), "de", [],
-            null, previous, true);
+            null, previous, null, true);
 
         var result = await _resolver.ResolveAsync(request, CancellationToken.None);
 
@@ -389,7 +389,7 @@ public class SkillToolsetGuaranteeResolverFollowThroughTests
         GivenEdges(ContractEdges());
         var request = new SkillToolsetGuaranteeRequest(
             _agentId, ContractSkills(), [], UserMessage, "conv", null, Guid.NewGuid().ToString(), "de", [],
-            null, [ExplainSkill], true);
+            null, [ExplainSkill], null, true);
 
         var result = await _resolver.ResolveAsync(request, CancellationToken.None);
 
