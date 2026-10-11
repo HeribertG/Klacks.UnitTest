@@ -5,7 +5,7 @@
 /// includes accepted/rejected; without a group the scenarios of EVERY group are listed (the old repository
 /// call only returned group-less scenarios, so an AutoWizard result bound to a group was invisible); a
 /// restricted group scope hides scenarios outside the scope and group-less ones; a groupId outside the scope
-/// is answered with "not accessible" instead of an empty list. The filters run in the repository query, so the
+/// is answered exactly like a missing group (no existence or name oracle). The filters run in the repository query, so the
 /// skill is exercised over the real AnalyseScenarioRepository on the EF InMemory provider - that proves the
 /// filter semantics, not the Npgsql SQL translation. Payload is asserted via serialized JSON because the
 /// projection uses an internal anonymous type.
@@ -166,19 +166,24 @@ public class ListScenariosSkillTests
     }
 
     [Test]
-    public async Task RestrictedScope_GroupOutsideScope_IsReportedAsNotAccessible_NotAsAnEmptyList()
+    public async Task RestrictedScope_GroupOutsideScope_IsAnsweredExactlyLikeAMissingGroup()
     {
         RestrictToWinterthur();
+        var missingId = Guid.NewGuid();
 
-        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        var hidden = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
             ["groupId"] = _bern.Id.ToString()
         });
+        var missing = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = missingId.ToString()
+        });
 
-        result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("not accessible");
-        result.Message.ShouldContain("Bern");
-        result.Message.ShouldNotContain("Found 0");
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe($"Group with ID {_bern.Id} not found.");
+        missing.Message.ShouldBe($"Group with ID {missingId} not found.");
+        hidden.Message.ShouldNotContain("Bern");
     }
 
     [Test]
