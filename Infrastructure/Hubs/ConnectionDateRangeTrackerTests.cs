@@ -213,4 +213,28 @@ public sealed class ConnectionDateRangeTrackerTests
 
         matches.Count.ShouldBe(1);
     }
+
+    [Test]
+    public async Task ConnectionWithoutResolvedVisibility_SeesNothing()
+    {
+        await _sut.RegisterConnectionAsync(Connection, July1, July31, null);
+
+        var snapshot = await _sut.GetConnectionAsync(Connection);
+
+        snapshot!.Visibility.ShouldBe(ConnectionVisibility.None);
+    }
+
+    [Test]
+    public async Task CachedVisibility_IsCarriedOnTheSnapshot_AndClearedOnUnregister()
+    {
+        var visibility = ConnectionVisibility.Restricted([Guid.NewGuid()], [Guid.NewGuid()]);
+        await _sut.SetVisibilityAsync(Connection, visibility);
+        await _sut.RegisterConnectionAsync(Connection, July1, July31, null);
+
+        (await _sut.GetConnectionsForDateRangeAsync(July15, July15, null)).Single().Visibility.ShouldBe(visibility);
+
+        await _sut.UnregisterConnectionAsync(Connection);
+        await _sut.RegisterConnectionAsync(Connection, July1, July31, null);
+        (await _sut.GetConnectionAsync(Connection))!.Visibility.ShouldBe(ConnectionVisibility.None);
+    }
 }

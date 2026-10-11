@@ -7,7 +7,8 @@
 /// principal (Context.User), not from IHttpContextAccessor, which may be empty inside a hub invocation (long polling)
 /// and would then make the guard fail open; a connection without a user id is refused. Exercised with the real token
 /// guard, group guard and UserService (no HTTP context); only the user's visibility rows and the scenario lookup are
-/// stubbed.
+/// stubbed. The caller's visibility (clients of the visible groups, or unrestricted) is cached on the connection state when it
+/// joins a range or changes its group filter, and client group joins are limited to visible clients.
 /// </summary>
 
 using System.Security.Claims;
@@ -31,6 +32,8 @@ public class WorkNotificationHubScenarioTokenTests
     private Guid _hiddenGroupId;
     private Guid _hiddenToken;
     private Guid _visibleToken;
+    private Guid _visibleClientId;
+    private Guid _hiddenClientId;
     private IGroupManager _groups = null!;
     private IConnectionDateRangeTracker _tracker = null!;
 
@@ -41,16 +44,23 @@ public class WorkNotificationHubScenarioTokenTests
         _hiddenGroupId = Guid.NewGuid();
         _hiddenToken = Guid.NewGuid();
         _visibleToken = Guid.NewGuid();
+        _visibleClientId = Guid.NewGuid();
+        _hiddenClientId = Guid.NewGuid();
     }
 
-    private WorkNotificationHub Hub(string? userId)
+    private WorkNotificationHub Hub(string? userId, bool unrestricted = false)
     {
         _groups = Substitute.For<IGroupManager>();
         _tracker = Substitute.For<IConnectionDateRangeTracker>();
 
         var visibilityService = Substitute.For<IGroupVisibilityService>();
         visibilityService.GetVisibilityScopeAsync()
-            .Returns(Task.FromResult(GroupVisibilityScope.Restricted([_visibleGroupId], [_visibleGroupId])));
+            .Returns(Task.FromResult(unrestricted
+                ? GroupVisibilityScope.Unrestricted()
+                : GroupVisibilityScope.Restricted([_visibleGroupId], [_visibleGroupId])));
+        var groupClients = Substitute.For<IGetAllClientIdsFromGroupAndSubgroups>();
+        groupClients.GetAllClientIdsFromGroupsAndSubgroupsFromList(Arg.Is<List<Guid>>(ids => ids.Contains(_visibleGroupId)))
+            .Returns([_visibleClientId]);
         var scenarios = Substitute.For<IAnalyseScenarioRepository>();
         scenarios.GetByTokenAsync(_hiddenToken, Arg.Any<CancellationToken>())
             .Returns(new AnalyseScenario { Id = Guid.NewGuid(), Token = _hiddenToken, GroupId = _hiddenGroupId });
@@ -72,7 +82,8 @@ public class WorkNotificationHubScenarioTokenTests
             _tracker,
             Substitute.For<IScheduleTimelineService>(),
             new ScenarioTokenAccessGuard(scenarios, groupGuard),
-            groupGuard)
+            groupGuard,
+            groupClients)
         {
             Context = context,
             Groups = _groups
@@ -134,5 +145,73 @@ public class WorkNotificationHubScenarioTokenTests
         await Hub(null).SetSelectedGroup(_visibleGroupId.ToString());
 
         await _tracker.DidNotReceiveWithAnyArgs().SetSelectedGroupAsync(default!, default, default);
+    }
+
+    [Test]
+    public async Task JoinScheduleGroup_OfARestrictedUser_CachesTheVisibleClientsBeforeRegistering()
+    {
+        await Hub(Guid.NewGuid().ToString()).JoinScheduleGroup(StartDate, EndDate, null);
+
+        Received.InOrder(() =>
+        {
+            _tracker.SetVisibilityAsync(ConnectionId, Arg.Is<ConnectionVisibility>(v =>
+                !v.IsUnrestricted && v.AllowsClient(_visibleClientId) && !v.AllowsClient(_hiddenClientId)
+                && v.AllowsGroup(_visibleGroupId) && !v.AllowsGroup(_hiddenGroupId)), Arg.Any<CancellationToken>());
+            _tracker.RegisterConnectionAsync(ConnectionId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), null, Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task JoinScheduleGroup_OfAnUnrestrictedUser_CachesUnrestrictedVisibility()
+    {
+        await Hub(Guid.NewGuid().ToString(), unrestricted: true).JoinScheduleGroup(StartDate, EndDate, null);
+
+        await _tracker.Received(1).SetVisibilityAsync(
+            ConnectionId, Arg.Is<ConnectionVisibility>(v => v.IsUnrestricted), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SetSelectedGroup_RefreshesTheCachedVisibility()
+    {
+        await Hub(Guid.NewGuid().ToString()).SetSelectedGroup(_visibleGroupId.ToString());
+
+        await _tracker.Received(1).SetVisibilityAsync(
+            ConnectionId, Arg.Is<ConnectionVisibility>(v => v.AllowsClient(_visibleClientId)), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task JoinClientGroup_OfAHiddenClient_DoesNotJoin()
+    {
+        await Hub(Guid.NewGuid().ToString()).JoinClientGroup(_hiddenClientId.ToString());
+
+        await _groups.DidNotReceiveWithAnyArgs().AddToGroupAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task JoinClientGroup_OfAVisibleClient_Joins()
+    {
+        await Hub(Guid.NewGuid().ToString()).JoinClientGroup(_visibleClientId.ToString());
+
+        await _groups.Received(1).AddToGroupAsync(
+            ConnectionId, WorkNotificationHub.GetClientGroupName(_visibleClientId.ToString()), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task JoinClientGroups_JoinsOnlyTheVisibleClients()
+    {
+        await Hub(Guid.NewGuid().ToString()).JoinClientGroups([_visibleClientId.ToString(), _hiddenClientId.ToString()]);
+
+        await _groups.Received(1).AddToGroupAsync(
+            ConnectionId, WorkNotificationHub.GetClientGroupName(_visibleClientId.ToString()), Arg.Any<CancellationToken>());
+        await _groups.DidNotReceive().AddToGroupAsync(
+            ConnectionId, WorkNotificationHub.GetClientGroupName(_hiddenClientId.ToString()), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task JoinClientGroup_WithoutUserIdClaim_IsRefused()
+    {
+        await Hub(null).JoinClientGroup(_visibleClientId.ToString());
+
+        await _groups.DidNotReceiveWithAnyArgs().AddToGroupAsync(default!, default!, default);
     }
 }

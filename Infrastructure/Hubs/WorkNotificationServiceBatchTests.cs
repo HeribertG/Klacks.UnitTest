@@ -167,7 +167,7 @@ public sealed class WorkNotificationServiceBatchTests
     }
 
     private static ScheduleConnectionSnapshot Snapshot(string connectionId, Guid? selectedGroupId)
-        => new(connectionId, AnyDate, AnyDate, null, selectedGroupId);
+        => new(connectionId, AnyDate, AnyDate, null, selectedGroupId, ConnectionVisibility.Unrestricted);
 
     private static CollisionListNotificationDto FullRefresh()
         => new()

@@ -91,7 +91,7 @@ public sealed class WorkNotificationServiceBulkTests
     }
 
     private static ScheduleConnectionSnapshot Snapshot(string connectionId)
-        => new(connectionId, RangeStart, RangeEnd, null, null);
+        => new(connectionId, RangeStart, RangeEnd, null, null, ConnectionVisibility.Unrestricted);
 
     private static WorksBulkCreatedNotificationDto Batch(int workCount)
     {
