@@ -51,6 +51,21 @@ public class ScheduleCommandVisibilityTests
     }
 
     [Test]
+    public async Task List_ReturnsOnlyTheMainPlan_NoScenarioRows()
+    {
+        var main = NewCommand(_visibleClientId);
+        var scenarioRow = NewCommand(_visibleClientId);
+        scenarioRow.AnalyseToken = Guid.NewGuid();
+        _repository.List().Returns(new List<ScheduleCommand> { main, scenarioRow });
+        var handler = new ListQueryHandler(
+            _repository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<ListQueryHandler>>());
+
+        var result = (await handler.Handle(new ListQuery<ScheduleCommandResource>(), CancellationToken.None)).ToList();
+
+        result.Select(r => r.Id).ShouldBe(new[] { main.Id });
+    }
+
+    [Test]
     public async Task List_LeavesOutCommandsOfHiddenClients()
     {
         var visible = NewCommand(_visibleClientId);

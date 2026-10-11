@@ -66,6 +66,21 @@ public class BreakVisibilityTests
     }
 
     [Test]
+    public async Task List_ReturnsOnlyTheMainPlan_NoScenarioRows()
+    {
+        var main = NewBreak(_visibleClientId);
+        var scenarioRow = NewBreak(_visibleClientId);
+        scenarioRow.AnalyseToken = Guid.NewGuid();
+        _breakRepository.List().Returns(new List<Break> { main, scenarioRow });
+        var handler = new ListQueryHandler(
+            _breakRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<ListQueryHandler>>());
+
+        var result = (await handler.Handle(new ListQuery<BreakResource>(), CancellationToken.None)).ToList();
+
+        result.Select(r => r.Id).ShouldBe(new[] { main.Id });
+    }
+
+    [Test]
     public async Task List_LeavesOutBreaksOfHiddenClients()
     {
         var visible = NewBreak(_visibleClientId);

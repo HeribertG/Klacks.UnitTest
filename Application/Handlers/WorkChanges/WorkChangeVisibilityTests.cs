@@ -62,6 +62,26 @@ public class WorkChangeVisibilityTests
     }
 
     [Test]
+    public async Task List_ReturnsOnlyTheMainPlan_NoScenarioRows()
+    {
+        var mainWork = NewWork(_visibleClientId);
+        var scenarioWork = NewWork(_visibleClientId);
+        scenarioWork.AnalyseToken = Guid.NewGuid();
+        var main = NewChange(mainWork.Id);
+        var scenarioRow = NewChange(scenarioWork.Id);
+        scenarioRow.AnalyseToken = scenarioWork.AnalyseToken;
+        _workChangeRepository.List().Returns(new List<WorkChange> { main, scenarioRow });
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work> { mainWork, scenarioWork });
+        var handler = new ListQueryHandler(
+            _workChangeRepository, _workRepository, _clientVisibilityGuard, new ScheduleMapper(),
+            Substitute.For<ILogger<ListQueryHandler>>());
+
+        var result = (await handler.Handle(new ListQuery<WorkChangeResource>(), CancellationToken.None)).ToList();
+
+        result.Select(r => r.Id).ShouldBe(new[] { main.Id });
+    }
+
+    [Test]
     public async Task List_LeavesOutChangesOnWorksOfHiddenClients()
     {
         var visibleWork = NewWork(_visibleClientId);

@@ -47,6 +47,21 @@ public class ScheduleNoteVisibilityTests
     }
 
     [Test]
+    public async Task List_ReturnsOnlyTheMainPlan_NoScenarioRows()
+    {
+        var main = NewNote(_visibleClientId);
+        var scenarioRow = NewNote(_visibleClientId);
+        scenarioRow.AnalyseToken = Guid.NewGuid();
+        _repository.List().Returns(new List<ScheduleNote> { main, scenarioRow });
+        var handler = new ListQueryHandler(
+            _repository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<ILogger<ListQueryHandler>>());
+
+        var result = (await handler.Handle(new ListQuery<ScheduleNoteResource>(), CancellationToken.None)).ToList();
+
+        result.Select(r => r.Id).ShouldBe(new[] { main.Id });
+    }
+
+    [Test]
     public async Task List_LeavesOutNotesOfHiddenClients()
     {
         var visible = NewNote(_visibleClientId);
