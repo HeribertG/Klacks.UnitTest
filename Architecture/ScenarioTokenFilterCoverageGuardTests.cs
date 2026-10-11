@@ -12,10 +12,12 @@
 /// 1. the filter is registered globally in Program.cs;
 /// 2. no action parameter and no property reachable from one is a Guid whose name mentions a token but is not the
 ///    convention name (rename it, or extend the scanner);
-/// 3. every token property reachable from an action parameter lies within MaxDepth, and the scanner sees that type.
+/// 3. every token property reachable from an action parameter lies within MaxDepth, and the scanner sees that type;
+/// 4. no string-typed action parameter or reachable property mentions a token, apart from the listed authentication
+///    and OAuth members (NonScenarioStringTokens) - a scenario token bound as string would bypass the filter.
 ///
-/// Not covered: controllers outside the Klacks.Api assembly (plugins), tokens hidden in dictionaries, strings or
-/// headers, and minimal-API endpoints (none carry a scenario token today).
+/// Not covered: controllers outside the Klacks.Api assembly (plugins), tokens hidden in dictionaries or headers, and
+/// minimal-API endpoints (none carry a scenario token today).
 /// </summary>
 
 using System.Reflection;
@@ -40,6 +42,30 @@ public class ScenarioTokenFilterCoverageGuardTests
     /// employee import (preview/commit of the same file), it never selects a scenario.
     /// </summary>
     private static readonly HashSet<string> NonScenarioTokens = ["ClientImportRequest.Token"];
+
+    /// <summary>
+    /// String-typed members whose name mentions a token but that never select a scenario, keyed as
+    /// "Type.Property" or "Controller.Action(parameter)". All of them are authentication material or OAuth metadata:
+    /// - PasswordResetController.ResetPassword(token), ClientResource.PasswortResetToken, AppUser.PasswordResetToken,
+    ///   ResetPasswordResource.Token, ValidatePasswordResetTokenResource.Token, ChangePasswordResource.Token: Identity
+    ///   password-reset tokens;
+    /// - RefreshRequestResource.Token / .RefreshToken: the JWT and refresh token of the session refresh;
+    /// - IdentityProviderResource.TokenUrl, OAuthClientRegistrationRequest.TokenEndpointAuthMethod: OAuth endpoint URL and
+    ///   client-authentication method (configuration text, not a token value).
+    /// </summary>
+    private static readonly HashSet<string> NonScenarioStringTokens =
+    [
+        "PasswordResetController.ResetPassword(token)",
+        "ClientResource.PasswortResetToken",
+        "AppUser.PasswordResetToken",
+        "ResetPasswordResource.Token",
+        "ValidatePasswordResetTokenResource.Token",
+        "ChangePasswordResource.Token",
+        "RefreshRequestResource.Token",
+        "RefreshRequestResource.RefreshToken",
+        "IdentityProviderResource.TokenUrl",
+        "OAuthClientRegistrationRequest.TokenEndpointAuthMethod"
+    ];
 
     [Test]
     public void TheFilterIsRegisteredGlobally()
@@ -73,6 +99,29 @@ public class ScenarioTokenFilterCoverageGuardTests
     }
 
     [Test]
+    public void NoStringTokenReachableFromAnActionEscapesTheFilter()
+    {
+        var offenders = new List<string>();
+
+        foreach (var (action, parameter) in ActionParameters())
+        {
+            var where = $"{action.DeclaringType!.Name}.{action.Name}({parameter.Name})";
+            if (parameter.ParameterType == typeof(string)
+                && parameter.Name!.Contains(TokenNameFragment, StringComparison.OrdinalIgnoreCase)
+                && !NonScenarioStringTokens.Contains($"{action.DeclaringType!.Name}.{action.Name}({parameter.Name})"))
+            {
+                offenders.Add($"{where}: string parameter '{parameter.Name}'");
+            }
+
+            offenders.AddRange(StringTokenProperties(parameter.ParameterType).Select(p => $"{where}: string property {p}"));
+        }
+
+        offenders.Distinct().ShouldBeEmpty(
+            "String tokens the filter cannot see (it only reads Guid analyseToken). Bind a scenario token as Guid named "
+            + "'analyseToken'/'AnalyseToken'; list a string that is not a scenario token in NonScenarioStringTokens with the reason.");
+    }
+
+    [Test]
     public void EveryTokenPropertyReachableFromAnActionLiesWithinTheScannerDepth()
     {
         var carrying = ActionParameters()
@@ -103,6 +152,13 @@ public class ScenarioTokenFilterCoverageGuardTests
             .SelectMany(m => m.GetParameters().Select(p => (m, p)));
 
     private static bool IsGuid(Type type) => type == typeof(Guid) || type == typeof(Guid?);
+
+    private static IEnumerable<string> StringTokenProperties(Type root) =>
+        GraphProperties(root)
+            .Where(p => p.PropertyType == typeof(string)
+                && p.Name.Contains(TokenNameFragment, StringComparison.OrdinalIgnoreCase))
+            .Select(p => $"{p.DeclaringType!.Name}.{p.Name}")
+            .Where(name => !NonScenarioStringTokens.Contains(name));
 
     private static bool HasTokenPropertyInGraph(Type root) =>
         GraphProperties(root).Any(p => p.Name == ScenarioTokenArgumentScanner.TokenName && IsGuid(p.PropertyType));
