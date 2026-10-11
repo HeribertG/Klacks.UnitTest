@@ -130,6 +130,18 @@ public class TurnPreparationPendingConfirmationForceTests
     }
 
     [Test]
+    public void ResolvePendingConfirmation_StaleScenarioOverwriteToken_IsResurfacedLikeAGateReplay()
+    {
+        SetPending(PendingConfirmationPurposes.StaleScenarioOverwrite);
+
+        var (force, confirmFunction, note) = _service.ResolvePendingConfirmation(Context("ja"));
+
+        Assert.That(force, Is.True);
+        Assert.That(confirmFunction!.Name, Is.EqualTo(AutonomyDefaults.ConfirmPendingActionSkillName));
+        Assert.That(note, Does.Contain(PendingToken));
+    }
+
+    [Test]
     public void ResolvePendingConfirmation_NoPendingRow_DoesNotForce()
     {
         _confirmationStore

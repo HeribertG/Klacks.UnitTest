@@ -157,6 +157,53 @@ public class AcceptAnalyseScenarioStaleGateTests
     }
 
     [Test]
+    public async Task OverrideWithTheAcknowledgedStaleness_IsAccepted()
+    {
+        SetStale(changedEntries: 3);
+
+        var result = await _handler.Handle(
+            new AcceptAnalyseScenarioCommand(
+                _scenario.Id,
+                OverrideStale: true,
+                AcknowledgedStaleness: new StaleScenarioOverwriteAcknowledgement(3, LastChange)),
+            CancellationToken.None);
+
+        result.ShouldBeTrue();
+        _scenario.Status.ShouldBe(AnalyseScenarioStatus.Accepted);
+    }
+
+    [Test]
+    public async Task OverrideAcknowledgingFewerChangesThanNow_IsRefusedAsStaleAgain()
+    {
+        SetStale(changedEntries: 5);
+
+        var ex = await Should.ThrowAsync<ScenarioStaleException>(() => _handler.Handle(
+            new AcceptAnalyseScenarioCommand(
+                _scenario.Id,
+                OverrideStale: true,
+                AcknowledgedStaleness: new StaleScenarioOverwriteAcknowledgement(3, LastChange)),
+            CancellationToken.None));
+
+        ex.Staleness.ChangedEntryCount.ShouldBe(5);
+        await AssertNothingMutatedAsync();
+    }
+
+    [Test]
+    public async Task OverrideAcknowledgingAnOlderLastChange_IsRefusedAsStaleAgain()
+    {
+        SetStale(changedEntries: 3);
+
+        await Should.ThrowAsync<ScenarioStaleException>(() => _handler.Handle(
+            new AcceptAnalyseScenarioCommand(
+                _scenario.Id,
+                OverrideStale: true,
+                AcknowledgedStaleness: new StaleScenarioOverwriteAcknowledgement(3, LastChange.AddMinutes(-5))),
+            CancellationToken.None));
+
+        await AssertNothingMutatedAsync();
+    }
+
+    [Test]
     public async Task UnchangedOriginal_IsAcceptedWithoutAnyOverride()
     {
         var result = await _handler.Handle(new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
