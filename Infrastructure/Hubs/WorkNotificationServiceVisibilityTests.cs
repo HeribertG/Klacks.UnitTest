@@ -149,6 +149,40 @@ public sealed class WorkNotificationServiceVisibilityTests
             Entries = [new ScheduleValidationNotificationDto { ClientId = ForeignClient, Date = AnyDate }]
         });
 
+        await restrictedClient.DidNotReceive().ScheduleValidationsDetected(Arg.Any<ScheduleValidationListNotificationDto>());
+    }
+
+    [Test]
+    public async Task SingleDayCollisions_OfAForeignClient_AreNotSentToTheRestrictedConnection()
+    {
+        var restrictedClient = Substitute.For<IScheduleClient>();
+        _clients.Clients(Arg.Is<IReadOnlyList<string>>(ids => ids.Contains(RestrictedConnection))).Returns(restrictedClient);
+
+        await _sut.NotifyCollisionsDetected(new CollisionListNotificationDto
+        {
+            IsFullRefresh = false,
+            CheckedClientId = ForeignClient,
+            CheckedDate = AnyDate,
+            Collisions = [new CollisionNotificationDto { ClientId = ForeignClient, Date = AnyDate }]
+        });
+
+        await restrictedClient.DidNotReceive().CollisionsDetected(Arg.Any<CollisionListNotificationDto>());
+    }
+
+    [Test]
+    public async Task SingleDayValidations_OfTheOwnCheckedClientWithoutEntries_StillReachTheRestrictedConnection()
+    {
+        var restrictedClient = Substitute.For<IScheduleClient>();
+        _clients.Clients(Arg.Is<IReadOnlyList<string>>(ids => ids.Contains(RestrictedConnection))).Returns(restrictedClient);
+
+        await _sut.NotifyScheduleValidationsDetected(new ScheduleValidationListNotificationDto
+        {
+            IsFullRefresh = false,
+            CheckedClientId = OwnClient,
+            CheckedDate = AnyDate,
+            Entries = []
+        });
+
         await restrictedClient.Received(1).ScheduleValidationsDetected(Arg.Is<ScheduleValidationListNotificationDto>(
             dto => dto.Entries.Count == 0));
     }
