@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.RouteOptimization;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -61,7 +62,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             _userService,
             _containerAutofillService,
             _settingsReader,
-            _encryptionService);
+            _encryptionService,
+            GeoServicesPolicyTestFactory.Default());
 
         _userService.GetInstanceId().Returns("instance-1");
 
@@ -235,6 +237,28 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
         await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(
             Arg.Any<Func<Task<BundleNearbyTimeRangeShiftsIntoContainerSkill.BundleOutcome>>>());
+    }
+
+    [Test]
+    public async Task ReturnsError_WithoutReadingTheKey_WhenOpenRouteServiceIsDisabledAndTransportModeIsNotCar()
+    {
+        var skill = new BundleNearbyTimeRangeShiftsIntoContainerSkill(
+            _shiftRepository,
+            _groupRepository,
+            _mediator,
+            _unitOfWork,
+            _userService,
+            _containerAutofillService,
+            _settingsReader,
+            _encryptionService,
+            GeoServicesPolicyTestFactory.NoOutbound());
+
+        var result = await skill.ExecuteAsync(Ctx(), Params("bicycle"));
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldContain(Klacks.Api.Application.Constants.GeoServiceMessages.OpenRouteServiceDisabled);
+        await _settingsReader.DidNotReceive().GetSetting(Klacks.Api.Application.Constants.Settings.OPENROUTESERVICE_API_KEY);
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
     }
 
     [Test]

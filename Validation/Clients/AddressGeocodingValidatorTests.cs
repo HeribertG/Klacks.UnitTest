@@ -113,6 +113,27 @@ public class AddressGeocodingValidatorTests
     }
 
     [Test]
+    public async Task GeocoderDisabled_DoesNotBlockTheSave()
+    {
+        _geocoding.ValidateExactAddressAsync(Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new GeocodingValidationResult { Found = false, Disabled = true, MatchType = "geocoding_disabled" });
+
+        var address = new AddressResource
+        {
+            Id = Guid.Empty,
+            Street = "Bahnhofstrasse 1",
+            Zip = "8001",
+            City = "Zürich",
+            Country = "CH"
+        };
+
+        var result = await _validator.ValidateAsync(new List<AddressResource> { address });
+
+        Assert.That(result.IsValid, Is.True);
+        Assert.That(address.Latitude, Is.Null);
+    }
+
+    [Test]
     public async Task GeocoderUnavailable_DoesNotBlockTheSave()
     {
         _geocoding.ValidateExactAddressAsync(Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())

@@ -3,13 +3,16 @@
 /// <summary>
 /// Background geocoding of imported addresses: the worker drains every queued id through a scoped
 /// processor and survives a failing item; the processor fills coordinates (and an empty state) only on
-/// an exact hit and leaves the address unchanged otherwise; the disabled queue accepts nothing.
+/// an exact hit and leaves the address unchanged otherwise; the disabled queue accepts nothing and is registered
+/// whenever geocoding is effectively off (also for an unreadable GeoServices section).
 /// </summary>
 
 using Klacks.Api.Application.Services.Geocoding;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Services.Common;
+using Klacks.Api.Infrastructure.Extensions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -58,6 +61,27 @@ public class AddressGeocodingBackgroundServiceTests
     public void AddressGeocodingFlag_IsOnByDefault()
     {
         new Klacks.Api.Application.Configuration.BackgroundServiceOptions().AddressGeocoding.ShouldBeTrue();
+    }
+
+    [TestCase(null, false)]
+    [TestCase("false", false)]
+    [TestCase("true", true)]
+    [TestCase("ture", true)]
+    public void Registration_GeocodingEffectivelyOff_RegistersTheDisabledQueue(string? noOutboundTraffic, bool expectDisabledQueue)
+    {
+        var settings = new Dictionary<string, string?>();
+        if (noOutboundTraffic != null)
+        {
+            settings["GeoServices:NoOutboundTraffic"] = noOutboundTraffic;
+        }
+
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var services = new ServiceCollection();
+
+        services.AddClientImportServices(configuration);
+
+        var queue = services.Single(d => d.ServiceType == typeof(IAddressGeocodingQueue));
+        (queue.ImplementationType == typeof(DisabledAddressGeocodingQueue)).ShouldBe(expectDisabledQueue);
     }
 
     [Test]
@@ -115,6 +139,17 @@ public class AddressGeocodingBackgroundServiceTests
     public async Task Processor_ServiceUnavailable_LeavesTheAddressUnchanged()
     {
         var (processor, address, _, unitOfWork) = Processor(new GeocodingValidationResult { ServiceUnavailable = true });
+
+        await processor.ProcessAsync(address.Id, CancellationToken.None);
+
+        address.Latitude.ShouldBeNull();
+        await unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Processor_GeocodingDisabled_LeavesTheAddressUnchanged()
+    {
+        var (processor, address, _, unitOfWork) = Processor(new GeocodingValidationResult { Disabled = true });
 
         await processor.ProcessAsync(address.Id, CancellationToken.None);
 

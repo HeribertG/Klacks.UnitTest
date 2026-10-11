@@ -8,6 +8,7 @@
 using System.Net;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.RouteOptimization;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Services.RouteOptimization;
@@ -38,7 +39,7 @@ public class RouteDirectionsBuilderTests
         _handler = new StubHandler();
         _httpClientFactory = Substitute.For<IHttpClientFactory>();
         _httpClientFactory.CreateClient(ExternalHttpClientConstants.RoutingClientName).Returns(new HttpClient(_handler));
-        _builder = new RouteDirectionsBuilder(Substitute.For<ILogger<RouteDirectionsBuilder>>(), _httpClientFactory);
+        _builder = new RouteDirectionsBuilder(Substitute.For<ILogger<RouteDirectionsBuilder>>(), _httpClientFactory, GeoServicesPolicyTestFactory.Default());
     }
 
     [TearDown]
@@ -59,7 +60,7 @@ public class RouteDirectionsBuilderTests
 
         // Assert
         _httpClientFactory.Received(1).CreateClient(ExternalHttpClientConstants.RoutingClientName);
-        _handler.LastRequestUri!.AbsoluteUri.ShouldStartWith(RoutingServiceUrls.OsrmBaseUrl);
+        _handler.LastRequestUri!.AbsoluteUri.ShouldStartWith(GeoServiceDefaults.OsrmBaseUrl);
         result.Count.ShouldBe(1);
         result[0].DistanceKm.ShouldBe(2.47, 0.0001);
         result[0].Steps.Count.ShouldBe(2);
@@ -79,6 +80,24 @@ public class RouteDirectionsBuilderTests
         result.Count.ShouldBe(1);
         result[0].Steps.ShouldBeEmpty();
         result[0].DistanceKm.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task GetRouteDirectionsAsync_RoutingDisabled_ReturnsEmptySegmentWithoutAnyRequest()
+    {
+        // Arrange
+        var builder = new RouteDirectionsBuilder(
+            Substitute.For<ILogger<RouteDirectionsBuilder>>(), _httpClientFactory, GeoServicesPolicyTestFactory.NoOutbound());
+        var matrix = new DistanceMatrix(Route, new double[2, 2], new double[2, 2]);
+
+        // Act
+        var result = await builder.GetRouteDirectionsAsync(Route, matrix, ContainerTransportMode.ByCar);
+
+        // Assert
+        result.Count.ShouldBe(1);
+        result[0].Steps.ShouldBeEmpty();
+        result[0].FromName.ShouldBe("A");
+        _handler.LastRequestUri.ShouldBeNull();
     }
 
     private sealed class StubHandler : HttpMessageHandler

@@ -3,7 +3,7 @@
 /// <summary>
 /// Unit tests for GroupLocationResolver: a confident place is geocoded and persisted; a non-place, a
 /// low-confidence verdict, a failed geocode, an already-located group and a missing group all leave the
-/// group untouched (no write). The conservative gate matters because a wrong coordinate would feed a
+/// group untouched (no write). Switched-off geocoding returns GeocodingDisabled before the classifier and marks nothing. The conservative gate matters because a wrong coordinate would feed a
 /// wrong customer assignment downstream.
 /// </summary>
 
@@ -29,6 +29,7 @@ public class GroupLocationResolverTests
         _groupRepository = Substitute.For<IGroupRepository>();
         _classifier = Substitute.For<IGroupPlaceClassifier>();
         _geocoder = Substitute.For<IGroupGeocoder>();
+        _geocoder.IsEnabled.Returns(true);
         _resolver = new GroupLocationResolver(_groupRepository, _classifier, _geocoder);
         _groupRepository.GetPath(GroupId).Returns(new List<Group>());
         _groupRepository.SetCoordinatesAsync(Arg.Any<Guid>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
@@ -145,6 +146,43 @@ public class GroupLocationResolverTests
         result.Outcome.ShouldBe(GroupLocationResolveOutcome.AlreadySet);
         await _classifier.DidNotReceive().ClassifyAsync(
             Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Resolve_GeocodingDisabled_ReturnsDisabledWithoutClassifyingOrMarking()
+    {
+        HaveGroup("Biel/Bienne");
+        _geocoder.IsEnabled.Returns(false);
+
+        var result = await _resolver.ResolveAsync(GroupId);
+
+        result.Outcome.ShouldBe(GroupLocationResolveOutcome.GeocodingDisabled);
+        await _classifier.DidNotReceive().ClassifyAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+        await _geocoder.DidNotReceive().GeocodeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _groupRepository.DidNotReceive().MarkGeocodingAttemptedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Resolve_GeocodingDisabled_AlreadySetStillWins()
+    {
+        HaveGroup("Zürich", 47.37, 8.54);
+        _geocoder.IsEnabled.Returns(false);
+
+        var result = await _resolver.ResolveAsync(GroupId);
+
+        result.Outcome.ShouldBe(GroupLocationResolveOutcome.AlreadySet);
+    }
+
+    [Test]
+    public async Task Resolve_GeocodingDisabled_NotFoundStillWins()
+    {
+        _groupRepository.Get(GroupId).Returns((Group?)null);
+        _geocoder.IsEnabled.Returns(false);
+
+        var result = await _resolver.ResolveAsync(GroupId);
+
+        result.Outcome.ShouldBe(GroupLocationResolveOutcome.NotFound);
     }
 
     [Test]

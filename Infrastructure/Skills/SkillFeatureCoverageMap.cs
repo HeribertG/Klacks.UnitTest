@@ -109,6 +109,8 @@ public static class SkillFeatureCoverageMap
         ["PeriodClosingController"] = Covered("close_period", "reopen_period", "approve_day", "revoke_day_approval", "generate_period_summary"),
 
         ["ReportExportController"] = Excluded("technical endpoint: turns rows the frontend already resolved into a spreadsheet, so the assistant has nothing to pass it"),
+        ["GeocodingController"] = Excluded("technical endpoint: server-side proxy for the map's free-text place search so the browser never calls the geocoder directly; returns raw coordinates for the map, nothing the assistant could act on (address validation is covered by validate_address)"),
+        ["GeoServicesConfigController"] = Excluded("read-only installation snapshot of which geo services (geocoding, routing, map tiles) the operator enabled via environment variables, consumed by map views and the admin status card; nothing to change from chat"),
         ["RoutingController"] = Excluded("technical endpoint: server-side proxy that keeps the OpenRouteService API key off the browser and returns raw map geometry, nothing the assistant could act on"),
         ["ReportTemplatesController"] = Covered("list_report_templates"),
         ["ScheduleReportController"] = Covered("email_schedule_to_client"),

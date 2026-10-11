@@ -6,7 +6,9 @@
 /// never leak internal skill names into the text.
 /// </summary>
 
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Grouping;
+using Klacks.Api.Application.Interfaces.Grouping;
 using Klacks.Api.Application.Queries.Grouping;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
@@ -17,11 +19,14 @@ namespace Klacks.UnitTest.Skills;
 public class CheckGroupGeocodingStatusSkillTests
 {
     private IMediator _mediator = null!;
+    private IGroupGeocoder _geocoder = null!;
 
     [SetUp]
     public void Setup()
     {
         _mediator = Substitute.For<IMediator>();
+        _geocoder = Substitute.For<IGroupGeocoder>();
+        _geocoder.IsEnabled.Returns(true);
     }
 
     [Test]
@@ -30,7 +35,7 @@ public class CheckGroupGeocodingStatusSkillTests
         _mediator.Send(Arg.Any<GetGroupGeocodingStatusQuery>(), Arg.Any<CancellationToken>())
             .Returns(new GroupGeocodingStatus(65, 4, 10, 51));
 
-        var result = await new CheckGroupGeocodingStatusSkill(_mediator).ExecuteAsync(Ctx(), NoParameters());
+        var result = await new CheckGroupGeocodingStatusSkill(_mediator, _geocoder).ExecuteAsync(Ctx(), NoParameters());
 
         result.Success.ShouldBeTrue();
         result.Message.ShouldContain("4 of 65");
@@ -43,7 +48,7 @@ public class CheckGroupGeocodingStatusSkillTests
         _mediator.Send(Arg.Any<GetGroupGeocodingStatusQuery>(), Arg.Any<CancellationToken>())
             .Returns(new GroupGeocodingStatus(65, 60, 5, 0));
 
-        var result = await new CheckGroupGeocodingStatusSkill(_mediator).ExecuteAsync(Ctx(), NoParameters());
+        var result = await new CheckGroupGeocodingStatusSkill(_mediator, _geocoder).ExecuteAsync(Ctx(), NoParameters());
 
         result.Message.ShouldContain("None are still pending.");
     }
@@ -54,10 +59,23 @@ public class CheckGroupGeocodingStatusSkillTests
         _mediator.Send(Arg.Any<GetGroupGeocodingStatusQuery>(), Arg.Any<CancellationToken>())
             .Returns(new GroupGeocodingStatus(65, 4, 10, 51));
 
-        var result = await new CheckGroupGeocodingStatusSkill(_mediator).ExecuteAsync(Ctx(), NoParameters());
+        var result = await new CheckGroupGeocodingStatusSkill(_mediator, _geocoder).ExecuteAsync(Ctx(), NoParameters());
 
         result.Message.ShouldNotContain("geocode_location_groups");
         result.Message.ShouldNotContain("check_group_geocoding_status");
+    }
+
+    [Test]
+    public async Task Execute_GeocodingDisabled_SaysSoInsteadOfSuggestingARerun()
+    {
+        _geocoder.IsEnabled.Returns(false);
+        _mediator.Send(Arg.Any<GetGroupGeocodingStatusQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new GroupGeocodingStatus(65, 4, 10, 51));
+
+        var result = await new CheckGroupGeocodingStatusSkill(_mediator, _geocoder).ExecuteAsync(Ctx(), NoParameters());
+
+        result.Message!.ShouldContain(GeoServiceMessages.GroupGeocodingDisabled);
+        result.Message!.ShouldNotContain("re-run");
     }
 
     private static Dictionary<string, object> NoParameters() => new();

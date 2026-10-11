@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Tests for TravelTimeCalculationService: API key validation, coordinate resolution, and Haversine fallback.
@@ -9,6 +9,7 @@ using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.Api.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Memory;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using AppSettings = Klacks.Api.Application.Constants.Settings;
@@ -44,6 +45,7 @@ public class TravelTimeCalculationServiceTests
             _geocodingService,
             _cache,
             _httpClientFactory,
+            GeoServicesPolicyTestFactory.Default(),
             _logger);
     }
 

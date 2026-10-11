@@ -4,13 +4,15 @@
 /// Tests for GroupGeocodingBackgroundService: on startup it resumes every group that was queued but
 /// never actually resolved (e.g. lost by a restart while the in-memory channel still had items) by
 /// reading them from IGroupRepository and running them through the same resolver as a manual Queue()
-/// call — a real restart-resilience regression would show up as the resolver never being invoked.
+/// call — a real restart-resilience regression would show up as the resolver never being invoked. With geocoding
+/// switched off nothing is resumed and nothing is queued.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Grouping;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Interfaces.Grouping;
 using Klacks.Api.Infrastructure.Services;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -20,6 +22,7 @@ namespace Klacks.UnitTest.Infrastructure.Services;
 public class GroupGeocodingBackgroundServiceTests
 {
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DisabledObservationWindow = TimeSpan.FromMilliseconds(300);
 
     private IGroupRepository _groupRepository = null!;
     private IGroupLocationResolver _resolver = null!;
@@ -41,7 +44,7 @@ public class GroupGeocodingBackgroundServiceTests
         _serviceProvider = services.BuildServiceProvider();
 
         _sut = new GroupGeocodingBackgroundService(
-            _serviceProvider, NullLogger<GroupGeocodingBackgroundService>.Instance);
+            _serviceProvider, GeoServicesPolicyTestFactory.Default(), NullLogger<GroupGeocodingBackgroundService>.Instance);
     }
 
     [TearDown]
@@ -76,6 +79,25 @@ public class GroupGeocodingBackgroundServiceTests
         await WaitForSignalAsync();
 
         await _resolver.Received(1).ResolveAsync(manuallyQueuedId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Start_GeocodingDisabled_DoesNotResumeAndIgnoresManualQueue()
+    {
+        var lostGroupId = Guid.NewGuid();
+        _groupRepository.GetUnattemptedGeocodingCandidateIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new[] { lostGroupId });
+        await _sut.StopAsync(CancellationToken.None);
+        _sut.Dispose();
+        _sut = new GroupGeocodingBackgroundService(
+            _serviceProvider, GeoServicesPolicyTestFactory.NoOutbound(), NullLogger<GroupGeocodingBackgroundService>.Instance);
+
+        await _sut.StartAsync(CancellationToken.None);
+        _sut.Queue(Guid.NewGuid());
+        await Task.Delay(DisabledObservationWindow);
+
+        await _groupRepository.DidNotReceive().GetUnattemptedGeocodingCandidateIdsAsync(Arg.Any<CancellationToken>());
+        await _resolver.DidNotReceive().ResolveAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     private TaskCompletionSource _resolved = null!;

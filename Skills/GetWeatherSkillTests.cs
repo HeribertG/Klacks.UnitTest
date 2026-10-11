@@ -2,10 +2,12 @@
 
 /// <summary>
 /// Unit tests for the get_weather skill: explicit-coordinate, city-geocoding and company-fallback
-/// location paths, plus error handling when geocoding, the company location or Open-Meteo fail.
+/// location paths, plus error handling when geocoding, the company location or Open-Meteo fail, and the
+/// operator-disabled geocoder (reported as disabled, never as "location not found").
 /// </summary>
 
 using System.Text.Json;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
@@ -27,6 +29,7 @@ public class GetWeatherSkillTests
     {
         _weatherClient = Substitute.For<IOpenMeteoClient>();
         _geocodingService = Substitute.For<IGeocodingService>();
+        _geocodingService.IsEnabled.Returns(true);
         _companyLocationProvider = Substitute.For<ICompanyLocationProvider>();
         _skill = new GetWeatherSkill(_weatherClient, _geocodingService, _companyLocationProvider);
     }
@@ -112,6 +115,45 @@ public class GetWeatherSkillTests
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("Nowhere");
         await _weatherClient.DidNotReceiveWithAnyArgs().GetCurrentWeatherAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_WithCity_GeocodingDisabled_ReturnsDisabledWithoutGeocoding()
+    {
+        _geocodingService.IsEnabled.Returns(false);
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["city"] = "Bern" });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(GeoServiceMessages.GeocodingDisabled);
+        await _geocodingService.DidNotReceiveWithAnyArgs().GeocodeAsync(default!, default!, default);
+        await _weatherClient.DidNotReceiveWithAnyArgs().GetCurrentWeatherAsync(default, default, default, default);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_NoLocation_GeocodingDisabledAndNoCompanyLocation_ReturnsDisabled()
+    {
+        _geocodingService.IsEnabled.Returns(false);
+        (double Latitude, double Longitude)? company = null;
+        _companyLocationProvider.GetCompanyLocationAsync(Arg.Any<CancellationToken>()).Returns(company);
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(GeoServiceMessages.GeocodingDisabled);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ExplicitCoordinates_GeocodingDisabled_StillReturnsWeather()
+    {
+        _geocodingService.IsEnabled.Returns(false);
+        _weatherClient.GetCurrentWeatherAsync(46.9, 7.4, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(SampleSnapshot());
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["latitude"] = 46.9, ["longitude"] = 7.4 });
+
+        result.Success.ShouldBeTrue();
     }
 
     [Test]

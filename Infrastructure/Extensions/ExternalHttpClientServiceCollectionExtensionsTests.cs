@@ -6,6 +6,7 @@
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Models.Settings.GeoServices;
 using Klacks.Api.Infrastructure.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -29,6 +30,26 @@ public class ExternalHttpClientServiceCollectionExtensionsTests
 
         // Assert
         client.DefaultRequestHeaders.UserAgent.ToString().ShouldBe(ExternalHttpClientConstants.UserAgent);
+    }
+
+    [TestCase(ExternalHttpClientConstants.RoutingClientName, GeoServiceDefaults.OsrmBaseUrl)]
+    [TestCase(ExternalHttpClientConstants.RoutingClientName, GeoServiceDefaults.OpenRouteServiceBaseUrl)]
+    [TestCase(ExternalHttpClientConstants.NominatimClientName, GeoServiceDefaults.NominatimBaseUrl)]
+    public async Task AddExternalHttpClients_NoOutboundTraffic_BlocksPublicHostsWithoutNetwork(string clientName, string url)
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.Configure<GeoServicesOptions>(options => options.NoOutboundTraffic = true);
+        services.AddExternalHttpClients();
+        using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
+        using var client = factory.CreateClient(clientName);
+
+        // Act
+        using var response = await client.GetAsync(url);
+
+        // Assert
+        response.StatusCode.ShouldBe(System.Net.HttpStatusCode.ServiceUnavailable);
     }
 
     [Test]

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
 /// Tests for GeocodingService.GetAddressSuggestionsAsync: Nominatim response parsing,
@@ -11,6 +11,7 @@ using System.Net;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Memory;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Infrastructure.Services;
@@ -39,7 +40,7 @@ public class GeocodingServiceSuggestionsTests
         _cache = new MemoryCache(new MemoryCacheOptions());
         _logger = Substitute.For<ILogger<GeocodingService>>();
 
-        _service = new GeocodingService(_httpClientFactory, _cache, _logger);
+        _service = new GeocodingService(_httpClientFactory, _cache, GeoServicesPolicyTestFactory.Default(), _logger);
     }
 
     [TearDown]

@@ -9,6 +9,7 @@ using System.Net;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Microsoft.Extensions.Caching.Memory;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using SettingsEntity = Klacks.Api.Domain.Models.Settings.Settings;
 
@@ -41,6 +42,7 @@ public class TravelTimeCalculationServiceRoutingClientTests
             Substitute.For<IGeocodingService>(),
             _cache,
             _httpClientFactory,
+            GeoServicesPolicyTestFactory.Default(),
             Substitute.For<ILogger<TravelTimeCalculationService>>());
     }
 
@@ -64,8 +66,32 @@ public class TravelTimeCalculationServiceRoutingClientTests
         // Assert
         _httpClientFactory.Received(1).CreateClient(ExternalHttpClientConstants.RoutingClientName);
         _handler.LastRequestUri!.Scheme.ShouldBe(Uri.UriSchemeHttps);
-        _handler.LastRequestUri.AbsoluteUri.ShouldStartWith(RoutingServiceUrls.OsrmRouteDrivingUrl);
+        _handler.LastRequestUri.AbsoluteUri.ShouldStartWith(GeoServiceDefaults.OsrmBaseUrl + GeoServicePaths.OsrmRouteDriving);
         result.ShouldBe(TimeSpan.FromSeconds(420));
+    }
+
+    [Test]
+    public async Task CalculateTravelTimeAsync_RoutingDisabled_UsesHaversineWithoutAnyRequest()
+    {
+        // Arrange
+        var service = new TravelTimeCalculationService(
+            Substitute.For<ISettingsRepository>(),
+            Substitute.For<ISettingsEncryptionService>(),
+            Substitute.For<IGeocodingService>(),
+            _cache,
+            _httpClientFactory,
+            GeoServicesPolicyTestFactory.NoOutbound(),
+            Substitute.For<ILogger<TravelTimeCalculationService>>());
+        var from = new Address { Latitude = 47.4990, Longitude = 8.7240 };
+        var to = new Address { Latitude = 47.5050, Longitude = 8.7400 };
+
+        // Act
+        var result = await service.CalculateTravelTimeAsync(from, to, CancellationToken.None);
+
+        // Assert
+        result.ShouldNotBeNull();
+        result!.Value.ShouldBeGreaterThan(TimeSpan.Zero);
+        _handler.LastRequestUri.ShouldBeNull();
     }
 
     private sealed class StubHandler : HttpMessageHandler

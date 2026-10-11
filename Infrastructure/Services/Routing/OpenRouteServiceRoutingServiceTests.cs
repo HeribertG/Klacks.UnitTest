@@ -11,6 +11,7 @@ using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Common;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Infrastructure.Services.Routing;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using Shouldly;
 
@@ -45,6 +46,7 @@ public class OpenRouteServiceRoutingServiceTests
             new HttpClient(_handler),
             _settingsRepository,
             _encryptionService,
+            GeoServicesPolicyTestFactory.Default(),
             Substitute.For<ILogger<OpenRouteServiceRoutingService>>());
     }
 
@@ -131,6 +133,47 @@ public class OpenRouteServiceRoutingServiceTests
         result.ShouldBeNull();
     }
 
+    [Test]
+    public async Task GetRouteAsync_OpenRouteServiceDisabled_ShouldReturnNullWithoutAnyRequest()
+    {
+        ArrangeKey();
+        var service = new OpenRouteServiceRoutingService(
+            new HttpClient(_handler),
+            _settingsRepository,
+            _encryptionService,
+            GeoServicesPolicyTestFactory.NoOutbound(),
+            Substitute.For<ILogger<OpenRouteServiceRoutingService>>());
+
+        var result = await service.GetRouteAsync(Waypoints, CancellationToken.None);
+
+        result.ShouldBeNull();
+        _handler.WasCalled.ShouldBeFalse("a disabled OpenRouteService must not be contacted at all");
+    }
+
+    [Test]
+    public async Task GetRouteAsync_OwnOpenRouteServiceInstance_ShouldCallTheConfiguredHost()
+    {
+        ArrangeKey();
+        ArrangeOrsResponse(HttpStatusCode.OK, """
+            {"features":[{"geometry":{"coordinates":[[8.5417,47.3769],[7.4474,46.9480]]}}]}
+            """);
+        var service = new OpenRouteServiceRoutingService(
+            new HttpClient(_handler),
+            _settingsRepository,
+            _encryptionService,
+            GeoServicesPolicyTestFactory.With(o =>
+            {
+                o.NoOutboundTraffic = true;
+                o.OpenRouteService.BaseUrl = "http://ors.internal:8080/ors/v2";
+            }),
+            Substitute.For<ILogger<OpenRouteServiceRoutingService>>());
+
+        var result = await service.GetRouteAsync(Waypoints, CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        _handler.LastRequestUri!.AbsoluteUri.ShouldBe("http://ors.internal:8080/ors/v2/directions/driving-car/geojson");
+    }
+
     private void ArrangeKey()
     {
         _settingsRepository.GetSetting(SettingsType).Returns(new Klacks.Api.Domain.Models.Settings.Settings
@@ -153,6 +196,8 @@ public class OpenRouteServiceRoutingServiceTests
     {
         public bool WasCalled { get; private set; }
 
+        public Uri? LastRequestUri { get; private set; }
+
         public string? SentAuthorization { get; private set; }
 
         public Func<HttpResponseMessage>? ResponseFactory { get; set; }
@@ -163,6 +208,7 @@ public class OpenRouteServiceRoutingServiceTests
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             WasCalled = true;
+            LastRequestUri = request.RequestUri;
             SentAuthorization = request.Headers.TryGetValues("Authorization", out var values)
                 ? values.FirstOrDefault()
                 : null;

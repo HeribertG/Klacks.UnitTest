@@ -185,4 +185,23 @@ public class ValidateAddressSkillTests
         result.Message!.ShouldContain("Could not validate address");
         result.Message!.ShouldNotContain("not found");
     }
+
+    [Test]
+    public async Task GeocoderDisabled_IsReportedAsNotChecked_NotAsInvalid()
+    {
+        _geocodingService.ValidateExactAddressAsync(Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new GeocodingValidationResult { Found = false, Disabled = true });
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["street"] = "Kirchstrasse 52",
+            ["zip"] = "3097",
+            ["city"] = "Liebefeld"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message!.ShouldContain("Could not validate address");
+        result.Data!.GetType().GetProperty("Error")!.GetValue(result.Data)
+            .ShouldBe(Klacks.Api.Application.Constants.GeoServiceMessages.GeocodingDisabled);
+    }
 }

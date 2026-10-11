@@ -10,6 +10,7 @@ using System.Net;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.RouteOptimization;
 using Microsoft.Extensions.Caching.Memory;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 using SettingsEntity = Klacks.Api.Domain.Models.Settings.Settings;
 
@@ -49,7 +50,8 @@ public class DistanceMatrixBuilderTests
             Substitute.For<ISettingsEncryptionService>(),
             _cache,
             Substitute.For<ILogger<DistanceMatrixBuilder>>(),
-            _httpClientFactory);
+            _httpClientFactory,
+            GeoServicesPolicyTestFactory.Default());
     }
 
     [TearDown]
@@ -80,7 +82,7 @@ public class DistanceMatrixBuilderTests
         result.DurationMatrix[0, 1].ShouldBe(144.2, 0.0001);
         result.Locations.ShouldBe(TwoLocations);
         _handler.LastRequestUri!.Scheme.ShouldBe(Uri.UriSchemeHttps);
-        _handler.LastRequestUri.AbsoluteUri.ShouldStartWith(RoutingServiceUrls.OsrmBaseUrl);
+        _handler.LastRequestUri.AbsoluteUri.ShouldStartWith(GeoServiceDefaults.OsrmBaseUrl);
     }
 
     [Test]
@@ -138,6 +140,68 @@ public class DistanceMatrixBuilderTests
 
         // Assert
         result.IsEstimated.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task BuildDistanceMatrixAsync_RoutingDisabled_UsesHaversineWithoutAnyRequest()
+    {
+        // Arrange
+        var builder = CreateBuilder(GeoServicesPolicyTestFactory.NoOutbound());
+
+        // Act
+        var result = await builder.BuildDistanceMatrixAsync(TwoLocations, ContainerTransportMode.ByCar);
+
+        // Assert
+        result.IsEstimated.ShouldBeTrue();
+        result.Matrix[0, 1].ShouldBeGreaterThan(0);
+        _handler.LastRequestUri.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task BuildDistanceMatrixAsync_MixModeRoutingDisabled_EstimatesEveryProfileWithoutAnyRequest()
+    {
+        // Arrange
+        var builder = CreateBuilder(GeoServicesPolicyTestFactory.NoOutbound());
+
+        // Act
+        var result = await builder.BuildDistanceMatrixAsync(TwoLocations, ContainerTransportMode.Mix);
+
+        // Assert
+        result.IsEstimated.ShouldBeTrue();
+        result.DurationMatricesByProfile!.Count.ShouldBe(3);
+        _handler.LastRequestUri.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task BuildDistanceMatrixAsync_OwnOsrmInstance_CallsTheConfiguredHost()
+    {
+        // Arrange
+        _handler.Respond(HttpStatusCode.OK, OsrmTableJson);
+        var builder = CreateBuilder(GeoServicesPolicyTestFactory.With(o =>
+        {
+            o.NoOutboundTraffic = true;
+            o.Routing.BaseUrl = "http://osrm.internal:5000";
+        }));
+
+        // Act
+        var result = await builder.BuildDistanceMatrixAsync(TwoLocations, ContainerTransportMode.ByCar);
+
+        // Assert
+        result.IsEstimated.ShouldBeFalse();
+        _handler.LastRequestUri!.AbsoluteUri.ShouldStartWith("http://osrm.internal:5000/table/v1/driving/");
+    }
+
+    private DistanceMatrixBuilder CreateBuilder(Klacks.Api.Domain.Interfaces.GeoServices.IGeoServicesPolicy policy)
+    {
+        var settingsReader = Substitute.For<ISettingsReader>();
+        settingsReader.GetSetting(Arg.Any<string>()).Returns(Task.FromResult<SettingsEntity?>(null));
+        return new DistanceMatrixBuilder(
+            settingsReader,
+            Substitute.For<ISettingsEncryptionService>(),
+            _cache,
+            Substitute.For<ILogger<DistanceMatrixBuilder>>(),
+            _httpClientFactory,
+            policy);
     }
 
     private sealed class StubHandler : HttpMessageHandler

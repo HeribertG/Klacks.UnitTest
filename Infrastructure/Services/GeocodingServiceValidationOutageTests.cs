@@ -9,6 +9,7 @@
 using System.Net;
 using Klacks.Api.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Memory;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Infrastructure.Services;
@@ -31,7 +32,7 @@ public class GeocodingServiceValidationOutageTests
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient("Nominatim").Returns(new HttpClient(_handler));
         _cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-        _service = new GeocodingService(factory, _cache, Substitute.For<ILogger<GeocodingService>>());
+        _service = new GeocodingService(factory, _cache, GeoServicesPolicyTestFactory.Default(), Substitute.For<ILogger<GeocodingService>>());
     }
 
     [TearDown]
