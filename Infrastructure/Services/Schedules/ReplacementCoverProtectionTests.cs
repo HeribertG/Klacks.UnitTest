@@ -212,13 +212,14 @@ public class ReplacementCoverProtectionTests
 
         var result = await builder.BuildAsync([_absent, _substitute], From, Until, null, CancellationToken.None);
 
-        result.LockedWorks.Select(w => w.WorkId).ShouldBe([covered.Id.ToString()]);
-        result.LockedWorks[0].TotalHours.ShouldBe(4m);
+        result.LockedWorks.Select(w => w.WorkId).ShouldBe([covered.Id.ToString(), corrected.Id.ToString()], ignoreOrder: true);
+        result.LockedWorks.Single(w => w.WorkId == covered.Id.ToString()).TotalHours.ShouldBe(4m);
         var substituteBlocker = result.ExistingWorkBlockers.Single(b => b.AgentId == _substitute.ToString());
         substituteBlocker.StartAt.ShouldBe(Day.ToDateTime(new TimeOnly(6, 0)));
         substituteBlocker.EndAt.ShouldBe(Day.ToDateTime(new TimeOnly(10, 0)));
         result.ExistingWorkBlockers.ShouldNotContain(b => b.AgentId == _absent.ToString() && b.Date == Day);
-        result.ExistingWorkBlockers.ShouldContain(b => b.AgentId == _absent.ToString() && b.Date == Day.AddDays(1));
+        result.ExistingWorkBlockers.ShouldNotContain(b => b.AgentId == _absent.ToString() && b.Date == Day.AddDays(1),
+            "a corrected work is fixed (locked work), not a movable blocker");
     }
 
     [Test]

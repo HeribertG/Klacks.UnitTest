@@ -122,4 +122,39 @@ public class ScenarioSummaryBuilderTests
         reasons[ScenarioSummaryReasonCodes.CapacityOrRules].ShouldBe(4, "early shift on the remaining weekdays");
         summary.OpenSlotReasons.Sum(r => r.SlotCount).ShouldBe(summary.OpenSlots);
     }
+
+    [Test]
+    public async Task CountsTheExpensesWhoseWorkChangedEmployee()
+    {
+        var otherAgent = Guid.NewGuid();
+        var movedOrigin = AddWork(otherAgent, From.AddDays(1), token: null, clonedFrom: null);
+        var keptOrigin = AddWork(_agentId, From.AddDays(2), token: null, clonedFrom: null);
+        var moved = AddWork(_agentId, From.AddDays(1), _token, movedOrigin.Id);
+        var kept = AddWork(_agentId, From.AddDays(2), _token, keptOrigin.Id);
+        AddExpense(moved.Id, taxable: false);
+        AddExpense(moved.Id, taxable: true);
+        AddExpense(kept.Id, taxable: false);
+        await _context.SaveChangesAsync();
+
+        var summary = await BuildSut().BuildAsync(_token, CancellationToken.None);
+
+        summary!.ExpensesWithChangedEmployee.ShouldBe(2, "only the expenses of the work handed from the other agent count");
+    }
+
+    private Work AddWork(Guid clientId, DateOnly date, Guid? token, Guid? clonedFrom)
+    {
+        var work = new Work
+        {
+            Id = Guid.NewGuid(), ClientId = clientId, ShiftId = _late.Id, CurrentDate = date,
+            AnalyseToken = token, WorkTime = 8m, ClonedFromWorkId = clonedFrom,
+        };
+        _context.Work.Add(work);
+        return work;
+    }
+
+    private void AddExpense(Guid workId, bool taxable)
+        => _context.Expenses.Add(new Expenses
+        {
+            Id = Guid.NewGuid(), WorkId = workId, Amount = 10m, Taxable = taxable, AnalyseToken = _token,
+        });
 }
