@@ -35,12 +35,21 @@ public class UpdateHandlerTests
 
     private GetUpdateStatusQueryHandler CreateStatusHandler()
     {
-        return new GetUpdateStatusQueryHandler(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader);
+        return new GetUpdateStatusQueryHandler(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader, DockerInstallation());
     }
 
-    private TriggerUpdateCommandHandler CreateTriggerHandler()
+    private static IInstallationIdentityProvider DockerInstallation()
     {
-        return new TriggerUpdateCommandHandler(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader);
+        var installation = Substitute.For<IInstallationIdentityProvider>();
+        installation.Get().Returns(new InstallationIdentity(InstallationKind.Docker, "linux-x64"));
+        return installation;
+    }
+
+    private TriggerUpdateCommandHandler CreateTriggerHandler(InstallationIdentity? identity = null)
+    {
+        var installation = Substitute.For<IInstallationIdentityProvider>();
+        installation.Get().Returns(identity ?? new InstallationIdentity(InstallationKind.Docker, "linux-x64"));
+        return new TriggerUpdateCommandHandler(_repository, _manifestReader, new UpdateAvailabilityEvaluator(), _settingsReader, installation);
     }
 
     private DeleteUpdateHistoryCommandHandler CreateDeleteHandler()
@@ -56,7 +65,14 @@ public class UpdateHandlerTests
     private void GivenManifest(string latest, string minUpgradableFrom)
     {
         _manifestReader.GetManifestAsync(Arg.Any<UpdateChannel>(), Arg.Any<CancellationToken>())
-            .Returns(new UpdateManifest { Channel = UpdateChannel.Stable, LatestVersion = latest, MinUpgradableFrom = minUpgradableFrom });
+            .Returns(new UpdateManifest
+            {
+                Channel = UpdateChannel.Stable,
+                LatestVersion = latest,
+                MinUpgradableFrom = minUpgradableFrom,
+                Artifacts = new UpdateArtifacts { Docker = new DockerArtifact { ApiImage = "ghcr.io/heribertg/klacks-api:" + latest, Sha256 = "sha256:abc" } },
+                Signature = "sig",
+            });
     }
 
     private static UpdateHistory Entry(UpdateOperationStatus status, UpdateOperationType type = UpdateOperationType.Update)
@@ -141,7 +157,13 @@ public class UpdateHandlerTests
         _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
         _repository.GetRecentAsync(1, Arg.Any<CancellationToken>()).Returns(new List<UpdateHistory>());
         _manifestReader.GetManifestAsync(Arg.Any<UpdateChannel>(), Arg.Any<CancellationToken>())
-            .Returns(new UpdateManifest { Channel = UpdateChannel.Stable, LatestVersion = "9.9.9", MinUpgradableFrom = "1.0.0" });
+            .Returns(new UpdateManifest
+            {
+                Channel = UpdateChannel.Stable,
+                LatestVersion = "9.9.9",
+                MinUpgradableFrom = "1.0.0",
+                Artifacts = new UpdateArtifacts { Docker = new DockerArtifact { ApiImage = "ghcr.io/heribertg/klacks-api:9.9.9" } },
+            });
 
         var handler = CreateStatusHandler();
         var result = await handler.Handle(new GetUpdateStatusQuery(), CancellationToken.None);
@@ -149,6 +171,20 @@ public class UpdateHandlerTests
         result.Availability.ShouldNotBeNull();
         result.Availability!.IsUpdateAvailable.ShouldBeTrue();
         result.Availability.LatestVersion.ShouldBe("9.9.9");
+    }
+
+    [Test]
+    public async Task Status_reports_not_available_when_release_lacks_artifact_for_installation()
+    {
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        _repository.GetRecentAsync(1, Arg.Any<CancellationToken>()).Returns(new List<UpdateHistory>());
+        _manifestReader.GetManifestAsync(Arg.Any<UpdateChannel>(), Arg.Any<CancellationToken>())
+            .Returns(new UpdateManifest { Channel = UpdateChannel.Stable, LatestVersion = "9.9.9", MinUpgradableFrom = "1.0.0" });
+
+        var result = await CreateStatusHandler().Handle(new GetUpdateStatusQuery(), CancellationToken.None);
+
+        result.Availability!.Status.ShouldBe(UpdateAvailabilityStatus.NotAvailableForInstallation);
+        result.Availability.IsUpdateAvailable.ShouldBeFalse();
     }
 
     [Test]
@@ -332,6 +368,37 @@ public class UpdateHandlerTests
                 && e.OperationType == UpdateOperationType.Update
                 && e.TargetVersion == "9.9.9"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Trigger_native_installation_stores_its_own_bundle()
+    {
+        GivenManifest("9.9.9", "1.0.0");
+        var manifest = await _manifestReader.GetManifestAsync(UpdateChannel.Stable, CancellationToken.None);
+        manifest!.Artifacts.Native.Add(new OnPremArtifact { Rid = "win-x64", BundleUrl = "https://example.invalid/win-x64.zip", Sha256 = "h", Signature = "s" });
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+
+        var result = await CreateTriggerHandler(new InstallationIdentity(InstallationKind.Native, "win-x64"))
+            .Handle(new TriggerUpdateCommand("admin"), CancellationToken.None);
+
+        result.Enqueued.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(
+            Arg.Is<UpdateHistory>(e => e.ArtifactRef == "https://example.invalid/win-x64.zip" && e.ArtifactSignature == "s"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Trigger_rejected_when_release_has_no_bundle_for_platform()
+    {
+        GivenManifest("9.9.9", "1.0.0");
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+
+        var result = await CreateTriggerHandler(new InstallationIdentity(InstallationKind.Native, "osx-arm64"))
+            .Handle(new TriggerUpdateCommand("admin"), CancellationToken.None);
+
+        result.Enqueued.ShouldBeFalse();
+        result.Reason.ShouldBe(UpdateReasons.NoArtifactForInstallation);
+        await _repository.DidNotReceive().AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
