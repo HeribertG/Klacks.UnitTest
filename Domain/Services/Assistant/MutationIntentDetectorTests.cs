@@ -79,6 +79,8 @@ public class MutationIntentDetectorTests
     [TestCase("how do I create a customer?")]
     [TestCase("quelle est l'adresse?")]
     [TestCase("quali gruppi ci sono?")]
+    [TestCase("cosa significa sigillare un ordine?")]
+    [TestCase("cos'è un contratto?")]
     public void IsInformationQuestion_True_For_Questions(string message)
     {
         MutationIntentDetector.IsInformationQuestion(message).ShouldBeTrue(message);
@@ -131,5 +133,44 @@ public class MutationIntentDetectorTests
             mutationPhrases: []);
 
         MutationIntentDetector.IsMutationIntent("jak usunąć klienta?").ShouldBeFalse();
+    }
+
+    [Test]
+    public void PluginQuestionLead_MatchesOnlyAWholeLeadingWord()
+    {
+        MutationIntentDetector.Configure(questionLeads: ["co"], mutationPhrases: []);
+
+        MutationIntentDetector.IsInformationQuestion("co to jest kontrakt?").ShouldBeTrue();
+        MutationIntentDetector.IsInformationQuestion("Could you create a customer named Acme Ltd").ShouldBeFalse();
+        MutationIntentDetector.IsMutationIntent("Could you create a customer named Acme Ltd").ShouldBeTrue();
+    }
+
+    [Test]
+    public void PluginQuestionLead_InLatinScript_NeedsAWordBoundary()
+    {
+        MutationIntentDetector.Configure(questionLeads: ["ce", "ai"], mutationPhrases: []);
+
+        MutationIntentDetector.IsInformationQuestion("ce este un contract?").ShouldBeTrue();
+        MutationIntentDetector.IsInformationQuestion("Cette semaine, crée un client").ShouldBeFalse();
+        MutationIntentDetector.IsInformationQuestion("aide-moi à créer un client").ShouldBeFalse();
+    }
+
+    [Test]
+    public void PluginQuestionLead_InOtherScripts_StillMatchesAsPrefix()
+    {
+        MutationIntentDetector.Configure(questionLeads: ["どうやって", "อะไร", "מה"], mutationPhrases: []);
+
+        MutationIntentDetector.IsInformationQuestion("どうやって契約を作成しますか？").ShouldBeTrue();
+        MutationIntentDetector.IsInformationQuestion("อะไรคือสัญญา").ShouldBeTrue();
+        MutationIntentDetector.IsInformationQuestion("מהו חוזה?").ShouldBeTrue();
+    }
+
+    [Test]
+    public void PluginMutationPhrase_StillMatchesInsideAffixedWords()
+    {
+        MutationIntentDetector.Configure(questionLeads: [], mutationPhrases: ["buat", "作成"]);
+
+        MutationIntentDetector.IsMutationIntent("tolong membuat kontrak untuk Budi").ShouldBeTrue();
+        MutationIntentDetector.IsMutationIntent("契約を作成して").ShouldBeTrue();
     }
 }

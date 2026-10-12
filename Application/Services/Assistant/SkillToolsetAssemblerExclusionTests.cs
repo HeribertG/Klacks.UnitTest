@@ -130,6 +130,7 @@ public class SkillToolsetAssemblerExclusionTests
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             NoLearnedPhrases(),
             Substitute.For<ISkillRelationRepository>(),
+            new NoTurnIntentExplainGuarantee(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>()),
         Substitute.For<ILogger<SkillToolsetAssembler>>());
 

@@ -170,6 +170,7 @@ public class SkillToolsetAssemblerTests
             _planningProfileDraftStore,
             _skillPhrases,
             Substitute.For<ISkillRelationRepository>(),
+            new NoTurnIntentExplainGuarantee(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         return new SkillToolsetAssembler(

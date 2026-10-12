@@ -100,6 +100,7 @@ public class SkillToolsetAssemblerTruncationPriorityTests
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             phrases,
             relations,
+            new NoTurnIntentExplainGuarantee(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         _assembler = new SkillToolsetAssembler(

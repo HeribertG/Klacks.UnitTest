@@ -68,6 +68,7 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
             phrases,
             relations,
+            new NoTurnIntentExplainGuarantee(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
     }
 
