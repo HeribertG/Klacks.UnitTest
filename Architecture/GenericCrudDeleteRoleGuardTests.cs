@@ -53,10 +53,7 @@ public class GenericCrudDeleteRoleGuardTests
                 "supervisor's daily schedule work, not an administrative removal of master data.",
             ["ScheduleCommandsController"] =
                 "Same schedule context menu as ScheduleNotes; the keyword entries are day-to-day planning " +
-                "data.",
-            ["ExpensesController"] =
-                "Same schedule context menu as ScheduleNotes; expenses and reimbursements are recorded and " +
-                "corrected while planning."
+                "data."
         };
 
     [Test]
