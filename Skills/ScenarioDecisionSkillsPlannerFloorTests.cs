@@ -10,6 +10,7 @@
 
 using System.Text.Json;
 using Klacks.Api.Application.Commands.AnalyseScenarios;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant.Skills;
@@ -50,7 +51,7 @@ public class ScenarioDecisionSkillsPlannerFloorTests
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => ci.Arg<AcceptAnalyseScenarioCommand>().ScenarioId == _hiddenScenarioId
                 ? throw new KeyNotFoundException("AnalyseScenario not found")
-                : true);
+                : new AcceptAnalyseScenarioResult(true));
         _mediator.Send(Arg.Any<RejectAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => ci.Arg<RejectAnalyseScenarioCommand>().ScenarioId == _hiddenScenarioId
                 ? throw new KeyNotFoundException("AnalyseScenario not found")

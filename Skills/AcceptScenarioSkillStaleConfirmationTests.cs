@@ -52,7 +52,7 @@ public class AcceptScenarioSkillStaleConfirmationTests
     public async Task StaleScenario_AsksForConfirmation_AndStoresTheShownStalenessUnderItsOwnPurpose()
     {
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
-            .Returns<bool>(_ => throw new ScenarioStaleException(
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ScenarioStaleException(
                 new ScenarioStaleness(4, LastChangeUtc, new[] { "Scenario B" })));
 
         var result = await _skill.ExecuteAsync(Ctx(bypassGate: false), Params(withLegacyFlag: true));
@@ -81,7 +81,7 @@ public class AcceptScenarioSkillStaleConfirmationTests
     public async Task ConfirmedReplay_AcceptsWithOverrideStale_AndPassesTheShownStaleness()
     {
         var acknowledgement = new StaleScenarioOverwriteAcknowledgement(4, LastChangeUtc);
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
 
         var result = await _skill.ExecuteAsync(
             Ctx(bypassGate: true) with { StaleScenarioOverwriteAcknowledgement = acknowledgement }, Params());
@@ -98,7 +98,7 @@ public class AcceptScenarioSkillStaleConfirmationTests
     [Test]
     public async Task GateBypassingCallWithTheFormerHiddenParameter_GetsNoOverride()
     {
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
 
         await _skill.ExecuteAsync(Ctx(bypassGate: true), Params(withLegacyFlag: true));
 
@@ -110,7 +110,7 @@ public class AcceptScenarioSkillStaleConfirmationTests
     [Test]
     public async Task DirectCallWithTheFormerHiddenParameter_GetsNoOverride()
     {
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
 
         await _skill.ExecuteAsync(Ctx(bypassGate: false), Params(withLegacyFlag: true));
 

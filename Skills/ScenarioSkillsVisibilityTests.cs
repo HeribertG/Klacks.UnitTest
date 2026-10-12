@@ -44,7 +44,7 @@ public class ScenarioSkillsVisibilityTests
     public async Task AcceptScenario_OfHiddenScenario_ReportsItLikeAMissingOne()
     {
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
-            .Returns<bool>(_ => throw new KeyNotFoundException($"AnalyseScenario with ID {_scenarioId} not found"));
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new KeyNotFoundException($"AnalyseScenario with ID {_scenarioId} not found"));
         var skill = new AcceptScenarioSkill(_mediator, Substitute.For<IPendingConfirmationStore>(), Substitute.For<ITurnConfirmationScope>(), Substitute.For<ICompanyClock>());
 
         var result = await skill.ExecuteAsync(Ctx(), ScenarioParams());

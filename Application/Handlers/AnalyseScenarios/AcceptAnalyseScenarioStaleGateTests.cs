@@ -107,7 +107,7 @@ public class AcceptAnalyseScenarioStaleGateTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id, OverrideStale: true), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _scenarioService.Received(1).SoftDeleteRealScheduleDataAsync(
             _scenario.GroupId, _scenario.Token, FromDate, UntilDate, Arg.Any<CancellationToken>());
         await _scenarioService.Received(1).PromoteScenarioWorksAsync(
@@ -152,7 +152,7 @@ public class AcceptAnalyseScenarioStaleGateTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id, OverrideBlock: true, OverrideStale: true), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         _scenario.Status.ShouldBe(AnalyseScenarioStatus.Accepted);
     }
 
@@ -168,7 +168,7 @@ public class AcceptAnalyseScenarioStaleGateTests
                 AcknowledgedStaleness: new StaleScenarioOverwriteAcknowledgement(3, LastChange)),
             CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         _scenario.Status.ShouldBe(AnalyseScenarioStatus.Accepted);
     }
 
@@ -208,9 +208,22 @@ public class AcceptAnalyseScenarioStaleGateTests
     {
         var result = await _handler.Handle(new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _scenarioService.Received(1).FindRealPlanChangesSinceCreationAsync(_scenario, Arg.Any<CancellationToken>());
         _scenario.Status.ShouldBe(AnalyseScenarioStatus.Accepted);
+    }
+
+    [Test]
+    public async Task Accept_ReportsTheEntriesNotTakenOverOnLockedDays()
+    {
+        _scenarioService
+            .PromoteScenarioWorksAsync(_scenario.Token, FromDate, UntilDate, Arg.Any<CancellationToken>())
+            .Returns(new ScenarioAcceptLockSkips(2, 1, 3));
+
+        var result = await _handler.Handle(new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
+
+        result.ShouldBe(new AcceptAnalyseScenarioResult(true, 2, 1, 3));
+        result.SkippedLockedTotal.ShouldBe(6);
     }
 
     private void SetStale(int changedEntries, params string[] acceptedScenarioNames)

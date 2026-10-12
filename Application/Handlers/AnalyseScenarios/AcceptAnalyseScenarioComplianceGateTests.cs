@@ -138,7 +138,7 @@ public class AcceptAnalyseScenarioComplianceGateTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id, OverrideBlock: true), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _overrideAuthorizer.Received(1).IsAuthorizedAsync(true);
         await _scenarioService.Received(1).SoftDeleteRealScheduleDataAsync(
             _scenario.GroupId, _scenario.Token, FromDate, UntilDate, Arg.Any<CancellationToken>());
@@ -155,7 +155,7 @@ public class AcceptAnalyseScenarioComplianceGateTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _overrideAuthorizer.DidNotReceive().IsAuthorizedAsync(Arg.Any<bool>());
         await _scenarioService.Received(1).PromoteScenarioWorksAsync(
             _scenario.Token, FromDate, UntilDate, Arg.Any<CancellationToken>());

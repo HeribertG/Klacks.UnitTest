@@ -135,7 +135,7 @@ public class AcceptAnalyseScenarioLedgerWriteBackTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _ledgerService.Received(1).TryTransitionAsync(
             condition.Id,
             AgentConditionStatus.Prepared,
@@ -172,7 +172,7 @@ public class AcceptAnalyseScenarioLedgerWriteBackTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _scenarioService.Received(1).PromoteScenarioWorksAsync(
             _scenario.Token, FromDate, UntilDate, Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).CompleteAsync();
@@ -187,7 +187,7 @@ public class AcceptAnalyseScenarioLedgerWriteBackTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
     }
 
     /// <summary>
@@ -211,7 +211,7 @@ public class AcceptAnalyseScenarioLedgerWriteBackTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
     }
 
     [Test]
@@ -223,7 +223,7 @@ public class AcceptAnalyseScenarioLedgerWriteBackTests
         var result = await _handler.Handle(
             new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _ledgerService.DidNotReceive().TryTransitionAsync(
             Arg.Any<Guid>(),
             Arg.Any<AgentConditionStatus>(),

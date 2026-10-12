@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Guards the texts of the stale-scenario accept dialog (the original plan changed after the scenario was created and
-/// accepting overwrites those changes): every key must exist and be non-empty, with the same placeholders as en.json, in
+/// accepting overwrites those changes) and of the notice about entries not taken over on locked days: every key must exist and be non-empty, with the same placeholders as en.json, in
 /// all four core catalogues of Klacks.Ui and in every language plugin (owner rule: all 25 languages, no English
 /// fallback). Same structure as the other i18n gates: the Klacks.Ui half reports inconclusive when that repository is not
 /// checked out next to Klacks.Api.
@@ -25,6 +25,7 @@ public class ScenarioStaleAcceptI18nGateTests
         "scenario.accept.staleMessage",
         "scenario.accept.staleAcceptedScenarios",
         "scenario.accept.staleConfirmButton",
+        "scenario.accept.lockedSkipped",
     ];
 
     private const string SourceLanguage = "en";

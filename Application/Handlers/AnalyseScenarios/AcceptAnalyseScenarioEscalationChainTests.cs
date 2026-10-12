@@ -87,7 +87,7 @@ public class AcceptAnalyseScenarioEscalationChainTests
     {
         var result = await _handler.Handle(new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         Received.InOrder(() =>
         {
             _scenarioService.GetScenarioBreakIdsAsync(_scenario.Token, Arg.Any<CancellationToken>());
@@ -110,7 +110,7 @@ public class AcceptAnalyseScenarioEscalationChainTests
 
         var result = await _handler.Handle(new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBeTrue();
+        result.Accepted.ShouldBeTrue();
         await _unitOfWork.Received(1).CompleteAsync();
     }
 }

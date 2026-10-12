@@ -137,7 +137,7 @@ public class NextPeriodAutoCommitServiceTests
     public async Task CommitCompletedChain_ZeroNewIssues_AcceptsScenarioAndReportsCommit()
     {
         StubCompliance();
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
 
         await CommitAsync();
 
@@ -152,7 +152,7 @@ public class NextPeriodAutoCommitServiceTests
     public async Task CommitCompletedChain_SuccessfulCommit_IsAttributedToTheDecidingAdmin()
     {
         StubCompliance();
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
 
         await CommitAsync();
 
@@ -191,7 +191,7 @@ public class NextPeriodAutoCommitServiceTests
     {
         StubAutonomy(AutonomyLevel.FullyAutonomous, NextPeriodAutonomyBlockedBy.KillSwitch);
         StubCompliance();
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
 
         await CommitAsync();
 
@@ -235,7 +235,7 @@ public class NextPeriodAutoCommitServiceTests
     public async Task CommitCompletedChain_AcceptReturnsFalse_ReportsRefused()
     {
         StubCompliance();
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(false);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(false));
 
         await CommitAsync();
 
@@ -250,7 +250,7 @@ public class NextPeriodAutoCommitServiceTests
     {
         StubCompliance();
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
-            .Returns<bool>(_ => throw new ConflictException("blocked"));
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ConflictException("blocked"));
 
         await CommitAsync();
 
@@ -343,7 +343,7 @@ public class NextPeriodAutoCommitServiceTests
     {
         StubCompliance();
         _jobRunner.IsRunning(JobId).Returns(false);
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
         var terminalStates = JobTerminalStateCacheTestFactory.Create<AutoWizardJobResultDto>();
         await terminalStates.StoreCompletedAsync(JobId, new AutoWizardJobResultDto(
             JobId, ScenarioId, ScenarioToken, "AutoWizard-Holistic", 1000, [], [], []));

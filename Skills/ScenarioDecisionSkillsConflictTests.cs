@@ -7,6 +7,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.AnalyseScenarios;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Interfaces.Assistant;
@@ -45,7 +46,7 @@ public class ScenarioDecisionSkillsConflictTests
     {
         // Arrange
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
-            .Returns<bool>(_ => throw new ScenarioNotActiveException(NotActiveMessage));
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ScenarioNotActiveException(NotActiveMessage));
         var skill = new AcceptScenarioSkill(_mediator, Substitute.For<IPendingConfirmationStore>(), Substitute.For<ITurnConfirmationScope>(), Substitute.For<ICompanyClock>());
 
         // Act
@@ -62,7 +63,7 @@ public class ScenarioDecisionSkillsConflictTests
     {
         // Arrange
         _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
-            .Returns<bool>(_ => throw new ConflictException(BlockedMessage));
+            .Returns<AcceptAnalyseScenarioResult>(_ => throw new ConflictException(BlockedMessage));
         var skill = new AcceptScenarioSkill(_mediator, Substitute.For<IPendingConfirmationStore>(), Substitute.For<ITurnConfirmationScope>(), Substitute.For<ICompanyClock>());
 
         // Act
@@ -95,7 +96,7 @@ public class ScenarioDecisionSkillsConflictTests
     public async Task AcceptScenario_OfAnActiveScenario_StillSucceeds()
     {
         // Arrange
-        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(true);
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>()).Returns(new AcceptAnalyseScenarioResult(true));
         var skill = new AcceptScenarioSkill(_mediator, Substitute.For<IPendingConfirmationStore>(), Substitute.For<ITurnConfirmationScope>(), Substitute.For<ICompanyClock>());
 
         // Act
@@ -103,5 +104,24 @@ public class ScenarioDecisionSkillsConflictTests
 
         // Assert
         result.Success.ShouldBeTrue();
+        result.Message.ShouldNotBeNull();
+        result.Message.ShouldNotContain("locked days");
+    }
+
+    [Test]
+    public async Task AcceptScenario_WithEntriesOnLockedDays_ReportsTheSkippedCount()
+    {
+        // Arrange
+        _mediator.Send(Arg.Any<AcceptAnalyseScenarioCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new AcceptAnalyseScenarioResult(true, SkippedLockedWorks: 2, SkippedLockedBreaks: 1));
+        var skill = new AcceptScenarioSkill(_mediator, Substitute.For<IPendingConfirmationStore>(), Substitute.For<ITurnConfirmationScope>(), Substitute.For<ICompanyClock>());
+
+        // Act
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        // Assert
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldNotBeNull();
+        result.Message.ShouldContain("3 scenario entries on locked days");
     }
 }
