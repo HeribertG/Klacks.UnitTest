@@ -24,7 +24,7 @@ public sealed class DayLockServiceShiftTests
     public void SetUp()
     {
         _repository = Substitute.For<ISealedDayRepository>();
-        _sut = new DayLockService(_repository);
+        _sut = new DayLockService(_repository, Substitute.For<IShiftRepository>());
     }
 
     [Test]

@@ -224,6 +224,64 @@ public class WorkChangeScopeTests
         await _workChangeRepository.DidNotReceive().Delete(Arg.Any<Guid>());
     }
 
+    [Test]
+    public async Task Put_RemovingAReplacementWhoseEmployeeDayIsSealed_IsRefused_NothingWritten()
+    {
+        var work = NewWork(null);
+        var replacedBy = Guid.NewGuid();
+        var stored = NewChange(work.Id, null);
+        stored.Type = WorkChangeType.ReplacementWithin;
+        stored.ReplaceClientId = replacedBy;
+        Given(stored, work);
+        GivenSealed(replacedBy);
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewPutHandler().Handle(
+            new PutCommand<WorkChangeResource>(NewResource(stored.Id, work.Id)), CancellationToken.None));
+
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Put(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Put_SettingAReplacementWhoseEmployeeDayIsSealed_IsRefused_NothingWritten()
+    {
+        var work = NewWork(null);
+        var replacedBy = Guid.NewGuid();
+        var stored = NewChange(work.Id, null);
+        Given(stored, work);
+        GivenSealed(replacedBy);
+        var resource = NewResource(stored.Id, work.Id);
+        resource.Type = WorkChangeType.ReplacementWithin;
+        resource.ReplaceClientId = replacedBy;
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewPutHandler().Handle(
+            new PutCommand<WorkChangeResource>(resource), CancellationToken.None));
+
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Put(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Delete_OfAReplacementWhoseEmployeeDayIsSealed_IsRefused_NothingDeleted()
+    {
+        var work = NewWork(null);
+        var replacedBy = Guid.NewGuid();
+        var stored = NewChange(work.Id, null);
+        stored.Type = WorkChangeType.ReplacementWithin;
+        stored.ReplaceClientId = replacedBy;
+        _workChangeRepository.GetWithWorkInAnyScope(stored.Id).Returns(stored);
+        _workRepository.GetNoTracking(work.Id).Returns(work);
+        GivenSealed(replacedBy);
+
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => NewDeleteHandler().Handle(new DeleteCommand<WorkChangeResource>(stored.Id), CancellationToken.None));
+
+        await _workChangeRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+    }
+
+    private void GivenSealed(Guid clientId)
+        => _dayLockService.EnsureWorkChangeNotLockedAsync(
+                Arg.Any<Work>(), Arg.Is<WorkChange>(c => c.ReplaceClientId == clientId), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidRequestException("Day 2027-05-10 is sealed and cannot be modified.")));
+
     private void Given(WorkChange stored, params Work[] works)
     {
         _workChangeRepository.GetNoTracking(stored.Id).Returns(stored);

@@ -9,6 +9,7 @@
 
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Email;
@@ -35,6 +36,7 @@ public class InboundActionOrchestratorTests
 {
     private IAdminAutonomyLevelAggregator _adminAutonomy = null!;
     private ISkillExecutor _skillExecutor = null!;
+    private IUnitOfWork _unitOfWork = null!;
     private IGroupMembershipService _groupMembershipService = null!;
     private Klacks.Api.Application.Interfaces.IAbsenceRepository _absenceRepository = null!;
     private Klacks.Api.Application.Interfaces.IWorkRepository _workRepository = null!;
@@ -108,6 +110,10 @@ public class InboundActionOrchestratorTests
         _governanceResolver.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>())
             .Returns(false);
 
+        _unitOfWork = Substitute.For<IUnitOfWork>();
+        _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
+            .Returns(ci => ci.Arg<Func<Task<int>>>()());
+
         _orchestrator = new InboundActionOrchestrator(
             _adminAutonomy, _skillExecutor,
             _groupMembershipService, _absenceRepository, _workRepository,
@@ -117,6 +123,7 @@ public class InboundActionOrchestratorTests
             new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
             _governanceResolver,
             Options.Create(new EmailAutomationOptions()),
+            _unitOfWork,
             Substitute.For<ILogger<InboundActionOrchestrator>>());
     }
 
@@ -617,6 +624,24 @@ public class InboundActionOrchestratorTests
         invocations.Count.ShouldBe(2);
         invocations.Select(i => i.SkillName).ShouldAllBe(name => name == "add_schedule_commands_range");
         invocations.Select(i => (string)i.Parameters["commandKeyword"]).ShouldBe(new[] { "EARLY", "-NIGHT" });
+    }
+
+    [Test]
+    public async Task ShiftPreference_SecondCallFails_RunsInOneTransaction_AndReportsNothingPlaced()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _skillExecutor.ExecuteAsync(
+                Arg.Is<SkillInvocation>(i => (string)i.Parameters["commandKeyword"] == "-NIGHT"),
+                Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.Error("database unavailable"));
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-NIGHT"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("nothing was placed");
+        await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>());
     }
 
     [Test]
@@ -1135,6 +1160,7 @@ public class InboundActionOrchestratorTests
             new UnattendedSkillPolicy(_skillRegistry, new SkillRiskClassifier()),
             _governanceResolver,
             Options.Create(new EmailAutomationOptions { ServiceAccountId = serviceAccountId.ToString() }),
+            _unitOfWork,
             Substitute.For<ILogger<InboundActionOrchestrator>>());
 
         AdminLevel(AutonomyLevel.FullyAutonomous);

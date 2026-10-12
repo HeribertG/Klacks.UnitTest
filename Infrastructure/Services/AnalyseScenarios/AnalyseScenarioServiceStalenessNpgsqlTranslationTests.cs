@@ -4,8 +4,9 @@
 /// Proves that every query of the staleness check translates to SQL on the real Npgsql provider (the in-memory provider
 /// of the behaviour tests evaluates any C# expression). The connection is never opened: an interceptor suppresses the
 /// open and answers every command with an empty result, so each query is translated and "executed" in turn and an
-/// untranslatable expression would surface as "could not be translated". The first change count (real works) is answered
-/// with one changed row, which makes the scenario stale and so also runs the MAX and accepted-sibling queries.
+/// untranslatable expression would surface as "could not be translated". With no changed rows the check ends after the
+/// five change queries; the day-lock plan and the accepted-sibling query that follow a change run against real Postgres
+/// in the integration test (AcceptDayLockSeamTests).
 /// </summary>
 
 using System.Data;
@@ -65,15 +66,11 @@ public class AnalyseScenarioServiceStalenessNpgsqlTranslationTests
 
         var staleness = await service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None);
 
-        staleness.ShouldNotBeNull();
-        staleness.ChangedEntryCount.ShouldBe(1);
-        staleness.LastChangeUtc.ShouldBe(EmptyResultInterceptor.ChangedAt);
-        _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("analyse_scenario"));
+        staleness.ShouldBeNull();
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("work_change"));
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("expenses"));
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("schedule_note"));
         _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("break"));
-        _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("max("), "the latest change is aggregated in the database");
         if (builtOnAScenario)
         {
             _interceptor.ExecutedCommands.ShouldContain(sql => sql.Contains("source_token"));
@@ -81,38 +78,17 @@ public class AnalyseScenarioServiceStalenessNpgsqlTranslationTests
     }
 
     /// <summary>
-    /// Answers by statement shape: the first COUNT (real works) reports one changed row, every other COUNT none; every MAX
-    /// reports the change instant; anything else (source chain, accepted siblings) is empty.
+    /// Answers every command with an empty result.
     /// </summary>
     private sealed class EmptyResultInterceptor : DbCommandInterceptor, IDbConnectionInterceptor
     {
-        private const string CountMarker = "count(";
-
-        private const string MaxMarker = "max(";
-
-        public static readonly DateTime ChangedAt = new(2026, 3, 2, 8, 0, 0, DateTimeKind.Utc);
-
-        private bool _changedRowServed;
-
         public List<string> ExecutedCommands { get; } = [];
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(
             DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
         {
             ExecutedCommands.Add(command.CommandText);
-            var sql = command.CommandText.ToLowerInvariant();
             var table = new DataTable();
-            if (sql.Contains(CountMarker))
-            {
-                table.Columns.Add("count", typeof(int));
-                table.Rows.Add(_changedRowServed ? 0 : 1);
-                _changedRowServed = true;
-            }
-            else if (sql.Contains(MaxMarker))
-            {
-                table.Columns.Add("max", typeof(DateTime));
-                table.Rows.Add(ChangedAt);
-            }
 
             return InterceptionResult<DbDataReader>.SuppressWithResult(table.CreateDataReader());
         }

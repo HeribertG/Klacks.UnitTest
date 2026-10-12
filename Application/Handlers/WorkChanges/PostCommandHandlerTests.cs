@@ -230,6 +230,30 @@ public class PostCommandHandlerTests
         await _recorder.DidNotReceiveWithAnyArgs().RecordManualReplacementAsync(
             Arg.Any<Work>(), Arg.Any<WorkChange>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task Handle_ReplacementWithAnEmployeeWhoseDayIsSealed_IsRefused()
+    {
+        _dayLockService.EnsureWorkChangeNotLockedAsync(
+                Arg.Is<Work>(w => w.Id == _workId), Arg.Is<WorkChange>(c => c.ReplaceClientId == _replaceClientId), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidRequestException("Day 2027-05-10 is sealed and cannot be modified.")));
+
+        await Should.ThrowAsync<InvalidRequestException>(
+            () => _handler.Handle(ReplacementCommand(overrideBlock: false), CancellationToken.None));
+
+        await _workChangeRepository.DidNotReceiveWithAnyArgs().Add(Arg.Any<WorkChange>());
+    }
+
+    [Test]
+    public async Task Handle_PureCorrection_ChecksOnlyTheDayOfTheWorksEmployee()
+    {
+        await _handler.Handle(CorrectionCommand(), CancellationToken.None);
+
+        await _dayLockService.Received(1).EnsureNotLockedAsync(
+            Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _dayLockService.Received(1).EnsureNotLockedAsync(_date, _parentClientId, null, Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task Handle_MissingParentWork_IsRefusedBeforeAnyGuardRuns()
     {

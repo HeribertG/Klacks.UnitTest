@@ -226,6 +226,29 @@ public class WorkVisibilityTests
     }
 
     [Test]
+    public async Task Delete_ScenarioWorkOnASealedDay_IsRefused_NothingDeleted()
+    {
+        var scenarioWork = NewWork(_visibleClientId);
+        scenarioWork.AnalyseToken = Guid.NewGuid();
+        _workRepository.Get(scenarioWork.Id).Returns(scenarioWork);
+        _dayLockService.EnsureDeletableAsync(
+                Arg.Is<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(p => p.Any(w => w.Date == Day && w.ClientId == _visibleClientId)),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidRequestException("Day 2027-04-12 is sealed and cannot be modified.")));
+        var handler = new DeleteCommandHandler(
+            _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
+            _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
+            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService,
+            Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
+            Substitute.For<ILogger<DeleteCommandHandler>>());
+
+        await Should.ThrowAsync<InvalidRequestException>(() => handler.Handle(
+            new DeleteWorkCommand(scenarioWork.Id, Day, Day), CancellationToken.None));
+
+        await _workRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+    }
+
+    [Test]
     public async Task Delete_WorkOfHiddenClient_IsRefusedLikeAMissingWork_NothingDeleted()
     {
         var hidden = NewWork(_hiddenClientId);

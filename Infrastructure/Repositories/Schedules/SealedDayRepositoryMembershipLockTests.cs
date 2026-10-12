@@ -56,7 +56,7 @@ public class SealedDayRepositoryMembershipLockTests
     {
         var member = await AddMemberAsync(_groupA);
         await SealAsync(_groupA);
-        var dayLock = new DayLockService(_sut);
+        var dayLock = new DayLockService(_sut, Substitute.For<IShiftRepository>());
 
         var ex = await Should.ThrowAsync<InvalidRequestException>(
             () => dayLock.EnsureNotLockedAsync(SealedDate, member, analyseToken: null));
@@ -106,7 +106,7 @@ public class SealedDayRepositoryMembershipLockTests
     {
         var member = await AddMemberAsync(_groupA);
         await SealAsync(_groupA);
-        var dayLock = new DayLockService(_sut);
+        var dayLock = new DayLockService(_sut, Substitute.For<IShiftRepository>());
 
         await Should.NotThrowAsync(() => dayLock.EnsureNotLockedAsync(SealedDate, member, Guid.NewGuid()));
     }

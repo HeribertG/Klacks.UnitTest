@@ -30,7 +30,7 @@ public sealed class DayLockServiceBulkTests
         _repository.GetLockedPairsAsync(
                 Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(), Arg.Any<CancellationToken>())
             .Returns([]);
-        _sut = new DayLockService(_repository);
+        _sut = new DayLockService(_repository, Substitute.For<IShiftRepository>());
     }
 
     [Test]

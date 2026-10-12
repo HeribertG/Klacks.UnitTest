@@ -90,7 +90,46 @@ public class AnalyseScenarioServiceAcceptDayLockTests
         liveOnOpenDay.ShouldHaveSingleItem().Id.ShouldNotBe(openWork.Id, "the open day is replaced by the scenario");
         liveOnOpenDay[0].StartTime.ShouldBe(ChangedStart);
 
-        skips.ShouldBe(new ScenarioAcceptLockSkips(1, 1, 1));
+        skips.ShouldBe(new ScenarioAcceptLockSkips(Works: 1, WorkChanges: 0, Expenses: 0, Breaks: 1, Notes: 1));
+    }
+
+    [Test]
+    public async Task Accept_EditedExpenseAndAddedWorkChangeOnASealedDay_AreCounted_AndTheRealOnesStay()
+    {
+        var sealedWork = AddRealWork(SealedDay);
+        var realExpense = new Expenses { Id = Guid.NewGuid(), WorkId = sealedWork.Id, Amount = 12m, Description = "Train" };
+        _context.Expenses.Add(realExpense);
+        await _context.SaveChangesAsync();
+        await CloneAsync();
+
+        var clone = await _context.Work.SingleAsync(w => w.AnalyseToken == _token && w.CurrentDate == SealedDay);
+        (await _context.Expenses.SingleAsync(e => e.WorkId == clone.Id)).Amount = 30m;
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = clone.Id, Type = WorkChangeType.CorrectionEnd, ChangeTime = 1m, AnalyseToken = _token
+        });
+        await _context.SaveChangesAsync();
+
+        var skips = await AcceptAsync();
+
+        skips.ShouldBe(new ScenarioAcceptLockSkips(Works: 0, WorkChanges: 1, Expenses: 1, Breaks: 0, Notes: 0));
+        (await _context.Expenses.Where(e => !e.IsDeleted && e.AnalyseToken == null).ToListAsync())
+            .ShouldHaveSingleItem().Amount.ShouldBe(12m);
+        (await _context.WorkChange.CountAsync(wc => !wc.IsDeleted && wc.AnalyseToken == null)).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Accept_UnchangedChildrenOnASealedDay_AreNotCounted()
+    {
+        var sealedWork = AddRealWork(SealedDay);
+        _context.Expenses.Add(new Expenses { Id = Guid.NewGuid(), WorkId = sealedWork.Id, Amount = 12m, Description = "Train" });
+        _context.WorkChange.Add(new WorkChange { Id = Guid.NewGuid(), WorkId = sealedWork.Id, Type = WorkChangeType.CorrectionEnd, ChangeTime = 1m });
+        await _context.SaveChangesAsync();
+        await CloneAsync();
+
+        var skips = await AcceptAsync();
+
+        skips.Total.ShouldBe(0);
     }
 
     [Test]
@@ -216,6 +255,51 @@ public class AnalyseScenarioServiceAcceptDayLockTests
         await AcceptAsync();
 
         (await _context.ScheduleNotes.CountAsync(n => !n.IsDeleted && n.AnalyseToken == null && n.ClientId == noteOnlyClient))
+            .ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Accept_ReplacementShownAfterMidnightOnASealedDay_KeepsTheRealWorkAndDiscardsTheClone()
+    {
+        var nightShiftId = Guid.NewGuid();
+        _context.Shift.Add(new Shift { Id = nightShiftId, Name = "Night", StartShift = new TimeOnly(22, 0), EndShift = new TimeOnly(6, 0) });
+        var nightWork = NewWork(_clientId, SealedDay.AddDays(-1), nightShiftId, null);
+        nightWork.StartTime = new TimeOnly(22, 0);
+        nightWork.EndTime = new TimeOnly(6, 0);
+        _context.Work.Add(nightWork);
+        _context.WorkChange.Add(new WorkChange
+        {
+            Id = Guid.NewGuid(), WorkId = nightWork.Id, Type = WorkChangeType.ReplacementEnd, ChangeTime = 2m,
+            ReplaceClientId = Guid.NewGuid()
+        });
+        await _context.SaveChangesAsync();
+        await CloneAsync();
+        (await _context.Work.SingleAsync(w => w.AnalyseToken == _token)).Information = "changed";
+        await _context.SaveChangesAsync();
+
+        var skips = await AcceptAsync();
+
+        (await LiveRealWorks(SealedDay.AddDays(-1))).ShouldHaveSingleItem().Id.ShouldBe(
+            nightWork.Id, "the replacement's 04:00-06:00 part is shown on the sealed following day");
+        skips.Works.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task SlotReplacement_DoesNotDisplaceAScenarioWorkOnASealedDay()
+    {
+        AddRealWork(SealedDay);
+        AddRealWork(OpenDay);
+        await _context.SaveChangesAsync();
+        await CloneAsync();
+        var cloneShiftId = (await _context.Shift.SingleAsync(s => s.AnalyseToken == _token)).Id;
+
+        var displaced = await _service.SoftDeleteClonedWorksOnSlotsAsync(
+            _token, From, Until, new HashSet<(Guid, DateOnly)> { (cloneShiftId, SealedDay), (cloneShiftId, OpenDay) },
+            CancellationToken.None);
+        await _context.SaveChangesAsync();
+
+        displaced.Count.ShouldBe(1, "only the open-day work may be displaced");
+        (await _context.Work.CountAsync(w => w.AnalyseToken == _token && !w.IsDeleted && w.CurrentDate == SealedDay))
             .ShouldBe(1);
     }
 

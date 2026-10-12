@@ -3,8 +3,9 @@
 /// <summary>
 /// Tests for the staleness check before an accept (FindRealPlanChangesSinceCreationAsync): real rows inside the scope the
 /// accept replaces that were created, updated or deleted after the scenario was created make it stale - whether another
-/// scenario was accepted in between, an entry was edited, sealed or deleted. Changes outside the scope (other group,
-/// outside the range, children of locked works, scenario rows) do not count, because the accept does not overwrite them.
+/// scenario was accepted in between, an entry was edited or deleted. Changes outside the scope (other group, outside the
+/// range, scenario rows) and changes the accept leaves in place (locked works and their children, rows on a sealed day)
+/// do not count, because the accept does not overwrite them.
 /// A scenario built on another scenario compares with the earliest creation along its SourceToken chain.
 /// The "created" instant is taken between two save batches, so baseline rows are older and later changes newer.
 /// </summary>
@@ -198,7 +199,7 @@ public class AnalyseScenarioServiceStalenessTests
     }
 
     [Test]
-    public async Task WorkSealedAfterCreation_IsStale()
+    public async Task WorkLockedAfterCreation_IsNotStale()
     {
         var work = AddWork(_shiftId, InsideDay);
         await _context.SaveChangesAsync();
@@ -207,10 +208,51 @@ public class AnalyseScenarioServiceStalenessTests
         work.LockLevel = WorkLockLevel.Confirmed;
         await _context.SaveChangesAsync();
 
+        (await _service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None)).ShouldBeNull(
+            "the accept keeps the locked real work and discards its clones, so the change is not overwritten");
+    }
+
+    [Test]
+    public async Task PauseOfALockedWorkEditedAfterCreation_IsNotStale_ButThePauseOfAMovableWorkIs()
+    {
+        var lockedWork = AddWork(_shiftId, InsideDay);
+        lockedWork.LockLevel = WorkLockLevel.Confirmed;
+        var movableWork = AddWork(_shiftId, InsideDay.AddDays(1));
+        var lockedPause = AddBreak(_clientId, InsideDay);
+        lockedPause.ParentWorkId = lockedWork.Id;
+        var movablePause = AddBreak(_clientId, InsideDay.AddDays(1));
+        movablePause.ParentWorkId = movableWork.Id;
+        await _context.SaveChangesAsync();
+        var scenario = await MarkScenarioCreatedAsync();
+
+        lockedPause.EndTime = new TimeOnly(12, 0);
+        movablePause.EndTime = new TimeOnly(12, 0);
+        await _context.SaveChangesAsync();
+
         var staleness = await _service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None);
 
-        staleness.ShouldNotBeNull("the accept keeps the sealed real work and promotes its movable clone next to it");
-        staleness.ChangedEntryCount.ShouldBe(1);
+        staleness.ShouldNotBeNull();
+        staleness.ChangedEntryCount.ShouldBe(1, "the pause of the locked work stays with its work");
+    }
+
+    [Test]
+    public async Task ChangesOnASealedDay_AreNotStale_ButChangesOnAnOpenDayAre()
+    {
+        var sealedWork = AddWork(_shiftId, InsideDay);
+        var openWork = AddWork(_shiftId, InsideDay.AddDays(1));
+        _context.SealedDay.Add(new SealedDay { Id = Guid.NewGuid(), Date = InsideDay, GroupId = null });
+        await _context.SaveChangesAsync();
+        var scenario = await MarkScenarioCreatedAsync();
+
+        sealedWork.Information = "edited on the sealed day";
+        AddExpense(sealedWork.Id);
+        openWork.Information = "edited on the open day";
+        await _context.SaveChangesAsync();
+
+        var staleness = await _service.FindRealPlanChangesSinceCreationAsync(scenario, CancellationToken.None);
+
+        staleness.ShouldNotBeNull();
+        staleness.ChangedEntryCount.ShouldBe(1, "only the open-day edit is overwritten by the accept");
     }
 
     [Test]

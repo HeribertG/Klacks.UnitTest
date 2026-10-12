@@ -218,12 +218,12 @@ public class AcceptAnalyseScenarioStaleGateTests
     {
         _scenarioService
             .PromoteScenarioWorksAsync(_scenario.Token, FromDate, UntilDate, Arg.Any<CancellationToken>())
-            .Returns(new ScenarioAcceptLockSkips(2, 1, 3));
+            .Returns(new ScenarioAcceptLockSkips(2, 1, 3, 4, 5));
 
         var result = await _handler.Handle(new AcceptAnalyseScenarioCommand(_scenario.Id), CancellationToken.None);
 
-        result.ShouldBe(new AcceptAnalyseScenarioResult(true, 2, 1, 3));
-        result.SkippedLockedTotal.ShouldBe(6);
+        result.ShouldBe(new AcceptAnalyseScenarioResult(true, 2, 1, 3, 4, 5));
+        result.SkippedLockedTotal.ShouldBe(15);
     }
 
     private void SetStale(int changedEntries, params string[] acceptedScenarioNames)
