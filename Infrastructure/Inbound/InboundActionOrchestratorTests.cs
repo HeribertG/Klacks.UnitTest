@@ -78,6 +78,9 @@ public class InboundActionOrchestratorTests
         _sealedDayRepository.FindFirstLockedDateForClientAsync(
                 Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns((DateOnly?)null);
+        _sealedDayRepository.GetLockedPairsAsync(
+                Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new HashSet<(DateOnly Date, Guid ClientId)>());
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "done"));
@@ -1172,5 +1175,136 @@ public class InboundActionOrchestratorTests
         outcome!.Executed.ShouldBeFalse();
         await _skillExecutor.DidNotReceive().ExecuteAsync(
             Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    private void SealDay(DateOnly sealedDay)
+    {
+        _sealedDayRepository.GetLockedPairsAsync(
+                Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>()
+                .Where(pair => pair.Date == sealedDay)
+                .ToHashSet());
+    }
+
+    [Test]
+    public async Task ShiftPreference_SealedDayInLaterRange_PlacesNothing()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SealDay(new DateOnly(2026, 7, 15));
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-NIGHT", weekdays: "1,3"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("2026-07-15");
+        outcome.Description.ShouldContain("add_schedule_commands_range");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task ShiftPreference_AllRangesValid_PlacesEveryKeywordOnEveryRange_AfterCheckingEveryDay()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var checkedPairs = new List<(DateOnly Date, Guid ClientId)>();
+        _sealedDayRepository.GetLockedPairsAsync(
+                Arg.Do<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(checkedPairs.AddRange), Arg.Any<CancellationToken>())
+            .Returns(_ => new HashSet<(DateOnly Date, Guid ClientId)>());
+        var invocations = CaptureSkillInvocations();
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-NIGHT", weekdays: "1,3,4"));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeTrue();
+        checkedPairs.ShouldBe(new[]
+        {
+            (new DateOnly(2026, 7, 13), ClientId),
+            (new DateOnly(2026, 7, 15), ClientId),
+            (new DateOnly(2026, 7, 16), ClientId)
+        }, ignoreOrder: true);
+        invocations.Select(i => ((string)i.Parameters["commandKeyword"], (DateOnly)i.Parameters["fromDate"], (DateOnly)i.Parameters["untilDate"]))
+            .ShouldBe(new[]
+            {
+                ("EARLY", new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 13)),
+                ("EARLY", new DateOnly(2026, 7, 15), new DateOnly(2026, 7, 16)),
+                ("-NIGHT", new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 13)),
+                ("-NIGHT", new DateOnly(2026, 7, 15), new DateOnly(2026, 7, 16))
+            });
+    }
+
+    [Test]
+    public async Task ShiftPreference_SeveralCalls_IssueTheTokenOnce()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        CaptureSkillInvocations();
+
+        await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-NIGHT", weekdays: "1,3"));
+
+        (await ExecutedSkillCallsAsync()).ShouldBe(4);
+        await _tokenIssuer.Received(1).IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ShiftPreference_TokenRefused_PlacesNothing()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(InternalTokenResult.Refused("the owner account holds no role"));
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(),
+            ShiftPreferenceAnalysis(new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 17), "EARLY,-NIGHT", weekdays: "1,3"));
+
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("the owner account holds no role");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task DayOffWish_SealedDay_PlacesNothing()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        SealDay(new DateOnly(2026, 7, 11));
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), Analysis(EmailIntent.DayOffWish));
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldContain("2026-07-11");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task DayOffWish_PeriodEndsBeforeItStarts_PlacesNothingWithCleanMessage()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var analysis = Analysis(EmailIntent.DayOffWish);
+        analysis.FromDate = new DateOnly(2026, 7, 12);
+        analysis.UntilDate = new DateOnly(2026, 7, 10);
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        outcome.Description.ShouldNotContain("Automatic action failed");
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task DayOffWish_PeriodLongerThanSealCheckLimit_PlacesNothingWithoutCheckingDays()
+    {
+        AdminLevel(AutonomyLevel.FullyAutonomous);
+        var analysis = Analysis(EmailIntent.DayOffWish);
+        analysis.FromDate = new DateOnly(2026, 7, 1);
+        analysis.UntilDate = new DateOnly(2029, 7, 1);
+
+        var outcome = await _orchestrator.ExecuteAsync(ClientId, Source(), analysis);
+
+        outcome.ShouldNotBeNull();
+        outcome!.Executed.ShouldBeFalse();
+        (await ExecutedSkillCallsAsync()).ShouldBe(0);
+        await _sealedDayRepository.DidNotReceive().GetLockedPairsAsync(
+            Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(), Arg.Any<CancellationToken>());
     }
 }
