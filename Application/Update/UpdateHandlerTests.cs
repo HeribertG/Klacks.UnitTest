@@ -401,6 +401,52 @@ public class UpdateHandlerTests
         await _repository.DidNotReceive().AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
     }
 
+    [TestCase(UpdateOperationStatus.Failed)]
+    [TestCase(UpdateOperationStatus.RolledBack)]
+    [TestCase(UpdateOperationStatus.RollbackFailed)]
+    public async Task Automatic_trigger_skips_a_version_whose_last_attempt_failed(UpdateOperationStatus lastStatus)
+    {
+        GivenManifest("9.9.9", "1.0.0");
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        var failed = Entry(lastStatus);
+        failed.TargetVersion = "9.9.9";
+        _repository.GetLatestByTypesAsync(Arg.Any<IReadOnlyCollection<UpdateOperationType>>(), Arg.Any<CancellationToken>()).Returns(failed);
+
+        var result = await CreateTriggerHandler().Handle(new TriggerUpdateCommand(UpdateRequesters.Automatic), CancellationToken.None);
+
+        result.Enqueued.ShouldBeFalse();
+        result.Reason.ShouldBe(UpdateReasons.PreviousAttemptFailed);
+        await _repository.DidNotReceive().AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Manual_trigger_retries_a_version_whose_last_attempt_failed()
+    {
+        GivenManifest("9.9.9", "1.0.0");
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        var failed = Entry(UpdateOperationStatus.RolledBack);
+        failed.TargetVersion = "9.9.9";
+        _repository.GetLatestByTypesAsync(Arg.Any<IReadOnlyCollection<UpdateOperationType>>(), Arg.Any<CancellationToken>()).Returns(failed);
+
+        var result = await CreateTriggerHandler().Handle(new TriggerUpdateCommand("admin"), CancellationToken.None);
+
+        result.Enqueued.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task Automatic_trigger_proceeds_when_the_failed_attempt_was_an_older_version()
+    {
+        GivenManifest("9.9.9", "1.0.0");
+        _repository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        var failed = Entry(UpdateOperationStatus.RolledBack);
+        failed.TargetVersion = "9.9.8";
+        _repository.GetLatestByTypesAsync(Arg.Any<IReadOnlyCollection<UpdateOperationType>>(), Arg.Any<CancellationToken>()).Returns(failed);
+
+        var result = await CreateTriggerHandler().Handle(new TriggerUpdateCommand(UpdateRequesters.Automatic), CancellationToken.None);
+
+        result.Enqueued.ShouldBeTrue();
+    }
+
     [Test]
     public async Task Trigger_rejected_when_up_to_date()
     {
