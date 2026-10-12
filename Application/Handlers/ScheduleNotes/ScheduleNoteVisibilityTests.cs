@@ -114,7 +114,7 @@ public class ScheduleNoteVisibilityTests
     {
         var resource = NewResource(Guid.NewGuid(), _hiddenClientId);
         var handler = new PostCommandHandler(
-            _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+            _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork, Substitute.For<IDayLockService>(),
             Substitute.For<ILogger<PostCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() =>
@@ -189,7 +189,7 @@ public class ScheduleNoteVisibilityTests
         hidden.AnalyseToken = _hiddenToken;
         _repository.Get(hidden.Id).Returns(hidden);
         var handler = new DeleteCommandHandler(
-            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, Substitute.For<IDayLockService>(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
         var result = await handler.Handle(new DeleteCommand<ScheduleNoteResource>(hidden.Id), CancellationToken.None);
@@ -205,7 +205,7 @@ public class ScheduleNoteVisibilityTests
         var hidden = NewNote(_hiddenClientId);
         _repository.Get(hidden.Id).Returns(hidden);
         var handler = new DeleteCommandHandler(
-            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, Substitute.For<IDayLockService>(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
         var result = await handler.Handle(new DeleteCommand<ScheduleNoteResource>(hidden.Id), CancellationToken.None);
@@ -218,7 +218,7 @@ public class ScheduleNoteVisibilityTests
     private PutCommandHandler NewPutHandler()
     {
         return new PutCommandHandler(
-            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+            _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, Substitute.For<IDayLockService>(),
             Substitute.For<ILogger<PutCommandHandler>>());
     }
 

@@ -302,15 +302,15 @@ public class ScheduleCommandVisibilityTests
     }
 
     private PostCommandHandler NewPostHandler() => new(
-        _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork,
+        _repository, _clientVisibilityGuard, new ScheduleMapper(), _unitOfWork, Substitute.For<IDayLockService>(),
         Substitute.For<ILogger<PostCommandHandler>>());
 
     private PutCommandHandler NewPutHandler() => new(
-        _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+        _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, Substitute.For<IDayLockService>(),
         Substitute.For<ILogger<PutCommandHandler>>());
 
     private DeleteCommandHandler NewDeleteHandler() => new(
-        _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork,
+        _repository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, Substitute.For<IDayLockService>(),
         Substitute.For<ILogger<DeleteCommandHandler>>());
 
     private static ScheduleCommand NewCommand(Guid clientId) => new()

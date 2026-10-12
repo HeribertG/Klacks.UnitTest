@@ -2,11 +2,12 @@
 
 /// <summary>
 /// Unit tests for AddScheduleCommandSkill — verifies keyword validation against the currently
-/// configured (admin-renamable) tokens, and the single-day write.
+/// configured (admin-renamable) tokens, the single-day write, and the refusal on a sealed day.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
@@ -18,12 +19,14 @@ namespace Klacks.UnitTest.Skills;
 [TestFixture]
 public class AddScheduleCommandSkillTests
 {
+    private const string SealedMessage = "Day 2026-07-10 is sealed and cannot be modified.";
     private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
     private IScheduleCommandRepository _scheduleCommandRepository = null!;
     private IClientRepository _clientRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IScheduleCommandKeywordProvider _keywordProvider = null!;
+    private IDayLockService _dayLockService = null!;
     private AddScheduleCommandSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -35,11 +38,12 @@ public class AddScheduleCommandSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
+        _dayLockService = Substitute.For<IDayLockService>();
 
         _clientRepository.Exists(ClientId).Returns(true);
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
-        _skill = new AddScheduleCommandSkill(_scheduleCommandRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork, _keywordProvider);
+        _skill = new AddScheduleCommandSkill(_scheduleCommandRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork, _keywordProvider, _dayLockService);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -56,6 +60,32 @@ public class AddScheduleCommandSkillTests
         ["date"] = "2026-07-10",
         ["commandKeyword"] = keyword
     };
+
+    [Test]
+    public async Task SealedDay_ReturnsError_WithoutWrite()
+    {
+        _dayLockService
+            .When(s => s.EnsureNotLockedAsync(new DateOnly(2026, 7, 10), ClientId, null, Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidRequestException(SealedMessage));
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(SealedMessage);
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task OpenDay_ChecksTheDayLockForTheTargetDay_AndPlacesCommand()
+    {
+        var result = await _skill.ExecuteAsync(Context(), Parameters());
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _dayLockService.Received(1).EnsureNotLockedAsync(
+            new DateOnly(2026, 7, 10), ClientId, null, Arg.Any<CancellationToken>());
+        await _scheduleCommandRepository.ReceivedWithAnyArgs(1).Add(default!);
+    }
 
     [Test]
     public async Task ValidKeyword_PlacesCommand()
@@ -135,7 +165,7 @@ public class AddScheduleCommandSkillTests
     public async Task HiddenClient_AnswersLikeUnknownId_WithoutWrite()
     {
         var guard = SkillClientVisibility.Hiding(ClientId);
-        var skill = new AddScheduleCommandSkill(_scheduleCommandRepository, _clientRepository, guard, _unitOfWork, _keywordProvider);
+        var skill = new AddScheduleCommandSkill(_scheduleCommandRepository, _clientRepository, guard, _unitOfWork, _keywordProvider, _dayLockService);
         var unknownId = Guid.NewGuid();
         var unknownParameters = Parameters();
         unknownParameters["clientId"] = unknownId.ToString();

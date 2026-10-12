@@ -2,11 +2,13 @@
 
 /// <summary>
 /// Unit tests for AddScheduleCommandsRangeSkill — verifies one command per day over the range,
-/// skipping of already-present identical commands, the range cap, and keyword validation.
+/// skipping of already-present identical commands, the range cap, keyword validation, and the refusal of a
+/// range that touches a sealed day.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
@@ -18,12 +20,14 @@ namespace Klacks.UnitTest.Skills;
 [TestFixture]
 public class AddScheduleCommandsRangeSkillTests
 {
+    private const string SealedMessage = "Day 2026-07-10 is sealed and cannot be modified.";
     private static readonly ScheduleCommandKeywordSet DefaultKeywords = ScheduleCommandKeywordTestFactory.Default;
 
     private IScheduleCommandRepository _scheduleCommandRepository = null!;
     private IClientRepository _clientRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IScheduleCommandKeywordProvider _keywordProvider = null!;
+    private IDayLockService _dayLockService = null!;
     private AddScheduleCommandsRangeSkill _skill = null!;
 
     private static readonly Guid ClientId = Guid.NewGuid();
@@ -35,6 +39,7 @@ public class AddScheduleCommandsRangeSkillTests
         _clientRepository = Substitute.For<IClientRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _keywordProvider = Substitute.For<IScheduleCommandKeywordProvider>();
+        _dayLockService = Substitute.For<IDayLockService>();
 
         _clientRepository.Exists(ClientId).Returns(true);
         _scheduleCommandRepository.GetByClientsAndDateRangeAsync(
@@ -43,7 +48,7 @@ public class AddScheduleCommandsRangeSkillTests
             .Returns([]);
         _keywordProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(DefaultKeywords);
 
-        _skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork, _keywordProvider);
+        _skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, SkillClientVisibility.AllVisible(), _unitOfWork, _keywordProvider, _dayLockService);
     }
 
     private static SkillExecutionContext Context() => new()
@@ -80,6 +85,50 @@ public class AddScheduleCommandsRangeSkillTests
         ]);
         added.ShouldAllBe(c => c.CommandKeyword == "FREE" && c.ClientId == ClientId);
         await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task RangeTouchingASealedDay_ReturnsError_WithoutAnyWrite()
+    {
+        _dayLockService
+            .When(s => s.EnsureNoneLockedAsync(
+                Arg.Is<IReadOnlyCollection<(DateOnly Date, Guid ClientId, Guid? AnalyseToken)>>(
+                    entries => entries.Any(e => e.Date == new DateOnly(2026, 7, 12))),
+                Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidRequestException(SealedMessage));
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(SealedMessage);
+        await _scheduleCommandRepository.DidNotReceiveWithAnyArgs().Add(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task DayLockCheck_CoversOnlyTheDaysStillToBePlaced()
+    {
+        _scheduleCommandRepository.GetByClientsAndDateRangeAsync(
+                Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new ScheduleCommand { ClientId = ClientId, CurrentDate = new DateOnly(2026, 7, 11), CommandKeyword = "FREE" }
+            ]);
+        IReadOnlyCollection<(DateOnly Date, Guid ClientId, Guid? AnalyseToken)>? checkedEntries = null;
+        await _dayLockService.EnsureNoneLockedAsync(
+            Arg.Do<IReadOnlyCollection<(DateOnly Date, Guid ClientId, Guid? AnalyseToken)>>(e => checkedEntries = e),
+            Arg.Any<CancellationToken>());
+
+        var result = await _skill.ExecuteAsync(Context(), Parameters());
+
+        result.Success.ShouldBeTrue(result.Message);
+        checkedEntries.ShouldNotBeNull();
+        checkedEntries!.Select(e => e.Date).ShouldBe(
+        [
+            new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 12), new DateOnly(2026, 7, 13), new DateOnly(2026, 7, 14)
+        ]);
+        checkedEntries.ShouldAllBe(e => e.ClientId == ClientId && e.AnalyseToken == null);
     }
 
     [Test]
@@ -162,7 +211,7 @@ public class AddScheduleCommandsRangeSkillTests
     public async Task HiddenClient_AnswersLikeUnknownId_WithoutWrite()
     {
         var guard = SkillClientVisibility.Hiding(ClientId);
-        var skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, guard, _unitOfWork, _keywordProvider);
+        var skill = new AddScheduleCommandsRangeSkill(_scheduleCommandRepository, _clientRepository, guard, _unitOfWork, _keywordProvider, _dayLockService);
         var unknownId = Guid.NewGuid();
         var unknownParameters = Parameters();
         unknownParameters["clientId"] = unknownId.ToString();
