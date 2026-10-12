@@ -3,6 +3,7 @@
 using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
@@ -24,21 +25,27 @@ public class ConfirmPendingActionSkillTests
         _store = PendingStoreTestFactory.CreateConfirmationStore();
         _skillExecutor = Substitute.For<ISkillExecutor>();
         _turnScope = new TurnConfirmationScope();
-        _sut = new ConfirmPendingActionSkill(_store, _skillExecutor, _turnScope);
+        _sut = new ConfirmPendingActionSkill(_store, _skillExecutor, new ConfirmationRedemptionGuard(_turnScope));
     }
 
-    private static SkillExecutionContext Ctx(Guid? userId = null) => new()
+    private static SkillExecutionContext Ctx(
+        Guid? userId = null,
+        UserConfirmationEvidence evidence = UserConfirmationEvidence.None) => new()
     {
         UserId = userId ?? Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string>()
+        UserPermissions = new List<string>(),
+        UserConfirmation = evidence
     };
+
+    private static SkillExecutionContext YesCtx(Guid? userId = null) =>
+        Ctx(userId, UserConfirmationEvidence.ExplicitConfirmationReply);
 
     [Test]
     public async Task ValidToken_ReplaysStoredInvocationWithBypass()
     {
-        var context = Ctx();
+        var context = YesCtx();
         var storedParams = new Dictionary<string, object> { ["level"] = "0" };
         var token = _store.Create(context.UserId, "set_autonomy_level", storedParams);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
@@ -61,7 +68,7 @@ public class ConfirmPendingActionSkillTests
     [Test]
     public async Task InvalidToken_ReturnsErrorWithoutExecution()
     {
-        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        var result = await _sut.ExecuteAsync(YesCtx(), new Dictionary<string, object>
         {
             [AutonomyDefaults.ConfirmationTokenParameter] = "no-such-token"
         });
@@ -76,7 +83,7 @@ public class ConfirmPendingActionSkillTests
     {
         var token = _store.Create(Guid.NewGuid(), "delete_shift", new Dictionary<string, object>());
 
-        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        var result = await _sut.ExecuteAsync(YesCtx(), new Dictionary<string, object>
         {
             [AutonomyDefaults.ConfirmationTokenParameter] = token
         });
@@ -89,7 +96,7 @@ public class ConfirmPendingActionSkillTests
     [Test]
     public async Task Token_IsSingleUse()
     {
-        var context = Ctx();
+        var context = YesCtx();
         var token = _store.Create(context.UserId, "delete_shift", new Dictionary<string, object>());
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null));
@@ -107,12 +114,14 @@ public class ConfirmPendingActionSkillTests
         Assert.That(second.Success, Is.False);
     }
 
-    [Test]
-    public async Task SensitiveTokenFromSameTurn_ReturnsErrorAndKeepsTokenValid()
+    [TestCase("close_period")]
+    [TestCase("delete_shift")]
+    [TestCase("place_work")]
+    public async Task TokenFromSameTurn_WhateverTheSkillsRiskClass_ReturnsErrorAndKeepsTokenValid(string skillName)
     {
-        var context = Ctx();
-        var token = _store.Create(context.UserId, "close_period", new Dictionary<string, object>());
-        _turnScope.MarkIssuedForSensitiveSkill(token);
+        var context = YesCtx();
+        var token = _store.Create(context.UserId, skillName, new Dictionary<string, object>());
+        _turnScope.MarkIssued(token);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null));
 
@@ -120,20 +129,85 @@ public class ConfirmPendingActionSkillTests
         {
             [AutonomyDefaults.ConfirmationTokenParameter] = token
         });
-        var nextTurnSkill = new ConfirmPendingActionSkill(_store, _skillExecutor, new TurnConfirmationScope());
+        var nextTurnSkill = new ConfirmPendingActionSkill(
+            _store, _skillExecutor, new ConfirmationRedemptionGuard(new TurnConfirmationScope()));
         var nextTurn = await nextTurnSkill.ExecuteAsync(context, new Dictionary<string, object>
         {
             [AutonomyDefaults.ConfirmationTokenParameter] = token
         });
 
-        Assert.That(sameTurn.Success, Is.False);
-        Assert.That(nextTurn.Success, Is.True);
+        sameTurn.Success.ShouldBeFalse();
+        sameTurn.Message.ShouldBe(ConfirmationRedemptionMessages.IssuedThisTurn);
+        nextTurn.Success.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task LaterTurnWithoutUserConfirmationEvidence_ReturnsErrorAndKeepsTokenValid()
+    {
+        var userId = Guid.NewGuid();
+        var token = _store.Create(userId, "delete_shift", new Dictionary<string, object>());
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null));
+
+        var withoutEvidence = await _sut.ExecuteAsync(
+            Ctx(userId, UserConfirmationEvidence.None),
+            new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = token });
+
+        withoutEvidence.Success.ShouldBeFalse();
+        withoutEvidence.Message.ShouldBe(ConfirmationRedemptionMessages.UserConfirmationMissing);
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+
+        var withEvidence = await _sut.ExecuteAsync(
+            Ctx(userId, UserConfirmationEvidence.ExplicitConfirmationReply),
+            new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = token });
+
+        withEvidence.Success.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task AClientEndpointCallWithoutTheChatsEvidence_CannotRedeemAnEarlierToken()
+    {
+        var userId = Guid.NewGuid();
+        var token = _store.Create(userId, "delete_shift", new Dictionary<string, object>());
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null));
+
+        var result = await _sut.ExecuteAsync(
+            Ctx(userId),
+            new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = token });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(ConfirmationRedemptionMessages.UserConfirmationMissing);
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        _store.PeekLatestForUser(userId, TimeSpan.FromMinutes(1)).ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task ATokenIssuedOverMcp_IsNotRedeemableInTheChat_AndIsBurnedByTheAttempt()
+    {
+        var userId = Guid.NewGuid();
+        var token = _store.Create(
+            userId, "delete_shift", new Dictionary<string, object>(),
+            PendingConfirmationPurposes.GateReplay, PendingConfirmationChannels.Mcp);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(null));
+
+        var result = await _sut.ExecuteAsync(
+            YesCtx(userId),
+            new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = token });
+
+        result.Success.ShouldBeFalse();
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        _store.Consume(token, userId, channel: PendingConfirmationChannels.Mcp).ShouldBeNull();
     }
 
     [Test]
     public async Task ContextWithBypassedGate_IsRefusedBeforeTheTokenIsConsumed()
     {
-        var context = Ctx();
+        var context = YesCtx();
         var token = _store.Create(context.UserId, "close_period", new Dictionary<string, object>());
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null));
@@ -158,7 +232,7 @@ public class ConfirmPendingActionSkillTests
     [Test]
     public async Task MissingToken_ReturnsError()
     {
-        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+        var result = await _sut.ExecuteAsync(YesCtx(), new Dictionary<string, object>());
 
         Assert.That(result.Success, Is.False);
         await _skillExecutor.DidNotReceive().ExecuteAsync(
@@ -168,7 +242,7 @@ public class ConfirmPendingActionSkillTests
     [Test]
     public async Task ValidToken_CarriesTheReplayedSkillNameInTheResultMetadata()
     {
-        var context = Ctx();
+        var context = YesCtx();
         var token = _store.Create(context.UserId, "update_contract", new Dictionary<string, object>());
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(new { ok = true }, "done"));
@@ -186,7 +260,7 @@ public class ConfirmPendingActionSkillTests
     [Test]
     public async Task ValidToken_KeepsTheReplayedResultsOwnMetadata()
     {
-        var context = Ctx();
+        var context = YesCtx();
         var token = _store.Create(context.UserId, "update_contract", new Dictionary<string, object>());
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.Confirmation("Please confirm.", "inner-token"));
@@ -203,7 +277,7 @@ public class ConfirmPendingActionSkillTests
     [Test]
     public async Task ARedeemedCorrectionUndo_RunsTheInverse_ButCarriesNoReplayedSkillName()
     {
-        var context = Ctx();
+        var context = YesCtx();
         var token = _store.Create(
             context.UserId, "remove_shift_from_group", new Dictionary<string, object>(),
             PendingConfirmationPurposes.CorrectionUndo);
@@ -229,7 +303,7 @@ public class ConfirmPendingActionSkillTests
     [TestCase("GateReplay", true)]
     public async Task ThePurposeOfTheRedeemedToken_IsComparedNormalized(string purpose, bool carriesReplayedName)
     {
-        var context = Ctx();
+        var context = YesCtx();
         var token = _store.Create(context.UserId, "update_contract", new Dictionary<string, object>(), purpose);
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(new { ok = true }, "done"));
@@ -245,7 +319,7 @@ public class ConfirmPendingActionSkillTests
     [Test]
     public async Task InvalidToken_CarriesNoReplayedSkillName()
     {
-        var result = await _sut.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        var result = await _sut.ExecuteAsync(YesCtx(), new Dictionary<string, object>
         {
             [AutonomyDefaults.ConfirmationTokenParameter] = "no-such-token"
         });

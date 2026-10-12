@@ -73,7 +73,6 @@ public class AcceptScenarioSkillStaleConfirmationTests
                 && !p.ContainsKey(ScenarioAcceptDefaults.LegacyStaleConfirmedParameter)
                 && (string)p["scenarioId"] == _scenarioId.ToString()),
             PendingConfirmationPurposes.StaleScenarioOverwrite);
-        _turnScope.Received(1).MarkIssuedForSensitiveSkill(IssuedToken);
         _turnScope.Received(1).MarkIssued(IssuedToken);
     }
 

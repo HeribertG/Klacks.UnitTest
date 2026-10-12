@@ -99,4 +99,32 @@ public class McpSkillExposurePolicyTests
 
         Assert.That(sut.IsExposed(descriptor), Is.True);
     }
+
+    // An MCP call never carries user-confirmation evidence (the client's agent is a model), so the redeeming
+    // tool would only ever refuse; the held action is confirmed by the user in the Klacks chat instead.
+    [Test]
+    public void ConfirmPendingAction_IsNotExposed_EvenWhenClassifiedIrreversible()
+    {
+        var descriptor = McpTestData.Descriptor(AutonomyDefaults.ConfirmPendingActionSkillName, SkillCategory.Action);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.Irreversible);
+
+        Assert.That(_sut.IsExposed(descriptor), Is.False);
+    }
+
+    // Owner decision 2026-10-12: the destructive delete/remove/reset skills and the secret writers are Sensitive,
+    // so they vanish from the MCP tool list together with the confirmation they now always need.
+    [TestCase("delete_shift")]
+    [TestCase("delete_address")]
+    [TestCase("remove_client_from_group")]
+    [TestCase("reset_shift_cuts")]
+    [TestCase("update_deepl_settings")]
+    [TestCase("update_web_search_settings")]
+    [TestCase("update_openroute_settings")]
+    [TestCase("update_speech_settings")]
+    public void MovedDestructiveAndSecretWriterSkills_RealClassifier_AreNotExposed(string name)
+    {
+        var sut = new McpSkillExposurePolicy(new SkillRiskClassifier());
+
+        Assert.That(sut.IsExposed(McpTestData.Descriptor(name, SkillCategory.Crud)), Is.False);
+    }
 }

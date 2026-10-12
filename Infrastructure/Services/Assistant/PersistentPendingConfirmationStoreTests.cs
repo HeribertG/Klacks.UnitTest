@@ -80,6 +80,63 @@ public class PersistentPendingConfirmationStoreTests
     }
 
     [Test]
+    public void A_token_issued_over_mcp_is_invisible_to_the_chat_and_not_redeemable_by_it()
+    {
+        var mcpToken = _store.Create(
+            User1, "delete_shift", SampleParameters(), PendingConfirmationPurposes.GateReplay,
+            PendingConfirmationChannels.Mcp);
+
+        _store.PeekLatestForUser(User1, Window).ShouldBeNull();
+        _store.PeekLatestForUser(User1, Window, PendingConfirmationPurposes.GateReplay, PendingConfirmationChannels.Mcp)
+            .ShouldNotBeNull();
+        _store.Consume(mcpToken, User1).ShouldBeNull();
+        _store.Consume(mcpToken, User1, channel: PendingConfirmationChannels.Mcp).ShouldBeNull();
+    }
+
+    [Test]
+    public void A_token_issued_over_mcp_is_redeemable_on_mcp_itself()
+    {
+        var mcpToken = _store.Create(
+            User1, "delete_shift", SampleParameters(), PendingConfirmationPurposes.GateReplay,
+            PendingConfirmationChannels.Mcp);
+
+        _store.Consume(mcpToken, User1, channel: PendingConfirmationChannels.Mcp).ShouldNotBeNull();
+    }
+
+    [Test]
+    public void The_latest_chat_token_is_found_although_a_newer_mcp_token_exists()
+    {
+        var chatToken = _store.Create(User1, "delete_shift", SampleParameters());
+        _store.Create(
+            User1, "delete_shift", SampleParameters(), PendingConfirmationPurposes.GateReplay,
+            PendingConfirmationChannels.Mcp);
+
+        _store.PeekLatestForUser(User1, Window)!.Token.ShouldBe(chatToken);
+    }
+
+    [Test]
+    public void A_row_stored_without_a_channel_reads_as_chat()
+    {
+        using (var context = CreateContext())
+        {
+            context.PendingConfirmations.Add(new PendingConfirmationRow
+            {
+                Id = Guid.NewGuid(),
+                Token = "legacy-token",
+                UserId = User1,
+                SkillName = "delete_shift",
+                ParametersJson = "{}",
+                Channel = string.Empty,
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(AutonomyDefaults.ConfirmationTtlMinutes)
+            });
+            context.SaveChanges();
+        }
+
+        _store.PeekLatestForUser(User1, Window)!.Token.ShouldBe("legacy-token");
+        _store.Consume("legacy-token", User1).ShouldNotBeNull();
+    }
+
+    [Test]
     public void Consume_returns_null_on_second_attempt()
     {
         var token = _store.Create(User1, "delete_system_user", SampleParameters());

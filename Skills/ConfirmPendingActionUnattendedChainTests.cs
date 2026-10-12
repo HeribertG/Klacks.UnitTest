@@ -18,6 +18,7 @@ using Klacks.Api.Application.Services.Assistant.Scheduling;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
@@ -125,7 +126,7 @@ public class ConfirmPendingActionUnattendedChainTests
     public async Task ABackgroundPathRedeemingAHeldToken_IsRefused_AndTheTokenStaysRedeemableInTheChat()
     {
         var token = HoldSensitiveSkillInAnEarlierScope();
-        var skill = new ConfirmPendingActionSkill(_store, _executor, new TurnConfirmationScope());
+        var skill = new ConfirmPendingActionSkill(_store, _executor, new ConfirmationRedemptionGuard(new TurnConfirmationScope()));
         var planStepContext = InteractiveContext() with { BypassAutonomyGate = true, SupportsUiActions = false };
 
         var result = await skill.ExecuteAsync(planStepContext, TokenParameters(token));
@@ -142,14 +143,13 @@ public class ConfirmPendingActionUnattendedChainTests
             ["shiftId"] = Guid.NewGuid().ToString(),
             ["macroId"] = Guid.NewGuid().ToString()
         });
-        new TurnConfirmationScope().MarkIssuedForSensitiveSkill(token);
         return token;
     }
 
     private async Task RedeemInteractivelyAsync(string token)
     {
         _executedSkills.Clear();
-        var chatSkill = new ConfirmPendingActionSkill(_store, _executor, new TurnConfirmationScope());
+        var chatSkill = new ConfirmPendingActionSkill(_store, _executor, new ConfirmationRedemptionGuard(new TurnConfirmationScope()));
 
         var result = await chatSkill.ExecuteAsync(InteractiveContext(), TokenParameters(token));
 
@@ -161,7 +161,7 @@ public class ConfirmPendingActionUnattendedChainTests
     {
         if (string.Equals(invocation.SkillName, AutonomyDefaults.ConfirmPendingActionSkillName, StringComparison.OrdinalIgnoreCase))
         {
-            var freshScopeSkill = new ConfirmPendingActionSkill(_store, _executor, new TurnConfirmationScope());
+            var freshScopeSkill = new ConfirmPendingActionSkill(_store, _executor, new ConfirmationRedemptionGuard(new TurnConfirmationScope()));
             return await freshScopeSkill.ExecuteAsync(context, invocation.Parameters);
         }
 
@@ -220,7 +220,8 @@ public class ConfirmPendingActionUnattendedChainTests
         TenantId = Guid.Empty,
         UserName = Owner.ToString(),
         UserPermissions = AdminPermissions(),
-        UserTimezone = TimeZone
+        UserTimezone = TimeZone,
+        UserConfirmation = UserConfirmationEvidence.ExplicitConfirmationReply
     };
 
     private static SkillDescriptor Descriptor(string name) =>

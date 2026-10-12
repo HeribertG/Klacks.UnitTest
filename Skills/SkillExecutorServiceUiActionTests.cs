@@ -13,6 +13,7 @@ using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.UnitTest.TestHelpers;
@@ -81,6 +82,7 @@ public class SkillExecutorServiceUiActionTests
             new SkillRiskClassifier(),
             _confirmationStore,
             _turnScope,
+            new ConfirmationRedemptionGuard(_turnScope),
             Array.Empty<ISkillConfirmationPreviewProvider>(),
             NullLogger<AutonomyGateService>.Instance);
         return CreateExecutor(gate);
@@ -101,14 +103,16 @@ public class SkillExecutorServiceUiActionTests
         bool supportsUiActions = true,
         bool bypassGate = false,
         IReadOnlyList<string>? permissions = null,
-        Guid? userId = null) => new()
+        Guid? userId = null,
+        UserConfirmationEvidence evidence = UserConfirmationEvidence.None) => new()
     {
         UserId = userId ?? Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
         UserPermissions = permissions ?? new List<string>(),
         BypassAutonomyGate = bypassGate,
-        SupportsUiActions = supportsUiActions
+        SupportsUiActions = supportsUiActions,
+        UserConfirmation = evidence
     };
 
     private void SetLevel(Guid userId, AutonomyLevel level)
@@ -218,6 +222,24 @@ public class SkillExecutorServiceUiActionTests
     }
 
     [Test]
+    public async Task UiAction_WithAStoredApiCallStep_IsNotDeliveredToTheClient_AndNeverReachesTheGate()
+    {
+        const string apiCallConfig =
+            "{\"steps\":[{\"action\":\"navigate\",\"route\":\"/x\"},{\"action\":\"apiCall\",\"apiUrl\":\"/api/backend/Clients/1\",\"apiMethod\":\"DELETE\"}]}";
+        _registry.GetSkillByName(MutatingUiActionSkillName).Returns(
+            UiActionDescriptor(MutatingUiActionSkillName, handlerConfig: apiCallConfig));
+
+        var result = await ExecuteAsync(_sut, MutatingUiActionSkillName, new Dictionary<string, object>(), Ctx());
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Is.EqualTo(UiActionStepActions.ApiCallRejectedMessage));
+        Assert.That(result.UiActionSteps, Is.Null);
+        await _autonomyGate.DidNotReceive().CheckAsync(
+            Arg.Any<SkillDescriptor>(), Arg.Any<SkillExecutionContext>(),
+            Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task UiAction_WithoutHandlerConfig_FallsBackToEmptyStepsObject()
     {
         _registry.GetSkillByName(MutatingUiActionSkillName).Returns(
@@ -268,13 +290,14 @@ public class SkillExecutorServiceUiActionTests
     {
         var executor = CreateExecutorWithRealGate();
         _serviceProvider.GetService(typeof(ConfirmPendingActionSkill))
-            .Returns(_ => new ConfirmPendingActionSkill(_confirmationStore, executor, _turnScope));
+            .Returns(_ => new ConfirmPendingActionSkill(
+                _confirmationStore, executor, new ConfirmationRedemptionGuard(new TurnConfirmationScope())));
         _registry.GetSkillByName(MutatingUiActionSkillName).Returns(UiActionDescriptor(MutatingUiActionSkillName));
         _registry.GetSkillByName(AutonomyDefaults.ConfirmPendingActionSkillName).Returns(
             new SkillDescriptor(
                 AutonomyDefaults.ConfirmPendingActionSkillName, "test", SkillCategory.System,
                 [], [], [], typeof(ConfirmPendingActionSkill)));
-        var context = Ctx();
+        var context = Ctx(evidence: UserConfirmationEvidence.ExplicitConfirmationReply);
         SetLevel(context.UserId, AutonomyLevel.Propose);
         var originalParameters = new Dictionary<string, object> { ["branchId"] = "7", ["name"] = "North" };
 
@@ -299,7 +322,7 @@ public class SkillExecutorServiceUiActionTests
     {
         var executor = CreateExecutorWithRealGate();
         _registry.GetSkillByName(MutatingUiActionSkillName).Returns(UiActionDescriptor(MutatingUiActionSkillName));
-        var context = Ctx();
+        var context = Ctx(evidence: UserConfirmationEvidence.ExplicitConfirmationReply);
         SetLevel(context.UserId, AutonomyLevel.Propose);
         var token = _confirmationStore.Create(
             context.UserId, MutatingUiActionSkillName, new Dictionary<string, object> { ["name"] = "North" });

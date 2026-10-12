@@ -60,6 +60,13 @@ public class StopTurnServiceRegistrationTests
         Descriptor<ITurnConfirmationDiscarder>().Lifetime.ShouldBe(ServiceLifetime.Scoped);
     }
 
+    [Test]
+    public void TheConfirmationRedemptionGuard_IsScopedBecauseItReadsTheScopedTurnScope()
+    {
+        Descriptor<IConfirmationRedemptionGuard>().ImplementationType.ShouldBe(typeof(ConfirmationRedemptionGuard));
+        Descriptor<IConfirmationRedemptionGuard>().Lifetime.ShouldBe(ServiceLifetime.Scoped);
+    }
+
     [TestCase(typeof(LLMFunctionExecutor))]
     [TestCase(typeof(CorrectionTurnPreparer))]
     public void TheTurnScope_IsARequiredConstructorParameter(Type consumer)

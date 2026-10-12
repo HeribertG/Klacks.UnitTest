@@ -15,6 +15,7 @@
 using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -184,6 +185,7 @@ public class AutonomyGatePreviewTests
         _riskClassifier,
         _confirmationStore,
         turnScope,
+        new ConfirmationRedemptionGuard(turnScope),
         [_provider],
         NullLogger<AutonomyGateService>.Instance);
 
@@ -202,6 +204,7 @@ public class AutonomyGatePreviewTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "admin",
-        UserPermissions = new List<string> { Roles.Admin }
+        UserPermissions = new List<string> { Roles.Admin },
+        UserConfirmation = UserConfirmationEvidence.ExplicitConfirmationReply
     };
 }

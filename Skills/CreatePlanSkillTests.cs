@@ -91,7 +91,6 @@ public class CreatePlanSkillTests
         result.Message.ShouldContain("plan-token");
         _confirmationStore.Received(1).Create(userId, PlanSkillDefaults.CreatePlanSkillName,
             Arg.Any<IReadOnlyDictionary<string, object>>());
-        _turnScope.Received(1).MarkIssuedForSensitiveSkill("plan-token");
         _turnScope.Received(1).MarkIssued("plan-token");
         _planChatService.DidNotReceive().StartBackgroundExecution(
             Arg.Any<Guid>(), Arg.Any<SkillExecutionContext>(), Arg.Any<bool>());

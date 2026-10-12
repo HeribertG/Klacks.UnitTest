@@ -11,6 +11,7 @@ using System.Globalization;
 using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
@@ -31,7 +32,7 @@ public class ConfirmPendingActionStaleOverwriteTests
         _skillExecutor = Substitute.For<ISkillExecutor>();
         _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "done"));
-        _sut = new ConfirmPendingActionSkill(_store, _skillExecutor, new TurnConfirmationScope());
+        _sut = new ConfirmPendingActionSkill(_store, _skillExecutor, new ConfirmationRedemptionGuard(new TurnConfirmationScope()));
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -39,7 +40,8 @@ public class ConfirmPendingActionStaleOverwriteTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string>()
+        UserPermissions = new List<string>(),
+        UserConfirmation = UserConfirmationEvidence.ExplicitConfirmationReply
     };
 
     private static Dictionary<string, object> StoredParameters() => new()

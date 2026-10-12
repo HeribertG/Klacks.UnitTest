@@ -40,6 +40,28 @@ public class SkillRiskClassifierTests
     [TestCase("delete_macro")]
     [TestCase("delete_contract")]
     [TestCase("create_contract_from_template")]
+    [TestCase("delete_shift")]
+    [TestCase("delete_address")]
+    [TestCase("delete_qualification")]
+    [TestCase("delete_communication")]
+    [TestCase("delete_annotation")]
+    [TestCase("remove_client_from_group")]
+    [TestCase("remove_shift_from_group")]
+    [TestCase("reset_shift_cuts")]
+    [TestCase("reset_container_day")]
+    [TestCase("delete_expense")]
+    [TestCase("delete_workchange")]
+    [TestCase("delete_break_placeholder")]
+    [TestCase("delete_period_cap_rule")]
+    [TestCase("delete_llm_provider")]
+    [TestCase("update_deepl_settings")]
+    [TestCase("update_web_search_settings")]
+    [TestCase("update_openroute_settings")]
+    [TestCase("update_speech_settings")]
+    [TestCase("update_email_settings")]
+    [TestCase("update_imap_settings")]
+    [TestCase("create_llm_provider")]
+    [TestCase("update_llm_model")]
     public void Classify_SensitiveSkills_ReturnsSensitive(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
@@ -75,10 +97,13 @@ public class SkillRiskClassifierTests
     // through anything.
     [TestCase("accept_scenario")]
     [TestCase("update_client")]
-    [TestCase("delete_shift")]
+    [TestCase("create_shift")]
     [TestCase("update_general_settings")]
     [TestCase("create_calendar_selection")]
-    [TestCase("reset_container_day")]
+    [TestCase("update_work")]
+    [TestCase("delete_ai_memory")]
+    [TestCase("delete_agent_skill")]
+    [TestCase("delete_transcription_dictionary_entry")]
     public void Classify_ListedWriters_ReturnsIrreversible(string name)
     {
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Irreversible));

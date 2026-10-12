@@ -11,6 +11,7 @@
 using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
@@ -78,7 +79,8 @@ public class SkillExecutorServiceExternalContentTests
         UserId = userId ?? Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string>()
+        UserPermissions = new List<string>(),
+        UserConfirmation = UserConfirmationEvidence.ExplicitConfirmationReply
     };
 
     private Task<SkillResult> ExecuteAsync(string skillName, Dictionary<string, object> parameters, SkillExecutionContext context)
@@ -134,7 +136,7 @@ public class SkillExecutorServiceExternalContentTests
     {
         var turnScope = new TurnConfirmationScope();
         _serviceProvider.GetService(typeof(ConfirmPendingActionSkill))
-            .Returns(_ => new ConfirmPendingActionSkill(_confirmationStore, _sut, turnScope));
+            .Returns(_ => new ConfirmPendingActionSkill(_confirmationStore, _sut, new ConfirmationRedemptionGuard(turnScope)));
         _registry.GetSkillByName(AutonomyDefaults.ConfirmPendingActionSkillName).Returns(
             new SkillDescriptor(
                 AutonomyDefaults.ConfirmPendingActionSkillName, "test", SkillCategory.System,
@@ -157,7 +159,7 @@ public class SkillExecutorServiceExternalContentTests
     {
         var turnScope = new TurnConfirmationScope();
         _serviceProvider.GetService(typeof(ConfirmPendingActionSkill))
-            .Returns(_ => new ConfirmPendingActionSkill(_confirmationStore, _sut, turnScope));
+            .Returns(_ => new ConfirmPendingActionSkill(_confirmationStore, _sut, new ConfirmationRedemptionGuard(turnScope)));
         _registry.GetSkillByName(AutonomyDefaults.ConfirmPendingActionSkillName).Returns(
             new SkillDescriptor(
                 AutonomyDefaults.ConfirmPendingActionSkillName, "test", SkillCategory.System,

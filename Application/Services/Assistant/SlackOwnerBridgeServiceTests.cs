@@ -12,6 +12,7 @@
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Application.Services.Assistant.Autonomy;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -20,6 +21,7 @@ using Klacks.Plugin.Messaging.Application.Constants;
 using Klacks.Plugin.Messaging.Application.Interfaces;
 using Klacks.Plugin.Messaging.Domain.Enums;
 using Klacks.Plugin.Messaging.Domain.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SettingsConstants = Klacks.Api.Application.Constants.Settings;
 
@@ -38,6 +40,8 @@ public class SlackOwnerBridgeServiceTests
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private IMediator _mediator = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
+    private List<ITurnConfirmationScope> _turnScopesSeen = null!;
+    private ServiceProvider _serviceProvider = null!;
     private SlackOwnerBridgeService _sut = null!;
 
     [SetUp]
@@ -56,15 +60,52 @@ public class SlackOwnerBridgeServiceTests
         _planningAudienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
             .Returns((IReadOnlySet<string>)new HashSet<string> { AdminId });
 
+        _turnScopesSeen = [];
+        var services = new ServiceCollection();
+        services.AddScoped<ITurnConfirmationScope, TurnConfirmationScope>();
+        services.AddScoped<IMediator>(provider =>
+        {
+            _turnScopesSeen.Add(provider.GetRequiredService<ITurnConfirmationScope>());
+            return _mediator;
+        });
+        _serviceProvider = services.BuildServiceProvider();
+
         _sut = new SlackOwnerBridgeService(
             _ownerMessengerReader,
             _messagingService,
             _settingsRepository,
             _unitOfWork,
             _planningAudienceResolver,
-            _mediator,
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _tokenIssuer,
             NullLogger<SlackOwnerBridgeService>.Instance);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _serviceProvider.Dispose();
+    }
+
+    [Test]
+    public async Task RunCycleAsync_TwoMessagesInOneCycle_EachRunsInItsOwnScope_SoATokenIssuedByTheFirstIsNotIssuedThisTurnForTheSecond()
+    {
+        SetUpOwnerAlias();
+        SetUpWatermark(DateTime.UtcNow.AddMinutes(-5));
+        var first = BuildMessage(DateTime.UtcNow.AddSeconds(-2), content: "lösche den Dienst");
+        var second = BuildMessage(DateTime.UtcNow, content: "ja");
+        _messagingService.GetMessagesAsync(
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<MessageScope?>(), Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+            .Returns(new List<Message> { first, second });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMResponse { Message = "Antwort" });
+
+        await _sut.RunCycleAsync();
+
+        _turnScopesSeen.Count.ShouldBe(2);
+        _turnScopesSeen[0].ShouldNotBeSameAs(_turnScopesSeen[1]);
+        _turnScopesSeen[0].MarkIssued("token-of-message-one");
+        _turnScopesSeen[1].WasIssuedThisTurn("token-of-message-one").ShouldBeFalse();
     }
 
     [Test]

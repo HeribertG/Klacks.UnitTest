@@ -113,7 +113,8 @@ public class McpPromptCatalogTests
         Assert.That(text, Does.Contain("create_employee"));
         Assert.That(text, Does.Contain("add_client_to_group_by_name"));
         Assert.That(text, Does.Contain("Ask the user which group to add the employee to."));
-        Assert.That(text, Does.Contain("confirm_pending_action"));
+        Assert.That(text, Does.Contain("Klacks assistant chat"));
+        Assert.That(text, Does.Not.Contain("confirm_pending_action"));
     }
 
     [Test]

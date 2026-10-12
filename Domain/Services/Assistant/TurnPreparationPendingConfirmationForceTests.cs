@@ -129,6 +129,38 @@ public class TurnPreparationPendingConfirmationForceTests
         Assert.That(note, Is.Null);
     }
 
+    // The same predicate the server demands before it redeems a token (IsExplicitConfirmation): a polite request
+    // that merely carries "bitte" is not a yes, so it must not narrow the turn to confirm_pending_action either.
+    [TestCase("Zeig mir die Dienste bitte")]
+    [TestCase("Neuen Mitarbeiter, bitte")]
+    [TestCase("Please show me next week")]
+    public void ResolvePendingConfirmation_RequestThatOnlyCarriesACourtesyWord_DoesNotForce(string message)
+    {
+        SetPending();
+
+        var (force, confirmFunction, note) = _service.ResolvePendingConfirmation(Context(message));
+
+        Assert.That(AffirmationDetector.IsAffirmation(message), Is.True,
+            "test would not cover the tightening if the loose detector already rejected the message");
+        Assert.That(force, Is.False);
+        Assert.That(confirmFunction, Is.Null);
+        Assert.That(note, Is.Null);
+    }
+
+    [TestCase("Bitte ausführen")]
+    [TestCase("Please proceed")]
+    [TestCase("Alles klar")]
+    public void ResolvePendingConfirmation_PoliteOrShortRealYes_ForcesConfirmation(string message)
+    {
+        SetPending();
+
+        var (force, confirmFunction, note) = _service.ResolvePendingConfirmation(Context(message));
+
+        Assert.That(force, Is.True);
+        Assert.That(confirmFunction!.Name, Is.EqualTo(AutonomyDefaults.ConfirmPendingActionSkillName));
+        Assert.That(note, Does.Contain(PendingToken));
+    }
+
     [Test]
     public void ResolvePendingConfirmation_StaleScenarioOverwriteToken_IsResurfacedLikeAGateReplay()
     {
@@ -215,6 +247,40 @@ public class TurnPreparationPendingConfirmationForceTests
 
         Assert.That(force, Is.False);
         _confirmationStore.Received(1).DiscardCorrectionUndo(UserId);
+    }
+
+    // IsAffirmation alone would let "Zeig mir die Dienste bitte" pass as the answer to the undo offer and carry the
+    // inverse write out; the explicit-yes predicate that also guards the server-side redemption rejects it, so the
+    // offer is discarded like for any other message that does not answer it.
+    [TestCase("Zeig mir die Dienste bitte")]
+    [TestCase("Neuen Mitarbeiter, bitte")]
+    [TestCase("Mach einen Dienst für Montag")]
+    [TestCase("Ja, aber nur für Montag")]
+    public void ResolvePendingConfirmation_AnAffirmationWithoutAnExplicitYes_DiscardsTheCorrectionUndoAndForcesNothing(
+        string message)
+    {
+        SetPending(PendingConfirmationPurposes.CorrectionUndo);
+
+        var (force, confirmFunction, note) = _service.ResolvePendingConfirmation(Context(message));
+
+        Assert.That(AffirmationDetector.IsExplicitConfirmation(message), Is.False);
+        Assert.That(force, Is.False);
+        Assert.That(confirmFunction, Is.Null);
+        Assert.That(note, Is.Null);
+        _confirmationStore.Received(1).DiscardCorrectionUndo(UserId);
+    }
+
+    [Test]
+    public void ResolvePendingConfirmation_LooksOnlyAtChatTokens_NeverAtOnesAnExternalAgentCaused()
+    {
+        SetPending();
+
+        _service.ResolvePendingConfirmation(Context("ja"));
+
+        _confirmationStore.DidNotReceive().PeekLatestForUser(
+            Arg.Any<Guid>(), Arg.Any<TimeSpan>(), Arg.Any<string>(), PendingConfirmationChannels.Mcp);
+        _confirmationStore.Received().PeekLatestForUser(
+            UserId, ForceWindow, PendingConfirmationPurposes.GateReplay, PendingConfirmationChannels.Chat);
     }
 
     // The discard is scoped to the undo purpose alone: a gate-replay hold is answered whenever the user

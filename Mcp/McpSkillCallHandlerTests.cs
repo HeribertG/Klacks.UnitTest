@@ -4,6 +4,7 @@ using System.Text.Json;
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.DTOs.Assistant;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Mcp;
 using Microsoft.Extensions.Logging;
@@ -156,7 +157,7 @@ public class McpSkillCallHandlerTests
     }
 
     [Test]
-    public async Task ConfirmationResult_IsNotErrorAndContainsToken()
+    public async Task ConfirmationResult_IsNotError_AndSaysTheUserConfirmsInTheChatNotThroughMcp()
     {
         var descriptor = McpTestData.Descriptor("delete_client", SkillCategory.Crud);
         _skillRegistry.GetSkillByName("delete_client").Returns(descriptor);
@@ -178,8 +179,8 @@ public class McpSkillCallHandlerTests
             CancellationToken.None);
 
         Assert.That(result.IsError, Is.False);
-        Assert.That(FirstText(result), Does.Contain(AutonomyDefaults.ConfirmPendingActionSkillName));
-        Assert.That(FirstText(result), Does.Contain("token-123"));
+        Assert.That(FirstText(result), Does.Contain(McpServerConstants.ConfirmationRequiredInstruction));
+        Assert.That(FirstText(result), Does.Not.Contain(AutonomyDefaults.ConfirmPendingActionSkillName));
     }
 
     [Test]
@@ -359,7 +360,7 @@ public class McpSkillCallHandlerTests
     }
 
     [Test]
-    public async Task ConfirmationOfAnUntrustedSkill_FramesTheMessageButKeepsTheTokenInstructionOutsideTheFrame()
+    public async Task ConfirmationOfAnUntrustedSkill_FramesTheMessageButKeepsTheInstructionOutsideTheFrame()
     {
         _skillRegistry.GetSkillByName("fetch_new_emails").Returns(McpTestData.Descriptor("fetch_new_emails"));
         _mediator.Send(Arg.Any<ExecuteSkillCommand>(), Arg.Any<CancellationToken>())
@@ -379,7 +380,7 @@ public class McpSkillCallHandlerTests
         var text = FirstText(result);
         Assert.That(text, Does.StartWith(ToolResultMarkers.UntrustedContentNotice));
         Assert.That(text, Does.Contain("Fetching e-mails requires confirmation."));
-        Assert.That(text.LastIndexOf("token-9", StringComparison.Ordinal),
+        Assert.That(text.LastIndexOf(McpServerConstants.ConfirmationRequiredInstruction, StringComparison.Ordinal),
             Is.GreaterThan(text.IndexOf("Fetching e-mails requires confirmation.", StringComparison.Ordinal)));
         Assert.That(result.IsError, Is.Not.True);
         Assert.That(result.StructuredContent, Is.Null);
@@ -403,8 +404,78 @@ public class McpSkillCallHandlerTests
             McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid()),
             CancellationToken.None);
 
-        Assert.That(FirstText(result), Does.StartWith("Please confirm. Confirmation required"));
-        Assert.That(FirstText(result), Does.Contain("token-7"));
+        Assert.That(FirstText(result), Is.EqualTo("Please confirm. " + McpServerConstants.ConfirmationRequiredInstruction));
         Assert.That(result.StructuredContent, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task ToolCall_AlwaysCarriesTheExternalAgentAccessMode_SoItsConfirmationsAreBoundToTheMcpChannel()
+    {
+        _skillRegistry.GetSkillByName("search_employees").Returns(McpTestData.Descriptor("search_employees"));
+        _mediator.Send(Arg.Any<ExecuteSkillCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillExecuteResponse { Success = true, ResultType = SkillResultType.Data });
+
+        await _sut.HandleAsync(
+            new CallToolRequestParams { Name = "search_employees" },
+            McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid()),
+            CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<ExecuteSkillCommand>(command => command.ExternalAgentAccessMode != null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("list_groups")]
+    [TestCase("fetch_new_emails")]
+    public async Task AConfirmationThatEmbedsTheToken_NeverShowsTheTokenInTheWholeCallToolResult(string skillName)
+    {
+        const string token = "9f2c41d07b3a4e5c8d6a1b0e7f3c2d11";
+        _skillRegistry.GetSkillByName(skillName).Returns(McpTestData.Descriptor(skillName));
+        _mediator.Send(Arg.Any<ExecuteSkillCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillExecuteResponse
+            {
+                Success = false,
+                Message = $"User confirmation required. In your NEXT turn call 'confirm_pending_action' with " +
+                          $"'confirmation_token' set to '{token}'.",
+                Data = new { skillName, hint = token },
+                ResultType = SkillResultType.Confirmation,
+                Metadata = new Dictionary<string, object> { ["confirmationToken"] = token, ["other"] = "kept" }
+            });
+
+        var result = await _sut.HandleAsync(
+            new CallToolRequestParams { Name = skillName },
+            McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid()),
+            CancellationToken.None);
+
+        var wire = FirstText(result) + (result.StructuredContent?.GetRawText() ?? string.Empty);
+        Assert.That(wire, Does.Not.Contain(token));
+        Assert.That(FirstText(result), Does.Not.Contain(AutonomyDefaults.ConfirmPendingActionSkillName));
+        Assert.That(FirstText(result), Does.Contain(McpServerConstants.ConfirmationRequiredInstruction));
+        Assert.That(result.IsError, Is.Not.True);
+    }
+
+    [Test]
+    public async Task AConfirmationThatDoesNotEmbedTheToken_KeepsItsMessage_AndLosesOnlyTheTokenFromTheMetadata()
+    {
+        const string token = "token-keep";
+        _skillRegistry.GetSkillByName("list_groups").Returns(McpTestData.Descriptor("list_groups"));
+        _mediator.Send(Arg.Any<ExecuteSkillCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new SkillExecuteResponse
+            {
+                Success = false,
+                Message = "Deleting the shift needs a confirmation. Preview: 3 works affected.",
+                ResultType = SkillResultType.Confirmation,
+                Metadata = new Dictionary<string, object> { ["confirmationToken"] = token, ["other"] = "kept" }
+            });
+
+        var result = await _sut.HandleAsync(
+            new CallToolRequestParams { Name = "list_groups" },
+            McpTestData.Principal(Guid.NewGuid(), Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.That(FirstText(result), Does.Contain("Preview: 3 works affected."));
+        var structured = result.StructuredContent!.Value.GetRawText();
+        Assert.That(structured, Does.Not.Contain(token));
+        Assert.That(structured, Does.Contain("kept"));
     }
 }
