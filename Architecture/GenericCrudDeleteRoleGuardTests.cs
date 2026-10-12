@@ -47,13 +47,7 @@ public class GenericCrudDeleteRoleGuardTests
                 "Membership removal is a supervisor action (spec 2.3 pins the sibling action " +
                 "RemoveByClientAndGroup that way), and the skills remove_client_from_group " +
                 "(CanEditClients) and remove_shift_from_group (CanEditShifts) delete by id through the " +
-                "self API under the caller's own token, so an Admin-only DELETE would answer them 403.",
-            ["ScheduleNotesController"] =
-                "The schedule context menu offers the delete with no permission gate of its own; it is a " +
-                "supervisor's daily schedule work, not an administrative removal of master data.",
-            ["ScheduleCommandsController"] =
-                "Same schedule context menu as ScheduleNotes; the keyword entries are day-to-day planning " +
-                "data."
+                "self API under the caller's own token, so an Admin-only DELETE would answer them 403."
         };
 
     [Test]
