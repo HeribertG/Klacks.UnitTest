@@ -90,6 +90,37 @@ public class ToolChoicePolicyTests
         }
     }
 
+    [TestCase(true, false, true)]
+    [TestCase(true, true, false)]
+    [TestCase(false, false, false)]
+    [TestCase(false, true, false)]
+    public void MutationForcesToolCall_TurnIntentVetoLiftsOnlyTheMutationReason(
+        bool isMutationIntent, bool turnIntentVeto, bool expected)
+    {
+        ToolChoicePolicy.MutationForcesToolCall(isMutationIntent, turnIntentVeto).ShouldBe(expected);
+    }
+
+    [Test]
+    public void VetoedMutation_StillForcedByNavigationRecipeOrConfirmation()
+    {
+        var vetoedMutation = ToolChoicePolicy.MutationForcesToolCall(isMutationIntent: true, turnIntentVeto: true);
+
+        ToolChoicePolicy.ShouldForceToolCall(false, vetoedMutation, isNavigationIntent: false, false, 0).ShouldBeFalse();
+        ToolChoicePolicy.ShouldForceToolCall(false, vetoedMutation, isNavigationIntent: true, false, 0).ShouldBeTrue();
+        ToolChoicePolicy.ShouldForceToolCall(forceRecipe: true, vetoedMutation, false, false, 0).ShouldBeTrue();
+        ToolChoicePolicy.ShouldForceToolCall(false, vetoedMutation, false, forceConfirmation: true, 0).ShouldBeTrue();
+    }
+
+    [Test]
+    public void ResolveToolChoice_TurnIntentVeto_LiftsTheMutationReasonOnly()
+    {
+        ToolChoicePolicy.ResolveToolChoice(false, isMutationIntent: true, false, false, 0, turnIntentVeto: true).ShouldBeNull();
+        ToolChoicePolicy.ResolveToolChoice(false, isMutationIntent: true, isNavigationIntent: true, false, 0, turnIntentVeto: true)
+            .ShouldBe(MutationGuardConstants.ToolChoiceRequired);
+        ToolChoicePolicy.ResolveToolChoice(false, isMutationIntent: true, false, false, 0)
+            .ShouldBe(MutationGuardConstants.ToolChoiceRequired);
+    }
+
     private static readonly bool[] Bools = [false, true];
     private static readonly int[] Counts = [0, 1];
 }
