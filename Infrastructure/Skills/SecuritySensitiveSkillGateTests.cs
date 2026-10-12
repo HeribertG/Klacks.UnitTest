@@ -7,7 +7,8 @@
 /// multi-step plan were reachable by every role. They were then gated on CanPlan, which stopped
 /// separating anyone once the Planer floor took CanPlan in. They now carry gates of
 /// their own: CanManageAutomation and CanManageAccessTokens, neither of which is in the floor.
-/// The genuinely self-service skills must stay open, otherwise a plain user loses their own account.
+/// set_proactive_governance left this group for Admin parity (owner decision 2026-10-12, REST is Admin-only); its
+/// gate is pinned in SkillRestParityGateTests. The genuinely self-service skills must stay open, otherwise a plain user loses their own account.
 /// The last test widens the rule from a named handful to every seed: a skill that mutates state and
 /// names no permission is reachable by every authenticated caller, so each one has to be listed with a
 /// written reason instead of being discovered later.
@@ -45,7 +46,6 @@ public class SecuritySensitiveSkillGateTests
         ["create_personal_access_token"] = Permissions.CanManageAccessTokens,
         ["revoke_personal_access_token"] = Permissions.CanManageAccessTokens,
         ["set_autonomy_level"] = Permissions.CanManageAutomation,
-        ["set_proactive_governance"] = Permissions.CanManageAutomation,
         ["schedule_recurring_task"] = Permissions.CanManageAutomation,
         // Cancelling somebody's recurring task is the off switch of the same unattended machinery
         // schedule_recurring_task turns on: without a gate any authenticated caller could silently stop

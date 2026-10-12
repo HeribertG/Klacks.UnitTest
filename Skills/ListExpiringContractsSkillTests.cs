@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Domain.Models.Staffs;
 using NSubstitute;
 using NUnit.Framework;
@@ -60,7 +61,8 @@ public class ListExpiringContractsSkillTests
             _clientQualificationRepository,
             _qualificationRepository,
             _clientRepository,
-            _companyClock);
+            _companyClock,
+            new HiddenClientsVisibilityGuard());
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -283,5 +285,42 @@ public class ListExpiringContractsSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("withinDays");
+    }
+
+    [Test]
+    public async Task ExecuteAsync_RestrictedCaller_DropsRowsOfHiddenClients_BeforeCounting()
+    {
+        var visibleClientId = Guid.NewGuid();
+        var hiddenClientId = Guid.NewGuid();
+        var contractId = Guid.NewGuid();
+        var qualificationId = Guid.NewGuid();
+
+        _clientContractReadRepository
+            .GetExpiringBetweenAsync(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ClientContract>
+            {
+                MakeContract(visibleClientId, Today.AddDays(10), contractId),
+                MakeContract(hiddenClientId, Today.AddDays(11), contractId)
+            });
+        _contractRepository.List().Returns(new List<Contract> { new() { Id = contractId, Name = "180 BE" } });
+        _clientQualificationRepository.List().Returns(new List<ClientQualification>
+        {
+            MakeQualification(hiddenClientId, qualificationId, Today.AddDays(5))
+        });
+        _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { new() { Id = hiddenClientId, FirstName = "Eva", Name = "Hidden", Type = EntityTypeEnum.Employee } });
+        _qualificationRepository.GetAllAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Qualification> { new() { Id = qualificationId, Name = new MultiLanguage { De = "Stapler" } } });
+        var skill = new ListExpiringContractsSkill(
+            _clientContractReadRepository, _contractRepository, _clientQualificationRepository,
+            _qualificationRepository, _clientRepository, _companyClock,
+            new HiddenClientsVisibilityGuard(hiddenClientId));
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["withinDays"] = 90 });
+
+        var data = (ListExpiringContractsResult)result.Data!;
+        data.TotalContractCount.ShouldBe(1);
+        data.TotalQualificationCount.ShouldBe(0);
+        data.Items.ShouldHaveSingleItem().ClientId.ShouldBe(visibleClientId);
     }
 }

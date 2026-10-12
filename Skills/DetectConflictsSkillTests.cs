@@ -13,6 +13,7 @@ using Klacks.Api.Application.Interfaces.PeriodClosing;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -68,6 +69,10 @@ public class DetectConflictsSkillTests
         return p;
     }
 
+    private static DetectConflictsSkill Unscoped(IPeriodValidationLoader loader)
+        => new(loader, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted(),
+            new HiddenClientsVisibilityGuard());
+
     private static JsonElement DataAsJson(SkillResult result)
         => JsonSerializer.SerializeToElement(result.Data);
 
@@ -80,7 +85,7 @@ public class DetectConflictsSkillTests
             Issue(ScheduleValidationType.Warning, "RestViolation", "schedule.error-list.rest-violation"),
             Issue(ScheduleValidationType.Warning, "WeeklyOvertime", "schedule.error-list.weekly-overtime")
         };
-        var skill = new DetectConflictsSkill(LoaderReturning(issues));
+        var skill = Unscoped(LoaderReturning(issues));
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
@@ -104,7 +109,7 @@ public class DetectConflictsSkillTests
     [Test]
     public async Task NoConflicts_ReturnsEmptySuccess()
     {
-        var skill = new DetectConflictsSkill(LoaderReturning(new List<PeriodIssueDto>()));
+        var skill = Unscoped(LoaderReturning(new List<PeriodIssueDto>()));
 
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
@@ -118,7 +123,7 @@ public class DetectConflictsSkillTests
     {
         var token = Guid.NewGuid();
         var loader = LoaderReturning(new List<PeriodIssueDto>());
-        var skill = new DetectConflictsSkill(loader);
+        var skill = Unscoped(loader);
 
         var result = await skill.ExecuteAsync(Ctx(), Params(token.ToString()));
 
@@ -132,7 +137,7 @@ public class DetectConflictsSkillTests
     public async Task RealMode_PassesNullTokenToLoader()
     {
         var loader = LoaderReturning(new List<PeriodIssueDto>());
-        var skill = new DetectConflictsSkill(loader);
+        var skill = Unscoped(loader);
 
         await skill.ExecuteAsync(Ctx(), Params());
 
@@ -143,7 +148,7 @@ public class DetectConflictsSkillTests
     [Test]
     public async Task InvalidFromDate_ReturnsError()
     {
-        var skill = new DetectConflictsSkill(LoaderReturning(new List<PeriodIssueDto>()));
+        var skill = Unscoped(LoaderReturning(new List<PeriodIssueDto>()));
         var p = Params();
         p["fromDate"] = "not-a-date";
 
@@ -156,7 +161,7 @@ public class DetectConflictsSkillTests
     [Test]
     public async Task UntilBeforeFrom_ReturnsError()
     {
-        var skill = new DetectConflictsSkill(LoaderReturning(new List<PeriodIssueDto>()));
+        var skill = Unscoped(LoaderReturning(new List<PeriodIssueDto>()));
         var p = Params();
         p["untilDate"] = "2026-03-01";
 
@@ -168,11 +173,79 @@ public class DetectConflictsSkillTests
     [Test]
     public async Task InvalidAnalyseToken_ReturnsError()
     {
-        var skill = new DetectConflictsSkill(LoaderReturning(new List<PeriodIssueDto>()));
+        var skill = Unscoped(LoaderReturning(new List<PeriodIssueDto>()));
 
         var result = await skill.ExecuteAsync(Ctx(), Params("not-a-guid"));
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("analyseToken");
+    }
+
+    [Test]
+    public async Task RestrictedCaller_GroupOutsideScope_IsAnsweredLikeAMissingGroup_AndLoadsNothing()
+    {
+        var loader = LoaderReturning(new List<PeriodIssueDto>());
+        var groupRepository = Substitute.For<IGroupRepository>();
+        groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Logistik", Root = GroupId });
+        var skill = new DetectConflictsSkill(
+            loader, groupRepository, TestGroupScopeGuard.Restricted(new[] { Guid.NewGuid() }, "Verkauf"),
+            new HiddenClientsVisibilityGuard());
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Group with ID '{GroupId}' not found.");
+        await loader.DidNotReceive().LoadAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RestrictedCaller_WithoutAnyScope_IsRefused()
+    {
+        var groupRepository = Substitute.For<IGroupRepository>();
+        groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Verkauf", Root = GroupId });
+        var skill = new DetectConflictsSkill(
+            LoaderReturning(new List<PeriodIssueDto>()), groupRepository,
+            TestGroupScopeGuard.Restricted(Array.Empty<Guid>()), new HiddenClientsVisibilityGuard());
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task RestrictedCaller_GroupInScope_DropsFindingsOfHiddenClients()
+    {
+        var visible = Issue(ScheduleValidationType.Error, "Collision", "schedule.error-list.collision", "Anna");
+        var hidden = Issue(ScheduleValidationType.Warning, "RestViolation", "schedule.error-list.rest-violation", "Ben");
+        var groupRepository = Substitute.For<IGroupRepository>();
+        groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Verkauf", Root = GroupId });
+        var skill = new DetectConflictsSkill(
+            LoaderReturning(new List<PeriodIssueDto> { visible, hidden }), groupRepository,
+            TestGroupScopeGuard.Restricted(new[] { GroupId }, "Verkauf"), new HiddenClientsVisibilityGuard(hidden.ClientId));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue();
+        var data = DataAsJson(result);
+        data.GetProperty("TotalConflicts").GetInt32().ShouldBe(1);
+        data.GetProperty("Conflicts")[0].GetProperty("ClientName").GetString().ShouldBe("Anna");
+    }
+
+    [Test]
+    public async Task UnrestrictedCaller_IsNotFiltered_AndNeedsNoGroupLookup()
+    {
+        var issue = Issue(ScheduleValidationType.Error, "Collision", "schedule.error-list.collision");
+        var groupRepository = Substitute.For<IGroupRepository>();
+        var clientGuard = new HiddenClientsVisibilityGuard(issue.ClientId);
+        var skill = new DetectConflictsSkill(
+            LoaderReturning(new List<PeriodIssueDto> { issue }), groupRepository,
+            TestGroupScopeGuard.Unrestricted(), clientGuard);
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        DataAsJson(result).GetProperty("TotalConflicts").GetInt32().ShouldBe(1);
+        clientGuard.FilterCalls.ShouldBe(0);
+        await groupRepository.DidNotReceive().Get(Arg.Any<Guid>());
     }
 }

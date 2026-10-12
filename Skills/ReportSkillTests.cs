@@ -79,7 +79,7 @@ public class ReportSkillTests
         repo.GetAgentIdsAsync(
             groupId, new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30), Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { Guid.NewGuid(), Guid.NewGuid() });
-        var skill = new GeneratePeriodSummarySkill(repo);
+        var skill = new GeneratePeriodSummarySkill(repo, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -93,10 +93,56 @@ public class ReportSkillTests
     }
 
     [Test]
+    public async Task GeneratePeriodSummary_GroupOutsideScope_IsAnsweredLikeAMissingGroup()
+    {
+        var groupId = Guid.NewGuid();
+        var repo = Substitute.For<IGroupPlanningAgentRepository>();
+        var groupRepository = Substitute.For<IGroupRepository>();
+        groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Logistik", Root = groupId });
+        var skill = new GeneratePeriodSummarySkill(
+            repo, groupRepository, TestGroupScopeGuard.Restricted(new[] { Guid.NewGuid() }, "Verkauf"));
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = groupId.ToString(),
+            ["fromDate"] = "2026-06-01",
+            ["untilDate"] = "2026-06-30"
+        });
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Is.EqualTo($"Group with ID '{groupId}' not found."));
+        await repo.DidNotReceive().GetAgentIdsAsync(
+            Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GeneratePeriodSummary_GroupInScope_IsServed()
+    {
+        var groupId = Guid.NewGuid();
+        var repo = Substitute.For<IGroupPlanningAgentRepository>();
+        repo.GetAgentIdsAsync(groupId, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { Guid.NewGuid() });
+        var groupRepository = Substitute.For<IGroupRepository>();
+        groupRepository.Get(groupId).Returns(new Group { Id = groupId, Name = "Verkauf", Root = groupId });
+        var skill = new GeneratePeriodSummarySkill(
+            repo, groupRepository, TestGroupScopeGuard.Restricted(new[] { groupId }, "Verkauf"));
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupId"] = groupId.ToString(),
+            ["fromDate"] = "2026-06-01",
+            ["untilDate"] = "2026-06-30"
+        });
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Does.Contain("1 employee"));
+    }
+
+    [Test]
     public async Task GeneratePeriodSummary_RejectsInvertedRange()
     {
         var repo = Substitute.For<IGroupPlanningAgentRepository>();
-        var skill = new GeneratePeriodSummarySkill(repo);
+        var skill = new GeneratePeriodSummarySkill(repo, Substitute.For<IGroupRepository>(), TestGroupScopeGuard.Unrestricted());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

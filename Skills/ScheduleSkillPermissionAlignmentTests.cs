@@ -5,7 +5,8 @@
 /// floor (CanEditSchedule) exactly like the REST endpoints they mirror (WorksController work CRUD and confirm, Breaks,
 /// WorkChanges, BreakPlaceholders, Recovery CoverAbsence, Expenses, ScheduleNotes and ScheduleCommands carry no role attribute);
 /// shift master data stays with CanEditShifts; day approval is Admin and Supervisor;
-/// closing and reopening a period is Admin only, like WorksController.ClosePeriod/ReopenPeriod. The permission rule is
+/// closing and reopening a period is Admin only, like WorksController.ClosePeriod/ReopenPeriod (the Admin-only
+/// period-closing reads are pinned in SkillRestParityGateTests). The permission rule is
 /// the one SkillExecutorService.ValidatePermissions applies: the Admin role passes, everyone else needs every required
 /// right among the rights Permissions.ExpandRoles yields for the caller's roles.
 /// </summary>
@@ -41,7 +42,7 @@ public class ScheduleSkillPermissionAlignmentTests
     private static readonly string[] ShiftMasterDataSkills =
     [
         "create_shift", "update_shift", "cut_shift", "cut_shift_by_date", "reset_shift_cuts", "seal_shift",
-        "create_container_template", "create_qualification", "set_shift_preferences", "add_shift_to_group",
+        "create_container_template", "set_shift_preferences", "add_shift_to_group",
         "assign_orders_to_groups", "find_split_shift_candidates"
     ];
 

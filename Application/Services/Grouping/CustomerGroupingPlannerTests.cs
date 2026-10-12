@@ -8,10 +8,12 @@
 /// groups) stay untouched, clients that cannot be placed get a distinguishable reason, and a client already
 /// sitting in its target group is a no-op. Scenario memberships (AnalyseToken set) are invisible to the
 /// planner: they are never retired and never make a client count as already placed, and the retired
-/// memberships are reported with their group names so a preview can show what would end.
+/// memberships are reported with their group names so a preview can show what would end. A group-restricted
+/// caller only plans visible clients into visible groups and never retires or names a hidden membership.
 /// </summary>
 
 using Klacks.Api.Application.Services.Grouping;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Grouping;
 
@@ -42,7 +44,9 @@ public class CustomerGroupingPlannerTests
     {
         _clientRepository = Substitute.For<IClientRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
-        _planner = new CustomerGroupingPlanner(_clientRepository, _groupRepository);
+        _planner = new CustomerGroupingPlanner(
+            _clientRepository, _groupRepository, new HiddenClientsVisibilityGuard(),
+            TestGroupWriteVisibility.UnrestrictedGroups());
 
         _groupRepository.List().Returns(new List<Group>
         {
@@ -432,6 +436,95 @@ public class CustomerGroupingPlannerTests
             .GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Customer, Arg.Any<CancellationToken>());
         await _clientRepository.Received(1)
             .GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task BuildProposal_RestrictedCaller_SkipsHiddenClients()
+    {
+        var visible = Customer("Anna", "Meier", 47.38, 8.54, new[] { CantonZh });
+        var hidden = Customer("Ben", "Huber", 47.38, 8.54, new[] { CantonZh });
+        SetCustomers(visible, hidden);
+        var planner = new CustomerGroupingPlanner(
+            _clientRepository, _groupRepository, new HiddenClientsVisibilityGuard(hidden.Id),
+            TestGroupWriteVisibility.UnrestrictedGroups());
+
+        var proposal = await planner.BuildProposalAsync();
+
+        proposal.Assignments.ShouldHaveSingleItem().ClientId.ShouldBe(visible.Id);
+        proposal.Unassigned.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task BuildProposal_RestrictedCaller_NeverTargetsRetiresOrNamesAHiddenGroup()
+    {
+        var customer = Customer("Anna", "Meier", 47.38, 8.54, new[] { CantonZh, QualificationGroup });
+        SetCustomers(customer);
+        var planner = new CustomerGroupingPlanner(
+            _clientRepository, _groupRepository, new HiddenClientsVisibilityGuard(),
+            GroupsVisible(CityWinterthur));
+
+        var proposal = await planner.BuildProposalAsync();
+
+        var assignment = proposal.Assignments.ShouldHaveSingleItem();
+        assignment.TargetGroupId.ShouldBe(CityWinterthur);
+        assignment.RetireGroupIds.ShouldBeEmpty();
+        assignment.CurrentGroupNames.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task BuildProposal_RestrictedCaller_CityNameOfHiddenGroup_BehavesLikeAMissingGroup()
+    {
+        var customer = CustomerWithAddresses("Anna", "Meier", new[] { CantonZh }, AddressWith("Zürich"));
+        SetCustomers(customer);
+        var planner = new CustomerGroupingPlanner(
+            _clientRepository, _groupRepository, new HiddenClientsVisibilityGuard(),
+            GroupsVisible(CityWinterthur));
+
+        var proposal = await planner.BuildProposalAsync();
+
+        proposal.Assignments.ShouldBeEmpty();
+        proposal.Unassigned.ShouldHaveSingleItem().Reason.ShouldBe(ReasonNoMatch);
+    }
+
+    [Test]
+    public async Task BuildProposal_RestrictedCaller_HiddenGroupWithSameName_DoesNotSuppressTheVisibleCityMatch()
+    {
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = CityWinterthur, Name = "Winterthur", Root = CantonZh, Lft = 4, Rgt = 5 },
+            new() { Id = CityZurich, Name = "Winterthur", Root = CantonZh, Lft = 2, Rgt = 3 }
+        });
+        var customer = CustomerWithAddresses("Anna", "Meier", Array.Empty<Guid>(), AddressWith("Winterthur"));
+        SetCustomers(customer);
+        var planner = new CustomerGroupingPlanner(
+            _clientRepository, _groupRepository, new HiddenClientsVisibilityGuard(),
+            GroupsVisible(CityWinterthur));
+
+        var proposal = await planner.BuildProposalAsync();
+
+        proposal.Assignments.ShouldHaveSingleItem().TargetGroupId.ShouldBe(CityWinterthur);
+    }
+
+    [Test]
+    public async Task BuildProposal_CallerWithoutVisibleGroups_PlansNothing()
+    {
+        SetCustomers(Customer("Anna", "Meier", 47.38, 8.54, Array.Empty<Guid>()));
+        var planner = new CustomerGroupingPlanner(
+            _clientRepository, _groupRepository, new HiddenClientsVisibilityGuard(), GroupsVisible());
+
+        var proposal = await planner.BuildProposalAsync();
+
+        proposal.AnchorGroupCount.ShouldBe(0);
+        proposal.Assignments.ShouldBeEmpty();
+    }
+
+    private static IGroupVisibilityGuard GroupsVisible(params Guid[] groupIds)
+    {
+        var guard = Substitute.For<IGroupVisibilityGuard>();
+        guard.IsUnrestrictedAsync(Arg.Any<CancellationToken>()).Returns(false);
+        guard.GetScopeAsync(Arg.Any<CancellationToken>())
+            .Returns(GroupVisibilityScope.Restricted(groupIds, groupIds));
+        return guard;
     }
 
     private static void AddScenarioMembership(Client client, Guid groupId)
