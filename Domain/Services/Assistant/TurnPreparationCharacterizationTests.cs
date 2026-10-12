@@ -304,6 +304,33 @@ public class TurnPreparationCharacterizationTests
     }
 
     /// <summary>
+    /// A call rejected for lying outside the toolset and a write refused by the completed-recipe guard never ran
+    /// either, so neither may become the anchor a correction turn refers back to.
+    /// </summary>
+    [Test]
+    public void RecordLastAction_CallsRejectedOutsideTheToolsetOrByTheRecipeGuard_AreNotAnchored()
+    {
+        var saved = CaptureSave();
+
+        Record(
+            Call("delete_group", rejectedOutside: true),
+            Call("close_period", rejectedByRecipeGuard: true),
+            Call("add_client_to_group"));
+
+        saved()!.Calls.Count.ShouldBe(1);
+        saved()!.Calls[0].SkillName.ShouldBe("add_client_to_group");
+    }
+
+    [Test]
+    public void RecordLastAction_OnlyCallsRejectedOutsideTheToolsetOrByTheRecipeGuard_SupersedeInsteadOfReplacing()
+    {
+        Record(Call("delete_group", rejectedOutside: true), Call("close_period", rejectedByRecipeGuard: true));
+
+        _lastActionStore.Received(1).MarkSuperseded(_userId, ResolvedConversationId);
+        _lastActionStore.DidNotReceiveWithAnyArgs().Save(default!);
+    }
+
+    /// <summary>
     /// A missing anchor costs one correction; a thrown store call would cost the answer the user is
     /// already waiting for. The write is best-effort by design.
     /// </summary>
@@ -445,11 +472,15 @@ public class TurnPreparationCharacterizationTests
         string name,
         bool success = true,
         bool rejectedRepeat = false,
-        bool requiresConfirmation = false) => new()
+        bool requiresConfirmation = false,
+        bool rejectedOutside = false,
+        bool rejectedByRecipeGuard = false) => new()
         {
             FunctionName = name,
             Success = success,
             IsRejectedRepeat = rejectedRepeat,
+            IsRejectedOutsideToolset = rejectedOutside,
+            IsRejectedByReadOnlyRecipeGuard = rejectedByRecipeGuard,
             RequiresConfirmation = requiresConfirmation
         };
 

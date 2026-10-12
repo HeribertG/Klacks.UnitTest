@@ -37,6 +37,20 @@ public class LLMServiceSerializeFunctionsCalledTests
     }
 
     [Test]
+    public void CallsRejectedWithoutRunning_AreNotRecordedAsInvoked()
+    {
+        var json = LLMService.SerializeFunctionsCalled(
+        [
+            new LLMFunctionCall { FunctionName = "list_open_shifts" },
+            new LLMFunctionCall { FunctionName = "delete_client", IsRejectedOutsideToolset = true },
+            new LLMFunctionCall { FunctionName = "cut_shift", IsRejectedByReadOnlyRecipeGuard = true },
+            new LLMFunctionCall { FunctionName = "update_contract", IsRejectedRepeat = true }
+        ]);
+
+        JsonSerializer.Deserialize<List<string>>(json).ShouldBe(["list_open_shifts"]);
+    }
+
+    [Test]
     public void MoreNamesThanTheColumnWidth_AreTrimmedUntilItFits()
     {
         var calls = Enumerable.Range(0, 40)

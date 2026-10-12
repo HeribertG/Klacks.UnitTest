@@ -3,9 +3,9 @@
 /// <summary>
 /// Pins the selection rule behind the "every step failed" notice, which both chat loops carried inline.
 /// The notice exists for the case where a forced step failed on every iteration and the turn therefore has
-/// no prose at all; a rejected repeat carries only the generic rejection text, so the genuine failure of an
-/// earlier iteration is the message worth showing. Any prose at all suppresses the notice, because then the
-/// user already has an answer.
+/// no prose at all; a call rejected without running carries only a rejection text addressed to the model, so the
+/// genuine failure of an earlier iteration is the message worth showing and a turn of nothing but rejections
+/// surfaces nothing. Any prose at all suppresses the notice, because then the user already has an answer.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
@@ -39,7 +39,7 @@ public class TurnClosingNoticesTests
     }
 
     [Test]
-    public void AllCallsRejectedRepeats_FallsBackToTheLastCall()
+    public void AllCallsRejectedRepeats_SurfaceNothing_BecauseTheirTextIsAddressedToTheModel()
     {
         var calls = new List<LLMFunctionCall>
         {
@@ -47,7 +47,20 @@ public class TurnClosingNoticesTests
             Call("b", success: false, "last", rejectedRepeat: true)
         };
 
-        TurnClosingNotices.LastUnrecoveredFailure(calls, string.Empty)!.Result.ShouldBe("last");
+        TurnClosingNotices.LastUnrecoveredFailure(calls, string.Empty).ShouldBeNull();
+    }
+
+    [TestCase(nameof(LLMFunctionCall.IsRejectedRepeat))]
+    [TestCase(nameof(LLMFunctionCall.IsRejectedOutsideToolset))]
+    [TestCase(nameof(LLMFunctionCall.IsRejectedByReadOnlyRecipeGuard))]
+    public void EveryKindOfRejectedCall_SurfacesNothing_AndGenuineFailureIsPreferred(string flag)
+    {
+        var rejected = Call("a", success: false, RejectionText);
+        typeof(LLMFunctionCall).GetProperty(flag)!.SetValue(rejected, true);
+        var genuine = Call("b", success: false, RealFailure);
+
+        TurnClosingNotices.LastUnrecoveredFailure([rejected], string.Empty).ShouldBeNull();
+        TurnClosingNotices.LastUnrecoveredFailure([genuine, rejected], string.Empty).ShouldBe(genuine);
     }
 
     [Test]

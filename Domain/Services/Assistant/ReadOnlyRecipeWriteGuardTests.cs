@@ -38,6 +38,9 @@ public class ReadOnlyRecipeWriteGuardTests
 
         executable.ShouldBeEmpty();
         call.Success.ShouldBeFalse();
+        call.IsRejectedByReadOnlyRecipeGuard.ShouldBeTrue();
+        call.IsRejectedWithoutRunning.ShouldBeTrue();
+        call.IsRejectedRepeat.ShouldBeFalse();
         call.Result.ShouldBe(LLMLoopConstants.ReadOnlyRecipeWriteRejectedResult);
     }
 
@@ -50,6 +53,7 @@ public class ReadOnlyRecipeWriteGuardTests
 
         ReadOnlyRecipeWriteGuard.Reject(new List<LLMFunctionCall> { call }, true, Rejected, null).ShouldBe(new[] { call });
         call.Success.ShouldBeTrue();
+        call.IsRejectedByReadOnlyRecipeGuard.ShouldBeFalse();
     }
 
     [Test]

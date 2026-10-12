@@ -128,7 +128,7 @@ internal sealed class LLMServiceTurnHarness
                 Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository),
             conversationManager: conversationManager,
             functionExecutor: new LLMFunctionExecutor(
-                Substitute.For<ILogger<LLMFunctionExecutor>>(),
+                ExecutorLogger,
                 Substitute.For<IAgentSkillRepository>(),
                 agentRepository,
                 Substitute.For<IPendingConfirmationStore>(),
@@ -168,6 +168,8 @@ internal sealed class LLMServiceTurnHarness
     internal List<CancellationToken> ProviderStreamTokens { get; } = new();
 
     internal RecordingLogger<LLMService> Logger { get; } = new();
+
+    internal RecordingLogger<LLMFunctionExecutor> ExecutorLogger { get; } = new();
 
     internal IAgentRepository AgentRepository { get; private set; } = null!;
 

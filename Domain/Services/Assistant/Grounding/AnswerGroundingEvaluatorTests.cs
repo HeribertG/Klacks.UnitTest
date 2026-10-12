@@ -155,6 +155,31 @@ public class AnswerGroundingEvaluatorTests
         _finding.ShouldBeNull();
     }
 
+    [TestCase(nameof(LLMFunctionCall.IsRejectedRepeat))]
+    [TestCase(nameof(LLMFunctionCall.IsRejectedOutsideToolset))]
+    [TestCase(nameof(LLMFunctionCall.IsRejectedByReadOnlyRecipeGuard))]
+    public async Task CallRejectedWithoutRunning_DoesNotSkipTheTurn(string flag)
+    {
+        var rejected = new LLMFunctionCall { FunctionName = "x", Success = false };
+        typeof(LLMFunctionCall).GetProperty(flag)!.SetValue(rejected, true);
+
+        await Evaluator().EvaluateAsync(Guid.NewGuid(), Ctx(), "Es ist erledigt.", [rejected]);
+
+        _counter!.TurnsSkipped.ShouldBe(0);
+        _counter.TurnsEvaluated.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task RejectedCallNextToAGenuineFailure_StillSkipsTheTurn()
+    {
+        var rejected = new LLMFunctionCall { FunctionName = "x", Success = false, IsRejectedOutsideToolset = true };
+        var failed = new LLMFunctionCall { FunctionName = "y", Success = false };
+
+        await Evaluator().EvaluateAsync(Guid.NewGuid(), Ctx(), "Antwort mit 4711.5 und 8999.", [rejected, failed]);
+
+        _counter!.TurnsSkipped.ShouldBe(1);
+    }
+
     [Test]
     public async Task ConfirmationCall_DoesNotSkipTheTurn()
     {
