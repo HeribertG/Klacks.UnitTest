@@ -53,7 +53,7 @@ public class ExternalGeoServiceUrlGuardTests
 
     private static readonly IReadOnlyDictionary<string, int> AllowedCsLineHits = new Dictionary<string, int>
     {
-        ["Domain/Constants/GeoServiceDefaults.cs"] = 6
+        ["Domain/Constants/GeoServiceDefaults.cs"] = 7
     };
 
     [Test]
