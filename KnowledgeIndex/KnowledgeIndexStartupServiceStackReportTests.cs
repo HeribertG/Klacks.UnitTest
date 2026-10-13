@@ -4,8 +4,8 @@
 /// Guards the startup report of the active retrieval stack. A silent fallback to a remote embedding
 /// provider changes retrieval quality without any visible signal, which once invalidated a whole
 /// measurement round, so the warning must not disappear in a refactoring. Also pins that the startup
-/// sync goes through the single-flight scheduler, is awaited while the index covers too little of the
-/// catalogue and only requested (background) once it covers enough.
+/// sync goes through the single-flight scheduler and never blocks host start: it is always requested in the
+/// background, and an index that covers too little of the catalogue is reported as degraded retrieval.
 /// </summary>
 
 using Klacks.Api.Domain.Enums;
@@ -44,38 +44,29 @@ public class KnowledgeIndexStartupServiceStackReportTests
     }
 
     [Test]
-    public async Task StartAsync_RunsTheSyncThroughTheSchedulerAndWaitsForIt()
+    public async Task StartAsync_RequestsTheSyncThroughTheSchedulerWithoutWaiting()
     {
         var scheduler = new StubScheduler(succeeds: true);
 
         await RunWithEmbeddingSpaceAsync(
             KnowledgeIndexConstants.LocalEmbeddingSpacePrefix + "multilingual-e5-small@384", scheduler);
 
-        scheduler.RunNowReasons.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
-        scheduler.Requests.ShouldBeEmpty();
-    }
-
-    [Test]
-    public async Task StartAsync_WarnsWithTheError_WhenTheStartupSyncFailed()
-    {
-        var recorder = await RunWithEmbeddingSpaceAsync(
-            KnowledgeIndexConstants.LocalEmbeddingSpacePrefix + "multilingual-e5-small@384",
-            new StubScheduler(succeeds: false));
-
-        recorder.Warnings.ShouldContain(m => m.Contains("did not complete") && m.Contains(StubScheduler.FailureMessage));
+        scheduler.Requests.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
+        scheduler.RunNowReasons.ShouldBeEmpty();
     }
 
     [TestCase(0)]
     [TestCase(1)]
     [TestCase(8)]
-    public async Task StartAsync_IndexCoversTooLittleOfTheCatalogue_WaitsForTheSync(int storedOfTen)
+    public async Task StartAsync_IndexCoversTooLittleOfTheCatalogue_BuildsInTheBackgroundAndWarnsDegraded(int storedOfTen)
     {
         var scheduler = new StubScheduler(succeeds: true);
 
-        await RunWithIndexAsync(scheduler, requiredSkills: 10, storedSkills: storedOfTen);
+        var recorder = await RunWithIndexAsync(scheduler, requiredSkills: 10, storedSkills: storedOfTen);
 
-        scheduler.RunNowReasons.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
-        scheduler.Requests.ShouldBeEmpty();
+        scheduler.Requests.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
+        scheduler.RunNowReasons.ShouldBeEmpty();
+        recorder.Warnings.ShouldContain(m => m.Contains("degraded"));
     }
 
     [TestCase(9)]
@@ -97,21 +88,22 @@ public class KnowledgeIndexStartupServiceStackReportTests
     {
         var scheduler = new StubScheduler(succeeds: true);
 
-        await RunWithIndexAsync(scheduler, requiredSkills: 10, storedSkills: 1, storedOrphans: 50);
+        var recorder = await RunWithIndexAsync(scheduler, requiredSkills: 10, storedSkills: 1, storedOrphans: 50);
 
-        scheduler.RunNowReasons.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
-        scheduler.Requests.ShouldBeEmpty();
+        scheduler.Requests.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
+        recorder.Warnings.ShouldContain(m => m.Contains("degraded"));
     }
 
     [Test]
-    public async Task StartAsync_IndexUnreadable_FallsBackToTheBlockingSync()
+    public async Task StartAsync_IndexUnreadable_StillSyncsInTheBackgroundAndWarns()
     {
         var scheduler = new StubScheduler(succeeds: true);
 
-        await RunWithIndexAsync(scheduler, requiredSkills: 10, storedSkills: 10, readFails: true);
+        var recorder = await RunWithIndexAsync(scheduler, requiredSkills: 10, storedSkills: 10, readFails: true);
 
-        scheduler.RunNowReasons.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
-        scheduler.Requests.ShouldBeEmpty();
+        scheduler.Requests.ShouldBe([KnowledgeIndexSyncConstants.StartupReason]);
+        scheduler.RunNowReasons.ShouldBeEmpty();
+        recorder.Warnings.ShouldContain(m => m.Contains("Could not read"));
     }
 
     private static async Task<LogRecorder> RunWithEmbeddingSpaceAsync(
