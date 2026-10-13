@@ -91,10 +91,8 @@ public class SkillToolsetAssemblerExclusionTests
         recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
-        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        competingDetector.FindCompetingSkillNamesAsync(default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
-        scopedProvider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
+        var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
+        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
         var serviceScope = Substitute.For<IServiceScope>();
         serviceScope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();

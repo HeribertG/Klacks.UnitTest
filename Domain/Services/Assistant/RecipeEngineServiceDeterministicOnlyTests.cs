@@ -1,17 +1,17 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// The G5 probe calls GuaranteedSkillNamesAsync with allowSemanticFallback: false and discards the
-/// competing-skill-intent verdict entirely - FindMatchingRecipeAsync must not compute it in the first
-/// place. Without this, a deterministic-only probe call on a keyword-trigger match would still run
-/// ICompetingSkillIntentDetector and the shadow-mode margin evaluator (embedding, reranking, and a
-/// calibration log write) purely to produce a HasCompetingSkillIntent flag nobody reads.
+/// The G5 probe calls GuaranteedSkillNamesAsync with allowSemanticFallback: false: it asks whether a message routes by
+/// itself through a keyword trigger. That call must never reach the semantic fallback (an embedding and a rerank round
+/// per correction that carries a mutation verb) and must not ask the rights gate about a probe, which is not a question
+/// about one user's rights.
 /// </summary>
 
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
-using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
+using Klacks.Api.KnowledgeIndex.Application.Interfaces;
+using Klacks.Api.KnowledgeIndex.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +21,7 @@ namespace Klacks.UnitTest.Domain.Services.Assistant;
 public class RecipeEngineServiceDeterministicOnlyTests
 {
     private const string Message = "Erstelle einen neuen Auftrag";
+    private const string UnmatchedMessage = "Richte bitte alles Notwendige fuer die neue Filiale ein";
 
     private static readonly AgentRecipe OrderRecipe = new()
     {
@@ -33,8 +34,8 @@ public class RecipeEngineServiceDeterministicOnlyTests
     };
 
     private IAgentRecipeRepository _recipeRepository = null!;
-    private ICompetingSkillIntentDetector _competingDetector = null!;
-    private IRecipeSkillMarginEvaluator _marginEvaluator = null!;
+    private IAgentSkillRepository _skillRepository = null!;
+    private IKnowledgeRetrievalService _retrieval = null!;
     private RecipeEngineService _service = null!;
 
     [SetUp]
@@ -44,13 +45,17 @@ public class RecipeEngineServiceDeterministicOnlyTests
         _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
             .Returns(new List<AgentRecipe> { OrderRecipe });
 
-        _competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        _marginEvaluator = Substitute.For<IRecipeSkillMarginEvaluator>();
+        _skillRepository = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
+        _retrieval = Substitute.For<IKnowledgeRetrievalService>();
+        _retrieval.RetrieveAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+            .Returns(new RetrievalResult([]));
 
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
-        provider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(_competingDetector);
-        provider.GetService(typeof(IRecipeSkillMarginEvaluator)).Returns(_marginEvaluator);
+        provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
+        provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
 
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(provider);
@@ -63,30 +68,46 @@ public class RecipeEngineServiceDeterministicOnlyTests
     }
 
     [Test]
-    public async Task DeterministicOnlyCall_OnAKeywordTriggerMatch_NeverInvokesTheCompetingIntentDetector()
+    public async Task DeterministicOnlyCall_OnAKeywordTriggerMatch_GuaranteesTheStepSkills_WithoutAnyRetrieval()
     {
         var skills = await _service.GuaranteedSkillNamesAsync(
             userId: null, conversationId: null, Message, language: null, userRights: null,
             allowSemanticFallback: false, CancellationToken.None);
 
         skills.ShouldContain("create_shift");
-        await _competingDetector.DidNotReceiveWithAnyArgs()
-            .FindCompetingSkillNamesAsync(default!, default, default!, default, default!, default);
-        await _marginEvaluator.DidNotReceiveWithAnyArgs()
-            .EvaluateAndLogAsync(default!, default);
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default, default);
     }
 
     [Test]
-    public async Task FullCall_OnTheSameKeywordTriggerMatch_StillInvokesTheCompetingIntentDetector()
+    public async Task DeterministicOnlyCall_OnAMessageNoTriggerMatches_NeverRunsTheSemanticFallback()
     {
-        _competingDetector.FindCompetingSkillNamesAsync(
-                default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
+        var skills = await _service.GuaranteedSkillNamesAsync(
+            userId: null, conversationId: null, UnmatchedMessage, language: null, userRights: null,
+            allowSemanticFallback: false, CancellationToken.None);
 
-        await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, Message);
+        skills.ShouldBeEmpty();
+        await _retrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default, default);
+    }
 
-        await _competingDetector.Received(1).FindCompetingSkillNamesAsync(
-            Message, Arg.Any<string?>(), Arg.Any<RecipeTrigger>(), Arg.Any<IReadOnlyCollection<string>?>(),
-            Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+    [Test]
+    public async Task FullCall_OnAMessageNoTriggerMatches_RunsTheSemanticFallback()
+    {
+        await _service.GuaranteedSkillNamesAsync(userId: null, conversationId: null, UnmatchedMessage);
+
+        await _retrieval.Received(1).RetrieveAsync(
+            UnmatchedMessage, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>());
+    }
+
+    [Test]
+    public async Task AProbeWithoutRights_NeverAsksTheRightsGate()
+    {
+        await _service.GuaranteedSkillNamesAsync(
+            userId: null, conversationId: null, Message, language: null, userRights: null,
+            allowSemanticFallback: false, CancellationToken.None);
+
+        await _skillRepository.DidNotReceiveWithAnyArgs().GetRequiredPermissionsByNameAsync(default!, default);
     }
 }

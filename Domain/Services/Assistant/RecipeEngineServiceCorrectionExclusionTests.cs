@@ -95,16 +95,13 @@ public class RecipeEngineServiceCorrectionExclusionTests
 
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
-        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        competingDetector.FindCompetingSkillNamesAsync(
-                default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
 
         var scope = Substitute.For<IServiceScope>();
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
+        var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
+        provider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
         provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
-        provider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

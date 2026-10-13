@@ -24,9 +24,9 @@ namespace Klacks.UnitTest.Domain.Services.Assistant;
 public class RecipeEngineServiceSemanticFallbackTests
 {
     private IAgentRecipeRepository _recipeRepository = null!;
+    private IAgentSkillRepository _skillRepository = null!;
     private IKnowledgeRetrievalService _retrieval = null!;
     private IPendingRecipeStore _pendingRecipeStore = null!;
-    private ICompetingSkillIntentDetector _competingDetector = null!;
     private RecipeEngineService _service = null!;
 
     private static readonly AgentRecipe OnboardRecipe = new()
@@ -48,16 +48,15 @@ public class RecipeEngineServiceSemanticFallbackTests
 
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
-        _competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        _competingDetector.FindCompetingSkillNamesAsync(
-                default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
 
         var scope = Substitute.For<IServiceScope>();
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
+        _skillRepository = Substitute.For<IAgentSkillRepository>();
+        _skillRepository.GetRequiredPermissionsByNameAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, string?>());
+        provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
         provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
-        provider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(_competingDetector);
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
@@ -382,7 +381,7 @@ public class RecipeEngineServiceSemanticFallbackTests
 
         plan.ShouldNotBeNull();
         plan!.Name.ShouldBe("onboard-employee");
-        plan.NeedsConfirmation.ShouldBeFalse();
+        plan.NeedsConfirmation.ShouldBeTrue();
     }
 
     [Test]
@@ -412,66 +411,17 @@ public class RecipeEngineServiceSemanticFallbackTests
     }
 
     [Test]
-    public async Task MessageMatchingKeywordTrigger_PlanDoesNotNeedConfirmation()
+    public async Task MessageMatchingKeywordTrigger_PlanNeedsConfirmation_AndIsNotMarkedAsMatchedByMeaning()
     {
-        // The deterministic fast path is precise by construction — it must keep starting the flow
-        // directly, exactly as before the confirmation gate was introduced.
+        // Since 2026-10-13 the deterministic fast path proposes instead of starting: a bag-of-substrings
+        // trigger fires on vocabulary the user did not mean as a request, so the flow waits for the user's yes.
         var message = "Bitte onboard einen neuen Mitarbeiter";
 
         var plan = await _service.ResolveAsync(message);
 
         plan.ShouldNotBeNull();
-        plan!.NeedsConfirmation.ShouldBeFalse();
-    }
-
-    [Test]
-    public async Task KeywordTriggerMatch_WithCompetingSkillIntent_GatesPlanBehindConfirmation()
-    {
-        // Live regression class 2026-07-16: the message keyword-matches a recipe through incidental
-        // vocabulary while verbatim containing a foreign skill's multiword phrase. The plan must run
-        // through the confirmation gate instead of hijacking the turn silently.
-        _competingDetector.FindCompetingSkillNamesAsync(
-                default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(new[] { "start_company_rule" });
-        var message = "Bitte onboard einen neuen Mitarbeiter";
-
-        var plan = await _service.ResolveAsync(message);
-
-        plan.ShouldNotBeNull();
-        plan!.Name.ShouldBe("onboard-employee");
-        plan.NeedsConfirmation.ShouldBeTrue();
-    }
-
-    [Test]
-    public async Task KeywordTriggerMatch_CompetingDetectorThrows_DegradesToDirectStart()
-    {
-        // The safety net must never take the recipe engine down: a detection failure falls back to
-        // the previous silent-start behavior.
-        _competingDetector.FindCompetingSkillNamesAsync(
-                default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs<IReadOnlyList<string>>(_ => throw new InvalidOperationException("boom"));
-        var message = "Bitte onboard einen neuen Mitarbeiter";
-
-        var plan = await _service.ResolveAsync(message);
-
-        plan.ShouldNotBeNull();
-        plan!.NeedsConfirmation.ShouldBeFalse();
-    }
-
-    [Test]
-    public async Task SemanticMatch_NeverConsultsCompetingSkillDetector()
-    {
-        // The competing-skill check exists for the unconfirmed keyword fast path only; semantic
-        // matches already pass the confirmation gate, so an extra detection would be wasted work.
-        var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
-            .Returns(RecipeResult("onboard-employee", 0.82));
-
-        var plan = await _service.ResolveAsync(message);
-
-        plan.ShouldNotBeNull();
-        await _competingDetector.DidNotReceiveWithAnyArgs().FindCompetingSkillNamesAsync(
-            default!, default, default!, default, default!, default);
+        plan!.NeedsConfirmation.ShouldBeTrue();
+        plan.MatchedByMeaning.ShouldBeFalse();
     }
 
     [Test]

@@ -362,22 +362,12 @@ public class CapabilityLearnerTests
         scopedRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(_ => _resolvedRecipes);
 
         // Every service the engine resolves from its own scope has to be present, not only the one the
-        // happy path needs: it calls GetRequiredService for the competing-intent detector, the margin
-        // evaluator and the retrieval service too, and a missing registration surfaces as a DI message
-        // in the outcome text rather than as a failed resolution - which is exactly how these tests
-        // first went red.
-        var competingIntent = Substitute.For<ICompetingSkillIntentDetector>();
-        competingIntent
-            .FindCompetingSkillNamesAsync(
-                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<RecipeTrigger>(),
-                Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<IReadOnlyCollection<string>>(),
-                Arg.Any<CancellationToken>())
-            .Returns([]);
-
+        // happy path needs: it calls GetRequiredService for the rights gate's skill repository and the
+        // retrieval service too, and a missing registration surfaces as a DI message in the outcome text
+        // rather than as a failed resolution - which is exactly how these tests first went red.
         var services = new ServiceCollection();
         services.AddSingleton(scopedRepository);
-        services.AddSingleton(competingIntent);
-        services.AddSingleton(Substitute.For<IRecipeSkillMarginEvaluator>());
+        services.AddSingleton(Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements());
         services.AddSingleton(Substitute.For<IKnowledgeRetrievalService>());
 
         var provider = services.BuildServiceProvider();

@@ -46,7 +46,7 @@ public class RecipeTriggerMatcherTimeoutTests
     [Test]
     public void RegexTimeout_WithoutALogger_StillSurvives()
     {
-        // Two of the four call sites (CompetingSkillIntentDetector, TurnReplayService) pass no logger.
+        // Some call sites (TurnReplayService) pass no logger.
         // Containment must not depend on one being there.
         var matched = RecipeTriggerMatcher.MatchesWordStart(Stems, Message, null, Unmeetable);
 

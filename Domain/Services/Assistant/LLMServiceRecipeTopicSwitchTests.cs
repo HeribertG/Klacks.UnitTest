@@ -79,13 +79,10 @@ public class LLMServiceRecipeTopicSwitchTests
         var scope = Substitute.For<IServiceScope>();
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
+        var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
+        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
         scopedProvider.GetService(typeof(IKnowledgeRetrievalService))
             .Returns(Substitute.For<IKnowledgeRetrievalService>());
-        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        competingDetector.FindCompetingSkillNamesAsync(
-                default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
-        scopedProvider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
         scope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

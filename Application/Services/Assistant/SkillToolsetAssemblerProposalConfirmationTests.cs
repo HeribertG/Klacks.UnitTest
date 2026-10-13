@@ -265,14 +265,10 @@ public class SkillToolsetAssemblerProposalConfirmationTests
         var recipeRepository = Substitute.For<IAgentRecipeRepository>();
         recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
 
-        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        competingDetector.FindCompetingSkillNamesAsync(
-                default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
-
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
-        scopedProvider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
+        var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
+        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
 
         var serviceScope = Substitute.For<IServiceScope>();
         serviceScope.ServiceProvider.Returns(scopedProvider);

@@ -55,6 +55,24 @@ public class ToolResultFormatterTests
         formatted.ShouldContain(ToolResultMarkers.ResultUntrustedFlag);
     }
 
+    [TestCase("list_schedule_notes")]
+    [TestCase("search_client_absences")]
+    [TestCase("list_expenses")]
+    [TestCase("read_schedule_state")]
+    [TestCase("get_ai_memories")]
+    [TestCase("list_navigation_feedback")]
+    [TestCase("get_shift_details")]
+    [TestCase("get_group_details")]
+    [TestCase("list_scenarios")]
+    [TestCase("list_agent_skills")]
+    public void UntaintedEntry_UnderAFreeTextReader_IsFlaggedAndCarriesTheNotice(string skillName)
+    {
+        var formatted = ToolResultFormatter.Format([new ToolResultEntry(skillName, "free text")], Cap);
+
+        formatted.ShouldContain(ToolResultMarkers.ResultUntrustedFlag);
+        formatted.ShouldContain(ToolResultMarkers.UntrustedContentNotice);
+    }
+
     [Test]
     public void UntaintedEntry_UnderAnUnlistedName_IsNotFlagged()
     {

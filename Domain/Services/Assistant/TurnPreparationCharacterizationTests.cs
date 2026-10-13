@@ -52,10 +52,8 @@ public class TurnPreparationCharacterizationTests
 
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
-        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        competingDetector.FindCompetingSkillNamesAsync(default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
-        scopedProvider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
+        var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
+        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();

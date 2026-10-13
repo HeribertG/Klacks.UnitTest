@@ -59,15 +59,12 @@ public class TurnPreparationGateReplayRecipeSuppressionTests
 
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
 
-        var competingDetector = Substitute.For<ICompetingSkillIntentDetector>();
-        competingDetector.FindCompetingSkillNamesAsync(default!, default, default!, default, default!, default)
-            .ReturnsForAnyArgs(Array.Empty<string>());
-
         var serviceProvider = Substitute.For<IServiceProvider>();
         serviceProvider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
+        var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
+        serviceProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
         serviceProvider.GetService(typeof(IKnowledgeRetrievalService))
             .Returns(Substitute.For<IKnowledgeRetrievalService>());
-        serviceProvider.GetService(typeof(ICompetingSkillIntentDetector)).Returns(competingDetector);
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(serviceProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();

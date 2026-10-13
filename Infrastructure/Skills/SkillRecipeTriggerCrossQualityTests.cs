@@ -11,8 +11,8 @@
 /// fixture closes that gap: no phrase built from a skill's own trigger keywords may fully match a
 /// recipe trigger unless the recipe executes that skill or the pair is a documented intended
 /// overlap, and no plugin-language skill synonym may embed a foreign recipe synonym. Regression
-/// tests prove the original bug message is fixed and that the runtime safety net
-/// (CompetingSkillIntentDetector) catches the pre-fix trigger.
+/// tests prove the original bug message is fixed and that the pre-fix trigger reproduces it. Since 2026-10-13 every
+/// recipe match is proposed and confirmed before it starts, so a residual over-match costs one question, not a hijack.
 /// </summary>
 
 using System.Text.Json;
@@ -34,9 +34,7 @@ public class SkillRecipeTriggerCrossQualityTests
     private const string SkillSynonymsFileName = "skill-synonyms.json";
 
     private const string CreateShiftOrderRecipeName = "create-shift-order";
-    private const string CompanyRuleSkillName = "start_company_rule";
     private const string CompanyRuleNoneOfMarker = "firmenregel";
-    private const string GermanLanguageCode = "de";
     private const string OriginalBugMessage =
         "Klacksy, wir haben eine neue Firmenregel: maximal 3 Nachtschichten pro Woche, hart blockieren.";
 
@@ -282,37 +280,6 @@ public class SkillRecipeTriggerCrossQualityTests
             "the original over-match; the regression setup is stale");
     }
 
-    [Test]
-    public void CompetingSkillIntentDetector_WouldHaveCaughtThePreFixHijack()
-    {
-        // Had the runtime safety net existed before the noneOf fix, the silent hijack would have been
-        // converted into a confirmation question: the message verbatim contains the multiword
-        // start_company_rule keyword phrase "neue firmenregel", which the pre-fix trigger does not
-        // own. This pins the safety net against the exact production incident.
-        var preFixTrigger = BuildPreFixCreateShiftOrderTrigger();
-        var recipe = LoadRecipes().Single(r => r.Name == CreateShiftOrderRecipeName);
-        var seededSkills = LoadSkills()
-            .Select(s => new AgentSkill
-            {
-                Name = s.Name,
-                TriggerKeywords = JsonSerializer.Serialize(s.Keywords)
-            })
-            .ToList();
-
-        var competing = CompetingSkillIntentDetector.FindCompetingSkillNames(
-            seededSkills,
-            OriginalBugMessage,
-            GermanLanguageCode,
-            preFixTrigger,
-            matchedRecipeSynonyms: null,
-            servedSkillNames: recipe.StepSkills);
-
-        competing.ShouldContain(CompanyRuleSkillName,
-            "the runtime competing-skill detector must flag the company-rule skill intent inside the " +
-            "hijacked message, so the plan is gated behind a confirmation instead of silently starting " +
-            "the create-shift-order flow");
-    }
-
     private static RecipeTrigger BuildPreFixCreateShiftOrderTrigger()
     {
         var trigger = LoadRecipes().Single(r => r.Name == CreateShiftOrderRecipeName).Trigger;
@@ -337,7 +304,7 @@ public class SkillRecipeTriggerCrossQualityTests
         // Singles cover a user uttering one skill phrase; pairs cover a realistic message combining
         // two of the same skill's own phrases ("Füge einen Ferienwunsch-Platzhalter hinzu"). Terms
         // from OTHER skills or free message context are deliberately not mixed in — that unbounded
-        // class is covered at runtime by CompetingSkillIntentDetector.
+        // class is covered at runtime by the confirmation every recipe match goes through.
         var phrases = new List<string>(terms);
         for (var i = 0; i < terms.Count; i++)
         {

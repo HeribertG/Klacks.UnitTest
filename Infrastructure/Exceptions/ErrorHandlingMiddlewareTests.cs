@@ -153,6 +153,28 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task ShiftLockedException_Becomes409CarryingItsCodeStatusAndLockedFields()
+    {
+        var shift = new Klacks.Api.Domain.Models.Schedules.Shift
+        {
+            Id = Guid.NewGuid(),
+            Name = "Night patrol",
+            Status = Klacks.Api.Domain.Enums.ShiftStatus.SealedOrder
+        };
+
+        var response = await Invoke(ShiftLockedException.ForEdit(shift, ["Name", "StartShift"]));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("errorCode").GetString().ShouldBe(ShiftLockedException.ErrorCode);
+        root.GetProperty(ShiftLockedException.StatusKey).GetString().ShouldBe("SealedOrder");
+        root.GetProperty(ShiftLockedException.ShiftIdKey).GetGuid().ShouldBe(shift.Id);
+        root.GetProperty(ShiftLockedException.LockedFieldsKey).EnumerateArray().Select(e => e.GetString())
+            .ShouldBe(["Name", "StartShift"]);
+    }
+
+    [Test]
     public async Task ScenarioStaleException_Becomes409CarryingItsCodeAndWhatChanged()
     {
         var staleness = new ScenarioStaleness(3, new DateTime(2026, 4, 20, 10, 0, 0, DateTimeKind.Utc), ["Plan B"]);
