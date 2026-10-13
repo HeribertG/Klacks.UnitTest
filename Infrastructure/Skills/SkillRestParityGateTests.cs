@@ -6,7 +6,11 @@
 /// (QualificationController is Admin-only, gate CanEditSettings), the deletion of client sub-resources
 /// (InputBaseController.Delete is Admin-only, gate CanDeleteClients), the proactive governance write
 /// (ProactiveGovernanceController is Admin-only, gate CanEditSettings) and the period-closing reads
-/// (PeriodClosingController Issues/AuditLog/UsedPeriods and the period-closing page are Admin-only, gate Admin).
+/// (PeriodClosingController Issues/AuditLog/UsedPeriods and the period-closing page are Admin-only, gate Admin) and
+/// create_test_environment, which writes demo employees, a contract and shifts into the live installation (gate
+/// CanEditSettings). The opposite direction is pinned too: the client-note skills mirror AnnotationsController, whose
+/// writes need CanEditClientNotes alone (part of the Planer floor), so the Planer who may write a note in the UI may
+/// also ask Klacksy to.
 /// The rule applied is SkillExecutorService.ValidatePermissions: the Admin role passes, everyone else needs every
 /// required right among Permissions.ExpandRoles of their roles.
 /// </summary>
@@ -34,10 +38,20 @@ public class SkillRestParityGateTests
         ["delete_membership"] = Permissions.CanDeleteClients,
         ["list_period_issues"] = Roles.Admin,
         ["list_period_audit_log"] = Roles.Admin,
-        ["list_open_periods"] = Roles.Admin
+        ["list_open_periods"] = Roles.Admin,
+        ["create_test_environment"] = Permissions.CanEditSettings
+    };
+
+    private static readonly Dictionary<string, string> PlannerFloorGateBySkill = new(StringComparer.Ordinal)
+    {
+        ["add_client_note"] = Permissions.CanEditClientNotes,
+        ["update_annotation"] = Permissions.CanEditClientNotes,
+        ["delete_annotation"] = Permissions.CanEditClientNotes
     };
 
     private static IEnumerable<string> AdminOnlySkills => AdminOnlyGateBySkill.Keys;
+
+    private static IEnumerable<string> PlannerFloorSkills => PlannerFloorGateBySkill.Keys;
 
     private static Dictionary<string, SkillSeedDefinition> Seeds()
     {
@@ -69,5 +83,29 @@ public class SkillRestParityGateTests
         MayRun(skill).ShouldBeFalse($"The Planer floor must not reach '{skill}'.");
         MayRun(skill, Roles.Authorised).ShouldBeFalse($"A Supervisor must not reach '{skill}'.");
         MayRun(skill, Roles.Admin).ShouldBeTrue($"Admin must keep reaching '{skill}'.");
+    }
+
+    [TestCaseSource(nameof(PlannerFloorSkills))]
+    public void SkillMirroringAPlannerFloorEndpoint_CarriesExactlyItsFloorGate(string skill)
+    {
+        Seeds()[skill].RequiredPermissions.ShouldBe(
+            new List<string> { PlannerFloorGateBySkill[skill] },
+            $"'{skill}' sends the same request as a REST action gated on {PlannerFloorGateBySkill[skill]} alone " +
+            "(AnnotationsController). A stricter skill gate such as CanEditClients locks out the Planer the UI lets " +
+            "write the note. Remember the version bump when changing it.");
+    }
+
+    [TestCaseSource(nameof(PlannerFloorSkills))]
+    public void PlannerSupervisorAndAdmin_AllReachAPlannerFloorSkill(string skill)
+    {
+        MayRun(skill).ShouldBeTrue($"The Planer floor must reach '{skill}', as it reaches the UI action.");
+        MayRun(skill, Roles.Authorised).ShouldBeTrue($"A Supervisor must reach '{skill}'.");
+        MayRun(skill, Roles.Admin).ShouldBeTrue($"Admin must reach '{skill}'.");
+    }
+
+    [Test]
+    public void ClientNoteGate_IsPartOfThePlanerFloor()
+    {
+        Permissions.PlannerFloor.ShouldContain(Permissions.CanEditClientNotes);
     }
 }

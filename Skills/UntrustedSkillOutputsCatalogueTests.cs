@@ -7,7 +7,8 @@
 /// asserts that every curated entry still exists in the seeded skill catalogue (core definitions plus
 /// every plugin feature seed), and that the curated names are unique and lower-case, matching the
 /// naming convention every seeded skill follows. list_macros must stay in the registry, because macro names and
-/// scripts are free text an administrator or the assistant wrote.
+/// scripts are free text an administrator or the assistant wrote; get_client_details too, because it returns the
+/// free-text client notes any planner can type.
 /// </summary>
 
 using System.Text.Json;
@@ -23,6 +24,7 @@ public class UntrustedSkillOutputsCatalogueTests
     private const string SkillsJsonProperty = "skills";
     private const string SkillNameJsonProperty = "name";
     private const string MacroListingSkill = "list_macros";
+    private const string ClientDetailsSkill = "get_client_details";
 
     private static readonly string[] DefinitionsRelativePath =
     [
@@ -55,6 +57,13 @@ public class UntrustedSkillOutputsCatalogueTests
     public void MacroListing_IsUntrusted_BecauseMacroNamesAndScriptsAreFreeText()
     {
         UntrustedSkillOutputs.Contains(MacroListingSkill).ShouldBeTrue();
+    }
+
+    [Test]
+    public void ClientDetails_IsUntrusted_BecauseItCarriesTheFreeTextClientNotes()
+    {
+        UntrustedSkillOutputs.Contains(ClientDetailsSkill).ShouldBeTrue();
+        UntrustedSkillOutputs.Contains(ClientDetailsSkill.ToUpperInvariant()).ShouldBeTrue();
     }
 
     [Test]

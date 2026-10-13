@@ -13,6 +13,7 @@ using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Queries.Shifts;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -101,6 +102,120 @@ public class SearchShiftsSkillTests
                 q.Filter.SearchString == string.Empty &&
                 q.Filter.NumberOfItemsPerPage == 20),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SearchShifts_WithoutStatus_ListsThePlannableShifts_NotTheUnsealedOrderInbox()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>()).Returns(Result());
+        var skill = new SearchShiftsSkill(mediator);
+
+        await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        await mediator.Received(1).Send(
+            Arg.Is<GetTruncatedListQuery>(q =>
+                q.Filter.FilterType == ShiftFilterType.Shift &&
+                !q.Filter.IsSealedOrder &&
+                q.Filter.IsTimeRange &&
+                q.Filter.IsSporadic),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("shift", ShiftFilterType.Shift, false)]
+    [TestCase("draft_order", ShiftFilterType.Original, false)]
+    [TestCase("sealed_order", ShiftFilterType.Original, true)]
+    [TestCase("container", ShiftFilterType.Container, false)]
+    [TestCase("SEALED_ORDER", ShiftFilterType.Original, true)]
+    public async Task SearchShifts_Status_SelectsTheMatchingListView(
+        string status, ShiftFilterType expectedType, bool expectedSealed)
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>()).Returns(Result());
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["status"] = status });
+
+        result.Success.ShouldBeTrue(result.Message);
+        await mediator.Received(1).Send(
+            Arg.Is<GetTruncatedListQuery>(q =>
+                q.Filter.FilterType == expectedType &&
+                q.Filter.IsSealedOrder == expectedSealed &&
+                q.Filter.IsTimeRange &&
+                q.Filter.IsSporadic &&
+                q.Filter.ActiveDateRange &&
+                q.Filter.FormerDateRange &&
+                q.Filter.FutureDateRange),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SearchShifts_UnknownStatus_ReturnsErrorListingTheValidOnes_NoDispatch()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["status"] = "archived" });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("shift");
+        result.Message.ShouldContain("draft_order");
+        result.Message.ShouldContain("sealed_order");
+        result.Message.ShouldContain("container");
+        await mediator.DidNotReceive().Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SearchShifts_FuzzyFallback_ReadsTheCatalogOfTheSameListView()
+    {
+        var mediator = MediatorWithCatalog(
+            "Sonderdienst",
+            new ShiftResource { Id = Guid.NewGuid(), Name = "AllShift" });
+        var skill = new SearchShiftsSkill(mediator);
+
+        await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["searchString"] = "Sonderdienst",
+            ["status"] = "sealed_order"
+        });
+
+        await mediator.Received(2).Send(
+            Arg.Is<GetTruncatedListQuery>(q =>
+                q.Filter.FilterType == ShiftFilterType.Original && q.Filter.IsSealedOrder),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SearchShifts_ReportsEachShiftsStatus_SoFollowUpSkillsKnowWhatTheyGot()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var sealedOrderId = Guid.NewGuid();
+        mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Result(new ShiftResource
+            {
+                Id = Guid.NewGuid(),
+                Name = "Frühdienst",
+                Status = ShiftStatus.OriginalShift,
+                OriginalId = sealedOrderId
+            }));
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        var shift = JsonSerializer.SerializeToElement(result.Data).GetProperty("Shifts")[0];
+        shift.GetProperty("Status").GetString().ShouldBe("OriginalShift");
+        shift.GetProperty("OriginalId").GetGuid().ShouldBe(sealedOrderId);
+    }
+
+    [Test]
+    public void SearchShifts_SeedDeclaresTheStatusEnum_WithThePlannableShiftsAsDefault()
+    {
+        var seed = SkillSeedCatalogue.Get("search_shifts");
+
+        var status = seed.Parameters!.Single(p => p.Name == "status");
+        status.Required.ShouldBeFalse();
+        status.DefaultValue?.ToString().ShouldBe("shift");
+        status.EnumValues.ShouldBe(new List<string> { "shift", "draft_order", "sealed_order", "container" });
     }
 
     [Test]

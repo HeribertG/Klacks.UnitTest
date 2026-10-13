@@ -5,6 +5,7 @@
 /// happy path with contract/group/address counts and filtering of soft-deleted children.
 /// </summary>
 
+using System.Text.Json;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
@@ -134,6 +135,94 @@ public class GetClientDetailsSkillTests
         Assert.That(result.Message, Does.Contain("1 contract(s)"));
         Assert.That(result.Message, Does.Contain("1 group(s)"));
         Assert.That(result.Data, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task ReturnsTheNotesWithTheirIds_AndLeavesSoftDeletedNotesOut()
+    {
+        var id = Guid.NewGuid();
+        var liveNote = Guid.NewGuid();
+        var client = MakeClientWithChildren(id);
+        client.Annotations.Add(new Annotation { Id = liveNote, ClientId = id, Note = "Prefers early shifts" });
+        client.Annotations.Add(new Annotation { Id = Guid.NewGuid(), ClientId = id, Note = "Old note", IsDeleted = true });
+        _clientRepository.Get(id).Returns(client);
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["clientId"] = id.ToString() });
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("1 note(s)");
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        var annotations = data.GetProperty("Annotations");
+        annotations.GetArrayLength().ShouldBe(1);
+        annotations[0].GetProperty("Id").GetGuid().ShouldBe(liveNote);
+        annotations[0].GetProperty("Note").GetString().ShouldBe("Prefers early shifts");
+        data.GetProperty("Summary").GetProperty("TotalAnnotations").GetInt32().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ManyNotes_AreCappedToTheNewestOnes_AndTheTotalIsStillReported()
+    {
+        const int noteCount = 27;
+        const int expectedListed = 20;
+        var id = Guid.NewGuid();
+        var client = MakeClientWithChildren(id);
+        var firstDay = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        for (var index = 0; index < noteCount; index++)
+        {
+            client.Annotations.Add(new Annotation
+            {
+                Id = Guid.NewGuid(),
+                ClientId = id,
+                Note = $"note {index}",
+                CreateTime = firstDay.AddDays(index)
+            });
+        }
+
+        _clientRepository.Get(id).Returns(client);
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["clientId"] = id.ToString() });
+
+        result.Success.ShouldBeTrue(result.Message);
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        var annotations = data.GetProperty("Annotations");
+        annotations.GetArrayLength().ShouldBe(expectedListed);
+        annotations[0].GetProperty("Note").GetString().ShouldBe($"note {noteCount - 1}");
+        annotations[expectedListed - 1].GetProperty("Note").GetString().ShouldBe($"note {noteCount - expectedListed}");
+        data.GetProperty("Summary").GetProperty("TotalAnnotations").GetInt32().ShouldBe(noteCount);
+        result.Message.ShouldContain($"{noteCount} note(s)");
+        result.Message.ShouldContain($"newest {expectedListed}");
+    }
+
+    [Test]
+    public async Task ReturnsAnEmptyNoteList_ForClientWithoutNotes()
+    {
+        var id = Guid.NewGuid();
+        _clientRepository.Get(id).Returns(MakeClientWithChildren(id));
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["clientId"] = id.ToString() });
+
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("Annotations").GetArrayLength().ShouldBe(0);
+        result.Message.ShouldContain("0 note(s)");
+    }
+
+    [Test]
+    public async Task HiddenClient_NeverLeaksItsNotes()
+    {
+        var id = Guid.NewGuid();
+        var client = MakeClientWithChildren(id);
+        client.Annotations.Add(new Annotation { Id = Guid.NewGuid(), ClientId = id, Note = "Secret" });
+        _clientRepository.Get(id).Returns(client);
+
+        var hidden = await new GetClientDetailsSkill(_clientRepository, SkillClientVisibility.Hiding(id))
+            .ExecuteAsync(Ctx(), new Dictionary<string, object> { ["clientId"] = id.ToString() });
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Data.ShouldBeNull();
+        hidden.Message.ShouldNotContain("Secret");
     }
 
     [Test]

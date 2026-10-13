@@ -9,6 +9,7 @@
 
 using Klacks.Api.Application.Commands.PeriodClosing;
 using Klacks.Api.Application.DTOs.PeriodClosing;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.PeriodClosing;
 using Klacks.Api.Application.Skills;
@@ -18,6 +19,8 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -116,6 +119,134 @@ public class PeriodClosingSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("verification failed");
+    }
+
+    private ClosePeriodSkill CloseSkillSealing()
+    {
+        _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>()).Returns(10);
+        _mediator.Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<SealedPeriodSummaryDto> { Day(1, true) });
+        return new ClosePeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
+    }
+
+    [Test]
+    public async Task ClosePeriod_WithoutAcknowledgement_SendsTheCommandUnacknowledged()
+    {
+        var skill = CloseSkillSealing();
+
+        await skill.ExecuteAsync(Ctx(), Range());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<ClosePeriodByGroupCommand>(c => !c.AcknowledgeViolations && c.AcknowledgedErrorCount == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClosePeriod_WithAcknowledgementAndCount_PassesBothToTheCommand()
+    {
+        var skill = CloseSkillSealing();
+        var parameters = Range("acknowledgeViolations", true);
+        parameters["acknowledgedErrorCount"] = 3;
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(
+            Arg.Is<ClosePeriodByGroupCommand>(c => c.AcknowledgeViolations && c.AcknowledgedErrorCount == 3),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClosePeriod_WithAcknowledgementButNoCount_IsRefusedAndSealsNothing()
+    {
+        var skill = CloseSkillSealing();
+
+        var result = await skill.ExecuteAsync(Ctx(), Range("acknowledgeViolations", true));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Pass acknowledgedErrorCount = number of errors shown to the user");
+        await _mediator.DidNotReceive().Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClosePeriod_CountWithoutAcknowledgement_IsIgnored()
+    {
+        var skill = CloseSkillSealing();
+
+        await skill.ExecuteAsync(Ctx(), Range("acknowledgedErrorCount", 4));
+
+        await _mediator.Received(1).Send(
+            Arg.Is<ClosePeriodByGroupCommand>(c => !c.AcknowledgeViolations && c.AcknowledgedErrorCount == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClosePeriod_RefusedForOpenErrors_NamesTheNextStepAndSealsNothing()
+    {
+        _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new PeriodValidationConflictException("The period still holds 3 unresolved error(s).", 3));
+        var skill = new ClosePeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
+
+        var result = await skill.ExecuteAsync(Ctx(), Range());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("3 unresolved error(s)");
+        result.Message.ShouldContain("acknowledgeViolations=true");
+        result.Message.ShouldContain("acknowledgedErrorCount=3");
+        result.Message.ShouldContain("Nothing was sealed");
+        result.Message.ShouldContain("only if the user explicitly decides to seal anyway", Case.Insensitive);
+        result.Message.ShouldNotContain("repeat the request", Case.Insensitive);
+        await _mediator.DidNotReceive().Send(Arg.Any<GetSealedPeriodsQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ClosePeriod_NewErrorsAfterTheConfirmation_AreReportedWithoutOfferingAnotherBlindRetry()
+    {
+        _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new PeriodValidationConflictException("The period still holds 5 unresolved error(s).", 5));
+        var skill = new ClosePeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
+        var parameters = Range("acknowledgeViolations", true);
+        parameters["acknowledgedErrorCount"] = 3;
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("5 unresolved error(s)");
+        result.Message.ShouldContain("New findings appeared");
+        result.Message.ShouldContain("explicitly decides to seal anyway");
+        result.Message.ShouldNotContain("acknowledgedErrorCount=");
+        result.Message.ShouldNotContain("repeat the request", Case.Insensitive);
+    }
+
+    [Test]
+    public async Task ClosePeriod_RefusalText_IsBuiltFromTheCountNotFromTheExceptionMessage()
+    {
+        _mediator.Send(Arg.Any<ClosePeriodByGroupCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new PeriodValidationConflictException(
+                "Please repeat the request with the acknowledgement and the current count.", 4));
+        var skill = new ClosePeriodSkill(_mediator, _groupRepository, TestGroupScopeGuard.Unrestricted());
+
+        var result = await skill.ExecuteAsync(Ctx(), Range());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("4 unresolved error(s)");
+        result.Message.ShouldNotContain("repeat the request", Case.Insensitive);
+    }
+
+    [Test]
+    public void ClosePeriod_SeedDeclaresTheAcknowledgementParameters_WithoutPointingAtOtherSkills()
+    {
+        var seed = SkillSeedCatalogue.Get("close_period");
+
+        var parameters = seed.Parameters!;
+        parameters.Select(p => p.Name).ShouldContain("acknowledgeViolations");
+        parameters.Select(p => p.Name).ShouldContain("acknowledgedErrorCount");
+        parameters.Single(p => p.Name == "acknowledgeViolations").Required.ShouldBeFalse();
+        parameters.Single(p => p.Name == "acknowledgedErrorCount").Description
+            .ShouldContain("Required when acknowledgeViolations is true");
+        seed.Description.ShouldNotContain("list_period_issues");
+        parameters.Select(p => p.Description).ShouldAllBe(description => !description.Contains("issues list"));
     }
 
     [Test]

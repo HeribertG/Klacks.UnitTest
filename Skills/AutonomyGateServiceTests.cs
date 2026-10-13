@@ -395,6 +395,29 @@ public class AutonomyGateServiceTests
     }
 
     [Test]
+    public async Task Check_ClosePeriodTokenIssuedWithoutAcknowledgement_DoesNotCoverTheSealAnywayCall()
+    {
+        var context = YesContext();
+        SetLevel(context.UserId, AutonomyLevel.Propose);
+        SetRisk(SkillRiskClass.Sensitive);
+        var descriptor = Descriptor("close_period");
+        var plainSeal = new Dictionary<string, object> { ["groupName"] = "Group A" };
+        var token = _confirmationStore.Create(context.UserId, "close_period", plainSeal);
+
+        var result = await _sut.CheckAsync(descriptor, context, new Dictionary<string, object>
+        {
+            ["groupName"] = "Group A",
+            ["acknowledgeViolations"] = true,
+            ["acknowledgedErrorCount"] = 3,
+            [AutonomyDefaults.ConfirmationTokenParameter] = token
+        });
+
+        result.ShouldNotBeNull();
+        result.Type.ShouldBe(SkillResultType.Confirmation);
+        ((string)result.Metadata!["confirmationToken"]).ShouldNotBe(token);
+    }
+
+    [Test]
     public async Task Check_TokenWithDifferentParameters_IsBurned_SameActionHeldAfterwards()
     {
         var context = YesContext();

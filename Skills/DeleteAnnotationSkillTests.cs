@@ -7,8 +7,10 @@
 
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Staffs;
+using Klacks.Api.Application.Queries;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -20,7 +22,7 @@ public class DeleteAnnotationSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "admin",
-        UserPermissions = new List<string> { "CanEditClients" }
+        UserPermissions = new List<string> { "CanEditClientNotes" }
     };
 
     [Test]
@@ -57,5 +59,24 @@ public class DeleteAnnotationSkillTests
         });
 
         result.Success.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task DeleteAnnotation_NoteOfAHiddenClient_IsAnsweredLikeAnUnknownNote()
+    {
+        var id = Guid.NewGuid();
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<DeleteCommand<AnnotationResource>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new KeyNotFoundException($"Annotation with ID {id} not found."));
+        var skill = new DeleteAnnotationSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["annotationId"] = id.ToString()
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not found");
+        await mediator.DidNotReceive().Send(Arg.Any<GetQuery<AnnotationResource>>(), Arg.Any<CancellationToken>());
     }
 }
