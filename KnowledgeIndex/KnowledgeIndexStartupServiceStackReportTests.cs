@@ -106,6 +106,17 @@ public class KnowledgeIndexStartupServiceStackReportTests
         recorder.Warnings.ShouldContain(m => m.Contains("Could not read"));
     }
 
+    [Test]
+    public async Task StartAsync_EmbeddingProviderThrows_DoesNotAbortTheHost()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<IEmbeddingProvider>(_ => throw new InvalidOperationException("onnx runtime missing"));
+
+        var recorder = await StartAsync(services, new StubScheduler(succeeds: true));
+
+        recorder.Warnings.ShouldContain(m => m.Contains("startup check failed"));
+    }
+
     private static async Task<LogRecorder> RunWithEmbeddingSpaceAsync(
         string embeddingSpaceId, StubScheduler? scheduler = null)
     {
