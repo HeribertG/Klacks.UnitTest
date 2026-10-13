@@ -12,6 +12,7 @@ using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Exports;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Infrastructure.Exceptions;
 using Microsoft.AspNetCore.Http;
@@ -256,5 +257,21 @@ public class ErrorHandlingMiddlewareTests
         using var problem = JsonDocument.Parse(response.Body);
         problem.RootElement.GetProperty("errorCode").GetString().ShouldBe("payrollExportConcurrent");
         problem.RootElement.TryGetProperty("blockers", out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task AccountRegistrationRejectedException_Becomes400WithErrorCodeAndReasons()
+    {
+        var response = await Invoke(new AccountRegistrationRejectedException(
+            [AccountRegistrationErrorCodes.PasswordTooShort, AccountRegistrationErrorCodes.PasswordRequiresDigit],
+            "Passwords must be at least 8 characters."));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("errorCode").GetString().ShouldBe(AccountRegistrationErrorCodes.ErrorCode);
+        root.GetProperty("reasons").EnumerateArray().Select(reason => reason.GetString()).ShouldBe(
+            [AccountRegistrationErrorCodes.PasswordTooShort, AccountRegistrationErrorCodes.PasswordRequiresDigit]);
+        root.GetProperty("detail").GetString().ShouldBe("Passwords must be at least 8 characters.");
     }
 }
