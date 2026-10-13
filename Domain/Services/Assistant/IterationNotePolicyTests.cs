@@ -19,6 +19,7 @@ public class IterationNotePolicyTests
     private const string PendingNote = "pending-note";
     private const string RecipeNote = "recipe-note";
     private const string CompletionNote = "completion-note";
+    private const string AmbiguousNote = "ambiguous-note";
 
     [Test]
     public void ConfirmationGate_WinsOverRecipeAndPlanNudge()
@@ -78,5 +79,22 @@ public class IterationNotePolicyTests
     {
         IterationNotePolicy.Select(false, PendingNote, false, RecipeNote, false, 0)
             .ShouldBeNull();
+    }
+
+    [Test]
+    public void AmbiguousReplyNote_AppliesOnlyWhileNoToolHasBeenCalledAndOnlyWhenNothingElseDoes()
+    {
+        IterationNotePolicy.Select(false, null, false, null, false, 0, null, AmbiguousNote)
+            .ShouldBe(AmbiguousNote);
+        IterationNotePolicy.Select(false, null, false, null, false, 1, null, AmbiguousNote)
+            .ShouldBeNull();
+        IterationNotePolicy.Select(false, null, false, null, true, 0, null, AmbiguousNote)
+            .ShouldBe(AmbiguousNote);
+        IterationNotePolicy.Select(false, null, false, null, false, 0, CompletionNote, AmbiguousNote)
+            .ShouldBe(CompletionNote);
+        IterationNotePolicy.Select(false, null, true, RecipeNote, false, 0, null, AmbiguousNote)
+            .ShouldBe(RecipeNote);
+        IterationNotePolicy.Select(true, PendingNote, false, null, false, 0, null, AmbiguousNote)
+            .ShouldBe(PendingNote);
     }
 }

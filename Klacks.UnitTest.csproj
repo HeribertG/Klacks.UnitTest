@@ -54,6 +54,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<None Update="Domain\Services\Assistant\conversation-signal-collisions.expected.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 		<None Update="ScheduleOptimizer\Harmonizer\Research\Scenarios\*.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>

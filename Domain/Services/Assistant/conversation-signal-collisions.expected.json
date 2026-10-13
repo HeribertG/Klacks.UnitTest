@@ -1,0 +1,16 @@
+{
+  "tak": {
+    "affirmingLanguages": [
+      "pl"
+    ],
+    "negatingLanguages": [
+      "ms"
+    ],
+    "negatingCategories": [
+      "negations"
+    ],
+    "neutralLanguages": [
+      "da"
+    ]
+  }
+}

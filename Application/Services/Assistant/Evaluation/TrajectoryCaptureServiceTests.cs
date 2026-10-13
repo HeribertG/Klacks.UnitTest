@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation;
@@ -837,6 +838,32 @@ public class TrajectoryCaptureServiceTests
                 && d.TrajectoryId == previous.Id),
             Arg.Any<CancellationToken>());
         await _caseCollector.DidNotReceiveWithAnyArgs().CollectImplicitCorrectionAsync(default!, default);
+    }
+
+    // The engine keeps a gate pending when the reply is a word that languages disagree about and the UI language does
+    // not settle it, and asks again. The capture must not book that same gate as declined: before the third verdict
+    // existed engine and capture both said "declined", now only the engine's verdict is a fact.
+    [TestCase("de", RecipeOutcomes.Pending)]
+    [TestCase(null, RecipeOutcomes.Pending)]
+    [TestCase("pl", RecipeOutcomes.Pending)]
+    [TestCase("ms", RecipeOutcomes.Declined)]
+    public async Task ANegationWordLanguagesDisagreeAbout_DeclinesTheGateOnlyWhereTheUiLanguageReadsItAsANo(
+        string? language, string expectedOutcome)
+    {
+        ShippedConversationSignals.Install();
+        try
+        {
+            var previous = GivenPendingConfirmation();
+
+            await _service.CaptureAsync(
+                _agentId, new LLMContext { Message = "tak", UserId = "user-1", Language = language }, "Alles klar.", []);
+
+            previous.RecipeOutcome.ShouldBe(expectedOutcome);
+        }
+        finally
+        {
+            ShippedConversationSignals.Uninstall();
+        }
     }
 
     [Test]

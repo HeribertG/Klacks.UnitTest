@@ -20,13 +20,6 @@ public class AffirmationDetectorExplicitConfirmationTests
     private const string LanguagesDirectory = "Languages";
     private const string SignalsFileName = "conversation-signals.json";
     private const string AffirmationsProperty = "affirmations";
-    private const string NegationsProperty = "negations";
-
-    private static readonly List<string> PluginAffirmations = [];
-    private static readonly List<string> PluginNegations = [];
-
-    private static readonly HashSet<(string Language, string Entry)> KnownCrossLanguageCollisions =
-        [("pl", "tak")];
 
     private const int MinimumShippedLanguagePacks = 21;
 
@@ -54,24 +47,18 @@ public class AffirmationDetectorExplicitConfirmationTests
             using var document = JsonDocument.Parse(File.ReadAllText(file));
             var affirmations = document.RootElement.GetProperty(AffirmationsProperty)
                 .EnumerateArray().Select(item => item.GetString()!).ToList();
-            var negations = document.RootElement.GetProperty(NegationsProperty)
-                .EnumerateArray().Select(item => item.GetString()!).ToList();
 
-            PluginAffirmations.AddRange(affirmations);
-            PluginNegations.AddRange(negations);
             entries.AddRange(affirmations.Select(entry => (Path.GetFileName(directory), entry)));
         }
 
         AffirmationEntriesPerLanguage = entries;
-        AffirmationDetector.Configure(PluginAffirmations, PluginNegations);
+        ShippedConversationSignals.Install();
     }
 
     [OneTimeTearDown]
     public void ResetPluginEntries()
     {
-        AffirmationDetector.Reset();
-        PluginAffirmations.Clear();
-        PluginNegations.Clear();
+        ShippedConversationSignals.Uninstall();
     }
 
     [TestCase("ja")]
@@ -173,35 +160,25 @@ public class AffirmationDetectorExplicitConfirmationTests
         AffirmationEntriesPerLanguage.ShouldNotBeEmpty();
 
         var rejected = AffirmationEntriesPerLanguage
-            .Where(item => !KnownCrossLanguageCollisions.Contains((item.Language, item.Entry)))
-            .Where(item => !AffirmationDetector.IsExplicitConfirmation(item.Entry))
+            .Where(item => !AffirmationDetector.IsExplicitConfirmation(item.Entry, item.Language))
             .Select(item => $"{item.Language}: '{item.Entry}'")
             .ToList();
 
         rejected.ShouldBeEmpty(
-            "A language pack's own go-ahead word must be accepted as a yes on its own, otherwise users of that " +
-            "language can never confirm a held action: " + string.Join("; ", rejected));
+            "A language pack's own go-ahead word must be accepted as a yes on its own in that pack's UI language, " +
+            "otherwise users of that language can never confirm a held action; no entry is exempt, a pack that lists a word " +
+            "as a yes and as a no at once is rejected by the collision-table guard: " + string.Join("; ", rejected));
     }
 
     [Test]
-    public void KnownCrossLanguageCollisions_AreTheOnlyAffirmationsAnotherPackNegates()
+    public void ThePolishTak_IsAYesInAPolishUi_ANoInAMalayUi_AndAmbiguousWhereTheLanguageDoesNotSettleIt()
     {
-        var negations = PluginNegations.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var collisions = AffirmationEntriesPerLanguage
-            .Where(item => negations.Contains(item.Entry))
-            .Select(item => (item.Language, item.Entry))
-            .ToHashSet();
-
-        collisions.ShouldBe(KnownCrossLanguageCollisions, ignoreOrder: true,
-            "The detectors merge every installed pack into one global vocabulary, so a go-ahead word of one pack " +
-            "that another pack lists as a negation is never accepted as a yes while both packs are installed. " +
-            "Update this list deliberately when a pack changes.");
-    }
-
-    [Test]
-    public void ThePolishTak_IsRefusedWhileTheMalayPackNegatesIt_AndStillAccepted_ByItsOtherPolishGoAheads()
-    {
+        AffirmationDetector.IsExplicitConfirmation("tak", "pl").ShouldBeTrue();
+        AffirmationDetector.IsExplicitConfirmation("tak", "pl-PL").ShouldBeTrue();
+        AffirmationDetector.IsExplicitConfirmation("tak", "ms").ShouldBeFalse();
+        AffirmationDetector.AssessExplicitConfirmation("tak", "ms").IsAmbiguous.ShouldBeFalse();
+        AffirmationDetector.AssessExplicitConfirmation("tak", "de").IsAmbiguous.ShouldBeTrue();
+        AffirmationDetector.AssessExplicitConfirmation("tak", null).IsAmbiguous.ShouldBeTrue();
         AffirmationDetector.IsExplicitConfirmation("tak").ShouldBeFalse();
         AffirmationDetector.IsExplicitConfirmation("dobrze").ShouldBeTrue();
         AffirmationDetector.IsExplicitConfirmation("zgoda").ShouldBeTrue();

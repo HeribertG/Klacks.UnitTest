@@ -11,6 +11,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using NUnit.Framework;
 using Shouldly;
 
@@ -106,6 +107,25 @@ public class GracefulCorrectionDetectorTests
     public void G3_BareNegation_StaysADecline()
     {
         Evaluate("Nein.", Anchor()).ShouldBe(GracefulCorrectionGate.BareNegation);
+    }
+
+    [TestCase("de", GracefulCorrectionGate.Passed)]
+    [TestCase(null, GracefulCorrectionGate.Passed)]
+    [TestCase("pl", GracefulCorrectionGate.Passed)]
+    [TestCase("ms", GracefulCorrectionGate.BareNegation)]
+    public void G3_AWordTheLanguageDoesNotSettleAsANo_IsNoBareRefusal_SoTheCorrectionIsNotSkippedSilently(
+        string? language, GracefulCorrectionGate expected)
+    {
+        ShippedConversationSignals.Install();
+        try
+        {
+            GracefulCorrectionDetector.Evaluate("nie tak", Anchor(), false, false, DateTime.UtcNow, language)
+                .ShouldBe(expected, $"'nie tak' in '{language}'");
+        }
+        finally
+        {
+            ShippedConversationSignals.Uninstall();
+        }
     }
 
     [Test]

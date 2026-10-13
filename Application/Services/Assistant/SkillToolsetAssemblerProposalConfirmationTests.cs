@@ -131,6 +131,28 @@ public class SkillToolsetAssemblerProposalConfirmationTests
             _userId, ProposalHintWindow, PendingConfirmationPurposes.ProposalHint).ShouldBeNull();
     }
 
+    // "tak" is a refusal in Malay and a yes in Polish; with no language to settle it, the reply is not an EXPLICIT
+    // negation, and only an explicit negation discards the hint.
+    [Test]
+    public async Task AReplyLanguagesDisagreeAbout_IsNoExplicitRefusal_SoTheHintSurvives()
+    {
+        ShippedConversationSignals.Install();
+        try
+        {
+            _confirmationStore.CreateProposalHint(_userId, ApplySkillName);
+
+            var result = await AssembleAsync("tak");
+
+            FunctionNames(result).ShouldContain(ApplySkillName);
+            _confirmationStore.PeekLatestForUser(
+                _userId, ProposalHintWindow, PendingConfirmationPurposes.ProposalHint).ShouldNotBeNull();
+        }
+        finally
+        {
+            ShippedConversationSignals.Uninstall();
+        }
+    }
+
     [Test]
     public async Task BareDateAnswer_WithAnOutstandingHint_GuaranteesThePairedApplySkill()
     {
