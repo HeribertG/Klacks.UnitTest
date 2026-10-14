@@ -121,6 +121,7 @@ public static class SkillFeatureCoverageMap
         ["AbsencesController"] = Covered("create_absence", "update_absence", "delete_absence", "list_absence_types", "assign_macro_to_absence_type"),
         ["AnalyseScenariosController"] = Covered("list_scenarios", "evaluate_scenario", "accept_scenario", "reject_scenario"),
         ["AutoWizardController"] = Covered("start_autowizard"),
+        ["AutofillRunsController"] = Excluded("read-only presence for the schedule progress line, pushed to the open schedule, not chat-addressable"),
         ["BreakPlaceholdersController"] = Gap("break placeholder planning"),
         ["BreaksController"] = Covered("add_break", "delete_break"),
         ["ContainerLocksController"] = Excluded("schedule grid concurrency locking between UI sessions, not chat-addressable"),
