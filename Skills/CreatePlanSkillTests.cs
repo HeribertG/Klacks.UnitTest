@@ -291,6 +291,46 @@ public class CreatePlanSkillTests
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
     }
 
+    private const string ReadMessagesPlanJson =
+        "[{\"Order\":1,\"Skill\":\"read_messages\",\"Params\":{},\"Reversible\":true}]";
+
+    private static SkillExecutionContext SlackCtx(Guid userId) =>
+        Ctx(userId) with { CappedChannel = CappedChannels.SlackOwnerBridge };
+
+    [Test]
+    public async Task OnTheSlackBridge_Proposal_WithAnExcludedStepSkill_IsRefused_AndNothingIsStored()
+    {
+        RegisterSkills("read_messages");
+        var userId = Guid.NewGuid();
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(DraftPlan(Guid.NewGuid(), userId, ReadMessagesPlanJson));
+
+        var result = await _skill.ExecuteAsync(
+            SlackCtx(userId),
+            new Dictionary<string, object> { [PlanSkillDefaults.GoalParameter] = "read the messages" });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("read_messages");
+        await _planRepository.DidNotReceive().AddAsync(Arg.Any<AgentPlan>(), Arg.Any<CancellationToken>());
+        _confirmationStore.DidNotReceive().Create(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, object>>());
+    }
+
+    [Test]
+    public async Task InChat_Proposal_WithTheSameSkill_IsNotRefused()
+    {
+        RegisterSkills("read_messages");
+        var userId = Guid.NewGuid();
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(DraftPlan(Guid.NewGuid(), userId, ReadMessagesPlanJson));
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(userId),
+            new Dictionary<string, object> { [PlanSkillDefaults.GoalParameter] = "read the messages" });
+
+        result.Type.ShouldBe(SkillResultType.Confirmation);
+    }
+
     [Test]
     public async Task OverMcp_Proposal_WithAnUnregisteredStepSkill_IsRefused()
     {

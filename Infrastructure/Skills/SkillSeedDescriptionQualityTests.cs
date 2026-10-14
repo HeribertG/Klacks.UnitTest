@@ -1,9 +1,9 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// W3 gates for description and parameter-shape hygiene in skill-seeds.json:
-/// descriptions stay between 40 and 500 characters (the explain_page_* knowledge skills may run to
-/// 1000), every parameter description is at least 15 characters so the model gets a real hint for
+/// W3 gates for description and parameter-shape hygiene in skill-seeds.json and in the skill-seeds.json of every feature
+/// plugin under Klacks.Api/Plugins/Features: descriptions stay between 40 and 500 characters (the explain_page_* knowledge
+/// skills may run to 1000), every parameter description is at least 15 characters so the model gets a real hint for
 /// each slot, and no skill outgrows 12 parameters without an explicitly justified allowlist entry.
 /// </summary>
 
@@ -29,6 +29,21 @@ public class SkillSeedDescriptionQualityTests
         "Klacks.Api", "Application", "Skills", "Definitions"
     ];
 
+    private static readonly string[] PluginFeaturesRelativePath =
+    [
+        "Klacks.Api", "Plugins", "Features"
+    ];
+
+    /// <summary>
+    /// Plugin seeds that predate the plugin coverage of this gate and run past 500 characters. diagnose_messaging_setup is an
+    /// Admin-only setup checklist whose description carries its answer rules; shortening it changes what the model does
+    /// with an unmeasured skill, so it stays as is until a goldset covers it.
+    /// </summary>
+    private static readonly HashSet<string> DescriptionLengthAllowlist = new(StringComparer.Ordinal)
+    {
+        "diagnose_messaging_setup"
+    };
+
     /// <summary>
     /// Form-heavy creation/update skills that legitimately need more than 12 parameters. Splitting
     /// them into sub-skills is UI work; until then they are allowlisted here on purpose.
@@ -53,7 +68,8 @@ public class SkillSeedDescriptionQualityTests
                 ? KnowledgePageDescriptionMaxLength
                 : DescriptionMaxLength;
 
-            if (description.Length < DescriptionMinLength || description.Length > max)
+            if (description.Length < DescriptionMinLength
+                || (description.Length > max && !DescriptionLengthAllowlist.Contains(skillName)))
             {
                 violations.Add($"{skillName}: {description.Length} chars");
             }
@@ -182,8 +198,7 @@ public class SkillSeedDescriptionQualityTests
 
     private static IEnumerable<(string SkillName, string Description)> EnumerateDescriptions()
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName)));
-        foreach (var skill in document.RootElement.GetProperty("skills").EnumerateArray())
+        foreach (var skill in EnumerateSkillElements())
         {
             var name = skill.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
             var description = skill.TryGetProperty("description", out var descriptionElement)
@@ -195,8 +210,7 @@ public class SkillSeedDescriptionQualityTests
 
     private static IEnumerable<(string SkillName, JsonElement Parameter)> EnumerateParameters()
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName)));
-        foreach (var skill in document.RootElement.GetProperty("skills").EnumerateArray())
+        foreach (var skill in EnumerateSkillElements())
         {
             var name = skill.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
             if (!skill.TryGetProperty("parameters", out var parameters) || parameters.ValueKind != JsonValueKind.Array)
@@ -213,8 +227,7 @@ public class SkillSeedDescriptionQualityTests
 
     private static IEnumerable<(string SkillName, List<JsonElement> Parameters)> EnumerateSkillParameters()
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName)));
-        foreach (var skill in document.RootElement.GetProperty("skills").EnumerateArray())
+        foreach (var skill in EnumerateSkillElements())
         {
             var name = skill.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
             var parameters = skill.TryGetProperty("parameters", out var parametersElement)
@@ -222,6 +235,33 @@ public class SkillSeedDescriptionQualityTests
                 ? parametersElement.EnumerateArray().ToList()
                 : new List<JsonElement>();
             yield return (name, parameters);
+        }
+    }
+
+    private static IEnumerable<JsonElement> EnumerateSkillElements()
+    {
+        using (var core = JsonDocument.Parse(File.ReadAllText(LocateDefinitionsFile(SkillSeedsFileName))))
+        {
+            foreach (var skill in core.RootElement.GetProperty("skills").EnumerateArray())
+            {
+                yield return skill.Clone();
+            }
+        }
+
+        var pluginSeedFiles = Directory.GetDirectories(RepositoryRootLocator.RequireDirectory(PluginFeaturesRelativePath))
+            .Select(directory => Path.Combine(directory, SkillSeedsFileName))
+            .Where(File.Exists)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToList();
+        pluginSeedFiles.ShouldNotBeEmpty("no feature plugin ships skill-seeds.json, so the plugin coverage proves nothing");
+
+        foreach (var seedFile in pluginSeedFiles)
+        {
+            using var plugin = JsonDocument.Parse(File.ReadAllText(seedFile));
+            foreach (var skill in plugin.RootElement.EnumerateArray())
+            {
+                yield return skill.Clone();
+            }
         }
     }
 

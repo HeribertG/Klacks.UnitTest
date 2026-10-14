@@ -13,12 +13,15 @@ using Klacks.Api.Application.Queries.Email;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Interfaces.Inbound;
+using Klacks.Api.Domain.Interfaces.Translation;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Email;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Mediator;
+using NSubstitute.ExceptionExtensions;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -302,11 +305,8 @@ public class InboxEmailSkillTests
                 BodyText = "Hallo, kann ich meinen Dienst am Freitag tauschen?",
                 TargetLanguage = "de"
             });
-        var skill = new TranslateEmailSkill(_mediator);
 
-        var parameters = P(id);
-        parameters["targetLanguage"] = "DE";
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
+        var result = await TranslateAsync(id, "DE");
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldContain("Anfrage Diensttausch");
@@ -316,18 +316,73 @@ public class InboxEmailSkillTests
     }
 
     [Test]
-    public async Task TranslateEmail_ReturnsError_WhenServiceUnavailable()
+    public async Task TranslateEmail_OfAnHtmlMail_ReturnsTheTranslatedHtmlAsPlainText()
     {
-        var id = Guid.NewGuid();
+        _mediator.Send(Arg.Any<TranslateReceivedEmailQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new TranslatedEmailResource
+            {
+                Subject = "Schichttausch",
+                BodyHtml = "<p>Kann ich am Freitag <b>tauschen</b>?</p><script>x()</script>",
+                TargetLanguage = "de"
+            });
+
+        var result = await TranslateAsync(Guid.NewGuid(), "de");
+
+        result.Success.ShouldBeTrue(result.Message);
+        var body = (string)result.Data!.GetType().GetProperty("BodyText")!.GetValue(result.Data)!;
+        body.ShouldBe("Kann ich am Freitag tauschen?");
+    }
+
+    [Test]
+    public async Task TranslateEmail_ReturnsNotFound_WhenTheMailIsMissingOrHidden()
+    {
         _mediator.Send(Arg.Any<TranslateReceivedEmailQuery>(), Arg.Any<CancellationToken>())
             .Returns((TranslatedEmailResource?)null);
-        var skill = new TranslateEmailSkill(_mediator);
 
-        var parameters = P(id);
-        parameters["targetLanguage"] = "de";
-        var result = await skill.ExecuteAsync(Ctx(), parameters);
+        var result = await TranslateAsync(Guid.NewGuid(), "de");
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("could not be translated");
+        result.Message.ShouldContain("not found");
+    }
+
+    [Test]
+    public async Task TranslateEmail_ToAnUnsupportedLanguage_IsRefusedBeforeTheQuery()
+    {
+        var result = await TranslateAsync(Guid.NewGuid(), "xx");
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Unsupported target language 'xx'");
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<TranslateReceivedEmailQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TranslateEmail_WithoutAConfiguredService_IsRefusedBeforeTheQuery()
+    {
+        var result = await TranslateAsync(Guid.NewGuid(), "de", configured: false);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not configured");
+        await _mediator.DidNotReceiveWithAnyArgs().Send(Arg.Any<TranslateReceivedEmailQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TranslateEmail_RejectedServiceKey_IsReportedAsAnError()
+    {
+        _mediator.Send(Arg.Any<TranslateReceivedEmailQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TranslationAuthenticationException("DeepL rejected the API key."));
+
+        var result = await TranslateAsync(Guid.NewGuid(), "de");
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe("DeepL rejected the API key.");
+    }
+
+    private async Task<SkillResult> TranslateAsync(Guid id, string targetLanguage, bool configured = true)
+    {
+        var translationService = Substitute.For<ITranslationService>();
+        translationService.IsConfiguredAsync().Returns(configured);
+        var parameters = P(id);
+        parameters["targetLanguage"] = targetLanguage;
+        return await new TranslateEmailSkill(_mediator, translationService).ExecuteAsync(Ctx(), parameters);
     }
 }

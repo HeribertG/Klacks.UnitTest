@@ -73,6 +73,35 @@ public class McpSkillExposurePolicyTests
         Assert.That(_sut.IsExposed(descriptor), Is.False);
     }
 
+    private static readonly string[] OpenedByB8 =
+    [
+        "send_message", "read_messages", "list_email_folders", "mark_email_read", "move_email_to_folder", "delete_email",
+        "restore_email", "fetch_new_emails", "translate_email", "list_emails_by_group", "get_email_group_tree"
+    ];
+
+    private static readonly string[] ReachableBeforeB8 =
+    [
+        "list_emails", "read_email", "get_email_analysis", "list_emails_by_client"
+    ];
+
+    [TestCaseSource(nameof(OpenedByB8))]
+    public void SkillB8OpenedToTheSupervisor_IsNotExposed_EvenWhenClassifiedReadOnly(string skill)
+    {
+        var descriptor = McpTestData.Descriptor(skill, category: SkillCategory.Query);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.ReadOnly);
+
+        Assert.That(_sut.IsExposed(descriptor), Is.False);
+    }
+
+    [TestCaseSource(nameof(ReachableBeforeB8))]
+    public void SkillTheSupervisorReachedBeforeB8_StaysExposed(string skill)
+    {
+        var descriptor = McpTestData.Descriptor(skill, category: SkillCategory.Query);
+        _riskClassifier.Classify(descriptor).Returns(SkillRiskClass.ReadOnly);
+
+        Assert.That(_sut.IsExposed(descriptor), Is.True);
+    }
+
     // End-to-end guard with the REAL classifier, no mock: all three personal-access-token skills stay
     // invisible to external agents, for two different reasons. create/revoke are Sensitive; the pure
     // read is a plain ReadOnly Query and is withheld by the policy's own exclusion list instead, which

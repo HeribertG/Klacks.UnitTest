@@ -5,7 +5,8 @@
 /// the ones the real composition root registers (the real AddDomainServices on an empty configuration, not a text search),
 /// each provider built with substitutes for its dependencies, and the skills they support with the category the skill is
 /// seeded with (the messaging plugin seeds a category SkillCategory does not know, which the registry maps to Action, so
-/// does this helper).
+/// does this helper). A skill implementation is looked up in Klacks.Api and in the messaging plugin, whose skills derive from
+/// the plugin contract's base class and receive a reduced context.
 /// </summary>
 
 using System.Reflection;
@@ -33,6 +34,7 @@ public static class ConfirmationPreviewProviderFixtures
     ];
 
     private static readonly Assembly ApiAssembly = typeof(BulkWorkDeletionConfirmationPreviewProvider).Assembly;
+    private static readonly Assembly PluginAssembly = typeof(Klacks.Plugin.Messaging.MessagingPluginRegistrar).Assembly;
 
     public static IReadOnlyList<Type> ProviderTypes() =>
         ApiAssembly.GetTypes()
@@ -81,6 +83,12 @@ public static class ConfirmationPreviewProviderFixtures
             skills.TryAdd(attribute.SkillName, null);
         }
 
+        foreach (var attribute in PluginAssembly.GetTypes()
+                     .SelectMany(type => type.GetCustomAttributes<Klacks.Plugin.Contracts.Skills.SkillImplementationAttribute>()))
+        {
+            skills.TryAdd(attribute.SkillName, null);
+        }
+
         return skills;
     }
 
@@ -93,7 +101,16 @@ public static class ConfirmationPreviewProviderFixtures
             .ToList();
     }
 
-    public static Type ImplementationOf(string skillName) =>
-        ApiAssembly.GetTypes().Single(type => type.GetCustomAttributes<SkillImplementationAttribute>()
+    public static Type ImplementationOf(string skillName)
+    {
+        var apiImplementations = ApiAssembly.GetTypes().Where(type => type.GetCustomAttributes<SkillImplementationAttribute>()
             .Any(attribute => string.Equals(attribute.SkillName, skillName, StringComparison.OrdinalIgnoreCase)));
+        var pluginImplementations = PluginAssembly.GetTypes().Where(type =>
+            type.GetCustomAttributes<Klacks.Plugin.Contracts.Skills.SkillImplementationAttribute>()
+                .Any(attribute => string.Equals(attribute.SkillName, skillName, StringComparison.OrdinalIgnoreCase)));
+        return apiImplementations.Concat(pluginImplementations).Single();
+    }
+
+    public static bool IsPluginSkill(Type implementation) =>
+        typeof(Klacks.Plugin.Contracts.Skills.ISkillImplementation).IsAssignableFrom(implementation);
 }

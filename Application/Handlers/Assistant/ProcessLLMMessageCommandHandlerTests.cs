@@ -11,6 +11,7 @@ using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -193,6 +194,47 @@ public class ProcessLLMMessageCommandHandlerTests
         _capturedContext.ShouldNotBeNull();
         _capturedContext!.AvailableFunctions.ShouldContain(f => f.Name == DashboardSkillName);
         _capturedContext.AvailableFunctions.ShouldNotContain(f => f.Name == EmployeesSkillName);
+    }
+
+    [Test]
+    public async Task Handle_OnACappedChannel_WithholdsTheExcludedSkills_AndMarksTheContext()
+    {
+        const string excludedSkill = "read_messages";
+        const string allowedSkill = "list_emails";
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill> { CreateSkill(excludedSkill), CreateSkill(allowedSkill) });
+        _retrieval.RetrieveAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+            .Returns(new RetrievalResult(
+                RetrievalHit(excludedSkill).Candidates.Concat(RetrievalHit(allowedSkill).Candidates).ToList()));
+        var command = CreateCommand(null);
+        command.CappedChannel = CappedChannels.SlackOwnerBridge;
+
+        await CreateHandler().Handle(command, CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CappedChannel.ShouldBe(CappedChannels.SlackOwnerBridge);
+        _capturedContext.AvailableFunctions.ShouldContain(f => f.Name == allowedSkill);
+        _capturedContext.AvailableFunctions.ShouldNotContain(f => f.Name == excludedSkill);
+    }
+
+    [Test]
+    public async Task Handle_InTheChat_KeepsTheSkillsTheCappedChannelsWithhold()
+    {
+        const string skill = "read_messages";
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill> { CreateSkill(skill) });
+        _retrieval.RetrieveAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+            .Returns(RetrievalHit(skill));
+
+        await CreateHandler().Handle(CreateCommand(null), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.CappedChannel.ShouldBeNull();
+        _capturedContext.AvailableFunctions.ShouldContain(f => f.Name == skill);
     }
 
     [Test]

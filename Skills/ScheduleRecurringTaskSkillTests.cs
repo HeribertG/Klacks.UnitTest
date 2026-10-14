@@ -459,6 +459,35 @@ public class ScheduleRecurringTaskSkillTests
     }
 
     [Test]
+    public async Task OnTheSlackBridge_AnExcludedSkill_IsRefusedAndNothingIsSaved()
+    {
+        KnownHarmlessSkill("read_messages");
+        var context = Ctx(permissions: new[] { "Authorised", "CanViewClients" }) with
+        {
+            CappedChannel = CappedChannels.SlackOwnerBridge
+        };
+
+        var result = await _skill.ExecuteAsync(context, SkillParamsFor("read_messages"));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("cannot be scheduled from this channel");
+        result.Message.ShouldContain("read_messages");
+        await _repository.DidNotReceive().AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task InTheChat_TheSameSkill_IsScheduled()
+    {
+        KnownHarmlessSkill("read_messages");
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(permissions: new[] { "Authorised", "CanViewClients" }), SkillParamsFor("read_messages"));
+
+        result.Success.ShouldBeTrue();
+        await _repository.Received(1).AddAsync(Arg.Any<ScheduledTask>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task OverMcp_UiCategorySkill_IsRefused()
     {
         KnownHarmlessSkill("open_settings_page", SkillCategory.UI);

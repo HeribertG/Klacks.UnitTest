@@ -223,6 +223,24 @@ public class SlackOwnerBridgeServiceTests
     }
 
     [Test]
+    public async Task RunCycleAsync_NewMessage_MarksTheTurnAsTheCappedSlackChannel()
+    {
+        SetUpOwnerAlias();
+        SetUpWatermark(DateTime.UtcNow.AddMinutes(-5));
+        _messagingService.GetMessagesAsync(
+                null, MessageDirection.Inbound, OwnerSlackId, Arg.Any<MessageScope?>(), Arg.Any<int>(), 0, Arg.Any<CancellationToken>())
+            .Returns(new List<Message> { BuildMessage(DateTime.UtcNow, content: "Zeig mir die Nachrichten") });
+        _mediator.Send(Arg.Any<ProcessLLMMessageCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new LLMResponse { Message = "ok" });
+
+        await _sut.RunCycleAsync();
+
+        await _mediator.Received(1).Send(
+            Arg.Is<ProcessLLMMessageCommand>(c => c.CappedChannel == CappedChannels.SlackOwnerBridge),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task RunCycleAsync_FirstOfTwoMessagesFails_SecondMessageIsStillProcessed()
     {
         SetUpOwnerAlias();

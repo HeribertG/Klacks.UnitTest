@@ -8,7 +8,9 @@
 /// every plugin feature seed), and that the curated names are unique and lower-case, matching the
 /// naming convention every seeded skill follows. list_macros must stay in the registry, because macro names and
 /// scripts are free text an administrator or the assistant wrote; get_client_details too, because it returns the
-/// free-text client notes any planner can type.
+/// free-text client notes any planner can type. The inbox skills that change a mail and report it back with its
+/// subject line (mark_email_read, move_email_to_folder, delete_email, restore_email) stay listed too: the subject is
+/// written by the sender, and the skills are reachable by Supervisors since the inbox was opened to them.
 /// </summary>
 
 using System.Text.Json;
@@ -64,6 +66,17 @@ public class UntrustedSkillOutputsCatalogueTests
     {
         UntrustedSkillOutputs.Contains(ClientDetailsSkill).ShouldBeTrue();
         UntrustedSkillOutputs.Contains(ClientDetailsSkill.ToUpperInvariant()).ShouldBeTrue();
+    }
+
+    [TestCase("mark_email_read")]
+    [TestCase("move_email_to_folder")]
+    [TestCase("delete_email")]
+    [TestCase("restore_email")]
+    public void InboxMutationSkill_ReportingTheSenderSubject_IsUntrusted(string skill)
+    {
+        UntrustedSkillOutputs.Contains(skill).ShouldBeTrue(
+            $"'{skill}' returns the subject line of the received mail in its data and message; that text is written by "
+            + "the sender and must stay framed as untrusted.");
     }
 
     [Test]

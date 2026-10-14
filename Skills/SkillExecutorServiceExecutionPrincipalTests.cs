@@ -4,7 +4,8 @@
 /// Skills reached outside an HTTP request (Telegram, inbound automation, proactive remediation) carry their acting
 /// user only in SkillExecutionContext.UserId, while every visibility guard reads the ambient user (HTTP claim, else
 /// ExecutionPrincipal). The executor therefore runs each invocation under ExecutionPrincipal = context.UserId unless an
-/// owner is already set. Exercised with the real executor, scope guard, token guard, group guard and UserService; only
+/// owner is already set, the autonomy gate included: a confirmation preview (send_message resolves its recipient under the
+/// caller's group visibility) must never be computed as an unrestricted system job. Exercised with the real executor, scope guard, token guard, group guard and UserService; only
 /// the group visibility service (the user's DB rows) is stubbed.
 /// </summary>
 
@@ -31,6 +32,7 @@ public class SkillExecutorServiceExecutionPrincipalTests
     private Guid _visibleGroupId;
     private Guid _hiddenToken;
     private string? _principalSeenBySkill;
+    private string? _principalSeenByGate;
 
     [SetUp]
     public void SetUp()
@@ -42,6 +44,7 @@ public class SkillExecutorServiceExecutionPrincipalTests
         _visibleGroupId = Guid.NewGuid();
         _hiddenToken = Guid.NewGuid();
         _principalSeenBySkill = null;
+        _principalSeenByGate = null;
 
         _groupVisibilityService.GetVisibilityScopeAsync()
             .Returns(Task.FromResult(GroupVisibilityScope.Restricted([_visibleGroupId], [_visibleGroupId])));
@@ -52,7 +55,11 @@ public class SkillExecutorServiceExecutionPrincipalTests
         autonomyGate.CheckAsync(
                 Arg.Any<SkillDescriptor>(), Arg.Any<SkillExecutionContext>(),
                 Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>())
-            .Returns((SkillResult?)null);
+            .Returns(_ =>
+            {
+                _principalSeenByGate = ExecutionPrincipal.CurrentUserId;
+                return (SkillResult?)null;
+            });
         _genericDispatcher.CanHandle(GenericHandlerType).Returns(true);
         _genericDispatcher.ExecuteAsync(
                 GenericHandlerType, GenericHandlerConfig,
@@ -127,6 +134,16 @@ public class SkillExecutorServiceExecutionPrincipalTests
         result.Success.ShouldBeTrue();
         _principalSeenBySkill.ShouldBe(userId.ToString());
         ExecutionPrincipal.CurrentUserId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task TheAutonomyGate_AndSoEveryConfirmationPreview_RunsUnderTheContextUser()
+    {
+        var userId = Guid.NewGuid();
+
+        await ExecuteAsync(userId, null);
+
+        _principalSeenByGate.ShouldBe(userId.ToString());
     }
 
     [Test]

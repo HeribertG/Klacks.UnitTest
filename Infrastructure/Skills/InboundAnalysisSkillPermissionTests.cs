@@ -3,16 +3,13 @@
 /// <summary>
 /// Pins the seeded rights of the inbound-analysis skills to the owner decision of 2026-09-24: whoever may
 /// close an open clarification round (close_clarification, CanManageAutomation, Admin plus Supervisor) may
-/// also read what the pipeline made of the message (get_email_analysis, get_messenger_analysis). Both
-/// readers were CanViewSettings, which only the Admin holds. They return the analysis summary, the
-/// employee, the date window and the clarification question, never the message body; the mail inbox they
-/// draw on is open to every authenticated caller (InboxGuard is a feature gate, ReceivedEmailController
-/// has no role), so the change widens no access to raw text. A caller without a role (Planer floor) still
-/// reaches none of them. The three mail readers that hand out the emailId get_email_analysis needs
-/// (list_emails, read_email, list_emails_by_client) follow, because a supervisor who cannot find the id
-/// cannot use the analysis reader: they run the very queries ReceivedEmailController serves to every
-/// authenticated caller. translate_email deliberately stays CanViewSettings: it does not hand out an id
-/// the analysis reader needs, so it is outside this decision.
+/// also read what the pipeline made of the message (get_messenger_analysis). The reader was CanViewSettings,
+/// which only the Admin holds. It returns the analysis summary, the employee, the date window and the
+/// clarification question, never the message body. A caller without a role (Planer floor) still reaches
+/// none of them. The e-mail side of that decision (get_email_analysis, list_emails, read_email,
+/// list_emails_by_client) moved from CanManageAutomation to CanEditClients on 2026-10-14 (owner decision F5 of
+/// the messaging and inbox opening): the rights of the whole inbox are pinned in SkillRestParityGateTests, and
+/// the four readers are pinned below as unchanged in who may call them.
 /// </summary>
 
 using System.Text.Json;
@@ -38,9 +35,13 @@ public class InboundAnalysisSkillPermissionTests
 
     private static readonly string[] ClarificationSkills =
     [
-        "get_email_analysis",
         "get_messenger_analysis",
-        "close_clarification",
+        "close_clarification"
+    ];
+
+    private static readonly string[] InboxReaders =
+    [
+        "get_email_analysis",
         "list_emails",
         "read_email",
         "list_emails_by_client"
@@ -74,17 +75,21 @@ public class InboundAnalysisSkillPermissionTests
             "hold CanManageAutomation.");
     }
 
-    [Test]
-    public void TranslateEmail_StaysAtTheSettingsRight_BecauseItIsOutsideTheDecision()
+    [TestCaseSource(nameof(InboxReaders))]
+    public void InboxReader_StaysReachableByAdminAndSupervisor_AndNotByThePlannerFloor(string skillName)
     {
-        SeededPermissionsOf("translate_email").ShouldBe([Permissions.CanViewSettings]);
+        var required = string.Join(",", SeededPermissionsOf(skillName));
+
+        Permissions.HasAllRequiredPermissions(Permissions.ExpandRoles(new[] { Roles.Admin }), required).ShouldBeTrue();
+        Permissions.HasAllRequiredPermissions(Permissions.ExpandRoles(new[] { Roles.Authorised }), required).ShouldBeTrue();
+        Permissions.HasAllRequiredPermissions(Permissions.ExpandRoles(Array.Empty<string>()), required).ShouldBeFalse();
     }
 
-    [TestCase("get_email_analysis", 5)]
+    [TestCase("get_email_analysis", 6)]
     [TestCase("get_messenger_analysis", 2)]
-    [TestCase("list_emails", 5)]
-    [TestCase("read_email", 9)]
-    [TestCase("list_emails_by_client", 4)]
+    [TestCase("list_emails", 6)]
+    [TestCase("read_email", 10)]
+    [TestCase("list_emails_by_client", 5)]
     public void FormerlyAdminOnlyReader_CarriesTheBumpedSeedVersion(string skillName, int minimumVersion)
     {
         SeededVersionOf(skillName).ShouldBeGreaterThanOrEqualTo(

@@ -307,6 +307,28 @@ public class ReadOnlyResearchServiceTests
     }
 
     [Test]
+    public async Task SlackBridgeCaller_ToolsetHoldsNoSkillTheChannelWithholds_AndForcedCallsAreBlocked()
+    {
+        var excluded = CappedChannelSkillExclusions.All.ToList();
+        ArrangeCatalog(excluded);
+        var forcedCalls = excluded.Select(ToolResponse).ToArray();
+        _provider.ProcessAsync(Arg.Any<Providers.LLMProviderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(forcedCalls[0], forcedCalls.Skip(1).Append(TextResponse("final")).ToArray());
+
+        await _service.ResearchAsync(
+            "analyze the month", Context() with { CappedChannel = CappedChannels.SlackOwnerBridge });
+
+        await _provider.DidNotReceive().ProcessAsync(
+            Arg.Is<Providers.LLMProviderRequest>(r =>
+                r.AvailableFunctions.Any(function => excluded.Contains(function.Name))),
+            Arg.Any<CancellationToken>());
+        await _bridge.DidNotReceive().ExecuteSkillFromLLMCallAsync(
+            Arg.Is<Providers.LLMFunctionCall>(c => excluded.Contains(c.FunctionName)),
+            Arg.Any<SkillExecutionContext>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ChatCaller_ToolsetHoldsNoDraftWriter_ButKeepsChatOnlyReads()
     {
         ArrangeCatalog(DraftPersistingReadOnlySkills.Names.Append(ListPersonalAccessTokensSkill).ToList());

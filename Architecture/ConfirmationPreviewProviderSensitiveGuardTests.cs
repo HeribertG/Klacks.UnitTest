@@ -57,11 +57,12 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
     }
 
     [Test]
-    public void TheFourBoundSkills_AreSupportedByAProvider()
+    public void TheBoundSkills_AreSupportedByAProvider()
     {
         var providers = ConfirmationPreviewProviderFixtures.Providers();
         string[] bound =
         [
+            Klacks.Plugin.Messaging.Application.Constants.MessagingConstants.SkillSendMessage,
             BulkDeleteWorksSkill.SkillName,
             MacroAssignmentSkillNames.AssignToShift,
             MacroAssignmentSkillNames.AssignToAbsenceType,

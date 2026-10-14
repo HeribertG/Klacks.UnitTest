@@ -156,6 +156,24 @@ public class RestoreEmailCommandHandlerTests
     }
 
     [Test]
+    public async Task Handle_FolderSharingTheInboxSortOrder_StillRestoresIntoTheInbox()
+    {
+        var emailId = Guid.NewGuid();
+        _repository.GetByIdAsync(emailId).Returns(new ReceivedEmail { Id = emailId, ImapUid = 56, Folder = "Trash" });
+        _folderRepository.GetAllAsync().Returns(new List<EmailFolder>
+        {
+            new() { Name = "Drafts", ImapFolderName = "Drafts", SpecialUse = null, SortOrder = 0 },
+            new() { Name = "Inbox", ImapFolderName = "INBOX", SpecialUse = FolderSpecialUse.Inbox, SortOrder = 0 },
+            new() { Name = "Trash", ImapFolderName = "Trash", SpecialUse = FolderSpecialUse.Trash, SortOrder = 999 }
+        });
+
+        await _handler.Handle(new RestoreEmailCommand(emailId), CancellationToken.None);
+
+        await _repository.Received(1).MoveToFolderAsync(emailId, "INBOX");
+        await _imapService.Received(1).MoveEmailOnImapAsync(56, "Trash", "INBOX", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Handle_EmailNotFound_ThrowsKeyNotFoundException()
     {
         var emailId = Guid.NewGuid();
