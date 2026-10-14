@@ -61,7 +61,7 @@ public class SourceFileSizeGuardTests
         [@"Infrastructure\Services\Plugins\FeaturePluginService.cs"] = 805,
         [@"Infrastructure\Services\Settings\RegionSetupService.cs"] = 3595,
         [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs"] = 965,
-        [@"Application\Services\Assistant\Planning\PlanStepExecutor.cs"] = 865,
+        [@"Application\Services\Assistant\Planning\PlanStepExecutor.cs"] = 819,
     };
 
     // "RelativePath::MethodName" -> its measured body length on the day it was allowlisted.

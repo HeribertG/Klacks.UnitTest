@@ -24,7 +24,10 @@
 /// that candidate's frozen OwnerPermissionsCsv, GoalSelfReflectionAuditConstants.AuditUserName, and
 /// SessionId (UserId/TenantId are left as the resuming caller supplied them); a UserGoal plan, a
 /// missing/unapproved candidate, and an empty OwnerPermissionsCsv all fall back to the supplied context
-/// unchanged.
+/// unchanged. A step whose skill shows a server preview before it runs (IConfirmationPreviewCatalog: bulk_delete_works and
+/// the macro assignment skills) can only run in the chat after the user confirmed that preview, so the executor fails the
+/// plan at that step with the chat-only text instead of pausing for an approval that could not make it succeed, also on
+/// resume after an approval and for a SelfReflection (goal) plan.
 /// </summary>
 
 using System.Text.Json;
@@ -53,6 +56,7 @@ public class PlanStepExecutorTests
     private IAgentTriggerService _triggerService = null!;
     private IGoalCandidateRepository _goalCandidateRepository = null!;
     private IInternalTokenIssuer _tokenIssuer = null!;
+    private IConfirmationPreviewCatalog _previewCatalog = null!;
     private PlanStepExecutor _sut = null!;
 
     private const int TaskBoundaryMinMessages = 10;
@@ -90,6 +94,8 @@ public class PlanStepExecutorTests
         _tokenIssuer = Substitute.For<IInternalTokenIssuer>();
         _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(InternalTokenResult.Issued(new BearerToken("owner-jwt"), new[] { Roles.Authorised }));
+        _previewCatalog = Substitute.For<IConfirmationPreviewCatalog>();
+        _previewCatalog.HasPreview(Arg.Any<string>()).Returns(false);
         _sut = new PlanStepExecutor(
             _planRepository,
             _skillExecutor,
@@ -101,6 +107,7 @@ public class PlanStepExecutorTests
             _triggerService,
             _goalCandidateRepository,
             _tokenIssuer,
+            _previewCatalog,
             NullLogger<PlanStepExecutor>.Instance);
     }
 
@@ -1244,7 +1251,7 @@ public class PlanStepExecutorTests
         var sut = new PlanStepExecutor(
             _planRepository, _skillExecutor, _skillRegistry, _riskClassifier,
             _autonomyRepository, _notificationService, _backgroundTaskService, _triggerService,
-            _goalCandidateRepository, _tokenIssuer, recordingLogger);
+            _goalCandidateRepository, _tokenIssuer, _previewCatalog, recordingLogger);
 
         var plan = CreatePlan(new[]
         {
@@ -1390,5 +1397,76 @@ public class PlanStepExecutorTests
             Arg.Any<SkillInvocation>(),
             Arg.Is<SkillExecutionContext>(c => c.AccessToken!.Value == "previous-jwt"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_StepOfASkillWithAServerPreview_FailsWithTheChatOnlyText_NeverPausesAndNeverRuns()
+    {
+        _previewCatalog.HasPreview("previewed_skill").Returns(true);
+        var plan = CreatePlan(new[] { new PlanStep(1, "previewed_skill", new(), null, false) });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.Failed);
+        result.LastErrorMessage.ShouldBe(ConfirmationBindingMessages.ChatOnlyStep);
+        result.LastErrorMessage.ShouldBe(
+            "This step can only run in the chat, after the user has confirmed its server preview.");
+        result.CurrentStepIndex.ShouldBe(0);
+        await _skillExecutor.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default);
+        await _triggerService.DidNotReceiveWithAnyArgs().OnEventAsync(default!, default);
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_StepsBeforeAPreviewedStep_StillRun_ThenThePlanFailsAtThePreviewedOne()
+    {
+        _previewCatalog.HasPreview("previewed_skill").Returns(true);
+        var plan = CreatePlan(new[]
+        {
+            new PlanStep(1, "skill_a", new(), null, true),
+            new PlanStep(2, "previewed_skill", new(), null, false)
+        });
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(SkillResult.SuccessResult(new { id = "ok" }));
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.Failed);
+        result.CurrentStepIndex.ShouldBe(1);
+        await _skillExecutor.Received(1).ExecuteAsync(
+            Arg.Is<SkillInvocation>(i => i.SkillName == "skill_a"), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        await _skillExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Is<SkillInvocation>(i => i.SkillName == "previewed_skill"), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ApproveAndContinueAsync_OnAPlanPausedAtAPreviewedStep_FailsWithTheChatOnlyText_InsteadOfRunningIt()
+    {
+        _previewCatalog.HasPreview("previewed_skill").Returns(true);
+        var plan = CreatePlan(new[] { new PlanStep(1, "previewed_skill", new(), null, false) });
+        plan.Status = PlanStatus.PausedForApproval;
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ApproveAndContinueAsync(plan.Id, CreateSkillContext());
+
+        result.Status.ShouldBe(PlanStatus.Failed);
+        result.LastErrorMessage.ShouldBe(ConfirmationBindingMessages.ChatOnlyStep);
+        await _skillExecutor.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task ExecutePlanAsync_AGoalPlanStepOfAPreviewedSkill_FailsTheSameWay()
+    {
+        _previewCatalog.HasPreview("previewed_skill").Returns(true);
+        var plan = CreatePlan(
+            new[] { new PlanStep(1, "previewed_skill", new(), null, false) }, origin: AgentPlanOrigin.SelfReflection);
+        _planRepository.GetByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, CreateSkillContext() with { BypassAutonomyGate = true });
+
+        result.Status.ShouldBe(PlanStatus.Failed);
+        result.LastErrorMessage.ShouldBe(ConfirmationBindingMessages.ChatOnlyStep);
+        await _skillExecutor.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default);
     }
 }

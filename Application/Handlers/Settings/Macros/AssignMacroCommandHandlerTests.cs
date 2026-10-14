@@ -13,14 +13,21 @@
 /// counts without a second run) and a target macro that cannot run is refused. A switch the plan refuses throws
 /// and writes nothing; a read-back mismatch is reported as rolled back. The handler depends on nothing that recalculates;
 /// its only addition is a logger: a failure while saving is logged as an error with the switch, holder and macro ids and
-/// the holder count (no names, not the database message) and rethrown, while a refused switch is not logged.
+/// the holder count (no names, not the database message) and rethrown, while a refused switch is not logged. The command
+/// carries the binding of the confirmed preview (MacroAssignmentBinding over the references the preview would write); the
+/// handler compares it with its own plan before the transaction starts: a member added, gone or re-pointed since the
+/// preview writes nothing, starts no transaction and reports the counts, while a binding without items (a large group)
+/// is compared by fingerprint alone and answered with the scope text.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Settings.Macros;
 using Klacks.Api.Application.Handlers.Settings.Macro;
 using Klacks.Api.Application.Services.Macros;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Macros;
+using Klacks.Api.Domain.Services.Macros;
 using Klacks.Api.Infrastructure.Services.Macros;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -41,7 +48,13 @@ public class AssignMacroCommandHandlerTests
 
     private static readonly ILogger<AssignMacroCommandHandler> AssignLog = NullLogger<AssignMacroCommandHandler>.Instance;
 
+    private static readonly ConfirmationBinding RefusedBinding =
+        ConfirmationBinding.Of(ConfirmationBindingKinds.MacroSwitch, ["refused"]);
+
     private DataBaseContext _context = null!;
+    private DataBaseContext _bindingContext = null!;
+    private MacroAssignPlanner _bindingPlanner = null!;
+    private IMacroAssignPlanner? _boundPlanner;
     private MacroReferenceRepository _references = null!;
     private MacroAssignmentHistoryRepository _history = null!;
     private IMacroDryRunService _dryRun = null!;
@@ -59,6 +72,14 @@ public class AssignMacroCommandHandlerTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         _context = new DataBaseContext(options, null!);
+        _bindingContext = new DataBaseContext(options, null!);
+        var bindingDryRun = Substitute.For<IMacroDryRunService>();
+        bindingDryRun.RunAsync(
+                Arg.Any<MacroAssignmentTarget>(), Arg.Any<IReadOnlyList<MacroDryRunHolder>>(), Arg.Any<CancellationToken>())
+            .Returns(new MacroDryRunResult(0, 0, [], null, false));
+        _bindingPlanner = new MacroAssignPlanner(
+            new MacroReferenceRepository(_bindingContext), new MacroOutputChannelInspector(), bindingDryRun);
+        _boundPlanner = null;
         _references = new MacroReferenceRepository(_context);
         _history = new MacroAssignmentHistoryRepository(_context);
         _dryRun = Substitute.For<IMacroDryRunService>();
@@ -99,7 +120,11 @@ public class AssignMacroCommandHandlerTests
     }
 
     [TearDown]
-    public void TearDown() => _context.Dispose();
+    public void TearDown()
+    {
+        _context.Dispose();
+        _bindingContext.Dispose();
+    }
 
     [Test]
     public async Task Shift_WritesOnlyTheReference_RecordsHistory_AndLeavesWorksAndMacrosUntouched()
@@ -113,7 +138,7 @@ public class AssignMacroCommandHandlerTests
         var userId = Guid.NewGuid();
 
         var outcome = await _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, shift.Id, copy.Id, userId), CancellationToken.None);
+            Cmd(MacroAssignmentTarget.Shift, shift.Id, copy.Id, userId), CancellationToken.None);
         _context.ChangeTracker.Clear();
 
         var storedShift = await _context.Shift.AsNoTracking().SingleAsync(s => s.Id == shift.Id);
@@ -151,7 +176,7 @@ public class AssignMacroCommandHandlerTests
         await SaveAndClearAsync();
 
         await _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
             CancellationToken.None);
 
         _pendingAtCommit.Count.ShouldBe(4);
@@ -183,7 +208,7 @@ public class AssignMacroCommandHandlerTests
         await SaveAndClearAsync();
 
         var outcome = await _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
             CancellationToken.None);
         _context.ChangeTracker.Clear();
 
@@ -212,7 +237,7 @@ public class AssignMacroCommandHandlerTests
         await SaveAndClearAsync();
 
         await _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.AbsenceType, absence.Id, partTime.Id, Guid.NewGuid()),
+            Cmd(MacroAssignmentTarget.AbsenceType, absence.Id, partTime.Id, Guid.NewGuid()),
             CancellationToken.None);
         _context.ChangeTracker.Clear();
 
@@ -235,7 +260,7 @@ public class AssignMacroCommandHandlerTests
         await SaveAndClearAsync();
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, order.Id, copy.Id, Guid.NewGuid()), CancellationToken.None));
+            Cmd(MacroAssignmentTarget.Shift, order.Id, copy.Id, Guid.NewGuid()), CancellationToken.None));
 
         exception.Message.ShouldContain("sealed order");
         (await _context.MacroAssignmentHistory.AsNoTracking().AnyAsync()).ShouldBeFalse();
@@ -253,7 +278,7 @@ public class AssignMacroCommandHandlerTests
         GivenDryRun(MacroDryRunResult.NewMacroFailed(0, 0, "syntax error"));
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, shift.Id, broken.Id, Guid.NewGuid()), CancellationToken.None));
+            Cmd(MacroAssignmentTarget.Shift, shift.Id, broken.Id, Guid.NewGuid()), CancellationToken.None));
 
         exception.Message.ShouldContain("cannot be used");
         (await _context.MacroAssignmentHistory.AsNoTracking().AnyAsync()).ShouldBeFalse();
@@ -271,7 +296,7 @@ public class AssignMacroCommandHandlerTests
         GivenDryRun(new MacroDryRunResult(1, 0, [sample], null, false));
 
         var outcome = await _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, shift.Id, copy.Id, Guid.NewGuid()), CancellationToken.None);
+            Cmd(MacroAssignmentTarget.Shift, shift.Id, copy.Id, Guid.NewGuid()), CancellationToken.None);
 
         outcome.Warnings.ShouldContain(warning => warning.Contains("no value from the macro used today"));
     }
@@ -288,7 +313,7 @@ public class AssignMacroCommandHandlerTests
         GivenDryRun(dryRun);
 
         var outcome = await _sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, shift.Id, copy.Id, Guid.NewGuid()), CancellationToken.None);
+            Cmd(MacroAssignmentTarget.Shift, shift.Id, copy.Id, Guid.NewGuid()), CancellationToken.None);
 
         outcome.DryRun.ShouldBeSameAs(dryRun);
         outcome.UndoneSwitchId.ShouldBeNull();
@@ -310,7 +335,7 @@ public class AssignMacroCommandHandlerTests
         var sut = WithPlannedChanges(existing, target, [Change(existing, target), Change(vanished, target)]);
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
             CancellationToken.None));
 
         exception.Message.ShouldContain("no longer exists");
@@ -335,7 +360,7 @@ public class AssignMacroCommandHandlerTests
         var sut = WithPlannedChanges(first, target, [Change(first, target), Change(secondAsPlanned, target)]);
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid()),
             CancellationToken.None));
 
         exception.Message.ShouldContain("changed while");
@@ -352,6 +377,7 @@ public class AssignMacroCommandHandlerTests
         var holder = Holder(Guid.NewGuid(), null, null);
         var macro = NewSnapshot();
         var planner = PlannerReturning(holder, macro, [Change(holder, macro)]);
+        _boundPlanner = planner;
         var references = Substitute.For<IMacroReferenceRepository>();
         var history = Substitute.For<IMacroAssignmentHistoryRepository>();
         var calls = new List<(string Call, bool InTransaction)>();
@@ -368,7 +394,7 @@ public class AssignMacroCommandHandlerTests
         var sut = new AssignMacroCommandHandler(planner, references, history, _unitOfWork, AssignLog);
 
         await sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Guid.NewGuid()), CancellationToken.None);
+            Cmd(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Guid.NewGuid()), CancellationToken.None);
 
         calls.Select(call => call.Call).ShouldBe(new[]
         {
@@ -386,6 +412,7 @@ public class AssignMacroCommandHandlerTests
         var holder = Holder(Guid.NewGuid(), null, null);
         var macro = NewSnapshot();
         var planner = PlannerReturning(holder, macro, [Change(holder, macro)]);
+        _boundPlanner = planner;
         var references = Substitute.For<IMacroReferenceRepository>();
         references.SetMacroIdAsync(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Arg.Any<CancellationToken>())
             .Returns(true);
@@ -394,7 +421,7 @@ public class AssignMacroCommandHandlerTests
             planner, references, Substitute.For<IMacroAssignmentHistoryRepository>(), _unitOfWork, AssignLog);
 
         var exception = await Should.ThrowAsync<InvalidRequestException>(() => sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Guid.NewGuid()), CancellationToken.None));
+            Cmd(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Guid.NewGuid()), CancellationToken.None));
 
         exception.Message.ShouldContain("could not be confirmed");
     }
@@ -411,15 +438,16 @@ public class AssignMacroCommandHandlerTests
         var failure = new ConcurrencyException(CommitFailureText);
         _unitOfWork.CompleteAsync().Returns<Task>(_ => throw failure);
         var logger = new RecordingLogger<AssignMacroCommandHandler>();
+        _boundPlanner = PlannerReturning(holder, macro, [Change(holder, macro)]);
         var sut = new AssignMacroCommandHandler(
-            PlannerReturning(holder, macro, [Change(holder, macro)]),
+            _boundPlanner,
             references,
             Substitute.For<IMacroAssignmentHistoryRepository>(),
             _unitOfWork,
             logger);
 
         var thrown = await Should.ThrowAsync<ConcurrencyException>(() => sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Guid.NewGuid()), CancellationToken.None));
+            Cmd(MacroAssignmentTarget.Shift, holder.Id, macro.Id, Guid.NewGuid()), CancellationToken.None));
 
         thrown.ShouldBeSameAs(failure);
         var entry = logger.Entries.ShouldHaveSingleItem();
@@ -439,10 +467,165 @@ public class AssignMacroCommandHandlerTests
         var sut = new AssignMacroCommandHandler(_planner, _references, _history, _unitOfWork, logger);
 
         await Should.ThrowAsync<InvalidRequestException>(() => sut.Handle(
-            new AssignMacroCommand(MacroAssignmentTarget.Shift, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()),
+            Cmd(MacroAssignmentTarget.Shift, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()),
             CancellationToken.None));
 
         logger.Entries.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ACutAddedAfterThePreview_WritesNothing_StartsNoTransaction_AndReportsTheCounts()
+    {
+        var standard = AddMacro("AllShift", MacroFunctionEnum.Standard, MacroCategoryEnum.Shift);
+        var copy = AddMacro("AllShift extended", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var orderId = Guid.NewGuid();
+        var firstCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        var secondCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        await SaveAndClearAsync();
+        var shown = BindingOf(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id);
+        shown.Items.Count.ShouldBe(2);
+        var lateCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        await SaveAndClearAsync();
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid(), shown), CancellationToken.None));
+        _context.ChangeTracker.Clear();
+
+        exception.Message.ShouldContain("2 item(s) were shown, 3 apply now (1 new, 0 no longer there)");
+        exception.Message.ShouldContain("Nothing was changed");
+        _completedOutsideTransaction.ShouldBeFalse();
+        await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        var macros = await _context.Shift.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.MacroId);
+        macros[firstCut.Id].ShouldBe(standard.Id);
+        macros[secondCut.Id].ShouldBe(standard.Id);
+        macros[lateCut.Id].ShouldBe(standard.Id);
+        (await _context.MacroAssignmentHistory.AsNoTracking().AnyAsync()).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ACutThatLeftTheGroupAfterThePreview_WritesNothing()
+    {
+        var standard = AddMacro("AllShift", MacroFunctionEnum.Standard, MacroCategoryEnum.Shift);
+        var copy = AddMacro("AllShift extended", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var orderId = Guid.NewGuid();
+        var firstCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        var secondCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        await SaveAndClearAsync();
+        var shown = BindingOf(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id);
+        secondCut = await _context.Shift.SingleAsync(s => s.Id == secondCut.Id);
+        secondCut.IsDeleted = true;
+        await SaveAndClearAsync();
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid(), shown), CancellationToken.None));
+
+        exception.Message.ShouldContain("(0 new, 1 no longer there)");
+        await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+    }
+
+    [Test]
+    public async Task AMemberThatMovedOntoTheTargetMacroAfterThePreview_IsRefused_AsOneNoLongerThere()
+    {
+        var standard = AddMacro("AllShift", MacroFunctionEnum.Standard, MacroCategoryEnum.Shift);
+        var copy = AddMacro("AllShift extended", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var orderId = Guid.NewGuid();
+        var firstCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        var secondCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        await SaveAndClearAsync();
+        var shown = BindingOf(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id);
+        secondCut = await _context.Shift.SingleAsync(s => s.Id == secondCut.Id);
+        secondCut.MacroId = copy.Id;
+        await SaveAndClearAsync();
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid(), shown), CancellationToken.None));
+        _context.ChangeTracker.Clear();
+
+        exception.Message.ShouldContain("2 item(s) were shown, 1 apply now (0 new, 1 no longer there)");
+        var macros = await _context.Shift.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.MacroId);
+        macros[firstCut.Id].ShouldBe(standard.Id);
+        macros[secondCut.Id].ShouldBe(copy.Id);
+        (await _context.MacroAssignmentHistory.AsNoTracking().AnyAsync()).ShouldBeFalse();
+        await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+    }
+
+    [Test]
+    public async Task AMemberRepointedAfterThePreview_IsRefused_AsOneNewAndOneGone()
+    {
+        var standard = AddMacro("AllShift", MacroFunctionEnum.Standard, MacroCategoryEnum.Shift);
+        var copy = AddMacro("AllShift extended", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var third = AddMacro("Night special", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var orderId = Guid.NewGuid();
+        var firstCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        var secondCut = AddShift(standard.Id, ShiftStatus.SplitShift, orderId);
+        await SaveAndClearAsync();
+        var shown = BindingOf(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id);
+        secondCut = await _context.Shift.SingleAsync(s => s.Id == secondCut.Id);
+        secondCut.MacroId = third.Id;
+        await SaveAndClearAsync();
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
+            Cmd(MacroAssignmentTarget.Shift, firstCut.Id, copy.Id, Guid.NewGuid(), shown), CancellationToken.None));
+        _context.ChangeTracker.Clear();
+
+        exception.Message.ShouldContain("2 item(s) were shown, 2 apply now (1 new, 1 no longer there)");
+        (await _context.Shift.AsNoTracking().SingleAsync(s => s.Id == firstCut.Id)).MacroId.ShouldBe(standard.Id);
+        (await _context.MacroAssignmentHistory.AsNoTracking().AnyAsync()).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ABindingOfThePlannedWrites_WithoutItems_WritesWhenTheFingerprintMatches()
+    {
+        var standard = AddMacro("AllShift", MacroFunctionEnum.Standard, MacroCategoryEnum.Shift);
+        var copy = AddMacro("AllShift extended", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var shift = AddShift(standard.Id, ShiftStatus.OriginalShift);
+        await SaveAndClearAsync();
+        var shown = BindingOf(MacroAssignmentTarget.Shift, shift.Id, copy.Id);
+        var fingerprintOnly = shown with { Items = [] };
+
+        await _sut.Handle(
+            Cmd(MacroAssignmentTarget.Shift, shift.Id, copy.Id, Guid.NewGuid(), fingerprintOnly), CancellationToken.None);
+        _context.ChangeTracker.Clear();
+
+        (await _context.Shift.AsNoTracking().SingleAsync(s => s.Id == shift.Id)).MacroId.ShouldBe(copy.Id);
+    }
+
+    [Test]
+    public async Task ABindingWithoutItems_ThatDoesNotMatch_IsRefusedWithTheScopeText_AndWritesNothing()
+    {
+        var standard = AddMacro("AllShift", MacroFunctionEnum.Standard, MacroCategoryEnum.Shift);
+        var copy = AddMacro("AllShift extended", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var shift = AddShift(standard.Id, ShiftStatus.OriginalShift);
+        await SaveAndClearAsync();
+        var foreign = ConfirmationBinding.Of(
+            ConfirmationBindingKinds.MacroSwitch,
+            Enumerable.Range(0, ConfirmationBindingDefaults.MaxStoredItems + 1).Select(i => $"Shift|{i}|-|-"));
+
+        var exception = await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
+            Cmd(MacroAssignmentTarget.Shift, shift.Id, copy.Id, Guid.NewGuid(), foreign), CancellationToken.None));
+        _context.ChangeTracker.Clear();
+
+        foreign.Items.ShouldBeEmpty();
+        exception.Message.ShouldBe(ConfirmationBindingMessages.ScopeChanged);
+        (await _context.Shift.AsNoTracking().SingleAsync(s => s.Id == shift.Id)).MacroId.ShouldBe(standard.Id);
+        await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
+    }
+
+    [Test]
+    public async Task AnUndoBinding_NeverAuthorisesASwitch()
+    {
+        var standard = AddMacro("AllShift", MacroFunctionEnum.Standard, MacroCategoryEnum.Shift);
+        var copy = AddMacro("AllShift extended", MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified);
+        var shift = AddShift(standard.Id, ShiftStatus.OriginalShift);
+        await SaveAndClearAsync();
+        var shown = BindingOf(MacroAssignmentTarget.Shift, shift.Id, copy.Id);
+        var asUndo = shown with { Kind = ConfirmationBindingKinds.MacroUndo };
+
+        await Should.ThrowAsync<InvalidRequestException>(() => _sut.Handle(
+            Cmd(MacroAssignmentTarget.Shift, shift.Id, copy.Id, Guid.NewGuid(), asUndo), CancellationToken.None));
+
+        await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>());
     }
 
     [Test]
@@ -467,8 +650,25 @@ public class AssignMacroCommandHandlerTests
             .Returns(result);
 
     private AssignMacroCommandHandler WithPlannedChanges(
-        MacroReferenceHolder holder, MacroSnapshot macro, IReadOnlyList<MacroReferenceChange> changes) =>
-        new(PlannerReturning(holder, macro, changes), _references, _history, _unitOfWork, AssignLog);
+        MacroReferenceHolder holder, MacroSnapshot macro, IReadOnlyList<MacroReferenceChange> changes)
+    {
+        _boundPlanner = PlannerReturning(holder, macro, changes);
+        return new AssignMacroCommandHandler(_boundPlanner, _references, _history, _unitOfWork, AssignLog);
+    }
+
+    private AssignMacroCommand Cmd(MacroAssignmentTarget target, Guid holderId, Guid macroId, Guid userId) =>
+        Cmd(target, holderId, macroId, userId, BindingOf(target, holderId, macroId));
+
+    private static AssignMacroCommand Cmd(
+        MacroAssignmentTarget target, Guid holderId, Guid macroId, Guid userId, ConfirmationBinding binding) =>
+        new(target, holderId, macroId, userId, binding);
+
+    private ConfirmationBinding BindingOf(MacroAssignmentTarget target, Guid holderId, Guid macroId)
+    {
+        var preview = (_boundPlanner ?? _bindingPlanner)
+            .PreviewAssignAsync(target, holderId, macroId, CancellationToken.None).GetAwaiter().GetResult();
+        return preview.Refusal != null ? RefusedBinding : MacroAssignmentBinding.Of(preview.Plan);
+    }
 
     private static IMacroAssignPlanner PlannerReturning(
         MacroReferenceHolder holder, MacroSnapshot macro, IReadOnlyList<MacroReferenceChange> changes)

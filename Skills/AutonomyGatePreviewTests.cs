@@ -5,7 +5,9 @@
 /// provider gets the server-computed preview appended to its confirmation request and a token; a refusing or failing
 /// provider turns the hold into an error without a token (the failure text does not leak the exception); a cancellation
 /// propagates; providers are consulted neither for other risk classes, nor for skills they do not support, nor when a valid
-/// token is redeemed in a later turn; and a confirmation carrying the longest macro preview still fits the smallest
+/// token is redeemed in a later turn; the binding of a preview is stored with the token; a token sent along with the call
+/// of a skill that has a preview provider is refused before it is consumed (it can only be redeemed through
+/// confirm_pending_action, which hands the skill its binding) and stays valid; and a confirmation carrying the longest macro preview still fits the smallest
 /// per-result cap of the tool loop (2000 characters, ContextBudgetPolicy tiny profile; relay prefix from
 /// LLMFunctionExecutor). The preview intro asks the model to relay every name and number unchanged. That is the only
 /// mitigation of the residual risk the owner accepted on 2026-09-25 (F1): the user sees the model's wording, not a
@@ -137,22 +139,94 @@ public class AutonomyGatePreviewTests
     }
 
     [Test]
-    public async Task RedeemingAValidTokenInALaterTurn_DoesNotConsultTheProviderAgain()
+    public async Task RedeemingAValidTokenOfASkillWithoutAProviderInALaterTurn_DoesNotConsultTheProvider()
+    {
+        SetRisk(SkillRiskClass.Sensitive);
+        var context = Context();
+        var parameters = new Dictionary<string, object> { [ParameterName] = ParameterValue };
+        var held = await _sut.CheckAsync(Descriptor(OtherSkillName), context, new Dictionary<string, object>(parameters));
+        var token = (string)held!.Metadata![ConfirmationTokenKey];
+        var laterTurn = CreateGate(new TurnConfirmationScope());
+        var replay = new Dictionary<string, object>(parameters) { [AutonomyDefaults.ConfirmationTokenParameter] = token };
+
+        var result = await laterTurn.CheckAsync(Descriptor(OtherSkillName), context, replay);
+
+        result.ShouldBeNull();
+        await _provider.DidNotReceiveWithAnyArgs().BuildAsync(default!, default!, default!, default);
+    }
+
+    [Test]
+    public async Task TheBindingOfThePreview_IsStoredWithTheToken()
+    {
+        SetRisk(SkillRiskClass.Sensitive);
+        var binding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, new[] { "w1", "w2" });
+        GivenPreview(SkillConfirmationPreview.Show(PreviewText, binding));
+        var context = Context();
+
+        var held = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
+
+        var consumed = _confirmationStore.Consume((string)held!.Metadata![ConfirmationTokenKey], context.UserId);
+        consumed.ShouldNotBeNull();
+        consumed.Binding.ShouldBe(binding);
+    }
+
+    [Test]
+    public async Task APreviewWithoutABinding_StoresNone()
     {
         SetRisk(SkillRiskClass.Sensitive);
         GivenPreview(SkillConfirmationPreview.Show(PreviewText));
+        var context = Context();
+
+        var held = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
+
+        _confirmationStore.Consume((string)held!.Metadata![ConfirmationTokenKey], context.UserId)!.Binding.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ASkillWithoutAPreviewProvider_StoresNoBinding()
+    {
+        SetRisk(SkillRiskClass.Sensitive);
+        var context = Context();
+
+        var held = await _sut.CheckAsync(Descriptor(OtherSkillName), context, new Dictionary<string, object>());
+
+        _confirmationStore.Consume((string)held!.Metadata![ConfirmationTokenKey], context.UserId)!.Binding.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ATokenSentWithTheCallOfAProviderSkill_IsRefused_AndStaysValidForTheConfirmSkill()
+    {
+        SetRisk(SkillRiskClass.Sensitive);
+        var binding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, new[] { "w1" });
+        GivenPreview(SkillConfirmationPreview.Show(PreviewText, binding));
         var context = Context();
         var parameters = new Dictionary<string, object> { [ParameterName] = ParameterValue };
         var held = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>(parameters));
         var token = (string)held!.Metadata![ConfirmationTokenKey];
         var laterTurn = CreateGate(new TurnConfirmationScope());
-        var replay = new Dictionary<string, object>(parameters) { [AutonomyDefaults.ConfirmationTokenParameter] = token };
+        var direct = new Dictionary<string, object>(parameters) { [AutonomyDefaults.ConfirmationTokenParameter] = token };
 
-        var result = await laterTurn.CheckAsync(Descriptor(), context, replay);
+        var result = await laterTurn.CheckAsync(Descriptor(), context, direct);
 
-        result.ShouldBeNull();
-        await _provider.Received(1).BuildAsync(
-            Arg.Any<string>(), Arg.Any<SkillExecutionContext>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>());
+        result!.Type.ShouldBe(SkillResultType.Error);
+        result.Message.ShouldBe(string.Format(ConfirmationBindingMessages.DirectRedemptionRefused, SkillName));
+        var stillThere = _confirmationStore.Consume(token, context.UserId, SkillName);
+        stillThere.ShouldNotBeNull();
+        stillThere.Binding.ShouldBe(binding);
+    }
+
+    [Test]
+    public async Task ATokenSentWithTheCallOfAProviderSkill_IsRefusedEvenWhenTheTokenIsInvalid_AndIssuesNoNewToken()
+    {
+        SetRisk(SkillRiskClass.Sensitive);
+        GivenPreview(SkillConfirmationPreview.Show(PreviewText));
+        var direct = new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = "no-such-token" };
+
+        var result = await _sut.CheckAsync(Descriptor(), Context(), direct);
+
+        result!.Type.ShouldBe(SkillResultType.Error);
+        result.Metadata.ShouldBeNull();
+        await _provider.DidNotReceiveWithAnyArgs().BuildAsync(default!, default!, default!, default);
     }
 
     [Test]

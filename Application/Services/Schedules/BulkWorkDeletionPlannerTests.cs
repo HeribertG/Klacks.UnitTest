@@ -2,8 +2,10 @@
 
 /// <summary>
 /// Unit tests for BulkWorkDeletionPlanner: the sentence's parameters resolve to the exact Works of the main plan
-/// (no scenario rows, no container children), and the plan is refused - never truncated - when the employee is
-/// unknown or hidden, nothing matches, more than the per-call cap match, a Work is locked or a day is sealed.
+/// (no scenario rows, no container children among the listed works), and the plan is refused - never truncated - when the
+/// employee is unknown or hidden, nothing matches, more than the per-call cap match, a Work is locked or a day is sealed.
+/// A usable plan also carries the live container children (child works and breaks) of the planned works, read through the
+/// cascade service the delete itself uses; a refused plan reads none.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
@@ -33,6 +35,7 @@ public class BulkWorkDeletionPlannerTests
     private ISealedDayRepository _sealedDays = null!;
     private IShiftRepository _shiftRepository = null!;
     private ICompanyClock _clock = null!;
+    private IContainerWorkCascadeService _cascade = null!;
 
     [SetUp]
     public void SetUp()
@@ -44,6 +47,9 @@ public class BulkWorkDeletionPlannerTests
         _sealedDays = Substitute.For<ISealedDayRepository>();
         _shiftRepository = Substitute.For<IShiftRepository>();
         _clock = Substitute.For<ICompanyClock>();
+        _cascade = Substitute.For<IContainerWorkCascadeService>();
+        _cascade.GetChildIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ContainerChildIds.None);
 
         _clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(new DateTime(2026, 10, 13, 0, 0, 0, DateTimeKind.Utc));
         _clientRepository.Get(ClientId).Returns(new Client { Id = ClientId, FirstName = "Max", Name = "Müller" });
@@ -65,7 +71,7 @@ public class BulkWorkDeletionPlannerTests
     }
 
     private BulkWorkDeletionPlanner NewPlanner() => new(
-        _workRepository, _clientRepository, _searchRepository, _visibility, _sealedDays, _shiftRepository, _clock);
+        _workRepository, _clientRepository, _searchRepository, _visibility, _sealedDays, _shiftRepository, _clock, _cascade);
 
     private static Work NewWork(DateOnly date, Guid shiftId) => new()
     {
@@ -295,5 +301,66 @@ public class BulkWorkDeletionPlannerTests
         plan.Works.ShouldBeEmpty();
         plan.Refusal.ShouldContain("sealed");
         plan.Refusal.ShouldContain("2026-11-03");
+    }
+
+    [Test]
+    public async Task TheContainerChildrenOfThePlannedParents_AreReadThroughTheCascadeService_AndCarriedInThePlan()
+    {
+        var first = NewWork(FirstDay, EarlyShiftId);
+        var second = NewWork(FirstDay.AddDays(1), LateShiftId);
+        GivenWorks(first, second);
+        var childWork = Guid.NewGuid();
+        var childBreak = Guid.NewGuid();
+        _cascade.GetChildIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new ContainerChildIds([childWork], [childBreak]));
+
+        var plan = await NewPlanner().PlanAsync(ByName(), null);
+
+        plan.IsRefused.ShouldBeFalse(plan.Refusal);
+        plan.ChildWorkIds.ShouldBe([childWork]);
+        plan.ChildBreakIds.ShouldBe([childBreak]);
+        plan.ChildEntryCount.ShouldBe(2);
+        await _cascade.Received(1).GetChildIdsAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.OrderBy(id => id).SequenceEqual(new[] { first.Id, second.Id }.OrderBy(id => id))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutContainerChildren_ThePlanCarriesNone()
+    {
+        var plan = await NewPlanner().PlanAsync(ByName(), null);
+
+        plan.ChildWorkIds.ShouldBeEmpty();
+        plan.ChildBreakIds.ShouldBeEmpty();
+        plan.ChildEntryCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task OnlyTheParentsAfterTheShiftFilter_AreAskedForChildren()
+    {
+        var early = NewWork(FirstDay, EarlyShiftId);
+        var late = NewWork(FirstDay.AddDays(1), LateShiftId);
+        GivenWorks(early, late);
+        var parameters = ByName();
+        parameters["shiftId"] = LateShiftId.ToString();
+
+        await NewPlanner().PlanAsync(parameters, null);
+
+        await _cascade.Received(1).GetChildIdsAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 1 && ids.Contains(late.Id)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ARefusedPlan_ReadsNoChildren()
+    {
+        var locked = NewWork(FirstDay, EarlyShiftId);
+        locked.LockLevel = WorkLockLevel.Confirmed;
+        GivenWorks(locked);
+
+        var plan = await NewPlanner().PlanAsync(ByName(), null);
+
+        plan.IsRefused.ShouldBeTrue();
+        await _cascade.DidNotReceiveWithAnyArgs().GetChildIdsAsync(default!, default);
     }
 }

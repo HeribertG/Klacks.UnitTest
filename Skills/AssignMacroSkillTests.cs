@@ -10,13 +10,16 @@
 /// depend on the mediator only: the handler plans and runs the dry run exactly once per confirmed call, so the confirmed
 /// call re-checks the role and re-plans instead of trusting the preview it was confirmed with — part of the mitigation of
 /// the residual risk the owner accepted on 2026-09-25 (F1: the confirmation is worded by the model and a token can be
-/// redeemed without an explicit yes).
+/// redeemed without an explicit yes). The skill carries the binding of the confirmed preview (context, kind MacroSwitch)
+/// into the command unchanged; without it, or with a binding of another kind, it refuses and sends nothing, also on a
+/// background path. The order of the refusals is: role, parameters, binding.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Settings.Macros;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Infrastructure.Mediator;
 
@@ -32,6 +35,9 @@ public class AssignMacroSkillTests
     private const string MacroName = "Sunday plus";
     private const int TotalEntries = 5;
     private const int SealedEntries = 2;
+
+    private static readonly ConfirmationBinding SwitchBinding =
+        ConfirmationBinding.Of(ConfirmationBindingKinds.MacroSwitch, ["Shift|a|-|b"]);
 
     private IMediator _mediator = null!;
 
@@ -109,8 +115,78 @@ public class AssignMacroSkillTests
                 command.Target == MacroAssignmentTarget.Shift
                 && command.HolderId == shiftId
                 && command.MacroId == macroId
-                && command.UserId == context.UserId),
+                && command.UserId == context.UserId
+                && ReferenceEquals(command.ConfirmedBinding, SwitchBinding)),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutABinding_IsRefused_AndSendsNothing_EvenOnABypassedPath()
+    {
+        var context = Context(Roles.Admin) with { ConfirmedActionBinding = null, BypassAutonomyGate = true };
+
+        var result = await ShiftSkill().ExecuteAsync(
+            context, Parameters(MacroAssignmentParameters.ShiftId, Guid.NewGuid(), Guid.NewGuid()));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(string.Format(ConfirmationBindingMessages.BindingRequired, MacroAssignmentSkillNames.AssignToShift));
+        await _mediator.DidNotReceive().Send(Arg.Any<AssignMacroCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ABindingOfAnotherKind_IsRefused_AndSendsNothing()
+    {
+        var context = Context(Roles.Admin) with
+        {
+            ConfirmedActionBinding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, ["x"])
+        };
+
+        var result = await ShiftSkill().ExecuteAsync(
+            context, Parameters(MacroAssignmentParameters.ShiftId, Guid.NewGuid(), Guid.NewGuid()));
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldContain("only runs as the confirmed replay");
+        await _mediator.DidNotReceive().Send(Arg.Any<AssignMacroCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AnUndoBinding_DoesNotPinASwitch()
+    {
+        var context = Context(Roles.Admin) with
+        {
+            ConfirmedActionBinding = ConfirmationBinding.Of(ConfirmationBindingKinds.MacroUndo, ["Shift|a|b|-"])
+        };
+
+        var result = await ShiftSkill().ExecuteAsync(
+            context, Parameters(MacroAssignmentParameters.ShiftId, Guid.NewGuid(), Guid.NewGuid()));
+
+        result.Success.ShouldBeFalse();
+        await _mediator.DidNotReceive().Send(Arg.Any<AssignMacroCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task TheAbsenceTypeSkill_NamesItselfInTheBindingRefusal()
+    {
+        var context = Context(Roles.Admin) with { ConfirmedActionBinding = null };
+
+        var result = await new AssignMacroToAbsenceTypeSkill(_mediator).ExecuteAsync(
+            context, Parameters(MacroAssignmentParameters.AbsenceTypeId, Guid.NewGuid(), Guid.NewGuid()));
+
+        result.Message.ShouldBe(
+            string.Format(ConfirmationBindingMessages.BindingRequired, MacroAssignmentSkillNames.AssignToAbsenceType));
+    }
+
+    [Test]
+    public async Task AParameterNamedLikeTheBinding_IsNeverRead()
+    {
+        var context = Context(Roles.Admin) with { ConfirmedActionBinding = null };
+        var parameters = Parameters(MacroAssignmentParameters.ShiftId, Guid.NewGuid(), Guid.NewGuid());
+        parameters["confirmedActionBinding"] = SwitchBinding;
+
+        var result = await ShiftSkill().ExecuteAsync(context, parameters);
+
+        result.Success.ShouldBeFalse();
+        await _mediator.DidNotReceive().Send(Arg.Any<AssignMacroCommand>(), Arg.Any<CancellationToken>());
     }
 
     [TestCase(PlanRefusal)]
@@ -191,7 +267,8 @@ public class AssignMacroSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "caller",
-        UserPermissions = rights
+        UserPermissions = rights,
+        ConfirmedActionBinding = SwitchBinding
     };
 
     private static Dictionary<string, object> Parameters(string holderParameter, Guid holderId, Guid macroId) => new()
@@ -205,4 +282,26 @@ public class AssignMacroSkillTests
 
     private static MacroSnapshot Snapshot(Guid id) =>
         new(id, MacroName, (int)MacroFunctionEnum.Custom, MacroCategoryEnum.Unspecified, MacroOrigin.AssistantExtension, "OUTPUT 1, 0");
+
+    [Test]
+    public async Task TheOrderOfTheRefusals_IsRoleThenParametersThenBinding()
+    {
+        var invalid = new Dictionary<string, object>
+        {
+            [MacroAssignmentParameters.ShiftId] = "not-an-id",
+            [MacroAssignmentParameters.MacroId] = Guid.NewGuid().ToString()
+        };
+        var valid = Parameters(MacroAssignmentParameters.ShiftId, Guid.NewGuid(), Guid.NewGuid());
+        var withoutBinding = Context(Roles.Admin) with { ConfirmedActionBinding = null };
+        var nonAdminWithoutBinding = Context(Permissions.CanEditSettings) with { ConfirmedActionBinding = null };
+
+        var role = await ShiftSkill().ExecuteAsync(nonAdminWithoutBinding, invalid);
+        var parameter = await ShiftSkill().ExecuteAsync(withoutBinding, invalid);
+        var binding = await ShiftSkill().ExecuteAsync(withoutBinding, valid);
+
+        role.Message.ShouldBe(MacroAssignmentAccess.AdminOnlyMessage);
+        parameter.Message!.ShouldContain("is not a valid id for shiftId");
+        binding.Message.ShouldBe(string.Format(ConfirmationBindingMessages.BindingRequired, MacroAssignmentSkillNames.AssignToShift));
+        await _mediator.DidNotReceive().Send(Arg.Any<AssignMacroCommand>(), Arg.Any<CancellationToken>());
+    }
 }

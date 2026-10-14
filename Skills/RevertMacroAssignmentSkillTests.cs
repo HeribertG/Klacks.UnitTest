@@ -8,13 +8,16 @@
 /// a switch recorded in between) is relayed verbatim, and a database failure at the commit answers with the save-failed
 /// text. The skill depends on the mediator only: the handler resolves the switch, plans and runs the dry run once per
 /// confirmed call, so the confirmed call re-checks the role and re-plans instead of trusting the preview it was confirmed
-/// with — part of the mitigation of the residual risk the owner accepted on 2026-09-25 (F1).
+/// with — part of the mitigation of the residual risk the owner accepted on 2026-09-25 (F1). The skill carries the binding
+/// of the confirmed preview (context, kind MacroUndo) into the command unchanged; without it, or with a binding of another
+/// kind, it refuses and sends nothing, also on a background path. The order of the refusals is: role, parameters, binding.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Settings.Macros;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Infrastructure.Mediator;
 
@@ -29,6 +32,9 @@ public class RevertMacroAssignmentSkillTests
     private const string ShiftName = "night";
     private const int TotalEntries = 2;
     private const int SealedEntries = 1;
+
+    private static readonly ConfirmationBinding UndoBinding =
+        ConfirmationBinding.Of(ConfirmationBindingKinds.MacroUndo, ["Shift|a|b|-"]);
 
     private IMediator _mediator = null!;
     private RevertMacroAssignmentSkill _sut = null!;
@@ -83,8 +89,37 @@ public class RevertMacroAssignmentSkillTests
 
         await _mediator.Received(1).Send(
             Arg.Is<RevertMacroAssignmentCommand>(command =>
-                command.SwitchId == id && command.UserId == context.UserId),
+                command.SwitchId == id
+                && command.UserId == context.UserId
+                && ReferenceEquals(command.ConfirmedBinding, UndoBinding)),
             Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutABinding_IsRefused_AndSendsNothing_EvenOnABypassedPath()
+    {
+        var context = Context(Roles.Admin) with { ConfirmedActionBinding = null, BypassAutonomyGate = true };
+
+        var result = await _sut.ExecuteAsync(context, By(MacroAssignmentParameters.SwitchId, Guid.NewGuid()));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(string.Format(ConfirmationBindingMessages.BindingRequired, MacroAssignmentSkillNames.Revert));
+        await _mediator.DidNotReceive().Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ASwitchBinding_DoesNotPinAnUndo()
+    {
+        var context = Context(Roles.Admin) with
+        {
+            ConfirmedActionBinding = ConfirmationBinding.Of(ConfirmationBindingKinds.MacroSwitch, ["Shift|a|-|b"])
+        };
+
+        var result = await _sut.ExecuteAsync(context, By(MacroAssignmentParameters.SwitchId, Guid.NewGuid()));
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldContain("only runs as the confirmed replay");
+        await _mediator.DidNotReceive().Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -175,6 +210,40 @@ public class RevertMacroAssignmentSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "caller",
-        UserPermissions = rights
+        UserPermissions = rights,
+        ConfirmedActionBinding = UndoBinding
     };
+
+    [Test]
+    public async Task TheOrderOfTheRefusals_IsRoleThenParametersThenBinding()
+    {
+        var invalid = new Dictionary<string, object> { [MacroAssignmentParameters.SwitchId] = ShiftName };
+        var valid = By(MacroAssignmentParameters.SwitchId, Guid.NewGuid());
+        var withoutBinding = Context(Roles.Admin) with { ConfirmedActionBinding = null };
+        var nonAdminWithoutBinding = Context(Permissions.CanEditSettings) with { ConfirmedActionBinding = null };
+
+        var role = await _sut.ExecuteAsync(nonAdminWithoutBinding, invalid);
+        var parameter = await _sut.ExecuteAsync(withoutBinding, invalid);
+        var binding = await _sut.ExecuteAsync(withoutBinding, valid);
+
+        role.Message.ShouldBe(MacroAssignmentAccess.AdminOnlyMessage);
+        parameter.Message!.ShouldContain("is not a valid id for switchId");
+        binding.Message.ShouldBe(string.Format(ConfirmationBindingMessages.BindingRequired, MacroAssignmentSkillNames.Revert));
+        await _mediator.DidNotReceive().Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AWorkBinding_DoesNotPinAnUndo()
+    {
+        var context = Context(Roles.Admin) with
+        {
+            ConfirmedActionBinding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, ["w1"])
+        };
+
+        var result = await _sut.ExecuteAsync(context, By(MacroAssignmentParameters.SwitchId, Guid.NewGuid()));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(string.Format(ConfirmationBindingMessages.BindingRequired, MacroAssignmentSkillNames.Revert));
+        await _mediator.DidNotReceive().Send(Arg.Any<RevertMacroAssignmentCommand>(), Arg.Any<CancellationToken>());
+    }
 }

@@ -18,6 +18,7 @@ using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Assistant;
 
@@ -264,7 +265,7 @@ public class PendingConfirmationStoreProposalHintTests
         scopeFactory.CreateScope().Returns(scope);
 
         return (
-            new PersistentPendingConfirmationStore(scopeFactory),
+            new PersistentPendingConfirmationStore(scopeFactory, NullLogger<PersistentPendingConfirmationStore>.Instance),
             new PendingConfirmationRepository(new DataBaseContext(options, httpAccessor)));
     }
 }

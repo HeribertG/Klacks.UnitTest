@@ -7,6 +7,7 @@ using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.TestHelpers;
 
@@ -22,7 +23,7 @@ internal static class PendingStoreTestFactory
     {
         var scopeFactory = CreateScopeFactory<IPendingConfirmationRepository>(
             context => new PendingConfirmationRepository(context));
-        return new PersistentPendingConfirmationStore(scopeFactory);
+        return new PersistentPendingConfirmationStore(scopeFactory, NullLogger<PersistentPendingConfirmationStore>.Instance);
     }
 
     public static IPendingCompanyRuleDraftStore CreateCompanyRuleDraftStore()

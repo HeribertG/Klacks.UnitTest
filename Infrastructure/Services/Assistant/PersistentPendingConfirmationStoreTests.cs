@@ -19,6 +19,7 @@ using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -52,7 +53,7 @@ public class PersistentPendingConfirmationStoreTests
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
 
-        _store = new PersistentPendingConfirmationStore(scopeFactory);
+        _store = new PersistentPendingConfirmationStore(scopeFactory, NullLogger<PersistentPendingConfirmationStore>.Instance);
     }
 
     private DataBaseContext CreateContext() => new(_options, _httpAccessor);
@@ -326,6 +327,88 @@ public class PersistentPendingConfirmationStoreTests
         _store.DiscardByTokens(User1, [undo.Token]);
 
         _store.PeekLatestForUser(User1, Window, PendingConfirmationPurposes.CorrectionUndo).ShouldBeNull();
+    }
+
+    [Test]
+    public void A_binding_given_to_Create_comes_back_identical_from_Consume()
+    {
+        var binding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, new[] { "w2", "w1" });
+        var token = _store.Create(
+            User1, "bulk_delete_works", SampleParameters(), PendingConfirmationPurposes.GateReplay,
+            PendingConfirmationChannels.Chat, binding);
+
+        var consumed = _store.Consume(token, User1);
+
+        consumed.ShouldNotBeNull();
+        consumed.Binding.ShouldBe(binding);
+    }
+
+    [Test]
+    public void A_fingerprint_only_binding_comes_back_from_Consume_without_items_and_still_matches()
+    {
+        var big = ConfirmationBinding.Of(
+            ConfirmationBindingKinds.Work,
+            Enumerable.Range(0, ConfirmationBindingDefaults.MaxStoredItems + 1).Select(i => $"w{i:D3}"));
+        big.Items.ShouldBeEmpty();
+        var token = _store.Create(
+            User1, "bulk_delete_works", SampleParameters(), PendingConfirmationPurposes.GateReplay,
+            PendingConfirmationChannels.Chat, big);
+
+        var consumed = _store.Consume(token, User1);
+
+        consumed.ShouldNotBeNull();
+        consumed.Binding.ShouldNotBeNull();
+        consumed.Binding.Items.ShouldBeEmpty();
+        consumed.Binding.Fingerprint.ShouldBe(big.Fingerprint);
+        consumed.Binding.Matches(big).ShouldBeTrue();
+    }
+
+    [Test]
+    public void Without_a_binding_Consume_returns_none()
+    {
+        var token = _store.Create(User1, "delete_shift", SampleParameters());
+
+        _store.Consume(token, User1)!.Binding.ShouldBeNull();
+    }
+
+    [Test]
+    public void The_binding_is_stored_in_its_own_column_and_not_in_the_parameters()
+    {
+        var binding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, new[] { "w1" });
+        _store.Create(
+            User1, "bulk_delete_works", SampleParameters(), PendingConfirmationPurposes.GateReplay,
+            PendingConfirmationChannels.Chat, binding);
+
+        using var verify = CreateContext();
+        var row = verify.PendingConfirmations.Single();
+        row.BindingJson.ShouldNotBeNullOrEmpty();
+        row.ParametersJson.ShouldNotContain(binding.Fingerprint);
+    }
+
+    [TestCase("{garbage")]
+    [TestCase("{}")]
+    [TestCase("null")]
+    public void An_unreadable_stored_binding_voids_the_token(string bindingJson)
+    {
+        using (var context = CreateContext())
+        {
+            context.PendingConfirmations.Add(new PendingConfirmationRow
+            {
+                Id = Guid.NewGuid(),
+                Token = "corrupt-binding",
+                UserId = User1,
+                SkillName = "bulk_delete_works",
+                ParametersJson = "{}",
+                BindingJson = bindingJson,
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(AutonomyDefaults.ConfirmationTtlMinutes)
+            });
+            context.SaveChanges();
+        }
+
+        _store.Consume("corrupt-binding", User1).ShouldBeNull();
+
+        using var verify = CreateContext();
+        verify.PendingConfirmations.Count().ShouldBe(0);
     }
 
     [Test]

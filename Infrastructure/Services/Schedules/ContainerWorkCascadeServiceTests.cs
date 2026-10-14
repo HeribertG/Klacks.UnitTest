@@ -5,7 +5,9 @@
 /// container Work to another client also reassigns its WorkChange (child Work) and Break children, so a
 /// cross-client schedule move never orphans them under the old client. The restore side brings back only
 /// the children that the same delete took away (same user, same instant within tolerance) and leaves
-/// children deleted earlier or by another actor deleted.
+/// children deleted earlier or by another actor deleted. GetChildIdsAsync reads the ids of the live child Works and Breaks
+/// of several parents with the very query DeleteChildrenAsync deletes by, so the ids a confirmation was given for are
+/// exactly the ones the delete takes.
 /// </summary>
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Schedules;
@@ -218,4 +220,62 @@ public class ContainerWorkCascadeServiceTests
         DeletedTime = deletedTime,
         CurrentUserDeleted = deletedBy
     };
+
+    [Test]
+    public async Task GetChildIdsAsync_ReturnsTheLiveChildWorksAndBreaksOfTheGivenParentsOnly()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var otherParent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var untouchedParent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childWork = new Work { Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date };
+        var childBreak = new Break { Id = Guid.NewGuid(), ParentWorkId = otherParent.Id, ClientId = _sourceClientId, CurrentDate = _date };
+        var foreignChild = new Work { Id = Guid.NewGuid(), ParentWorkId = untouchedParent.Id, ClientId = _sourceClientId, CurrentDate = _date };
+        var deletedChild = new Work
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date, IsDeleted = true
+        };
+        _context.Work.AddRange(parent, otherParent, untouchedParent, childWork, foreignChild, deletedChild);
+        _context.Break.Add(childBreak);
+        await _context.SaveChangesAsync();
+
+        var ids = await _sut.GetChildIdsAsync([parent.Id, otherParent.Id]);
+
+        ids.WorkIds.ShouldBe([childWork.Id]);
+        ids.BreakIds.ShouldBe([childBreak.Id]);
+        ids.Count.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task GetChildIdsAsync_WithoutParents_ReturnsNoneAndTouchesNothing()
+    {
+        var ids = await _sut.GetChildIdsAsync([]);
+
+        ids.Count.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task GetChildIdsAsync_ListsExactlyTheEntriesDeleteChildrenAsyncRemoves()
+    {
+        var parent = new Work { Id = Guid.NewGuid(), ClientId = _sourceClientId, CurrentDate = _date };
+        var childWork = new Work { Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date };
+        var childBreak = new Break { Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date };
+        var alreadyGone = new Break
+        {
+            Id = Guid.NewGuid(), ParentWorkId = parent.Id, ClientId = _sourceClientId, CurrentDate = _date, IsDeleted = true
+        };
+        _context.Work.AddRange(parent, childWork);
+        _context.Break.AddRange(childBreak, alreadyGone);
+        await _context.SaveChangesAsync();
+
+        var listed = await _sut.GetChildIdsAsync([parent.Id]);
+        await _sut.DeleteChildrenAsync(parent.Id);
+        await _context.SaveChangesAsync();
+
+        var removedWorks = await _context.Work.IgnoreQueryFilters()
+            .Where(w => w.ParentWorkId == parent.Id && w.IsDeleted).Select(w => w.Id).ToListAsync();
+        var removedBreaks = await _context.Break.IgnoreQueryFilters()
+            .Where(b => b.ParentWorkId == parent.Id && b.IsDeleted && b.Id != alreadyGone.Id).Select(b => b.Id).ToListAsync();
+        listed.WorkIds.OrderBy(id => id).ShouldBe(removedWorks.OrderBy(id => id));
+        listed.BreakIds.OrderBy(id => id).ShouldBe(removedBreaks.OrderBy(id => id));
+    }
 }

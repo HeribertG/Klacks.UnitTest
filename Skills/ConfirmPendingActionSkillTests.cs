@@ -66,6 +66,71 @@ public class ConfirmPendingActionSkillTests
     }
 
     [Test]
+    public async Task ARowWithABinding_ReplaysWithTheBindingOnTheContext_AndNotInTheParameters()
+    {
+        var context = YesCtx();
+        var binding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, new[] { "w1", "w2" });
+        var token = _store.Create(
+            context.UserId, "bulk_delete_works", new Dictionary<string, object> { ["fromDate"] = "2026-11-01" },
+            PendingConfirmationPurposes.GateReplay, PendingConfirmationChannels.Chat, binding);
+        SkillExecutionContext? seen = null;
+        SkillInvocation? invocation = null;
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                invocation = call.Arg<SkillInvocation>();
+                seen = call.Arg<SkillExecutionContext>();
+                return SkillResult.SuccessResult(null);
+            });
+
+        await _sut.ExecuteAsync(context, new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = token });
+
+        seen.ShouldNotBeNull();
+        seen.ConfirmedActionBinding.ShouldBe(binding);
+        seen.BypassAutonomyGate.ShouldBeTrue();
+        invocation!.Parameters.Keys.ShouldBe(new[] { "fromDate" });
+    }
+
+    [Test]
+    public async Task ARowWithABindingOfAMacroSwitch_CarriesItToo()
+    {
+        var context = YesCtx();
+        var binding = ConfirmationBinding.Of(ConfirmationBindingKinds.MacroSwitch, new[] { "Shift|a|-|b" });
+        var token = _store.Create(
+            context.UserId, "assign_macro_to_shift", new Dictionary<string, object>(),
+            PendingConfirmationPurposes.GateReplay, PendingConfirmationChannels.Chat, binding);
+        SkillExecutionContext? seen = null;
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                seen = call.Arg<SkillExecutionContext>();
+                return SkillResult.SuccessResult(null);
+            });
+
+        await _sut.ExecuteAsync(context, new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = token });
+
+        seen!.ConfirmedActionBinding.ShouldBe(binding);
+    }
+
+    [Test]
+    public async Task ARowWithoutABinding_ReplaysWithNoneOnTheContext_EvenWhenTheCallerContextCarriedOne()
+    {
+        var context = YesCtx() with { ConfirmedActionBinding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, new[] { "x" }) };
+        var token = _store.Create(context.UserId, "delete_shift", new Dictionary<string, object>());
+        SkillExecutionContext? seen = null;
+        _skillExecutor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                seen = call.Arg<SkillExecutionContext>();
+                return SkillResult.SuccessResult(null);
+            });
+
+        await _sut.ExecuteAsync(context, new Dictionary<string, object> { [AutonomyDefaults.ConfirmationTokenParameter] = token });
+
+        seen!.ConfirmedActionBinding.ShouldBeNull();
+    }
+
+    [Test]
     public async Task InvalidToken_ReturnsErrorWithoutExecution()
     {
         var result = await _sut.ExecuteAsync(YesCtx(), new Dictionary<string, object>

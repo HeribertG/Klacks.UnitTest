@@ -10,6 +10,7 @@
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Macros;
+using Klacks.Api.Domain.Services.Macros;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -118,6 +119,44 @@ public class MacroAssignmentConfirmationPreviewProviderTests
         preview.Text.ShouldContain("'Night'");
         preview.Text.ShouldContain("'Sunday plus'");
         preview.Text.ShouldContain("Entries in scope: 3");
+        preview.Binding.ShouldNotBeNull();
+        preview.Binding.Kind.ShouldBe(ConfirmationBindingKinds.MacroSwitch);
+        preview.Binding.ShouldBe(MacroAssignmentBinding.Of(plan));
+        preview.Binding.Items.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ValidSwitch_BindsTheWrittenReferences_NotTheEntryCounts()
+    {
+        var change = new MacroReferenceChange(Holder(), null, Snapshot("Sunday plus"));
+        var plan = new MacroAssignmentPlan(change.Holder, change.To, [change], [], [], null);
+        _assignPlanner.PreviewAssignAsync(MacroAssignmentTarget.Shift, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new MacroAssignmentPreview(plan, new MacroDryRunResult(3, 1, [], null, false), null),
+                new MacroAssignmentPreview(plan, new MacroDryRunResult(300, 100, [], null, false), null));
+
+        var first = await _sut.BuildAsync(
+            MacroAssignmentSkillNames.AssignToShift, Context(Roles.Admin), AssignParameters(MacroAssignmentParameters.ShiftId));
+        var second = await _sut.BuildAsync(
+            MacroAssignmentSkillNames.AssignToShift, Context(Roles.Admin), AssignParameters(MacroAssignmentParameters.ShiftId));
+
+        first.Text.ShouldNotBe(second.Text);
+        first.Binding!.Matches(second.Binding!).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task EveryRefusal_CarriesNoBinding()
+    {
+        _assignPlanner.PreviewAssignAsync(Arg.Any<MacroAssignmentTarget>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new MacroAssignmentPreview(MacroAssignmentPlan.Refused(PlanRefusal), null, PlanRefusal));
+
+        var refusedPlan = await _sut.BuildAsync(
+            MacroAssignmentSkillNames.AssignToShift, Context(Roles.Admin), AssignParameters(MacroAssignmentParameters.ShiftId));
+        var notAdmin = await _sut.BuildAsync(
+            MacroAssignmentSkillNames.AssignToShift, Context(Permissions.CanEditSettings), AssignParameters(MacroAssignmentParameters.ShiftId));
+
+        refusedPlan.Binding.ShouldBeNull();
+        notAdmin.Binding.ShouldBeNull();
     }
 
     [Test]
@@ -151,6 +190,9 @@ public class MacroAssignmentConfirmationPreviewProviderTests
         preview.IsRefusal.ShouldBeFalse();
         preview.Text.ShouldContain($"Undo the macro switch {switchId}");
         await _revertPlanner.Received(1).PreviewRevertAsync(new MacroRevertRequest(switchId), Arg.Any<CancellationToken>());
+        preview.Binding.ShouldNotBeNull();
+        preview.Binding.Kind.ShouldBe(ConfirmationBindingKinds.MacroUndo);
+        preview.Binding.ShouldBe(MacroAssignmentBinding.Of(plan));
     }
 
     private static SkillExecutionContext Context(params string[] rights) => new()
