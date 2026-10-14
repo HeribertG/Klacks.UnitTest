@@ -36,6 +36,7 @@ public class WizardApplyServiceCaptureTests
     private const string GeneratedName = "generated name";
     private IScenarioNameGenerator _nameGenerator = null!;
     private WizardApplyService _sut = null!;
+    private Klacks.Api.Application.Interfaces.Schedules.IClientPlanningPeriodGuard _planningPeriodGuard = null!;
 
     private readonly List<Guid> _createdIds = new() { Guid.NewGuid(), Guid.NewGuid() };
 
@@ -68,6 +69,7 @@ public class WizardApplyServiceCaptureTests
                 Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(GeneratedName);
 
+        _planningPeriodGuard = Klacks.UnitTest.TestHelpers.TestPlanningPeriodGuard.NoViolations();
         _sut = new WizardApplyService(
             _cache,
             _mediator,
@@ -82,6 +84,7 @@ public class WizardApplyServiceCaptureTests
             new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
             _nameGenerator,
             Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
+            _planningPeriodGuard,
             NullLogger<WizardApplyService>.Instance);
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same

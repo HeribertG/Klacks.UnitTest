@@ -119,5 +119,6 @@ public class ScenarioProducerVisibilityTests
         _unitOfWork,
         Substitute.For<IScenarioNameGenerator>(),
         Substitute.For<ISealedDayRepository>(),
-        _guard);
+        _guard,
+        Substitute.For<IClientPlanningPeriodGuard>());
 }

@@ -214,6 +214,62 @@ public class ClientPlanningPeriodGuardTests
     }
 
     [Test]
+    public async Task FindViolations_ListsEveryOffendingCellEarliestFirst_OncePerCell_WithoutThrowing()
+    {
+        GivenClients(
+            NewClient(ClientId, NewMembership(Day.AddDays(-30), null)),
+            NewClient(OtherClientId, NewMembership(Day.AddDays(10), null)));
+
+        var violations = await _guard.FindViolationsAsync(
+            [(ClientId, Day), (OtherClientId, Day.AddDays(3)), (OtherClientId, Day.AddDays(1)), (OtherClientId, Day.AddDays(1))],
+            CancellationToken.None);
+
+        violations.Select(v => (v.ClientId, v.Date)).ShouldBe(
+            [(OtherClientId, Day.AddDays(1)), (OtherClientId, Day.AddDays(3))]);
+        violations[0].Message.ShouldContain("membership");
+        violations[0].Message.ShouldContain("2026-10-15");
+    }
+
+    [Test]
+    public async Task FindViolations_MembershipReasonWinsOverTheGroupPeriodForTheSameCell()
+    {
+        GivenClients(NewClient(ClientId, NewMembership(Day.AddDays(1), null)));
+        _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns(new List<Guid> { GroupId });
+        GivenGroupRange(ClientId, Day.AddDays(2), null);
+
+        var violations = await _guard.FindViolationsAsync([(ClientId, Day)], CancellationToken.None);
+
+        violations.ShouldHaveSingleItem().Message.ShouldContain("membership");
+    }
+
+    [Test]
+    public async Task FindViolations_InsideEveryPeriod_IsEmpty()
+    {
+        GivenClients(NewClient(ClientId, NewMembership(Day, Day)));
+
+        var violations = await _guard.FindViolationsAsync([(ClientId, Day)], CancellationToken.None);
+
+        violations.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task FindViolationsInGroups_ReadsTheGivenGroups_NotTheRequestsGroupContext()
+    {
+        var targetGroup = Guid.NewGuid();
+        _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns(new List<Guid> { GroupId });
+        GivenGroupRange(ClientId, Day.AddDays(1), null);
+
+        var violations = await _guard.FindViolationsInGroupsAsync([(ClientId, Day)], [targetGroup], CancellationToken.None);
+
+        violations.ShouldHaveSingleItem().Message.ShouldContain("group period");
+        await _groupItemRepository.Received(1).GetValidityRangesAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(),
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == targetGroup),
+            Arg.Any<CancellationToken>());
+        await _groupContextResolver.DidNotReceive().ResolveVisibleGroupIdsAsync();
+    }
+
+    [Test]
     public async Task NoCells_ReadNothing()
     {
         await _guard.EnsureWithinPeriodsAsync([], CancellationToken.None);

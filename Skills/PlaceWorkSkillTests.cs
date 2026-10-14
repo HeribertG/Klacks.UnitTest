@@ -11,10 +11,12 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -23,6 +25,7 @@ public class PlaceWorkSkillTests
 {
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid ShiftId = Guid.NewGuid();
+    private static readonly DateOnly PlacementDay = new(2026, 3, 10);
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -36,11 +39,12 @@ public class PlaceWorkSkillTests
     {
         ["clientId"] = ClientId.ToString(),
         ["shiftId"] = ShiftId.ToString(),
-        ["date"] = new DateOnly(2026, 3, 10)
+        ["date"] = PlacementDay
     };
 
     private static (PlaceWorkSkill skill, IMediator mediator, IPreCommitConflictChecker checker) Build(
-        PreCommitCheckResult checkResult, IClientVisibilityGuard? visibilityGuard = null, bool daySealed = false)
+        PreCommitCheckResult checkResult, IClientVisibilityGuard? visibilityGuard = null, bool daySealed = false,
+        bool outsidePeriod = false)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
@@ -65,7 +69,11 @@ public class PlaceWorkSkillTests
         var sealedDays = Substitute.For<ISealedDayRepository>();
         sealedDays.IsDayLockedAsync(Arg.Any<DateOnly>(), ClientId, Arg.Any<CancellationToken>()).Returns(daySealed);
 
-        return (new PlaceWorkSkill(mediator, shiftRepo, checker, clientRepo, visibilityGuard ?? SkillClientVisibility.AllVisible(), sealedDays), mediator, checker);
+        return (new PlaceWorkSkill(
+            mediator, shiftRepo, checker, clientRepo, visibilityGuard ?? SkillClientVisibility.AllVisible(), sealedDays,
+            outsidePeriod
+                ? TestPlanningPeriodGuard.Violating((ClientId, PlacementDay))
+                : TestPlanningPeriodGuard.NoViolations()), mediator, checker);
     }
 
     [Test]
@@ -118,6 +126,34 @@ public class PlaceWorkSkillTests
         result.Message.ShouldContain("analyseToken");
         await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
         await checker.DidNotReceiveWithAnyArgs().CheckAsync(default!, default, default);
+    }
+
+    [Test]
+    public async Task DayOutsideThePlanningPeriod_ReturnsErrorAndDoesNotCommit()
+    {
+        var (skill, mediator, checker) = Build(PreCommitCheckResult.Empty, outsidePeriod: true);
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("membership");
+        result.Message.ShouldContain("Nothing was placed");
+        await checker.DidNotReceiveWithAnyArgs().CheckAsync(default!, default, default);
+        await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ARefusalOfTheBulkPipeline_IsAnsweredAsASkillError_NotAsAnException()
+    {
+        var (skill, mediator, _) = Build(PreCommitCheckResult.Empty);
+        mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
+            .Returns<BulkWorksResponse>(_ => throw new InvalidRequestException("Day is sealed and cannot be modified."));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("was refused");
+        result.Message.ShouldContain("Day is sealed and cannot be modified.");
     }
 
     [Test]

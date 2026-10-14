@@ -258,7 +258,8 @@ public class WorkLockLevelWriteTests
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
             Substitute.For<IOvertimeCascadeService>(), Substitute.For<IPreCommitConflictChecker>(),
-            _httpContextAccessor, NewGuard(), Substitute.For<ILogger<PutCommandHandler>>());
+            _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
+            Substitute.For<ILogger<PutCommandHandler>>());
 
     private DeleteCommandHandler NewDeleteHandler()
         => new(

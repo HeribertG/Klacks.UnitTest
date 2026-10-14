@@ -128,7 +128,8 @@ public class WorkVisibilityTests
             _scheduleEntriesService, _completionService, _notificationFacade,
             Substitute.For<IShiftDefaultExpensesApplier>(),
             Substitute.For<IContainerWorkExpansionService>(), _groupContextResolver, _dayLockService, _unitOfWork,
-            _overtimeCascadeService, _writeGuard, Substitute.For<ILogger<PostCommandHandler>>());
+            _overtimeCascadeService, _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
+            Substitute.For<ILogger<PostCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
             new PostCommand<WorkResource>(NewResource(Guid.NewGuid(), _hiddenClientId)), CancellationToken.None));
@@ -276,7 +277,7 @@ public class WorkVisibilityTests
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService, _completionService,
             _notificationFacade, Substitute.For<IContainerWorkExpansionService>(), _overtimeCascadeService,
             _dayLockService, _conflictChecker, Substitute.For<IShiftDefaultExpensesApplier>(),
-            Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
+            Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
         var request = new BulkAddWorksRequest
         {
             PeriodStart = Day,
@@ -682,7 +683,7 @@ public class WorkVisibilityTests
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
             _httpContextAccessor, new ParentWorkLockGuard(new WorkLockLevelService()),
-            Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
 
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(

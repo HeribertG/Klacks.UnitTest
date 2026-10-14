@@ -50,6 +50,7 @@ public class ProposePlanCommandHandlerTests
     private IHttpContextAccessor _httpContextAccessor = null!;
     private IScenarioNameGenerator _nameGenerator = null!;
     private ISealedDayRepository _sealedDayRepo = null!;
+    private IClientPlanningPeriodGuard _planningPeriodGuard = null!;
     private ProposePlanCommandHandler _handler = null!;
 
     [SetUp]
@@ -106,8 +107,11 @@ public class ProposePlanCommandHandlerTests
         _sealedDayRepo.GetLockedPairsAsync(Arg.Any<IReadOnlyCollection<(DateOnly Date, Guid ClientId)>>(), Arg.Any<CancellationToken>())
             .Returns(new HashSet<(DateOnly Date, Guid ClientId)>());
 
+        _planningPeriodGuard = TestPlanningPeriodGuard.NoViolations();
+
         _handler = new ProposePlanCommandHandler(
-            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator, _sealedDayRepo, TestGroupWriteVisibility.UnrestrictedGroups());
+            _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator, _sealedDayRepo,
+            TestGroupWriteVisibility.UnrestrictedGroups(), _planningPeriodGuard);
     }
 
     private static ClaimsPrincipal AnonymousUser() => new(new ClaimsIdentity());
@@ -165,6 +169,48 @@ public class ProposePlanCommandHandlerTests
         outcome.Rejected.ShouldHaveSingleItem().ClientId.ShouldBe(sealedClient);
         await _mediator.Received(1).Send(
             Arg.Is<BulkAddWorksCommand>(c => c.Request.Works.All(w => w.ClientId == freeClient)), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PlacementOutsideThePlanningPeriodOfTheTargetGroup_RejectedAndNotWritten_TheRestIsWrittenWithoutASecondPeriodCheck()
+    {
+        var formerEmployee = Guid.NewGuid();
+        var member = Guid.NewGuid();
+        var violating = TestPlanningPeriodGuard.Violating((formerEmployee, From));
+        _planningPeriodGuard
+            .FindViolationsInGroupsAsync(
+                Arg.Any<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => violating.FindViolationsAsync(
+                call.Arg<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(), CancellationToken.None));
+
+        var outcome = await Propose(Placement(formerEmployee, From), Placement(member, From));
+
+        outcome.Written.ShouldHaveSingleItem().ClientId.ShouldBe(member);
+        var rejected = outcome.Rejected.ShouldHaveSingleItem();
+        rejected.ClientId.ShouldBe(formerEmployee);
+        rejected.Reason.ShouldBe("outside membership or group period");
+        await _mediator.Received(1).Send(
+            Arg.Is<BulkAddWorksCommand>(c =>
+                c.Request.Works.All(w => w.ClientId == member)
+                && c.PeriodCheck == PlanningPeriodCheck.SkipForPlannerOutput),
+            Arg.Any<CancellationToken>());
+        await _planningPeriodGuard.Received(1).FindViolationsInGroupsAsync(
+            Arg.Any<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(),
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == GroupId),
+            Arg.Any<CancellationToken>());
+        await _planningPeriodGuard.DidNotReceiveWithAnyArgs().FindViolationsAsync(default!, default);
+    }
+
+    [Test]
+    public async Task WithoutATargetGroup_TheRequestsGroupContextDecidesThePeriod()
+    {
+        await _handler.Handle(new ProposePlanCommand(null, From, Until, [Placement(Guid.NewGuid(), From)]), CancellationToken.None);
+
+        await _planningPeriodGuard.Received(1).FindViolationsAsync(
+            Arg.Any<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(), Arg.Any<CancellationToken>());
+        await _planningPeriodGuard.DidNotReceiveWithAnyArgs().FindViolationsInGroupsAsync(default!, default!, default);
     }
 
     [Test]

@@ -5,6 +5,9 @@
 /// client in a group. A scenario membership (AnalyseToken set) may coexist with the real one for the
 /// same client and group, and must never be handed out — callers soft-delete or count what they get,
 /// which would destroy a running analysis scenario and skip the real change.
+/// GetValidityRangesAsync: the group period of an employee is the widest range over its items in the given groups, and
+/// an item without a start or without an end leaves that side open - an open-ended item must not be narrowed by a
+/// bounded one (LINQ Min/Max skip null and would otherwise do exactly that).
 /// </summary>
 
 using Microsoft.AspNetCore.Http;
@@ -74,6 +77,56 @@ public class GroupItemRepositoryTests
         var result = await _repository.GetByClientAndGroup(ClientId, GroupId);
 
         result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetValidityRanges_AnOpenEndedItemBesideABoundedOne_LeavesTheEndOpen()
+    {
+        AddRange(new DateTime(2026, 1, 1), new DateTime(2026, 3, 31));
+        AddRange(new DateTime(2026, 2, 1), null);
+        await _context.SaveChangesAsync();
+
+        var ranges = await _repository.GetValidityRangesAsync([ClientId], [GroupId]);
+
+        ranges[ClientId].ValidFrom.ShouldBe(new DateTime(2026, 1, 1));
+        ranges[ClientId].ValidUntil.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetValidityRanges_AnItemWithoutStartBesideABoundedOne_LeavesTheStartOpen()
+    {
+        AddRange(new DateTime(2026, 1, 1), new DateTime(2026, 3, 31));
+        AddRange(null, new DateTime(2026, 2, 28));
+        await _context.SaveChangesAsync();
+
+        var ranges = await _repository.GetValidityRangesAsync([ClientId], [GroupId]);
+
+        ranges[ClientId].ValidFrom.ShouldBeNull();
+        ranges[ClientId].ValidUntil.ShouldBe(new DateTime(2026, 3, 31));
+    }
+
+    [Test]
+    public async Task GetValidityRanges_OnlyBoundedItems_SpanTheEarliestStartToTheLatestEnd()
+    {
+        AddRange(new DateTime(2026, 1, 10), new DateTime(2026, 1, 20));
+        AddRange(new DateTime(2026, 1, 5), new DateTime(2026, 1, 25));
+        await _context.SaveChangesAsync();
+
+        var ranges = await _repository.GetValidityRangesAsync([ClientId], [GroupId]);
+
+        ranges[ClientId].ShouldBe((new DateTime(2026, 1, 5), new DateTime(2026, 1, 25)));
+    }
+
+    private void AddRange(DateTime? validFrom, DateTime? validUntil)
+    {
+        _context.GroupItem.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientId,
+            GroupId = GroupId,
+            ValidFrom = validFrom,
+            ValidUntil = validUntil
+        });
     }
 
     private GroupItem AddMembership(Guid? analyseToken)

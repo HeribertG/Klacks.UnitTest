@@ -188,6 +188,26 @@ public class GetScheduleEntriesQueryHandlerTests
     }
 
     [Test]
+    public async Task Handle_AnOpenEndedGroupItemBesideABoundedOne_LeavesTheGridsGroupPeriodOpenAtTheEnd()
+    {
+        var clientId = Guid.NewGuid();
+        var group1 = Guid.NewGuid();
+        var group2 = Guid.NewGuid();
+        SetupWorkListWithClient(clientId);
+        _groupFilterService.GetVisibleGroupIdsAsync(group1).ReturnsForAnyArgs(new List<Guid> { group1, group2 });
+
+        _context.GroupItem.AddRange(
+            new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = group1, ValidFrom = new DateTime(2026, 1, 10), ValidUntil = new DateTime(2026, 1, 20), IsDeleted = false },
+            new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = group2, ValidFrom = new DateTime(2026, 1, 15), ValidUntil = null, IsDeleted = false });
+        await _context.SaveChangesAsync();
+
+        var result = await _handler.Handle(CreateQuery(group1), CancellationToken.None);
+
+        result.Clients[0].GroupItemValidFrom.ShouldBe(new DateOnly(2026, 1, 10));
+        result.Clients[0].GroupItemValidUntil.ShouldBeNull();
+    }
+
+    [Test]
     public async Task Handle_DeletedGroupItem_GroupItemDatesNotSet()
     {
         var clientId = Guid.NewGuid();

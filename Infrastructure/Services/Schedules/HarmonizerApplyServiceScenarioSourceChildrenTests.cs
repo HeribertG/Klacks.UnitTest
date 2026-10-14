@@ -186,6 +186,7 @@ public class HarmonizerApplyServiceScenarioSourceChildrenTests
         var item = _bulkCommands.SelectMany(c => c.Request.Works).Where(i => i.CurrentDate == OutsideSourceDay).ToList().ShouldHaveSingleItem();
         item.ClientId.ShouldBe(AgentB);
         item.AnalyseToken.ShouldBe(token);
+        _bulkCommands.ShouldAllBe(c => c.PeriodCheck == PlanningPeriodCheck.SkipForPlannerOutput);
         (await LiveWorksOf(token)).ShouldNotContain(
             w => w.CurrentDate == OutsideSourceDay, "the real-plan clones of that day are replaced by the bitmap's work, not doubled");
     }

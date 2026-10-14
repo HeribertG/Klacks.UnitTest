@@ -43,6 +43,7 @@ public class WizardApplyServiceComplianceTests
     private const string GeneratedName = "generated name";
     private IScenarioNameGenerator _nameGenerator = null!;
     private WizardApplyService _sut = null!;
+    private Klacks.Api.Application.Interfaces.Schedules.IClientPlanningPeriodGuard _planningPeriodGuard = null!;
 
     private readonly List<Guid> _createdIds = new() { Guid.NewGuid() };
 
@@ -72,6 +73,7 @@ public class WizardApplyServiceComplianceTests
                 Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(GeneratedName);
 
+        _planningPeriodGuard = Klacks.UnitTest.TestHelpers.TestPlanningPeriodGuard.NoViolations();
         _sut = new WizardApplyService(
             _cache,
             _mediator,
@@ -86,6 +88,7 @@ public class WizardApplyServiceComplianceTests
             new FixedCompanyClock(new DateTimeOffset(2026, 4, 20, 0, 0, 0, TimeSpan.Zero)),
             _nameGenerator,
             Klacks.UnitTest.TestHelpers.TestScenarioTokenAccess.AllVisible(),
+            _planningPeriodGuard,
             NullLogger<WizardApplyService>.Instance);
 
         // The real unit of work runs the delegate inside a transaction; the substitute must do the same
@@ -151,6 +154,7 @@ public class WizardApplyServiceComplianceTests
         sent.ShouldNotBeNull();
         sent!.Request.Works.Count.ShouldBe(1);
         sent.Request.Works[0].ClientId.ShouldBe(acceptedAgent);
+        sent.PeriodCheck.ShouldBe(PlanningPeriodCheck.SkipForPlannerOutput);
 
         var skipped = outcome.SkippedPlacements.ShouldHaveSingleItem();
         skipped.ClientId.ShouldBe(blockedAgent);
@@ -316,11 +320,72 @@ public class WizardApplyServiceComplianceTests
         sent.ShouldNotBeNull();
         sent!.Request.Works.Count.ShouldBe(1);
         sent.Request.Works[0].ClientId.ShouldBe(acceptedAgent);
+        sent.PeriodCheck.ShouldBe(PlanningPeriodCheck.SkipForPlannerOutput);
 
         var skipped = outcome.SkippedPlacements.ShouldHaveSingleItem();
         skipped.ClientId.ShouldBe(blockedAgent);
         skipped.ReasonKey.ShouldBe(BlockReasonKey);
         outcome.CreatedWorkIds.ShouldBe(_createdIds);
+    }
+
+    [Test]
+    public async Task ApplyAsync_APlacementOutsideThePlanningPeriod_IsSkippedWithItsReason_TheRestIsWritten()
+    {
+        var memberAgent = Guid.NewGuid();
+        var formerAgent = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(memberAgent, Day1), MakeToken(formerAgent, Day2)] }, null);
+        SetPartitionPassThrough();
+        GivenOutsidePeriod((formerAgent, Day2));
+        BulkAddWorksCommand? sent = null;
+        _mediator.Send(Arg.Do<BulkAddWorksCommand>(c => sent = c), Arg.Any<CancellationToken>())
+            .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
+
+        var outcome = await _sut.ApplyAsync(jobId, overrideBlock: false, CancellationToken.None);
+
+        sent!.Request.Works.ShouldHaveSingleItem().ClientId.ShouldBe(memberAgent);
+        var skipped = outcome.SkippedPlacements.ShouldHaveSingleItem();
+        skipped.ClientId.ShouldBe(formerAgent);
+        skipped.ReasonKey.ShouldBe("schedule.error-list.outside-planning-period");
+    }
+
+    [Test]
+    public async Task ApplyAsScenarioAsync_ChecksTheGroupPeriodOfTheScenarioGroup_AndSkipsWhatLiesOutside()
+    {
+        var memberAgent = Guid.NewGuid();
+        var formerAgent = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        _cache.Store(jobId, new CoreScenario { Id = "s", Tokens = [MakeToken(memberAgent, Day1), MakeToken(formerAgent, Day2)] }, null);
+        SetPartitionPassThrough();
+        GivenOutsidePeriod((formerAgent, Day2));
+        BulkAddWorksCommand? sent = null;
+        _mediator.Send(Arg.Do<BulkAddWorksCommand>(c => sent = c), Arg.Any<CancellationToken>())
+            .Returns(new BulkWorksResponse { CreatedIds = _createdIds });
+
+        var (_, outcome) = await _sut.ApplyAsScenarioAsync(jobId, groupId, overrideBlock: false, CancellationToken.None);
+
+        sent!.Request.Works.ShouldHaveSingleItem().ClientId.ShouldBe(memberAgent);
+        outcome.SkippedPlacements.ShouldHaveSingleItem().ReasonKey.ShouldBe("schedule.error-list.outside-planning-period");
+        await _planningPeriodGuard.Received(1).FindViolationsInGroupsAsync(
+            Arg.Any<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(),
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == groupId),
+            Arg.Any<CancellationToken>());
+        await _planningPeriodGuard.DidNotReceiveWithAnyArgs().FindViolationsAsync(default!, default);
+    }
+
+    private void GivenOutsidePeriod((Guid ClientId, DateOnly Date) cell)
+    {
+        var violating = Klacks.UnitTest.TestHelpers.TestPlanningPeriodGuard.Violating(cell);
+        _planningPeriodGuard.FindViolationsAsync(Arg.Any<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(), Arg.Any<CancellationToken>())
+            .Returns(call => violating.FindViolationsAsync(
+                call.Arg<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(), CancellationToken.None));
+        _planningPeriodGuard.FindViolationsInGroupsAsync(
+                Arg.Any<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => violating.FindViolationsAsync(
+                call.Arg<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(), CancellationToken.None));
     }
 
     [Test]
