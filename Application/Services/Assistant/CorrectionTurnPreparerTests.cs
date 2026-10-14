@@ -298,6 +298,33 @@ public class CorrectionTurnPreparerTests
             Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// A non-empty pinned list switches the turn-intent classifier off for the turn, so a previous scenario
+    /// skill must not pin anything: the follow-up guarantee is state-based (ScenarioActivityProbe) instead.
+    /// </summary>
+    [Test]
+    public async Task AnchorThatStartedTheAutoWizard_PinsNothing_SoTheTurnIntentClassifierStillRuns()
+    {
+        var lastAction = new AssistantLastAction
+        {
+            UserId = Guid.Parse(UserId),
+            ConversationId = ConversationId,
+            UserMessage = PreviousMessage,
+            CreateTimeUtc = DateTime.UtcNow,
+            Calls = [new AssistantLastActionCall { SkillName = "start_autowizard", Success = true }]
+        };
+        _lastActionStore.Peek(Guid.Parse(UserId), ConversationId).Returns(lastAction);
+
+        await Prepare("Ja, übernimm es.");
+
+        await _assembler.Received(1).AssembleAsync(
+            Arg.Any<Agent?>(), Arg.Any<List<string>>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int>(),
+            Arg.Any<bool>(), Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Is<IReadOnlyCollection<string>?>(pinned => pinned == null || pinned.Count == 0),
+            Arg.Any<IReadOnlyList<string>?>(), Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task WithAClarification_PinsTheTwoCandidates()
     {

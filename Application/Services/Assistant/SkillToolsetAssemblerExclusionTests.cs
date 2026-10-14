@@ -129,6 +129,7 @@ public class SkillToolsetAssemblerExclusionTests
             NoLearnedPhrases(),
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),
+            Substitute.For<IScenarioActivityProbe>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>()),
         Substitute.For<ILogger<SkillToolsetAssembler>>());
 

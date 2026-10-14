@@ -67,6 +67,7 @@ public class SkillToolsetGuaranteeResolverFollowThroughTests
             phrases,
             _relations,
             new NoTurnIntentExplainGuarantee(),
+            Substitute.For<IScenarioActivityProbe>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
     }
 

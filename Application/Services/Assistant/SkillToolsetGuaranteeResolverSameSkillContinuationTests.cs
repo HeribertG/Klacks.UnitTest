@@ -66,6 +66,7 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
             phrases,
             relations,
             new NoTurnIntentExplainGuarantee(),
+            Substitute.For<IScenarioActivityProbe>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
     }
 

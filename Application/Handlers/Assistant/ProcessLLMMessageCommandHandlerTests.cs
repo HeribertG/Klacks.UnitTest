@@ -109,6 +109,7 @@ public class ProcessLLMMessageCommandHandlerTests
             NoLearnedPhrases(),
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),
+            Substitute.For<IScenarioActivityProbe>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         return new SkillToolsetAssembler(

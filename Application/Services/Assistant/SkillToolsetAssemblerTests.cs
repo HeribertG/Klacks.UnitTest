@@ -58,6 +58,7 @@ public class SkillToolsetAssemblerTests
     private RecipeEngineService _recipeEngine = null!;
     private IPendingPlanningProfileDraftStore _planningProfileDraftStore = null!;
     private ISkillPhraseRepository _skillPhrases = null!;
+    private IScenarioActivityProbe _scenarioProbe = null!;
     private Agent _agent = null!;
 
     [SetUp]
@@ -98,6 +99,9 @@ public class SkillToolsetAssemblerTests
         _skillPhrases.GetActiveBySourceAsync(
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new List<SkillPhrase>());
+
+        _scenarioProbe = Substitute.For<IScenarioActivityProbe>();
+        _scenarioProbe.HasVisibleActivityAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(false);
 
         _agent = new Agent { Id = Guid.NewGuid() };
         _skillCache.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(_agent);
@@ -156,6 +160,241 @@ public class SkillToolsetAssemblerTests
         FunctionNames(result).ShouldNotContain("set_planning_profile_parameters");
     }
 
+    /// <summary>
+    /// Live 2026-09-30: "Ja, übernimm es." retrieved accept_scenario without list_scenarios; the history
+    /// carries no scenario id, so the model could not accept the scenario it was asked to accept.
+    /// </summary>
+    [TestCase("accept_scenario")]
+    [TestCase("reject_scenario")]
+    public async Task RetrievedScenarioIdConsumer_GuaranteesListScenarios(string consumer)
+    {
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                CreateSkill(AlwaysOnSkillName, alwaysOn: true),
+                CreateSkill(consumer),
+                CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, effect: SkillEffect.Read)
+            });
+        SetupRetrievalResult(RetrievalHit(consumer));
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Ja, übernimm es.", "conv-scenario", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        FunctionNames(result).ShouldContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    [Test]
+    public async Task WithoutAScenarioIdConsumer_ListScenariosIsNotGuaranteed()
+    {
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                CreateSkill(AlwaysOnSkillName, alwaysOn: true),
+                CreateSkill(RetrievedSkillName, effect: SkillEffect.Explain),
+                CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, effect: SkillEffect.Read)
+            });
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), UserMessage, "conv-no-scenario", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        FunctionNames(result).ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    private void GivenScenarioSkills(string acceptTriggerKeywords = "[]") =>
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                CreateSkill(AlwaysOnSkillName, alwaysOn: true),
+                CreateSkill(RetrievedSkillName, effect: SkillEffect.Explain, sortOrder: 1),
+                CreateSkill(NeighbourSkillName, sortOrder: 2),
+                CreateSkill(ScenarioFollowUpSkills.AcceptScenarioSkillName, triggerKeywords: acceptTriggerKeywords),
+                CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, effect: SkillEffect.Read, sortOrder: 999)
+            });
+
+    [Test]
+    public async Task AcceptScenarioAsKeywordHit_GuaranteesListScenarios()
+    {
+        GivenScenarioSkills(acceptTriggerKeywords: "[\"übernimm\"]");
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Ja, übernimm es.", "conv-keyword", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        var names = FunctionNames(result);
+        names.ShouldContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
+        names.ShouldContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    [Test]
+    public async Task AcceptScenarioAsLearnedPhraseHit_GuaranteesListScenarios()
+    {
+        GivenScenarioSkills();
+        GivenLearnedSkillPhrase(ScenarioFollowUpSkills.AcceptScenarioSkillName, "nimm den vorschlag");
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Ja, nimm den Vorschlag.", "conv-learned", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        var names = FunctionNames(result);
+        names.ShouldContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
+        names.ShouldContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    /// <summary>
+    /// The planning run can take hours and the user asks for the result in a turn whose wording carries no
+    /// scenario vocabulary: the open scenario (or the running job) itself is the signal.
+    /// </summary>
+    [Test]
+    public async Task VisibleScenarioActivity_GuaranteesListScenarios_WithoutAnyRetrievalHit()
+    {
+        GivenScenarioSkills();
+        _scenarioProbe.HasVisibleActivityAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir das Ergebnis.", "conv-state", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        FunctionNames(result).ShouldContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+        FunctionNames(result).ShouldNotContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
+    }
+
+    [Test]
+    public async Task WithoutScenarioActivity_TheProbeAloneGuaranteesNothing()
+    {
+        GivenScenarioSkills();
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir das Ergebnis.", "conv-no-state", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        FunctionNames(result).ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    [Test]
+    public async Task AFailingScenarioProbe_DegradesToNoGuarantee()
+    {
+        GivenScenarioSkills();
+        _scenarioProbe.HasVisibleActivityAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns<bool>(_ => throw new InvalidOperationException("db down"));
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir das Ergebnis.", "conv-probe-fails", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        FunctionNames(result).ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    /// <summary>
+    /// At a full provider cap list_scenarios carries the worst sort order in the set; without its guarantee
+    /// slot it would be the first skill truncated.
+    /// </summary>
+    [Test]
+    public async Task ListScenarios_SurvivesTheProviderCap()
+    {
+        GivenScenarioSkills();
+        SetupRetrievalResult(RetrievalHit(
+            RetrievedSkillName, NeighbourSkillName, ScenarioFollowUpSkills.ListScenariosSkillName));
+        _scenarioProbe.HasVisibleActivityAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir das Ergebnis.", "conv-cap", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de", maxToolsForProvider: 2);
+
+        var names = FunctionNames(result);
+        names.Count.ShouldBe(2);
+        names.ShouldContain(AlwaysOnSkillName);
+        names.ShouldContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    /// <summary>
+    /// Control for ListScenarios_SurvivesTheProviderCap: the same retrieval without scenario activity cuts
+    /// list_scenarios, so the survival above is the guarantee's doing and not the retrieval hit's.
+    /// </summary>
+    [Test]
+    public async Task ListScenarios_WithoutTheGuarantee_IsCutAtTheProviderCap()
+    {
+        GivenScenarioSkills();
+        SetupRetrievalResult(RetrievalHit(
+            RetrievedSkillName, NeighbourSkillName, ScenarioFollowUpSkills.ListScenariosSkillName));
+
+        var result = await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir das Ergebnis.", "conv-cap-control", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de", maxToolsForProvider: 2);
+
+        FunctionNames(result).ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    [Test]
+    public async Task ARetrievedScenarioIdConsumer_NeedsNoStateProbe()
+    {
+        GivenScenarioSkills(acceptTriggerKeywords: "[\"übernimm\"]");
+
+        await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Ja, übernimm es.", "conv-no-probe", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        await _scenarioProbe.DidNotReceiveWithAnyArgs().HasVisibleActivityAsync(default, default);
+    }
+
+    [Test]
+    public async Task WithoutAPermittedListScenarios_TheStateProbeIsNeverAsked()
+    {
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill> { CreateSkill(AlwaysOnSkillName, alwaysOn: true) });
+
+        await CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir das Ergebnis.", "conv-no-list", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de");
+
+        await _scenarioProbe.DidNotReceiveWithAnyArgs().HasVisibleActivityAsync(default, default);
+    }
+
+    private const string ContinuedSkillName = "update_shift";
+
+    private Task<SkillToolsetResult> AssembleWithContinuation(int maxTools) =>
+        CreateAssembler().AssembleAsync(
+            _agent, new List<string>(), "Zeig mir das Ergebnis.", "conv-follow-through", currentRoute: null,
+            Guid.NewGuid().ToString(), language: "de", maxTools, applyLearnedPhraseGuarantee: true,
+            excludedSkillNames: null, pinnedSkillNames: null, previousTurnSkillNames: null,
+            continuationSkillNames: [ContinuedSkillName], CancellationToken.None);
+
+    private void GivenScenarioSkillsAndAContinuedMutateSkill() =>
+        _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentSkill>
+            {
+                CreateSkill(AlwaysOnSkillName, alwaysOn: true),
+                CreateSkill(ContinuedSkillName),
+                CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, effect: SkillEffect.Read, sortOrder: 999)
+            });
+
+    [Test]
+    public async Task ScenarioHint_SurvivesTheCap_AgainstTheFollowThroughContinuation()
+    {
+        GivenScenarioSkillsAndAContinuedMutateSkill();
+        _scenarioProbe.HasVisibleActivityAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await AssembleWithContinuation(maxTools: 2);
+
+        var names = FunctionNames(result);
+        names.ShouldContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+        names.ShouldNotContain(ContinuedSkillName);
+    }
+
+    [Test]
+    public async Task WithoutScenarioActivity_TheFollowThroughContinuationKeepsItsSlot()
+    {
+        GivenScenarioSkillsAndAContinuedMutateSkill();
+
+        var result = await AssembleWithContinuation(maxTools: 2);
+
+        var names = FunctionNames(result);
+        names.ShouldContain(ContinuedSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
     private static List<string> FunctionNames(SkillToolsetResult result) =>
         result.Functions.Select(f => f.Name).ToList();
 
@@ -168,6 +407,7 @@ public class SkillToolsetAssemblerTests
             _skillPhrases,
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),
+            _scenarioProbe,
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         return new SkillToolsetAssembler(

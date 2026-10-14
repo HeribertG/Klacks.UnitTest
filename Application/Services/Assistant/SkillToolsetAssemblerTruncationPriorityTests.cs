@@ -101,6 +101,7 @@ public class SkillToolsetAssemblerTruncationPriorityTests
             phrases,
             relations,
             new NoTurnIntentExplainGuarantee(),
+            Substitute.For<IScenarioActivityProbe>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         _assembler = new SkillToolsetAssembler(

@@ -103,6 +103,7 @@ public class SkillToolsetAssemblerScoreTruncationTests
             phrases,
             relations,
             new NoTurnIntentExplainGuarantee(),
+            Substitute.For<IScenarioActivityProbe>(),
             Substitute.For<ILogger<SkillToolsetGuaranteeResolver>>());
 
         return new SkillToolsetAssembler(
