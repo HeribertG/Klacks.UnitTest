@@ -260,6 +260,7 @@
   "get_plan_status": "ReadOnly",
   "get_planning_deadline": "ReadOnly",
   "get_proactive_governance": "ReadOnly",
+  "get_replacement_status": "ReadOnly",
   "get_scheduling_defaults": "ReadOnly",
   "get_sealed_order_work_entries": "ReadOnly",
   "get_setup_guidance": "ReadOnly",

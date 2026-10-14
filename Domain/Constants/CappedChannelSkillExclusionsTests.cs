@@ -22,6 +22,8 @@ public class CappedChannelSkillExclusionsTests
         "restore_email", "fetch_new_emails", "translate_email", "list_emails_by_group", "get_email_group_tree"
     ];
 
+    private static readonly string[] AddedAfterB8 = ["get_replacement_status"];
+
     private static readonly string[] ReachableBeforeB8 =
     [
         "list_emails", "read_email", "get_email_analysis", "list_emails_by_client"
@@ -37,7 +39,7 @@ public class CappedChannelSkillExclusionsTests
     public void TheExclusions_AreExactlyTheSkillsB8OpenedToTheSupervisor()
     {
         CappedChannelSkillExclusions.All.OrderBy(name => name, StringComparer.Ordinal)
-            .ShouldBe(OpenedByB8.OrderBy(name => name, StringComparer.Ordinal));
+            .ShouldBe(OpenedByB8.Concat(AddedAfterB8).OrderBy(name => name, StringComparer.Ordinal));
     }
 
     [TestCaseSource(nameof(ReachableBeforeB8))]
@@ -66,6 +68,7 @@ public class CappedChannelSkillExclusionsTests
     }
 
     [TestCaseSource(nameof(OpenedByB8))]
+    [TestCaseSource(nameof(AddedAfterB8))]
     public void AnExcludedSkill_IsBlockedOnTheSlackBridge_AndOverMcp_ButNotInTheChat(string skill)
     {
         CappedChannelSkillExclusions.Blocks(skill, CappedChannels.SlackOwnerBridge, null).ShouldBeTrue();

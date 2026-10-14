@@ -8,6 +8,8 @@
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Assistant;
+using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Queries.Assistant;
 using Klacks.Api.Domain.Models.Assistant.Escalation;
 
@@ -17,13 +19,57 @@ namespace Klacks.UnitTest.Handlers.Assistant;
 public class GetRunningEscalationChainsQueryHandlerTests
 {
     private IEscalationChainRepository _chainRepository = null!;
+    private IEscalationChainVisibilityFilter _visibilityFilter = null!;
+    private IUserService _userService = null!;
     private GetRunningEscalationChainsQueryHandler _sut = null!;
 
     [SetUp]
     public void Setup()
     {
         _chainRepository = Substitute.For<IEscalationChainRepository>();
-        _sut = new GetRunningEscalationChainsQueryHandler(_chainRepository);
+        _visibilityFilter = Substitute.For<IEscalationChainVisibilityFilter>();
+        _visibilityFilter.FilterVisibleAsync(Arg.Any<IReadOnlyCollection<EscalationChain>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<IReadOnlyCollection<EscalationChain>>().ToList()));
+        _userService = Substitute.For<IUserService>();
+        _userService.GetRights().Returns(new List<string>());
+        _sut = new GetRunningEscalationChainsQueryHandler(_chainRepository, _visibilityFilter, _userService);
+    }
+
+    [Test]
+    public async Task Handle_ReturnsOnlyChainsTheVisibilityFilterKeeps()
+    {
+        var visible = new EscalationChain { Id = Guid.NewGuid(), GroupId = Guid.NewGuid() };
+        var hidden = new EscalationChain { Id = Guid.NewGuid(), GroupId = Guid.NewGuid() };
+        _chainRepository.GetRunningChainsWithStagesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationChain> { visible, hidden });
+        _visibilityFilter.FilterVisibleAsync(Arg.Any<IReadOnlyCollection<EscalationChain>>(), "planner-a", Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationChain> { visible });
+
+        var result = await _sut.Handle(new GetRunningEscalationChainsQuery("planner-a"), CancellationToken.None);
+
+        Assert.That(result.Select(r => r.Id), Is.EqualTo(new[] { visible.Id }));
+    }
+
+    [Test]
+    public async Task Handle_CanCancel_FollowsTheCancelPolicy()
+    {
+        var chain = new EscalationChain
+        {
+            Id = Guid.NewGuid(),
+            GroupId = Guid.NewGuid(),
+            Stages = new List<EscalationStage> { new() { Rank = 1, UserId = "holder", Status = EscalationStageStatus.Notified } }
+        };
+        _chainRepository.GetRunningChainsWithStagesAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationChain> { chain });
+
+        var holder = await _sut.Handle(new GetRunningEscalationChainsQuery("holder"), CancellationToken.None);
+        var stranger = await _sut.Handle(new GetRunningEscalationChainsQuery("stranger"), CancellationToken.None);
+        _userService.GetRights().Returns(new List<string> { Klacks.Api.Domain.Constants.Roles.Authorised });
+        var supervisor = await _sut.Handle(new GetRunningEscalationChainsQuery("stranger"), CancellationToken.None);
+
+        Assert.That(holder[0].CanCancel, Is.True);
+        Assert.That(stranger[0].CanCancel, Is.False);
+        Assert.That(supervisor[0].CanCancel, Is.True);
     }
 
     [Test]

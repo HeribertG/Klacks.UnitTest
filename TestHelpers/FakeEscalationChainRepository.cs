@@ -71,6 +71,12 @@ public class FakeEscalationChainRepository : IEscalationChainRepository
         Task.FromResult<IReadOnlyList<EscalationChain>>(
             _chains.Values.Where(c => c.Status == EscalationChainStatus.Running).OrderBy(c => c.DeadlineUtc).ToList());
 
+    public Task<IReadOnlyList<EscalationChain>> GetAbsenceCoverageChainsByAbsentClientAsync(
+        Guid absentClientId, DateTime shiftStartFromUtc, DateTime shiftStartUntilUtc, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<EscalationChain>>(
+            _chains.Values.Where(c => c.Purpose == EscalationChainPurpose.AbsenceCoverage && c.AbsentClientId == absentClientId
+                && c.ShiftStartUtc >= shiftStartFromUtc && c.ShiftStartUtc < shiftStartUntilUtc).OrderBy(c => c.ShiftStartUtc).ToList());
+
     public Task<bool> IsBreakDeletedAsync(Guid breakId, CancellationToken cancellationToken = default) =>
         Task.FromResult(_deletedBreakIds.Contains(breakId));
 

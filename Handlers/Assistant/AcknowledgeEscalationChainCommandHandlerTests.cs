@@ -12,6 +12,9 @@
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
 
+using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Domain.Models.Assistant.Escalation;
+
 namespace Klacks.UnitTest.Handlers.Assistant;
 
 [TestFixture]
@@ -21,6 +24,7 @@ public class AcknowledgeEscalationChainCommandHandlerTests
 
     private IEscalationChainService _chainService = null!;
     private IEscalationChainRepository _chainRepository = null!;
+    private IEscalationChainVisibilityFilter _visibilityFilter = null!;
     private AcknowledgeEscalationChainCommandHandler _sut = null!;
 
     [SetUp]
@@ -28,7 +32,9 @@ public class AcknowledgeEscalationChainCommandHandlerTests
     {
         _chainService = Substitute.For<IEscalationChainService>();
         _chainRepository = Substitute.For<IEscalationChainRepository>();
-        _sut = new AcknowledgeEscalationChainCommandHandler(_chainService, _chainRepository);
+        _visibilityFilter = Substitute.For<IEscalationChainVisibilityFilter>();
+        _visibilityFilter.IsVisibleAsync(Arg.Any<EscalationChain>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        _sut = new AcknowledgeEscalationChainCommandHandler(_chainService, _chainRepository, _visibilityFilter);
     }
 
     [Test]
@@ -104,5 +110,21 @@ public class AcknowledgeEscalationChainCommandHandlerTests
         await _sut.Handle(new AcknowledgeEscalationChainCommand(chainId, UserId), CancellationToken.None);
 
         await _chainService.Received(1).AcknowledgeChainAsync(chainId, UserId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_ChainHiddenFromCaller_AnswersLikeAMissingChainWithoutReachingTheService()
+    {
+        var chainId = Guid.NewGuid();
+        _chainRepository.GetByIdWithStagesAsync(chainId, Arg.Any<CancellationToken>())
+            .Returns(new EscalationChain { Id = chainId, GroupId = Guid.NewGuid() });
+        _visibilityFilter.IsVisibleAsync(Arg.Any<EscalationChain>(), UserId, Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await _sut.Handle(new AcknowledgeEscalationChainCommand(chainId, UserId), CancellationToken.None);
+
+        Assert.That(result.Outcome, Is.EqualTo(EscalationAcknowledgeOutcome.NoNotifiedStage));
+        Assert.That(result.ChainStatus, Is.Null);
+        await _chainService.DidNotReceive().AcknowledgeChainAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _chainRepository.DidNotReceive().GetStatusAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 }
