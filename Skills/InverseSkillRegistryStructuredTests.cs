@@ -9,6 +9,7 @@
 /// offered as a restoration of the previous state, so a pair that cannot restore it must not be there.
 /// </summary>
 
+using Klacks.Api.Application.Skills;
 using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
@@ -148,12 +149,22 @@ public class InverseSkillRegistryStructuredTests
         }
     }
 
+    // B2 plan §2.1 (owner decisions 2026-10-12): delete_work was Reversible before restore_work existed, so declaring
+    // its inverse releases nothing from the gate - it makes the old class true and lets rollback_my_last_change
+    // propose the restore. restore_work is a new skill whose class is decided here, with delete_work as its inverse.
+    private static readonly string[] ApprovedVisibleStructuredPairs = ["delete_work", "restore_work"];
+
     [Test]
     public void EveryStructuredEntry_IsUndoOnly_SoNoSkillLeavesTheAutonomyGate()
     {
         foreach (var (skillName, entry) in InverseSkillRegistry.Map)
         {
             if (entry.CopiedArguments.Count == 0 && entry.ResultIdProperty == null)
+            {
+                continue;
+            }
+
+            if (ApprovedVisibleStructuredPairs.Contains(skillName, StringComparer.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -174,6 +185,47 @@ public class InverseSkillRegistryStructuredTests
         new SkillRiskClassifier()
             .Classify(new SkillDescriptor("add_shift_to_group", string.Empty, SkillCategory.Crud, [], [], [], null))
             .ShouldNotBe(SkillRiskClass.Reversible);
+    }
+
+    [Test]
+    public void TheApprovedPair_BuildsItsUndoFromTheSameWorkId_AndIsVisibleToTheRollbackView()
+    {
+        foreach (var (original, inverse) in new[] { ("delete_work", "restore_work"), ("restore_work", "delete_work") })
+        {
+            InverseSkillRegistry.TryBuildUndo(original, """{"workId":"w-1"}""", "{}", out var undo).ShouldBeTrue();
+            undo!.SkillName.ShouldBe(inverse);
+            undo.Arguments["workId"].ShouldBe("w-1");
+
+            InverseSkillRegistry.TryGetRollbackEntry(original, out var visible).ShouldBeTrue();
+            visible.SkillName.ShouldBe(inverse);
+        }
+    }
+
+    [Test]
+    public void ReassignWork_IsItsOwnInverse_AsProseOnly_BecauseItNeedsBothTheArgumentAndTheResult()
+    {
+        InverseSkillRegistry.TryGetRollbackEntry("reassign_work", out var entry).ShouldBeTrue();
+        entry.SkillName.ShouldBe("reassign_work");
+        entry.CopiedArguments.ShouldBeEmpty();
+        entry.ResultIdProperty.ShouldBeNull();
+    }
+
+    [Test]
+    public void BulkDeleteWorks_IsAManualEntry_PointingAtRestoreWorkAndTheUndoWindow_AndStaysSensitive()
+    {
+        InverseSkillRegistry.TryGetRollbackEntry(BulkDeleteWorksSkill.SkillName, out var entry).ShouldBeTrue();
+        entry.SkillName.ShouldBe(InverseSkillRegistry.ManualMarker);
+        entry.ParamHint.ShouldContain("restore_work");
+        entry.ParamHint.ShouldContain("DeletedWorkIds");
+        entry.ParamHint.ShouldContain(WorkRestoreDefaults.UndoWindowSeconds.ToString());
+
+        InverseSkillRegistry.TryBuildUndo(
+            BulkDeleteWorksSkill.SkillName, """{"clientId":"c-1"}""", """{"DeletedWorkIds":["w-1"]}""", out _)
+            .ShouldBeFalse();
+
+        new SkillRiskClassifier()
+            .Classify(new SkillDescriptor(BulkDeleteWorksSkill.SkillName, string.Empty, SkillCategory.Crud, [], [], [], null))
+            .ShouldBe(SkillRiskClass.Sensitive);
     }
 
     [Test]

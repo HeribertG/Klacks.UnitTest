@@ -25,7 +25,8 @@ public class ScheduleSkillPermissionAlignmentTests
 
     private static readonly string[] FloorScheduleSkills =
     [
-        "place_work", "update_work", "delete_work", "confirm_work", "unconfirm_work",
+        "place_work", "update_work", "delete_work", "restore_work", "reassign_work", "bulk_delete_works",
+        "confirm_work", "unconfirm_work",
         "add_break", "update_break", "delete_break", "bulk_add_absence_for_group",
         "add_workchange", "update_workchange", "delete_workchange",
         "add_break_placeholder", "update_break_placeholder", "delete_break_placeholder",

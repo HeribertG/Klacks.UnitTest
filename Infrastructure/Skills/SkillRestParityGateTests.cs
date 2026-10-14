@@ -10,7 +10,9 @@
 /// create_test_environment, which writes demo employees, a contract and shifts into the live installation (gate
 /// CanEditSettings). The opposite direction is pinned too: the client-note skills mirror AnnotationsController, whose
 /// writes need CanEditClientNotes alone (part of the Planer floor), so the Planer who may write a note in the UI may
-/// also ask Klacksy to.
+/// also ask Klacksy to; and the grid-intent skills restore_work, reassign_work and bulk_delete_works mirror the
+/// WorksController endpoints Restore, ReassignClient and the bulk DELETE, which carry no role attribute (gate
+/// CanEditSchedule alone, part of the Planer floor).
 /// The rule applied is SkillExecutorService.ValidatePermissions: the Admin role passes, everyone else needs every
 /// required right among Permissions.ExpandRoles of their roles.
 /// </summary>
@@ -46,7 +48,10 @@ public class SkillRestParityGateTests
     {
         ["add_client_note"] = Permissions.CanEditClientNotes,
         ["update_annotation"] = Permissions.CanEditClientNotes,
-        ["delete_annotation"] = Permissions.CanEditClientNotes
+        ["delete_annotation"] = Permissions.CanEditClientNotes,
+        ["restore_work"] = Permissions.CanEditSchedule,
+        ["reassign_work"] = Permissions.CanEditSchedule,
+        ["bulk_delete_works"] = Permissions.CanEditSchedule
     };
 
     private static IEnumerable<string> AdminOnlySkills => AdminOnlyGateBySkill.Keys;
@@ -91,8 +96,8 @@ public class SkillRestParityGateTests
         Seeds()[skill].RequiredPermissions.ShouldBe(
             new List<string> { PlannerFloorGateBySkill[skill] },
             $"'{skill}' sends the same request as a REST action gated on {PlannerFloorGateBySkill[skill]} alone " +
-            "(AnnotationsController). A stricter skill gate such as CanEditClients locks out the Planer the UI lets " +
-            "write the note. Remember the version bump when changing it.");
+            "(AnnotationsController, WorksController). A stricter skill gate such as CanEditClients locks out the " +
+            "Planer the UI lets do it. Remember the version bump when changing it.");
     }
 
     [TestCaseSource(nameof(PlannerFloorSkills))]

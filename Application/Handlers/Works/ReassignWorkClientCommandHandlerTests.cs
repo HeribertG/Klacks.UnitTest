@@ -16,7 +16,9 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Mappers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Schedules;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Domain.Services.Schedules;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -37,6 +39,7 @@ public class ReassignWorkClientCommandHandlerTests
     private IUnitOfWork _unitOfWork = null!;
     private IOvertimeCascadeService _overtimeCascadeService = null!;
     private IPreCommitConflictChecker _conflictChecker = null!;
+    private IClientPlanningPeriodGuard _planningPeriodGuard = null!;
     private ReassignWorkClientCommandHandler _handler = null!;
 
     private readonly Guid _workId = Guid.NewGuid();
@@ -61,6 +64,7 @@ public class ReassignWorkClientCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _overtimeCascadeService = Substitute.For<IOvertimeCascadeService>();
         _conflictChecker = Substitute.For<IPreCommitConflictChecker>();
+        _planningPeriodGuard = Substitute.For<IClientPlanningPeriodGuard>();
         _conflictChecker.CheckAsync(
                 Arg.Any<IReadOnlyList<PlannedWorkRow>>(),
                 Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
@@ -103,7 +107,37 @@ public class ReassignWorkClientCommandHandlerTests
             _unitOfWork,
             _overtimeCascadeService,
             _conflictChecker,
+            Substitute.For<IHttpContextAccessor>(),
+            new ParentWorkLockGuard(new WorkLockLevelService()),
+            _planningPeriodGuard,
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+    }
+
+    [Test]
+    public async Task Handle_ChecksThePlanningPeriod_OfTheTargetClientOnTheWorksDay()
+    {
+        await _handler.Handle(new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        await _planningPeriodGuard.Received(1).EnsureWithinPeriodsAsync(
+            Arg.Is<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(cells =>
+                cells.Count == 1 && cells.Single().ClientId == _targetClientId && cells.Single().Date == _date),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Handle_Refuses_WhenTheTargetIsOutsideItsPlanningPeriod_AndWritesNothing()
+    {
+        _planningPeriodGuard.EnsureWithinPeriodsAsync(
+                Arg.Any<IReadOnlyCollection<(Guid ClientId, DateOnly Date)>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidRequestException("outside the membership"));
+
+        Func<Task> act = async () => await _handler.Handle(
+            new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        (await Should.ThrowAsync<InvalidRequestException>(act)).Message.ShouldContain("membership");
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+        await _cascadeService.DidNotReceiveWithAnyArgs().MoveChildrenAsync(default, default, default);
+        await _workRepository.DidNotReceive().Get(_workId);
     }
 
     [Test]

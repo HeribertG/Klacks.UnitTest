@@ -231,7 +231,7 @@ public class TurnGoldsetGoldenCaseSeedLoaderTests
 
     // The numbers the acceptance criteria name, measured against the file that actually ships.
     [Test]
-    public void TheShippedGoldset_Yields326CasesSplit234TrainAnd92Holdout()
+    public void TheShippedGoldset_Yields339CasesSplit244TrainAnd95Holdout()
     {
         var path = Path.Combine(
             FindRepositoryRoot(), ApiProjectDirectory,
@@ -243,9 +243,9 @@ public class TurnGoldsetGoldenCaseSeedLoaderTests
         document.ShouldNotBeNull();
         var withTool = document!.Items.Where(i => !string.IsNullOrWhiteSpace(i.ExpectedTool)).ToList();
 
-        withTool.Count.ShouldBe(326);
-        withTool.Count(i => GoldsetPartitioner.Resolve(i.Id) == GoldenCasePartitions.Train).ShouldBe(234);
-        withTool.Count(i => GoldsetPartitioner.Resolve(i.Id) == GoldenCasePartitions.Holdout).ShouldBe(92);
+        withTool.Count.ShouldBe(339);
+        withTool.Count(i => GoldsetPartitioner.Resolve(i.Id) == GoldenCasePartitions.Train).ShouldBe(244);
+        withTool.Count(i => GoldsetPartitioner.Resolve(i.Id) == GoldenCasePartitions.Holdout).ShouldBe(95);
     }
 
     private static SkillLearningGoldenCase Existing(string query, string locale, string expectedSourceId) =>

@@ -34,11 +34,13 @@ public class WorkLockLevelWriteTests
     private IDayLockService _dayLockService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private IContainerWorkCascadeService _cascadeService = null!;
 
     [SetUp]
     public void SetUp()
     {
         _workRepository = Substitute.For<IWorkRepository>();
+        _cascadeService = Substitute.For<IContainerWorkCascadeService>();
         _clientVisibilityGuard = Substitute.For<IClientVisibilityGuard>();
         _dayLockService = Substitute.For<IDayLockService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
@@ -157,6 +159,89 @@ public class WorkLockLevelWriteTests
         _workRepository.DidNotReceive().Remove(Arg.Any<Work>());
     }
 
+    [Test]
+    public async Task Reassign_OfAClosedWork_IsRefusedEvenForAnAdmin_NothingWritten()
+    {
+        var stored = GivenStoredWork(WorkLockLevel.Closed, null);
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => NewReassignHandler().Handle(
+            new ReassignWorkClientCommand(stored.Id, Guid.NewGuid()), CancellationToken.None));
+
+        ex.Message.ShouldBe(ParentWorkLockGuard.ClosedWorkMessage);
+        await _workRepository.DidNotReceive().Get(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Reassign_OfAnApprovedWork_AsRegularUser_IsRefused_NothingWritten()
+    {
+        WorksTestHelpers.GivenUserIsRegularUser(_httpContextAccessor, UserName);
+        var stored = GivenStoredWork(WorkLockLevel.Approved, null);
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => NewReassignHandler().Handle(
+            new ReassignWorkClientCommand(stored.Id, Guid.NewGuid()), CancellationToken.None));
+
+        ex.Message.ShouldBe(ParentWorkLockGuard.SealedWorkMessage);
+        await _workRepository.DidNotReceive().Get(Arg.Any<Guid>());
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Reassign_OfAnApprovedWork_AsAuthorised_PassesTheLockGuard()
+    {
+        WorksTestHelpers.GivenUserIsAuthorised(_httpContextAccessor, UserName);
+        var stored = GivenStoredWork(WorkLockLevel.Approved, null);
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => NewReassignHandler().Handle(
+            new ReassignWorkClientCommand(stored.Id, Guid.NewGuid()), CancellationToken.None));
+
+        ex.Message.ShouldBe(PassedGuardSentinel);
+    }
+
+    [Test]
+    public async Task Reassign_OfAClosedScenarioWork_IsNotCheckedByTheLockGuard()
+    {
+        var stored = GivenStoredWork(WorkLockLevel.Closed, Guid.NewGuid());
+
+        var ex = await Should.ThrowAsync<InvalidRequestException>(() => NewReassignHandler().Handle(
+            new ReassignWorkClientCommand(stored.Id, Guid.NewGuid()), CancellationToken.None));
+
+        ex.Message.ShouldBe(PassedGuardSentinel);
+    }
+
+    [Test]
+    public async Task BulkDelete_RemovesTheContainerChildrenOfEveryDeletedWork()
+    {
+        var first = NewWork(WorkLockLevel.None, null);
+        var second = NewWork(WorkLockLevel.None, null);
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work> { first, second });
+        var periodHours = Substitute.For<IPeriodHoursService>();
+        periodHours.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
+
+        await NewBulkDeleteHandler(periodHours).Handle(
+            new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = [first.Id, second.Id] }),
+            CancellationToken.None);
+
+        await _cascadeService.Received(1).DeleteChildrenAsync(first.Id);
+        await _cascadeService.Received(1).DeleteChildrenAsync(second.Id);
+        _workRepository.Received(1).Remove(first);
+        _workRepository.Received(1).Remove(second);
+    }
+
+    [Test]
+    public async Task BulkDelete_WithAClosedWork_RemovesNoContainerChildren()
+    {
+        var open = NewWork(WorkLockLevel.None, null);
+        var closed = NewWork(WorkLockLevel.Closed, null);
+        _workRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>()).Returns(new List<Work> { open, closed });
+
+        await Should.ThrowAsync<InvalidRequestException>(() => NewBulkDeleteHandler().Handle(
+            new BulkDeleteWorksCommand(new BulkDeleteWorksRequest { WorkIds = [open.Id, closed.Id] }),
+            CancellationToken.None));
+
+        await _cascadeService.DidNotReceive().DeleteChildrenAsync(Arg.Any<Guid>());
+    }
+
     private Work GivenStoredWork(WorkLockLevel level, Guid? analyseToken)
     {
         var stored = NewWork(level, analyseToken);
@@ -184,12 +269,23 @@ public class WorkLockLevelWriteTests
             Substitute.For<IOvertimeCascadeService>(), _httpContextAccessor, NewGuard(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
-    private BulkDeleteWorksCommandHandler NewBulkDeleteHandler()
+    private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
             _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
+            Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
+            Substitute.For<IWorkNotificationFacade>(), _cascadeService,
+            Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
+            Substitute.For<IOvertimeCascadeService>(), Substitute.For<IPreCommitConflictChecker>(),
+            _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
+            Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
+
+    private BulkDeleteWorksCommandHandler NewBulkDeleteHandler(IPeriodHoursService? periodHoursService = null)
+        => new(
+            _workRepository, TestScheduleRowAccess.Over(_clientVisibilityGuard), new ScheduleMapper(),
+            periodHoursService ?? Substitute.For<IPeriodHoursService>(),
             Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkNotificationFacade>(),
-            Substitute.For<IOvertimeCascadeService>(), Substitute.For<IDayLockService>(), _httpContextAccessor,
-            NewGuard(), Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
+            Substitute.For<IOvertimeCascadeService>(), _cascadeService, Substitute.For<IDayLockService>(),
+            _httpContextAccessor, NewGuard(), Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
 
     private static Work NewWork(WorkLockLevel level, Guid? analyseToken)
         => new()

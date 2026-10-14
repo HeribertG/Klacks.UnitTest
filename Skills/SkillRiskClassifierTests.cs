@@ -52,6 +52,7 @@ public class SkillRiskClassifierTests
     [TestCase("delete_expense")]
     [TestCase("delete_workchange")]
     [TestCase("delete_break_placeholder")]
+    [TestCase("bulk_delete_works")]
     [TestCase("delete_period_cap_rule")]
     [TestCase("delete_llm_provider")]
     [TestCase("update_deepl_settings")]
@@ -85,6 +86,8 @@ public class SkillRiskClassifierTests
     [TestCase("create_contract")]
     [TestCase("add_expense")]
     [TestCase("delete_work")]
+    [TestCase("restore_work")]
+    [TestCase("reassign_work")]
     [TestCase("cancel_wizard_job")]
     [TestCase("delete_email")]
     public void Classify_InverseMappedOrExtraSkills_ReturnsReversible(string name)

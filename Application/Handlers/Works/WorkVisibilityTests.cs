@@ -311,7 +311,7 @@ public class WorkVisibilityTests
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         var handler = new BulkDeleteWorksCommandHandler(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService, _completionService,
-            _notificationFacade, _overtimeCascadeService, _dayLockService,
+            _notificationFacade, _overtimeCascadeService, _cascadeService, _dayLockService,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
 
@@ -321,6 +321,7 @@ public class WorkVisibilityTests
 
         _workRepository.Received(1).Remove(visible);
         _workRepository.DidNotReceive().Remove(hidden);
+        await _cascadeService.DidNotReceive().DeleteChildrenAsync(hidden.Id);
         response.DeletedIds.ShouldBe(new[] { visible.Id });
         response.FailedCount.ShouldBe(2);
     }
@@ -335,7 +336,7 @@ public class WorkVisibilityTests
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
         var handler = new BulkDeleteWorksCommandHandler(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService, _completionService,
-            _notificationFacade, _overtimeCascadeService, _dayLockService,
+            _notificationFacade, _overtimeCascadeService, _cascadeService, _dayLockService,
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<ILogger<BulkDeleteWorksCommandHandler>>());
 
@@ -345,6 +346,7 @@ public class WorkVisibilityTests
 
         _workRepository.Received(1).Remove(visible);
         _workRepository.DidNotReceive().Remove(hidden);
+        await _cascadeService.DidNotReceive().DeleteChildrenAsync(hidden.Id);
         response.DeletedIds.ShouldBe(new[] { visible.Id });
         response.FailedCount.ShouldBe(2);
     }
@@ -687,6 +689,8 @@ public class WorkVisibilityTests
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
+            Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
+            Substitute.For<IClientPlanningPeriodGuard>(),
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 
     private (UpdateContainerWorkChildrenCommandHandler Handler, IContainerWorkChildrenManager ChildrenManager)
