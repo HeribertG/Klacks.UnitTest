@@ -80,6 +80,8 @@ public class SkillRiskClassifierTests
     [TestCase("place_work")]
     [TestCase("add_break")]
     [TestCase("confirm_work")]
+    [TestCase("confirm_break")]
+    [TestCase("unconfirm_break")]
     [TestCase("approve_day")]
     [TestCase("reopen_period")]
     [TestCase("create_branch")]

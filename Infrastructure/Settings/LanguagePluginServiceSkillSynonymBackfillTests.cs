@@ -123,6 +123,23 @@ public class LanguagePluginServiceSkillSynonymBackfillTests
     }
 
     [Test]
+    public async Task Backfill_PackGainedAPhrase_AddsItToAnAlreadyInstalledLanguageOnce()
+    {
+        const string addedTerm = "把员工加入工时加成组";
+        await _service.ApplyInstalledSkillSynonymBackfillAsync();
+        File.WriteAllText(
+            Path.Combine(_pluginDirectory, ManifestCode, "skill-synonyms.json"),
+            $"{{\"{SkillName}\": [\"{Term}\", \"{addedTerm}\"]}}");
+
+        await _service.ApplyInstalledSkillSynonymBackfillAsync();
+        await _service.ApplyInstalledSkillSynonymBackfillAsync();
+
+        _skill.Synonyms![ManifestCode].ShouldBe([Term, addedTerm]);
+        await _skillRepository.Received(2).UpdateAsync(_skill, Arg.Any<CancellationToken>());
+        (await _context.SkillPhrases.AsNoTracking().CountAsync()).ShouldBe(2);
+    }
+
+    [Test]
     public async Task Backfill_RunTwice_WritesTheSkillOnlyOnce()
     {
         await _service.ApplyInstalledSkillSynonymBackfillAsync();

@@ -12,7 +12,8 @@
 /// writes need CanEditClientNotes alone (part of the Planer floor), so the Planer who may write a note in the UI may
 /// also ask Klacksy to; and the grid-intent skills restore_work, reassign_work and bulk_delete_works mirror the
 /// WorksController endpoints Restore, ReassignClient and the bulk DELETE, which carry no role attribute (gate
-/// CanEditSchedule alone, part of the Planer floor).
+/// CanEditSchedule alone, part of the Planer floor); confirm_break and unconfirm_break mirror BreaksController Confirm and
+/// Unconfirm, which carry no role attribute either (the lock-level rules inside the handler decide by role).
 /// A third direction covers the Supervisor: the messaging skills send_message and read_messages mirror
 /// MessagingController (Admin plus Authorised, group-visibility scoped inside the skill) and the e-mail inbox skills
 /// mirror ReceivedEmailController (Admin plus Authorised, group-visibility scoped inside the handlers); both carry
@@ -64,6 +65,8 @@ public class SkillRestParityGateTests
         ["restore_work"] = Permissions.CanEditSchedule,
         ["reassign_work"] = Permissions.CanEditSchedule,
         ["bulk_delete_works"] = Permissions.CanEditSchedule,
+        ["confirm_break"] = Permissions.CanEditSchedule,
+        ["unconfirm_break"] = Permissions.CanEditSchedule,
         ["list_messaging_providers"] = Permissions.CanViewClients
     };
 

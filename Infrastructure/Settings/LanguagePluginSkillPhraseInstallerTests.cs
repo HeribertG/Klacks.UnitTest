@@ -232,18 +232,31 @@ public class LanguagePluginSkillPhraseInstallerTests
         await _skillRepository.Received(1).UpdateAsync(_matching, Arg.Any<CancellationToken>());
     }
 
-    // The backfill runs on every boot: a skill that already carries the language must cost no write,
+    // The backfill runs on every boot: a skill that already carries every pack phrase must cost no write,
     // otherwise every restart rewrites every skill of every installed pack.
     [Test]
-    public async Task Backfill_LeavesSkillThatAlreadyHasTheLanguageUntouched()
+    public async Task Backfill_LeavesSkillThatAlreadyHasThePackPhrasesUntouched()
+    {
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = [Term, "recznie dodane"] };
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe([Term, "recznie dodane"]);
+        await _skillRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+        (await _context.SkillPhrases.AsNoTracking().CountAsync()).ShouldBe(0);
+    }
+
+    // A pack update that adds a phrase to a skill must reach installations that already carry the language;
+    // phrases that are not from the pack stay.
+    [Test]
+    public async Task Backfill_AddsAPackPhraseMissingFromALanguageTheSkillAlreadyHas_KeepingOtherEntries()
     {
         _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = ["recznie dodane"] };
 
         await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
 
-        _matching.Synonyms[Code].ShouldBe(["recznie dodane"]);
-        await _skillRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
-        (await _context.SkillPhrases.AsNoTracking().CountAsync()).ShouldBe(0);
+        _matching.Synonyms[Code].ShouldBe([Term, "recznie dodane"]);
+        await _skillRepository.Received(1).UpdateAsync(_matching, Arg.Any<CancellationToken>());
     }
 
     // zh-CN was stored in two spellings on existing installations; a key that differs only in case must
@@ -251,12 +264,90 @@ public class LanguagePluginSkillPhraseInstallerTests
     [Test]
     public async Task Backfill_TreatsAKeyInOtherCasingAsPresent()
     {
-        _matching.Synonyms = new Dictionary<string, List<string>> { [Code.ToUpperInvariant()] = ["recznie dodane"] };
+        var otherCasing = Code.ToUpperInvariant();
+        _matching.Synonyms = new Dictionary<string, List<string>> { [otherCasing] = [Term] };
 
         await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
 
         _matching.Synonyms.ContainsKey(Code).ShouldBeFalse();
         await _skillRepository.DidNotReceive().UpdateAsync(Arg.Any<AgentSkill>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Backfill_AddsAMissingPackPhraseUnderTheExistingKeyInOtherCasing()
+    {
+        var otherCasing = Code.ToUpperInvariant();
+        _matching.Synonyms = new Dictionary<string, List<string>> { [otherCasing] = ["recznie dodane"] };
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms.ContainsKey(Code).ShouldBeFalse();
+        _matching.Synonyms[otherCasing].ShouldBe([Term, "recznie dodane"]);
+    }
+
+    private async Task RejectAsync(Guid id)
+    {
+        var row = await _context.SkillPhrases.SingleAsync(phrase => phrase.Id == id);
+        row.Status = SkillPhraseStatuses.Rejected;
+        await _context.SaveChangesAsync();
+        _context.Entry(row).State = EntityState.Detached;
+    }
+
+    // A phrase an administrator withdrew stays withdrawn: the pack may list it again, but neither the jsonb
+    // mirror nor skill_phrase gets it back, the Rejected row survives, and the skill is not rewritten on
+    // every boot because of it.
+    [Test]
+    public async Task Backfill_DoesNotBringBackARejectedPhrase_AndKeepsTheRejectedRow()
+    {
+        const string otherTerm = "drugi termin";
+        File.WriteAllText(
+            Path.Combine(_pluginDirectory, Code, "skill-synonyms.json"),
+            $"{{\"{MatchingSkill}\": [\"{Term}\", \"{otherTerm}\"]}}");
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = ["recznie dodane"] };
+        var rejectedId = await _phraseRepository.TryAddLearnedAsync(
+            SkillPhraseOwnerKinds.Skill, MatchingSkill, Code, SkillPhraseKinds.Synonym, Term);
+        await RejectAsync(rejectedId!.Value);
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe([otherTerm, "recznie dodane"]);
+        await _skillRepository.Received(1).UpdateAsync(_matching, Arg.Any<CancellationToken>());
+
+        var rows = await _context.SkillPhrases.AsNoTracking().ToListAsync();
+        var rejected = rows.Single(row => row.Phrase == Term);
+        rejected.Status.ShouldBe(SkillPhraseStatuses.Rejected);
+        rejected.Source.ShouldBe(SkillPhraseSources.Learned);
+        rows.Single(row => row.Source == SkillPhraseSources.LanguagePack).Phrase.ShouldBe(otherTerm);
+    }
+
+    [Test]
+    public async Task Install_DoesNotBringBackARejectedPhrase()
+    {
+        var rejectedId = await _phraseRepository.TryAddLearnedAsync(
+            SkillPhraseOwnerKinds.Skill, MatchingSkill, Code, SkillPhraseKinds.Synonym, Term);
+        await RejectAsync(rejectedId!.Value);
+
+        await _installer.InstallSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms![Code].ShouldBeEmpty();
+        (await _context.SkillPhrases.AsNoTracking().CountAsync(row => row.Source == SkillPhraseSources.LanguagePack))
+            .ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Backfill_TrimsPackPhrasesBeforeStoringThem_SoTheNextBootFindsThemPresent()
+    {
+        File.WriteAllText(
+            Path.Combine(_pluginDirectory, Code, "skill-synonyms.json"),
+            $"{{\"{MatchingSkill}\": [\"  {Term}  \"]}}");
+        _matching.Synonyms = new Dictionary<string, List<string>> { [Code] = ["recznie dodane"] };
+
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+        await _installer.BackfillMissingSkillSynonymsAsync(_scope, Code);
+
+        _matching.Synonyms[Code].ShouldBe([Term, "recznie dodane"]);
+        await _skillRepository.Received(1).UpdateAsync(_matching, Arg.Any<CancellationToken>());
     }
 
     [Test]
