@@ -5,6 +5,7 @@
 /// ListReplacementRequestsQuery (default period 7 days back to 14 ahead), groups the rows per scenario x date x shift with the
 /// derived coverage status, labels a merely proposed candidate as not asked, hides the name of a shift outside the caller's
 /// group visibility, says plainly when nothing is recorded, and shows only the escalation chains the visibility filter keeps.
+/// The cancel reason of a chain reaches only an Admin, an Authorised supervisor or the canceller.
 /// </summary>
 
 using System.Text.Json;
@@ -12,6 +13,7 @@ using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -251,5 +253,49 @@ public class GetReplacementStatusSkillTests
         Assert.That(chains.GetArrayLength(), Is.EqualTo(1));
         Assert.That(chains[0].GetProperty("TakenOverBy").GetString(), Is.EqualTo("Planner B"));
         Assert.That(chains[0].GetProperty("WokenPlanners").GetArrayLength(), Is.EqualTo(2));
+    }
+
+    [TestCase(null, false, false)]
+    [TestCase(Roles.Admin, false, true)]
+    [TestCase(Roles.Authorised, false, true)]
+    [TestCase(null, true, true)]
+    public async Task EscalationChains_CancelReason_OnlyForAdminSupervisorOrCanceller(string? role, bool callerCancelled, bool expectReason)
+    {
+        var plain = Ctx();
+        var context = role is null
+            ? plain
+            : new SkillExecutionContext
+            {
+                UserId = plain.UserId,
+                TenantId = plain.TenantId,
+                UserName = plain.UserName,
+                UserPermissions = new List<string>(plain.UserPermissions) { role }
+            };
+
+        var chain = new EscalationChain
+        {
+            Id = Guid.NewGuid(),
+            Status = EscalationChainStatus.Cancelled,
+            CancelledByUserId = callerCancelled ? context.UserId.ToString().ToUpperInvariant() : "someone-else",
+            CancelledByUserName = "Canceller",
+            CancelReason = "covered by phone"
+        };
+        _chains.GetAbsenceCoverageChainsByAbsentClientAsync(
+                AbsentId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationChain> { chain });
+
+        var result = await Skill().ExecuteAsync(context, ById());
+
+        var view = Json(result).GetProperty("EscalationChains")[0];
+        Assert.That(view.GetProperty("CancelledBy").GetString(), Is.EqualTo("Canceller"));
+        var reason = view.GetProperty("CancelReason");
+        if (expectReason)
+        {
+            Assert.That(reason.GetString(), Is.EqualTo("covered by phone"));
+        }
+        else
+        {
+            Assert.That(reason.ValueKind, Is.EqualTo(JsonValueKind.Null));
+        }
     }
 }

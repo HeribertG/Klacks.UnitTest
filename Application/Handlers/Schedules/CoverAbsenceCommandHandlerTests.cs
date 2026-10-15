@@ -516,6 +516,21 @@ public class CoverAbsenceCommandHandlerTests
     }
 
     [Test]
+    public async Task EscalationRoster_ChainCarriesTheRecoveryScenarioOfTheRun()
+    {
+        var persistedScenarioId = Guid.NewGuid();
+        _scenarioRepo.When(repository => repository.Add(Arg.Any<AnalyseScenario>()))
+            .Do(call => call.Arg<AnalyseScenario>().Id = persistedScenarioId);
+
+        var outcome = await Cover();
+
+        outcome.ScenarioId.ShouldBe(persistedScenarioId);
+        await _escalationChainService.Received(1).StartChainAsync(
+            Arg.Is<StartEscalationChainRequest>(r => r.ScenarioId == outcome.ScenarioId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task EscalationRoster_StaysQuiet_WhenThePlannerHandlesTheAbsenceInteractively()
     {
         var outcome = await _handler.Handle(

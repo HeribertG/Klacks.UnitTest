@@ -4,10 +4,11 @@
 /// EscalationNotifier.NotifyExhaustedAsync, the close-out of a chain nobody answered. Two claims are
 /// separable and separately asserted here. First, the inbox row of every stage that was still waiting is
 /// acknowledged, for BOTH chain purposes - an open row asking a question that can no longer be answered
-/// is wrong whether the question was about a shift or about a remediation. Second, the quiet note that
-/// says the window lapsed goes out only for a ProactiveApproval chain: an absence chain's roster was
-/// woken over the messenger about a shift somebody still has to cover, and telling the people who did
-/// not answer that nobody answered adds nothing they can act on.
+/// is wrong whether the question was about a shift or about a remediation. Second, the note that says the
+/// window lapsed: for a ProactiveApproval chain it goes to the stages that were waiting; for an
+/// AbsenceCoverage chain it goes to every stage that was ever notified plus every administrator
+/// (deduplicated, case-insensitive), also when nobody was reached at all, because the shift may still be
+/// uncovered. A failing admin lookup must not abort the close-out.
 /// The dispatch rows written for escalation stages carry neither ConditionId nor NextReminderAtUtc, so
 /// they were never in the reminder loop (IProactiveTriggerDispatchRepository.GetDueForReminderAsync needs
 /// both) - the acknowledgement closes the row, it does not stop a reminder.
@@ -32,6 +33,8 @@ public class EscalationNotifierExhaustedTests
     private const string FirstUserId = "planner-first";
     private const string SecondUserId = "planner-second";
     private const string TriggerKind = "empty_container";
+    private const string AdminUserId = "admin-one";
+    private const string PendingUserId = "planner-never-reached";
 
     private static readonly Guid ConditionId = Guid.NewGuid();
     private static readonly Guid FirstRowId = Guid.NewGuid();
@@ -41,6 +44,7 @@ public class EscalationNotifierExhaustedTests
     private IProactiveTriggerDispatchRepository _dispatchRepository = null!;
     private IAssistantNotificationService _notificationService = null!;
     private IAgentConditionRepository _conditionRepository = null!;
+    private IPlanningAudienceResolver _audienceResolver = null!;
     private EscalationNotifier _sut = null!;
 
     [SetUp]
@@ -49,6 +53,9 @@ public class EscalationNotifierExhaustedTests
         _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
         _notificationService = Substitute.For<IAssistantNotificationService>();
         _conditionRepository = Substitute.For<IAgentConditionRepository>();
+        _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string>());
 
         var settingsReader = Substitute.For<ISettingsReader>();
         settingsReader.GetSettingsByTypesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
@@ -69,6 +76,7 @@ public class EscalationNotifierExhaustedTests
             new FixedCompanyClock(new DateTimeOffset(DeadlineUtc, TimeSpan.Zero)),
             _conditionRepository,
             Substitute.For<IConditionRemediationRegistry>(),
+            _audienceResolver,
             Substitute.For<ILogger<EscalationNotifier>>());
     }
 
@@ -99,21 +107,79 @@ public class EscalationNotifierExhaustedTests
     }
 
     [Test]
-    public async Task NotifyExhaustedAsync_AbsenceChain_ClosesTheRowsButWritesNoNote()
+    public async Task NotifyExhaustedAsync_AbsenceChain_ClosesTheRowsAndNotesEveryNotifiedStagePlusEveryAdmin()
     {
-        var chain = new EscalationChain
-        {
-            Id = Guid.NewGuid(),
-            Purpose = EscalationChainPurpose.AbsenceCoverage,
-            Status = EscalationChainStatus.Exhausted,
-            AbsentClientName = "Absent Employee",
-            DeadlineUtc = DeadlineUtc
-        };
+        var stages = Stages();
+        var chain = AbsenceChain([.. stages, NeverNotifiedStage()]);
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string> { AdminUserId });
 
-        await _sut.NotifyExhaustedAsync(chain, Stages(), CancellationToken.None);
+        await _sut.NotifyExhaustedAsync(chain, stages, CancellationToken.None);
 
         await _dispatchRepository.Received(1).AcknowledgeAsync(FirstRowId, FirstUserId, Arg.Any<CancellationToken>());
+        await _dispatchRepository.Received(1).AcknowledgeAsync(SecondRowId, SecondUserId, Arg.Any<CancellationToken>());
+        Assert.That(RecordedRecipients(), Is.EquivalentTo(new[] { FirstUserId, SecondUserId, AdminUserId }));
+    }
+
+    [Test]
+    public async Task NotifyExhaustedAsync_AbsenceChain_AnAdminWhoAlsoHeldAStage_GetsOneNoteOnly()
+    {
+        var stages = Stages();
+        var chain = AbsenceChain(stages);
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string> { FirstUserId.ToUpperInvariant(), AdminUserId });
+
+        await _sut.NotifyExhaustedAsync(chain, stages, CancellationToken.None);
+
+        var recipients = RecordedRecipients();
+        Assert.That(recipients, Has.Count.EqualTo(3), "The admin who held a stage is deduplicated case-insensitively.");
+        Assert.That(recipients.Count(r => string.Equals(r, FirstUserId, StringComparison.OrdinalIgnoreCase)), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task NotifyExhaustedAsync_AbsenceChain_NobodyWasEverNotified_StillTellsTheAdmins()
+    {
+        var chain = AbsenceChain([NeverNotifiedStage()]);
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string> { AdminUserId });
+
+        await _sut.NotifyExhaustedAsync(chain, [], CancellationToken.None);
+
+        await _dispatchRepository.DidNotReceiveWithAnyArgs().AcknowledgeAsync(default, default!, default);
+        Assert.That(RecordedRecipients(), Is.EqualTo(new[] { AdminUserId }));
+    }
+
+    [Test]
+    public void NotifyExhaustedAsync_AbsenceChain_AdminLookupThrows_StillNotesTheStagesWithoutThrowing()
+    {
+        var stages = Stages();
+        var chain = AbsenceChain(stages);
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("identity store unavailable"));
+
+        Assert.DoesNotThrowAsync(() => _sut.NotifyExhaustedAsync(chain, stages, CancellationToken.None));
+
+        Assert.That(RecordedRecipients(), Is.EquivalentTo(new[] { FirstUserId, SecondUserId }));
+    }
+
+    [Test]
+    public async Task NotifyExhaustedAsync_AbsenceChain_NoNotifiedStageAndNoAdmin_WritesNothing()
+    {
+        await _sut.NotifyExhaustedAsync(AbsenceChain([NeverNotifiedStage()]), [], CancellationToken.None);
+
         await _dispatchRepository.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
+    }
+
+    [Test]
+    public async Task NotifyExhaustedAsync_ApprovalChain_NeverAsksForTheAdmins()
+    {
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new HashSet<string> { AdminUserId });
+
+        await _sut.NotifyExhaustedAsync(ApprovalChain(), Stages(), CancellationToken.None);
+
+        await _audienceResolver.DidNotReceiveWithAnyArgs().GetAdminUserIdsAsync(default);
+        Assert.That(RecordedRecipients(), Is.EquivalentTo(new[] { FirstUserId, SecondUserId }));
     }
 
     [Test]
@@ -156,6 +222,33 @@ public class EscalationNotifierExhaustedTests
 
         await _dispatchRepository.Received(1).AcknowledgeAsync(SecondRowId, SecondUserId, Arg.Any<CancellationToken>());
     }
+
+    private List<string> RecordedRecipients() =>
+        _dispatchRepository.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IProactiveTriggerDispatchRepository.RecordAsync))
+            .Select(call => ((ProactiveTriggerDispatchRow)call.GetArguments()[0]!).UserId)
+            .ToList();
+
+    private static EscalationChain AbsenceChain(IEnumerable<EscalationStage> stages) => new()
+    {
+        Id = Guid.NewGuid(),
+        Purpose = EscalationChainPurpose.AbsenceCoverage,
+        Status = EscalationChainStatus.Exhausted,
+        AbsentClientName = "Absent Employee",
+        ShiftStartUtc = DeadlineUtc,
+        DeadlineUtc = DeadlineUtc,
+        Stages = stages.ToList()
+    };
+
+    private static EscalationStage NeverNotifiedStage() => new()
+    {
+        Id = Guid.NewGuid(),
+        Rank = 3,
+        UserId = PendingUserId,
+        UserDisplayName = "Never Reached",
+        Status = EscalationStageStatus.Cancelled,
+        NotifiedAtUtc = null
+    };
 
     private static EscalationChain ApprovalChain() => new()
     {

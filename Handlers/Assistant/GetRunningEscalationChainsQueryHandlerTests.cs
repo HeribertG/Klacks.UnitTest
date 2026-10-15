@@ -4,13 +4,16 @@
 /// Unit tests for GetRunningEscalationChainsQueryHandler — verifies the field-for-field mapping from
 /// EscalationChain/EscalationStage to EscalationChainSummaryResource/EscalationStageSummaryResource,
 /// the per-requesting-user CanAcknowledge computation, and that stages come back ordered by Rank
-/// regardless of storage order.
+/// regardless of storage order, plus the display context of the intervention list: group name, finding kind,
+/// the scenario id only while the scenario is Active, the wake instant of a registered chain and the start
+/// instant (first notification, else the wake instant, else the creation time).
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Application.Queries.Assistant;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant.Escalation;
 
 namespace Klacks.UnitTest.Handlers.Assistant;
@@ -32,6 +35,8 @@ public class GetRunningEscalationChainsQueryHandlerTests
             .Returns(call => Task.FromResult(call.Arg<IReadOnlyCollection<EscalationChain>>().ToList()));
         _userService = Substitute.For<IUserService>();
         _userService.GetRights().Returns(new List<string>());
+        UseDisplayContext(new EscalationChainDisplayContext(
+            new Dictionary<Guid, string>(), new Dictionary<Guid, string>(), new Dictionary<Guid, AnalyseScenarioStatus>()));
         _sut = new GetRunningEscalationChainsQueryHandler(_chainRepository, _visibilityFilter, _userService);
     }
 
@@ -190,4 +195,146 @@ public class GetRunningEscalationChainsQueryHandlerTests
 
         Assert.That(result[0].Stages.Select(s => s.UserId), Is.EqualTo(new[] { "planner-a", "planner-b", "planner-c" }));
     }
+
+    [Test]
+    public async Task Handle_MapsTheDisplayContext_GroupNameFindingKindAndGroupId()
+    {
+        var groupId = Guid.NewGuid();
+        var conditionId = Guid.NewGuid();
+        var chain = new EscalationChain { Id = Guid.NewGuid(), GroupId = groupId, ConditionId = conditionId };
+        var unknownGroupChain = new EscalationChain { Id = Guid.NewGuid(), GroupId = Guid.NewGuid() };
+        UseChains(chain, unknownGroupChain);
+        UseDisplayContext(new EscalationChainDisplayContext(
+            new Dictionary<Guid, string> { [groupId] = "Ward 3" },
+            new Dictionary<Guid, string> { [conditionId] = "empty_container" },
+            new Dictionary<Guid, AnalyseScenarioStatus>()));
+
+        var result = await _sut.Handle(new GetRunningEscalationChainsQuery("someone"), CancellationToken.None);
+
+        var known = result.Single(r => r.Id == chain.Id);
+        Assert.That(known.GroupName, Is.EqualTo("Ward 3"));
+        Assert.That(known.FindingKind, Is.EqualTo("empty_container"));
+        Assert.That(known.GroupId, Is.EqualTo(groupId));
+        var unknown = result.Single(r => r.Id == unknownGroupChain.Id);
+        Assert.That(unknown.GroupName, Is.Null);
+        Assert.That(unknown.FindingKind, Is.Null);
+    }
+
+    [Test]
+    public async Task Handle_AsksTheDisplayContextWithTheDistinctIdsOfTheVisibleChainsOnly()
+    {
+        var groupId = Guid.NewGuid();
+        var scenarioId = Guid.NewGuid();
+        var visibleA = new EscalationChain { Id = Guid.NewGuid(), GroupId = groupId, ScenarioId = scenarioId };
+        var visibleB = new EscalationChain { Id = Guid.NewGuid(), GroupId = groupId };
+        var hidden = new EscalationChain { Id = Guid.NewGuid(), GroupId = Guid.NewGuid(), ConditionId = Guid.NewGuid() };
+        UseChains(visibleA, visibleB, hidden);
+        _visibilityFilter.FilterVisibleAsync(Arg.Any<IReadOnlyCollection<EscalationChain>>(), "planner-a", Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationChain> { visibleA, visibleB });
+
+        await _sut.Handle(new GetRunningEscalationChainsQuery("planner-a"), CancellationToken.None);
+
+        await _chainRepository.Received(1).GetDisplayContextAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { groupId })),
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 0),
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { scenarioId })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(AnalyseScenarioStatus.Active, true)]
+    [TestCase(AnalyseScenarioStatus.Accepted, false)]
+    [TestCase(AnalyseScenarioStatus.Rejected, false)]
+    [TestCase(AnalyseScenarioStatus.Superseded, false)]
+    public async Task Handle_ScenarioId_OnlyWhileTheScenarioIsActive(AnalyseScenarioStatus status, bool expectId)
+    {
+        var scenarioId = Guid.NewGuid();
+        UseChains(new EscalationChain { Id = Guid.NewGuid(), ScenarioId = scenarioId });
+        UseDisplayContext(new EscalationChainDisplayContext(
+            new Dictionary<Guid, string>(),
+            new Dictionary<Guid, string>(),
+            new Dictionary<Guid, AnalyseScenarioStatus> { [scenarioId] = status }));
+
+        var result = await _sut.Handle(new GetRunningEscalationChainsQuery("someone"), CancellationToken.None);
+
+        Assert.That(result[0].ScenarioId, expectId ? Is.EqualTo(scenarioId) : Is.Null);
+    }
+
+    [Test]
+    public async Task Handle_ScenarioId_IsNullWhenTheScenarioIsGone()
+    {
+        UseChains(new EscalationChain { Id = Guid.NewGuid(), ScenarioId = Guid.NewGuid() });
+
+        var result = await _sut.Handle(new GetRunningEscalationChainsQuery("someone"), CancellationToken.None);
+
+        Assert.That(result[0].ScenarioId, Is.Null);
+    }
+
+    [Test]
+    public async Task Handle_StartedAtUtc_IsTheEarliestNotification_WhenAStageWasWoken()
+    {
+        var firstNotifiedUtc = new DateTime(2026, 10, 3, 6, 0, 0, DateTimeKind.Utc);
+        UseChains(new EscalationChain
+        {
+            Id = Guid.NewGuid(),
+            CreateTime = new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc),
+            WakeNotBeforeUtc = new DateTime(2026, 10, 3, 5, 0, 0, DateTimeKind.Utc),
+            Stages = new List<EscalationStage>
+            {
+                new() { Rank = 1, UserId = "a", Status = EscalationStageStatus.Expired, NotifiedAtUtc = firstNotifiedUtc.AddMinutes(30) },
+                new() { Rank = 2, UserId = "b", Status = EscalationStageStatus.Notified, NotifiedAtUtc = firstNotifiedUtc },
+                new() { Rank = 3, UserId = "c", Status = EscalationStageStatus.Pending }
+            }
+        });
+
+        var result = await _sut.Handle(new GetRunningEscalationChainsQuery("someone"), CancellationToken.None);
+
+        Assert.That(result[0].StartedAtUtc, Is.EqualTo(firstNotifiedUtc));
+    }
+
+    [Test]
+    public async Task Handle_RegisteredChainNotYetWoken_StartsAtItsWakeInstantAndReportsIt()
+    {
+        var wakeUtc = new DateTime(2026, 11, 2, 4, 30, 0, DateTimeKind.Utc);
+        UseChains(new EscalationChain
+        {
+            Id = Guid.NewGuid(),
+            CreateTime = new DateTime(2026, 10, 15, 9, 0, 0, DateTimeKind.Utc),
+            WakeNotBeforeUtc = wakeUtc,
+            Stages = new List<EscalationStage> { new() { Rank = 1, UserId = "a", Status = EscalationStageStatus.Pending } }
+        });
+
+        var result = await _sut.Handle(new GetRunningEscalationChainsQuery("someone"), CancellationToken.None);
+
+        Assert.That(result[0].WakeNotBeforeUtc, Is.EqualTo(wakeUtc));
+        Assert.That(result[0].StartedAtUtc, Is.EqualTo(wakeUtc));
+    }
+
+    [Test]
+    public async Task Handle_ChainWokenAtCreation_StartsAtItsCreationTimeWithoutWakeInstant()
+    {
+        var createdUtc = new DateTime(2026, 10, 15, 9, 0, 0, DateTimeKind.Utc);
+        UseChains(new EscalationChain
+        {
+            Id = Guid.NewGuid(),
+            CreateTime = createdUtc,
+            Stages = new List<EscalationStage> { new() { Rank = 1, UserId = "a", Status = EscalationStageStatus.Pending } }
+        });
+
+        var result = await _sut.Handle(new GetRunningEscalationChainsQuery("someone"), CancellationToken.None);
+
+        Assert.That(result[0].StartedAtUtc, Is.EqualTo(createdUtc));
+        Assert.That(result[0].WakeNotBeforeUtc, Is.Null);
+    }
+
+    private void UseChains(params EscalationChain[] chains) =>
+        _chainRepository.GetRunningChainsWithStagesAsync(Arg.Any<CancellationToken>())
+            .Returns(chains.ToList());
+
+    private void UseDisplayContext(EscalationChainDisplayContext context) =>
+        _chainRepository.GetDisplayContextAsync(
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(context);
 }

@@ -40,9 +40,9 @@ public class EscalationAndProactiveTextCatalogueGuardTests
     private const string PluginsDirectory = "Plugins";
     private const string LanguagesDirectory = "Languages";
     private const int ExpectedPluginPacks = 21;
-    private const int ExpectedEscalationKeys = 5;
+    private const int ExpectedEscalationKeys = 7;
     private const int ExpectedProactiveKeys = 4;
-    private const int ExpectedAssistantTextsKeys = 30;
+    private const int ExpectedAssistantTextsKeys = 32;
     private const string Bold = "**";
     private const char LineBreak = '\n';
     private const int VariationSelector16 = 0xFE0F;
@@ -69,7 +69,9 @@ public class EscalationAndProactiveTextCatalogueGuardTests
             [EscalationHandoffTexts.HandoffQuietNote] = [ResponderParameter, EscalationHandoffPlaceholders.Date, EscalationHandoffPlaceholders.Employee],
             [EscalationHandoffTexts.ApprovalAcknowledgedConfirmation] = [EscalationHandoffPlaceholders.Action, EscalationHandoffPlaceholders.Finding],
             [EscalationHandoffTexts.ApprovalHandoffQuietNote] = [ResponderParameter, EscalationHandoffPlaceholders.Action, EscalationHandoffPlaceholders.Finding],
-            [EscalationHandoffTexts.ApprovalExhaustedNote] = [EscalationHandoffPlaceholders.Action, EscalationHandoffPlaceholders.Finding]
+            [EscalationHandoffTexts.ApprovalExhaustedNote] = [EscalationHandoffPlaceholders.Action, EscalationHandoffPlaceholders.Finding],
+            [EscalationHandoffTexts.AbsenceExhaustedNote] = [EscalationHandoffPlaceholders.Date, EscalationHandoffPlaceholders.Employee],
+            [EscalationHandoffTexts.AbsenceUnreachedNote] = [EscalationHandoffPlaceholders.Date, EscalationHandoffPlaceholders.Employee]
         };
 
     private static readonly IReadOnlyDictionary<(string Language, string Key), string> SameAsEnglishByDesign =

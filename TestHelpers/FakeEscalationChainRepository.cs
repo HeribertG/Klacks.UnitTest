@@ -63,6 +63,40 @@ public class FakeEscalationChainRepository : IEscalationChainRepository
         Task.FromResult<IReadOnlyList<Guid>>(
             _chains.Values.Where(c => c.Status == EscalationChainStatus.Running && c.DeadlineUtc <= nowUtc).Select(c => c.Id).ToList());
 
+    public Task<IReadOnlyList<Guid>> GetChainIdsDueToWakeAsync(DateTime nowUtc, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<Guid>>(
+            _chains.Values
+                .Where(c => c.Status == EscalationChainStatus.Running
+                    && c.WakeNotBeforeUtc != null
+                    && c.WakeNotBeforeUtc <= nowUtc)
+                .Select(c => c.Id)
+                .ToList());
+
+    public Task<bool> TryClaimWakeAsync(Guid chainId, DateTime nowUtc, CancellationToken cancellationToken = default)
+    {
+        if (!_chains.TryGetValue(chainId, out var chain)
+            || chain.Status != EscalationChainStatus.Running
+            || chain.WakeNotBeforeUtc is not DateTime wakeNotBeforeUtc
+            || wakeNotBeforeUtc > nowUtc)
+        {
+            return Task.FromResult(false);
+        }
+
+        chain.WakeNotBeforeUtc = null;
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TryUpdateRunningChainScenarioAsync(Guid workId, Guid scenarioId, CancellationToken cancellationToken = default)
+    {
+        var running = _chains.Values.Where(c => c.WorkId == workId && c.Status == EscalationChainStatus.Running).ToList();
+        foreach (var chain in running)
+        {
+            chain.ScenarioId = scenarioId;
+        }
+
+        return Task.FromResult(running.Count > 0);
+    }
+
     public Task<IReadOnlyList<EscalationChain>> GetRunningChainsWithAbsenceBreakAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<EscalationChain>>(
             _chains.Values.Where(c => c.Status == EscalationChainStatus.Running && c.AbsenceBreakId != null).ToList());
@@ -70,6 +104,24 @@ public class FakeEscalationChainRepository : IEscalationChainRepository
     public Task<IReadOnlyList<EscalationChain>> GetRunningChainsWithStagesAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<EscalationChain>>(
             _chains.Values.Where(c => c.Status == EscalationChainStatus.Running).OrderBy(c => c.DeadlineUtc).ToList());
+
+    public Task<IReadOnlyList<EscalationChain>> GetUnresolvedChainsSinceAsync(DateTime sinceUtc, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<EscalationChain>>(
+            _chains.Values
+                .Where(c => (c.Status == EscalationChainStatus.Cancelled && c.CancelledAtUtc >= sinceUtc)
+                    || (c.Status == EscalationChainStatus.Exhausted && c.ExhaustedAtUtc >= sinceUtc))
+                .OrderByDescending(c => c.CancelledAtUtc ?? c.ExhaustedAtUtc)
+                .ToList());
+
+    public Task<EscalationChainDisplayContext> GetDisplayContextAsync(
+        IReadOnlyCollection<Guid> groupIds,
+        IReadOnlyCollection<Guid> conditionIds,
+        IReadOnlyCollection<Guid> scenarioIds,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new EscalationChainDisplayContext(
+            new Dictionary<Guid, string>(),
+            new Dictionary<Guid, string>(),
+            new Dictionary<Guid, AnalyseScenarioStatus>()));
 
     public Task<IReadOnlyList<EscalationChain>> GetAbsenceCoverageChainsByAbsentClientAsync(
         Guid absentClientId, DateTime shiftStartFromUtc, DateTime shiftStartUntilUtc, CancellationToken cancellationToken = default) =>
@@ -175,12 +227,13 @@ public class FakeEscalationChainRepository : IEscalationChainRepository
     }
 
     public async Task<EscalationChainExhaustResult> TryExhaustChainAsync(
-        Guid chainId, string outcomeReason, CancellationToken cancellationToken = default)
+        Guid chainId, string outcomeReason, DateTime exhaustedAtUtc, CancellationToken cancellationToken = default)
     {
         var won = TryTransitionChain(chainId, EscalationChainStatus.Running, chain =>
         {
             chain.Status = EscalationChainStatus.Exhausted;
             chain.OutcomeReason = outcomeReason;
+            chain.ExhaustedAtUtc = exhaustedAtUtc;
         });
 
         if (!won)

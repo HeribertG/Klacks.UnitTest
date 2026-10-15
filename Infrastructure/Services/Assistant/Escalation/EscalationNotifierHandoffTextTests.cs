@@ -39,6 +39,7 @@ public class EscalationNotifierHandoffTextTests
     private const string LanguagesDirectory = "Languages";
     private const string AssistantTextsFile = "assistant-texts.json";
     private const string ShiftDate = "16.08.2026";
+    private const string AdminUserId = "admin-one";
 
     private static readonly Guid ConditionId = Guid.NewGuid();
     private static readonly DateTime ShiftStartUtc = new(2026, 8, 16, 6, 0, 0, DateTimeKind.Utc);
@@ -48,6 +49,7 @@ public class EscalationNotifierHandoffTextTests
     private IAgentConditionRepository _conditionRepository = null!;
     private ISettingsReader _settingsReader = null!;
     private List<ProactiveTriggerDispatchRow> _rows = null!;
+    private IPlanningAudienceResolver _audienceResolver = null!;
     private EscalationNotifier _sut = null!;
 
     [SetUp]
@@ -70,6 +72,9 @@ public class EscalationNotifierHandoffTextTests
         _settingsReader = Substitute.For<ISettingsReader>();
         UseLanguage(null);
 
+        _audienceResolver = Substitute.For<IPlanningAudienceResolver>();
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>()).Returns(new HashSet<string>());
+
         _sut = new EscalationNotifier(
             _dispatchRepository,
             notificationService,
@@ -81,6 +86,7 @@ public class EscalationNotifierHandoffTextTests
             new FixedCompanyClock(new DateTimeOffset(ShiftStartUtc, TimeSpan.Zero)),
             _conditionRepository,
             Substitute.For<IConditionRemediationRegistry>(),
+            _audienceResolver,
             Substitute.For<ILogger<EscalationNotifier>>());
     }
 
@@ -291,5 +297,90 @@ public class EscalationNotifierHandoffTextTests
             PackSentence(ChineseSimplified, EscalationHandoffTexts.ApprovalExhaustedNote)
                 .Replace("{{action}}", UnknownAction)
                 .Replace("{{finding}}", TriggerKind));
+    }
+
+    [TestCase("de", "Niemand hat sich um den Ausfall von Erika Absent am 16.08.2026 gekümmert; die Zeit zum Reagieren ist abgelaufen.")]
+    [TestCase("en", "Nobody took care of Erika Absent's absence on 16.08.2026; the time to react has run out.")]
+    [TestCase("fr", "Personne ne s'est occupé de l'absence de Erika Absent le 16.08.2026 ; le délai pour réagir est écoulé.")]
+    [TestCase("it", "Nessuno si è occupato dell'assenza di Erika Absent il 16.08.2026; il tempo per reagire è scaduto.")]
+    public async Task NotifyExhaustedAsync_AbsenceChain_EachCoreLanguageWritesItsNote(string language, string noteStart)
+    {
+        LoadThePacks();
+        UseLanguage(language);
+        var chain = AbsenceChain();
+        chain.Stages = [Stage(EarlierUserId, "Earlier Planner")];
+
+        await _sut.NotifyExhaustedAsync(chain, chain.Stages.ToList());
+
+        RowOf(EarlierUserId).ShouldStartWith(noteStart);
+    }
+
+    [Test]
+    public async Task NotifyExhaustedAsync_AbsenceChain_APackLanguageWritesTheNoteOfItsPack()
+    {
+        LoadThePacks();
+        UseLanguage(ChineseSimplified);
+        var chain = AbsenceChain();
+        chain.Stages = [Stage(EarlierUserId, "Earlier Planner")];
+
+        await _sut.NotifyExhaustedAsync(chain, chain.Stages.ToList());
+
+        RowOf(EarlierUserId).ShouldBe(
+            PackSentence(ChineseSimplified, EscalationHandoffTexts.AbsenceExhaustedNote)
+                .Replace("{{employee}}", AbsentEmployee)
+                .Replace("{{date}}", ShiftDate));
+    }
+
+    [TestCase("de", "Für den Ausfall von Erika Absent am 16.08.2026 war niemand aus der Eskalationsliste erreichbar.")]
+    [TestCase("en", "Nobody on the escalation list could be reached for Erika Absent's absence on 16.08.2026.")]
+    [TestCase("fr", "Personne de la liste d'escalade n'a pu être joint pour l'absence de Erika Absent le 16.08.2026.")]
+    [TestCase("it", "Nessuno della lista di escalation è stato raggiungibile per l'assenza di Erika Absent il 16.08.2026.")]
+    public async Task NotifyExhaustedAsync_AbsenceChainNobodyWasReached_TellsTheAdminsWithTheUnreachedNote(string language, string noteStart)
+    {
+        LoadThePacks();
+        UseLanguage(language);
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>()).Returns(new HashSet<string> { AdminUserId });
+        var chain = AbsenceChain();
+        var neverReached = Stage(EarlierUserId, "Earlier Planner");
+        neverReached.NotifiedAtUtc = null;
+        neverReached.Status = EscalationStageStatus.Cancelled;
+        chain.Stages = [neverReached];
+
+        await _sut.NotifyExhaustedAsync(chain, []);
+
+        _rows.Select(row => row.UserId).ShouldBe(new[] { AdminUserId });
+        RowOf(AdminUserId).ShouldStartWith(noteStart);
+    }
+
+    [Test]
+    public async Task NotifyExhaustedAsync_AbsenceChainWithAWokenStage_GivesTheAdminTheExhaustedNoteNotTheUnreachedOne()
+    {
+        LoadThePacks();
+        UseLanguage("en");
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>()).Returns(new HashSet<string> { AdminUserId });
+        var chain = AbsenceChain();
+        chain.Stages = [Stage(EarlierUserId, "Earlier Planner")];
+
+        await _sut.NotifyExhaustedAsync(chain, chain.Stages.ToList());
+
+        RowOf(AdminUserId).ShouldStartWith("Nobody took care of Erika Absent's absence on 16.08.2026");
+        RowOf(EarlierUserId).ShouldBe(RowOf(AdminUserId));
+    }
+
+    [Test]
+    public async Task NotifyExhaustedAsync_AbsenceChainNobodyWasReached_APackLanguageWritesTheUnreachedNoteOfItsPack()
+    {
+        LoadThePacks();
+        UseLanguage(ChineseSimplified);
+        _audienceResolver.GetAdminUserIdsAsync(Arg.Any<CancellationToken>()).Returns(new HashSet<string> { AdminUserId });
+        var chain = AbsenceChain();
+        chain.Stages = [];
+
+        await _sut.NotifyExhaustedAsync(chain, []);
+
+        RowOf(AdminUserId).ShouldBe(
+            PackSentence(ChineseSimplified, EscalationHandoffTexts.AbsenceUnreachedNote)
+                .Replace("{{employee}}", AbsentEmployee)
+                .Replace("{{date}}", ShiftDate));
     }
 }

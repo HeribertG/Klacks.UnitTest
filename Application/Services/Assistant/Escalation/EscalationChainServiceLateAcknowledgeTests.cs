@@ -191,7 +191,7 @@ public class EscalationChainServiceLateAcknowledgeTests
             }
 
             ExhaustAfterStageWin = null;
-            await TryExhaustChainAsync(chainId, ExhaustReason, cancellationToken);
+            await TryExhaustChainAsync(chainId, ExhaustReason, respondedAtUtc, cancellationToken);
 
             return true;
         }
