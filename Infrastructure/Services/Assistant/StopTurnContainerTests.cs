@@ -93,6 +93,7 @@ public class StopTurnContainerTests
         services.AddMediator(typeof(ChatController).Assembly);
         services.AddSingleton(Substitute.For<IAssistantNotificationService>());
         services.AddSingleton(Substitute.For<IAssistantConnectionTracker>());
+        services.AddSingleton(Substitute.For<IConnectionDateRangeTracker>());
         services.AddSingleton(Substitute.For<IUtteranceNormalizer>());
         services.AddSingleton(Substitute.For<INavigationTargetMatcher>());
         services.AddSingleton(Substitute.For<INavigationTargetCacheService>());
