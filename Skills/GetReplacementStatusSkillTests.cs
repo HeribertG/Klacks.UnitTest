@@ -5,7 +5,9 @@
 /// ListReplacementRequestsQuery (default period 7 days back to 14 ahead), groups the rows per scenario x date x shift with the
 /// derived coverage status, labels a merely proposed candidate as not asked, hides the name of a shift outside the caller's
 /// group visibility, says plainly when nothing is recorded, and shows only the escalation chains the visibility filter keeps.
-/// The cancel reason of a chain reaches only an Admin, an Authorised supervisor or the canceller.
+/// The cancel reason of a chain reaches only an Admin, an Authorised supervisor or the canceller. The slot status is
+/// classified over every book row (hidden candidates counted as HiddenEntries, never named) unless the scenario token is
+/// not visible, and every instant is rendered in the company time zone.
 /// </summary>
 
 using System.Text.Json;
@@ -45,6 +47,9 @@ public class GetReplacementStatusSkillTests
     private IEscalationChainRepository _chains = null!;
     private IEscalationChainVisibilityFilter _chainFilter = null!;
     private ICompanyClock _clock = null!;
+    private IReplacementRequestRepository _requests = null!;
+    private IScenarioTokenAccessGuard _tokenGuard = null!;
+    private List<ReplacementRequest> _bookRows = null!;
 
     [SetUp]
     public void Setup()
@@ -75,6 +80,12 @@ public class GetReplacementStatusSkillTests
         _clock = Substitute.For<ICompanyClock>();
         _clock.GetTodayDateAsync(Arg.Any<CancellationToken>()).Returns(Today);
         _clock.GetTimeZoneAsync(Arg.Any<CancellationToken>()).Returns(TimeZoneInfo.Utc);
+        _bookRows = new List<ReplacementRequest>();
+        _requests = Substitute.For<IReplacementRequestRepository>();
+        _requests.ListAsync(Arg.Any<ReplacementRequestFilter>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(_bookRows.ToList()));
+        _tokenGuard = Substitute.For<IScenarioTokenAccessGuard>();
+        _tokenGuard.IsVisibleAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(true);
         GivenRows();
     }
 
@@ -82,7 +93,29 @@ public class GetReplacementStatusSkillTests
     {
         _mediator.Send(Arg.Any<ListReplacementRequestsQuery>(), Arg.Any<CancellationToken>())
             .Returns(rows.ToList());
+        _bookRows.Clear();
+        _bookRows.AddRange(rows.Select(ToEntity));
     }
+
+    private void GivenHiddenBookRows(params ReplacementRequestResource[] rows) => _bookRows.AddRange(rows.Select(ToEntity));
+
+    private static ReplacementRequest ToEntity(ReplacementRequestResource r) => new()
+    {
+        Id = r.Id,
+        AbsentClientId = r.AbsentClientId,
+        CandidateClientId = r.CandidateClientId,
+        ShiftId = r.ShiftId,
+        Date = r.Date,
+        StartTime = r.StartTime,
+        EndTime = r.EndTime,
+        Source = r.Source,
+        Outcome = r.Outcome,
+        ReportedAtUtc = r.ReportedAtUtc,
+        ShiftStartUtc = r.ShiftStartUtc,
+        OutcomeAtUtc = r.OutcomeAtUtc,
+        AnalyseToken = r.AnalyseToken,
+        AppliedAtUtc = r.AppliedAtUtc
+    };
 
     private static ReplacementRequestResource Row(
         Guid candidate, ReplacementRequestOutcome outcome, DateOnly? date = null, Guid? token = null, bool applied = false) => new(
@@ -99,7 +132,7 @@ public class GetReplacementStatusSkillTests
     };
 
     private GetReplacementStatusSkill Skill() => new(
-        _mediator, _search, _clients, _clientGuard, _shifts, _groupGuard, _absences, _chains, _chainFilter, _clock);
+        _mediator, _search, _clients, _clientGuard, _shifts, _groupGuard, _absences, _chains, _chainFilter, _clock, _requests, _tokenGuard);
 
     private static Dictionary<string, object> ById() => new() { ["clientId"] = AbsentId.ToString() };
 
@@ -297,5 +330,124 @@ public class GetReplacementStatusSkillTests
         {
             Assert.That(reason.ValueKind, Is.EqualTo(JsonValueKind.Null));
         }
+    }
+
+    [Test]
+    public async Task VisibleRowsDeclined_HiddenRowAccepted_SlotIsCoveredWithOneHiddenEntryAndTheHiddenNote()
+    {
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Declined));
+        GivenHiddenBookRows(Row(Guid.NewGuid(), ReplacementRequestOutcome.Accepted));
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        var json = Json(result);
+        var slot = json.GetProperty("Slots")[0];
+        Assert.That(slot.GetProperty("Status").GetString(), Is.EqualTo(nameof(ReplacementSlotStatus.Covered)));
+        Assert.That(slot.GetProperty("HiddenEntries").GetInt32(), Is.EqualTo(1));
+        Assert.That(slot.GetProperty("Candidates").GetArrayLength(), Is.EqualTo(1));
+        var notes = json.GetProperty("Notes").EnumerateArray().Select(n => n.GetString()).ToList();
+        Assert.That(notes, Has.Some.Contains("HiddenEntries"));
+        Assert.That(result.Message, Does.Contain("1 covered"));
+    }
+
+    [Test]
+    public async Task NoHiddenRows_HiddenEntriesIsZero_WithoutHiddenNote_ButWithSearchWindowNote()
+    {
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Declined));
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        var json = Json(result);
+        Assert.That(json.GetProperty("Slots")[0].GetProperty("HiddenEntries").GetInt32(), Is.EqualTo(0));
+        var notes = json.GetProperty("Notes").EnumerateArray().Select(n => n.GetString()).ToList();
+        Assert.That(notes, Has.None.Contains("HiddenEntries"));
+        Assert.That(notes, Has.Some.Contains("SearchFrom/SearchUntil"));
+    }
+
+    [Test]
+    public async Task Instants_AreRenderedInTheCompanyTimeZone()
+    {
+        _clock.GetTimeZoneAsync(Arg.Any<CancellationToken>()).Returns(TimeZoneInfo.FindSystemTimeZoneById("Europe/Zurich"));
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Declined) with
+        {
+            OutcomeAtUtc = new DateTime(2026, 10, 12, 6, 30, 0, DateTimeKind.Utc)
+        });
+        var chain = new EscalationChain
+        {
+            Id = Guid.NewGuid(),
+            Status = EscalationChainStatus.Acknowledged,
+            ShiftStartUtc = new DateTime(2026, 10, 13, 4, 0, 0, DateTimeKind.Utc),
+            DeadlineUtc = new DateTime(2026, 10, 12, 22, 15, 0, DateTimeKind.Utc),
+            AcknowledgedAtUtc = new DateTime(2026, 10, 12, 21, 5, 0, DateTimeKind.Utc),
+            Stages = new List<EscalationStage>
+            {
+                new()
+                {
+                    Rank = 1,
+                    UserDisplayName = "Planner A",
+                    Status = EscalationStageStatus.Acknowledged,
+                    NotifiedAtUtc = new DateTime(2026, 10, 12, 21, 0, 0, DateTimeKind.Utc),
+                    RespondedAtUtc = new DateTime(2026, 10, 12, 21, 5, 0, DateTimeKind.Utc)
+                }
+            }
+        };
+        _chains.GetAbsenceCoverageChainsByAbsentClientAsync(
+                AbsentId, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new List<EscalationChain> { chain });
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        var json = Json(result);
+        Assert.That(json.GetProperty("TimeZone").GetString(), Is.EqualTo("Europe/Zurich"));
+        Assert.That(json.GetProperty("Slots")[0].GetProperty("Candidates")[0].GetProperty("AnsweredAt").GetString(),
+            Is.EqualTo("2026-10-12 08:30"));
+        var view = json.GetProperty("EscalationChains")[0];
+        Assert.That(view.GetProperty("ShiftStart").GetString(), Is.EqualTo("2026-10-13 06:00"));
+        Assert.That(view.GetProperty("Deadline").GetString(), Is.EqualTo("2026-10-13 00:15"));
+        Assert.That(view.GetProperty("TakenOverAt").GetString(), Is.EqualTo("2026-10-12 23:05"));
+        var stage = view.GetProperty("WokenPlanners")[0];
+        Assert.That(stage.GetProperty("NotifiedAt").GetString(), Is.EqualTo("2026-10-12 23:00"));
+        Assert.That(stage.GetProperty("RespondedAt").GetString(), Is.EqualTo("2026-10-12 23:05"));
+    }
+
+    [Test]
+    public async Task SearchWindow_DatesWithEntries_AndWeekday_AreReported()
+    {
+        var monday = new DateOnly(2026, 3, 9);
+        var wednesday = new DateOnly(2026, 3, 11);
+        GivenRows(
+            Row(CandidateA, ReplacementRequestOutcome.Requested, date: wednesday),
+            Row(CandidateA, ReplacementRequestOutcome.Requested, date: monday),
+            Row(CandidateB, ReplacementRequestOutcome.Declined, date: monday));
+
+        var result = await Skill().ExecuteAsync(Ctx(), ById());
+
+        var json = Json(result);
+        Assert.That(json.GetProperty("SearchFrom").GetString(), Is.EqualTo("2026-03-03"));
+        Assert.That(json.GetProperty("SearchUntil").GetString(), Is.EqualTo("2026-03-24"));
+        var absentDates = json.GetProperty("DatesWithEntries").EnumerateArray().Select(d => d.GetString()).ToList();
+        Assert.That(absentDates, Is.EqualTo(new[] { "2026-03-09", "2026-03-11" }));
+        var weekdays = json.GetProperty("Slots").EnumerateArray().Select(s => s.GetProperty("Weekday").GetString()).ToList();
+        Assert.That(weekdays, Is.EqualTo(new[] { nameof(DayOfWeek.Monday), nameof(DayOfWeek.Wednesday) }));
+        Assert.That(result.Message, Does.Contain("in the search window 2026-03-03 to 2026-03-24"));
+    }
+
+    [Test]
+    public async Task ScenarioTokenNotVisible_BookOutcomesAreNotUsed_AndTheVisibleClassificationApplies()
+    {
+        var token = Guid.NewGuid();
+        _tokenGuard.IsVisibleAsync(token, Arg.Any<CancellationToken>()).Returns(false);
+        GivenRows(Row(CandidateA, ReplacementRequestOutcome.Declined, token: token));
+        GivenHiddenBookRows(Row(Guid.NewGuid(), ReplacementRequestOutcome.Accepted, token: token));
+        var parameters = ById();
+        parameters["analyseToken"] = token.ToString();
+
+        var result = await Skill().ExecuteAsync(Ctx(), parameters);
+
+        var slot = Json(result).GetProperty("Slots")[0];
+        Assert.That(slot.GetProperty("Status").GetString(), Is.Not.EqualTo(nameof(ReplacementSlotStatus.Covered)));
+        Assert.That(slot.GetProperty("HiddenEntries").GetInt32(), Is.EqualTo(0));
+        await _requests.DidNotReceive().ListAsync(
+            Arg.Any<ReplacementRequestFilter>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 }
