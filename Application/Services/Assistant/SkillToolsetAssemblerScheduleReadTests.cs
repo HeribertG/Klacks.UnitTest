@@ -5,7 +5,9 @@
 /// keep read_schedule_state in the toolset although vector retrieval never ranks it for such wording. A recognised
 /// question also keeps list_groups (the skill needs a group id); the page alone keeps only read_schedule_state.
 /// list_groups is the weakest guarantee and goes first at a small provider cap. The skills survive the cap, stay out
-/// when their signal is missing, and never pull in the scenario accept/reject/list skills.
+/// when their signal is missing, and never pull in the scenario accept/reject/list skills on their own. Since the owner
+/// approval of 2026-10-16 accept_scenario may be guaranteed, but only for an affirmation right after a turn that showed
+/// scenarios; reject_scenario is never guaranteed.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
@@ -40,6 +42,7 @@ public class SkillToolsetAssemblerScheduleReadTests
     private const string DashboardRoute = "/workplace/dashboard";
     private const string DutyQuestion = "Wer hat am Montag, 19. Oktober, in Winterthur Dienst?";
     private const string PlanQuestion = "Was steht am Montag, 19. Oktober, in Winterthur an?";
+    private const string AcceptReply = "Ja, übernimm es.";
     private const int FillerSkillCount = 40;
     private const int SmallCap = 6;
 
@@ -107,6 +110,42 @@ public class SkillToolsetAssemblerScheduleReadTests
         var names = Names(result);
         names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
         names.ShouldContain(ScheduleReadIntentResolver.ListGroupsSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.RejectScenarioSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    [Test]
+    public async Task OnTheSchedulePage_ADutyQuestion_AfterShownScenarios_OffersNoAcceptAndNoReject()
+    {
+        var result = await AssembleAsync(
+            DutyQuestion, ScheduleRoute, previousTurnSkillNames: [ScenarioFollowUpSkills.ListScenariosSkillName]);
+
+        var names = Names(result);
+        names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.RejectScenarioSkillName);
+    }
+
+    [Test]
+    public async Task OnTheSchedulePage_AnAffirmation_AfterShownScenarios_KeepsAcceptButNeverReject()
+    {
+        var result = await AssembleAsync(
+            AcceptReply, ScheduleRoute, previousTurnSkillNames: [ScenarioFollowUpSkills.ListScenariosSkillName]);
+
+        var names = Names(result);
+        names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
+        names.ShouldContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
+        names.ShouldContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.RejectScenarioSkillName);
+    }
+
+    [Test]
+    public async Task OnTheSchedulePage_AnAffirmation_WithoutShownScenarios_OffersNoScenarioSkill()
+    {
+        var result = await AssembleAsync(AcceptReply, ScheduleRoute);
+
+        var names = Names(result);
         names.ShouldNotContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
         names.ShouldNotContain(ScenarioFollowUpSkills.RejectScenarioSkillName);
         names.ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
@@ -183,7 +222,8 @@ public class SkillToolsetAssemblerScheduleReadTests
         string message,
         string? route,
         int maxTools = 30,
-        IReadOnlyCollection<string>? pinnedSkillNames = null)
+        IReadOnlyCollection<string>? pinnedSkillNames = null,
+        IReadOnlyList<string>? previousTurnSkillNames = null)
     {
         var resolver = new SkillToolsetGuaranteeResolver(
             Substitute.For<IPendingUserNoteRepository>(),
@@ -212,7 +252,7 @@ public class SkillToolsetAssemblerScheduleReadTests
         return await assembler.AssembleAsync(
             _agent, new List<string>(), message, "conv-retrieval-gap", route, Guid.NewGuid().ToString(),
             "de", maxTools, applyLearnedPhraseGuarantee: true, excludedSkillNames: null, pinnedSkillNames,
-            previousTurnSkillNames: null, continuationSkillNames: null, CancellationToken.None);
+            previousTurnSkillNames, continuationSkillNames: null, CancellationToken.None);
     }
 
     private static RecipeEngineService CreateRecipeEngine()
