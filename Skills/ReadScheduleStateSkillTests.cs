@@ -35,7 +35,8 @@ public class ReadScheduleStateSkillTests
         DateTime date,
         int lockLevel = 0,
         bool groupRestricted = false,
-        Guid? clientId = null) => new()
+        Guid? clientId = null,
+        Guid? replaceClientId = null) => new()
         {
             Id = Guid.NewGuid(),
             EntryType = entryType,
@@ -46,7 +47,8 @@ public class ReadScheduleStateSkillTests
             EntryName = "Day shift",
             Abbreviation = "DS",
             LockLevel = lockLevel,
-            IsGroupRestricted = groupRestricted
+            IsGroupRestricted = groupRestricted,
+            ReplaceClientId = replaceClientId
         };
 
     private static IScheduleEntriesService ServiceReturning(IEnumerable<ScheduleCell> cells)
@@ -68,7 +70,24 @@ public class ReadScheduleStateSkillTests
             .Returns(ci => Task.FromResult(ci.Arg<IReadOnlyCollection<ScheduleCell>>()
                 .Where(c => !hidden.Contains(ci.Arg<Func<ScheduleCell, Guid>>()(c)))
                 .ToList()));
+        guard.FilterVisibleAsync(
+                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<Func<Guid, Guid>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(ci.Arg<IReadOnlyCollection<Guid>>()
+                .Where(id => !hidden.Contains(ci.Arg<Func<Guid, Guid>>()(id)))
+                .ToList()));
         return guard;
+    }
+
+    private static IClientRepository ClientNames(params (Guid Id, string Name)[] names)
+    {
+        var known = names.ToDictionary(n => n.Id, n => n.Name);
+        var repository = Substitute.For<IClientRepository>();
+        repository.GetDisplayNamesAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(ci.Arg<IReadOnlyCollection<Guid>>()
+                .Where(known.ContainsKey)
+                .ToDictionary(id => id, id => known[id])));
+        return repository;
     }
 
     private static IGroupVisibilityGuard GroupHidden(Guid hiddenGroupId)
@@ -82,11 +101,13 @@ public class ReadScheduleStateSkillTests
     private static ReadScheduleStateSkill NewSkill(
         IScheduleEntriesService service,
         IGroupVisibilityGuard? groupVisibilityGuard = null,
-        IClientVisibilityGuard? clientVisibilityGuard = null)
+        IClientVisibilityGuard? clientVisibilityGuard = null,
+        IClientRepository? clientRepository = null)
         => new(
             service,
             groupVisibilityGuard ?? TestGroupWriteVisibility.UnrestrictedGroups(),
-            clientVisibilityGuard ?? ClientsVisibleExcept());
+            clientVisibilityGuard ?? ClientsVisibleExcept(),
+            clientRepository ?? ClientNames());
 
     private static Dictionary<string, object> Params(string? analyseToken = null)
     {
@@ -294,5 +315,125 @@ public class ReadScheduleStateSkillTests
         data.GetProperty("EntryCount").GetInt32().ShouldBe(1);
         data.GetProperty("DistinctEmployees").GetInt32().ShouldBe(1);
         data.GetProperty("Entries")[0].GetProperty("Id").GetGuid().ShouldBe(visibleCell.Id);
+    }
+
+    [Test]
+    public async Task EveryEntry_CarriesTheDisplayNameOfItsEmployee()
+    {
+        var anna = Guid.NewGuid();
+        var ben = Guid.NewGuid();
+        var cells = new List<ScheduleCell>
+        {
+            Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2), clientId: anna),
+            Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.WorkChange, new DateTime(2026, 3, 3), clientId: ben)
+        };
+        var skill = NewSkill(
+            ServiceReturning(cells),
+            clientRepository: ClientNames((anna, "Anna Meier"), (ben, "Ben Keller")));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        var entries = DataAsJson(result).GetProperty("Entries");
+        entries[0].GetProperty("ClientName").GetString().ShouldBe("Anna Meier");
+        entries[1].GetProperty("ClientName").GetString().ShouldBe("Ben Keller");
+    }
+
+    [Test]
+    public async Task ClientWithoutAName_GetsANullName_NotAnEmptyString()
+    {
+        var nameless = Guid.NewGuid();
+        var cell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2), clientId: nameless);
+        var skill = NewSkill(
+            ServiceReturning(new List<ScheduleCell> { cell }),
+            clientRepository: ClientNames((nameless, "  ")));
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        DataAsJson(result).GetProperty("Entries")[0].GetProperty("ClientName").ValueKind
+            .ShouldBe(JsonValueKind.Null);
+    }
+
+    [Test]
+    public async Task HiddenClient_IsNeitherNamedNorLookedUp()
+    {
+        var visibleClient = Guid.NewGuid();
+        var hiddenClient = Guid.NewGuid();
+        var cells = new List<ScheduleCell>
+        {
+            Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2), clientId: visibleClient),
+            Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 3), clientId: hiddenClient)
+        };
+        var repository = ClientNames((visibleClient, "Anna Meier"), (hiddenClient, "Secret Person"));
+        var skill = NewSkill(
+            ServiceReturning(cells),
+            clientVisibilityGuard: ClientsVisibleExcept(hiddenClient),
+            clientRepository: repository);
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        var json = JsonSerializer.Serialize(result.Data) + result.Message;
+        json.ShouldContain("Anna Meier");
+        json.ShouldNotContain("Secret Person");
+        json.ShouldNotContain(hiddenClient.ToString());
+        await repository.Received(1).GetDisplayNamesAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(visibleClient) && !ids.Contains(hiddenClient)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ManyEntries_ResolveAllNamesWithASingleBatchedLookup()
+    {
+        var clientA = Guid.NewGuid();
+        var clientB = Guid.NewGuid();
+        var cells = Enumerable.Range(0, 40)
+            .Select(i => Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2),
+                clientId: i % 2 == 0 ? clientA : clientB))
+            .ToList();
+        var repository = ClientNames((clientA, "Anna Meier"), (clientB, "Ben Keller"));
+        var skill = NewSkill(ServiceReturning(cells), clientRepository: repository);
+
+        await skill.ExecuteAsync(Ctx(), Params());
+
+        await repository.Received(1).GetDisplayNamesAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2 && ids.Contains(clientA) && ids.Contains(clientB)),
+            Arg.Any<CancellationToken>());
+        await repository.DidNotReceiveWithAnyArgs().GetByIdsAsync(default!, default);
+        await repository.DidNotReceiveWithAnyArgs().GetTypeAndDisplayNameAsync(default, default);
+    }
+
+    [Test]
+    public async Task NoEntries_DoesNotQueryClientNames()
+    {
+        var repository = ClientNames();
+        var skill = NewSkill(ServiceReturning(new List<ScheduleCell>()), clientRepository: repository);
+
+        await skill.ExecuteAsync(Ctx(), Params());
+
+        await repository.DidNotReceiveWithAnyArgs().GetDisplayNamesAsync(default!, default);
+    }
+
+    [Test]
+    public async Task ReplacementEntry_NamesTheReplacedEmployeeOnlyWhenVisible()
+    {
+        var replacement = Guid.NewGuid();
+        var replacedVisible = Guid.NewGuid();
+        var replacedHidden = Guid.NewGuid();
+        var visibleCell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 2),
+            clientId: replacement, replaceClientId: replacedVisible);
+        var hiddenCell = Cell((int)Klacks.Api.Domain.Enums.ScheduleEntryType.Work, new DateTime(2026, 3, 3),
+            clientId: replacement, replaceClientId: replacedHidden);
+        var repository = ClientNames(
+            (replacement, "Rita Ersatz"), (replacedVisible, "Vera Sichtbar"), (replacedHidden, "Hans Versteckt"));
+        var skill = NewSkill(
+            ServiceReturning(new List<ScheduleCell> { visibleCell, hiddenCell }),
+            clientVisibilityGuard: ClientsVisibleExcept(replacedHidden),
+            clientRepository: repository);
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        var entries = DataAsJson(result).GetProperty("Entries");
+        entries[0].GetProperty("ReplaceClientName").GetString().ShouldBe("Vera Sichtbar");
+        entries[1].GetProperty("ReplaceClientName").ValueKind.ShouldBe(JsonValueKind.Null);
+        JsonSerializer.Serialize(result.Data).ShouldNotContain("Hans Versteckt");
     }
 }
