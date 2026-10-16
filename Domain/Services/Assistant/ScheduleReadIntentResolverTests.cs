@@ -1,11 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// ScheduleReadIntentResolver: which turns must carry read_schedule_state. Live trigger 2026-10-16 (recording of the
-/// Klacksy "who has duty" take): "Wer hat am Montag, 19. Oktober, in Winterthur Dienst?" and "Was steht am Montag,
-/// 19. Oktober, in Winterthur an?" never retrieved read_schedule_state, so the model answered that it had no tool for
-/// planned shifts. The schedule page (any UI language) and a dated duty/plan question in de/en/fr/it keep it, together
-/// with list_groups, because read_schedule_state needs a group id and the user names the group.
+/// ScheduleReadIntentResolver: which turns must carry read_schedule_state. A dated duty or plan question in de/en/fr/it
+/// guarantees read_schedule_state together with list_groups (it needs a group id); the schedule page alone guarantees
+/// read_schedule_state only. Duty words match anywhere in a word (Nachtdienst, Bereitschaftsdienst); a weekday prefix is
+/// not a duty word (Dienstagabend), and "hier" is not a date.
 /// </summary>
 
 using Klacks.Api.Domain.Services.Assistant;
@@ -39,6 +38,17 @@ public class ScheduleReadIntentResolverTests
     [TestCase("Quel service y a-t-il demain à Winterthur ?")]
     [TestCase("Chi lavora lunedì 19 ottobre a Winterthur?")]
     [TestCase("Quale turno c'è domani?")]
+    [TestCase("Wie viele Dienste sind am Montag, 19. Oktober, in Winterthur geplant?")]
+    [TestCase("Wer hat am Montag Nachtdienst?")]
+    [TestCase("Wer macht am Freitag den Frühdienst?")]
+    [TestCase("Wer hat am Samstag Bereitschaftsdienst?")]
+    [TestCase("Wer hat Spätdienst am Mittwoch?")]
+    [TestCase("Wer hat Pikett am Freitagabend?")]
+    [TestCase("Wer hat montags Dienst?")]
+    [TestCase("Wer hat Freitagabend Dienst?")]
+    [TestCase("Wer hat Dienstagabend Dienst?")]
+    [TestCase("Welcher Plan gilt am Montag?")]
+    [TestCase("Wer hat am Montag den Montagsdienst?")]
     public void ADatedDutyQuestion_GuaranteesReadScheduleState(string message)
     {
         ScheduleReadIntentResolver.GuaranteedSkillNames(message, currentRoute: null)
@@ -52,6 +62,9 @@ public class ScheduleReadIntentResolverTests
     [TestCase("Welche Mitarbeiter hat die Gruppe Winterthur?")]
     [TestCase("Was ist am Dienstag los?")]
     [TestCase("Create a shift on Monday in Winterthur")]
+    [TestCase("Was ist am Dienstagabend los?")]
+    [TestCase("Wer kommt am Dienstagabend?")]
+    [TestCase("Wer hat hier Dienst?")]
     [TestCase("")]
     [TestCase("   ")]
     public void AnythingElse_GuaranteesNothing(string message)
@@ -70,9 +83,16 @@ public class ScheduleReadIntentResolverTests
     [TestCase("/workplace/schedule?group=1")]
     [TestCase("/workplace/schedule#today")]
     [TestCase("/WORKPLACE/Schedule")]
-    public void TheSchedulePage_GuaranteesReadScheduleState_InAnyLanguage(string route)
+    public void TheSchedulePage_WithoutARecognisedQuestion_GuaranteesOnlyReadScheduleState(string route)
     {
         ScheduleReadIntentResolver.GuaranteedSkillNames("Kto pracuje w poniedziałek?", route)
+            .ShouldBe([ScheduleReadIntentResolver.ReadScheduleStateSkillName]);
+    }
+
+    [Test]
+    public void TheSchedulePage_WithARecognisedQuestion_GuaranteesBothSkills()
+    {
+        ScheduleReadIntentResolver.GuaranteedSkillNames("Wer hat am Montag Dienst?", ScheduleRoute)
             .ShouldBe(ExpectedSkills);
     }
 

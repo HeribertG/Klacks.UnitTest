@@ -1,11 +1,11 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Retrieval-gap guarantee of the shared SkillToolsetAssembler, found 2026-10-16 while recording the Klacksy videos:
-/// "Wer hat am Montag, 19. Oktober, in Winterthur Dienst?" never retrieved read_schedule_state (it is not in the
-/// 25-candidate pool, demo and fresh database alike), so the model said it had no tool for planned shifts.
-/// read_schedule_state and list_groups (it needs a group id) must arrive as guarantees, survive the provider cap,
-/// and stay out when their signal is missing.
+/// Schedule-read guarantee of the shared SkillToolsetAssembler: a dated duty or plan question and the schedule page
+/// keep read_schedule_state in the toolset although vector retrieval never ranks it for such wording. A recognised
+/// question also keeps list_groups (the skill needs a group id); the page alone keeps only read_schedule_state.
+/// list_groups is the weakest guarantee and goes first at a small provider cap. The skills survive the cap, stay out
+/// when their signal is missing, and never pull in the scenario accept/reject/list skills.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
@@ -31,6 +31,11 @@ public class SkillToolsetAssemblerScheduleReadTests
     private const string AlwaysOnSkillName = "navigate_to";
     private const string CreateShiftSkillName = "create_shift";
     private const string AddShiftToGroupSkillName = "add_shift_to_group";
+    private const string ExplainPageScheduleSkillName = "explain_page_schedule";
+    private const string ExtraHintSkillName = "extra_hint_skill";
+    private const string AlwaysOnFillerPrefix = "always_on_filler_";
+    private const int AlwaysOnFillerCount = 8;
+    private const int TinyCap = 12;
     private const string ScheduleRoute = "/workplace/schedule";
     private const string DashboardRoute = "/workplace/dashboard";
     private const string DutyQuestion = "Wer hat am Montag, 19. Oktober, in Winterthur Dienst?";
@@ -59,7 +64,12 @@ public class SkillToolsetAssemblerScheduleReadTests
             CreateSkill(ScheduleReadIntentResolver.ReadScheduleStateSkillName, SkillEffect.Read),
             CreateSkill(ScheduleReadIntentResolver.ListGroupsSkillName, SkillEffect.Read),
             CreateSkill(CreateShiftSkillName, SkillEffect.Mutate),
-            CreateSkill(AddShiftToGroupSkillName, SkillEffect.Mutate)
+            CreateSkill(AddShiftToGroupSkillName, SkillEffect.Mutate),
+            CreateSkill(ExplainPageScheduleSkillName, SkillEffect.Explain),
+            CreateSkill(ExtraHintSkillName, SkillEffect.Read),
+            CreateSkill(ScenarioFollowUpSkills.AcceptScenarioSkillName, SkillEffect.Mutate),
+            CreateSkill(ScenarioFollowUpSkills.RejectScenarioSkillName, SkillEffect.Mutate),
+            CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, SkillEffect.Read)
         ];
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>()).Returns(_ => _skills);
         GivenRetrieval();
@@ -80,11 +90,43 @@ public class SkillToolsetAssemblerScheduleReadTests
     }
 
     [Test]
-    public async Task OnTheSchedulePage_ReadScheduleStateIsKept_ForAnyMessage()
+    public async Task OnTheSchedulePage_ReadScheduleStateIsKept_ForAnyMessage_WithoutListGroups()
     {
         var result = await AssembleAsync("Kto pracuje w poniedziałek?", ScheduleRoute);
 
-        Names(result).ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
+        var names = Names(result);
+        names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
+        names.ShouldNotContain(ScheduleReadIntentResolver.ListGroupsSkillName);
+    }
+
+    [Test]
+    public async Task OnTheSchedulePage_ADutyQuestion_KeepsBothSkills_AndNoScenarioSkill()
+    {
+        var result = await AssembleAsync(DutyQuestion, ScheduleRoute);
+
+        var names = Names(result);
+        names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
+        names.ShouldContain(ScheduleReadIntentResolver.ListGroupsSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.AcceptScenarioSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.RejectScenarioSkillName);
+        names.ShouldNotContain(ScenarioFollowUpSkills.ListScenariosSkillName);
+    }
+
+    [Test]
+    public async Task AtTheTinyCap_ListGroupsIsCutBeforeReadScheduleStateAndOtherHints()
+    {
+        _skills.AddRange(Enumerable.Range(0, AlwaysOnFillerCount)
+            .Select(index => CreateSkill($"{AlwaysOnFillerPrefix}{index}", SkillEffect.Read, alwaysOn: true)));
+
+        var result = await AssembleAsync(
+            DutyQuestion, ScheduleRoute, maxTools: TinyCap, pinnedSkillNames: [ExtraHintSkillName]);
+
+        var names = Names(result);
+        names.Count.ShouldBe(TinyCap);
+        names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
+        names.ShouldContain(ExplainPageScheduleSkillName);
+        names.ShouldContain(ExtraHintSkillName);
+        names.ShouldNotContain(ScheduleReadIntentResolver.ListGroupsSkillName);
     }
 
     [Test]
@@ -141,7 +183,7 @@ public class SkillToolsetAssemblerScheduleReadTests
         string message,
         string? route,
         int maxTools = 30,
-        IReadOnlyList<string>? previousTurnSkillNames = null)
+        IReadOnlyCollection<string>? pinnedSkillNames = null)
     {
         var resolver = new SkillToolsetGuaranteeResolver(
             Substitute.For<IPendingUserNoteRepository>(),
@@ -169,8 +211,8 @@ public class SkillToolsetAssemblerScheduleReadTests
 
         return await assembler.AssembleAsync(
             _agent, new List<string>(), message, "conv-retrieval-gap", route, Guid.NewGuid().ToString(),
-            "de", maxTools, applyLearnedPhraseGuarantee: true, excludedSkillNames: null, pinnedSkillNames: null,
-            previousTurnSkillNames, continuationSkillNames: null, CancellationToken.None);
+            "de", maxTools, applyLearnedPhraseGuarantee: true, excludedSkillNames: null, pinnedSkillNames,
+            previousTurnSkillNames: null, continuationSkillNames: null, CancellationToken.None);
     }
 
     private static RecipeEngineService CreateRecipeEngine()
