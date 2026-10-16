@@ -48,7 +48,8 @@ public class ReadScheduleStateSkillTests
             Abbreviation = "DS",
             LockLevel = lockLevel,
             IsGroupRestricted = groupRestricted,
-            ReplaceClientId = replaceClientId
+            ReplaceClientId = replaceClientId,
+            IsReplacementEntry = replaceClientId.HasValue
         };
 
     private static IScheduleEntriesService ServiceReturning(IEnumerable<ScheduleCell> cells)
@@ -413,7 +414,7 @@ public class ReadScheduleStateSkillTests
     }
 
     [Test]
-    public async Task ReplacementEntry_NamesTheReplacedEmployeeOnlyWhenVisible()
+    public async Task ReplacementEntry_ExposesTheReplacedEmployeeOnlyWhenVisible()
     {
         var replacement = Guid.NewGuid();
         var replacedVisible = Guid.NewGuid();
@@ -432,8 +433,15 @@ public class ReadScheduleStateSkillTests
         var result = await skill.ExecuteAsync(Ctx(), Params());
 
         var entries = DataAsJson(result).GetProperty("Entries");
+        entries[0].GetProperty("ReplaceClientId").GetGuid().ShouldBe(replacedVisible);
         entries[0].GetProperty("ReplaceClientName").GetString().ShouldBe("Vera Sichtbar");
+        entries[1].GetProperty("ReplaceClientId").ValueKind.ShouldBe(JsonValueKind.Null);
         entries[1].GetProperty("ReplaceClientName").ValueKind.ShouldBe(JsonValueKind.Null);
-        JsonSerializer.Serialize(result.Data).ShouldNotContain("Hans Versteckt");
+        entries[1].GetProperty("IsReplacement").GetBoolean().ShouldBeTrue();
+        var data = DataAsJson(result);
+        data.GetProperty("EntryCount").GetInt32().ShouldBe(2);
+        var serialized = JsonSerializer.Serialize(result.Data) + result.Message;
+        serialized.ShouldNotContain("Hans Versteckt");
+        serialized.ShouldNotContain(replacedHidden.ToString());
     }
 }

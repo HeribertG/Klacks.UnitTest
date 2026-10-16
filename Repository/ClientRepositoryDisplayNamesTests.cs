@@ -77,6 +77,17 @@ public class ClientRepositoryDisplayNamesTests
     }
 
     [Test]
+    public async Task GetDisplayNamesAsync_SoftDeletedClient_IsNotReturned()
+    {
+        var anna = await SeedAsync("Anna", "Meier", null);
+        var deleted = await SeedAsync("Dora", "Gelöscht", null, isDeleted: true);
+
+        var names = await _repository.GetDisplayNamesAsync(new[] { anna, deleted });
+
+        names.Keys.ShouldBe(new[] { anna });
+    }
+
+    [Test]
     public async Task GetDisplayNamesAsync_NoIds_ReturnsEmpty()
     {
         await SeedAsync("Anna", "Meier", null);
@@ -86,7 +97,7 @@ public class ClientRepositoryDisplayNamesTests
         names.ShouldBeEmpty();
     }
 
-    private async Task<Guid> SeedAsync(string firstName, string name, string? company)
+    private async Task<Guid> SeedAsync(string firstName, string name, string? company, bool isDeleted = false)
     {
         var client = new Client
         {
@@ -94,7 +105,8 @@ public class ClientRepositoryDisplayNamesTests
             Type = EntityTypeEnum.Employee,
             FirstName = firstName,
             Name = name,
-            Company = company ?? string.Empty
+            Company = company ?? string.Empty,
+            IsDeleted = isDeleted
         };
         _context.Client.Add(client);
         await _context.SaveChangesAsync();
