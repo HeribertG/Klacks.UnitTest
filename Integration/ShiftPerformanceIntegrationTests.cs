@@ -176,7 +176,7 @@ public class ShiftPerformanceIntegrationTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
+        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter, null);
         stopwatch.Stop();
 
         // Assert
@@ -213,7 +213,7 @@ public class ShiftPerformanceIntegrationTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
+        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter, null);
         stopwatch.Stop();
 
         // Assert
@@ -251,7 +251,7 @@ public class ShiftPerformanceIntegrationTests
 
         // Act
         var stopwatch = Stopwatch.StartNew();
-        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
+        var result = await _shiftRepository.GetFilteredAndPaginatedShifts(filter, null);
         stopwatch.Stop();
 
         // Assert
@@ -328,7 +328,7 @@ public class ShiftPerformanceIntegrationTests
         var sw1 = Stopwatch.StartNew();
         var memoryBefore1 = GC.GetTotalMemory(false);
         
-        var queryableResult = await _shiftRepository.GetFilteredAndPaginatedShifts(filter);
+        var queryableResult = await _shiftRepository.GetFilteredAndPaginatedShifts(filter, null);
         
         sw1.Stop();
         var memoryAfter1 = GC.GetTotalMemory(false);

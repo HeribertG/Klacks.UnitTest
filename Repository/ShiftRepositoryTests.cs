@@ -390,7 +390,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow), SelectedGroupRestriction(filter)).ToList();
 
         // Assert
         result.Count().ShouldBe(1);
@@ -439,7 +439,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow), SelectedGroupRestriction(filter)).ToList();
 
         // Assert
         result.Count().ShouldBe(1);
@@ -492,7 +492,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow), SelectedGroupRestriction(filter)).ToList();
 
         // Assert
         result.ShouldBeEmpty();
@@ -572,7 +572,7 @@ public class ShiftRepositoryTests
             .Returns(args => (IQueryable<Shift>)args[0]);
 
         // Act
-        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow), SelectedGroupRestriction(filter)).ToList();
 
         // Assert
         result.Count().ShouldBe(2);
@@ -617,7 +617,7 @@ public class ShiftRepositoryTests
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 
-        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow), SelectedGroupRestriction(filter)).ToList();
 
         _mockQueryPipeline.DidNotReceiveWithAnyArgs().ApplyDateRangeFilter(default!, default, default, default, default);
         result.ShouldContain(s => s.Id == draftFarInFuture.Id);
@@ -656,9 +656,113 @@ public class ShiftRepositoryTests
             .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(args => (IQueryable<Shift>)args[0]);
 
-        _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow)).ToList();
+        _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow), SelectedGroupRestriction(filter)).ToList();
 
         _mockQueryPipeline.Received(1).ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), true, false, false, Arg.Any<DateOnly>());
+    }
+
+    [Test]
+    public void FilterShifts_EmptyRestriction_KeepsOnlyGroupLessShifts()
+    {
+        var hiddenShift = AddShiftWithGroups("Hidden group shift", Guid.NewGuid());
+        var groupLessShift = AddShiftWithGroups("Group-less shift");
+        PassThroughPipeline();
+
+        var result = _repository.FilterShifts(ShiftListFilter(), DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()).ToList();
+
+        result.ShouldContain(s => s.Id == groupLessShift.Id);
+        result.ShouldNotContain(s => s.Id == hiddenShift.Id);
+    }
+
+    [Test]
+    public void FilterShifts_VisibleRestriction_KeepsVisibleAndMixedShifts_DropsHiddenShift()
+    {
+        var visibleGroup = Guid.NewGuid();
+        var hiddenGroup = Guid.NewGuid();
+        var visibleShift = AddShiftWithGroups("Visible", visibleGroup);
+        var mixedShift = AddShiftWithGroups("Mixed", hiddenGroup, visibleGroup);
+        var hiddenShift = AddShiftWithGroups("Hidden", hiddenGroup);
+        PassThroughPipeline();
+
+        var result = _repository.FilterShifts(ShiftListFilter(), DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid> { visibleGroup }).ToList();
+
+        result.ShouldContain(s => s.Id == visibleShift.Id);
+        result.ShouldContain(s => s.Id == mixedShift.Id);
+        result.ShouldNotContain(s => s.Id == hiddenShift.Id);
+    }
+
+    [Test]
+    public void FilterShifts_NullRestriction_KeepsEveryShift()
+    {
+        var groupedShift = AddShiftWithGroups("Grouped", Guid.NewGuid());
+        var groupLessShift = AddShiftWithGroups("Group-less");
+        PassThroughPipeline();
+
+        var result = _repository.FilterShifts(ShiftListFilter(), DateOnly.FromDateTime(DateTime.UtcNow), null).ToList();
+
+        result.ShouldContain(s => s.Id == groupedShift.Id);
+        result.ShouldContain(s => s.Id == groupLessShift.Id);
+    }
+
+    [Test]
+    public void FilterShifts_UnsealedDraftView_StillAppliesGroupVisibility()
+    {
+        var hiddenDraft = AddShiftWithGroups("Hidden draft", Guid.NewGuid());
+        var groupLessDraft = AddShiftWithGroups("Group-less draft");
+        PassThroughPipeline();
+        var filter = new ShiftFilter { FilterType = ShiftFilterType.Original, IsSealedOrder = false, SelectedGroup = Guid.NewGuid() };
+
+        var result = _repository.FilterShifts(filter, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()).ToList();
+
+        result.ShouldContain(s => s.Id == groupLessDraft.Id);
+        result.ShouldNotContain(s => s.Id == hiddenDraft.Id);
+    }
+
+    private static List<Guid>? SelectedGroupRestriction(ShiftFilter filter)
+        => filter.SelectedGroup.HasValue ? [filter.SelectedGroup.Value] : null;
+
+    private static ShiftFilter ShiftListFilter() => new()
+    {
+        FilterType = ShiftFilterType.Shift,
+        IsTimeRange = true,
+        IsSporadic = true
+    };
+
+    private Shift AddShiftWithGroups(string name, params Guid[] groupIds)
+    {
+        var shiftId = Guid.NewGuid();
+        var shift = new Shift
+        {
+            Id = shiftId,
+            Name = name,
+            Status = ShiftStatus.OriginalShift,
+            ShiftType = ShiftType.IsTask,
+            FromDate = DateOnly.FromDateTime(DateTime.Now),
+            StartShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)),
+            EndShift = TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)),
+            GroupItems = groupIds
+                .Select(groupId => new GroupItem { Id = Guid.NewGuid(), GroupId = groupId, ShiftId = shiftId })
+                .ToList()
+        };
+        _context.Shift.Add(shift);
+        _context.SaveChanges();
+        return shift;
+    }
+
+    private void PassThroughPipeline()
+    {
+        _mockQueryPipeline
+            .ApplyStatusFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<ShiftFilterType>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplyDateRangeFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<DateOnly>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplySearchFilter(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<bool>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
+        _mockQueryPipeline
+            .ApplySorting(Arg.Any<IQueryable<Shift>>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(args => (IQueryable<Shift>)args[0]);
     }
 
     [TearDown]
