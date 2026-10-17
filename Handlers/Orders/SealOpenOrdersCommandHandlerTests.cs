@@ -8,6 +8,7 @@
 /// assignment command before the sealing pass instead of duplicating its logic.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Commands.Orders;
 using Klacks.Api.Application.DTOs.Orders;
 using Klacks.Api.Application.Handlers.Orders;
@@ -32,7 +33,7 @@ public class SealOpenOrdersCommandHandlerTests
         _shiftRepository = Substitute.For<IShiftRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _mediator = Substitute.For<IMediator>();
-        _orderSealingService = new OrderSealingService(_shiftRepository, _unitOfWork);
+        _orderSealingService = new OrderSealingService(_shiftRepository, _unitOfWork, ShiftVisibilityGuards.AllowAll());
         _handler = new SealOpenOrdersCommandHandler(_shiftRepository, _orderSealingService, _mediator);
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())

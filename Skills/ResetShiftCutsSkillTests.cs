@@ -32,7 +32,7 @@ public class ResetShiftCutsSkillTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _mediator = Substitute.For<IMediator>();
-        _skill = new ResetShiftCutsSkill(_shiftRepository, _mediator);
+        _skill = new ResetShiftCutsSkill(_shiftRepository, _mediator, ShiftVisibilityGuards.AllowAll());
 
         var part = new Shift
         {

@@ -8,6 +8,7 @@
 /// as well (the administrator family delete is covered in ShiftLifecycleTests).
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
@@ -43,6 +44,7 @@ public class ShiftLockHandlerTests
             Substitute.For<IShiftRequiredQualificationRepository>(),
             _mapper,
             _unitOfWork,
+            ShiftVisibilityGuards.AllowAll(),
             Substitute.For<ILogger<PutCommandHandler>>());
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns((HttpContext?)null);
@@ -52,6 +54,7 @@ public class ShiftLockHandlerTests
             _unitOfWork,
             Substitute.For<ISealedOrderFamilyDeletion>(),
             accessor,
+            ShiftVisibilityGuards.AllowAll(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
 
         _shiftRepository.PutWithSealedOrderHandling(Arg.Any<Shift>()).Returns(call => call.Arg<Shift>());

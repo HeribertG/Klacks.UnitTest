@@ -1,4 +1,5 @@
 ﻿using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -25,6 +26,7 @@ public class GetResetDateRangeQueryHandlerTests
 
         _handler = new GetResetDateRangeQueryHandler(
             _shiftRepository,
+            ShiftVisibilityGuards.AllowAll(),
             _logger
         );
     }

@@ -11,6 +11,7 @@
 /// as the stored value (production keeps it); Guid.Empty counts as no macro.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Services.Macros;
 using Klacks.Api.Domain.Models.Macros;
 using Klacks.Api.Domain.Services.Macros;
@@ -30,7 +31,7 @@ public class MacroAssignPlannerTests : MacroPlannerTestBase
     [SetUp]
     public void SetUp()
     {
-        _sut = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun);
+        _sut = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun, ShiftVisibilityGuards.AllowAll());
     }
 
     [Test]
@@ -93,6 +94,27 @@ public class MacroAssignPlannerTests : MacroPlannerTestBase
         plan.Changes.ShouldAllBe(change => change.From == current && change.To == next);
         plan.Unchanged.Single().Id.ShouldBe(alreadyOnTarget.Id);
         plan.Warnings.ShouldContain(warning => warning.Contains("1 shift(s) of the order already use"));
+    }
+
+    [Test]
+    public async Task PlanAssign_CutGroupWithHiddenPiece_IsRefusedLikeAMissingShift()
+    {
+        var current = GivenMacro();
+        var next = GivenMacro();
+        var orderId = Guid.NewGuid();
+        var holder = GivenHolder(macroId: current.Id, cutGroupId: orderId);
+        var hiddenPiece = Sibling(orderId, current.Id, "Hidden cut");
+        GivenCutGroup(holder, hiddenPiece);
+        var guard = ShiftVisibilityGuards.AllowAll();
+        guard.FindFirstHiddenAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(hiddenPiece.Id)), Arg.Any<CancellationToken>())
+            .Returns(hiddenPiece.Id);
+        var sut = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun, guard);
+
+        var plan = await sut.PlanAssignAsync(MacroAssignmentTarget.Shift, holder.Id, next.Id);
+
+        plan.Refusal.ShouldBe(MacroAssignmentPlanning.DescribeMissingHolder(MacroAssignmentTarget.Shift, holder.Id));
+        plan.Changes.ShouldBeEmpty();
     }
 
     [Test]

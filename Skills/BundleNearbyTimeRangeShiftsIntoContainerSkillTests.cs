@@ -29,6 +29,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
 
     private IShiftRepository _shiftRepository = null!;
     private IGroupRepository _groupRepository = null!;
+    private IGroupVisibilityGuard _groupVisibilityGuard = null!;
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IUserService _userService = null!;
@@ -47,6 +48,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
+        _groupVisibilityGuard = TestGroupWriteVisibility.UnrestrictedGroups();
         _mediator = Substitute.For<IMediator>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _userService = Substitute.For<IUserService>();
@@ -63,7 +65,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             _containerAutofillService,
             _settingsReader,
             _encryptionService,
-            GeoServicesPolicyTestFactory.Default());
+            GeoServicesPolicyTestFactory.Default(),
+            _groupVisibilityGuard);
 
         _userService.GetInstanceId().Returns("instance-1");
 
@@ -251,7 +254,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             _containerAutofillService,
             _settingsReader,
             _encryptionService,
-            GeoServicesPolicyTestFactory.NoOutbound());
+            GeoServicesPolicyTestFactory.NoOutbound(),
+            _groupVisibilityGuard);
 
         var result = await skill.ExecuteAsync(Ctx(), Params("bicycle"));
 
@@ -275,6 +279,22 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
 
         result.Success.ShouldBeTrue();
         await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task HiddenGroup_IsAnsweredLikeMissingGroup_AndNothingIsWritten()
+    {
+        var hiddenGroupId = Guid.NewGuid();
+        _groupRepository.Get(hiddenGroupId).Returns(new Group { Id = hiddenGroupId, Name = "Hidden" });
+        _groupVisibilityGuard.IsGroupVisibleAsync(hiddenGroupId, Arg.Any<CancellationToken>()).Returns(false);
+        var parameters = Params();
+        parameters["groupIds"] = hiddenGroupId.ToString();
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Group with ID {hiddenGroupId} not found.");
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
     }
 
     [Test]

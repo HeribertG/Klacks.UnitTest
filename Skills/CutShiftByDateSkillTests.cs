@@ -30,7 +30,7 @@ public class CutShiftByDateSkillTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _shiftCutFacade = Substitute.For<IShiftCutFacade>();
-        _skill = new CutShiftByDateSkill(_shiftRepository, _shiftCutFacade);
+        _skill = new CutShiftByDateSkill(_shiftRepository, _shiftCutFacade, ShiftVisibilityGuards.AllowAll());
 
         _shiftRepository.GetGroupsForShift(Arg.Any<Guid>()).Returns(new List<Group>());
         _shiftCutFacade.ProcessBatchCutsAsync(Arg.Any<List<CutOperation>>()).Returns(new List<Shift>());

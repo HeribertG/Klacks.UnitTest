@@ -6,6 +6,7 @@
 /// with the currently required qualification ids listed, without sending any command.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Commands.Qualifications;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
@@ -32,7 +33,7 @@ public class RemoveShiftRequiredQualificationSkillTests
     {
         _repository = Substitute.For<IShiftRequiredQualificationRepository>();
         _mediator = Substitute.For<IMediator>();
-        _skill = new RemoveShiftRequiredQualificationSkill(_repository, _mediator);
+        _skill = new RemoveShiftRequiredQualificationSkill(_repository, _mediator, ShiftVisibilityGuards.AllowAll());
     }
 
     private static SkillExecutionContext Ctx() => new()

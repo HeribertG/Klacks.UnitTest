@@ -5,6 +5,7 @@
 /// with a default — that would silently reintroduce surcharges a planner deliberately opted out of.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Shifts;
@@ -30,7 +31,7 @@ public class PutCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _logger = Substitute.For<ILogger<PutCommandHandler>>();
 
-        _handler = new PutCommandHandler(_shiftRepository, Substitute.For<Klacks.Api.Domain.Interfaces.Associations.IShiftRequiredQualificationRepository>(), _mapper, _unitOfWork, _logger);
+        _handler = new PutCommandHandler(_shiftRepository, Substitute.For<Klacks.Api.Domain.Interfaces.Associations.IShiftRequiredQualificationRepository>(), _mapper, _unitOfWork, ShiftVisibilityGuards.AllowAll(), _logger);
 
         _shiftRepository.PutWithSealedOrderHandling(Arg.Any<Shift>())
             .Returns(ci => ci.Arg<Shift>());

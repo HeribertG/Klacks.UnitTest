@@ -8,6 +8,7 @@
 /// soft-deletes a draft via the repository and applies the same rules.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Exceptions;
@@ -71,7 +72,7 @@ public class ShiftLifecycleTests
         mediator.Send(Arg.Do<PutCommand<ShiftResource>>(c => captured = c.Resource), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<ShiftResource>)ci[0]).Resource);
 
-        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator);
+        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator, ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -98,7 +99,7 @@ public class ShiftLifecycleTests
         mediator.Send(Arg.Any<PutCommand<ShiftResource>>(), Arg.Any<CancellationToken>())
             .Returns<Task<ShiftResource?>>(_ => throw ShiftLockedException.ForEdit(
                 ExistingShift(lft: 1, rgt: 6), [nameof(Shift.StartShift)]));
-        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator);
+        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator, ShiftVisibilityGuards.AllowAll());
 
         var thrown = await Should.ThrowAsync<ShiftLockedException>(() => skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -123,7 +124,7 @@ public class ShiftLifecycleTests
         var captured = new List<ShiftResource>();
         mediator.Send(Arg.Do<PutCommand<ShiftResource>>(c => captured.Add(c.Resource)), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<ShiftResource>)ci[0]).Resource);
-        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator);
+        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator, ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -144,7 +145,7 @@ public class ShiftLifecycleTests
         var repo = Substitute.For<IShiftRepository>();
         repo.Get(ShiftId).Returns(parent);
         var mediator = Substitute.For<IMediator>();
-        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator);
+        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator, ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -166,7 +167,7 @@ public class ShiftLifecycleTests
         ShiftResource? captured = null;
         mediator.Send(Arg.Do<PutCommand<ShiftResource>>(c => captured = c.Resource), Arg.Any<CancellationToken>())
             .Returns(ci => ((PutCommand<ShiftResource>)ci[0]).Resource);
-        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator);
+        var skill = new UpdateShiftSkill(repo, new ScheduleMapper(), mediator, ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
@@ -184,7 +185,7 @@ public class ShiftLifecycleTests
         var repo = Substitute.For<IShiftRepository>();
         repo.Get(ShiftId).Returns(ExistingShift(lft: 1, rgt: 4));
         var mediator = Substitute.For<IMediator>();
-        var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>());
+        var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>(), ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() });
 
@@ -200,7 +201,7 @@ public class ShiftLifecycleTests
         repo.Get(ShiftId).Returns(ExistingShift());
         repo.HasActiveWorksAsync(ShiftId, Arg.Any<CancellationToken>()).Returns(true);
         var mediator = Substitute.For<IMediator>();
-        var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>());
+        var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>(), ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() });
 
@@ -230,7 +231,7 @@ public class ShiftLifecycleTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<DeleteCommand<ShiftResource>>(), Arg.Any<CancellationToken>())
             .Returns<Task<ShiftResource?>>(_ => throw ShiftLockedException.ForDelete(shift));
-        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion);
+        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion, ShiftVisibilityGuards.AllowAll());
 
         var thrown = await Should.ThrowAsync<ShiftLockedException>(() =>
             skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() }));
@@ -249,7 +250,7 @@ public class ShiftLifecycleTests
         var familyDeletion = Substitute.For<ISealedOrderFamilyDeletion>();
         familyDeletion.DeleteAsync(order, Arg.Any<CancellationToken>()).Returns(4);
         var mediator = Substitute.For<IMediator>();
-        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion);
+        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion, ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(AdminCtx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() });
 
@@ -269,7 +270,7 @@ public class ShiftLifecycleTests
         familyDeletion.DeleteAsync(order, Arg.Any<CancellationToken>())
             .Returns<Task<int>>(_ => throw ShiftLockedException.ForOrderFamilyInUse(
                 order, new OrderFamilyUsage([ShiftId], HasWorks: true, HasScenarioClones: false, HasContainerReferences: false)));
-        var skill = new DeleteShiftSkill(repo, Substitute.For<IMediator>(), familyDeletion);
+        var skill = new DeleteShiftSkill(repo, Substitute.For<IMediator>(), familyDeletion, ShiftVisibilityGuards.AllowAll());
 
         var thrown = await Should.ThrowAsync<ShiftLockedException>(() =>
             skill.ExecuteAsync(AdminCtx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() }));
@@ -287,7 +288,7 @@ public class ShiftLifecycleTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<DeleteCommand<ShiftResource>>(), Arg.Any<CancellationToken>())
             .Returns<Task<ShiftResource?>>(_ => throw ShiftLockedException.ForDelete(shift));
-        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion);
+        var skill = new DeleteShiftSkill(repo, mediator, familyDeletion, ShiftVisibilityGuards.AllowAll());
 
         await Should.ThrowAsync<ShiftLockedException>(() =>
             skill.ExecuteAsync(AdminCtx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() }));
@@ -304,7 +305,7 @@ public class ShiftLifecycleTests
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<DeleteCommand<ShiftResource>>(), Arg.Any<CancellationToken>())
             .Returns(new ShiftResource { Id = ShiftId, Name = "DayShift" });
-        var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>());
+        var skill = new DeleteShiftSkill(repo, mediator, Substitute.For<ISealedOrderFamilyDeletion>(), ShiftVisibilityGuards.AllowAll());
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["shiftId"] = ShiftId.ToString() });
 
@@ -324,7 +325,7 @@ public class ShiftLifecycleTests
 
         accessor.HttpContext.Returns(context);
         return new DeleteCommandHandler(
-            repo, new ScheduleMapper(), uow ?? Substitute.For<IUnitOfWork>(), familyDeletion, accessor,
+            repo, new ScheduleMapper(), uow ?? Substitute.For<IUnitOfWork>(), familyDeletion, accessor, ShiftVisibilityGuards.AllowAll(),
             Substitute.For<ILogger<DeleteCommandHandler>>());
     }
 

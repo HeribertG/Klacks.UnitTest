@@ -48,6 +48,7 @@ public class BulkAddGroupItemsCommandHandlerTests
             _unitOfWork,
             TestGroupWriteVisibility.UnrestrictedGroups(),
             TestGroupWriteVisibility.AllClientsVisible(),
+            ShiftVisibilityGuards.AllowAll(),
             NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
     }
 

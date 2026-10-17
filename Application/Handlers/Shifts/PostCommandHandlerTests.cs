@@ -8,6 +8,7 @@
 /// cannot be undone.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Commands;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Handlers.Shifts;
@@ -47,6 +48,7 @@ public class PostCommandHandlerTests
             _unitOfWork,
             _defaultShiftMacroResolver,
             _orderSealingService,
+            ShiftVisibilityGuards.AllowAll(),
             _logger);
 
         _shiftRepository.AddWithSealedOrderHandling(Arg.Any<Shift>())

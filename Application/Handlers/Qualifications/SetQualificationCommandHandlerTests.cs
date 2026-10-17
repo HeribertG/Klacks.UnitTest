@@ -92,7 +92,7 @@ public class SetQualificationCommandHandlerTests
         var repo = Substitute.For<IShiftRequiredQualificationRepository>();
         repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns(existing);
         var uow = Substitute.For<IUnitOfWork>();
-        var handler = new SetShiftRequiredQualificationCommandHandler(repo, uow);
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, uow, ShiftVisibilityGuards.AllowAll());
 
         var id = await handler.Handle(
             new SetShiftRequiredQualificationCommand(ShiftId, QualId, true, QualificationLevel.Advanced, null),
@@ -120,7 +120,7 @@ public class SetQualificationCommandHandlerTests
         };
         var repo = Substitute.For<IShiftRequiredQualificationRepository>();
         repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns(existing);
-        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>(), ShiftVisibilityGuards.AllowAll());
 
         // Act
         await handler.Handle(
@@ -139,7 +139,7 @@ public class SetQualificationCommandHandlerTests
         repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns((ShiftRequiredQualification?)null);
         repo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<EffectiveShiftRequirement>());
-        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>(), ShiftVisibilityGuards.AllowAll());
 
         // Act
         await handler.Handle(
@@ -166,7 +166,7 @@ public class SetQualificationCommandHandlerTests
         repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns((ShiftRequiredQualification?)null);
         repo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<EffectiveShiftRequirement> { new(ShiftId, "Piece", orderShiftId, inheritedRow) });
-        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>(), ShiftVisibilityGuards.AllowAll());
 
         // Act
         await handler.Handle(
@@ -186,7 +186,7 @@ public class SetQualificationCommandHandlerTests
         repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns((ShiftRequiredQualification?)null);
         repo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<EffectiveShiftRequirement>());
-        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>(), ShiftVisibilityGuards.AllowAll());
 
         // Act
         await handler.Handle(

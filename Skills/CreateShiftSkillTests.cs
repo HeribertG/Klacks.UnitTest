@@ -7,6 +7,7 @@
 /// that points to a macro created by the assistant is refused before anything is stored; other macroIds are used.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.DTOs.Settings;
 using Klacks.Api.Application.Queries.Settings.Macros;
 using Klacks.Api.Application.Skills;
@@ -44,7 +45,7 @@ public class CreateShiftSkillTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _defaultShiftMacroResolver = Substitute.For<IDefaultShiftMacroResolver>();
         _skill = new CreateShiftSkill(
-            _shiftRepository, _groupRepository, _clientRepository, SkillClientVisibility.AllVisible(), _mediator, _unitOfWork, _defaultShiftMacroResolver);
+            _shiftRepository, _groupRepository, _clientRepository, SkillClientVisibility.AllVisible(), _mediator, _unitOfWork, _defaultShiftMacroResolver, TestGroupWriteVisibility.UnrestrictedGroups());
 
         _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client> { new() { Id = ClientId, Name = "Müller", Type = EntityTypeEnum.Customer } });
@@ -170,7 +171,7 @@ public class CreateShiftSkillTests
                 : new List<Client>());
         var guard = SkillClientVisibility.Hiding(ClientId);
         var skill = new CreateShiftSkill(
-            _shiftRepository, _groupRepository, _clientRepository, guard, _mediator, _unitOfWork, _defaultShiftMacroResolver);
+            _shiftRepository, _groupRepository, _clientRepository, guard, _mediator, _unitOfWork, _defaultShiftMacroResolver, TestGroupWriteVisibility.UnrestrictedGroups());
         var unknownId = Guid.NewGuid();
         var unknownParams = Params();
         unknownParams["clientId"] = unknownId.ToString();

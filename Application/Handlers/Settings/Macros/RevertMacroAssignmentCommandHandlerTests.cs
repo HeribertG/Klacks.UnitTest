@@ -74,7 +74,7 @@ public class RevertMacroAssignmentCommandHandlerTests
                 Arg.Any<MacroAssignmentTarget>(), Arg.Any<IReadOnlyList<MacroDryRunHolder>>(), Arg.Any<CancellationToken>())
             .Returns(new MacroDryRunResult(0, 0, [], null, false));
         var bindingReferences = new MacroReferenceRepository(_bindingContext);
-        _bindingAssignPlanner = new MacroAssignPlanner(bindingReferences, new MacroOutputChannelInspector(), bindingDryRun);
+        _bindingAssignPlanner = new MacroAssignPlanner(bindingReferences, new MacroOutputChannelInspector(), bindingDryRun, ShiftVisibilityGuards.AllowAll());
         _bindingRevertPlanner = new MacroRevertPlanner(
             bindingReferences, new MacroAssignmentHistoryRepository(_bindingContext), new MacroOutputChannelInspector(), bindingDryRun);
         _references = new MacroReferenceRepository(_context);
@@ -83,7 +83,7 @@ public class RevertMacroAssignmentCommandHandlerTests
         _dryRun.RunAsync(
                 Arg.Any<MacroAssignmentTarget>(), Arg.Any<IReadOnlyList<MacroDryRunHolder>>(), Arg.Any<CancellationToken>())
             .Returns(new MacroDryRunResult(0, 0, [], null, false));
-        _assignPlanner = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun);
+        _assignPlanner = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun, ShiftVisibilityGuards.AllowAll());
         _planner = new MacroRevertPlanner(_references, _history, new MacroOutputChannelInspector(), _dryRun);
         _inTransaction = false;
         _completedOutsideTransaction = false;
@@ -264,7 +264,7 @@ public class RevertMacroAssignmentCommandHandlerTests
             var otherHistory = new MacroAssignmentHistoryRepository(otherScope);
             var otherPlanner = new MacroRevertPlanner(
                 otherReferences, otherHistory, new MacroOutputChannelInspector(), _dryRun);
-            var otherAssignPlanner = new MacroAssignPlanner(otherReferences, new MacroOutputChannelInspector(), _dryRun);
+            var otherAssignPlanner = new MacroAssignPlanner(otherReferences, new MacroOutputChannelInspector(), _dryRun, ShiftVisibilityGuards.AllowAll());
             var otherUnitOfWork = Substitute.For<IUnitOfWork>();
             otherUnitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
                 .Returns(async ci =>

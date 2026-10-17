@@ -7,6 +7,7 @@
 /// rejects the change up front instead of writing.
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
@@ -32,7 +33,7 @@ public class SetSealedOrderUntilDateSkillTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _skill = new SetSealedOrderUntilDateSkill(_shiftRepository, _unitOfWork);
+        _skill = new SetSealedOrderUntilDateSkill(_shiftRepository, _unitOfWork, ShiftVisibilityGuards.AllowAll());
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
             .Returns(ci => ci.Arg<Func<Task<Guid>>>()());

@@ -466,7 +466,7 @@ public class PreviewApplySkillCallsNoWriteTests
         OpenOrders(sealable, ungrouped);
         RouteAssignOrdersToHandler();
         var sealHandler = new SealOpenOrdersCommandHandler(
-            _shiftRepository, new OrderSealingService(_shiftRepository, _unitOfWork), _mediator);
+            _shiftRepository, new OrderSealingService(_shiftRepository, _unitOfWork, ShiftVisibilityGuards.AllowAll()), _mediator);
         _mediator.Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => sealHandler.Handle(ci.Arg<SealOpenOrdersCommand>(), ci.Arg<CancellationToken>()));
         var jobQueue = Substitute.For<ISealOpenOrdersJobQueue>();

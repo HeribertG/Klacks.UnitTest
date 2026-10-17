@@ -50,7 +50,7 @@ public class GroupItemWriteVisibilityTests
     }
 
     private GroupItemPostHandler PostHandler(IGroupVisibilityGuard groups, IClientVisibilityGuard clients) =>
-        new(_repository, new GroupMapper(), _unitOfWork, groups, clients, NullLogger<GroupItemPostHandler>.Instance);
+        new(_repository, new GroupMapper(), _unitOfWork, groups, clients, ShiftVisibilityGuards.AllowAll(), NullLogger<GroupItemPostHandler>.Instance);
 
     private static GroupItemResource Link(Guid groupId, Guid? clientId) => new()
     {
@@ -136,7 +136,7 @@ public class GroupItemWriteVisibilityTests
     {
         var handler = new BulkAddGroupItemsCommandHandler(
             _repository, _unitOfWork, GroupsVisibleExcept(_hiddenGroupId), TestGroupWriteVisibility.AllClientsVisible(),
-            NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
+            ShiftVisibilityGuards.AllowAll(), NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
         var command = new BulkAddGroupItemsCommand(new BulkGroupItemRequest
         {
             Items = [Link(_visibleGroupId, Guid.NewGuid()), Link(_hiddenGroupId, Guid.NewGuid())]
@@ -153,7 +153,7 @@ public class GroupItemWriteVisibilityTests
         var hiddenClientId = Guid.NewGuid();
         var handler = new BulkAddGroupItemsCommandHandler(
             _repository, _unitOfWork, GroupsVisibleExcept(_hiddenGroupId), TestGroupWriteVisibility.ClientsHidden(hiddenClientId),
-            NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
+            ShiftVisibilityGuards.AllowAll(), NullLogger<BulkAddGroupItemsCommandHandler>.Instance);
         var command = new BulkAddGroupItemsCommand(new BulkGroupItemRequest
         {
             Items = [Link(_visibleGroupId, Guid.NewGuid()), Link(_visibleGroupId, hiddenClientId)]

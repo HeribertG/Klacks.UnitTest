@@ -78,13 +78,13 @@ public class AssignMacroCommandHandlerTests
                 Arg.Any<MacroAssignmentTarget>(), Arg.Any<IReadOnlyList<MacroDryRunHolder>>(), Arg.Any<CancellationToken>())
             .Returns(new MacroDryRunResult(0, 0, [], null, false));
         _bindingPlanner = new MacroAssignPlanner(
-            new MacroReferenceRepository(_bindingContext), new MacroOutputChannelInspector(), bindingDryRun);
+            new MacroReferenceRepository(_bindingContext), new MacroOutputChannelInspector(), bindingDryRun, ShiftVisibilityGuards.AllowAll());
         _boundPlanner = null;
         _references = new MacroReferenceRepository(_context);
         _history = new MacroAssignmentHistoryRepository(_context);
         _dryRun = Substitute.For<IMacroDryRunService>();
         GivenDryRun(new MacroDryRunResult(0, 0, [], null, false));
-        _planner = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun);
+        _planner = new MacroAssignPlanner(_references, new MacroOutputChannelInspector(), _dryRun, ShiftVisibilityGuards.AllowAll());
         _inTransaction = false;
         _completedOutsideTransaction = false;
         _pendingAtCommit = [];
