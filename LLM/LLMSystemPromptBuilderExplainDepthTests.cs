@@ -103,4 +103,13 @@ public class LLMSystemPromptBuilderExplainDepthTests
         none.ShouldBe(beginner);
         beginner.ShouldNotContain(ExplainDepthPromptTexts.Header);
     }
+
+    [Test]
+    public async Task StablePrompt_ForbidsInventedConsequences()
+    {
+        var prompt = await _builder.BuildSystemPromptAsync(Context(new ExplainDepthProfile(ExplainExperienceLevel.Advanced, false)));
+
+        prompt.ShouldContain("Never infer or add further consequences");
+        prompt.ShouldContain("say plainly that you cannot confirm it");
+    }
 }

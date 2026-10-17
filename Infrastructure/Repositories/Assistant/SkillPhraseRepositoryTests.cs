@@ -262,6 +262,187 @@ public class SkillPhraseRepositoryTests
         rows.Select(p => p.Phrase).ShouldBe(["gruppe", "team"], ignoreOrder: true);
     }
 
+    // Every seed version bump and every language pack install rewrites its slice. Removing and re-inserting
+    // unchanged phrases left one soft-deleted tombstone per phrase and run, which is how the table grew more
+    // deleted than active rows.
+    [Test]
+    public async Task ReplaceForLanguage_WithIdenticalListTwice_CreatesNoNewAndNoDeletedRows()
+    {
+        await ReplaceSeedSynonymsAsync(["gruppe", "team"]);
+        var idsAfterFirst = (await AllRowsAsync()).Select(p => p.Id).ToList();
+
+        await ReplaceSeedSynonymsAsync(["gruppe", "team"]);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(2);
+        all.ShouldAllBe(p => !p.IsDeleted);
+        all.Select(p => p.Id).ShouldBe(idsAfterFirst, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task ReplaceAllLanguages_WithIdenticalDictionaryTwice_CreatesNoNewAndNoDeletedRows()
+    {
+        var phrases = new Dictionary<string, List<string>> { ["de"] = ["eins", "zwei"], ["en"] = ["one"] };
+        await _repository.ReplaceAllLanguagesAsync(
+            SkillPhraseOwnerKinds.Skill, SkillName, SkillPhraseKinds.Synonym, SkillPhraseSources.Seed, phrases);
+        var idsAfterFirst = (await AllRowsAsync()).Select(p => p.Id).ToList();
+
+        await _repository.ReplaceAllLanguagesAsync(
+            SkillPhraseOwnerKinds.Skill, SkillName, SkillPhraseKinds.Synonym, SkillPhraseSources.Seed, phrases);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(3);
+        all.ShouldAllBe(p => !p.IsDeleted);
+        all.Select(p => p.Id).ShouldBe(idsAfterFirst, ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task ReplaceForLanguage_WithAPhraseRemoved_SoftDeletesOnlyThatPhrase()
+    {
+        await ReplaceSeedSynonymsAsync(["gruppe", "team", "mannschaft"]);
+        var before = await AllRowsAsync();
+
+        await ReplaceSeedSynonymsAsync(["gruppe", "mannschaft"]);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(3);
+        all.Where(p => p.IsDeleted).Select(p => p.Phrase).ShouldBe(["team"]);
+        all.Where(p => !p.IsDeleted).Select(p => p.Id)
+            .ShouldBe(before.Where(p => p.Phrase != "team").Select(p => p.Id), ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task ReplaceForLanguage_WithAPhraseAdded_InsertsOnlyThatPhrase()
+    {
+        await ReplaceSeedSynonymsAsync(["gruppe"]);
+        var gruppeId = (await AllRowsAsync()).Single().Id;
+
+        await ReplaceSeedSynonymsAsync(["gruppe", "team"]);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(2);
+        all.ShouldAllBe(p => !p.IsDeleted);
+        all.Single(p => p.Phrase == "gruppe").Id.ShouldBe(gruppeId);
+        all.Single(p => p.Phrase == "team").SortOrder.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ReplaceForLanguage_WithReorderedList_UpdatesSortOrderInPlace()
+    {
+        await ReplaceSeedSynonymsAsync(["erste", "zweite", "dritte"]);
+        var idsAfterFirst = (await AllRowsAsync()).ToDictionary(p => p.Phrase, p => p.Id);
+
+        await ReplaceSeedSynonymsAsync(["dritte", "erste", "zweite"]);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(3);
+        all.ShouldAllBe(p => !p.IsDeleted);
+        all.OrderBy(p => p.SortOrder).Select(p => p.Phrase).ShouldBe(["dritte", "erste", "zweite"]);
+        all.ShouldAllBe(p => idsAfterFirst[p.Phrase] == p.Id);
+    }
+
+    [Test]
+    public async Task ReplaceForLanguage_WithInListDuplicatesAndBlanks_StaysStableOnRepeat()
+    {
+        await ReplaceSeedSynonymsAsync(["gruppe", " ", "gruppe", "team"]);
+        await ReplaceSeedSynonymsAsync(["gruppe", " ", "gruppe", "team"]);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(2);
+        all.ShouldAllBe(p => !p.IsDeleted);
+        all.OrderBy(p => p.SortOrder).Select(p => p.SortOrder).ShouldBe([0, 3]);
+    }
+
+    [Test]
+    public async Task ReplaceForLanguage_WithBlankKeywordsTwice_KeepsTheBlankRowsInPlace()
+    {
+        await _repository.ReplaceForLanguageAsync(
+            SkillPhraseOwnerKinds.Skill, SkillName, SkillPhraseKinds.Keyword, SkillPhraseSources.Seed,
+            SkillPhraseLanguages.Multiple, ["a", " ", "b"]);
+        await _repository.ReplaceForLanguageAsync(
+            SkillPhraseOwnerKinds.Skill, SkillName, SkillPhraseKinds.Keyword, SkillPhraseSources.Seed,
+            SkillPhraseLanguages.Multiple, ["a", " ", "b"]);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(3);
+        all.ShouldAllBe(p => !p.IsDeleted);
+    }
+
+    // A rejected row still occupies the unique key, so a replacement that lists the same wording again must
+    // neither add a second row next to it nor quietly turn the rejection back into an active phrase.
+    [Test]
+    public async Task ReplaceForLanguage_WithARejectedPhraseListedAgain_KeepsTheRejectedRowAndAddsNoTwin()
+    {
+        var rejectedId = await GivenPhraseWithIdAsync(SkillPhraseSources.Seed, "gruppe", SkillPhraseStatuses.Rejected);
+
+        await ReplaceSeedSynonymsAsync(["gruppe", "team"]);
+
+        var all = await AllRowsAsync();
+        all.Count.ShouldBe(2);
+        all.ShouldAllBe(p => !p.IsDeleted);
+        var gruppe = all.Single(p => p.Phrase == "gruppe");
+        gruppe.Id.ShouldBe(rejectedId);
+        gruppe.Status.ShouldBe(SkillPhraseStatuses.Rejected);
+    }
+
+    [Test]
+    public async Task ReplaceForLanguage_WithARejectedPhraseNoLongerListed_SoftDeletesIt()
+    {
+        await GivenPhraseWithIdAsync(SkillPhraseSources.Seed, "gruppe", SkillPhraseStatuses.Rejected);
+
+        await ReplaceSeedSynonymsAsync(["team"]);
+
+        var all = await AllRowsAsync();
+        all.Single(p => p.Phrase == "gruppe").IsDeleted.ShouldBeTrue();
+        all.Single(p => p.Phrase == "team").IsDeleted.ShouldBeFalse();
+    }
+
+    // With AllSourcesOfOwner the written list becomes the whole slice. A matching phrase another source
+    // contributed is replaced by a fresh row of the writer, exactly as the former delete-and-insert did.
+    [Test]
+    public async Task ReplaceForLanguage_WithAllSourcesScope_ReplacesAMatchingForeignRowWithAnActiveWriterRow()
+    {
+        await GivenPhraseAsync("de", SkillPhraseSources.Seed, "gruppe");
+        var seedId = (await AllRowsAsync()).Single().Id;
+
+        await _repository.ReplaceForLanguageAsync(
+            SkillPhraseOwnerKinds.Skill, SkillName, SkillPhraseKinds.Synonym, SkillPhraseSources.Admin,
+            "de", ["gruppe"], SkillPhraseReplaceScope.AllSourcesOfOwner);
+
+        var all = await AllRowsAsync();
+        all.Single(p => p.Id == seedId).IsDeleted.ShouldBeTrue();
+        var active = all.Single(p => !p.IsDeleted);
+        active.Source.ShouldBe(SkillPhraseSources.Admin);
+        active.Status.ShouldBe(SkillPhraseStatuses.Active);
+    }
+
+    // Taking a rejected Learned row over in place would leave an Admin row that is inactive and that the
+    // learning card, scoped to Learned, can no longer reach. The administrator's wording must be active.
+    [Test]
+    public async Task ReplaceForLanguage_WithAllSourcesScope_ReplacesARejectedLearnedRowWithAnActiveAdminRow()
+    {
+        var learnedId = await GivenPhraseWithIdAsync(SkillPhraseSources.Learned, "gruppe", SkillPhraseStatuses.Rejected);
+
+        await _repository.ReplaceForLanguageAsync(
+            SkillPhraseOwnerKinds.Skill, SkillName, SkillPhraseKinds.Synonym, SkillPhraseSources.Admin,
+            "de", ["gruppe"], SkillPhraseReplaceScope.AllSourcesOfOwner);
+
+        var all = await AllRowsAsync();
+        all.Single(p => p.Id == learnedId).IsDeleted.ShouldBeTrue();
+        var active = all.Single(p => !p.IsDeleted);
+        active.Source.ShouldBe(SkillPhraseSources.Admin);
+        active.Status.ShouldBe(SkillPhraseStatuses.Active);
+    }
+
+    [Test]
+    public async Task ReplaceForLanguage_TwiceWithIdenticalList_LeavesNothingTracked()
+    {
+        await ReplaceSeedSynonymsAsync(["gruppe", "team"]);
+        await ReplaceSeedSynonymsAsync(["team", "gruppe", "neu"]);
+
+        _context.ChangeTracker.Entries<SkillPhrase>().Count().ShouldBe(0);
+    }
+
     [Test]
     public async Task TryUpdatePhraseText_OnALearnedPhrase_RewritesIt()
     {
@@ -325,7 +506,17 @@ public class SkillPhraseRepositoryTests
         (await _repository.GetByIdAsync(id)).ShouldBeNull();
     }
 
-    private async Task<Guid> GivenPhraseWithIdAsync(string source, string phrase)
+    private Task ReplaceSeedSynonymsAsync(IReadOnlyList<string> phrases) =>
+        _repository.ReplaceForLanguageAsync(
+            SkillPhraseOwnerKinds.Skill, SkillName, SkillPhraseKinds.Synonym, SkillPhraseSources.Seed, "de", phrases);
+
+    private async Task<List<SkillPhrase>> AllRowsAsync()
+    {
+        return await _context.SkillPhrases.IgnoreQueryFilters().AsNoTracking().ToListAsync();
+    }
+
+    private async Task<Guid> GivenPhraseWithIdAsync(
+        string source, string phrase, string status = SkillPhraseStatuses.Active)
     {
         var id = Guid.NewGuid();
         _context.SkillPhrases.Add(new SkillPhrase
@@ -338,7 +529,7 @@ public class SkillPhraseRepositoryTests
             Phrase = phrase,
             SortOrder = 0,
             Source = source,
-            Status = SkillPhraseStatuses.Active
+            Status = status
         });
 
         await _context.SaveChangesAsync();
