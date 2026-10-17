@@ -27,6 +27,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
     private IOpenMeteoClient _weatherClient = null!;
     private ICompanyLocationProvider _companyLocationProvider = null!;
     private IOnboardingService _onboardingService = null!;
+    private IIntroTourStateService _introTourStateService = null!;
     private IPublicHolidayProvider _holidayProvider = null!;
     private IGreetingComposer _greetingComposer = null!;
     private IConfiguration _configuration = null!;
@@ -45,6 +46,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _weatherClient = Substitute.For<IOpenMeteoClient>();
         _companyLocationProvider = Substitute.For<ICompanyLocationProvider>();
         _onboardingService = Substitute.For<IOnboardingService>();
+        _introTourStateService = Substitute.For<IIntroTourStateService>();
         _holidayProvider = Substitute.For<IPublicHolidayProvider>();
         _holidayProvider.GetUpcomingHolidayAsync(Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns((UpcomingHoliday?)null);
@@ -58,11 +60,11 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _companyClock = new FixedCompanyClock(FixedToday.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         _countryResolver = Substitute.For<ICountryResolver>();
         _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns((Countries?)null);
-        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, _configuration, _welcomeFocusResolver, _companyClock, _countryResolver, NullLogger<GetWelcomeQueryHandler>.Instance);
+        _handler = new GetWelcomeQueryHandler(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _introTourStateService, _holidayProvider, _greetingComposer, _configuration, _welcomeFocusResolver, _companyClock, _countryResolver, NullLogger<GetWelcomeQueryHandler>.Instance);
     }
 
     private GetWelcomeQueryHandler HandlerWith(IConfiguration configuration)
-        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider, _greetingComposer, configuration, _welcomeFocusResolver, _companyClock, _countryResolver, NullLogger<GetWelcomeQueryHandler>.Instance);
+        => new(_suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _introTourStateService, _holidayProvider, _greetingComposer, configuration, _welcomeFocusResolver, _companyClock, _countryResolver, NullLogger<GetWelcomeQueryHandler>.Instance);
 
     [Test]
     public async Task Handle_RequestHasBrowserCoordinates_UsesThemAndSkipsCompanyFallback()
@@ -175,7 +177,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
         var logger = Substitute.For<ILogger<GetWelcomeQueryHandler>>();
         var handler = new GetWelcomeQueryHandler(
-            _suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider,
+            _suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _introTourStateService, _holidayProvider,
             _greetingComposer, config, _welcomeFocusResolver, _companyClock, _countryResolver, logger);
 
         await handler.Handle(request, CancellationToken.None);
@@ -200,7 +202,7 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         _weatherClient.GetWeatherKeyAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>()).Returns("weather.clear");
         var logger = Substitute.For<ILogger<GetWelcomeQueryHandler>>();
         var handler = new GetWelcomeQueryHandler(
-            _suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _holidayProvider,
+            _suggestionsRanker, _weatherClient, _companyLocationProvider, _onboardingService, _introTourStateService, _holidayProvider,
             _greetingComposer, config, _welcomeFocusResolver, _companyClock, _countryResolver, logger);
 
         await handler.Handle(request, CancellationToken.None);

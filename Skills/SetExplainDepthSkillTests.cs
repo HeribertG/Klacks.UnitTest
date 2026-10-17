@@ -4,10 +4,12 @@
 /// set_explain_depth: beginner and advanced write a new override memory of the caller (never shared, never pinned, no
 /// expiry) and only then retire the caller's older override rows, so a crash in between still resolves to the newest
 /// choice; auto retires every override row; each successful call drops the caller's cached depth. Unknown values and a
-/// caller without a user id write nothing.
+/// caller without a user id write nothing. Runs the skill over the real ExplainDepthOverrideService it shares with the
+/// onboarding endpoint.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
+using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 
@@ -34,7 +36,7 @@ public class SetExplainDepthSkillTests
         _agentRepository = Substitute.For<IAgentRepository>();
         _agentRepository.GetDefaultAgentAsync(Arg.Any<CancellationToken>()).Returns(new Agent { Id = AgentId });
         _resolver = Substitute.For<IExplainDepthResolver>();
-        _sut = new SetExplainDepthSkill(_memoryRepository, _agentRepository, _resolver);
+        _sut = new SetExplainDepthSkill(new ExplainDepthOverrideService(_memoryRepository, _agentRepository, _resolver));
     }
 
     private static SkillExecutionContext Ctx(Guid? userId = null) => new()
