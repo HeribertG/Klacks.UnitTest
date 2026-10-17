@@ -146,4 +146,50 @@ public class UpdateQualificationSkillTests
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<UpdateQualificationCommand>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task UpdateQualification_IsLevelBinding_IsDispatched()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var mediator = MediatorWith(Existing(id));
+        var skill = new UpdateQualificationSkill(mediator);
+
+        // Act
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["qualificationId"] = id.ToString(),
+            ["isLevelBinding"] = true
+        });
+
+        // Assert
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<UpdateQualificationCommand>(c => c.Id == id && c.IsLevelBinding && !c.IsTimeLimited),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UpdateQualification_IsLevelBindingOmitted_KeepsTheCurrentValue()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var existing = Existing(id);
+        existing.IsLevelBinding = true;
+        var mediator = MediatorWith(existing);
+        var skill = new UpdateQualificationSkill(mediator);
+
+        // Act
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["qualificationId"] = id.ToString(),
+            ["name_en"] = "Forklift licence"
+        });
+
+        // Assert
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<UpdateQualificationCommand>(c => c.IsLevelBinding),
+            Arg.Any<CancellationToken>());
+    }
 }

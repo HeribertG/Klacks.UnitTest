@@ -68,4 +68,21 @@ public class ShiftRequirementMaterializerTests
         copies.Count.ShouldBe(1);
         copies[0].ShiftId.ShouldBe(Piece);
     }
+
+    [TestCase(null)]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void Copy_Keeps_The_LevelBindingOverride(bool? levelBindingOverride)
+    {
+        // Arrange
+        var source = Row(Order, Guid.NewGuid());
+        source.LevelBindingOverride = levelBindingOverride;
+
+        // Act
+        var copy = ShiftRequirementMaterializer.Copy(source, Piece);
+
+        // Assert
+        copy.LevelBindingOverride.ShouldBe(levelBindingOverride);
+        copy.ShiftId.ShouldBe(Piece);
+    }
 }

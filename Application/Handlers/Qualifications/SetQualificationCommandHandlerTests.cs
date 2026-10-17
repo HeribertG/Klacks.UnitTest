@@ -95,7 +95,7 @@ public class SetQualificationCommandHandlerTests
         var handler = new SetShiftRequiredQualificationCommandHandler(repo, uow);
 
         var id = await handler.Handle(
-            new SetShiftRequiredQualificationCommand(ShiftId, QualId, true, QualificationLevel.Advanced),
+            new SetShiftRequiredQualificationCommand(ShiftId, QualId, true, QualificationLevel.Advanced, null),
             CancellationToken.None);
 
         id.ShouldBe(existing.Id);
@@ -103,5 +103,97 @@ public class SetQualificationCommandHandlerTests
         existing.MinLevel.ShouldBe(QualificationLevel.Advanced);
         await repo.DidNotReceive().Add(Arg.Any<ShiftRequiredQualification>());
         await uow.Received(1).CompleteAsync();
+    }
+
+    [TestCase(null, false, null)]
+    [TestCase(false, false, false)]
+    [TestCase(null, true, true)]
+    [TestCase(false, true, true)]
+    public async Task SetShiftRequiredQualification_Existing_LevelBindingOverride_ReplacedUnlessKept(
+        bool? sent, bool keep, bool? expected)
+    {
+        // Arrange
+        var existing = new ShiftRequiredQualification
+        {
+            Id = Guid.NewGuid(), ShiftId = ShiftId, QualificationId = QualId, IsMandatory = true,
+            MinLevel = QualificationLevel.Low, LevelBindingOverride = true
+        };
+        var repo = Substitute.For<IShiftRequiredQualificationRepository>();
+        repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns(existing);
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+
+        // Act
+        await handler.Handle(
+            new SetShiftRequiredQualificationCommand(ShiftId, QualId, true, QualificationLevel.Basic, sent, keep),
+            CancellationToken.None);
+
+        // Assert
+        existing.LevelBindingOverride.ShouldBe(expected);
+    }
+
+    [Test]
+    public async Task SetShiftRequiredQualification_New_StoresTheOverride()
+    {
+        // Arrange
+        var repo = Substitute.For<IShiftRequiredQualificationRepository>();
+        repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns((ShiftRequiredQualification?)null);
+        repo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<EffectiveShiftRequirement>());
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+
+        // Act
+        await handler.Handle(
+            new SetShiftRequiredQualificationCommand(ShiftId, QualId, true, QualificationLevel.Proficient, true),
+            CancellationToken.None);
+
+        // Assert
+        await repo.Received(1).Add(Arg.Is<ShiftRequiredQualification>(r =>
+            r.QualificationId == QualId && r.LevelBindingOverride == true));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task SetShiftRequiredQualification_NewRowKeepingTheBinding_TakesTheInheritedOverride(bool inheritedOverride)
+    {
+        // Arrange
+        var orderShiftId = Guid.NewGuid();
+        var inheritedRow = new ShiftRequiredQualification
+        {
+            Id = Guid.NewGuid(), ShiftId = orderShiftId, QualificationId = QualId, IsMandatory = true,
+            MinLevel = QualificationLevel.Low, LevelBindingOverride = inheritedOverride
+        };
+        var repo = Substitute.For<IShiftRequiredQualificationRepository>();
+        repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns((ShiftRequiredQualification?)null);
+        repo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<EffectiveShiftRequirement> { new(ShiftId, "Piece", orderShiftId, inheritedRow) });
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+
+        // Act
+        await handler.Handle(
+            new SetShiftRequiredQualificationCommand(ShiftId, QualId, true, QualificationLevel.Advanced, null, KeepExistingLevelBinding: true),
+            CancellationToken.None);
+
+        // Assert
+        await repo.Received(1).Add(Arg.Is<ShiftRequiredQualification>(r =>
+            r.ShiftId == ShiftId && r.QualificationId == QualId && r.LevelBindingOverride == inheritedOverride));
+    }
+
+    [Test]
+    public async Task SetShiftRequiredQualification_NewRowKeepingTheBinding_WithoutInheritedRow_Inherits()
+    {
+        // Arrange
+        var repo = Substitute.For<IShiftRequiredQualificationRepository>();
+        repo.GetActiveAsync(ShiftId, QualId, Arg.Any<CancellationToken>()).Returns((ShiftRequiredQualification?)null);
+        repo.GetEffectiveByShiftIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<EffectiveShiftRequirement>());
+        var handler = new SetShiftRequiredQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+
+        // Act
+        await handler.Handle(
+            new SetShiftRequiredQualificationCommand(ShiftId, QualId, true, QualificationLevel.Advanced, true, KeepExistingLevelBinding: true),
+            CancellationToken.None);
+
+        // Assert
+        await repo.Received(1).Add(Arg.Is<ShiftRequiredQualification>(r => r.LevelBindingOverride == null));
     }
 }

@@ -104,4 +104,75 @@ public class SetQualificationSkillTests
         result.Success.ShouldBeFalse();
         await mediator.DidNotReceive().Send(Arg.Any<SetShiftRequiredQualificationCommand>(), Arg.Any<CancellationToken>());
     }
+
+    [TestCase("inherit", null)]
+    [TestCase("binding", true)]
+    [TestCase("HINT", false)]
+    public async Task SetShiftRequiredQualification_LevelBindingOverride_IsMappedOntoTheCommand(string value, bool? expected)
+    {
+        // Arrange
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<SetShiftRequiredQualificationCommand>(), Arg.Any<CancellationToken>()).Returns(Guid.NewGuid());
+        var skill = new SetShiftRequiredQualificationSkill(mediator);
+
+        // Act
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["shiftId"] = ShiftId.ToString(),
+            ["qualificationId"] = QualId.ToString(),
+            ["minLevel"] = 3,
+            ["levelBindingOverride"] = value
+        });
+
+        // Assert
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<SetShiftRequiredQualificationCommand>(c =>
+                c.LevelBindingOverride == expected && !c.KeepExistingLevelBinding),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SetShiftRequiredQualification_LevelBindingOverrideOmitted_KeepsTheExistingChoice()
+    {
+        // Arrange
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<SetShiftRequiredQualificationCommand>(), Arg.Any<CancellationToken>()).Returns(Guid.NewGuid());
+        var skill = new SetShiftRequiredQualificationSkill(mediator);
+
+        // Act
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["shiftId"] = ShiftId.ToString(),
+            ["qualificationId"] = QualId.ToString(),
+            ["minLevel"] = 3
+        });
+
+        // Assert
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<SetShiftRequiredQualificationCommand>(c => c.KeepExistingLevelBinding && c.LevelBindingOverride == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task SetShiftRequiredQualification_UnknownLevelBindingOverride_ReturnsError()
+    {
+        // Arrange
+        var mediator = Substitute.For<IMediator>();
+        var skill = new SetShiftRequiredQualificationSkill(mediator);
+
+        // Act
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["shiftId"] = ShiftId.ToString(),
+            ["qualificationId"] = QualId.ToString(),
+            ["minLevel"] = 3,
+            ["levelBindingOverride"] = "strict"
+        });
+
+        // Assert
+        result.Success.ShouldBeFalse();
+        await mediator.DidNotReceive().Send(Arg.Any<SetShiftRequiredQualificationCommand>(), Arg.Any<CancellationToken>());
+    }
 }

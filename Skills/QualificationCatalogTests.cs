@@ -92,4 +92,58 @@ public class QualificationCatalogTests
         data.GetProperty("Count").GetInt32().ShouldBe(2);
         data.GetProperty("Qualifications")[0].GetProperty("Name").GetProperty("de").GetString().ShouldBe("First aid");
     }
+
+    [Test]
+    public async Task CreateHandler_IsLevelBinding_IsStoredOnTheNewRow()
+    {
+        // Arrange
+        var repo = Substitute.For<IQualificationRepository>();
+        repo.GetByNameAsync("Pflegefachperson", Arg.Any<CancellationToken>()).Returns((Qualification?)null);
+        var handler = new CreateQualificationCommandHandler(repo, Substitute.For<IUnitOfWork>());
+
+        // Act
+        await handler.Handle(new CreateQualificationCommand(new MultiLanguage { De = "Pflegefachperson" }, null, true), CancellationToken.None);
+
+        // Assert
+        await repo.Received(1).Add(Arg.Is<Qualification>(q => q.IsLevelBinding));
+    }
+
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    public async Task CreateHandler_ExistingName_ExplicitIsLevelBinding_NeverOverwritesTheExistingBinding(bool stored, bool sent)
+    {
+        // Arrange
+        var existing = new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Kasse" }, IsLevelBinding = stored };
+        var repo = Substitute.For<IQualificationRepository>();
+        repo.GetByNameAsync("Kasse", Arg.Any<CancellationToken>()).Returns(existing);
+        var uow = Substitute.For<IUnitOfWork>();
+        var handler = new CreateQualificationCommandHandler(repo, uow);
+
+        // Act
+        var id = await handler.Handle(new CreateQualificationCommand(new MultiLanguage { De = "Kasse" }, null, sent), CancellationToken.None);
+
+        // Assert
+        id.ShouldBe(existing.Id);
+        existing.IsLevelBinding.ShouldBe(stored);
+        await repo.DidNotReceive().Add(Arg.Any<Qualification>());
+        await uow.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task CreateHandler_ExistingName_WithoutIsLevelBinding_LeavesTheRowUntouched()
+    {
+        // Arrange
+        var existing = new Qualification { Id = Guid.NewGuid(), Name = new MultiLanguage { De = "Kasse" }, IsLevelBinding = true };
+        var repo = Substitute.For<IQualificationRepository>();
+        repo.GetByNameAsync("Kasse", Arg.Any<CancellationToken>()).Returns(existing);
+        var uow = Substitute.For<IUnitOfWork>();
+        var handler = new CreateQualificationCommandHandler(repo, uow);
+
+        // Act
+        await handler.Handle(new CreateQualificationCommand(new MultiLanguage { De = "Kasse" }, null), CancellationToken.None);
+
+        // Assert
+        existing.IsLevelBinding.ShouldBeTrue();
+        await uow.DidNotReceive().CompleteAsync();
+    }
 }

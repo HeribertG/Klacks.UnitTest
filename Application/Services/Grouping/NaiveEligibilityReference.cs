@@ -135,10 +135,13 @@ public sealed class NaiveEligibilityReference
             var held = _context.QualificationsByClient.GetValueOrDefault(clientId, NoQualifications);
             var blocking = EligibilityMatcher
                 .FindMandatoryGaps(requirements, held, day, _context.ExpiredMandatoryBlocks)
-                .Any(gap => gap.Severity == QualificationGapSeverity.Error);
-            if (blocking)
+                .Where(gap => gap.Severity == QualificationGapSeverity.Error)
+                .ToList();
+            if (blocking.Count > 0)
             {
-                return GroupingIneligibilityReason.MandatoryQualificationMissing;
+                return blocking.All(gap => gap.IsBindingLevelBlock)
+                    ? GroupingIneligibilityReason.MandatoryQualificationLevelTooLow
+                    : GroupingIneligibilityReason.MandatoryQualificationMissing;
             }
         }
 

@@ -28,6 +28,7 @@ public class ParetoFairnessGateTests
     private const string BlacklistCase = "Blacklist";
     private const string OverlongCase = "OverlongPackages";
     private const string MixedCase = "MixedPackages";
+    private const string MissingLevelsCase = "MissingLevels";
 
     private static ParetoGateSnapshot Current() => new(
         Legality: CleanLegality,
@@ -51,6 +52,15 @@ public class ParetoFairnessGateTests
         ParetoFairnessGate.Accepts(Current(), FairerThanCurrent()).ShouldBeTrue();
     }
 
+    [Test]
+    public void Accepts_FewerMissingLevels_TakesTheSwap()
+    {
+        var current = Current() with { MissingLevels = 2 };
+        var candidate = current with { ShiftKindFairness = KindFairnessScore + Epsilon, MissingLevels = 1 };
+
+        ParetoFairnessGate.Accepts(current, candidate).ShouldBeTrue();
+    }
+
     /// <summary>
     /// Below the trade threshold the gate is a strict Pareto gate: a tiny fairness gain never pays for
     /// a rule between 1 and 8. Each case damages exactly one protected component by the smallest
@@ -67,6 +77,7 @@ public class ParetoFairnessGateTests
     [TestCase(BlacklistCase)]
     [TestCase(OverlongCase)]
     [TestCase(MixedCase)]
+    [TestCase(MissingLevelsCase)]
     public void Accepts_AnyProtectedComponentGetsWorse_RefusesTheSwap(string damaged)
     {
         var fairer = FairerThanCurrent();
@@ -80,6 +91,7 @@ public class ParetoFairnessGateTests
             BlacklistCase => fairer with { Blacklist = BlacklistScore - Epsilon },
             OverlongCase => fairer with { OverlongPackages = NoOverlongPackages + 1 },
             MixedCase => fairer with { MixedPackages = MixedPackages + 1 },
+            MissingLevelsCase => fairer with { MissingLevels = 1 },
             _ => throw new ArgumentOutOfRangeException(nameof(damaged), damaged, null),
         };
 
@@ -198,7 +210,10 @@ public class ParetoFairnessGateTests
         var overlong = TradeCandidate(TradeGain, 0, 0) with { OverlongPackages = NoOverlongPackages + 1 };
         var blacklist = TradeCandidate(TradeGain, 0, 0) with { Blacklist = BlacklistScore - Epsilon };
 
+        var lessQualified = TradeCandidate(TradeGain, 0, 0) with { MissingLevels = 1 };
+
         ParetoFairnessGate.Accepts(Current(), Current(), overlong).ShouldBeFalse();
         ParetoFairnessGate.Accepts(Current(), Current(), blacklist).ShouldBeFalse();
+        ParetoFairnessGate.Accepts(Current(), Current(), lessQualified).ShouldBeFalse();
     }
 }

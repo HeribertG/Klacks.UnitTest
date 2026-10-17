@@ -861,4 +861,77 @@ public class FindReplacementQueryHandlerTests
         await _clientSearchRepo.DidNotReceive().FilterVisibleToCallerAsync(
             Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task NonBindingLevelGap_StaysEligible_RankedAfterTheSufficientlyQualified()
+    {
+        // Arrange
+        var below = Guid.NewGuid();
+        var furtherBelow = Guid.NewGuid();
+        var qualified = Guid.NewGuid();
+        SetMembers(Member(below, "Anna"), Member(furtherBelow, "Bea"), Member(qualified, "Zoe"));
+        SetConflicts(
+            LevelConflict(below, ScheduleValidationType.Warning, levelDelta: 1),
+            LevelConflict(furtherBelow, ScheduleValidationType.Warning, levelDelta: 2),
+            Conflict(qualified, ScheduleValidationType.Warning, "schedule.error-list.weekly-overtime"),
+            Conflict(qualified, ScheduleValidationType.Warning, "schedule.error-list.consecutive-days"));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Excluded.ShouldBeEmpty();
+        result.Eligible.Select(c => c.ClientId).ShouldBe([qualified, below, furtherBelow]);
+        result.Eligible.Select(c => c.LevelShortfall).ShouldBe([0, 1, 2]);
+    }
+
+    [Test]
+    public async Task BindingLevelGap_IsHardExcluded_EvenWhenAuthorized()
+    {
+        // Arrange
+        var below = Guid.NewGuid();
+        var qualified = Guid.NewGuid();
+        SetMembers(Member(below, "Anna"), Member(qualified, "Bea"));
+        SetConflicts(LevelConflict(below, ScheduleValidationType.Error, levelDelta: 1));
+        _overrideAuthorizer.IsAuthorizedAsync(true).Returns(true);
+
+        // Act
+        var result = await Find(overrideBlock: true);
+
+        // Assert
+        result.Eligible.Single().ClientId.ShouldBe(qualified);
+        result.Excluded.Single().ClientId.ShouldBe(below);
+        result.Excluded.Single().Reason.ShouldBe(QualificationValidationKeys.InsufficientLevel);
+    }
+
+    [Test]
+    public async Task NonBindingLevelGap_OnCallStillRanksFirst()
+    {
+        // Arrange
+        var onCallBelow = Guid.NewGuid();
+        var qualified = Guid.NewGuid();
+        SetMembers(Member(onCallBelow, "Anna"), Member(qualified, "Bea"));
+        SetOnLeave(BreakCell(onCallBelow, OnCallAbsenceId));
+        SetConflicts(LevelConflict(onCallBelow, ScheduleValidationType.Warning, levelDelta: 1));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Eligible[0].ClientId.ShouldBe(onCallBelow);
+        result.Eligible[0].LevelShortfall.ShouldBe(1);
+    }
+
+    private static ScheduleValidationNotificationDto LevelConflict(Guid clientId, ScheduleValidationType type, int levelDelta)
+        => new()
+        {
+            Type = type,
+            ClientId = clientId,
+            Date = Date,
+            Comment = QualificationValidationKeys.InsufficientLevel,
+            CommentParams = new Dictionary<string, string>
+            {
+                [QualificationValidationParamKeys.LevelDelta] = levelDelta.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            },
+        };
 }

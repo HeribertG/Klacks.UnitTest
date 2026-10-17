@@ -149,6 +149,36 @@ public class StaticEligibilityEvaluatorTests
     }
 
     [Test]
+    public void Evaluate_MandatoryQualificationBelowABindingLevel_ReportsMandatoryQualificationLevelTooLow()
+    {
+        var requirement = new ShiftRequiredQualification
+        {
+            ShiftId = ShiftId, QualificationId = QualificationId, IsMandatory = true, MinLevel = QualificationLevel.Proficient,
+            LevelBindingOverride = true
+        };
+        var held = new ClientQualification { ClientId = ClientId, QualificationId = QualificationId, Level = QualificationLevel.Basic };
+
+        var verdict = Build(requirements: [requirement], qualifications: [held]).Evaluate(ClientId, ShiftId);
+
+        verdict.IsEligible.ShouldBeFalse();
+        verdict.Reason.ShouldBe(GroupingIneligibilityReason.MandatoryQualificationLevelTooLow);
+    }
+
+    [Test]
+    public void Evaluate_MandatoryQualificationBelowANonBindingLevel_IsEligible()
+    {
+        var requirement = new ShiftRequiredQualification
+        {
+            ShiftId = ShiftId, QualificationId = QualificationId, IsMandatory = true, MinLevel = QualificationLevel.Proficient,
+            LevelBindingOverride = false,
+            Qualification = new Qualification { Id = QualificationId, IsLevelBinding = true }
+        };
+        var held = new ClientQualification { ClientId = ClientId, QualificationId = QualificationId, Level = QualificationLevel.Basic };
+
+        Build(requirements: [requirement], qualifications: [held]).Evaluate(ClientId, ShiftId).IsEligible.ShouldBeTrue();
+    }
+
+    [Test]
     public void Evaluate_Blacklisted_ReportsBlacklisted()
     {
         Build(blacklisted: true).Evaluate(ClientId, ShiftId).Reason.ShouldBe(GroupingIneligibilityReason.Blacklisted);

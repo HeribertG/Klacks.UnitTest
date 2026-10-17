@@ -223,6 +223,147 @@ public sealed class EligibilityMatrixBuilderTests
         matrix.ShiftNames[Shift].ShouldBe("Piece", "The report names the staffed piece, not the shift that carries the row.");
     }
 
+    [Test]
+    public async Task InsufficientLevel_BindingLevel_IsIneligibleWithoutShortfall()
+    {
+        // Arrange
+        var requirement = Requirement(Shift, mandatory: true, QualificationLevel.Advanced);
+        requirement.Qualification!.IsLevelBinding = true;
+        GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Care", Shift, requirement));
+        GivenClientHolds(new ClientQualification { ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Basic });
+
+        // Act
+        var matrix = await Build();
+
+        // Assert
+        matrix.Ineligible.ShouldContain((Agent.ToString(), Shift, Date));
+        matrix.LevelShortfall.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task InsufficientLevel_HintOverrideOnABindingQualification_StaysAssignableWithShortfall()
+    {
+        // Arrange
+        var requirement = Requirement(Shift, mandatory: true, QualificationLevel.Advanced);
+        requirement.Qualification!.IsLevelBinding = true;
+        requirement.LevelBindingOverride = false;
+        GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Care", Shift, requirement));
+        GivenClientHolds(new ClientQualification { ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Basic });
+
+        // Act
+        var matrix = await Build();
+
+        // Assert
+        matrix.Ineligible.ShouldNotContain((Agent.ToString(), Shift, Date));
+        matrix.LevelShortfall[(Agent.ToString(), Shift, Date)].ShouldBe(2);
+    }
+
+    [Test]
+    public async Task InsufficientLevel_OptionalRequirement_HasNoShortfall()
+    {
+        // Arrange
+        GivenShiftRequires(mandatory: false, QualificationLevel.Expert);
+        GivenClientHolds(new ClientQualification { ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Basic });
+
+        // Act
+        var matrix = await Build();
+
+        // Assert
+        matrix.LevelShortfall.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task InsufficientLevel_BindingLevel_PreExistingIncumbent_StaysAssignableWithShortfall()
+    {
+        // Arrange
+        var requirement = Requirement(Shift, mandatory: true, QualificationLevel.Advanced);
+        requirement.Qualification!.IsLevelBinding = true;
+        GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Care", Shift, requirement));
+        GivenClientHolds(new ClientQualification { ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Basic });
+        var incumbents = new HashSet<(string AgentId, Guid ShiftId, DateOnly Date)> { (Agent.ToString(), Shift, Date) };
+
+        // Act
+        var matrix = await Build(incumbents);
+
+        // Assert
+        matrix.Ineligible.ShouldNotContain((Agent.ToString(), Shift, Date));
+        matrix.LevelShortfall[(Agent.ToString(), Shift, Date)].ShouldBe(2);
+        matrix.Gaps[(Agent.ToString(), Shift, Date)]
+            .ShouldContain(g => g.Reason == QualificationGapReason.InsufficientLevel && g.Severity == QualificationGapSeverity.Warning);
+    }
+
+    [Test]
+    public async Task InsufficientLevel_BindingLevel_OtherAgentOnSameSlot_StaysIneligible()
+    {
+        // Arrange
+        var requirement = Requirement(Shift, mandatory: true, QualificationLevel.Advanced);
+        requirement.Qualification!.IsLevelBinding = true;
+        GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Care", Shift, requirement));
+        GivenClientHolds(new ClientQualification { ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Basic });
+        var otherAgent = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var incumbents = new HashSet<(string AgentId, Guid ShiftId, DateOnly Date)> { (otherAgent.ToString(), Shift, Date) };
+
+        // Act
+        var matrix = await Build(incumbents);
+
+        // Assert
+        matrix.Ineligible.ShouldContain((Agent.ToString(), Shift, Date));
+        matrix.LevelShortfall.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task Missing_PreExistingIncumbent_StillIneligible()
+    {
+        // Arrange
+        GivenShiftRequires(mandatory: true, QualificationLevel.Proficient);
+        GivenClientHolds();
+        var incumbents = new HashSet<(string AgentId, Guid ShiftId, DateOnly Date)> { (Agent.ToString(), Shift, Date) };
+
+        // Act
+        var matrix = await Build(incumbents);
+
+        // Assert
+        matrix.Ineligible.ShouldContain((Agent.ToString(), Shift, Date));
+    }
+
+    [Test]
+    public async Task Expired_AndTooLow_NonBindingLevel_StaysAssignableWithShortfall()
+    {
+        // Arrange
+        GivenShiftRequires(mandatory: true, QualificationLevel.Advanced);
+        GivenClientHolds(new ClientQualification
+        {
+            ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Low, ValidUntil = Date.AddDays(-1)
+        });
+
+        // Act
+        var matrix = await Build();
+
+        // Assert
+        matrix.Ineligible.ShouldNotContain((Agent.ToString(), Shift, Date));
+        matrix.LevelShortfall[(Agent.ToString(), Shift, Date)].ShouldBe(3);
+        matrix.Gaps[(Agent.ToString(), Shift, Date)].ShouldContain(g => g.Reason == QualificationGapReason.Expired);
+    }
+
+    [Test]
+    public async Task Expired_AndTooLow_BindingLevel_IsIneligible()
+    {
+        // Arrange
+        var requirement = Requirement(Shift, mandatory: true, QualificationLevel.Advanced);
+        requirement.Qualification!.IsLevelBinding = true;
+        GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Care", Shift, requirement));
+        GivenClientHolds(new ClientQualification
+        {
+            ClientId = Agent, QualificationId = Qual, Level = QualificationLevel.Low, ValidUntil = Date.AddDays(-1)
+        });
+
+        // Act
+        var matrix = await Build();
+
+        // Assert
+        matrix.Ineligible.ShouldContain((Agent.ToString(), Shift, Date));
+    }
+
     private void GivenShiftRequires(bool mandatory, QualificationLevel minLevel)
         => GivenEffectiveRequirements(new EffectiveShiftRequirement(Shift, "Care", Shift, Requirement(Shift, mandatory, minLevel)));
 

@@ -113,4 +113,101 @@ public class EligibilityMatcherTests
         gaps[0].QualificationId.ShouldBe(other);
         gaps[0].Reason.ShouldBe(QualificationGapReason.Missing);
     }
+
+    [Test]
+    public void InsufficientLevel_CarriesTheHighestInWindowLevel()
+    {
+        // Arrange
+        var requirement = Req(min: QualificationLevel.Expert);
+
+        // Act
+        var gaps = EligibilityMatcher.FindMandatoryGaps(
+            [requirement],
+            [Held(QualificationLevel.Basic), Held(QualificationLevel.Proficient), Held(QualificationLevel.Advanced, until: new(2026, 1, 1))],
+            Date);
+
+        // Assert
+        gaps.Count.ShouldBe(1);
+        gaps[0].Reason.ShouldBe(QualificationGapReason.InsufficientLevel);
+        gaps[0].HeldLevel.ShouldBe(QualificationLevel.Proficient);
+        gaps[0].LevelDelta.ShouldBe(2);
+    }
+
+    [TestCase(null, false, QualificationGapSeverity.Warning)]
+    [TestCase(null, true, QualificationGapSeverity.Error)]
+    [TestCase(true, false, QualificationGapSeverity.Error)]
+    [TestCase(false, true, QualificationGapSeverity.Warning)]
+    public void InsufficientLevel_SeverityFollowsTheEffectiveBinding(
+        bool? levelBindingOverride, bool qualificationIsLevelBinding, QualificationGapSeverity expected)
+    {
+        // Arrange
+        var requirement = Req(min: QualificationLevel.Proficient);
+        requirement.LevelBindingOverride = levelBindingOverride;
+        requirement.Qualification = new Klacks.Api.Domain.Models.Staffs.Qualification { IsLevelBinding = qualificationIsLevelBinding };
+
+        // Act
+        var gaps = EligibilityMatcher.FindGaps([requirement], [Held(QualificationLevel.Basic)], Date);
+
+        // Assert
+        gaps.Single().IsLevelBinding.ShouldBe(expected == QualificationGapSeverity.Error);
+        gaps.Single().Severity.ShouldBe(expected);
+    }
+
+    [TestCase(null, false, false, QualificationGapSeverity.Warning)]
+    [TestCase(true, false, false, QualificationGapSeverity.Error)]
+    [TestCase(false, false, true, QualificationGapSeverity.Error)]
+    [TestCase(false, true, false, QualificationGapSeverity.Warning)]
+    public void Expired_AndTooLow_IsExpiredWithTheLevelGap_SeverityFollowsBindingOrExpirySetting(
+        bool? levelBindingOverride, bool qualificationIsLevelBinding, bool expiredMandatoryBlocks, QualificationGapSeverity expected)
+    {
+        // Arrange
+        var requirement = Req(min: QualificationLevel.Advanced);
+        requirement.LevelBindingOverride = levelBindingOverride;
+        requirement.Qualification = new Klacks.Api.Domain.Models.Staffs.Qualification { IsLevelBinding = qualificationIsLevelBinding };
+        var expiredRows = new[]
+        {
+            Held(QualificationLevel.Low, until: new(2026, 1, 1)),
+            Held(QualificationLevel.Basic, from: new(2025, 1, 1), until: new(2026, 3, 1)),
+        };
+
+        // Act
+        var gap = EligibilityMatcher.FindGaps([requirement], expiredRows, Date, expiredMandatoryBlocks).Single();
+
+        // Assert
+        gap.Reason.ShouldBe(QualificationGapReason.Expired);
+        gap.HeldLevel.ShouldBe(QualificationLevel.Basic);
+        gap.LevelDelta.ShouldBe(2);
+        gap.Severity.ShouldBe(expected);
+    }
+
+    [Test]
+    public void Expired_AtTheRequiredLevel_BindingLevel_StaysAWarning()
+    {
+        // Arrange
+        var requirement = Req(min: QualificationLevel.Proficient);
+        requirement.LevelBindingOverride = true;
+
+        // Act
+        var gap = EligibilityMatcher.FindGaps([requirement], [Held(QualificationLevel.Expert, until: new(2026, 1, 1))], Date).Single();
+
+        // Assert
+        gap.Reason.ShouldBe(QualificationGapReason.Expired);
+        gap.LevelDelta.ShouldBe(0);
+        gap.Severity.ShouldBe(QualificationGapSeverity.Warning);
+    }
+
+    [Test]
+    public void Missing_BlocksEvenWhenTheLevelIsOnlyAHint()
+    {
+        // Arrange
+        var requirement = Req(min: QualificationLevel.Proficient);
+        requirement.LevelBindingOverride = false;
+
+        // Act
+        var gaps = EligibilityMatcher.FindMandatoryGaps([requirement], [], Date);
+
+        // Assert
+        gaps.Single().Reason.ShouldBe(QualificationGapReason.Missing);
+        gaps.Single().Severity.ShouldBe(QualificationGapSeverity.Error);
+    }
 }

@@ -257,6 +257,38 @@ public class ScheduleMapperTests
         result.ShiftExpenses[0].Description.ShouldBe("Taxi");
     }
 
+    [TestCase(null)]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void RequiredQualifications_LevelBindingOverride_RoundTripsThroughResourceAndEntity(bool? levelBindingOverride)
+    {
+        // Arrange
+        var shiftId = Guid.NewGuid();
+        var shift = new Shift
+        {
+            Id = shiftId,
+            Name = "Care",
+            GroupItems = [],
+            ShiftExpenses = [],
+            RequiredQualifications =
+            [
+                new Api.Domain.Models.Associations.ShiftRequiredQualification
+                {
+                    Id = Guid.NewGuid(), ShiftId = shiftId, QualificationId = Guid.NewGuid(), IsMandatory = true,
+                    MinLevel = QualificationLevel.Proficient, LevelBindingOverride = levelBindingOverride
+                }
+            ]
+        };
+
+        // Act
+        var resource = _mapper.ToShiftResource(shift);
+        var entity = _mapper.ToShiftEntity(resource);
+
+        // Assert
+        resource.RequiredQualifications.Single().LevelBindingOverride.ShouldBe(levelBindingOverride);
+        entity.RequiredQualifications.Single().LevelBindingOverride.ShouldBe(levelBindingOverride);
+    }
+
     [Test]
     public void CloneShift_WithExpenses_ClonesWithEmptyIds()
     {

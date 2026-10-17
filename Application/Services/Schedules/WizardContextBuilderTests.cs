@@ -21,6 +21,7 @@ public class WizardContextBuilderTests
     private IWizardHardConstraintBuilder _hardBuilder = null!;
     private IPeriodHoursService _periodHours = null!;
     private IAvailabilityIneligibilityService _availabilityService = null!;
+    private IEligibilityMatrixBuilder _eligibilityBuilder = null!;
     private WizardContextBuilder _sut = null!;
 
     [SetUp]
@@ -54,8 +55,8 @@ public class WizardContextBuilderTests
             .GetWindowsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns((IReadOnlyDictionary<Guid, MembershipWindow>)new Dictionary<Guid, MembershipWindow>());
         var agentBuilder = new WizardAgentSnapshotBuilder(_contractProvider, membershipReader);
-        var eligibilityBuilder = Substitute.For<IEligibilityMatrixBuilder>();
-        eligibilityBuilder
+        _eligibilityBuilder = Substitute.For<IEligibilityMatrixBuilder>();
+        _eligibilityBuilder
             .BuildAsync(
                 Arg.Any<IReadOnlyCollection<Guid>>(),
                 Arg.Any<IReadOnlyCollection<EligibilitySlot>>(),
@@ -74,7 +75,7 @@ public class WizardContextBuilderTests
         restrictedWindowBuilder
             .BuildAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<CoreRestrictedTimeWindow>)new List<CoreRestrictedTimeWindow>());
-        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, eligibilityBuilder, _availabilityService, warmStartBuilder, restrictedWindowBuilder);
+        _sut = new WizardContextBuilder(agentBuilder, _shiftBuilder, _hardBuilder, _periodHours, _contractProvider, _eligibilityBuilder, _availabilityService, warmStartBuilder, restrictedWindowBuilder);
     }
 
     [Test]
@@ -133,6 +134,37 @@ public class WizardContextBuilderTests
             {
                 (agentId.ToString(), shiftId, date),
             });
+    }
+
+    [Test]
+    public async Task BuildContextAsync_PassesTheLevelShortfallOfTheEligibilityMatrixThrough()
+    {
+        // Arrange
+        var agentId = Guid.NewGuid();
+        var shiftId = Guid.NewGuid();
+        var date = new DateOnly(2026, 4, 20);
+        ArrangeAvailabilityHierarchyCase(agentId, shiftId, date, new HardConstraintResult([], [], [], [], []));
+        var shortfall = new Dictionary<(string AgentId, Guid ShiftId, DateOnly Date), int> { [(agentId.ToString(), shiftId, date)] = 2 };
+        _eligibilityBuilder
+            .BuildAsync(
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<EligibilitySlot>>(),
+                Arg.Any<IReadOnlySet<(string AgentId, Guid ShiftId, DateOnly Date)>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new EligibilityMatrix
+            {
+                Ineligible = new HashSet<(string, Guid, DateOnly)>(),
+                Gaps = new Dictionary<(string, Guid, DateOnly), IReadOnlyList<Klacks.Api.Application.DTOs.Schedules.QualificationGap>>(),
+                QualificationInfo = new Dictionary<Guid, QualificationInfo>(),
+                ShiftNames = new Dictionary<Guid, string>(),
+                LevelShortfall = shortfall,
+            });
+
+        // Act
+        var result = await _sut.BuildContextAsync(HierarchyRequest(agentId, date), CancellationToken.None);
+
+        // Assert
+        result.LevelShortfallOf(agentId.ToString(), shiftId, date).ShouldBe(2);
     }
 
     private static WizardContextRequest HierarchyRequest(Guid agentId, DateOnly date)

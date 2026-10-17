@@ -6,8 +6,9 @@
 /// ShiftRequiredQualification rows for the March 2026 fixture (5 employees, early/late/night,
 /// NACHT-BEF / OBJEKT-A / ERSTE-HILFE). Documents production findings K1 (expired mandatory
 /// qualification is only a Warning by default), K2 (order-to-cut inheritance, fixed 2026-10-08 in the repository via ShiftRequirementSourceResolver;
-/// the builder itself applies only what the repository resolves) and K7 (expired AND below MinLevel falls back to Missing and
-/// becomes a hard veto even at default settings).
+/// the builder itself applies only what the repository resolves) and K7 (expired AND below MinLevel used to fall back to
+/// Missing and become a hard veto even at default settings; fixed 2026-10-17 with the level binding: it is Expired with its
+/// level gap and blocks only when that level is binding or QUALIFICATION_EXPIRED_MANDATORY_BLOCKS is on).
 /// </summary>
 
 using System.Globalization;
@@ -271,7 +272,7 @@ public sealed class EligibilityMatrixScenario3Tests
     }
 
     [Test]
-    public async Task K7_ExpiredAndBelowMinLevel_FallsBackToMissing_HardVetoEvenAtDefaultSettings()
+    public async Task K7_ExpiredAndBelowMinLevel_IsExpiredWithItsLevelGap_WarningAtDefaultSettings()
     {
         // Deliberate deviation from the S3-1 level pinning: the anomaly only exists when the held
         // level is below MinLevel, so this night requirement demands Proficient.
@@ -294,13 +295,15 @@ public sealed class EligibilityMatrixScenario3Tests
             g => g.Reason == QualificationGapReason.Expired && g.Severity == QualificationGapSeverity.Warning,
             "Finding K7 contrast: MA-1's gap is Expired/Warning");
 
-        var anomalyKey = (Ma2.ToString(), NightShiftId, FirstExpiredNightDate);
-        matrix.Ineligible.ShouldContain(
-            anomalyKey,
-            "Finding K7 (semantic anomaly, EligibilityMatcher.cs:92-103): a qualification that is expired AND below MinLevel falls through to Missing and becomes a hard veto even though QUALIFICATION_EXPIRED_MANDATORY_BLOCKS is unset - expiry blocks exactly when the level was too low, while expiry at a sufficient level only warns");
-        matrix.Gaps[anomalyKey].ShouldContain(
-            g => g.Reason == QualificationGapReason.Missing && g.Severity == QualificationGapSeverity.Error,
-            "Finding K7: the anomaly surfaces as reason Missing (not Expired) with Error severity");
+        var formerAnomalyKey = (Ma2.ToString(), NightShiftId, FirstExpiredNightDate);
+        matrix.Ineligible.ShouldNotContain(
+            formerAnomalyKey,
+            "Finding K7 fixed: expired AND below a non-binding MinLevel is no longer a hard veto at default settings");
+        matrix.Gaps[formerAnomalyKey].ShouldContain(
+            g => g.Reason == QualificationGapReason.Expired && g.Severity == QualificationGapSeverity.Warning
+                && g.HeldLevel == QualificationLevel.Low && g.LevelDelta == 2,
+            "Finding K7 fixed: the gap is Expired (not Missing) and keeps its level gap");
+        matrix.LevelShortfall[formerAnomalyKey].ShouldBe(2, "the level gap of an expired row is a soft wizard penalty like an in-window one");
     }
 
     private void GivenRequirements(params ShiftRequiredQualification[] rows)
