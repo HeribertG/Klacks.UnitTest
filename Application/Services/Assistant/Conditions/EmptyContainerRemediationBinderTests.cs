@@ -48,7 +48,7 @@ public class EmptyContainerRemediationBinderTests
     }
 
     [Test]
-    public void HolidayFlags_AreMirroredFromTheContainer()
+    public void HolidayContainer_StillBindsThePlainWeekdayTemplate()
     {
         var payload = RoundTrip(Schedule(
             new TimeOnly(8, 0), new TimeOnly(17, 0), [7], isHoliday: true, isWeekdayAndHoliday: true));
@@ -58,8 +58,8 @@ public class EmptyContainerRemediationBinderTests
         Assert.Multiple(() =>
         {
             Assert.That(arguments[CreateContainerTemplateParameters.Weekday], Is.EqualTo(7));
-            Assert.That(arguments[CreateContainerTemplateParameters.IsHoliday], Is.EqualTo(true));
-            Assert.That(arguments[CreateContainerTemplateParameters.IsWeekdayAndHoliday], Is.EqualTo(true));
+            Assert.That(arguments[CreateContainerTemplateParameters.IsHoliday], Is.EqualTo(false));
+            Assert.That(arguments[CreateContainerTemplateParameters.IsWeekdayAndHoliday], Is.EqualTo(false));
         });
     }
 

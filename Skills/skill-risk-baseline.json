@@ -200,6 +200,7 @@
   "explain_scheduling_rules_model": "ReadOnly",
   "explain_shift_classification": "ReadOnly",
   "explain_shift_container": "ReadOnly",
+  "explain_shift_holiday_options": "ReadOnly",
   "explain_shift_lifecycle_order_to_shift": "ReadOnly",
   "explain_shift_sporadic": "ReadOnly",
   "explain_shift_time_range": "ReadOnly",
