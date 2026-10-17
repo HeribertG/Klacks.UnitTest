@@ -39,6 +39,7 @@ public class AssistantTextsPackCoverageTests
         EscalationHandoffTexts.Reset();
         ScenarioNameTexts.Reset();
         MessengerProactiveTexts.Reset();
+        ExplainOfferTexts.Reset();
     }
 
     /// <summary>

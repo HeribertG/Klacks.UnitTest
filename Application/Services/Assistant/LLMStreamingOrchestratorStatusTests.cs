@@ -83,6 +83,7 @@ public class LLMStreamingOrchestratorStatusTests
             providerOrchestrator,
             Substitute.For<IContextBudgetPolicy>(),
             Substitute.For<IExplainDepthResolver>(),
+            Substitute.For<IGateExplainOfferService>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
     }
 

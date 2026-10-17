@@ -42,6 +42,7 @@ public class AssistantTextsPluginLoaderTests
         GracefulCorrectionTexts.Reset();
         EscalationHandoffTexts.Reset();
         ScenarioNameTexts.Reset();
+        ExplainOfferTexts.Reset();
         MessengerProactiveTexts.Reset();
 
         if (Directory.Exists(_baseDirectory))

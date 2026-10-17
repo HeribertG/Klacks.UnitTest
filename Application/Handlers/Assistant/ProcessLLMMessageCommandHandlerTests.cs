@@ -153,6 +153,7 @@ public class ProcessLLMMessageCommandHandlerTests
             providerOrchestrator,
             new ContextBudgetPolicy(),
             _explainDepthResolver,
+            Substitute.For<IGateExplainOfferService>(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
@@ -389,6 +390,7 @@ public class ProcessLLMMessageCommandHandlerTests
             providerOrchestrator,
             new ContextBudgetPolicy(),
             _explainDepthResolver,
+            Substitute.For<IGateExplainOfferService>(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await handler.Handle(CreateCommand(null), CancellationToken.None);

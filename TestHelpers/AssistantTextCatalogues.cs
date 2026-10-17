@@ -17,5 +17,6 @@ internal static class AssistantTextCatalogues
         MessengerProactiveTexts.Reset();
         ClarificationTexts.Reset();
         GracefulCorrectionTexts.Reset();
+        ExplainOfferTexts.Reset();
     }
 }
