@@ -15,6 +15,8 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
 using NSubstitute.ExceptionExtensions;
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -23,6 +25,7 @@ public class ResetContainerDaySkillTests
     private IShiftRepository _shiftRepository = null!;
     private IMediator _mediator = null!;
     private ResetContainerDaySkill _skill = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
 
     private static readonly Guid ContainerId = Guid.NewGuid();
     private static readonly Guid OverrideId = Guid.NewGuid();
@@ -32,8 +35,9 @@ public class ResetContainerDaySkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
         _mediator = Substitute.For<IMediator>();
-        _skill = new ResetContainerDaySkill(_shiftRepository, _mediator);
+        _skill = new ResetContainerDaySkill(_shiftRepository, _mediator, _shiftVisibilityGuard);
 
         _shiftRepository.Get(ContainerId).Returns(new Shift
         {
@@ -101,5 +105,25 @@ public class ResetContainerDaySkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("work entries already exist"));
+    }
+
+    [Test]
+    public async Task AHiddenContainer_IsAnsweredLikeAMissingOne_AndNothingIsDeleted()
+    {
+        _skill = new ResetContainerDaySkill(_shiftRepository, _mediator, ShiftVisibilityGuards.Hiding(ContainerId));
+        var missingId = Guid.NewGuid();
+
+        var hidden = await _skill.ExecuteAsync(Ctx(), Params());
+        var missing = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["containerId"] = missingId.ToString(),
+            ["date"] = Date.ToString("yyyy-MM-dd")
+        });
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe($"Shift {ContainerId} is not a container shift.");
+        missing.Message.ShouldBe($"Shift {missingId} is not a container shift.");
+        await _mediator.DidNotReceive().Send(Arg.Any<GetContainerShiftOverrideQuery>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<DeleteContainerShiftOverrideCommand>(), Arg.Any<CancellationToken>());
     }
 }

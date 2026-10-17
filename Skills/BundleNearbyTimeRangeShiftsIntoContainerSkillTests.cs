@@ -4,7 +4,9 @@
 /// Unit tests for BundleNearbyTimeRangeShiftsIntoContainerSkill: a container shift is created, autofilled
 /// via IContainerAutofillService and its weekday template is written and re-read to confirm the write,
 /// all inside one transaction that rolls back completely when nothing is found or the write cannot be
-/// confirmed; the OpenRouteService key gate blocks non-car transport modes up front, before any write.
+/// confirmed; the OpenRouteService key gate blocks non-car transport modes up front, before any write. Autofill picks a
+/// restricted caller may not see are dropped before the write and never reported; when none is left the answer is the
+/// same as when nothing matched.
 /// </summary>
 
 using Klacks.Api.Application.Commands.ContainerTemplates;
@@ -16,6 +18,7 @@ using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.RouteOptimization;
 using Klacks.Api.Infrastructure.Mediator;
+using System.Text.Json;
 using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
@@ -36,6 +39,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
     private IContainerAutofillService _containerAutofillService = null!;
     private ISettingsReader _settingsReader = null!;
     private ISettingsEncryptionService _encryptionService = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
     private BundleNearbyTimeRangeShiftsIntoContainerSkill _skill = null!;
 
     private static readonly Guid ContainerId = Guid.NewGuid();
@@ -55,18 +59,9 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _containerAutofillService = Substitute.For<IContainerAutofillService>();
         _settingsReader = Substitute.For<ISettingsReader>();
         _encryptionService = Substitute.For<ISettingsEncryptionService>();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
 
-        _skill = new BundleNearbyTimeRangeShiftsIntoContainerSkill(
-            _shiftRepository,
-            _groupRepository,
-            _mediator,
-            _unitOfWork,
-            _userService,
-            _containerAutofillService,
-            _settingsReader,
-            _encryptionService,
-            GeoServicesPolicyTestFactory.Default(),
-            _groupVisibilityGuard);
+        _skill = SkillWith(_shiftVisibilityGuard);
 
         _userService.GetInstanceId().Returns("instance-1");
 
@@ -98,6 +93,19 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _mediator.Send(Arg.Any<PostContainerTemplatesCommand>(), Arg.Any<CancellationToken>())
             .Returns(new List<ContainerTemplateResource>());
     }
+
+    private BundleNearbyTimeRangeShiftsIntoContainerSkill SkillWith(IShiftVisibilityGuard shiftVisibilityGuard) => new(
+        _shiftRepository,
+        _groupRepository,
+        _mediator,
+        _unitOfWork,
+        _userService,
+        _containerAutofillService,
+        _settingsReader,
+        _encryptionService,
+        GeoServicesPolicyTestFactory.Default(),
+        _groupVisibilityGuard,
+        shiftVisibilityGuard);
 
     private static Shift TaskShift(Guid id, TimeOnly start, TimeOnly end) => new()
     {
@@ -255,7 +263,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             _settingsReader,
             _encryptionService,
             GeoServicesPolicyTestFactory.NoOutbound(),
-            _groupVisibilityGuard);
+            _groupVisibilityGuard,
+            _shiftVisibilityGuard);
 
         var result = await skill.ExecuteAsync(Ctx(), Params("bicycle"));
 
@@ -309,5 +318,63 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         result.Message.ShouldContain("No matching mobile TimeRange services");
         await _mediator.DidNotReceive().Send(Arg.Any<PostContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RestrictedCaller_HiddenAutofillPick_IsNeitherWrittenNorReported()
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(SuccessfulAutofillResult());
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(PersistedTemplate(new[] { TaskShiftId1 }));
+
+        var result = await SkillWith(ShiftVisibilityGuards.Hiding(TaskShiftId2)).ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _mediator.Received(1).Send(
+            Arg.Is<PostContainerTemplatesCommand>(c =>
+                c.Resources.Single().ContainerTemplateItems.Count == 1
+                && c.Resources.Single().ContainerTemplateItems.Single().ShiftId == TaskShiftId1),
+            Arg.Any<CancellationToken>());
+        await _shiftRepository.DidNotReceive().Get(TaskShiftId2);
+        result.Message.ShouldNotContain(TaskShiftId2.ToString());
+        result.Message.ShouldContain("filled with 1 of");
+        JsonSerializer.Serialize(result.Data).ShouldNotContain(TaskShiftId2.ToString());
+    }
+
+    [Test]
+    public async Task RestrictedCaller_AllAutofillPicksHidden_IsAnsweredLikeNoMatch_AndNothingIsWritten()
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(EmptyAutofillResult());
+        var noMatch = await _skill.ExecuteAsync(Ctx(), Params());
+        _mediator.ClearReceivedCalls();
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(SuccessfulAutofillResult());
+
+        var result = await SkillWith(ShiftVisibilityGuards.HideAll()).ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(noMatch.Message);
+        result.Message.ShouldNotContain(TaskShiftId1.ToString());
+        result.Message.ShouldNotContain(TaskShiftId2.ToString());
+        await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PostContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UnrestrictedCaller_KeepsEveryAutofillPick()
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(SuccessfulAutofillResult());
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _shiftVisibilityGuard.Received(1).FilterVisibleAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2), Arg.Any<CancellationToken>());
+        result.Message.ShouldContain("filled with 2 of");
     }
 }

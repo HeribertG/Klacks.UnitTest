@@ -129,7 +129,7 @@ public class WorkVisibilityTests
             Substitute.For<IShiftDefaultExpensesApplier>(),
             Substitute.For<IContainerWorkExpansionService>(), _groupContextResolver, _dayLockService, _unitOfWork,
             _overtimeCascadeService, _writeGuard, Substitute.For<IClientPlanningPeriodGuard>(),
-            Substitute.For<ILogger<PostCommandHandler>>());
+            ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PostCommandHandler>>());
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(() => handler.Handle(
             new PostCommand<WorkResource>(NewResource(Guid.NewGuid(), _hiddenClientId)), CancellationToken.None));
@@ -277,7 +277,8 @@ public class WorkVisibilityTests
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService, _completionService,
             _notificationFacade, Substitute.For<IContainerWorkExpansionService>(), _overtimeCascadeService,
             _dayLockService, _conflictChecker, Substitute.For<IShiftDefaultExpensesApplier>(),
-            Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
+            Substitute.For<IClientPlanningPeriodGuard>(), ShiftVisibilityGuards.AllowAll(),
+            Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
         var request = new BulkAddWorksRequest
         {
             PeriodStart = Day,
@@ -683,7 +684,8 @@ public class WorkVisibilityTests
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
             _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
             _httpContextAccessor, new ParentWorkLockGuard(new WorkLockLevelService()),
-            Substitute.For<IClientPlanningPeriodGuard>(), Substitute.For<ILogger<PutCommandHandler>>());
+            Substitute.For<IClientPlanningPeriodGuard>(), ShiftVisibilityGuards.AllowAll(),
+            Substitute.For<ILogger<PutCommandHandler>>());
 
     private ReassignWorkClientCommandHandler NewReassignHandler()
         => new(
@@ -707,7 +709,7 @@ public class WorkVisibilityTests
         var handler = new UpdateContainerWorkChildrenCommandHandler(
             childrenReadRepository, _rowAccessGuard, new ScheduleMapper(), _unitOfWork, _notificationFacade,
             lockRepository, Substitute.For<IUserService>(), childrenManager, _overtimeCascadeService,
-            Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
+            ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<UpdateContainerWorkChildrenCommandHandler>>());
         return (handler, childrenManager);
     }
 

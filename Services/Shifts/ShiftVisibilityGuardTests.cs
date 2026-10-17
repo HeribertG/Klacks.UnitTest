@@ -65,6 +65,46 @@ public class ShiftVisibilityGuardTests
     }
 
     [Test]
+    public async Task FilterVisible_Unrestricted_ReturnsAllDistinctIds_WithoutShiftQuery()
+    {
+        Unrestricted();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        var visible = await _guard.FilterVisibleAsync([first, second, first]);
+
+        visible.ShouldBe([first, second], ignoreOrder: true);
+        await _repository.DidNotReceiveWithAnyArgs().FilterVisibleShiftIdsAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task FilterVisible_Restricted_ReturnsOnlyWhatTheReaderPasses_WithOneQuery()
+    {
+        Restricted();
+        var visibleId = Guid.NewGuid();
+        var hiddenOrMissing = Guid.NewGuid();
+        VisibleShiftsAre(visibleId);
+
+        var visible = await _guard.FilterVisibleAsync([visibleId, hiddenOrMissing, visibleId]);
+
+        visible.ShouldBe([visibleId]);
+        await _repository.Received(1).FilterVisibleShiftIdsAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2),
+            Arg.Is<IReadOnlyCollection<Guid>>(groups => groups.SequenceEqual(new[] { VisibleGroup })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task FilterVisible_EmptyInput_ReturnsEmpty_WithoutAnyQuery()
+    {
+        Restricted();
+
+        (await _guard.FilterVisibleAsync([])).ShouldBeEmpty();
+        await _filter.DidNotReceiveWithAnyArgs().ResolveShiftListGroupIdsAsync(default);
+        await _repository.DidNotReceiveWithAnyArgs().FilterVisibleShiftIdsAsync(default!, default!, default);
+    }
+
+    [Test]
     public async Task Restricted_VisibleShift_Passes_HiddenAndMissingAreRefusedAlike()
     {
         Restricted();

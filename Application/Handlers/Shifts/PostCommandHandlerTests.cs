@@ -15,6 +15,7 @@ using Klacks.Api.Application.Handlers.Shifts;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Services.Shifts;
 using Klacks.Api.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -49,6 +50,7 @@ public class PostCommandHandlerTests
             _defaultShiftMacroResolver,
             _orderSealingService,
             ShiftVisibilityGuards.AllowAll(),
+            Substitute.For<IClientReferenceGuard>(),
             _logger);
 
         _shiftRepository.AddWithSealedOrderHandling(Arg.Any<Shift>())
@@ -95,13 +97,13 @@ public class PostCommandHandlerTests
     }
 
     [Test]
-    public void Handle_DraftWithoutCustomer_IsRefused()
+    public async Task Handle_DraftWithoutCustomer_IsRefused()
     {
         var resource = new ShiftResource { Name = "Early shift", Status = ShiftStatus.OriginalOrder };
 
         var act = async () => await _handler.Handle(new PostCommand<ShiftResource>(resource), CancellationToken.None);
 
-        Should.ThrowAsync<BadRequestException>(act);
+        await Should.ThrowAsync<BadRequestException>(act);
     }
 
     [Test]
@@ -116,7 +118,7 @@ public class PostCommandHandlerTests
     }
 
     [Test]
-    public void Handle_SealedOrderWithoutCustomer_AndIncomplete_IsRefused()
+    public async Task Handle_SealedOrderWithoutCustomer_AndIncomplete_IsRefused()
     {
         _orderSealingService.CollectMissingRequirements(Arg.Any<Shift>())
             .Returns(new[] { "group", "quantity" });
@@ -124,7 +126,7 @@ public class PostCommandHandlerTests
 
         var act = async () => await _handler.Handle(new PostCommand<ShiftResource>(resource), CancellationToken.None);
 
-        Should.ThrowAsync<BadRequestException>(act);
+        await Should.ThrowAsync<BadRequestException>(act);
     }
 
     [Test]
@@ -143,6 +145,54 @@ public class PostCommandHandlerTests
 
         result.ShouldNotBeNull();
         _orderSealingService.DidNotReceive().CollectMissingRequirements(Arg.Any<Shift>());
+    }
+
+    [TestCase(ShiftStatus.OriginalShift)]
+    [TestCase(ShiftStatus.SplitShift)]
+    [TestCase((ShiftStatus)99)]
+    public async Task Handle_StatusOtherThanAnOrder_IsRefused_AndWritesNothing(ShiftStatus status)
+    {
+        var resource = new ShiftResource
+        {
+            Name = "Second plannable copy",
+            Status = status,
+            ClientId = Guid.NewGuid(),
+            OriginalId = Guid.NewGuid()
+        };
+
+        var error = await Should.ThrowAsync<BadRequestException>(
+            () => _handler.Handle(new PostCommand<ShiftResource>(resource), CancellationToken.None));
+
+        error.Message.ShouldBe(string.Format(ShiftHierarchyMessages.PostStatusNotAllowed, status));
+        await _shiftRepository.DidNotReceiveWithAnyArgs().AddWithSealedOrderHandling(default!);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [TestCase(ShiftStatus.OriginalOrder)]
+    [TestCase(ShiftStatus.SealedOrder)]
+    public async Task Handle_DiscardsOrderReferenceAndCutTreeFieldsOfTheRequest(ShiftStatus status)
+    {
+        var resource = new ShiftResource
+        {
+            Name = "Guard duty",
+            Status = status,
+            ClientId = Guid.NewGuid(),
+            OriginalId = Guid.NewGuid(),
+            ParentId = Guid.NewGuid(),
+            RootId = Guid.NewGuid(),
+            Lft = 1,
+            Rgt = 2
+        };
+
+        await _handler.Handle(new PostCommand<ShiftResource>(resource), CancellationToken.None);
+
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Is<Shift>(s =>
+            s.Status == status
+            && s.OriginalId == null
+            && s.ParentId == null
+            && s.RootId == null
+            && s.Lft == null
+            && s.Rgt == null));
     }
 
     [Test]

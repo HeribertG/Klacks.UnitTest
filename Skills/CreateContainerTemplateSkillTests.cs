@@ -18,6 +18,8 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.UnitTest.Infrastructure.SelfApi;
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -38,11 +40,13 @@ public class CreateContainerTemplateSkillTests
     private IContainerTemplateRepository _containerTemplateRepository = null!;
     private FakeSelfApi _api = null!;
     private CreateContainerTemplateSkill _skill = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
 
     [SetUp]
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
         _containerTemplateRepository = Substitute.For<IContainerTemplateRepository>();
         _api = new FakeSelfApi();
 
@@ -68,7 +72,7 @@ public class CreateContainerTemplateSkillTests
         _api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new CreateContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver());
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
     }
 
     [TearDown]
@@ -292,7 +296,7 @@ public class CreateContainerTemplateSkillTests
         api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new CreateContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, api.Client, new SelfApiRouteResolver());
+            _shiftRepository, _containerTemplateRepository, api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
 
         return api;
     }
@@ -330,4 +334,18 @@ public class CreateContainerTemplateSkillTests
         ["fromTime"] = "06:00",
         ["untilTime"] = "22:00"
     };
+
+    [Test]
+    public async Task AHiddenContainer_IsAnsweredLikeAMissingOne_AndTheApiIsNeverCalled()
+    {
+        _skill = new CreateContainerTemplateSkill(
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(),
+            ShiftVisibilityGuards.Hiding(ContainerId));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift/container not found: {ContainerId}");
+        _api.Calls.ShouldBeEmpty();
+    }
 }

@@ -256,7 +256,7 @@ public class WorkCreatePlanningPeriodTests
             Substitute.For<IContainerWorkCascadeService>(), Substitute.For<ISelectedGroupContextResolver>(), _dayLockService,
             _unitOfWork, Substitute.For<IOvertimeCascadeService>(), _conflictChecker,
             Substitute.For<Microsoft.AspNetCore.Http.IHttpContextAccessor>(), Substitute.For<IParentWorkLockGuard>(),
-            _planningPeriodGuard, Substitute.For<ILogger<PutCommandHandler>>());
+            _planningPeriodGuard, ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PutCommandHandler>>());
     }
 
     private PostCommandHandler NewPostHandler(IContainerWorkExpansionService? expansion = null) => new(
@@ -265,13 +265,13 @@ public class WorkCreatePlanningPeriodTests
         Substitute.For<IShiftDefaultExpensesApplier>(), expansion ?? Substitute.For<IContainerWorkExpansionService>(),
         Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
         Substitute.For<IOvertimeCascadeService>(), Substitute.For<IWorkWriteGuard>(), _planningPeriodGuard,
-        Substitute.For<ILogger<PostCommandHandler>>());
+        ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PostCommandHandler>>());
 
     private BulkAddWorksCommandHandler NewBulkHandler() => new(
         _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
         _completionService, Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkExpansionService>(),
         Substitute.For<IOvertimeCascadeService>(), _dayLockService, _conflictChecker,
-        Substitute.For<IShiftDefaultExpensesApplier>(), _planningPeriodGuard,
+        Substitute.For<IShiftDefaultExpensesApplier>(), _planningPeriodGuard, ShiftVisibilityGuards.AllowAll(),
         Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
 
     private WorkResource NewResource()

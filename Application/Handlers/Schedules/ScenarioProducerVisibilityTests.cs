@@ -15,6 +15,7 @@ using Klacks.Api.Application.Interfaces.PeriodClosing;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Handlers.Schedules;
 
@@ -120,5 +121,6 @@ public class ScenarioProducerVisibilityTests
         Substitute.For<IScenarioNameGenerator>(),
         Substitute.For<ISealedDayRepository>(),
         _guard,
-        Substitute.For<IClientPlanningPeriodGuard>());
+        Substitute.For<IClientPlanningPeriodGuard>(),
+        ShiftVisibilityGuards.AllowAll());
 }

@@ -45,6 +45,7 @@ public class ShiftLockHandlerTests
             _mapper,
             _unitOfWork,
             ShiftVisibilityGuards.AllowAll(),
+            Substitute.For<IClientReferenceGuard>(),
             Substitute.For<ILogger<PutCommandHandler>>());
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns((HttpContext?)null);

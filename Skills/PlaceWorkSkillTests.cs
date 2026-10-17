@@ -44,7 +44,7 @@ public class PlaceWorkSkillTests
 
     private static (PlaceWorkSkill skill, IMediator mediator, IPreCommitConflictChecker checker) Build(
         PreCommitCheckResult checkResult, IClientVisibilityGuard? visibilityGuard = null, bool daySealed = false,
-        bool outsidePeriod = false)
+        bool outsidePeriod = false, IShiftVisibilityGuard? shiftVisibilityGuard = null)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>())
@@ -73,7 +73,8 @@ public class PlaceWorkSkillTests
             mediator, shiftRepo, checker, clientRepo, visibilityGuard ?? SkillClientVisibility.AllVisible(), sealedDays,
             outsidePeriod
                 ? TestPlanningPeriodGuard.Violating((ClientId, PlacementDay))
-                : TestPlanningPeriodGuard.NoViolations()), mediator, checker);
+                : TestPlanningPeriodGuard.NoViolations(),
+            shiftVisibilityGuard ?? ShiftVisibilityGuards.AllowAll()), mediator, checker);
     }
 
     [Test]
@@ -208,5 +209,40 @@ public class PlaceWorkSkillTests
         await checker.DidNotReceive().CheckAsync(
             Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
         await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HiddenShift_AnswersLikeUnknownShift_WithoutCheckingOrCommitting()
+    {
+        var shiftGuard = ShiftVisibilityGuards.HideAll();
+        var (skill, mediator, checker) = Build(PreCommitCheckResult.Empty, shiftVisibilityGuard: shiftGuard);
+        var unknownShiftId = Guid.NewGuid();
+        var unknownParams = Params();
+        unknownParams["shiftId"] = unknownShiftId.ToString();
+
+        var hidden = await skill.ExecuteAsync(Ctx(), Params());
+        var unknown = await skill.ExecuteAsync(Ctx(), unknownParams);
+
+        hidden.Success.ShouldBeFalse();
+        unknown.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe($"Shift {ShiftId} not found.");
+        unknown.Message.ShouldBe($"Shift {unknownShiftId} not found.");
+        await shiftGuard.Received().IsVisibleAsync(ShiftId, Arg.Any<CancellationToken>());
+        await checker.DidNotReceive().CheckAsync(
+            Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task VisibleShift_IsCheckedAndCommits()
+    {
+        var shiftGuard = ShiftVisibilityGuards.AllowAll();
+        var (skill, mediator, _) = Build(PreCommitCheckResult.Empty, shiftVisibilityGuard: shiftGuard);
+
+        var result = await skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue();
+        await shiftGuard.Received(1).IsVisibleAsync(ShiftId, Arg.Any<CancellationToken>());
+        await mediator.Received(1).Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
     }
 }

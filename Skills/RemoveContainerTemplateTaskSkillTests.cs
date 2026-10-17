@@ -13,6 +13,8 @@ using Klacks.Api.Application.Queries.ContainerTemplates;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -25,6 +27,7 @@ public class RemoveContainerTemplateTaskSkillTests
     private IMediator _mediator = null!;
     private IUserService _userService = null!;
     private RemoveContainerTemplateTaskSkill _skill = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
 
     private static readonly Guid ContainerId = Guid.NewGuid();
     private static readonly Guid TaskShiftId = Guid.NewGuid();
@@ -34,9 +37,10 @@ public class RemoveContainerTemplateTaskSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
         _mediator = Substitute.For<IMediator>();
         _userService = Substitute.For<IUserService>();
-        _skill = new RemoveContainerTemplateTaskSkill(_shiftRepository, _mediator, _userService);
+        _skill = new RemoveContainerTemplateTaskSkill(_shiftRepository, _mediator, _userService, _shiftVisibilityGuard);
 
         _shiftRepository.Get(ContainerId).Returns(new Shift { Id = ContainerId, ShiftType = ShiftType.IsContainer });
         _userService.GetInstanceId().Returns("instance-1");
@@ -115,5 +119,52 @@ public class RemoveContainerTemplateTaskSkillTests
         await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<ReleaseContainerLockCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AHiddenContainer_IsAnsweredLikeAMissingOne_AndNothingIsWritten()
+    {
+        _skill = new RemoveContainerTemplateTaskSkill(
+            _shiftRepository, _mediator, _userService, ShiftVisibilityGuards.Hiding(ContainerId));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift/container not found: {ContainerId}");
+        await _mediator.DidNotReceive().Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HiddenItemShifts_AreNeitherListedNorRemovable_LikeAbsentItems()
+    {
+        var hiddenShiftId = Guid.NewGuid();
+        var visibleShiftId = Guid.NewGuid();
+        var absenceId = Guid.NewGuid();
+        var template = TemplateWithItem(includeItem: false);
+        template.ContainerTemplateItems = new List<ContainerTemplateItemResource>
+        {
+            new() { Id = Guid.NewGuid(), ShiftId = hiddenShiftId },
+            new() { Id = Guid.NewGuid(), ShiftId = visibleShiftId },
+            new() { Id = Guid.NewGuid(), AbsenceId = absenceId }
+        };
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ContainerTemplateResource> { template });
+        _skill = new RemoveContainerTemplateTaskSkill(
+            _shiftRepository, _mediator, _userService, ShiftVisibilityGuards.Hiding(hiddenShiftId));
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["containerId"] = ContainerId.ToString(),
+            ["weekday"] = IsoWeekday,
+            ["taskShiftId"] = hiddenShiftId.ToString()
+        });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(
+            $"Task shift {hiddenShiftId} is not present in the container template for this weekday. " +
+            $"Current items: {visibleShiftId}, {absenceId}.");
+        await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
     }
 }

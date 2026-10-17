@@ -51,6 +51,7 @@ public class ProposePlanCommandHandlerTests
     private IScenarioNameGenerator _nameGenerator = null!;
     private ISealedDayRepository _sealedDayRepo = null!;
     private IClientPlanningPeriodGuard _planningPeriodGuard = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
     private ProposePlanCommandHandler _handler = null!;
 
     [SetUp]
@@ -108,10 +109,11 @@ public class ProposePlanCommandHandlerTests
             .Returns(new HashSet<(DateOnly Date, Guid ClientId)>());
 
         _planningPeriodGuard = TestPlanningPeriodGuard.NoViolations();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
 
         _handler = new ProposePlanCommandHandler(
             _shiftRepo, _scenarioRepo, _scenarioService, partitionService, _mediator, _unitOfWork, _nameGenerator, _sealedDayRepo,
-            TestGroupWriteVisibility.UnrestrictedGroups(), _planningPeriodGuard);
+            TestGroupWriteVisibility.UnrestrictedGroups(), _planningPeriodGuard, _shiftVisibilityGuard);
     }
 
     private static ClaimsPrincipal AnonymousUser() => new(new ClaimsIdentity());
@@ -259,6 +261,41 @@ public class ProposePlanCommandHandlerTests
         outcome.Rejected.Count.ShouldBe(1);
         outcome.Rejected[0].Reason.ShouldBe("shift not found");
         await _mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HiddenShift_IsRejectedLikeAMissingShift_AndNeverLoadedOrCloned()
+    {
+        var clientA = Guid.NewGuid();
+        var missingShift = Guid.NewGuid();
+        _shiftVisibilityGuard.FilterVisibleAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid>());
+
+        var outcome = await Propose(Placement(clientA, From), new PlacementInput(clientA, missingShift, From.AddDays(1)));
+
+        outcome.Written.ShouldBeEmpty();
+        outcome.Rejected.Select(r => r.Reason).ShouldBe(["shift not found", "shift not found"]);
+        outcome.Rejected[0].ShouldBe(new RejectedPlacement(clientA, ShiftId, From, "shift not found"));
+        await _shiftRepo.DidNotReceive().Get(ShiftId);
+        await _scenarioService.Received(1).CloneScenarioDataAsync(
+            Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(),
+            Arg.Is<IReadOnlyCollection<Guid>?>(ids => ids != null && ids.Count == 0),
+            Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<BulkAddWorksCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task VisibleShift_IsClonedAndWritten_WithOneVisibilityQuery()
+    {
+        var outcome = await Propose(Placement(Guid.NewGuid(), From), Placement(Guid.NewGuid(), From.AddDays(1)));
+
+        outcome.Written.Count.ShouldBe(2);
+        await _shiftVisibilityGuard.Received(1).FilterVisibleAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { ShiftId })), Arg.Any<CancellationToken>());
+        await _scenarioService.Received(1).CloneScenarioDataAsync(
+            Arg.Any<Guid?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid>(),
+            Arg.Is<IReadOnlyCollection<Guid>?>(ids => ids != null && ids.SequenceEqual(new[] { ShiftId })),
+            Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

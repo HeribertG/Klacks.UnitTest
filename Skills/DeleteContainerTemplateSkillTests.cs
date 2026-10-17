@@ -19,6 +19,8 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.UnitTest.Infrastructure.SelfApi;
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -38,11 +40,13 @@ public class DeleteContainerTemplateSkillTests
     private IContainerTemplateRepository _containerTemplateRepository = null!;
     private FakeSelfApi _api = null!;
     private DeleteContainerTemplateSkill _skill = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
 
     [SetUp]
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
         _containerTemplateRepository = Substitute.For<IContainerTemplateRepository>();
         _api = new FakeSelfApi();
 
@@ -67,7 +71,7 @@ public class DeleteContainerTemplateSkillTests
         _api.RespondToPrefix(HttpMethod.Delete, ContainerLocksRoute, true);
 
         _skill = new DeleteContainerTemplateSkill(
-            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver());
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(), _shiftVisibilityGuard);
     }
 
     [TearDown]
@@ -272,4 +276,18 @@ public class DeleteContainerTemplateSkillTests
     {
         ["containerId"] = ContainerId.ToString()
     };
+
+    [Test]
+    public async Task AHiddenContainer_IsAnsweredLikeAMissingOne_AndTheApiIsNeverCalled()
+    {
+        _skill = new DeleteContainerTemplateSkill(
+            _shiftRepository, _containerTemplateRepository, _api.Client, new SelfApiRouteResolver(),
+            ShiftVisibilityGuards.Hiding(ContainerId));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift/container not found: {ContainerId}");
+        _api.Calls.ShouldBeEmpty();
+    }
 }

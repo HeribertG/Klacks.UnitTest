@@ -11,6 +11,8 @@ using Klacks.Api.Application.Queries.ContainerTemplates;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -19,6 +21,7 @@ public class ListContainerTemplateSkillTests
     private IShiftRepository _shiftRepository = null!;
     private IMediator _mediator = null!;
     private ListContainerTemplateSkill _skill = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
 
     private static readonly Guid ContainerId = Guid.NewGuid();
     private static readonly Guid TaskShiftId = Guid.NewGuid();
@@ -27,8 +30,9 @@ public class ListContainerTemplateSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
         _mediator = Substitute.For<IMediator>();
-        _skill = new ListContainerTemplateSkill(_shiftRepository, _mediator);
+        _skill = new ListContainerTemplateSkill(_shiftRepository, _mediator, _shiftVisibilityGuard);
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -94,6 +98,22 @@ public class ListContainerTemplateSkillTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("not a container shift");
+        await _mediator.DidNotReceive().Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AHiddenContainer_IsAnsweredLikeAMissingOne_AndNothingIsRead()
+    {
+        _shiftRepository.Get(ContainerId).Returns(new Shift { Id = ContainerId, ShiftType = ShiftType.IsContainer });
+        _skill = new ListContainerTemplateSkill(_shiftRepository, _mediator, ShiftVisibilityGuards.Hiding(ContainerId));
+        var missingId = Guid.NewGuid();
+
+        var hidden = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["containerId"] = ContainerId.ToString() });
+        var missing = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["containerId"] = missingId.ToString() });
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe($"Shift/container not found: {ContainerId}");
+        missing.Message.ShouldBe($"Shift/container not found: {missingId}");
         await _mediator.DidNotReceive().Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>());
     }
 }

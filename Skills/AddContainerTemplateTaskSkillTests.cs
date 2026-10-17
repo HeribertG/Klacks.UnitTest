@@ -13,6 +13,8 @@ using Klacks.Api.Application.Queries.ContainerTemplates;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
 
+using Klacks.UnitTest.TestHelpers;
+
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
@@ -26,6 +28,7 @@ public class AddContainerTemplateTaskSkillTests
     private IUserService _userService = null!;
     private IContainerAvailableTasksService _availableTasksService = null!;
     private AddContainerTemplateTaskSkill _skill = null!;
+    private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
 
     private static readonly Guid ContainerId = Guid.NewGuid();
     private static readonly Guid TaskShiftId = Guid.NewGuid();
@@ -35,10 +38,12 @@ public class AddContainerTemplateTaskSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
         _mediator = Substitute.For<IMediator>();
         _userService = Substitute.For<IUserService>();
         _availableTasksService = Substitute.For<IContainerAvailableTasksService>();
-        _skill = new AddContainerTemplateTaskSkill(_shiftRepository, _mediator, _userService, _availableTasksService);
+        _skill = new AddContainerTemplateTaskSkill(
+            _shiftRepository, _mediator, _userService, _availableTasksService, _shiftVisibilityGuard);
 
         _shiftRepository.Get(ContainerId).Returns(new Shift { Id = ContainerId, ShiftType = ShiftType.IsContainer });
 
@@ -152,5 +157,33 @@ public class AddContainerTemplateTaskSkillTests
         result.Message.ShouldContain("currently being edited");
         await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<ReleaseContainerLockCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AHiddenContainer_IsAnsweredLikeAMissingOne_AndNothingIsWritten()
+    {
+        _skill = new AddContainerTemplateTaskSkill(
+            _shiftRepository, _mediator, _userService, _availableTasksService, ShiftVisibilityGuards.Hiding(ContainerId));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Shift/container not found: {ContainerId}");
+        await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AHiddenTaskShift_IsAnsweredLikeAMissingOne_AndNothingIsWritten()
+    {
+        _skill = new AddContainerTemplateTaskSkill(
+            _shiftRepository, _mediator, _userService, _availableTasksService, ShiftVisibilityGuards.Hiding(TaskShiftId));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe($"Task shift not found: {TaskShiftId}");
+        await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
     }
 }
