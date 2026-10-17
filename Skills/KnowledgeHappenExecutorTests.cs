@@ -2,6 +2,7 @@
 
 using Klacks.Api.Application.Skills.Generic;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging;
@@ -146,6 +147,146 @@ public class KnowledgeHappenExecutorTests
         var serialized = System.Text.Json.JsonSerializer.Serialize(result.Data);
         Assert.That(serialized, Does.Contain("A year-wide Gantt chart."));
         Assert.That(serialized, Does.Contain("Header, row header, surface, mask."));
+    }
+
+    private const string StagedContent =
+        "# Groups\n" +
+        "<!-- level:short -->\nSHORT-PART\n" +
+        "<!-- level:elements -->\nELEMENTS-PART\n" +
+        "<!-- level:effects -->\nEFFECTS-PART\n" +
+        "<!-- level:pitfalls -->\nPITFALLS-PART";
+
+    private const string StagedContentWithoutPitfalls =
+        "# Groups\n" +
+        "<!-- level:short -->\nSHORT-PART\n" +
+        "<!-- level:elements -->\nELEMENTS-PART\n" +
+        "<!-- level:effects -->\nEFFECTS-PART";
+
+    private static readonly ExplainDepthProfile Beginner = new(ExplainExperienceLevel.Beginner, false);
+    private static readonly ExplainDepthProfile Advanced = new(ExplainExperienceLevel.Advanced, false);
+
+    private async Task<SkillResult> ExecuteStagedAsync(string content, string? level, ExplainDepthProfile? depth)
+    {
+        _memoryRepository.GetByKeyAsync("explain_group_model", Arg.Any<CancellationToken>())
+            .Returns(new AgentMemory { Key = "explain_group_model", Content = content });
+
+        var parameters = level == null
+            ? null
+            : new Dictionary<string, object> { [KnowledgeHappenLevels.ParameterName] = level };
+
+        return await _sut.ExecuteAsync(new KnowledgeHappenConfig { MemoryKey = "explain_group_model" }, parameters, depth);
+    }
+
+    private static string Serialized(SkillResult result) => System.Text.Json.JsonSerializer.Serialize(result.Data);
+
+    [Test]
+    public async Task Effects_Beginner_ReturnsEffectsAndPitfalls()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, KnowledgeHappenLevels.Effects, Beginner);
+
+        var json = Serialized(result);
+        json.ShouldContain("EFFECTS-PART");
+        json.ShouldContain("PITFALLS-PART");
+        json.ShouldNotContain("ELEMENTS-PART");
+        json.ShouldNotContain("SHORT-PART");
+        json.ShouldContain("\"Stages\":[\"effects\",\"pitfalls\"]");
+    }
+
+    [Test]
+    public async Task Effects_Advanced_ReturnsEffectsAndPitfalls()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, KnowledgeHappenLevels.Effects, Advanced);
+
+        var json = Serialized(result);
+        json.ShouldContain("EFFECTS-PART");
+        json.ShouldContain("PITFALLS-PART");
+        json.ShouldNotContain("ELEMENTS-PART");
+    }
+
+    [Test]
+    public async Task Elements_Beginner_ReturnsElementsWithoutPitfalls()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, KnowledgeHappenLevels.Elements, Beginner);
+
+        var json = Serialized(result);
+        json.ShouldContain("ELEMENTS-PART");
+        json.ShouldNotContain("PITFALLS-PART");
+        json.ShouldNotContain("EFFECTS-PART");
+        json.ShouldContain("\"Stages\":[\"elements\"]");
+    }
+
+    [Test]
+    public async Task Elements_Advanced_ReturnsElementsAndPitfalls()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, KnowledgeHappenLevels.Elements, Advanced);
+
+        var json = Serialized(result);
+        json.ShouldContain("ELEMENTS-PART");
+        json.ShouldContain("PITFALLS-PART");
+        json.ShouldNotContain("EFFECTS-PART");
+        json.ShouldContain("\"Stages\":[\"elements\",\"pitfalls\"]");
+    }
+
+    [Test]
+    public async Task Short_Advanced_NeverReturnsPitfalls()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, KnowledgeHappenLevels.Short, Advanced);
+
+        var json = Serialized(result);
+        json.ShouldContain("SHORT-PART");
+        json.ShouldNotContain("PITFALLS-PART");
+        json.ShouldNotContain("ELEMENTS-PART");
+    }
+
+    [Test]
+    public async Task NoLevel_Advanced_ReturnsWholeBody()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, null, Advanced);
+
+        var json = Serialized(result);
+        json.ShouldContain("SHORT-PART");
+        json.ShouldContain("ELEMENTS-PART");
+        json.ShouldContain("EFFECTS-PART");
+        json.ShouldContain("PITFALLS-PART");
+    }
+
+    [Test]
+    public async Task NoMarkers_Advanced_ReturnsWholeBody()
+    {
+        var result = await ExecuteStagedAsync("# Groups\nPLAIN-BODY", KnowledgeHappenLevels.Elements, Advanced);
+
+        Serialized(result).ShouldContain("PLAIN-BODY");
+    }
+
+    [Test]
+    public async Task PitfallsRequestedAsLevel_FallsBackToWholeBody()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, KnowledgeHappenLevels.Pitfalls, Advanced);
+
+        var json = Serialized(result);
+        json.ShouldContain("SHORT-PART");
+        json.ShouldContain("ELEMENTS-PART");
+        json.ShouldContain("PITFALLS-PART");
+    }
+
+    [Test]
+    public async Task Elements_NullDepth_BehavesLikeBeginner()
+    {
+        var result = await ExecuteStagedAsync(StagedContent, KnowledgeHappenLevels.Elements, null);
+
+        var json = Serialized(result);
+        json.ShouldContain("ELEMENTS-PART");
+        json.ShouldNotContain("PITFALLS-PART");
+    }
+
+    [Test]
+    public async Task Effects_WithoutPitfallsMarker_ReturnsEffectsOnly()
+    {
+        var result = await ExecuteStagedAsync(StagedContentWithoutPitfalls, KnowledgeHappenLevels.Effects, Advanced);
+
+        var json = Serialized(result);
+        json.ShouldContain("EFFECTS-PART");
+        json.ShouldContain("\"Stages\":[\"effects\"]");
     }
 
     [Test]

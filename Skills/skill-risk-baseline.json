@@ -395,6 +395,7 @@
   "set_company_rule_parameters": "ReadOnly",
   "set_default_llm_model": "Irreversible",
   "set_erp_import_schedule": "Irreversible",
+  "set_explain_depth": "Irreversible",
   "set_export_format_override": "Irreversible",
   "set_group_location": "Irreversible",
   "set_my_display_language": "Irreversible",

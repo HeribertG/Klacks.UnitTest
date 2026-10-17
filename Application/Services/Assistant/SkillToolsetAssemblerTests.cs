@@ -656,6 +656,7 @@ public class SkillToolsetAssemblerTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             budgetPolicy,
+            Substitute.For<IExplainDepthResolver>(),
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
 
         LLMContext? nonStreamingContext = null;
@@ -668,6 +669,7 @@ public class SkillToolsetAssemblerTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             budgetPolicy,
+            Substitute.For<IExplainDepthResolver>(),
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await foreach (var _ in orchestrator.ProcessStreamAsync(

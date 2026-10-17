@@ -44,7 +44,7 @@ public class SkillExecutorGroupVisibilityGateTests
         _genericDispatcher.CanHandle(GenericHandlerType).Returns(true);
         _genericDispatcher.ExecuteAsync(
                 GenericHandlerType, GenericHandlerConfig,
-                Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>())
+                Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "ran"));
         _registry.GetSkillByName(Arg.Any<string>()).Returns(call =>
             new SkillDescriptor(call.Arg<string>(), "test", SkillCategory.Query, [], [], [], null)
@@ -88,7 +88,7 @@ public class SkillExecutorGroupVisibilityGateTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(GroupVisibilityBoundSkills.UnidentifiedCallerMessage);
-        await _genericDispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default);
+        await _genericDispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default, default);
     }
 
     [Test]

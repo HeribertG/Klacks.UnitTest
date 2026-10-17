@@ -68,7 +68,7 @@ public class SkillExecutorServiceValidationTests
         _registry.GetSkillByName(TestSkillName).Returns(descriptor);
         _genericDispatcher.CanHandle(HandlerType).Returns(true);
         _genericDispatcher.ExecuteAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "ok"));
         _autonomyGate.CheckAsync(
                 Arg.Any<SkillDescriptor>(), Arg.Any<SkillExecutionContext>(),
@@ -100,7 +100,7 @@ public class SkillExecutorServiceValidationTests
             Arg.Any<SkillDescriptor>(), Arg.Any<SkillExecutionContext>(),
             Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>());
         await _genericDispatcher.DidNotReceive().ExecuteAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -114,7 +114,7 @@ public class SkillExecutorServiceValidationTests
 
         Assert.That(result.Success, Is.True);
         await _genericDispatcher.Received(1).ExecuteAsync(
-            HandlerType, "{}", Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>());
+            HandlerType, "{}", Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

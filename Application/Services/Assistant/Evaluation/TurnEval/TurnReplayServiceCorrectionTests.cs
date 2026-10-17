@@ -6,6 +6,8 @@
 /// assemble on the composite with the exclusion and without pins, complete the correction, and answer a
 /// clarification deterministically without a provider call. It must do all of that without a single write
 /// - the class summary promises that the only persistence of a replay is the EvalRun of the runner.
+/// The replay also carries the item's explanation depth onto the context as an estimated (never explicit) profile, and
+/// an item without one replays as a beginner, because production always resolves a depth for a real user.
 /// </summary>
 
 using System.Diagnostics;
@@ -522,4 +524,25 @@ public class TurnReplayServiceCorrectionTests
             Arg.Is<IReadOnlyList<string>?>(previous => previousMatches(previous)),
             Arg.Is<IReadOnlyList<string>?>(continuation => continuationMatches(continuation)),
             Arg.Any<CancellationToken>());
+
+    [Test]
+    public async Task AnItemWithAnExplainDepth_ArrivesAsAnEstimatedProfile()
+    {
+        var item = Item();
+        item.ExplainDepth = ExplainExperienceLevel.Advanced;
+
+        await Replay(item);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.ExplainDepth.ShouldBe(new ExplainDepthProfile(ExplainExperienceLevel.Advanced, IsExplicitOverride: false));
+    }
+
+    [Test]
+    public async Task AnItemWithoutAnExplainDepth_ReplaysAsABeginnerLikeProduction()
+    {
+        await Replay(Item());
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.ExplainDepth.ShouldBe(new ExplainDepthProfile(ExplainExperienceLevel.Beginner, IsExplicitOverride: false));
+    }
 }

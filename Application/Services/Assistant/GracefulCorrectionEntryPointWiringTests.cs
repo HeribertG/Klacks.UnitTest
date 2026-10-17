@@ -4,13 +4,15 @@
 /// Both chat entry points delegate their correction/toolset preparation to the single shared
 /// ICorrectionTurnPreparer (see CorrectionTurnPreparerTests for the pipeline itself), so a divergence
 /// here can only be a wiring bug: calling it with the wrong request fields, or mapping its result onto
-/// LLMContext differently. That is all this fixture checks.
+/// LLMContext differently. The same holds for the explanation depth: both entry points must put exactly the profile
+/// IExplainDepthResolver resolved for the calling user onto the context.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Assistant;
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -31,6 +33,8 @@ public class GracefulCorrectionEntryPointWiringTests
     private ICorrectionTurnPreparer _correctionTurnPreparer = null!;
     private ISkillCacheService _skillCache = null!;
     private ILLMService _llmService = null!;
+    private IExplainDepthResolver _explainDepthResolver = null!;
+    private ExplainDepthProfile _resolvedDepth = null!;
     private LLMContext? _capturedContext;
 
     [SetUp]
@@ -46,6 +50,11 @@ public class GracefulCorrectionEntryPointWiringTests
         _skillCache = Substitute.For<ISkillCacheService>();
         _skillCache.GetDefaultAgentAsync(Arg.Any<CancellationToken>())
             .Returns(new Agent { Id = Guid.NewGuid(), Name = "Klacksy" });
+
+        _resolvedDepth = new ExplainDepthProfile(ExplainExperienceLevel.Advanced, IsExplicitOverride: true);
+        _explainDepthResolver = Substitute.For<IExplainDepthResolver>();
+        _explainDepthResolver.ResolveAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_resolvedDepth);
 
         _llmService = Substitute.For<ILLMService>();
         _llmService.ProcessAsync(Arg.Do<LLMContext>(c => _capturedContext = c))
@@ -89,6 +98,7 @@ public class GracefulCorrectionEntryPointWiringTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             Substitute.For<IContextBudgetPolicy>(),
+            _explainDepthResolver,
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
@@ -105,6 +115,7 @@ public class GracefulCorrectionEntryPointWiringTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             Substitute.For<IContextBudgetPolicy>(),
+            _explainDepthResolver,
             Substitute.For<ILogger<LLMStreamingOrchestrator>>());
     }
 
@@ -201,5 +212,25 @@ public class GracefulCorrectionEntryPointWiringTests
         await _correctionTurnPreparer.Received(1).PrepareAsync(
             Arg.Any<Agent?>(), Arg.Any<List<string>>(), CorrectionMessage, ConversationId, UserId,
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NonStreaming_PutsTheResolvedExplainDepthOntoTheContext()
+    {
+        await CreateHandler().Handle(Command(), CancellationToken.None);
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.ExplainDepth.ShouldBeSameAs(_resolvedDepth);
+        await _explainDepthResolver.Received(1).ResolveAsync(UserId, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Streaming_PutsTheResolvedExplainDepthOntoTheContext()
+    {
+        await Drain(CreateOrchestrator().ProcessStreamAsync(StreamRequest()));
+
+        _capturedContext.ShouldNotBeNull();
+        _capturedContext!.ExplainDepth.ShouldBeSameAs(_resolvedDepth);
+        await _explainDepthResolver.Received(1).ResolveAsync(UserId, Arg.Any<CancellationToken>());
     }
 }

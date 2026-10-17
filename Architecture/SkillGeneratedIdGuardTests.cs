@@ -42,6 +42,7 @@ public class SkillGeneratedIdGuardTests
             // Case (3): agent memory and pending notes are written through their own repositories.
             [@"Application\Skills\AddAiMemorySkill.cs"] = 1,
             [@"Application\Skills\AddPersonalMemorySkill.cs"] = 1,
+            [@"Application\Skills\SetExplainDepthSkill.cs"] = 1,
             [@"Application\Skills\StashPendingNoteSkill.cs"] = 1,
 
             // Case (2)/(3): link and schedule rows posted or added on routes whose handlers keep the id

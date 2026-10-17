@@ -141,7 +141,7 @@ public class SkillExecutorServiceUiActionTests
             Arg.Any<SkillDescriptor>(), Arg.Any<SkillExecutionContext>(), Arg.Any<Dictionary<string, object>>(),
             Arg.Any<SkillResult>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>(), result.UiActionTrackingId);
         await _genericDispatcher.DidNotReceive().ExecuteAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]

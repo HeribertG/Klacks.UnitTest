@@ -142,6 +142,46 @@ public class LLMFunctionExecutorTests
     }
 
     [Test]
+    public async Task SkillCall_CarriesTheTurnExplainDepthOnTheSkillContext()
+    {
+        var depth = new ExplainDepthProfile(Klacks.Api.Domain.Enums.ExplainExperienceLevel.Advanced, true);
+        SetupBridgeFor("explain_group_model", KnowledgeResult("GROUP KNOWLEDGE"));
+        var context = Ctx();
+        context.ExplainDepth = depth;
+
+        await _executor.ProcessFunctionCallsAsync(
+            context, new List<LLMFunctionCall> { new() { FunctionName = "explain_group_model" } });
+
+        await _skillBridge.Received(1).ExecuteSkillFromLLMCallAsync(
+            Arg.Is<LLMFunctionCall>(c => c.FunctionName == "explain_group_model"),
+            Arg.Is<SkillExecutionContext>(s => s.ExplainDepth == depth),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task NavigateTo_PageKnowledgeInjection_RunsWithoutExplainDepth()
+    {
+        var depth = new ExplainDepthProfile(Klacks.Api.Domain.Enums.ExplainExperienceLevel.Advanced, false);
+        SetupBridgeFor(SkillNames.NavigateTo, NavigationResult("/workplace/shift"));
+        SetupBridgeFor("explain_page_shifts", KnowledgeResult("SHIFT PAGE KNOWLEDGE"));
+        var context = Ctx();
+        context.ExplainDepth = depth;
+
+        await _executor.ProcessFunctionCallsAsync(
+            context,
+            new List<LLMFunctionCall> { new() { FunctionName = SkillNames.NavigateTo, Parameters = new() { ["page"] = "shift" } } });
+
+        await _skillBridge.Received(1).ExecuteSkillFromLLMCallAsync(
+            Arg.Is<LLMFunctionCall>(c => c.FunctionName == SkillNames.NavigateTo),
+            Arg.Is<SkillExecutionContext>(s => s.ExplainDepth == depth),
+            Arg.Any<CancellationToken>());
+        await _skillBridge.Received(1).ExecuteSkillFromLLMCallAsync(
+            Arg.Is<LLMFunctionCall>(c => c.FunctionName == "explain_page_shifts"),
+            Arg.Is<SkillExecutionContext>(s => s.ExplainDepth == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task NavigateTo_ExplainableRouteWithEntityId_ResolvesExplainSkillFromBaseRoute()
     {
         SetupBridgeFor(SkillNames.NavigateTo, NavigationResult($"/workplace/edit-shift/{Guid.NewGuid()}"));

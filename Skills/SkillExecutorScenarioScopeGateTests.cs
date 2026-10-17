@@ -58,7 +58,7 @@ public class SkillExecutorScenarioScopeGateTests
         _registry.GetSkillByName(TestSkillName).Returns(descriptor);
         _genericDispatcher.CanHandle(HandlerType).Returns(true);
         _genericDispatcher.ExecuteAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "ok"));
         _autonomyGate.CheckAsync(
                 Arg.Any<SkillDescriptor>(), Arg.Any<SkillExecutionContext>(),
@@ -92,7 +92,7 @@ public class SkillExecutorScenarioScopeGateTests
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(RefusalMessage);
         await _autonomyGate.DidNotReceiveWithAnyArgs().CheckAsync(default!, default!, default!, default);
-        await _genericDispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default);
+        await _genericDispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default, default);
     }
 
     [Test]
@@ -104,6 +104,6 @@ public class SkillExecutorScenarioScopeGateTests
         var result = await ExecuteAsync();
 
         result.Success.ShouldBeTrue();
-        await _genericDispatcher.ReceivedWithAnyArgs(1).ExecuteAsync(default!, default!, default!, default);
+        await _genericDispatcher.ReceivedWithAnyArgs(1).ExecuteAsync(default!, default!, default!, default, default);
     }
 }

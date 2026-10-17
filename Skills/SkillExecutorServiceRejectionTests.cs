@@ -64,7 +64,7 @@ public class SkillExecutorServiceRejectionTests
     private void DispatcherThrows(Exception exception)
     {
         _genericDispatcher.ExecuteAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>())
             .Returns<Task<SkillResult>>(_ => throw exception);
     }
 

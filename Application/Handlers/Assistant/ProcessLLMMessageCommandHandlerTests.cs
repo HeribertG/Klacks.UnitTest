@@ -46,6 +46,7 @@ public class ProcessLLMMessageCommandHandlerTests
     private RecipeEngineService _recipeEngine = null!;
     private Agent _agent = null!;
     private LLMContext? _capturedContext;
+    private IExplainDepthResolver _explainDepthResolver = null!;
 
     [SetUp]
     public void Setup()
@@ -94,6 +95,8 @@ public class ProcessLLMMessageCommandHandlerTests
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
                 Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
             .Returns(new RetrievalResult([]));
+
+        _explainDepthResolver = Substitute.For<IExplainDepthResolver>();
 
         _capturedContext = null;
         _llmService.ProcessAsync(Arg.Do<LLMContext>(c => _capturedContext = c))
@@ -149,6 +152,7 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             new ContextBudgetPolicy(),
+            _explainDepthResolver,
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
     }
 
@@ -384,6 +388,7 @@ public class ProcessLLMMessageCommandHandlerTests
             Substitute.For<IEntityCandidateGrounder>(),
             providerOrchestrator,
             new ContextBudgetPolicy(),
+            _explainDepthResolver,
             Substitute.For<ILogger<ProcessLLMMessageCommandHandler>>());
 
         await handler.Handle(CreateCommand(null), CancellationToken.None);
