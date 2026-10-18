@@ -271,7 +271,7 @@ public class WorkShiftVisibilityTests
         Substitute.For<IPeriodHoursService>(), _scheduleEntriesService, Substitute.For<IScheduleCompletionService>(),
         Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
         Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-        Substitute.For<IOvertimeCascadeService>(), _conflictChecker, Substitute.For<IHttpContextAccessor>(),
+        Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(_conflictChecker), Substitute.For<IHttpContextAccessor>(),
         new ParentWorkLockGuard(new WorkLockLevelService()), Substitute.For<IClientPlanningPeriodGuard>(),
         _shiftGuard, Substitute.For<ILogger<PutCommandHandler>>());
 
@@ -279,7 +279,7 @@ public class WorkShiftVisibilityTests
         _workRepository, _clientVisibilityGuard, new ScheduleMapper(), Substitute.For<IPeriodHoursService>(),
         Substitute.For<IScheduleCompletionService>(), Substitute.For<IWorkNotificationFacade>(),
         Substitute.For<IContainerWorkExpansionService>(), Substitute.For<IOvertimeCascadeService>(), _dayLockService,
-        _conflictChecker, Substitute.For<IShiftDefaultExpensesApplier>(), Substitute.For<IClientPlanningPeriodGuard>(),
+        TestWorkWriteGuard.Over(_conflictChecker), Substitute.For<IShiftDefaultExpensesApplier>(), Substitute.For<IClientPlanningPeriodGuard>(),
         _shiftGuard, Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
 
     private (UpdateContainerWorkChildrenCommandHandler Handler, IContainerWorkChildrenManager ChildrenManager,

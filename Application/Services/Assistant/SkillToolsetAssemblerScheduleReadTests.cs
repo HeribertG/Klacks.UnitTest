@@ -43,6 +43,7 @@ public class SkillToolsetAssemblerScheduleReadTests
     private const string DutyQuestion = "Wer hat am Montag, 19. Oktober, in Winterthur Dienst?";
     private const string PlanQuestion = "Was steht am Montag, 19. Oktober, in Winterthur an?";
     private const string AcceptReply = "Ja, übernimm es.";
+    private const string WhyNotQuestion = "Warum kann Anna am Montag, 19. Oktober, den Frühdienst nicht bekommen?";
     private const int FillerSkillCount = 40;
     private const int SmallCap = 6;
 
@@ -72,7 +73,9 @@ public class SkillToolsetAssemblerScheduleReadTests
             CreateSkill(ExtraHintSkillName, SkillEffect.Read),
             CreateSkill(ScenarioFollowUpSkills.AcceptScenarioSkillName, SkillEffect.Mutate),
             CreateSkill(ScenarioFollowUpSkills.RejectScenarioSkillName, SkillEffect.Mutate),
-            CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, SkillEffect.Read)
+            CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, SkillEffect.Read),
+            CreateSkill(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName, SkillEffect.Read),
+            CreateSkill(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName, SkillEffect.Explain)
         ];
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>()).Returns(_ => _skills);
         GivenRetrieval();
@@ -166,6 +169,45 @@ public class SkillToolsetAssemblerScheduleReadTests
         names.ShouldContain(ExplainPageScheduleSkillName);
         names.ShouldContain(ExtraHintSkillName);
         names.ShouldNotContain(ScheduleReadIntentResolver.ListGroupsSkillName);
+    }
+
+    [Test]
+    public async Task AtTheTinyCap_AWhyNotQuestionKeepsTheDiagnosis_AndCutsTheExplanationAndListGroupsFirst()
+    {
+        _skills.AddRange(Enumerable.Range(0, AlwaysOnFillerCount)
+            .Select(index => CreateSkill($"{AlwaysOnFillerPrefix}{index}", SkillEffect.Read, alwaysOn: true)));
+
+        var result = await AssembleAsync(WhyNotQuestion, ScheduleRoute, maxTools: TinyCap);
+
+        var names = Names(result);
+        names.Count.ShouldBe(TinyCap);
+        names.ShouldContain(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName);
+        names.ShouldContain(ExplainPageScheduleSkillName);
+        names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
+        names.ShouldNotContain(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName);
+        names.ShouldNotContain(ScheduleReadIntentResolver.ListGroupsSkillName);
+    }
+
+    [TestCase("Warum kann Anna am Montag den Frühdienst nicht bekommen?", null)]
+    [TestCase("Why can't Anna get this shift?", ScheduleRoute)]
+    public async Task AWhyNotBookingQuestion_KeepsTheDiagnosisAndTheExplanation_WhenRetrievalFindsNeither(
+        string message, string? route)
+    {
+        GivenRetrieval(CreateShiftSkillName, AddShiftToGroupSkillName);
+
+        var names = Names(await AssembleAsync(message, route));
+
+        names.ShouldContain(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName);
+        names.ShouldContain(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName);
+    }
+
+    [Test]
+    public async Task ADatedDutyQuestionWithoutNegation_DoesNotForceTheBookingDiagnosis()
+    {
+        var names = Names(await AssembleAsync(DutyQuestion, ScheduleRoute));
+
+        names.ShouldNotContain(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName);
+        names.ShouldNotContain(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName);
     }
 
     [Test]

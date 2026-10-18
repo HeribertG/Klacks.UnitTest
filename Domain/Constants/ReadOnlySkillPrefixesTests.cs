@@ -29,6 +29,8 @@ public class ReadOnlySkillPrefixesTests
     [TestCase("test_imap_connection")]
     [TestCase("evaluate_scenario")]
     [TestCase("generate_period_summary")]
+    [TestCase("diagnose_work_booking")]
+    [TestCase("diagnose_holiday_outcome")]
     public void SeededReadOnlySkills_AreRecognised(string skillName)
     {
         ReadOnlySkillPrefixes.HasReadOnlyPrefix(skillName).ShouldBeTrue();

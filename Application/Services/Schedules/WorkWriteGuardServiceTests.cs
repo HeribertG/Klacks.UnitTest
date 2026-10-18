@@ -211,6 +211,168 @@ public class WorkWriteGuardServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [TestCase(2, 1, 2, 5)]
+    [TestCase(0, 5, 2, 5)]
+    [TestCase(1, 5, 2, 5)]
+    [TestCase(0, 0, 1, 1)]
+    public async Task SporadicCheck_EnsureThrowsExactlyWhenFindReportsARefusal_WithTheSameCodeAndDetails(
+        int engagedAtDay, int distinctBookedDays, int sumEmployees, int quantity)
+    {
+        GivenSporadicUsage(engagedAtDay, distinctBookedDays, sumEmployees, quantity);
+
+        var refusal = await _sut.FindSporadicRefusalAsync(NewWork(), CancellationToken.None);
+        var thrown = await CatchAsync(() => _sut.EnsureNoSporadicConflictAsync(NewWork(), CancellationToken.None));
+
+        AssertCoupled(refusal, thrown);
+    }
+
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task HardBlockingCheck_EnsureThrowsExactlyWhenFindReportsARefusal_WithTheSameCodeAndDetails(
+        bool withCollision, bool withHardBlocking)
+    {
+        var conflicts = new List<ScheduleValidationNotificationDto>();
+        if (withCollision)
+        {
+            conflicts.Add(Collision());
+        }
+
+        if (withHardBlocking)
+        {
+            conflicts.Add(HardBlocking());
+        }
+
+        _shiftRepository.GetSporadicInfoAsync(_shiftId, Arg.Any<CancellationToken>())
+            .Returns(SporadicInfo(isSporadic: false, sumEmployees: 1, quantity: 1));
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult(conflicts));
+        var work = NewWork();
+
+        var refusal = await _sut.FindHardBlockingRefusalAsync(work, CancellationToken.None);
+        var rowRefusal = await _sut.FindHardBlockingRefusalAsync(
+            [PlannedWorkRow.From(work)], null, WorkWriteOperation.Create, CancellationToken.None);
+        var thrown = await CatchAsync(() => _sut.EnsureNoHardBlockingConflictAsync(work, CancellationToken.None));
+
+        AssertCoupled(refusal, thrown);
+        AssertCoupled(rowRefusal, thrown);
+        (refusal != null).ShouldBe(withHardBlocking);
+    }
+
+    [Test]
+    public async Task FindHardBlockingRefusalAsync_ForAScenarioWork_ReportsNothingAndRunsNoCheck_LikeTheWrite()
+    {
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult([HardBlocking()]));
+        var work = NewWork();
+        work.AnalyseToken = Guid.NewGuid();
+
+        var refusal = await _sut.FindHardBlockingRefusalAsync(work, CancellationToken.None);
+        var thrown = await CatchAsync(() => _sut.EnsureNoHardBlockingConflictAsync(work, CancellationToken.None));
+
+        refusal.ShouldBeNull();
+        thrown.ShouldBeNull();
+        await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(default!, default(Guid?), default);
+    }
+
+    [Test]
+    public async Task FindHardBlockingRefusalAsync_ForAWork_ChecksTheRowPlannedWorkRowFromBuilds()
+    {
+        var work = NewWork();
+
+        await _sut.FindHardBlockingRefusalAsync(work, CancellationToken.None);
+
+        await _conflictChecker.Received(1).CheckAsync(
+            Arg.Is<IReadOnlyList<PlannedWorkRow>>(rows => rows.Count == 1 && rows[0] == PlannedWorkRow.From(work)),
+            null,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task FindHardBlockingRefusalAsync_WithVacatedRows_UsesTheRemovalOverloadAndTheUpdateWording()
+    {
+        _conflictChecker.CheckAsync(
+                Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<IReadOnlyList<PlannedRemovalRow>>(),
+                Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult([HardBlocking()]));
+        var vacated = new PlannedRemovalRow(_clientId, _date, new TimeOnly(8, 0), new TimeOnly(16, 0), Guid.NewGuid());
+
+        var refusal = await _sut.FindHardBlockingRefusalAsync(
+            [new PlannedWorkRow(_clientId, _date, new TimeOnly(9, 0), new TimeOnly(17, 0), _shiftId)],
+            [vacated],
+            WorkWriteOperation.Update,
+            CancellationToken.None);
+
+        refusal.ShouldNotBeNull();
+        refusal.Code.ShouldBe(WorkWriteConflictCodes.BlockedByConflicts);
+        refusal.Message.ShouldBe(
+            $"Work update blocked: client {_clientId} would introduce 1 non-overridable schedule conflict(s) on 2027-03-10. Not committed.");
+        await _conflictChecker.DidNotReceiveWithAnyArgs().CheckAsync(default!, default(Guid?), default);
+    }
+
+    [Test]
+    public async Task FindHardBlockingRefusalAsync_BulkOverSeveralShifts_KeepsTheBulkWordingAndNamesNoSingleShift()
+    {
+        _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new PreCommitCheckResult([Collision(), HardBlocking()]));
+
+        var refusal = await _sut.FindHardBlockingRefusalAsync(
+            [
+                new PlannedWorkRow(_clientId, _date, new TimeOnly(8, 0), new TimeOnly(16, 0), _shiftId),
+                new PlannedWorkRow(_clientId, _date.AddDays(1), new TimeOnly(8, 0), new TimeOnly(16, 0), Guid.NewGuid()),
+            ],
+            null,
+            WorkWriteOperation.Bulk,
+            CancellationToken.None);
+
+        refusal.ShouldNotBeNull();
+        refusal.Message.ShouldBe(
+            "Bulk write blocked: at least one row would introduce 2 non-overridable schedule conflict(s). Nothing was committed.");
+        refusal.Details[WorkWriteConflictCodes.ShiftIdField].ShouldBeNull();
+        refusal.Details[WorkWriteConflictCodes.DateField].ShouldBeNull();
+        refusal.Details[WorkWriteConflictCodes.ConflictsField].ShouldBeOfType<List<WorkConflictItem>>().Count.ShouldBe(1);
+        await _shiftRepository.DidNotReceiveWithAnyArgs().GetSporadicInfoAsync(default, default);
+    }
+
+    private static async Task<WorkWriteConflictException?> CatchAsync(Func<Task> act)
+    {
+        try
+        {
+            await act();
+            return null;
+        }
+        catch (WorkWriteConflictException exception)
+        {
+            return exception;
+        }
+    }
+
+    private static void AssertCoupled(WorkBookingRefusal? refusal, WorkWriteConflictException? thrown)
+    {
+        if (refusal == null)
+        {
+            thrown.ShouldBeNull();
+            return;
+        }
+
+        thrown.ShouldNotBeNull();
+        thrown.ErrorCode.ShouldBe(refusal.Code);
+        thrown.Message.ShouldBe(refusal.Message);
+        thrown.Details.Keys.ShouldBe(refusal.Details.Keys, ignoreOrder: true);
+        foreach (var (field, value) in refusal.Details)
+        {
+            if (value is List<WorkConflictItem> items)
+            {
+                thrown.Details[field].ShouldBeOfType<List<WorkConflictItem>>().ShouldBe(items);
+            }
+            else
+            {
+                thrown.Details[field].ShouldBe(value);
+            }
+        }
+    }
+
     private Work NewWork() => new()
     {
         ClientId = _clientId,

@@ -257,7 +257,7 @@ public class WorkLockLevelWriteTests
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), Substitute.For<IContainerWorkCascadeService>(),
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-            Substitute.For<IOvertimeCascadeService>(), Substitute.For<IPreCommitConflictChecker>(),
+            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(Substitute.For<IPreCommitConflictChecker>()),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
             ShiftVisibilityGuards.AllowAll(), Substitute.For<ILogger<PutCommandHandler>>());
 
@@ -276,7 +276,7 @@ public class WorkLockLevelWriteTests
             Substitute.For<IScheduleEntriesService>(), Substitute.For<IScheduleCompletionService>(),
             Substitute.For<IWorkNotificationFacade>(), _cascadeService,
             Substitute.For<ISelectedGroupContextResolver>(), _dayLockService, _unitOfWork,
-            Substitute.For<IOvertimeCascadeService>(), Substitute.For<IPreCommitConflictChecker>(),
+            Substitute.For<IOvertimeCascadeService>(), TestWorkWriteGuard.Over(Substitute.For<IPreCommitConflictChecker>()),
             _httpContextAccessor, NewGuard(), Substitute.For<IClientPlanningPeriodGuard>(),
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());
 

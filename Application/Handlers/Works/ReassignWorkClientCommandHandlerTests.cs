@@ -106,7 +106,7 @@ public class ReassignWorkClientCommandHandlerTests
             _dayLockService,
             _unitOfWork,
             _overtimeCascadeService,
-            _conflictChecker,
+            TestWorkWriteGuard.Over(_conflictChecker),
             Substitute.For<IHttpContextAccessor>(),
             new ParentWorkLockGuard(new WorkLockLevelService()),
             _planningPeriodGuard,
@@ -249,6 +249,22 @@ public class ReassignWorkClientCommandHandlerTests
 
         (await Should.ThrowAsync<ConflictException>(act)).Message.ShouldContain("blocked");
         await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task Handle_HardBlockingRefusal_CarriesTheConflictCode_AndKeepsTheReassignmentWording()
+    {
+        GivenConflictCheckReturns(HardBlockingError());
+
+        Func<Task> act = async () => await _handler.Handle(
+            new ReassignWorkClientCommand(_workId, _targetClientId), CancellationToken.None);
+
+        var refusal = await Should.ThrowAsync<WorkWriteConflictException>(act);
+        refusal.ErrorCode.ShouldBe(WorkWriteConflictCodes.BlockedByConflicts);
+        refusal.Message.ShouldStartWith($"Reassignment blocked: client {_targetClientId} would introduce ");
+        refusal.Message.ShouldEndWith("non-overridable schedule conflict(s) on " + _date.ToString("yyyy-MM-dd") + ". Not committed.");
+        refusal.Details[WorkWriteConflictCodes.ConflictsField]
+            .ShouldBeOfType<List<WorkConflictItem>>().ShouldNotBeEmpty();
     }
 
     [Test]

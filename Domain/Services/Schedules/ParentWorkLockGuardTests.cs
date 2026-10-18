@@ -6,6 +6,7 @@
 /// SealedDay rows, so the day lock would not stop them), scenario Works never checked.
 /// </summary>
 
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Services.Schedules;
 
@@ -61,6 +62,34 @@ public class ParentWorkLockGuardTests
     public void EnsureChildWritable_ScenarioParent_IsNeverChecked(WorkLockLevel level)
     {
         Should.NotThrow(() => _guard.EnsureChildWritable(NewWork(level, Guid.NewGuid()), false, false));
+    }
+
+    [Test]
+    public void ClosedWork_CarriesTheClosedPeriodCodeAndTheLockLevel_ForTheWorkAndForItsChildren()
+    {
+        var workRefusal = Should.Throw<WorkBookingRefusedException>(
+            () => _guard.EnsureWorkWritable(NewWork(WorkLockLevel.Closed, null), true, true));
+        var childRefusal = Should.Throw<WorkBookingRefusedException>(
+            () => _guard.EnsureChildWritable(NewWork(WorkLockLevel.Closed, null), true, true));
+
+        workRefusal.Message.ShouldBe(ParentWorkLockGuard.ClosedWorkMessage);
+        childRefusal.Message.ShouldBe(ParentWorkLockGuard.ClosedParentMessage);
+        foreach (var refusal in new[] { workRefusal, childRefusal })
+        {
+            refusal.ErrorCode.ShouldBe(WorkBookingRefusalCodes.WorkInClosedPeriod);
+            refusal.Details[WorkBookingRefusalCodes.LockLevelField].ShouldBe((int)WorkLockLevel.Closed);
+        }
+    }
+
+    [Test]
+    public void ApprovedWork_WithoutRole_CarriesTheRoleRequiredCodeAndTheLockLevel()
+    {
+        var refusal = Should.Throw<WorkBookingRefusedException>(
+            () => _guard.EnsureWorkWritable(NewWork(WorkLockLevel.Approved, null), false, false));
+
+        refusal.Message.ShouldBe(ParentWorkLockGuard.SealedWorkMessage);
+        refusal.ErrorCode.ShouldBe(WorkBookingRefusalCodes.WorkSealedRoleRequired);
+        refusal.Details[WorkBookingRefusalCodes.LockLevelField].ShouldBe((int)WorkLockLevel.Approved);
     }
 
     private static Work NewWork(WorkLockLevel level, Guid? analyseToken)

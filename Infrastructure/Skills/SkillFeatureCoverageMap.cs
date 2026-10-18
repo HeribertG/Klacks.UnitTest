@@ -134,7 +134,7 @@ public static class SkillFeatureCoverageMap
         ["ShiftsController"] = Covered("create_shift", "update_shift", "delete_shift", "set_shift_required_qualification", "search_shifts", "get_shift_details", "assign_macro_to_shift"),
         ["WizardController"] = Covered("start_wizard1", "list_open_wizard_jobs", "cancel_wizard_job"),
         ["WorkChangesController"] = Covered("add_workchange"),
-        ["WorksController"] = Covered("place_work", "delete_work", "restore_work", "reassign_work", "bulk_delete_works", "confirm_work", "unconfirm_work", "read_schedule_state"),
+        ["WorksController"] = Covered("place_work", "delete_work", "restore_work", "reassign_work", "bulk_delete_works", "confirm_work", "unconfirm_work", "read_schedule_state", "diagnose_work_booking"),
 
         ["SchedulingRulesController"] = Covered("list_scheduling_rules", "create_scheduling_rule", "update_scheduling_rule", "delete_scheduling_rule", "get_scheduling_defaults", "update_scheduling_defaults"),
         ["CounterRulesController"] = Excluded("admin settings CRUD for counter rules (compliance event thresholds); admin settings card only, no Klacksy chat skill in this iteration"),

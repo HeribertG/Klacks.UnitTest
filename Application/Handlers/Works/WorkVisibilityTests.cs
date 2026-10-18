@@ -276,7 +276,7 @@ public class WorkVisibilityTests
         var handler = new BulkAddWorksCommandHandler(
             _workRepository, _clientVisibilityGuard, new ScheduleMapper(), _periodHoursService, _completionService,
             _notificationFacade, Substitute.For<IContainerWorkExpansionService>(), _overtimeCascadeService,
-            _dayLockService, _conflictChecker, Substitute.For<IShiftDefaultExpensesApplier>(),
+            _dayLockService, TestWorkWriteGuard.Over(_conflictChecker), Substitute.For<IShiftDefaultExpensesApplier>(),
             Substitute.For<IClientPlanningPeriodGuard>(), ShiftVisibilityGuards.AllowAll(),
             Substitute.For<ILogger<BulkAddWorksCommandHandler>>());
         var request = new BulkAddWorksRequest
@@ -682,7 +682,7 @@ public class WorkVisibilityTests
         => new(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
+            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, TestWorkWriteGuard.Over(_conflictChecker),
             _httpContextAccessor, new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<IClientPlanningPeriodGuard>(), ShiftVisibilityGuards.AllowAll(),
             Substitute.For<ILogger<PutCommandHandler>>());
@@ -691,7 +691,7 @@ public class WorkVisibilityTests
         => new(
             _workRepository, _rowAccessGuard, new ScheduleMapper(), _periodHoursService,
             _scheduleEntriesService, _completionService, _notificationFacade, _cascadeService,
-            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, _conflictChecker,
+            _groupContextResolver, _dayLockService, _unitOfWork, _overtimeCascadeService, TestWorkWriteGuard.Over(_conflictChecker),
             Substitute.For<IHttpContextAccessor>(), new ParentWorkLockGuard(new WorkLockLevelService()),
             Substitute.For<IClientPlanningPeriodGuard>(),
             Substitute.For<ILogger<ReassignWorkClientCommandHandler>>());

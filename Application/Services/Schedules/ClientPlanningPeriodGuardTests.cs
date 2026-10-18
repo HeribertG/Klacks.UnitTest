@@ -11,6 +11,7 @@
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
@@ -240,6 +241,52 @@ public class ClientPlanningPeriodGuardTests
         var violations = await _guard.FindViolationsAsync([(ClientId, Day)], CancellationToken.None);
 
         violations.ShouldHaveSingleItem().Message.ShouldContain("membership");
+    }
+
+    [Test]
+    public async Task OutsideTheMembership_TheRefusalCarriesTheMembershipCodeAndTheBounds_TextUnchanged()
+    {
+        GivenClients(NewClient(ClientId, NewMembership(Day.AddDays(-30), Day.AddDays(-1))));
+
+        var ex = await Should.ThrowAsync<WorkBookingRefusedException>(() => EnsureAsync((ClientId, Day)));
+
+        ex.Message.ShouldBe(
+            "Anna Meier cannot be planned on 2026-10-14: the day is outside the membership period (2026-09-14 to 2026-10-13).");
+        ex.ErrorCode.ShouldBe(WorkBookingRefusalCodes.OutsideMembershipPeriod);
+        ex.Details[WorkBookingRefusalCodes.ClientIdField].ShouldBe(ClientId);
+        ex.Details[WorkBookingRefusalCodes.DateField].ShouldBe(Day);
+        ex.Details[WorkBookingRefusalCodes.FromField].ShouldBe(Day.AddDays(-30));
+        ex.Details[WorkBookingRefusalCodes.UntilField].ShouldBe(Day.AddDays(-1));
+    }
+
+    [Test]
+    public async Task OutsideTheGroupPeriod_TheRefusalCarriesTheGroupCode_AndAnOpenEndAsNull()
+    {
+        _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns(new List<Guid> { GroupId });
+        GivenGroupRange(ClientId, Day.AddDays(2), null);
+
+        var ex = await Should.ThrowAsync<WorkBookingRefusedException>(() => EnsureAsync((ClientId, Day)));
+
+        ex.Message.ShouldBe(
+            "Anna Meier cannot be planned on 2026-10-14: the day is outside the group period of the employee (2026-10-16 to open).");
+        ex.ErrorCode.ShouldBe(WorkBookingRefusalCodes.OutsideGroupPeriod);
+        ex.Details[WorkBookingRefusalCodes.FromField].ShouldBe(Day.AddDays(2));
+        ex.Details[WorkBookingRefusalCodes.UntilField].ShouldBeNull();
+    }
+
+    [Test]
+    public async Task FindViolations_NameTheViolatedPeriodByCode()
+    {
+        GivenClients(
+            NewClient(ClientId, NewMembership(Day.AddDays(1), null)),
+            NewClient(OtherClientId, null));
+        _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns(new List<Guid> { GroupId });
+        GivenGroupRange(OtherClientId, Day.AddDays(2), null);
+
+        var violations = await _guard.FindViolationsAsync([(ClientId, Day), (OtherClientId, Day)], CancellationToken.None);
+
+        violations.Single(v => v.ClientId == ClientId).Code.ShouldBe(WorkBookingRefusalCodes.OutsideMembershipPeriod);
+        violations.Single(v => v.ClientId == OtherClientId).Code.ShouldBe(WorkBookingRefusalCodes.OutsideGroupPeriod);
     }
 
     [Test]

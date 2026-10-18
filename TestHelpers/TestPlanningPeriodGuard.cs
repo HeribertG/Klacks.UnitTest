@@ -7,6 +7,7 @@
 
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
+using Klacks.Api.Domain.Constants;
 
 namespace Klacks.UnitTest.TestHelpers;
 
@@ -34,6 +35,7 @@ internal static class TestPlanningPeriodGuard
         (Guid ClientId, DateOnly Date)[] outsideCells)
         => cells
             .Where(outsideCells.Contains)
-            .Select(cell => new PlanningPeriodViolation(cell.ClientId, cell.Date, ViolationMessage))
+            .Select(cell => new PlanningPeriodViolation(
+                cell.ClientId, cell.Date, ViolationMessage, WorkBookingRefusalCodes.OutsideMembershipPeriod, null, null))
             .ToList();
 }

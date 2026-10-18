@@ -142,6 +142,111 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task UncodedInvalidRequestException_CarriesNoCodeFields()
+    {
+        var response = await Invoke(new InvalidRequestException("this entry is not sealed"));
+
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("title").GetString().ShouldBe("Invalid request");
+        root.GetProperty("detail").GetString().ShouldBe("this entry is not sealed");
+        root.TryGetProperty("errorCode", out _).ShouldBeFalse();
+        root.TryGetProperty("code", out _).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task WorkBookingRefusedException_StaysA400WithTheSameDetail_AndAddsCodeAndDetails()
+    {
+        var clientId = Guid.NewGuid();
+        var refusal = new WorkBookingRefusedException(
+            "Ann Muster cannot be planned on 2027-03-10: the day is outside the membership period (2026-01-01 to open).",
+            WorkBookingRefusalCodes.OutsideMembershipPeriod,
+            new Dictionary<string, object?>
+            {
+                [WorkBookingRefusalCodes.ClientIdField] = clientId,
+                [WorkBookingRefusalCodes.DateField] = new DateOnly(2027, 3, 10),
+                [WorkBookingRefusalCodes.FromField] = new DateOnly(2026, 1, 1),
+                [WorkBookingRefusalCodes.UntilField] = null,
+            });
+
+        var response = await Invoke(refusal);
+
+        response.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("status").GetInt32().ShouldBe(StatusCodes.Status400BadRequest);
+        root.GetProperty("title").GetString().ShouldBe("Invalid request");
+        root.GetProperty("detail").GetString().ShouldBe(
+            "Ann Muster cannot be planned on 2027-03-10: the day is outside the membership period (2026-01-01 to open).");
+        root.GetProperty("errorCode").GetString().ShouldBe(WorkBookingRefusalCodes.OutsideMembershipPeriod);
+        root.GetProperty("code").GetString().ShouldBe(WorkBookingRefusalCodes.OutsideMembershipPeriod);
+        root.GetProperty("clientId").GetGuid().ShouldBe(clientId);
+        root.GetProperty("date").GetString().ShouldBe("2027-03-10");
+        root.GetProperty("from").GetString().ShouldBe("2026-01-01");
+        root.GetProperty("until").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Test]
+    public async Task WorkBookingRefusedException_ADetailNamedLikeTheCodeCannotOverwriteIt()
+    {
+        var refusal = new WorkBookingRefusedException(
+            "Cannot modify a work in a closed period. Reopen the period first.",
+            WorkBookingRefusalCodes.WorkInClosedPeriod,
+            new Dictionary<string, object?> { ["errorCode"] = "forged", [WorkBookingRefusalCodes.LockLevelField] = 3 });
+
+        var response = await Invoke(refusal);
+
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe(WorkBookingRefusalCodes.WorkInClosedPeriod);
+        problem.RootElement.GetProperty("lockLevel").GetInt32().ShouldBe(3);
+    }
+
+    [Test]
+    public async Task WorkWriteConflictException_ADetailNamedLikeTheCodeCannotOverwriteIt()
+    {
+        var response = await Invoke(new WorkWriteConflictException(
+            "Work blocked: not committed.",
+            WorkWriteConflictCodes.BlockedByConflicts,
+            new Dictionary<string, object?> { ["errorCode"] = "forged", [WorkWriteConflictCodes.DateField] = new DateOnly(2027, 3, 10) }));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        problem.RootElement.GetProperty("errorCode").GetString().ShouldBe(WorkWriteConflictCodes.BlockedByConflicts);
+        problem.RootElement.GetProperty("date").GetString().ShouldBe("2027-03-10");
+    }
+
+    [Test]
+    public void WorkWriteConflictException_IsNoSeparateCodedRejection_ItsCodeIsTheConflictCode()
+    {
+        var exception = new WorkWriteConflictException(
+            "Work blocked: not committed.",
+            WorkWriteConflictCodes.BlockedByConflicts,
+            new Dictionary<string, object?> { [WorkWriteConflictCodes.DateField] = new DateOnly(2027, 3, 10) });
+
+        exception.ShouldNotBeAssignableTo<ICodedRejection>();
+        exception.ErrorCode.ShouldBe(exception.ConflictCode);
+        exception.Details.ShouldBeSameAs(exception.ConflictDetails);
+    }
+
+    [Test]
+    public async Task WorkWriteConflictException_StaysA409WithErrorCodeOnly_NoCodeAlias()
+    {
+        var response = await Invoke(new WorkWriteConflictException(
+            "Work update blocked: not committed.",
+            WorkWriteConflictCodes.BlockedByConflicts,
+            new Dictionary<string, object?> { [WorkWriteConflictCodes.DateField] = new DateOnly(2027, 3, 10) }));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("title").GetString().ShouldBe("Conflict");
+        root.GetProperty("detail").GetString().ShouldBe("Work update blocked: not committed.");
+        root.GetProperty("errorCode").GetString().ShouldBe(WorkWriteConflictCodes.BlockedByConflicts);
+        root.GetProperty("date").GetString().ShouldBe("2027-03-10");
+        root.TryGetProperty("code", out _).ShouldBeFalse();
+    }
+
+    [Test]
     public async Task ScenarioNotActiveException_Becomes409CarryingItsErrorCode()
     {
         var response = await Invoke(new ScenarioNotActiveException("Scenario is no longer active."));
