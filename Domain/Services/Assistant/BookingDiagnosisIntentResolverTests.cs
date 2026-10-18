@@ -1,5 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.Api.Domain.Constants;
+
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
 /// <summary>
@@ -15,8 +17,8 @@ public class BookingDiagnosisIntentResolverTests
 
     private static readonly string[] Expected =
     [
-        BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName,
-        BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName,
+        SkillNames.DiagnoseWorkBooking,
+        SkillNames.ExplainWhyCannotBook,
     ];
 
     [TestCase("Warum kann Anna am Montag den Frühdienst nicht bekommen?")]

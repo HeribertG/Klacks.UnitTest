@@ -7,7 +7,10 @@
 /// the "explain.ui." kind, without ContentKey, carrying only the outcome; yes and no mute at once, the second "later"
 /// mutes, the third unanswered "shown" mutes; an unknown topic or outcome writes nothing; while the offers are off or
 /// the topic is already muted a reaction is accepted but writes nothing, except the one answer to the offer whose "shown"
-/// muted the topic (the user's newest row is that unanswered "shown").
+/// muted the topic (the user's newest row is that unanswered "shown"). Passive topic (work-booking-refusal): never offered
+/// by state, stores only "accepted" keyed by the company-local day (no Guid, so RecordAsync's dedup makes a second click of
+/// the day a no-op), never reads or writes the mute, writes nothing while the offers are off, and treats a concurrent
+/// duplicate (unique-index violation for a row that now exists) as already recorded.
 /// </summary>
 
 using System.Text.Json;
@@ -16,6 +19,7 @@ using Klacks.Api.Application.Services.Assistant.ExplainOffers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.UnitTest.TestHelpers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.ExplainOffers;
@@ -26,13 +30,18 @@ public class UiExplainOfferServiceTests
     private const string Topic = UiExplainOfferTopics.ShiftHolidayOptionsKey;
     private const string Kind = UiExplainOfferTopics.TriggerKindPrefix + UiExplainOfferTopics.ShiftHolidayOptionsKey;
 
+    private const string PassiveTopic = UiExplainOfferTopics.WorkBookingRefusalKey;
+    private const string PassiveKind = UiExplainOfferTopics.TriggerKindPrefix + UiExplainOfferTopics.WorkBookingRefusalKey;
+
     private static readonly DateTime Now = new(2026, 10, 18, 9, 0, 0, DateTimeKind.Utc);
+    private static readonly DateOnly CompanyToday = new(2026, 10, 19);
 
     private IProactiveTriggerDispatchRepository _dispatches = null!;
     private IAgentTriggerPreferenceService _preferences = null!;
     private IProactiveGovernanceResolver _governance = null!;
     private ISettingsReader _settings = null!;
     private IExplainDepthResolver _depth = null!;
+    private ICompanyClock _companyClock = null!;
     private UiExplainOfferService _sut = null!;
     private string _userId = null!;
 
@@ -45,6 +54,8 @@ public class UiExplainOfferServiceTests
         _governance = Substitute.For<IProactiveGovernanceResolver>();
         _settings = Substitute.For<ISettingsReader>();
         _depth = Substitute.For<IExplainDepthResolver>();
+        _companyClock = Substitute.For<ICompanyClock>();
+        _companyClock.GetTodayDateAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
 
         _preferences.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
         _governance.IsKillSwitchActiveAsync(Arg.Any<CancellationToken>()).Returns(false);
@@ -54,7 +65,7 @@ public class UiExplainOfferServiceTests
 
         _sut = new UiExplainOfferService(
             _dispatches, _preferences, new ExplainOffersSwitch(_settings, _governance), _depth,
-            new SettableTimeProvider(Now), Substitute.For<ILogger<UiExplainOfferService>>());
+            new SettableTimeProvider(Now), _companyClock, Substitute.For<ILogger<UiExplainOfferService>>());
     }
 
     private void GivenLevel(ExplainExperienceLevel? level) =>
@@ -376,5 +387,95 @@ public class UiExplainOfferServiceTests
             .ToList();
         keys.Count.ShouldBe(2);
         keys.Distinct().Count().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task PassiveTopic_IsNeverOfferedByState_WithoutLookups()
+    {
+        (await _sut.GetStateAsync(_userId, PassiveTopic)).ShouldBe(UiExplainOfferState.Off);
+
+        await _preferences.DidNotReceive().IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        await _depth.DidNotReceive().ResolveAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PassiveAccepted_WritesOneHelpfulRowKeyedByTheCompanyDay_AndNeverMutes()
+    {
+        (await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted)).ShouldBeTrue();
+
+        var row = RecordedRow();
+        row.TriggerKind.ShouldBe(PassiveKind);
+        row.ContentKey.ShouldBeNull();
+        row.Reaction.ShouldBe(ProactiveReaction.Helpful);
+        row.DedupKey.ShouldBe(PassiveTopic + ":accepted:2026-10-19");
+        await _preferences.DidNotReceive().MuteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+        await _preferences.DidNotReceive().IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task PassiveClicks_OfOneDay_ShareTheDedupKey()
+    {
+        await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted);
+        await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted);
+
+        var keys = _dispatches.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IProactiveTriggerDispatchRepository.RecordAsync))
+            .Select(call => ((ProactiveTriggerDispatchRow)call.GetArguments()[0]!).DedupKey)
+            .ToList();
+        keys.Count.ShouldBe(2);
+        keys.Distinct().Count().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task PassiveClick_OnAMutedKind_IsStillCounted()
+    {
+        _preferences.IsAllowedAsync(_userId, PassiveKind, Arg.Any<string>()).Returns(false);
+
+        await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted);
+
+        await _dispatches.Received(1).RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(UiExplainOfferOutcomes.Shown)]
+    [TestCase(UiExplainOfferOutcomes.Later)]
+    [TestCase(UiExplainOfferOutcomes.Declined)]
+    public async Task PassiveTopic_OtherOutcomes_AreAcceptedButWriteNothing(string outcome)
+    {
+        (await _sut.RecordReactionAsync(_userId, PassiveTopic, outcome)).ShouldBeTrue();
+
+        await _dispatches.DidNotReceive().RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
+        await _preferences.DidNotReceive().MuteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    [Test]
+    public async Task PassiveClick_WhileOffersOff_WritesNothing()
+    {
+        GivenSetting("false");
+
+        (await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted)).ShouldBeTrue();
+
+        await _dispatches.DidNotReceive().RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task PassiveClick_ConcurrentDuplicate_IsTreatedAsRecorded()
+    {
+        _dispatches.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new DbUpdateException("duplicate")));
+        _dispatches.WasDispatchedAsync(_userId, PassiveKind, PassiveTopic + ":accepted:2026-10-19", null, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        (await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted)).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task PassiveClick_OtherWriteFailure_IsNotSwallowed()
+    {
+        _dispatches.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new DbUpdateException("other")));
+        _dispatches.WasDispatchedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        await Should.ThrowAsync<DbUpdateException>(() => _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted));
     }
 }

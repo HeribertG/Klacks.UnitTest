@@ -12,6 +12,7 @@
 
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -74,8 +75,8 @@ public class SkillToolsetAssemblerScheduleReadTests
             CreateSkill(ScenarioFollowUpSkills.AcceptScenarioSkillName, SkillEffect.Mutate),
             CreateSkill(ScenarioFollowUpSkills.RejectScenarioSkillName, SkillEffect.Mutate),
             CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, SkillEffect.Read),
-            CreateSkill(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName, SkillEffect.Read),
-            CreateSkill(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName, SkillEffect.Explain)
+            CreateSkill(SkillNames.DiagnoseWorkBooking, SkillEffect.Read),
+            CreateSkill(SkillNames.ExplainWhyCannotBook, SkillEffect.Explain)
         ];
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>()).Returns(_ => _skills);
         GivenRetrieval();
@@ -181,10 +182,10 @@ public class SkillToolsetAssemblerScheduleReadTests
 
         var names = Names(result);
         names.Count.ShouldBe(TinyCap);
-        names.ShouldContain(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName);
+        names.ShouldContain(SkillNames.DiagnoseWorkBooking);
         names.ShouldContain(ExplainPageScheduleSkillName);
         names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
-        names.ShouldNotContain(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName);
+        names.ShouldNotContain(SkillNames.ExplainWhyCannotBook);
         names.ShouldNotContain(ScheduleReadIntentResolver.ListGroupsSkillName);
     }
 
@@ -197,8 +198,8 @@ public class SkillToolsetAssemblerScheduleReadTests
 
         var names = Names(await AssembleAsync(message, route));
 
-        names.ShouldContain(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName);
-        names.ShouldContain(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName);
+        names.ShouldContain(SkillNames.DiagnoseWorkBooking);
+        names.ShouldContain(SkillNames.ExplainWhyCannotBook);
     }
 
     [Test]
@@ -206,8 +207,8 @@ public class SkillToolsetAssemblerScheduleReadTests
     {
         var names = Names(await AssembleAsync(DutyQuestion, ScheduleRoute));
 
-        names.ShouldNotContain(BookingDiagnosisIntentResolver.DiagnoseWorkBookingSkillName);
-        names.ShouldNotContain(BookingDiagnosisIntentResolver.ExplainWhyCannotBookSkillName);
+        names.ShouldNotContain(SkillNames.DiagnoseWorkBooking);
+        names.ShouldNotContain(SkillNames.ExplainWhyCannotBook);
     }
 
     [Test]
