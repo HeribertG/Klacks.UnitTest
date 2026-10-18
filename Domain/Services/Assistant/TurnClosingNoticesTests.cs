@@ -113,7 +113,7 @@ public class TurnClosingNoticesTests
     }
 
     [Test]
-    public void Collect_EveryCallFailedAndNoProse_YieldsTheStepFailedNoticeAndLogsTheRawResult()
+    public void Collect_EveryCallFailedAndNoProse_YieldsTheStepFailedNoticeAndLogsOnlyMetadata()
     {
         var logger = new RecordingLogger<TurnClosingNoticesTests>();
         var failed = Call("resolve_contract", success: false, RealFailure);
@@ -122,7 +122,8 @@ public class TurnClosingNoticesTests
             isMutationIntent: true, forceConfirmation: false, string.Empty, [failed], recipePausedOnAsk: false, logger);
 
         notices.ShouldBe([TurnClosingNotices.StepFailed(failed)]);
-        logger.Entries.ShouldContain(e => e.Level == LogLevel.Warning && e.Message.Contains(RealFailure));
+        logger.Entries.ShouldContain(e => e.Level == LogLevel.Warning && e.Message.Contains("resolve_contract"));
+        logger.Entries.ShouldAllBe(e => !e.Message.Contains(RealFailure));
     }
 
     [Test]

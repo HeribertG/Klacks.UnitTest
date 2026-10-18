@@ -1,8 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// ReasoningChannelLog writes the reasoning text at Debug level only (it is chain-of-thought and may quote
-/// user data) and raises a Warning with the finish_reason only when the call ended with reasoning but no
+/// ReasoningChannelLog writes only the reasoning length at Debug level, never the text (it is chain-of-thought and
+/// may quote user data; owner decision 2026-10-18), and raises a Warning with the finish_reason only when the call ended with reasoning but no
 /// content and no tool call.
 /// </summary>
 
@@ -19,7 +19,7 @@ public class ReasoningChannelLogTests
     private const string FinishReason = "stop";
 
     [Test]
-    public void ReasoningWithoutContent_WarnsWithTheFinishReasonAndKeepsTheTextAtDebug()
+    public void ReasoningWithoutContent_WarnsWithTheFinishReasonAndLogsOnlyTheLengthAtDebug()
     {
         var logger = new RecordingLogger<ReasoningChannelLogTests>();
 
@@ -28,7 +28,9 @@ public class ReasoningChannelLogTests
         var warning = logger.Entries.Single(entry => entry.Level == LogLevel.Warning);
         warning.Message.ShouldContain(FinishReason);
         warning.Message.ShouldNotContain(Reasoning);
-        logger.Entries.Single(entry => entry.Level == LogLevel.Debug).Message.ShouldContain(Reasoning);
+        var debug = logger.Entries.Single(entry => entry.Level == LogLevel.Debug).Message;
+        debug.ShouldNotContain(Reasoning);
+        debug.ShouldContain(Reasoning.Length.ToString());
     }
 
     [Test]
@@ -53,13 +55,13 @@ public class ReasoningChannelLogTests
     }
 
     [Test]
-    public void LongReasoning_IsTruncatedInTheDebugEntry()
+    public void LongReasoning_IsNotWrittenToTheDebugEntry()
     {
         var logger = new RecordingLogger<ReasoningChannelLogTests>();
         var longReasoning = new string('x', 5000);
 
         ReasoningChannelLog.Write(logger, "DeepSeek", "deepseek-v4-pro", longReasoning, false, FinishReason);
 
-        logger.Entries.Single().Message.ShouldNotContain(longReasoning);
+        logger.Entries.Single().Message.ShouldNotContain("xxx");
     }
 }

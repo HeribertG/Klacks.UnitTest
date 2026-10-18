@@ -1052,7 +1052,7 @@ public class InboundIntentAnalysisServiceTests
     }
 
     [Test]
-    public async Task RawModelReply_IsNeverLoggedAboveDebugLevel()
+    public async Task RawModelReply_IsNeverLogged_OnlyItsLength()
     {
         const string SensitiveReply = "SENSITIVE-DIAGNOSIS-REPLY";
         var logger = new RecordingLogger<InboundIntentAnalysisService>();
@@ -1062,9 +1062,7 @@ public class InboundIntentAnalysisServiceTests
         await service.AnalyzeAsync(ClientId, EntityTypeEnum.Employee, Source());
         await service.AnalyzeAnswerAsync(ClientId, EntityTypeEnum.Employee, AnswerSource(), History());
 
-        logger.Entries.Count(e => e.Message.Contains(SensitiveReply)).ShouldBeGreaterThan(0);
-        logger.Entries
-            .Where(e => e.Level >= LogLevel.Information)
-            .ShouldAllBe(e => !e.Message.Contains(SensitiveReply));
+        logger.Entries.ShouldContain(e => e.Level == LogLevel.Debug && e.Message.Contains($"{SensitiveReply.Length} chars"));
+        logger.Entries.ShouldAllBe(e => !e.Message.Contains(SensitiveReply));
     }
 }
