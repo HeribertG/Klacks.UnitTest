@@ -69,7 +69,7 @@ public class GateExplainOfferServiceTests
             .Returns(new AgentMemory { Key = SkillNames.ExplainFinalVsCorrectable, Content = HappenContent });
 
         _sut = new GateExplainOfferService(
-            _dispatches, _preferences, _governance, _settings,
+            _dispatches, _preferences, new ExplainOffersSwitch(_settings, _governance),
             new KnowledgeHappenExecutor(_memory, Substitute.For<ILogger<KnowledgeHappenExecutor>>()),
             _renewal, new SettableTimeProvider(Now), Substitute.For<ILogger<GateExplainOfferService>>());
     }

@@ -45,7 +45,8 @@ public class GateOfferWireSeamTests
         preferences.IsAllowedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         _service = new GateExplainOfferService(
-            _dispatches, preferences, Substitute.For<IProactiveGovernanceResolver>(), Substitute.For<ISettingsReader>(),
+            _dispatches, preferences,
+            new ExplainOffersSwitch(Substitute.For<ISettingsReader>(), Substitute.For<IProactiveGovernanceResolver>()),
             new KnowledgeHappenExecutor(Substitute.For<IAgentMemoryRepository>(), Substitute.For<ILogger<KnowledgeHappenExecutor>>()),
             Substitute.For<IPendingConfirmationRenewal>(), TimeProvider.System, Substitute.For<ILogger<GateExplainOfferService>>());
     }

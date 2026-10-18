@@ -24,6 +24,7 @@ public static class SkillFeatureCoverageMap
         ["AgentPlansController"] = Excluded("Klacksy assistant infrastructure: persisted planner runs; plans are initiated via the propose_plan skill"),
         ["AgentSoulController"] = Covered("get_ai_soul", "update_ai_soul"),
         ["AgentTriggerPreferencesController"] = Excluded("Klacksy assistant self-configuration: per-user trigger mute/snooze managed in the assistant settings UI"),
+        ["UiExplainOffersController"] = Excluded("Klacksy assistant self-configuration: the UI asks whether to offer an explanation and records the reaction; the explanation itself is a chat turn"),
         ["AgentsController"] = Excluded("Klacksy assistant administration (agent registry), assistant infrastructure"),
         ["ChatController"] = Excluded("Klacksy chat pipeline itself: the host that executes skills, covering it with skills would be circular"),
         ["CompanyClockController"] = Excluded("read-only company time-zone/today snapshot for the UI (calendar rendering, non-admin readable); same audience and facts as the get_current_time skill, which already covers this for chat"),
