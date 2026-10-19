@@ -4,8 +4,8 @@
 /// Builds the real application container (AddApplicationServices, plus AddErpImportServices and AddMappers as
 /// Program.cs calls them, and the messaging plugin registrar, with the framework registrations Program.cs adds outside it mirrored as in ClarificationExpirySweepContainerTests)
 /// and checks that ValidateOnBuild reports no failure naming the ledger-based ERP import chain: the runner,
-/// the per-file importer, the per-order processor, the inbox registration, the legacy folder migrator and the
-/// ledger repository. The
+/// the per-file importer, the per-order processor, the inbox registration, the legacy folder migrator, the
+/// retention purge and the ledger repository. The
 /// DbContext never connects.
 /// </summary>
 
@@ -39,6 +39,7 @@ public class ErpOrderImportRunnerContainerTests
         nameof(ImportedOrderProcessor),
         nameof(ErpImportInboxRegistrationService),
         nameof(ErpImportLegacyFolderMigrator),
+        nameof(ErpImportRetentionService),
         "GetDefaultFilesQueryHandler",
         "RetryErpOrderFileCommandHandler",
         "DeleteErpOrderFileCommandHandler",

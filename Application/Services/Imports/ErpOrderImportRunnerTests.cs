@@ -4,7 +4,8 @@
 /// Unit tests for the ledger-based ERP import run: ErpOrderImportRunner with the real
 /// ErpImportInboxRegistrationService, ErpImportFileImporter, ImportedOrderProcessor and
 /// OrderSupersessionService over substituted repositories, storage and parser. Covers the schedule gate,
-/// reaping and registration before any claim, claim order and attempt numbers, every order outcome
+/// reaping, the retention purge (every drop point, also disabled ones; a failing purge does not stop the import) and
+/// registration before any claim, claim order and attempt numbers, every order outcome
 /// (Created/Updated/Unchanged/Superseded/Rejected) and its counter, parser rejections counted per rejected order
 /// (not per reference), the single verified read of the stored file (hash mismatch, grown, missing and too large
 /// objects), one unreadable inbox file or a failing inbox not stopping the import, the
@@ -149,8 +150,13 @@ public class ErpOrderImportRunnerTests
         var legacyFolderMigrator = new ErpImportLegacyFolderMigrator(
             _objectStorageService, _fileRepository, _exceptionRepository, _unitOfWork, _time, NullLogger<ErpImportLegacyFolderMigrator>.Instance);
 
+        _fileRepository.ListExpiredAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new List<ErpImportFileRetentionCandidate>());
+        var retentionService = new ErpImportRetentionService(
+            _fileRepository, _exceptionRepository, _objectStorageService, _unitOfWork, _time, NullLogger<ErpImportRetentionService>.Instance);
+
         _runner = new ErpOrderImportRunner(
-            _dropPointRepository, _defaultDropPointProvider, legacyFolderMigrator, _fileRepository, inboxRegistration, importer,
+            _dropPointRepository, _defaultDropPointProvider, legacyFolderMigrator, _fileRepository, retentionService, inboxRegistration, importer,
             _settingsRepository, companyClock, _unitOfWork, _runState, _time,
             NullLogger<ErpOrderImportRunner>.Instance, new ErpCronTimeZoneDriftNotifier());
     }
@@ -215,10 +221,41 @@ public class ErpOrderImportRunnerTests
             _defaultDropPointProvider.GetOrCreateDefaultAsync(Arg.Any<CancellationToken>());
             _objectStorageService.ListWithMetadataAsync(Prefix, Arg.Any<CancellationToken>());
             _fileRepository.ReapStaleAsync(Now - ErpImportFileTiming.StaleAfter, Arg.Any<CancellationToken>());
+            _fileRepository.ListExpiredAsync(DropPoint.Id, Now - ErpImportFileTiming.RetentionPeriod, ErpImportFileTiming.RetentionBatchSize, Arg.Any<CancellationToken>());
             _objectStorageService.ListAsync(Prefix, Arg.Any<CancellationToken>());
             _fileRepository.ListReceivedAsync(DropPoint.Id, Arg.Any<CancellationToken>());
             _fileRepository.TryClaimAsync(file.Id, file.Attempt, _instance.InstanceId, Now, Arg.Any<CancellationToken>());
         });
+    }
+
+    [Test]
+    public async Task RunAsync_RetentionFailing_StillRegistersAndImportsTheReceivedFiles()
+    {
+        // Arrange
+        var file = GivenReceivedFile(NewOrder("ORD-1"));
+        _fileRepository.ListExpiredAsync(Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("database hiccup"));
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        await _objectStorageService.Received(1).ListAsync(Prefix, Arg.Any<CancellationToken>());
+        _finishes.ShouldHaveSingleItem().FileId.ShouldBe(file.Id);
+    }
+
+    [Test]
+    public async Task RunAsync_DisabledDropPoint_StillGetsTheRetentionPurge()
+    {
+        // Arrange
+        var disabled = new ErpDropPoint { Id = Guid.NewGuid(), Name = "Disabled", SourceSystemId = "erp-2", BucketPrefix = "customer-2", IsEnabled = false };
+        _dropPointRepository.List().Returns([disabled]);
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        await _fileRepository.Received(1).ListExpiredAsync(disabled.Id, Arg.Any<DateTime>(), ErpImportFileTiming.RetentionBatchSize, Arg.Any<CancellationToken>());
     }
 
     [Test]
