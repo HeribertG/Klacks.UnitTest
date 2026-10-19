@@ -100,6 +100,7 @@ public class StopTurnContainerTests
         services.AddSingleton(Substitute.For<INavigationFeedbackLogger>());
         services.AddSingleton(Substitute.For<INavigationMissDetector>());
         services.AddSingleton(Substitute.For<INavigationEntityRouteGuard>());
+        services.AddSingleton(Substitute.For<IKlacksyPageKeyCatalog>());
     }
 
     private static ServiceProvider Build(IServiceCollection services) =>
