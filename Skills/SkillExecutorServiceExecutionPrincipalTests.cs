@@ -63,7 +63,7 @@ public class SkillExecutorServiceExecutionPrincipalTests
         _genericDispatcher.CanHandle(GenericHandlerType).Returns(true);
         _genericDispatcher.ExecuteAsync(
                 GenericHandlerType, GenericHandlerConfig,
-                Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 _principalSeenBySkill = ExecutionPrincipal.CurrentUserId;
@@ -121,7 +121,7 @@ public class SkillExecutorServiceExecutionPrincipalTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe($"No scenario found for analyseToken '{_hiddenToken}'.");
-        await _genericDispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default, default);
+        await _genericDispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default, default!, default);
     }
 
     [Test]

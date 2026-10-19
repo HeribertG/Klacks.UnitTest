@@ -325,4 +325,65 @@ public class KnowledgeHappenExecutorTests
         Assert.That(serialized, Does.Contain("SealedOrder"));
         Assert.That(serialized, Does.Contain("OriginalShift"));
     }
+    [Test]
+    public async Task AnswerInstruction_AsksForOneScrollMarkerWhenTheUserAsksWhereAnElementIs()
+    {
+        _memoryRepository.GetByKeyAsync("explain_page_settings_erp_drop_points", Arg.Any<CancellationToken>())
+            .Returns(new AgentMemory { Key = "explain_page_settings_erp_drop_points", Content = "# ERP\nUpload zone." });
+
+        var result = await _sut.ExecuteAsync(
+            new KnowledgeHappenConfig { MemoryKey = "explain_page_settings_erp_drop_points" });
+
+        Assert.That(result.Message, Does.Contain("asks WHERE"));
+        Assert.That(result.Message, Does.Contain("exactly one [SCROLL:anchor-id] marker"));
+    }
+
+    [Test]
+    public async Task OpenPage_ForbidsDescribingTheClickPathToIt()
+    {
+        SetupErpMemory();
+
+        var result = await _sut.ExecuteAsync(
+            new KnowledgeHappenConfig { MemoryKey = ErpSkill, PageKey = "settings" },
+            new Dictionary<string, object> { ["level"] = "elements" },
+            pageAccess: KnowledgePageAccess.Open);
+
+        Assert.That(result.Message, Does.Contain(KnowledgeHappenExecutor.PageAlreadyOpenInstruction));
+        Assert.That(result.Message, Does.Not.Contain(KnowledgeHappenExecutor.NoPageAccessInstruction));
+    }
+
+    [Test]
+    public async Task DeniedPage_ExplainsBrieflyAndNamesTheAdministratorInsteadOfPointing()
+    {
+        SetupErpMemory();
+
+        var result = await _sut.ExecuteAsync(
+            new KnowledgeHappenConfig { MemoryKey = ErpSkill, PageKey = "settings" },
+            pageAccess: KnowledgePageAccess.Denied);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Does.Contain(KnowledgeHappenExecutor.NoPageAccessInstruction));
+        Assert.That(result.Message, Does.Not.Contain(KnowledgeHappenExecutor.PageAlreadyOpenInstruction));
+    }
+
+    [Test]
+    public async Task NoPage_KeepsTheClickPathBecauseTheAppDoesNotOpenAPage()
+    {
+        _memoryRepository.GetByKeyAsync("explain_why_cannot_book", Arg.Any<CancellationToken>())
+            .Returns(new AgentMemory { Key = "explain_why_cannot_book", Content = "# Why\nReasons." });
+
+        var result = await _sut.ExecuteAsync(new KnowledgeHappenConfig { MemoryKey = "explain_why_cannot_book" });
+
+        Assert.That(result.Message, Does.Not.Contain(KnowledgeHappenExecutor.PageAlreadyOpenInstruction));
+        Assert.That(result.Message, Does.Not.Contain(KnowledgeHappenExecutor.NoPageAccessInstruction));
+        Assert.That(result.Message, Does.Not.Contain("highlighted"));
+    }
+
+    private const string ErpSkill = "explain_page_settings_erp_drop_points";
+
+    private void SetupErpMemory()
+    {
+        _memoryRepository.GetByKeyAsync(ErpSkill, Arg.Any<CancellationToken>())
+            .Returns(new AgentMemory { Key = ErpSkill, Content = "# ERP\nUpload zone." });
+    }
 }

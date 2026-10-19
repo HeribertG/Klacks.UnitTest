@@ -37,7 +37,7 @@ public class SkillExecutorServiceReservedParameterTests
         _genericDispatcher.CanHandle(GenericHandlerType).Returns(true);
         _genericDispatcher.ExecuteAsync(
                 GenericHandlerType, GenericHandlerConfig,
-                Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 _parametersSeenBySkill = ci.ArgAt<Dictionary<string, object>>(2);

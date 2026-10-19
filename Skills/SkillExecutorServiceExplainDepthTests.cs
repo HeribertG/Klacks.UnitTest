@@ -34,7 +34,7 @@ public class SkillExecutorServiceExplainDepthTests
         _genericDispatcher.CanHandle(KnowledgeHandlerType).Returns(true);
         _genericDispatcher.ExecuteAsync(
                 KnowledgeHandlerType, HandlerConfig,
-                Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(SkillResult.SuccessResult(null, "ran"));
         registry.GetSkillByName(SkillName).Returns(
             new SkillDescriptor(SkillName, "test", SkillCategory.Query, [], [], [], null)
@@ -73,7 +73,7 @@ public class SkillExecutorServiceExplainDepthTests
 
         await _genericDispatcher.Received(1).ExecuteAsync(
             KnowledgeHandlerType, HandlerConfig,
-            Arg.Any<Dictionary<string, object>>(), depth, Arg.Any<CancellationToken>());
+            Arg.Any<Dictionary<string, object>>(), depth, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -83,6 +83,20 @@ public class SkillExecutorServiceExplainDepthTests
 
         await _genericDispatcher.Received(1).ExecuteAsync(
             KnowledgeHandlerType, HandlerConfig,
-            Arg.Any<Dictionary<string, object>>(), (ExplainDepthProfile?)null, Arg.Any<CancellationToken>());
+            Arg.Any<Dictionary<string, object>>(), (ExplainDepthProfile?)null, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ContextPermissions_AreHandedToTheDispatcher()
+    {
+        var context = Context(null) with { UserPermissions = new List<string> { "CanViewSettings" } };
+
+        await _sut.ExecuteAsync(new SkillInvocation { SkillName = SkillName, Parameters = new() }, context);
+
+        await _genericDispatcher.Received(1).ExecuteAsync(
+            KnowledgeHandlerType, HandlerConfig,
+            Arg.Any<Dictionary<string, object>>(), Arg.Any<ExplainDepthProfile?>(),
+            Arg.Is<IReadOnlyList<string>>(permissions => permissions.Contains("CanViewSettings")),
+            Arg.Any<CancellationToken>());
     }
 }
