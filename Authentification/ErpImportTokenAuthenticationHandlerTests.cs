@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Constants;
@@ -84,9 +85,9 @@ public class ErpImportTokenAuthenticationHandlerTests
     }
 
     [Test]
-    public async Task AuthenticateAsync_ValidToken_SucceedsWithDropPointClaimOnly()
+    public async Task AuthenticateAsync_ValidToken_SucceedsWithDropPointAndTokenNameClaimsOnly()
     {
-        var (plaintext, _) = SetupStoredToken(DateTime.UtcNow.AddDays(1));
+        var (plaintext, token) = SetupStoredToken(DateTime.UtcNow.AddDays(1));
         SetupEnabledDropPoint();
 
         var result = await AuthenticateAsync(BearerPrefix + plaintext);
@@ -94,7 +95,9 @@ public class ErpImportTokenAuthenticationHandlerTests
         result.Succeeded.ShouldBeTrue();
         var principal = result.Ticket!.Principal;
         principal.FindFirst(ErpImportTokenConstants.DropPointIdClaimType)!.Value.ShouldBe(TestDropPointId.ToString());
-        principal.Claims.Count().ShouldBe(1);
+        principal.FindFirst(ErpImportTokenConstants.TokenNameClaimType)!.Value.ShouldBe(token.Name);
+        principal.FindFirst(ClaimTypes.Name).ShouldBeNull();
+        principal.Claims.Count().ShouldBe(2);
         result.Ticket.AuthenticationScheme.ShouldBe(ErpImportTokenConstants.SchemeName);
     }
 

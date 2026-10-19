@@ -296,12 +296,49 @@ public class XmlOrderImportParserTests
     }
 
     [Test]
+    public void Parse_RejectedOrdersWithoutReference_CarryTheirOwnOrderIndexOnEveryError()
+    {
+        var xml = """
+            <ErpOrderImport schemaVersion="1" sourceSystemId="erp-1">
+              <Order>
+                <ExternalOrderReference>ORD-VALID</ExternalOrderReference>
+                <Customer>
+                  <Company>Spitex Musterhausen</Company>
+                  <Address>
+                    <Street>Hauptstrasse 5</Street>
+                    <Zip>4000</Zip>
+                  </Address>
+                </Customer>
+                <FromDate>2026-08-01</FromDate>
+                <StartTime>07:00</StartTime>
+                <EndTime>15:00</EndTime>
+                <Weekdays monday="true" />
+              </Order>
+              <Order>
+                <StartTime>07:00</StartTime>
+              </Order>
+              <Order>
+                <StartTime>08:00</StartTime>
+              </Order>
+            </ErpOrderImport>
+            """;
+
+        var result = _parser.Parse(ToStream(xml));
+
+        result.Orders.ShouldHaveSingleItem().ExternalOrderReference.ShouldBe("ORD-VALID");
+        result.Errors.ShouldAllBe(e => e.ExternalOrderReference == null);
+        result.Errors.Select(e => e.OrderIndex).Distinct().OrderBy(i => i).ShouldBe(new int?[] { 1, 2 });
+        result.Errors.Count(e => e.OrderIndex == 1).ShouldBeGreaterThan(1, "one order produces several errors that must stay together");
+    }
+
+    [Test]
     public void Parse_MalformedXml_ReturnsError()
     {
         var result = _parser.Parse(ToStream("<ErpOrderImport schemaVersion=\"1\""));
 
         result.HasErrors.ShouldBeTrue();
         result.Orders.ShouldBeEmpty();
+        result.Errors.ShouldAllBe(e => e.OrderIndex == null, "a file-level error belongs to no order");
     }
 
     [Test]

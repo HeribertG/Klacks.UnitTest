@@ -11,6 +11,7 @@ using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Models.Staffs;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Shouldly;
 
 namespace Klacks.UnitTest.Application.Services.Imports;
 
@@ -84,8 +85,9 @@ public class OrderSupersessionServiceTests
             EndTime = sealedOrder.EndShift
         };
 
-        await _service.HandleAsync(sealedOrder, unchanged, ClientId);
+        var superseded = await _service.HandleAsync(sealedOrder, unchanged, ClientId);
 
+        superseded.ShouldBeFalse();
         await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
         await _workRepository.DidNotReceive().GetFutureUnlockedByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
@@ -99,8 +101,9 @@ public class OrderSupersessionServiceTests
         _workRepository.GetFutureUnlockedByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(new List<Work>());
 
-        await _service.HandleAsync(sealedOrder, ChangedOrder(), ClientId);
+        var superseded = await _service.HandleAsync(sealedOrder, ChangedOrder(), ClientId);
 
+        superseded.ShouldBeTrue();
         await _shiftRepository.Received(1).PutWithSealedOrderHandling(Arg.Is<Shift>(s => s.Id == sealedOrder.Id && s.UntilDate == new DateOnly(2026, 8, 15)));
     }
 

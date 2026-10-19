@@ -48,6 +48,11 @@ namespace Klacks.UnitTest.Mocks
             return await operation();
         }
 
+        public void DiscardTrackedChanges()
+        {
+            _context.ChangeTracker.Clear();
+        }
+
         private class MockTransaction : ITransaction
         {
             public void Dispose()

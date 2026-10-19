@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Unit tests for get_erp_drop_point_settings: reports the drop point's configuration plus the
-/// resolved absolute on-disk folder path, its processing/processed/error sub-folder names and the
+/// resolved absolute on-disk folder path (files stay there, no sub-folders any more) and the
 /// import's poll schedule, resolving the path through the same IObjectStorageService.ResolvePath
 /// the folder-health check and the runner use.
 /// </summary>
@@ -72,7 +72,7 @@ public class GetErpDropPointSettingsSkillTests
     }
 
     [Test]
-    public async Task ExecuteAsync_ReturnsSubFolderNames()
+    public async Task ExecuteAsync_ReportsNoSubFoldersBecauseFilesStayInTheInbox()
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<GetDefaultQuery>(), Arg.Any<CancellationToken>())
@@ -87,10 +87,10 @@ public class GetErpDropPointSettingsSkillTests
 
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
-        var subFolders = GetProperty(result.Data, "SubFolders");
-        GetProperty(subFolders, "Processing").ShouldBe("processing");
-        GetProperty(subFolders, "Processed").ShouldBe("processed");
-        GetProperty(subFolders, "Error").ShouldBe("error");
+        result.Data!.GetType().GetProperty("SubFolders").ShouldBeNull();
+        result.Message.ShouldNotContain("processed/");
+        result.Message.ShouldNotContain("error/");
+        result.Message.ShouldContain("get_erp_import_status");
     }
 
     [Test]

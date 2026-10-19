@@ -10,6 +10,7 @@ namespace Klacks.UnitTest.Infrastructure.Imports;
 public class FileSystemObjectStorageServiceTests
 {
     private const string DropPointPrefix = "erp/exports/";
+    private const string AbcSha256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
     private static readonly DateTime StableTimestampUtc = DateTime.UtcNow.AddMinutes(-5);
 
     private string _rootPath = null!;
@@ -58,6 +59,75 @@ public class FileSystemObjectStorageServiceTests
         await _service.UploadAsync(DropPointPrefix + "order-1.xml", ToStream("content"));
 
         Directory.EnumerateFiles(_rootPath, "*.uploading", SearchOption.AllDirectories).ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task UploadAsync_ReturnsSizeAndSha256OfTheRawBytes()
+    {
+        var info = await _service.UploadAsync(DropPointPrefix + "order-1.xml", ToStream("abc"));
+
+        info.SizeBytes.ShouldBe(3);
+        info.Sha256.ShouldBe(AbcSha256);
+    }
+
+    [Test]
+    public async Task GetObjectInfoAsync_AfterUpload_ReturnsTheSameInfoAsTheUpload()
+    {
+        var key = DropPointPrefix + "order-1.xml";
+        var uploaded = await _service.UploadAsync(key, ToStream("<ErpOrderImport />"));
+
+        var info = await _service.GetObjectInfoAsync(key);
+
+        info.ShouldBe(uploaded);
+        info!.Sha256.ShouldBe(ErpImportFileHasher.ComputeSha256Hex(ToStream("<ErpOrderImport />")));
+    }
+
+    [Test]
+    public async Task GetObjectInfoAsync_ReportsTheLastWriteTimeInUtc()
+    {
+        var key = DropPointPrefix + "order-2.xml";
+        await _service.UploadAsync(key, ToStream("<ErpOrderImport />"));
+        var writtenAt = new DateTime(2026, 10, 18, 21, 30, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(_service.ResolvePath(key), writtenAt);
+
+        var info = await _service.GetObjectInfoAsync(key);
+
+        info!.LastModifiedUtc.ShouldBe(writtenAt);
+        info.LastModifiedUtc!.Value.Kind.ShouldBe(DateTimeKind.Utc);
+    }
+
+    [Test]
+    public async Task GetObjectInfoAsync_FileDroppedDirectlyIntoTheFolder_HashesItsRawBytes()
+    {
+        var bytes = new byte[] { 0xEF, 0xBB, 0xBF, 0x3C, 0x61, 0x2F, 0x3E };
+        Directory.CreateDirectory(Path.Combine(_rootPath, "erp", "exports"));
+        await File.WriteAllBytesAsync(Path.Combine(_rootPath, "erp", "exports", "dropped.xml"), bytes);
+
+        var info = await _service.GetObjectInfoAsync(DropPointPrefix + "dropped.xml");
+
+        info.ShouldNotBeNull();
+        info.SizeBytes.ShouldBe(bytes.Length);
+        info.Sha256.ShouldBe(ErpImportFileHasher.ComputeSha256Hex(new MemoryStream(bytes)));
+    }
+
+    [Test]
+    public async Task GetObjectInfoAsync_MissingObject_ReturnsNull()
+    {
+        await _service.UploadAsync(DropPointPrefix + "order-1.xml", ToStream("a"));
+
+        (await _service.GetObjectInfoAsync(DropPointPrefix + "missing.xml")).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetObjectInfoAsync_MissingDirectory_ReturnsNull()
+    {
+        (await _service.GetObjectInfoAsync("never/created/order.xml")).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetObjectInfoAsync_KeyEscapingRoot_Throws()
+    {
+        await Should.ThrowAsync<ArgumentException>(() => _service.GetObjectInfoAsync("../outside.xml"));
     }
 
     [Test]
@@ -150,32 +220,61 @@ public class FileSystemObjectStorageServiceTests
     }
 
     [Test]
-    public async Task MoveAsync_MovesFileToDestinationSegment()
+    public async Task TryMoveAsync_FromLegacySubFolderBackIntoTheInbox_KeepsContentAndWriteTimestamp()
     {
-        var sourceKey = DropPointPrefix + "order-1.xml";
-        var destinationKey = DropPointPrefix + "processed/order-1.xml";
+        var sourceKey = DropPointPrefix + "processed/order-1.xml";
+        var destinationKey = DropPointPrefix + "0123456789abcdef0123456789abcdef-order-1.xml";
         await _service.UploadAsync(sourceKey, ToStream("content"));
+        MarkStable(sourceKey);
+        var sourceTimestamp = (await _service.ListWithMetadataAsync(sourceKey)).Single().LastModifiedUtc;
 
-        await _service.MoveAsync(sourceKey, destinationKey);
+        var moved = await _service.TryMoveAsync(sourceKey, destinationKey);
 
-        File.Exists(Path.Combine(_rootPath, "erp", "exports", "order-1.xml")).ShouldBeFalse();
+        moved.ShouldBeTrue();
+        (await _service.ListAsync(DropPointPrefix)).ShouldBe(new[] { destinationKey }, "the moved file keeps its age and stays listable");
+        (await _service.ListWithMetadataAsync(destinationKey)).Single().LastModifiedUtc.ShouldBe(sourceTimestamp);
         await using var downloaded = await _service.DownloadAsync(destinationKey);
         using var reader = new StreamReader(downloaded);
         (await reader.ReadToEndAsync()).ShouldBe("content");
     }
 
     [Test]
-    public async Task MoveAsync_PreservesWriteTimestamp_SoMovedFilesStayListable()
+    public async Task TryMoveAsync_FreeDestination_MovesTheFileAndKeepsItListable()
     {
-        var sourceKey = DropPointPrefix + "order-1.xml";
-        var destinationKey = DropPointPrefix + "processed/order-1.xml";
+        var sourceKey = DropPointPrefix + "orders.xml";
+        var destinationKey = DropPointPrefix + "0123456789abcdef0123456789abcdef-orders.xml";
         await _service.UploadAsync(sourceKey, ToStream("content"));
         MarkStable(sourceKey);
 
-        await _service.MoveAsync(sourceKey, destinationKey);
+        var moved = await _service.TryMoveAsync(sourceKey, destinationKey);
 
-        var keys = await _service.ListAsync(DropPointPrefix + "processed/");
-        keys.ShouldBe(new[] { destinationKey });
+        moved.ShouldBeTrue();
+        (await _service.ListAsync(DropPointPrefix)).ShouldBe(new[] { destinationKey });
+    }
+
+    [Test]
+    public async Task TryMoveAsync_OccupiedDestination_ReturnsFalseAndOverwritesNothing()
+    {
+        var sourceKey = DropPointPrefix + "orders.xml";
+        var destinationKey = DropPointPrefix + "taken.xml";
+        await _service.UploadAsync(sourceKey, ToStream("new"));
+        await _service.UploadAsync(destinationKey, ToStream("existing"));
+
+        var moved = await _service.TryMoveAsync(sourceKey, destinationKey);
+
+        moved.ShouldBeFalse();
+        await using var downloaded = await _service.DownloadAsync(destinationKey);
+        using var reader = new StreamReader(downloaded);
+        (await reader.ReadToEndAsync()).ShouldBe("existing");
+        File.Exists(Path.Combine(_rootPath, "erp", "exports", "orders.xml")).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task TryMoveAsync_SourceAlreadyMovedByAnotherCaller_ReturnsFalse()
+    {
+        var moved = await _service.TryMoveAsync(DropPointPrefix + "gone.xml", DropPointPrefix + "target.xml");
+
+        moved.ShouldBeFalse();
     }
 
     [Test]
@@ -187,6 +286,15 @@ public class FileSystemObjectStorageServiceTests
         await _service.DeleteAsync(key);
 
         File.Exists(Path.Combine(_rootPath, "erp", "exports", "order-1.xml")).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task DeleteAsync_MissingFile_IsANoOp()
+    {
+        await _service.UploadAsync(DropPointPrefix + "other.xml", ToStream("content"));
+
+        await Should.NotThrowAsync(() => _service.DeleteAsync(DropPointPrefix + "gone.xml"));
+        await Should.NotThrowAsync(() => _service.DeleteAsync("missing-folder/gone.xml"));
     }
 
     [Test]
