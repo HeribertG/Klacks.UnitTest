@@ -24,8 +24,10 @@ public class OrderSupersessionServiceTests
     private IAgentTriggerService _triggerService = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IShiftGroupScopeReader _groupScopeReader = null!;
+    private IDefaultShiftMacroResolver _defaultShiftMacroResolver = null!;
     private OrderSupersessionService _service = null!;
     private static readonly Guid ClientId = Guid.NewGuid();
+    private static readonly Guid DefaultMacroId = Guid.NewGuid();
 
     [SetUp]
     public void SetUp()
@@ -36,6 +38,8 @@ public class OrderSupersessionServiceTests
         _triggerService = Substitute.For<IAgentTriggerService>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
+        _defaultShiftMacroResolver = Substitute.For<IDefaultShiftMacroResolver>();
+        _defaultShiftMacroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>()).Returns(DefaultMacroId);
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>())
             .Returns(ci => ci.Arg<Func<Task<bool>>>()());
@@ -43,6 +47,7 @@ public class OrderSupersessionServiceTests
         _service = new OrderSupersessionService(
             _shiftRepository, _workRepository, _clientRepository, _triggerService, _groupScopeReader, _unitOfWork,
             new FixedCompanyClock(new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero)),
+            _defaultShiftMacroResolver,
             NullLogger<OrderSupersessionService>.Instance);
     }
 
@@ -122,6 +127,56 @@ public class OrderSupersessionServiceTests
             s.SupersedesOrderId == sealedOrder.Id &&
             s.ExternalOrderReference == "ORD-1" &&
             s.StartShift == new TimeOnly(8, 0)));
+    }
+
+    [Test]
+    public async Task HandleAsync_ChangedPayload_SealedOrderWithMacro_ReplacementDraftKeepsThatMacro()
+    {
+        var sealedOrder = SealedOrder();
+        var chosenMacroId = Guid.NewGuid();
+        sealedOrder.MacroId = chosenMacroId;
+        _shiftRepository.CutList(sealedOrder.Id, null, false).Returns([sealedOrder]);
+        _workRepository.GetFutureUnlockedByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Work>());
+
+        await _service.HandleAsync(sealedOrder, ChangedOrder(), ClientId);
+
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Is<Shift>(s =>
+            s.SupersedesOrderId == sealedOrder.Id && s.MacroId == chosenMacroId));
+        await _defaultShiftMacroResolver.DidNotReceive().ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HandleAsync_ChangedPayload_SealedOrderWithoutMacro_ReplacementDraftGetsDefaultMacro()
+    {
+        var sealedOrder = SealedOrder();
+        _shiftRepository.CutList(sealedOrder.Id, null, false).Returns([sealedOrder]);
+        _workRepository.GetFutureUnlockedByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Work>());
+
+        await _service.HandleAsync(sealedOrder, ChangedOrder(), ClientId);
+
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Is<Shift>(s =>
+            s.SupersedesOrderId == sealedOrder.Id && s.MacroId == DefaultMacroId));
+    }
+
+    [Test]
+    public async Task HandleAsync_UnchangedPayload_DoesNotResolveDefaultMacro()
+    {
+        var sealedOrder = SealedOrder();
+        var unchanged = new ImportedOrderPayload
+        {
+            SourceSystemId = sealedOrder.SourceSystemId!,
+            ExternalOrderReference = sealedOrder.ExternalOrderReference!,
+            Customer = new ImportedCustomerPayload(),
+            FromDate = sealedOrder.FromDate,
+            StartTime = sealedOrder.StartShift,
+            EndTime = sealedOrder.EndShift
+        };
+
+        await _service.HandleAsync(sealedOrder, unchanged, ClientId);
+
+        await _defaultShiftMacroResolver.DidNotReceive().ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]

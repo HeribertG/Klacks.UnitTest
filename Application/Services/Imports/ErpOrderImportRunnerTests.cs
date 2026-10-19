@@ -141,8 +141,9 @@ public class ErpOrderImportRunnerTests
         var companyClock = new FixedCompanyClock(new DateTimeOffset(Now), TimeZoneInfo.Utc);
         var supersession = new OrderSupersessionService(
             _shiftRepository, _workRepository, _clientRepository, _triggerService, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
-            _unitOfWork, companyClock, NullLogger<OrderSupersessionService>.Instance);
-        var orderProcessor = new ImportedOrderProcessor(new ErpCustomerResolver(_clientRepository), _shiftRepository, supersession, _unitOfWork);
+            _unitOfWork, companyClock, Substitute.For<IDefaultShiftMacroResolver>(), NullLogger<OrderSupersessionService>.Instance);
+        var orderProcessor = new ImportedOrderProcessor(
+            new ErpCustomerResolver(_clientRepository), _shiftRepository, supersession, _unitOfWork, Substitute.For<IDefaultShiftMacroResolver>());
         var importer = new ErpImportFileImporter(
             _fileRepository, _objectStorageService, _parser, orderProcessor, _exceptionRepository, _triggerService,
             _unitOfWork, _instance, _time, NullLogger<ErpImportFileImporter>.Instance);

@@ -40,7 +40,10 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
     private ISettingsReader _settingsReader = null!;
     private ISettingsEncryptionService _encryptionService = null!;
     private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
+    private IDefaultShiftMacroResolver _defaultShiftMacroResolver = null!;
     private BundleNearbyTimeRangeShiftsIntoContainerSkill _skill = null!;
+
+    private static readonly Guid DefaultMacroId = Guid.NewGuid();
 
     private static readonly Guid ContainerId = Guid.NewGuid();
     private static readonly Guid TaskShiftId1 = Guid.NewGuid();
@@ -60,6 +63,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _settingsReader = Substitute.For<ISettingsReader>();
         _encryptionService = Substitute.For<ISettingsEncryptionService>();
         _shiftVisibilityGuard = ShiftVisibilityGuards.AllowAll();
+        _defaultShiftMacroResolver = Substitute.For<IDefaultShiftMacroResolver>();
+        _defaultShiftMacroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>()).Returns(DefaultMacroId);
 
         _skill = SkillWith(_shiftVisibilityGuard);
 
@@ -105,7 +110,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _encryptionService,
         GeoServicesPolicyTestFactory.Default(),
         _groupVisibilityGuard,
-        shiftVisibilityGuard);
+        shiftVisibilityGuard,
+        _defaultShiftMacroResolver);
 
     private static Shift TaskShift(Guid id, TimeOnly start, TimeOnly end) => new()
     {
@@ -216,6 +222,20 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
     }
 
     [Test]
+    public async Task CreatesContainer_WithDefaultShiftMacro_LikeAContainerCreatedInTheEditor()
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(SuccessfulAutofillResult());
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+
+        await _skill.ExecuteAsync(Ctx(), Params());
+
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(
+            Arg.Is<Shift>(s => s.ShiftType == ShiftType.IsContainer && s.MacroId == DefaultMacroId));
+    }
+
+    [Test]
     public async Task ReturnsError_AndRollsBack_WhenTemplateWriteCannotBeConfirmed()
     {
         _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
@@ -264,7 +284,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             _encryptionService,
             GeoServicesPolicyTestFactory.NoOutbound(),
             _groupVisibilityGuard,
-            _shiftVisibilityGuard);
+            _shiftVisibilityGuard,
+            _defaultShiftMacroResolver);
 
         var result = await skill.ExecuteAsync(Ctx(), Params("bicycle"));
 

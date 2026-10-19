@@ -8,6 +8,7 @@
 
 using Klacks.Api.Application.Common;
 using Klacks.Api.Domain.Constants;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Application.Common;
 
@@ -21,7 +22,7 @@ public class DefaultShiftMacroResolverTests
     public void Setup()
     {
         _settingsRepository = Substitute.For<ISettingsRepository>();
-        _resolver = new DefaultShiftMacroResolver(_settingsRepository);
+        _resolver = new DefaultShiftMacroResolver(_settingsRepository, NullLogger<DefaultShiftMacroResolver>.Instance);
     }
 
     [Test]
@@ -111,6 +112,61 @@ public class DefaultShiftMacroResolverTests
         var result = await _resolver.ResolveDefaultMacroIdAsync();
 
         result.ShouldBe(standardMacro.Id);
+    }
+
+    [Test]
+    public async Task ResolveDefaultMacroIdAsync_DeletedStandardMacro_IsIgnored()
+    {
+        var deletedMacro = BuildShiftMacro("AllShift", MacroFunctionEnum.Standard);
+        deletedMacro.IsDeleted = true;
+        _settingsRepository.GetMacroList().Returns(new List<Macro> { deletedMacro });
+
+        var result = await _resolver.ResolveDefaultMacroIdAsync();
+
+        result.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ResolveDefaultMacroIdAsync_DeletedStandardMacroBesideActiveOne_ResolvesTheActiveOne()
+    {
+        var deletedMacro = BuildShiftMacro("AllShift (old)", MacroFunctionEnum.Standard);
+        deletedMacro.IsDeleted = true;
+        var activeMacro = BuildShiftMacro("AllShift", MacroFunctionEnum.Standard);
+        _settingsRepository.GetMacroList().Returns(new List<Macro> { deletedMacro, activeMacro });
+
+        var result = await _resolver.ResolveDefaultMacroIdAsync();
+
+        result.ShouldBe(activeMacro.Id);
+    }
+
+    [Test]
+    public async Task ResolveDefaultMacroIdAsync_SeveralCustomShiftMacrosBesideStandard_ResolvesTheStandardFunctionHolder()
+    {
+        var customA = BuildShiftMacro("Night special", MacroFunctionEnum.Custom);
+        var standardMacro = BuildShiftMacro("AllShift", MacroFunctionEnum.Standard);
+        var customB = BuildShiftMacro("Event duty", MacroFunctionEnum.Custom);
+        _settingsRepository.GetMacroList().Returns(new List<Macro> { customA, standardMacro, customB });
+
+        var result = await _resolver.ResolveDefaultMacroIdAsync();
+
+        result.ShouldBe(standardMacro.Id);
+    }
+
+    [Test]
+    public async Task ResolveDefaultMacroIdAsync_StandardMacroOfAnotherCategoryOnly_ReturnsNull()
+    {
+        var vacationStandard = new Macro
+        {
+            Id = Guid.NewGuid(),
+            Name = "Vacation",
+            Category = MacroCategoryEnum.Vacation,
+            Type = (int)MacroFunctionEnum.Standard
+        };
+        _settingsRepository.GetMacroList().Returns(new List<Macro> { vacationStandard });
+
+        var result = await _resolver.ResolveDefaultMacroIdAsync();
+
+        result.ShouldBeNull();
     }
 
     private void SetStackingModeSetting(string value)
