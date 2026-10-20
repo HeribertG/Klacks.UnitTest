@@ -20,8 +20,10 @@
 /// module's own internal layering.
 ///
 /// Violations that existed when the guard was introduced (2026-10-20) are listed in KnownViolations,
-/// keyed "relative path -> edge". The list is shrink-only: a new violation fails, and so does an entry
-/// whose file no longer violates - remove it in the same change that fixes the file.
+/// keyed "relative path -> referenced name" (the qualified namespace or type, DataBaseContext, or
+/// Microsoft.EntityFrameworkCore), so a second forbidden reference in an allowlisted file still fails. The
+/// list is shrink-only: a new violation fails, and so does an entry that no longer occurs - remove it in the
+/// same change that fixes the file.
 /// </summary>
 
 using System.Text;
@@ -40,6 +42,10 @@ public class LayerDependencyGuardTests
     private const string Infrastructure = "Infrastructure";
     private const string Presentation = "Presentation";
     private const string KnowledgeIndex = "KnowledgeIndex";
+
+    // The seed classes live in Infrastructure/Persistence/Seed but keep the namespace Klacks.Api.Data.Seed,
+    // which migrations reference and which therefore cannot be renamed.
+    private const string SeedNamespaceRoot = "Data";
     private const string DataBaseContextEdge = "DataBaseContext";
     private const string EntityFrameworkEdge = "EntityFrameworkCore";
 
@@ -92,27 +98,28 @@ public class LayerDependencyGuardTests
         $"{Path.DirectorySeparatorChar}.claude{Path.DirectorySeparatorChar}"
     ];
 
-    // "relative path -> edge", the edge being the forbidden target of the file's layer. See ShrinkOnlyHint.
+    // "relative path -> referenced name". See ShrinkOnlyHint.
     private static readonly IReadOnlySet<string> KnownViolations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        @"Domain\Services\Assistant\RecipeEngineService.cs -> KnowledgeIndex",
-        @"Domain\Services\Absences\AbsencePaginationService.cs -> EntityFrameworkCore",
-        @"Domain\Services\ContainerTemplates\ContainerAvailableTasksService.cs -> EntityFrameworkCore",
-        @"Domain\Services\Groups\GroupSearchService.cs -> EntityFrameworkCore",
-        @"Domain\Services\Settings\CalendarRulePaginationService.cs -> EntityFrameworkCore",
-        @"Domain\Services\Shifts\ShiftPaginationService.cs -> EntityFrameworkCore",
-        @"Application\Services\Assistant\Evaluation\TurnEval\TurnEvalMemoryProbe.cs -> KnowledgeIndex",
-        @"Application\Services\Assistant\Learning\SkillIndexStateVerifier.cs -> KnowledgeIndex",
-        @"Presentation\Mcp\McpEndpointExtensions.cs -> Infrastructure",
+        @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Application.Interfaces",
+        @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Domain",
+        @"Domain\Services\Absences\AbsencePaginationService.cs -> Microsoft.EntityFrameworkCore",
+        @"Domain\Services\ContainerTemplates\ContainerAvailableTasksService.cs -> Microsoft.EntityFrameworkCore",
+        @"Domain\Services\Groups\GroupSearchService.cs -> Microsoft.EntityFrameworkCore",
+        @"Domain\Services\Settings\CalendarRulePaginationService.cs -> Microsoft.EntityFrameworkCore",
+        @"Domain\Services\Shifts\ShiftPaginationService.cs -> Microsoft.EntityFrameworkCore",
+        @"Application\Services\Assistant\Evaluation\TurnEval\TurnEvalMemoryProbe.cs -> Klacks.Api.KnowledgeIndex.Application.Services",
+        @"Application\Services\Assistant\Learning\SkillIndexStateVerifier.cs -> Klacks.Api.KnowledgeIndex.Application.Services",
+        @"Presentation\Mcp\McpEndpointExtensions.cs -> Klacks.Api.Infrastructure.Authentication",
     };
 
     private static readonly Regex QualifiedApiName = new(
-        @"\bKlacks\.Api\.(?:Domain|Application|Infrastructure|Presentation|KnowledgeIndex)(?:\.[A-Za-z_][A-Za-z0-9_]*)*",
+        @"\bKlacks\.Api\.(?:Domain|Application|Infrastructure|Presentation|KnowledgeIndex|Data)(?:\.[A-Za-z_][A-Za-z0-9_]*)*",
         RegexOptions.Compiled | RegexOptions.CultureInvariant,
         TimeSpan.FromSeconds(1));
 
     private static readonly Regex RelativeApiName = new(
-        @"(?<![A-Za-z0-9_.])(?:Application|Infrastructure|Presentation|KnowledgeIndex)(?:\.[A-Za-z_][A-Za-z0-9_]*)+",
+        @"(?<![A-Za-z0-9_.])(?:Application|Infrastructure|Presentation|KnowledgeIndex|Data)(?:\.[A-Za-z_][A-Za-z0-9_]*)+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant,
         TimeSpan.FromSeconds(1));
 
@@ -177,13 +184,14 @@ public class LayerDependencyGuardTests
             "var b = @\"Presentation.Verbatim\n Presentation.SecondLine\";\n" +
             "var c = \"\"\"\n Presentation.Raw\n \"\"\";\n" +
             "var d = '\"'; var e = Application.Constants.Settings.Key;\n" +
-            "/* Presentation.Block */ var f = DataBaseContext.Name;\n";
+            "/* Presentation.Block */ var f = DataBaseContext.Name;\n" +
+            "var g = Klacks.Api.Data.Seed.ShiftSeed.Run;\n";
 
         var findings = FindReferences(Domain, BlankCommentsAndStrings(source))
             .Select(finding => $"{finding.Line}:{finding.Edge}")
             .ToList();
 
-        findings.ShouldBe(["1:Infrastructure", "9:Application", "10:DataBaseContext"]);
+        findings.ShouldBe(["1:Infrastructure", "9:Application", "10:DataBaseContext", "11:Infrastructure"]);
     }
 
     private static ScanResult Scan()
@@ -210,14 +218,14 @@ public class LayerDependencyGuardTests
 
             foreach (var finding in FindReferences(layer, BlankCommentsAndStrings(File.ReadAllText(path))))
             {
-                var key = $"{relative}{EdgeSeparator}{finding.Edge}";
+                var key = $"{relative}{EdgeSeparator}{finding.Reference}";
                 if (!violations.TryGetValue(key, out var lines))
                 {
                     lines = [];
                     violations[key] = lines;
                 }
 
-                lines.Add($"line {finding.Line}: {finding.Reference}");
+                lines.Add($"line {finding.Line}: {layer} -> {finding.Edge}");
             }
         }
 
@@ -282,6 +290,10 @@ public class LayerDependencyGuardTests
     private static string? ForbiddenEdge(string layer, string qualifiedName)
     {
         var target = qualifiedName[ApiNamespacePrefix.Length..].Split('.')[0];
+        if (target == SeedNamespaceRoot)
+        {
+            target = Infrastructure;
+        }
 
         if (target == KnowledgeIndex)
         {
@@ -309,9 +321,10 @@ public class LayerDependencyGuardTests
 
     /// <summary>
     /// Replaces comments and the content of string and char literals by nothing while keeping every line
-    /// break, so line numbers stay valid. Handles //, /* */, regular, verbatim (@"", $@"") and raw ("""...""")
-    /// strings. Interpolation holes are blanked with their string - a reference inside one is not seen,
-    /// which errs towards a false negative, never a false positive.
+    /// break. Handles //, /* */, regular, verbatim (@"", $@"") and raw ("""...""") strings. Interpolation
+    /// holes are not tracked: a nested string literal inside a hole of a multi-line interpolated string can
+    /// shift the reported line numbers of that file, and a reference inside a hole is not seen at all -
+    /// both err towards a false negative, never a false positive.
     /// </summary>
     private static string BlankCommentsAndStrings(string text)
     {
