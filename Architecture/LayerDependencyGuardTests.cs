@@ -96,7 +96,6 @@ public class LayerDependencyGuardTests
     private static readonly IReadOnlySet<string> KnownViolations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         @"Domain\Extensions\SettingsReaderOpenRouteExtensions.cs -> Application",
-        @"Domain\Interfaces\Imports\IOrderImportParser.cs -> Application",
         @"Domain\Services\Assistant\LLMProviderOrchestrator.cs -> Application",
         @"Domain\Services\RouteOptimization\ContainerAutofillService.cs -> Application",
         @"Domain\Services\Assistant\RecipeEngineService.cs -> KnowledgeIndex",
