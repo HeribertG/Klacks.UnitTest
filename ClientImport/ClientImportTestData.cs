@@ -45,6 +45,15 @@ internal static class ClientImportTestData
         Policy = new ClientImportPolicy()
     };
 
+    public static ClientImportExistingClient Employee(Guid id, string? firstName, string name, DateTime? birthdate, params string[] emails) =>
+        new(id, firstName, name, birthdate, emails, EntityTypeEnum.Employee, false, null, []);
+
+    public static ClientImportExistingClient CompanyCustomer(Guid id, string company, string zip, string street, params string[] emails) =>
+        new(id, null, string.Empty, null, emails, EntityTypeEnum.Customer, true, company, [new ClientImportExistingAddress(zip, street)]);
+
+    public static ClientImportExistingClient PersonCustomer(Guid id, string firstName, string name, DateTime? birthdate, string? company, params string[] emails) =>
+        new(id, firstName, name, birthdate, emails, EntityTypeEnum.Customer, false, company, []);
+
     public static (ClientImportEvaluator Evaluator, IClientImportLookupRepository Lookup) Evaluator(
         List<ClientImportExistingClient>? existing = null)
     {
@@ -53,7 +62,8 @@ internal static class ClientImportTestData
             .Returns([new ClientImportNamedEntity(ContractId, "Vollzeit"), new ClientImportNamedEntity(Guid.NewGuid(), "Teilzeit")]);
         lookup.GetGroupsAsync(Arg.Any<CancellationToken>())
             .Returns([new ClientImportNamedEntity(GroupId, "Zürich"), new ClientImportNamedEntity(Guid.NewGuid(), "Bern"), new ClientImportNamedEntity(Guid.NewGuid(), "Bern")]);
-        lookup.FindDuplicateCandidatesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+        lookup.FindDuplicateCandidatesAsync(
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(existing ?? []);
 
         var countries = Substitute.For<ICountryResolver>();

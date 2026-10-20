@@ -26,8 +26,8 @@ public class ListClientMembershipsSkillTests
         mediator.Send(Arg.Any<ListQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(new List<MembershipResource>
             {
-                new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), Type = 0, ValidFrom = new DateTime(2026, 1, 1) },
-                new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), Type = 0, ValidFrom = new DateTime(2026, 2, 1) }
+                new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), ValidFrom = new DateTime(2026, 1, 1) },
+                new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), ValidFrom = new DateTime(2026, 2, 1) }
             }.AsEnumerable());
         var skill = new ListClientMembershipsSkill(mediator);
 
@@ -47,8 +47,8 @@ public class ListClientMembershipsSkillTests
         mediator.Send(Arg.Any<ListQuery<MembershipResource>>(), Arg.Any<CancellationToken>())
             .Returns(new List<MembershipResource>
             {
-                new() { Id = Guid.NewGuid(), ClientId = targetClientId, Type = 0, ValidFrom = new DateTime(2026, 3, 1) },
-                new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), Type = 0, ValidFrom = new DateTime(2026, 1, 1) }
+                new() { Id = Guid.NewGuid(), ClientId = targetClientId, ValidFrom = new DateTime(2026, 3, 1) },
+                new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), ValidFrom = new DateTime(2026, 1, 1) }
             }.AsEnumerable());
         var skill = new ListClientMembershipsSkill(mediator);
 

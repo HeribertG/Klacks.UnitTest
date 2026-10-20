@@ -43,7 +43,6 @@ public class ContractRepositoryTests
         testMembership = new Membership
         {
             Id = Guid.NewGuid(),
-            Type = 1,
             ValidFrom = DateTime.UtcNow,
             ClientId = Guid.NewGuid()
         };

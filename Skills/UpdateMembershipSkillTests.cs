@@ -31,7 +31,6 @@ public class UpdateMembershipSkillTests
     {
         Id = id,
         ClientId = Guid.NewGuid(),
-        Type = 0,
         ValidFrom = new DateTime(2026, 1, 1),
         ValidUntil = null
     };
@@ -50,7 +49,7 @@ public class UpdateMembershipSkillTests
     }
 
     [Test]
-    public async Task UpdateValidFromAndType_DispatchesPutCommand()
+    public async Task UpdateValidFrom_DispatchesPutCommand()
     {
         var membershipId = Guid.NewGuid();
         var mediator = Substitute.For<IMediator>();
@@ -63,16 +62,14 @@ public class UpdateMembershipSkillTests
         var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
         {
             ["membershipId"] = membershipId.ToString(),
-            ["validFrom"] = "2026-03-01",
-            ["type"] = 1
+            ["validFrom"] = "2026-03-01"
         });
 
         result.Success.ShouldBeTrue();
         await mediator.Received(1).Send(
             Arg.Is<PutCommand<MembershipResource>>(c =>
                 c.Resource.Id == membershipId &&
-                c.Resource.ValidFrom == new DateTime(2026, 3, 1) &&
-                c.Resource.Type == 1),
+                c.Resource.ValidFrom == new DateTime(2026, 3, 1)),
             Arg.Any<CancellationToken>());
     }
 

@@ -10,7 +10,7 @@ namespace Klacks.UnitTest.Infrastructure.Persistence.Seed;
 public class FakeSeedDumpTableFilterTests
 {
     private const string InsertLine =
-        "INSERT INTO public.membership VALUES ('a', 'b', 2, '2024-08-18 00:00:00+00', NULL, '2026-03-22 12:03:55.26562+01', 'Anonymus', NULL, NULL, NULL, false, NULL);";
+        "INSERT INTO public.membership VALUES ('a', 'b', '2024-08-18 00:00:00+00', NULL, '2026-03-22 12:03:55.26562+01', 'Anonymus', NULL, NULL, NULL, false, NULL);";
 
     private static readonly IReadOnlySet<string> MembershipOnly =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "membership" };

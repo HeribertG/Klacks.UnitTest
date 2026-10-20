@@ -224,8 +224,7 @@ namespace Klacks.UnitTest.FakeData
                 Client = client,
                 ClientId = client.Id,
                 ValidFrom = start,
-                ValidUntil = end,
-                Type = rand.Next(5)
+                ValidUntil = end
             };
 
             return membership;

@@ -188,7 +188,7 @@ public class ClientImportEvaluatorTests
     {
         var existingId = Guid.NewGuid();
         var (evaluator, lookup) = ClientImportTestData.Evaluator(
-            [new ClientImportExistingClient(existingId, "Anna", "Alt", null, ["ANNA@example.com"])]);
+            [ClientImportTestData.Employee(existingId, "Anna", "Alt", null, "ANNA@example.com")]);
         var request = ClientImportTestData.Request([T.FirstName, T.LastName, T.Gender, T.Email], ["Anna", "Neu", "w", "anna@example.com"]);
 
         var skipped = (await evaluator.EvaluateAsync(request, CancellationToken.None)).Single();
@@ -204,6 +204,7 @@ public class ClientImportEvaluatorTests
         await lookup.Received().FindDuplicateCandidatesAsync(
             Arg.Is<IReadOnlyCollection<string>>(names => names.Contains("neu")),
             Arg.Is<IReadOnlyCollection<string>>(mails => mails.Contains("anna@example.com")),
+            Arg.Is<IReadOnlyCollection<string>>(companies => companies.Count == 0),
             Arg.Any<CancellationToken>());
     }
 
@@ -212,8 +213,8 @@ public class ClientImportEvaluatorTests
     {
         var birthdate = new DateTime(1990, 3, 5, 0, 0, 0, DateTimeKind.Utc);
         var (evaluator, _) = ClientImportTestData.Evaluator(
-            [new ClientImportExistingClient(Guid.NewGuid(), "Anna", "Müller", birthdate, []),
-             new ClientImportExistingClient(Guid.NewGuid(), "Ben", "Meier", null, [])]);
+            [ClientImportTestData.Employee(Guid.NewGuid(), "Anna", "Müller", birthdate),
+             ClientImportTestData.Employee(Guid.NewGuid(), "Ben", "Meier", null)]);
         var request = ClientImportTestData.Request(
             [T.FirstName, T.LastName, T.Gender, T.Birthdate],
             ["anna", "MÜLLER", "w", "05.03.1990"],

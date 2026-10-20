@@ -181,6 +181,7 @@
   "explain_page_dashboard": "ReadOnly",
   "explain_page_employees": "ReadOnly",
   "explain_page_groups": "ReadOnly",
+  "explain_page_import_employees": "ReadOnly",
   "explain_page_inbox": "ReadOnly",
   "explain_page_period_closing": "ReadOnly",
   "explain_page_profile": "ReadOnly",

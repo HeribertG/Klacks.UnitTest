@@ -80,7 +80,6 @@ public class EndClientMembershipSkillTests
     {
         Id = Guid.NewGuid(),
         ClientId = clientId ?? ClientId,
-        Type = 0,
         ValidFrom = ValidFrom,
         ValidUntil = validUntil
     };

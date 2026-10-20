@@ -52,13 +52,24 @@ public class ClientImportLookupRepositorySqlTests
     [Test]
     public void CandidateLookup_TranslatesNamesIdsAndTheMailProjection()
     {
-        var sql = Normalize(_repository.CandidatesQuery(["muster"], [Guid.NewGuid()]).ToQueryString());
+        var sql = Normalize(_repository.CandidatesQuery(["muster"], [Guid.NewGuid()], ["tech systems gmbh"]).ToQueryString());
 
         sql.ShouldContain("FROM client");
         sql.ShouldContain("lower(");
         Regex.IsMatch(sql, CollectionMatch).ShouldBeTrue(sql);
         sql.ShouldContain("LEFT JOIN");
         sql.ShouldContain("communication");
+    }
+
+    [Test]
+    public void CandidateLookup_TranslatesTheCompanyMatchAndTheAddressProjection()
+    {
+        var sql = Normalize(_repository.CandidatesQuery([], [], ["tech systems gmbh"]).ToQueryString());
+
+        sql.ShouldContain("btrim(");
+        sql.ShouldContain("company");
+        sql.ShouldContain("address");
+        sql.ShouldContain("legal_entity");
     }
 
     private static string Normalize(string sql) => Regex.Replace(sql, @"\s+", " ");
