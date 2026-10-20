@@ -7,10 +7,12 @@
 /// group first, every anchor condition carries at least one term, enough anchors exist to satisfy the
 /// requirement, and each anchor is reachable, alone and combined, by a message built from its own
 /// vocabulary. Messages that only talk about deferred notes must hit no anchor of any recipe. Single-condition
-/// recipes are exempt from the anchor, so the set of them is pinned: a new one must be a conscious decision.
+/// recipes are exempt from the anchor, so the set of them is pinned: a new one must be a conscious decision, and a
+/// writing one must restrict its semantic fallback to pack anchors.
 /// </summary>
 
 using System.Text.Json;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
@@ -81,6 +83,21 @@ public class RecipeSeedSemanticAnchorGateTests
             .ToList();
 
         single.ShouldBe(ExemptSingleConditionRecipes.OrderBy(name => name, StringComparer.Ordinal).ToList());
+    }
+
+    [Test]
+    public void WritingSingleConditionRecipes_RequireAPackAnchorForTheSemanticFallback()
+    {
+        var offenders = _recipes
+            .Where(r => r.Trigger.AllOf.Count == 1
+                        && r.Steps.Any(step => string.Equals(step.Kind, RecipeStepKinds.Mutate, StringComparison.OrdinalIgnoreCase))
+                        && r.Trigger.PackAnchorRequired != true)
+            .Select(r => r.Name)
+            .ToList();
+
+        offenders.ShouldBeEmpty(
+            "a writing recipe with a single phrase-list trigger has no subject condition, so its semantic fallback " +
+            "must be restricted to pack anchors (trigger.packAnchorRequired = true)");
     }
 
     [Test]

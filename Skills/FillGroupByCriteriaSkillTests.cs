@@ -4,7 +4,8 @@
 /// Unit tests for FillGroupByCriteriaSkill: unknown group / ambiguous contract or qualification names
 /// are rejected with helpful errors, the preview path sends Apply=false, city/zipPrefix/qualification
 /// filters are resolved and forwarded to the command, and an apply flag arriving as a JsonElement
-/// (the real tool-call shape) is correctly read as true.
+/// (the real tool-call shape) is correctly read as true. A random selection is seeded from the request, so preview
+/// and apply match.
 /// </summary>
 
 using System.Text.Json;
@@ -291,4 +292,66 @@ public class FillGroupByCriteriaSkillTests
             Arg.Is<FillGroupByCriteriaCommand>(c => !c.Apply),
             Arg.Any<CancellationToken>());
     }
+
+    [Test]
+    public async Task RandomPreviewAndApply_WithTheSameParameters_UseTheSameSeed()
+    {
+        var preview = RandomParameters(count: 10, apply: false);
+        var apply = RandomParameters(count: 10, apply: true);
+
+        var previewResult = await _skill.ExecuteAsync(Ctx(UserId), preview);
+        var applyResult = await _skill.ExecuteAsync(Ctx(UserId), apply);
+
+        Assert.That(previewResult.Success, Is.True);
+        Assert.That(applyResult.Success, Is.True);
+        var seeds = SentCommands().Select(c => c.RandomSeed).ToList();
+        Assert.That(seeds, Has.Count.EqualTo(2));
+        Assert.That(seeds[0], Is.Not.Null);
+        Assert.That(seeds[1], Is.EqualTo(seeds[0]));
+        Assert.That(previewResult.Message, Does.Contain("random"));
+    }
+
+    [Test]
+    public async Task RandomSelection_WithAnotherCount_UsesAnotherSeed()
+    {
+        await _skill.ExecuteAsync(Ctx(UserId), RandomParameters(count: 10, apply: false));
+        await _skill.ExecuteAsync(Ctx(UserId), RandomParameters(count: 5, apply: false));
+
+        var seeds = SentCommands().Select(c => c.RandomSeed).ToList();
+        Assert.That(seeds[1], Is.Not.EqualTo(seeds[0]));
+    }
+
+    [Test]
+    public async Task WithoutRandom_NoSeedIsSent()
+    {
+        await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["groupName"] = "Bern" });
+
+        Assert.That(SentCommands().Single().RandomSeed, Is.Null);
+    }
+
+    private static readonly Guid UserId = Guid.NewGuid();
+
+    private static Dictionary<string, object> RandomParameters(int count, bool apply) => new()
+    {
+        ["groupName"] = "Bern",
+        ["canton"] = "BE",
+        ["count"] = JsonSerializer.SerializeToElement(count),
+        ["random"] = JsonSerializer.SerializeToElement(true),
+        ["validFrom"] = "2026-07-01",
+        ["apply"] = JsonSerializer.SerializeToElement(apply)
+    };
+
+    private static SkillExecutionContext Ctx(Guid userId) => new()
+    {
+        UserId = userId,
+        TenantId = Guid.NewGuid(),
+        UserName = "tester",
+        UserPermissions = new List<string> { "CanEditClients", "CanViewGroups" }
+    };
+
+    private List<FillGroupByCriteriaCommand> SentCommands() =>
+        _mediator.ReceivedCalls()
+            .Select(call => call.GetArguments().FirstOrDefault())
+            .OfType<FillGroupByCriteriaCommand>()
+            .ToList();
 }

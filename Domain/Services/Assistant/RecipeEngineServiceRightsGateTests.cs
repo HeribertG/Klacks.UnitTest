@@ -354,7 +354,7 @@ public class RecipeEngineServiceRightsGateTests
     }
 
     [Test]
-    public async Task SemanticProposal_IsAlwaysPhrasedByTheModel()
+    public async Task SemanticProposal_IsDeterministicLikeAKeywordProposal()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
         _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
@@ -364,7 +364,7 @@ public class RecipeEngineServiceRightsGateTests
 
         plan.ShouldNotBeNull();
         plan!.MatchedByMeaning.ShouldBeTrue();
-        plan.DeterministicConfirmationText("de").ShouldBeNull();
+        plan.DeterministicConfirmationText("de").ShouldNotBeNull();
     }
 
     private static RetrievalCandidate Candidate(string recipeName, double score) =>

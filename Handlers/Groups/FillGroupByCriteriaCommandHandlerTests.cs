@@ -290,4 +290,36 @@ public class FillGroupByCriteriaCommandHandlerTests
 
         await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
     }
+
+    [Test]
+    public async Task RandomPreviewAndApply_WithTheSameSeed_SelectTheSameClients()
+    {
+        var matchingIds = Enumerable.Range(0, 20).Select(_ => Guid.NewGuid()).OrderBy(id => id).ToList();
+        _searchRepository.ListMatchingIdsAsync(
+                Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<string?>(),
+                Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<DateOnly?>(), Arg.Any<CancellationToken>())
+            .Returns(matchingIds);
+        var requested = new List<IReadOnlyCollection<Guid>>();
+        _searchRepository.GetItemsByIdsAsync(Arg.Do<IReadOnlyCollection<Guid>>(ids => requested.Add(ids)), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<IReadOnlyCollection<Guid>>().Select(id => new ClientSearchItem { Id = id }).ToList());
+        _groupItemRepository.GetByClientAndGroup(Arg.Any<Guid>(), GroupId).Returns((GroupItem?)null);
+        _groupItemRepository.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<IReadOnlyCollection<Guid>>().Count);
+
+        var preview = await _handler.Handle(RandomCommand(apply: false, seed: 42), CancellationToken.None);
+        var applied = await _handler.Handle(RandomCommand(apply: true, seed: 42), CancellationToken.None);
+
+        Assert.That(preview.TotalMatchCount, Is.EqualTo(20));
+        Assert.That(requested, Has.Count.EqualTo(2));
+        Assert.That(requested[0], Has.Count.EqualTo(5));
+        Assert.That(requested[1], Is.EquivalentTo(requested[0]));
+        Assert.That(applied.AddedCount, Is.EqualTo(5));
+        await _searchRepository.DidNotReceive().SearchAsync(
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<DateOnly?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    private static FillGroupByCriteriaCommand RandomCommand(bool apply, int seed) =>
+        new(GroupId, "Bern", "BE", null, null, null, null, EntityTypeEnum.Employee, 5, null, apply, "tester", RandomSeed: seed);
 }
