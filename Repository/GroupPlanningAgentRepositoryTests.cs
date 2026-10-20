@@ -195,6 +195,29 @@ public class GroupPlanningAgentRepositoryTests
         ids.ShouldBe(new[] { _winterthurEmployee, _winterthurExtern }, ignoreOrder: true);
     }
 
+    [Test]
+    public async Task Employments_AreTheSameClientsAsTheIds_WithTheirEmploymentWindow()
+    {
+        var memberId = await AddMemberAndSaveAsync(
+            membershipFrom: new DateTime(2026, 10, 12, 0, 0, 0, DateTimeKind.Utc),
+            membershipUntil: new DateTime(2026, 10, 25, 0, 0, 0, DateTimeKind.Utc));
+
+        var ids = await _repository.GetAgentIdsAsync(_winterthur, PeriodFrom, PeriodUntil);
+        var employments = await _repository.GetAgentEmploymentsAsync(_winterthur, PeriodFrom, PeriodUntil);
+
+        employments.Select(employment => employment.ClientId).ShouldBe(ids, ignoreOrder: true);
+        var added = employments.Single(employment => employment.ClientId == memberId).Employment;
+        added.ValidFrom.ShouldBe(new DateOnly(2026, 10, 12));
+        added.ValidUntil.ShouldBe(new DateOnly(2026, 10, 25));
+        employments.Single(employment => employment.ClientId == _winterthurEmployee).Employment.ValidUntil.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task Employments_OfAnUnknownGroup_AreEmpty()
+    {
+        (await _repository.GetAgentEmploymentsAsync(Guid.NewGuid(), PeriodFrom, PeriodUntil)).ShouldBeEmpty();
+    }
+
     private Guid ExpiredMemberId { get; set; }
 
     private HashSet<Guid> Subtree(Guid groupId)

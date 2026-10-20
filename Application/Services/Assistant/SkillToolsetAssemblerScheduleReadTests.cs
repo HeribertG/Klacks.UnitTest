@@ -76,7 +76,8 @@ public class SkillToolsetAssemblerScheduleReadTests
             CreateSkill(ScenarioFollowUpSkills.RejectScenarioSkillName, SkillEffect.Mutate),
             CreateSkill(ScenarioFollowUpSkills.ListScenariosSkillName, SkillEffect.Read),
             CreateSkill(SkillNames.DiagnoseWorkBooking, SkillEffect.Read),
-            CreateSkill(SkillNames.ExplainWhyCannotBook, SkillEffect.Explain)
+            CreateSkill(SkillNames.ExplainWhyCannotBook, SkillEffect.Explain),
+            CreateSkill(SkillNames.DiagnosePlanningPeriod, SkillEffect.Read)
         ];
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>()).Returns(_ => _skills);
         GivenRetrieval();
@@ -173,7 +174,7 @@ public class SkillToolsetAssemblerScheduleReadTests
     }
 
     [Test]
-    public async Task AtTheTinyCap_AWhyNotQuestionKeepsTheDiagnosis_AndCutsTheExplanationAndListGroupsFirst()
+    public async Task AtTheTinyCap_AWhyNotQuestionKeepsTheBookingDiagnosis_AndCutsTheExplanationThePeriodCheckAndListGroupsFirst()
     {
         _skills.AddRange(Enumerable.Range(0, AlwaysOnFillerCount)
             .Select(index => CreateSkill($"{AlwaysOnFillerPrefix}{index}", SkillEffect.Read, alwaysOn: true)));
@@ -186,6 +187,7 @@ public class SkillToolsetAssemblerScheduleReadTests
         names.ShouldContain(ExplainPageScheduleSkillName);
         names.ShouldContain(ScheduleReadIntentResolver.ReadScheduleStateSkillName);
         names.ShouldNotContain(SkillNames.ExplainWhyCannotBook);
+        names.ShouldNotContain(SkillNames.DiagnosePlanningPeriod);
         names.ShouldNotContain(ScheduleReadIntentResolver.ListGroupsSkillName);
     }
 
@@ -199,7 +201,45 @@ public class SkillToolsetAssemblerScheduleReadTests
         var names = Names(await AssembleAsync(message, route));
 
         names.ShouldContain(SkillNames.DiagnoseWorkBooking);
+        names.ShouldContain(SkillNames.DiagnosePlanningPeriod);
         names.ShouldContain(SkillNames.ExplainWhyCannotBook);
+    }
+
+    [TestCase("Warum sind die Zellen dunkelblau")]
+    [TestCase("Was bedeutet die Farbe der Zellen?")]
+    [TestCase("Why are the cells dark blue?")]
+    public async Task AShadingQuestionOnTheSchedulePage_KeepsThePeriodDiagnosisAndTheScheduleExplanation_WhenRetrievalFindsNeither(
+        string message)
+    {
+        GivenRetrieval(CreateShiftSkillName, AddShiftToGroupSkillName);
+
+        var names = Names(await AssembleAsync(message, ScheduleRoute));
+
+        names.ShouldContain(SkillNames.DiagnosePlanningPeriod);
+        names.ShouldContain(ExplainPageScheduleSkillName);
+    }
+
+    [Test]
+    public async Task AShadingQuestionOnTheSchedulePage_KeepsThePeriodDiagnosis_AtTheTinyCap()
+    {
+        _skills.AddRange(Enumerable.Range(0, AlwaysOnFillerCount)
+            .Select(index => CreateSkill($"{AlwaysOnFillerPrefix}{index}", SkillEffect.Read, alwaysOn: true)));
+
+        var names = Names(await AssembleAsync("Warum sind die Zellen dunkelblau", ScheduleRoute, maxTools: TinyCap));
+
+        names.Count.ShouldBe(TinyCap);
+        names.ShouldContain(SkillNames.DiagnosePlanningPeriod);
+        names.ShouldContain(ExplainPageScheduleSkillName);
+    }
+
+    [Test]
+    public async Task AShadingQuestionOffTheSchedulePage_DoesNotForceThePeriodDiagnosis()
+    {
+        GivenRetrieval(CreateShiftSkillName);
+
+        var names = Names(await AssembleAsync("Warum sind die Zellen dunkelblau", DashboardRoute));
+
+        names.ShouldNotContain(SkillNames.DiagnosePlanningPeriod);
     }
 
     [Test]

@@ -82,7 +82,8 @@ public class DiagnosePlanningPeriodSkillTests
 
     private DiagnosePlanningPeriodSkill Skill(IClientVisibilityGuard? guard = null, GroupScopeAccess? scope = null) => new(
         _search, _clients, guard ?? SkillClientVisibility.AllVisible(), _groups,
-        TestGroupScopeGuard.For(scope ?? GroupScopeAccess.Unrestricted()), _seals, _clock);
+        TestGroupScopeGuard.For(scope ?? GroupScopeAccess.Unrestricted()), _seals, _clock,
+        Substitute.For<IGroupPlanningAgentRepository>(), Substitute.For<IGroupItemRepository>());
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -161,6 +162,7 @@ public class DiagnosePlanningPeriodSkillTests
     public async Task DayBeforeTheEmploymentStart_IsReportedAsDark()
     {
         _anna.Membership = new Membership { ValidFrom = Utc(2026, 10, 12) };
+        _anna.GroupItems = new List<GroupItem>();
 
         var result = await Skill().ExecuteAsync(Ctx(), Params("2026-10-05"));
 
@@ -169,6 +171,19 @@ public class DiagnosePlanningPeriodSkillTests
         result.Message.ShouldContain("dark");
         result.Message.ShouldContain("Check or correct the entry and exit date");
         Json(result).GetProperty("findings")[0].GetProperty("scheduleShows").GetString().ShouldBe("dark");
+    }
+
+    [Test]
+    public async Task ADayOutsideBothTheEmploymentAndTheGroup_IsShownBlue_BecauseTheBlueMarkingCoversTheDark()
+    {
+        _anna.Membership = new Membership { ValidFrom = Utc(2026, 10, 12) };
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params("2026-10-05"));
+
+        Json(result).GetProperty("findings")[0].GetProperty("scheduleShows").GetString().ShouldBe("blue");
+        result.Message.ShouldContain("outside the employment of Anna Muster (2026-10-12 to open); nothing can be planned on it");
+        result.Message.ShouldContain("the schedule shows it blue");
+        result.Message.ShouldNotContain("shows the day dark");
     }
 
     [Test]
@@ -315,6 +330,7 @@ public class DiagnosePlanningPeriodSkillTests
         data.ShouldNotContain("DayApproval");
         data.ShouldNotContain("PeriodClosed");
         result.Message.ShouldContain("user's language");
+        result.Message.ShouldContain("do not add other causes");
     }
 
     private static JsonElement Json(SkillResult result) =>
