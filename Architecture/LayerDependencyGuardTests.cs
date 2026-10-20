@@ -104,7 +104,6 @@ public class LayerDependencyGuardTests
         @"Domain\Services\Settings\CalendarRulePaginationService.cs -> EntityFrameworkCore",
         @"Domain\Services\Shifts\ShiftPaginationService.cs -> EntityFrameworkCore",
         @"Domain\Services\Shifts\ShiftValidator.cs -> EntityFrameworkCore",
-        @"Application\Services\Assistant\SkillRegistryInitializer.cs -> Infrastructure",
         @"Application\Services\Assistant\Evaluation\TurnEval\TurnEvalMemoryProbe.cs -> KnowledgeIndex",
         @"Application\Services\Assistant\Learning\SkillIndexStateVerifier.cs -> KnowledgeIndex",
         @"Infrastructure\Services\Assistant\SelfApiRouteResolver.cs -> Presentation",

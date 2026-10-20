@@ -7,6 +7,7 @@
 /// </summary>
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
+using Klacks.Api.Application.Interfaces.Plugins;
 using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
@@ -32,6 +33,7 @@ public class SkillCatalogRefresherTests
         _initializer = Substitute.For<SkillRegistryInitializer>(
             Substitute.For<IAgentSkillRepository>(),
             Substitute.For<ISkillRegistry>(),
+            Substitute.For<IPluginSkillAssemblySource>(),
             Substitute.For<ILogger<SkillRegistryInitializer>>());
         _scheduler = Substitute.For<IKnowledgeIndexSyncScheduler>();
 
