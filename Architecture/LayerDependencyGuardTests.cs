@@ -95,9 +95,6 @@ public class LayerDependencyGuardTests
     // "relative path -> edge", the edge being the forbidden target of the file's layer. See ShrinkOnlyHint.
     private static readonly IReadOnlySet<string> KnownViolations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        @"Domain\Extensions\SettingsReaderOpenRouteExtensions.cs -> Application",
-        @"Domain\Services\Assistant\LLMProviderOrchestrator.cs -> Application",
-        @"Domain\Services\RouteOptimization\ContainerAutofillService.cs -> Application",
         @"Domain\Services\Assistant\RecipeEngineService.cs -> KnowledgeIndex",
         @"Domain\Extensions\QueryableExtensions.cs -> EntityFrameworkCore",
         @"Domain\Services\Absences\AbsencePaginationService.cs -> EntityFrameworkCore",
