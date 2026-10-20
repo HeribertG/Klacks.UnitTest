@@ -18,7 +18,10 @@
 /// excluded from test 3, so the two failures never mask each other.
 /// Test 3: every non-obsolete in-page target whose route has a page key with a permission carries
 /// exactly that permission — the drift guard for the Klacks.Ui scanner rule in spec section 3.2
-/// ("in-page targets inherit the page permission"). Inheritance is from requiredPermission, the
+/// ("in-page targets inherit the page permission"). The one allowed deviation is the Admin role set
+/// explicitly on the marker (data-klacksy-required-permission="Admin"): it is never looser than the page
+/// permission, because Admin bypasses every permission check, and it keeps an admin-only card (the
+/// employee import on the settings page) from being offered to users who can see the page but not the card. Inheritance is from requiredPermission, the
 /// permission of the ROUTE, never from actionPermission: an action right belongs to the one page key
 /// that performs the action, while a route's in-page targets are shared by every page key on it. The
 /// page-category targets that carry actionPermission instead (scanner rule of spec 2.4:
@@ -137,7 +140,8 @@ public class NavigationManifestPermissionGuardTests
                 continue;
             }
 
-            if (!string.Equals(target.RequiredPermission, expected, StringComparison.Ordinal))
+            if (!string.Equals(target.RequiredPermission, expected, StringComparison.Ordinal)
+                && !string.Equals(target.RequiredPermission, Roles.Admin, StringComparison.Ordinal))
             {
                 violations.Add(
                     $"target '{target.TargetId}' (route {target.Route}) has " +
