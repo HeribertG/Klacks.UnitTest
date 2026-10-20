@@ -96,14 +96,11 @@ public class LayerDependencyGuardTests
     private static readonly IReadOnlySet<string> KnownViolations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         @"Domain\Services\Assistant\RecipeEngineService.cs -> KnowledgeIndex",
-        @"Domain\Extensions\QueryableExtensions.cs -> EntityFrameworkCore",
         @"Domain\Services\Absences\AbsencePaginationService.cs -> EntityFrameworkCore",
         @"Domain\Services\ContainerTemplates\ContainerAvailableTasksService.cs -> EntityFrameworkCore",
         @"Domain\Services\Groups\GroupSearchService.cs -> EntityFrameworkCore",
-        @"Domain\Services\RouteOptimization\RouteOptimizationService.cs -> EntityFrameworkCore",
         @"Domain\Services\Settings\CalendarRulePaginationService.cs -> EntityFrameworkCore",
         @"Domain\Services\Shifts\ShiftPaginationService.cs -> EntityFrameworkCore",
-        @"Domain\Services\Shifts\ShiftValidator.cs -> EntityFrameworkCore",
         @"Application\Services\Assistant\Evaluation\TurnEval\TurnEvalMemoryProbe.cs -> KnowledgeIndex",
         @"Application\Services\Assistant\Learning\SkillIndexStateVerifier.cs -> KnowledgeIndex",
         @"Presentation\Mcp\McpEndpointExtensions.cs -> Infrastructure",
