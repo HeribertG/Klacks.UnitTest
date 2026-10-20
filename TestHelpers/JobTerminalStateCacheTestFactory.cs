@@ -1,6 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using Klacks.Api.Application.Services.Schedules;
+using Klacks.Api.Infrastructure.Repositories.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,8 @@ namespace Klacks.UnitTest.TestHelpers;
 
 /// <summary>
 /// Builds a JobTerminalStateCache backed by a fresh EF InMemory DataBaseContext. The cache resolves a new
-/// scope per operation, so the scope factory hands out a new context over the same in-memory database on
-/// every call, mirroring the production scoped-DbContext registration.
+/// scope per operation, so the scope factory hands out a new JobTerminalStateStore over a new context of the
+/// same in-memory database on every call, mirroring the production scoped store and DbContext registrations.
 /// </summary>
 internal static class JobTerminalStateCacheTestFactory
 {
@@ -69,7 +70,7 @@ internal static class JobTerminalStateCacheTestFactory
     {
         var scope = Substitute.For<IServiceScope>();
         var provider = Substitute.For<IServiceProvider>();
-        provider.GetService(typeof(DataBaseContext)).Returns(_ => contextFactory());
+        provider.GetService(typeof(IJobTerminalStateStore)).Returns(_ => new JobTerminalStateStore(contextFactory()));
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
