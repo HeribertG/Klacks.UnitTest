@@ -26,6 +26,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 

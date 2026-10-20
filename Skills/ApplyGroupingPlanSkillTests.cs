@@ -33,6 +33,8 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Application.DTOs.Groups;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -665,5 +667,68 @@ public class ApplyGroupingPlanSkillTests
         await _skill.ExecuteAsync(Ctx(Roles.Admin), Params());
 
         await _analyzer.Received(1).AnalyzeAsync(Arg.Any<GroupingAnalysisRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithoutAStartDate_TheApplierIsToldThatNoDateWasGiven()
+    {
+        GivenPlan(AddClient());
+
+        await _skill.ExecuteAsync(Ctx(Roles.Admin), Params(apply: true, validFrom: null));
+
+        await _applier.Received(1).ApplyAsync(
+            Arg.Is<GroupingApplyCommand>(command => !command.StartDateGiven && command.StartMode == GroupMembershipStartMode.Fixed),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task WithAnExplicitStartDate_TheApplierIsToldThatADateWasGiven()
+    {
+        GivenPlan(AddClient());
+
+        await _skill.ExecuteAsync(Ctx(Roles.Admin), Params(apply: true, validFrom: "2026-10-01"));
+
+        await _applier.Received(1).ApplyAsync(Arg.Is<GroupingApplyCommand>(command => command.StartDateGiven), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EntryKeyword_IsPassedToTheApplier_WithoutADate()
+    {
+        GivenPlan(AddClient());
+
+        var result = await _skill.ExecuteAsync(Ctx(Roles.Admin), Params(apply: true, validFrom: "entry"));
+
+        result.Success.ShouldBeTrue();
+        await _applier.Received(1).ApplyAsync(
+            Arg.Is<GroupingApplyCommand>(command => command.StartMode == GroupMembershipStartMode.EntryDate),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Preview_NamesTheStartTheApplierDescribes_AndAsksWhenSomeEnteredEarlier()
+    {
+        GivenPlan(AddClient());
+        _applier.PreviewStartAsync(Arg.Any<GroupingApplyCommand>(), Arg.Any<CancellationToken>()).Returns(
+            new GroupMembershipStartInfo(GroupMembershipStartMode.Fixed, true, "2026-10-01", "2026-10-01", "2026-10-01", 3, 2, 0, "2024-02-01"));
+
+        var result = await _skill.ExecuteAsync(Ctx(Roles.Admin), Params());
+
+        result.Message.ShouldContain("blue and locked");
+        result.Message.ShouldContain("2 of 3 person(s)");
+        result.Message.ShouldContain("validFrom='entry'");
+    }
+
+    [Test]
+    public async Task Applied_NamesTheStartTheApplierReports()
+    {
+        GivenPlan(AddClient());
+        _applier.ApplyAsync(Arg.Any<GroupingApplyCommand>(), Arg.Any<CancellationToken>()).Returns(
+            new GroupingApplyResult(null, 0, 0, 1, 0, 0,
+                new GroupMembershipStartInfo(GroupMembershipStartMode.Fixed, false, "2026-10-05", "2026-10-05", "2026-10-05", 1, 1, 0, "2024-02-01")));
+
+        var result = await _skill.ExecuteAsync(Ctx(Roles.Admin), Params(apply: true, validFrom: null));
+
+        result.Message.ShouldContain("default date 2026-10-05");
+        result.Message.ShouldContain("blue and locked");
     }
 }

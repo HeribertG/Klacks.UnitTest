@@ -341,8 +341,8 @@ public class GroupWriteVisibilityTests
         var clientRepository = Substitute.For<IClientRepository>();
         var groupItemRepository = Substitute.For<IGroupItemRepository>();
         var handler = new AddSelectedClientsToGroupCommandHandler(
-            clientRepository, groupItemRepository, _unitOfWork, Substitute.For<ICompanyClock>(),
-            Supervisor(), TestGroupWriteVisibility.AllClientsVisible());
+            clientRepository, groupItemRepository, _unitOfWork,
+            Supervisor(), TestGroupWriteVisibility.AllClientsVisible(), TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()));
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(
@@ -369,8 +369,8 @@ public class GroupWriteVisibilityTests
         var groupItemRepository = Substitute.For<IGroupItemRepository>();
         groupItemRepository.GetByClientAndGroup(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns((GroupItem?)null);
         var handler = new AddSelectedClientsToGroupCommandHandler(
-            clientRepository, groupItemRepository, _unitOfWork, Substitute.For<ICompanyClock>(),
-            Supervisor(), TestGroupWriteVisibility.ClientsHidden(hiddenClient));
+            clientRepository, groupItemRepository, _unitOfWork,
+            Supervisor(), TestGroupWriteVisibility.ClientsHidden(hiddenClient), TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()));
 
         var result = await handler.Handle(
             new AddSelectedClientsToGroupCommand(_visibleGroup, "Visible", [visibleClient, hiddenClient], null, false, "tester"),
@@ -387,7 +387,7 @@ public class GroupWriteVisibilityTests
         var searchRepository = Substitute.For<IClientSearchRepository>();
         var groupItemRepository = Substitute.For<IGroupItemRepository>();
         var handler = new FillGroupByCriteriaCommandHandler(
-            searchRepository, groupItemRepository, _unitOfWork, Substitute.For<ICompanyClock>(), Supervisor());
+            searchRepository, groupItemRepository, _unitOfWork, Substitute.For<ICompanyClock>(), Supervisor(), TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()));
 
         var ex = await Should.ThrowAsync<KeyNotFoundException>(
             () => handler.Handle(
@@ -406,8 +406,8 @@ public class GroupWriteVisibilityTests
         var clientRepository = Substitute.For<IClientRepository>();
         var groupItemRepository = Substitute.For<IGroupItemRepository>();
         var handler = new GroupUngroupedByCityNameCommandHandler(
-            clientRepository, _groupRepository, groupItemRepository, _unitOfWork, Substitute.For<ICompanyClock>(),
-            Supervisor());
+            clientRepository, _groupRepository, groupItemRepository, _unitOfWork,
+            Supervisor(), TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()));
 
         await Should.ThrowAsync<ForbiddenException>(
             () => handler.Handle(new GroupUngroupedByCityNameCommand(null, null, true, "tester"), CancellationToken.None));
@@ -423,10 +423,10 @@ public class GroupWriteVisibilityTests
         var clientRepository = Substitute.For<IClientRepository>();
         var groupItemRepository = Substitute.For<IGroupItemRepository>();
         var handler = new PartitionClientsByAddressCommandHandler(
-            clientRepository, _groupRepository, groupItemRepository, _unitOfWork, Substitute.For<ICompanyClock>(),
+            clientRepository, _groupRepository, groupItemRepository, _unitOfWork,
             Substitute.For<ICountryRegionProvider>(), Substitute.For<ICountryResolver>(),
             Substitute.For<IStateRepository>(), Substitute.For<ISettingsReader>(),
-            Substitute.For<IGroupVisibilityPreservationService>(), Supervisor());
+            Substitute.For<IGroupVisibilityPreservationService>(), Supervisor(), TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()));
 
         await Should.ThrowAsync<ForbiddenException>(
             () => handler.Handle(

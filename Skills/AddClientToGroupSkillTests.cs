@@ -17,6 +17,8 @@ using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Infrastructure.Services.Assistant;
 
 using Klacks.UnitTest.Infrastructure.SelfApi;
+using Klacks.UnitTest.TestHelpers;
+using System.Text.Json;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -45,7 +47,7 @@ public class AddClientToGroupSkillTests
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupSkill(
-            _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+            _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock, TestGroupMembershipStart.Planner(_companyClock));
 
         _clientRepository.Exists(ClientId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });
@@ -119,7 +121,7 @@ public class AddClientToGroupSkillTests
     {
         var guard = SkillClientVisibility.Hiding(ClientId);
         var skill = new AddClientToGroupSkill(
-            _clientRepository, guard, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+            _clientRepository, guard, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock, TestGroupMembershipStart.Planner(_companyClock));
         var unknownId = Guid.NewGuid();
         var unknownParams = Params();
         unknownParams["clientId"] = unknownId.ToString();
@@ -134,5 +136,80 @@ public class AddClientToGroupSkillTests
         await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
         await _groupItemRepository.DidNotReceive().GetByClientAndGroup(ClientId, Arg.Any<Guid>());
         _api.Calls.ShouldBeEmpty();
+    }
+
+    private AddClientToGroupSkill SkillWithEntryDate() => new(
+        _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(),
+        _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock,
+        TestGroupMembershipStart.Planner(_companyClock, (ClientId, new DateOnly(2021, 4, 1))));
+
+    [Test]
+    public async Task EntryKeyword_StartsThePersonOnTheirEntryDate_AndSaysSo()
+    {
+        var parameters = Params();
+        parameters["validFrom"] = "entry";
+
+        var result = await SkillWithEntryDate().ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
+        _api.BodyOf<GroupItemResource>()!.ValidFrom.ShouldBe(new DateTime(2021, 4, 1, 0, 0, 0, DateTimeKind.Utc));
+        Assert.That(result.Message, Does.Contain("each person's own employment entry date"));
+    }
+
+    [Test]
+    public async Task AGivenDateAfterTheEntry_NamesTheBlueLockedConsequence()
+    {
+        var result = await SkillWithEntryDate().ExecuteAsync(Ctx(), Params());
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Message, Does.Contain("blue and locked"));
+        Assert.That(result.Message, Does.Contain("2021-04-01"));
+        JsonSerializer.Serialize(result.Data).ShouldContain("\"PersonsEnteredBeforeStartCount\":1");
+    }
+
+    [Test]
+    public async Task AGivenDateWithoutAnEarlierEntry_AddsNoHint()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        Assert.That(result.Message, Does.Not.Contain("blue and locked"));
+    }
+
+    [Test]
+    public async Task ValidUntilBeforeTheStart_IsRefused_AndNothingIsPosted()
+    {
+        var parameters = Params();
+        parameters["validUntil"] = "2026-04-01";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("validUntil"));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ValidUntilBeforeThePersonsEntryDate_InEntryMode_IsRefused()
+    {
+        var parameters = Params();
+        parameters["validFrom"] = "entry";
+        parameters["validUntil"] = "2021-03-01";
+
+        var result = await SkillWithEntryDate().ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("validUntil"));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ValidUntilOnTheStartDay_IsAccepted()
+    {
+        var parameters = Params();
+        parameters["validUntil"] = "2026-05-01";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.True);
     }
 }

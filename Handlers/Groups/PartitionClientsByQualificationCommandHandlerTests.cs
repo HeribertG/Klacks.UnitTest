@@ -7,6 +7,7 @@ using Klacks.Api.Application.Handlers.Groups;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Domain.Enums;
 
 namespace Klacks.UnitTest.Handlers.Groups;
 
@@ -280,7 +281,8 @@ public class PartitionClientsByQualificationCommandHandlerTests
         guard.IsUnrestrictedAsync(Arg.Any<CancellationToken>()).Returns(false);
         var handler = new PartitionClientsByQualificationCommandHandler(
             _clientRepository, _qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork,
-            _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation, guard);
+            _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation, guard,
+            TestGroupMembershipStart.Planner(_companyClock));
 
         await Should.ThrowAsync<ForbiddenException>(() => handler.Handle(Command(apply: true), CancellationToken.None));
 
@@ -291,7 +293,8 @@ public class PartitionClientsByQualificationCommandHandlerTests
 
     private PartitionClientsByQualificationCommandHandler Handler() => new(
         _clientRepository, _qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork,
-        _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation, TestGroupWriteVisibility.UnrestrictedGroups());
+        _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation, TestGroupWriteVisibility.UnrestrictedGroups(),
+        TestGroupMembershipStart.Planner(_companyClock));
 
     private static PartitionClientsByQualificationCommand Command(
         bool apply, Guid? scopeGroupId = null, string? scopeGroupName = null, int minMembers = 2) =>
@@ -325,5 +328,72 @@ public class PartitionClientsByQualificationCommandHandlerTests
     {
         client.GroupItems.Add(new GroupItem { Id = Guid.NewGuid(), ClientId = client.Id, GroupId = groupId });
         return client;
+    }
+
+    [Test]
+    public async Task Apply_InEntryDateMode_StartsEachHolderOnTheirEntryDate_AndTheGroupsOnTheEarliest()
+    {
+        var anna = Holder(_forklift);
+        var beat = Holder(_forklift);
+        _employees = [anna, beat];
+        var items = new List<GroupItem>();
+        await _groupItemRepository.Add(Arg.Do<GroupItem>(items.Add));
+        var added = new List<Group>();
+        await _groupRepository.Add(Arg.Do<Group>(added.Add));
+        var handler = new PartitionClientsByQualificationCommandHandler(
+            _clientRepository, _qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(
+                _companyClock, (anna.Id, new DateOnly(2020, 1, 1)), (beat.Id, new DateOnly(2025, 3, 1))));
+
+        var result = await handler.Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        items.Single(i => i.ClientId == anna.Id).ValidFrom.ShouldBe(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        items.Single(i => i.ClientId == beat.Id).ValidFrom.ShouldBe(new DateTime(2025, 3, 1, 0, 0, 0, DateTimeKind.Utc));
+        added.ShouldAllBe(g => g.ValidFrom == new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        result.MembershipStart!.Mode.ShouldBe(GroupMembershipStartMode.EntryDate);
+        result.MembershipStart.LatestStartDate.ShouldBe("2025-03-01");
+    }
+
+    [Test]
+    public async Task Preview_StatesTheDefaultTodayAndCountsTheHoldersWhoEnteredEarlier()
+    {
+        var anna = Holder(_forklift);
+        _employees = [anna, Holder(_forklift)];
+        var handler = new PartitionClientsByQualificationCommandHandler(
+            _clientRepository, _qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, (anna.Id, new DateOnly(2020, 1, 1))));
+
+        var result = await handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.MembershipStart!.StartDate.ShouldBe("2026-10-02");
+        result.MembershipStart.PersonCount.ShouldBe(2);
+        result.MembershipStart.PersonsEnteredBeforeStartCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Apply_InEntryDateMode_EachNewGroupStartsOnItsOwnMembersMinimum_AndTheRootOnTheEarliest()
+    {
+        var anna = Holder(_forklift);
+        var beat = Holder(_firstAid);
+        _employees = [anna, beat];
+        var added = new List<Group>();
+        await _groupRepository.Add(Arg.Do<Group>(added.Add));
+        var handler = new PartitionClientsByQualificationCommandHandler(
+            _clientRepository, _qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(
+                _companyClock, (anna.Id, new DateOnly(2020, 1, 1)), (beat.Id, new DateOnly(2025, 3, 1))));
+
+        await handler.Handle(Command(apply: true, minMembers: 1) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        added.Single(g => g.Name == "Staplerfahrer").ValidFrom.ShouldBe(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        added.Single(g => g.Name == "Erste Hilfe").ValidFrom.ShouldBe(new DateTime(2025, 3, 1, 0, 0, 0, DateTimeKind.Utc));
+        added.Single(g => g.Name == "Qualifikationen").ValidFrom.ShouldBe(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
     }
 }

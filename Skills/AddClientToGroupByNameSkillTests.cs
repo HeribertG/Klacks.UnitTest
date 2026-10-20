@@ -19,6 +19,7 @@ using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Infrastructure.Services.Assistant;
 
 using Klacks.UnitTest.Infrastructure.SelfApi;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -49,7 +50,7 @@ public class AddClientToGroupByNameSkillTests
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToGroupByNameSkill(
             _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _companyClock,
-            _api.Client, new SelfApiRouteResolver());
+            _api.Client, new SelfApiRouteResolver(), TestGroupMembershipStart.Planner(_companyClock));
 
         _searchRepository.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult
@@ -252,7 +253,7 @@ public class AddClientToGroupByNameSkillTests
         _groupScopeGuard = TestGroupScopeGuard.Restricted(new[] { salesRootId }, "Verkauf");
         _skill = new AddClientToGroupByNameSkill(
             _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _companyClock,
-            _api.Client, new SelfApiRouteResolver());
+            _api.Client, new SelfApiRouteResolver(), TestGroupMembershipStart.Planner(_companyClock));
 
         var parameters = new Dictionary<string, object>
         {
@@ -282,7 +283,7 @@ public class AddClientToGroupByNameSkillTests
         _groupScopeGuard = TestGroupScopeGuard.Restricted(new[] { salesRootId }, "Verkauf");
         _skill = new AddClientToGroupByNameSkill(
             _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _companyClock,
-            _api.Client, new SelfApiRouteResolver());
+            _api.Client, new SelfApiRouteResolver(), TestGroupMembershipStart.Planner(_companyClock));
 
         var parameters = new Dictionary<string, object>
         {
@@ -296,5 +297,36 @@ public class AddClientToGroupByNameSkillTests
 
         Assert.That(result.Success, Is.True);
         _api.BodyOf<GroupItemResource>()!.GroupId.ShouldBe(salesRootId);
+    }
+
+    private AddClientToGroupByNameSkill SkillWithEntryDate() => new(
+        _clientRepository, _searchRepository, _groupRepository, _groupScopeGuard, _companyClock,
+        _api.Client, new SelfApiRouteResolver(),
+        TestGroupMembershipStart.Planner(_companyClock, (ClientId, new DateOnly(2021, 4, 1))));
+
+    private static Dictionary<string, object> NamedParams(string validFrom) => new()
+    {
+        ["firstName"] = "Max",
+        ["lastName"] = "Müller",
+        ["groupName"] = "Verkauf",
+        ["validFrom"] = validFrom
+    };
+
+    [Test]
+    public async Task EntryKeyword_StartsThePersonOnTheirEntryDate_AndSaysSo()
+    {
+        var result = await SkillWithEntryDate().ExecuteAsync(Ctx(), NamedParams("entry"));
+
+        Assert.That(result.Success, Is.True);
+        _api.BodyOf<GroupItemResource>()!.ValidFrom.ShouldBe(new DateTime(2021, 4, 1, 0, 0, 0, DateTimeKind.Utc));
+        Assert.That(result.Message, Does.Contain("each person's own employment entry date"));
+    }
+
+    [Test]
+    public async Task AGivenDateAfterTheEntry_NamesTheBlueLockedConsequence()
+    {
+        var result = await SkillWithEntryDate().ExecuteAsync(Ctx(), NamedParams("2026-05-01"));
+
+        Assert.That(result.Message, Does.Contain("blue and locked"));
     }
 }

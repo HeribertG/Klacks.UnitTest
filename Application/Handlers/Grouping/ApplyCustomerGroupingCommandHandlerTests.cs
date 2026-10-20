@@ -18,6 +18,8 @@ using Klacks.Api.Application.Handlers.Grouping;
 using Klacks.Api.Application.Services.Grouping;
 using Klacks.Api.Application.Interfaces.Grouping;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Domain.Enums;
 
 namespace Klacks.UnitTest.Application.Handlers.Grouping;
 
@@ -44,7 +46,8 @@ public class ApplyCustomerGroupingCommandHandlerTests
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
-        _handler = new ApplyCustomerGroupingCommandHandler(_planner, _groupItemRepository, _unitOfWork, _companyClock);
+        _handler = new ApplyCustomerGroupingCommandHandler(
+            _planner, _groupItemRepository, _unitOfWork, TestGroupMembershipStart.Planner(_companyClock));
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
             .Returns(ci => ci.Arg<Func<Task<int>>>()());
@@ -186,5 +189,45 @@ public class ApplyCustomerGroupingCommandHandlerTests
                 2,
                 new[] { assignment },
                 Array.Empty<UnassignedCustomer>()));
+    }
+
+    [Test]
+    public async Task Handle_InEntryDateMode_StartsThePersonOnTheirEntryDate_AndReportsIt()
+    {
+        SetProposal(new CustomerGroupingAssignment(
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
+        _groupItemRepository.GetByClientAndGroup(ClientId, Canton).Returns((GroupItem?)null);
+        _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns((GroupItem?)null);
+        var handler = new ApplyCustomerGroupingCommandHandler(
+            _planner, _groupItemRepository, _unitOfWork,
+            TestGroupMembershipStart.Planner(_companyClock, (ClientId, new DateOnly(2021, 4, 1))));
+
+        var result = await handler.Handle(
+            new ApplyCustomerGroupingCommand(StartMode: GroupMembershipStartMode.EntryDate), CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(g =>
+            g.GroupId == City && g.ValidFrom == new DateTime(2021, 4, 1, 0, 0, 0, DateTimeKind.Utc)));
+        result.AppliedValidFrom.ShouldBe(new DateTime(2021, 4, 1, 0, 0, 0, DateTimeKind.Utc));
+        result.MembershipStart!.Mode.ShouldBe(GroupMembershipStartMode.EntryDate);
+    }
+
+    [Test]
+    public async Task Handle_Fixed_ReportsHowManyMovedPersonsEnteredEarlier()
+    {
+        SetProposal(new CustomerGroupingAssignment(
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
+        _groupItemRepository.GetByClientAndGroup(ClientId, Canton).Returns((GroupItem?)null);
+        _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns((GroupItem?)null);
+        var handler = new ApplyCustomerGroupingCommandHandler(
+            _planner, _groupItemRepository, _unitOfWork,
+            TestGroupMembershipStart.Planner(_companyClock, (ClientId, new DateOnly(2021, 4, 1))));
+
+        var result = await handler.Handle(new ApplyCustomerGroupingCommand(), CancellationToken.None);
+
+        result.MembershipStart!.PersonsEnteredBeforeStartCount.ShouldBe(1);
+        result.MembershipStart.EarliestEntryDate.ShouldBe("2021-04-01");
+        result.MembershipStart.StartDateGiven.ShouldBeFalse();
     }
 }

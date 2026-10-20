@@ -12,6 +12,8 @@ using Klacks.Api.Application.DTOs.Grouping;
 using Klacks.Api.Application.Queries.Grouping;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Domain.Interfaces.Settings;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -47,7 +49,7 @@ public class ProposeGroupingSkillsTests
             Assignment("Anna Meier", new[] { CantonId, RegionId }, new[] { "ZH", "Ostschweiz" }),
             Assignment("Bea Huber", new[] { CantonId }, new[] { "ZH" }));
 
-        var result = await new ProposeGroupingSkill(_mediator).ExecuteAsync(Ctx(), Parameters("Customer"));
+        var result = await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>())).ExecuteAsync(Ctx(), Parameters("Customer"));
 
         var json = JsonSerializer.Serialize(result.Data);
         json.ShouldContain("\"MembershipsToEnd\":3");
@@ -60,7 +62,7 @@ public class ProposeGroupingSkillsTests
     {
         SetProposal(Assignment("Anna Meier", new[] { CantonId, RegionId }, new[] { "ZH", "Ostschweiz" }));
 
-        var result = await new ProposeGroupingSkill(_mediator).ExecuteAsync(Ctx(), Parameters("Customer"));
+        var result = await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>())).ExecuteAsync(Ctx(), Parameters("Customer"));
 
         var json = JsonSerializer.Serialize(result.Data);
         json.ShouldContain("\"Ends\":\"ZH/Ostschweiz\"");
@@ -71,7 +73,7 @@ public class ProposeGroupingSkillsTests
     {
         SetProposal(Assignment("Cara Frei", Array.Empty<Guid>(), Array.Empty<string>()));
 
-        var result = await new ProposeGroupingSkill(_mediator).ExecuteAsync(Ctx(), Parameters("Customer"));
+        var result = await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>())).ExecuteAsync(Ctx(), Parameters("Customer"));
 
         var json = JsonSerializer.Serialize(result.Data);
         json.ShouldContain("\"MembershipsToEnd\":0");
@@ -83,7 +85,7 @@ public class ProposeGroupingSkillsTests
     {
         SetProposal(Assignment("Gina Vogel", new[] { CantonId }, new[] { "ZH" }));
 
-        var result = await new ProposeGroupingSkill(_mediator).ExecuteAsync(Ctx(), Parameters("Employee"));
+        var result = await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>())).ExecuteAsync(Ctx(), Parameters("Employee"));
 
         var json = JsonSerializer.Serialize(result.Data);
         json.ShouldContain("\"MembershipsToEnd\":1");
@@ -96,7 +98,7 @@ public class ProposeGroupingSkillsTests
     {
         SetProposal(Assignment("Ivo Keller", new[] { CantonId }, new[] { "ZH" }));
 
-        var result = await new ProposeGroupingSkill(_mediator).ExecuteAsync(Ctx(), Parameters("ExternEmp"));
+        var result = await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>())).ExecuteAsync(Ctx(), Parameters("ExternEmp"));
 
         var json = JsonSerializer.Serialize(result.Data);
         json.ShouldContain("\"MembershipsToEnd\":1");
@@ -108,7 +110,7 @@ public class ProposeGroupingSkillsTests
     [TestCase("")]
     public async Task Proposal_WithInvalidEntityType_ReturnsError(string entityType)
     {
-        var result = await new ProposeGroupingSkill(_mediator).ExecuteAsync(Ctx(), Parameters(entityType));
+        var result = await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>())).ExecuteAsync(Ctx(), Parameters(entityType));
 
         result.Success.ShouldBeFalse();
     }
@@ -120,7 +122,7 @@ public class ProposeGroupingSkillsTests
 
         foreach (var entityType in new[] { "Customer", "Employee", "ExternEmp" })
         {
-            var message = (await new ProposeGroupingSkill(_mediator)
+            var message = (await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()))
                 .ExecuteAsync(Ctx(), Parameters(entityType))).Message;
 
             foreach (var skillName in InternalSkillNames)
@@ -137,7 +139,7 @@ public class ProposeGroupingSkillsTests
 
         foreach (var entityType in new[] { "Customer", "Employee", "ExternEmp" })
         {
-            var message = (await new ProposeGroupingSkill(_mediator)
+            var message = (await new ProposeGroupingSkill(_mediator, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()))
                 .ExecuteAsync(Ctx(), Parameters(entityType))).Message;
 
             foreach (var skillName in InternalSkillNames)
@@ -183,4 +185,22 @@ public class ProposeGroupingSkillsTests
         UserName = "tester",
         UserPermissions = new List<string> { "CanEditClients", "CanViewGroups" }
     };
+
+    [Test]
+    public async Task CustomerProposal_StatesTheDefaultStart_AndHowManyEnteredEarlier()
+    {
+        var assignment = Assignment("Anna Meier", new[] { CantonId }, new[] { "ZH" });
+        SetProposal(assignment);
+        var clock = Substitute.For<ICompanyClock>();
+        clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc));
+        var skill = new ProposeGroupingSkill(
+            _mediator, TestGroupMembershipStart.Planner(clock, (assignment.ClientId, new DateOnly(2021, 4, 1))));
+
+        var result = await skill.ExecuteAsync(Ctx(), Parameters("Employee"));
+
+        result.Message.ShouldContain("blue and locked");
+        result.Message.ShouldContain("1 of 1 person(s)");
+        result.Message.ShouldContain("validFrom='entry'");
+        JsonSerializer.Serialize(result.Data).ShouldContain("\"PersonsEnteredBeforeStartCount\":1");
+    }
 }

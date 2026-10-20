@@ -203,7 +203,8 @@ public class PreviewApplySkillCallsNoWriteTests
         result.Message.ShouldContain(NothingChangedMarker);
         previews.Received(1).RecordPreview(Arg.Any<Guid>(), Arg.Is(PlanFingerprint), Arg.Any<Guid?>());
         previews.DidNotReceiveWithAnyArgs().Forget(default, default!);
-        ShouldNotHaveWritten(null, [_groupRepository], applier, snapshotStore);
+        ShouldNotHaveWritten(null, [_groupRepository], snapshotStore);
+        await applier.DidNotReceiveWithAnyArgs().ApplyAsync(default!, default);
     }
 
     [Test]
@@ -221,7 +222,8 @@ public class PreviewApplySkillCallsNoWriteTests
                 TotalCount = 1
             });
         var handler = new FillGroupByCriteriaCommandHandler(
-            searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups());
+            searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock));
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<FillGroupByCriteriaCommand>(), ci.Arg<CancellationToken>()));
         var skill = new FillGroupByCriteriaSkill(
@@ -253,9 +255,9 @@ public class PreviewApplySkillCallsNoWriteTests
         var settingsReader = Substitute.For<ISettingsReader>();
         var visibilityPreservation = Substitute.For<IGroupVisibilityPreservationService>();
         var handler = new PartitionClientsByAddressCommandHandler(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock,
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
             regionProvider, countryResolver, stateRepository, settingsReader, visibilityPreservation,
-            TestGroupWriteVisibility.UnrestrictedGroups());
+            TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupMembershipStart.Planner(_companyClock));
         _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<PartitionClientsByAddressCommand>(), ci.Arg<CancellationToken>()));
         var skill = new PartitionClientsByAddressSkill(
@@ -296,7 +298,8 @@ public class PreviewApplySkillCallsNoWriteTests
         var groupVisibilityRepository = Substitute.For<IGroupVisibilityRepository>();
         var handler = new PartitionClientsByQualificationCommandHandler(
             _clientRepository, qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock,
-            languageResolver, groupVisibilityRepository, visibilityPreservation, TestGroupWriteVisibility.UnrestrictedGroups());
+            languageResolver, groupVisibilityRepository, visibilityPreservation, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock));
         _mediator.Send(Arg.Any<PartitionClientsByQualificationCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<PartitionClientsByQualificationCommand>(), ci.Arg<CancellationToken>()));
         var skill = new PartitionClientsByQualificationSkill(
@@ -376,7 +379,8 @@ public class PreviewApplySkillCallsNoWriteTests
         _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client> { EmployeeLivingInCity() });
         var handler = new AddSelectedClientsToGroupCommandHandler(
-            _clientRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible());
+            _clientRepository, _groupItemRepository, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupWriteVisibility.AllClientsVisible(),
+            TestGroupMembershipStart.Planner(_companyClock));
         _mediator.Send(Arg.Any<AddSelectedClientsToGroupCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<AddSelectedClientsToGroupCommand>(), ci.Arg<CancellationToken>()));
         var skill = new AddSelectedClientsToGroupSkill(
@@ -399,7 +403,8 @@ public class PreviewApplySkillCallsNoWriteTests
         _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
             .Returns(new List<Client> { EmployeeLivingInCity() });
         var handler = new GroupUngroupedByCityNameCommandHandler(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups());
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock));
         _mediator.Send(Arg.Any<GroupUngroupedByCityNameCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<GroupUngroupedByCityNameCommand>(), ci.Arg<CancellationToken>()));
         var skill = new GroupUngroupedByCityNameSkill(_mediator, TestGroupScopeGuard.Unrestricted(), _companyClock);
@@ -549,7 +554,8 @@ public class PreviewApplySkillCallsNoWriteTests
                 TotalCount = 1
             });
         var handler = new FillGroupByCriteriaCommandHandler(
-            searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups());
+            searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock));
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<FillGroupByCriteriaCommand>(), ci.Arg<CancellationToken>()));
         var skill = new FillGroupByCriteriaSkill(

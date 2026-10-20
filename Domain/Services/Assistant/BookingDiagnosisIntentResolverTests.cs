@@ -18,6 +18,7 @@ public class BookingDiagnosisIntentResolverTests
     private static readonly string[] Expected =
     [
         SkillNames.DiagnoseWorkBooking,
+        SkillNames.DiagnosePlanningPeriod,
         SkillNames.ExplainWhyCannotBook,
     ];
 

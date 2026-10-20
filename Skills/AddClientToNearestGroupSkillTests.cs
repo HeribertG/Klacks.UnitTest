@@ -19,6 +19,7 @@ using Klacks.Api.Application.DTOs.Associations;
 using Klacks.Api.Infrastructure.Services.Assistant;
 
 using Klacks.UnitTest.Infrastructure.SelfApi;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -47,7 +48,7 @@ public class AddClientToNearestGroupSkillTests
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new AddClientToNearestGroupSkill(
-            _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+            _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock, TestGroupMembershipStart.Planner(_companyClock));
 
         _clientRepository.Get(ClientId).Returns(new Client
         {
@@ -114,7 +115,7 @@ public class AddClientToNearestGroupSkillTests
     {
         var guard = SkillClientVisibility.Hiding(ClientId);
         var skill = new AddClientToNearestGroupSkill(
-            _clientRepository, guard, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock);
+            _clientRepository, guard, _groupRepository, TestGroupScopeGuard.Unrestricted(), _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock, TestGroupMembershipStart.Planner(_companyClock));
         var unknownId = Guid.NewGuid();
 
         var hidden = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
@@ -135,5 +136,21 @@ public class AddClientToNearestGroupSkillTests
         await guard.Received().IsVisibleAsync(ClientId, Arg.Any<CancellationToken>());
         await _clientRepository.DidNotReceive().Get(ClientId);
         _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task EntryKeyword_StartsThePersonOnTheirEntryDate_AndSaysSo()
+    {
+        var skill = new AddClientToNearestGroupSkill(
+            _clientRepository, SkillClientVisibility.AllVisible(), _groupRepository, TestGroupScopeGuard.Unrestricted(),
+            _groupItemRepository, _api.Client, new SelfApiRouteResolver(), _companyClock,
+            TestGroupMembershipStart.Planner(_companyClock, (ClientId, new DateOnly(2021, 4, 1))));
+
+        var result = await skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["clientId"] = ClientId.ToString(), ["validFrom"] = "entry" });
+
+        Assert.That(result.Success, Is.True);
+        _api.BodyOf<GroupItemResource>()!.ValidFrom.ShouldBe(new DateTime(2021, 4, 1, 0, 0, 0, DateTimeKind.Utc));
+        Assert.That(result.Message, Does.Contain("each person's own employment entry date"));
     }
 }

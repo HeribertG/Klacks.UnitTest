@@ -12,6 +12,14 @@ internal static class TestGroupScopeGuard
         return guard;
     }
 
+    public static IGroupScopeGuard For(GroupScopeAccess access)
+    {
+        var guard = Substitute.For<IGroupScopeGuard>();
+        guard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(access);
+        return guard;
+    }
+
     public static IGroupScopeGuard Restricted(IEnumerable<Guid> visibleRootIds, params string[] visibleRootNames)
     {
         var guard = Substitute.For<IGroupScopeGuard>();

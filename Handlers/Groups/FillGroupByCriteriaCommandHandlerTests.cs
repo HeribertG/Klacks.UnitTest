@@ -42,7 +42,8 @@ public class FillGroupByCriteriaCommandHandlerTests
         _companyClock = Substitute.For<ICompanyClock>();
         _companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
         _handler = new FillGroupByCriteriaCommandHandler(
-            _searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups());
+            _searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock));
 
         _searchRepository.SearchAsync(
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(),
@@ -186,5 +187,77 @@ public class FillGroupByCriteriaCommandHandlerTests
             Arg.Any<string?>(), "BE", EntityTypeEnum.Employee, contractId,
             "Bern", "30", qualificationId, DateOnly.FromDateTime(CompanyToday),
             Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    private static readonly DateOnly NewClientEntry = new(2024, 2, 1);
+
+    private FillGroupByCriteriaCommandHandler HandlerWithEntryDates() => new(
+        _searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(),
+        TestGroupMembershipStart.Planner(_companyClock, (NewClientId, NewClientEntry)));
+
+    [Test]
+    public async Task Preview_DescribesTheStart_AndCountsOnlyTheNewPersonWhoEnteredEarlier()
+    {
+        var result = await HandlerWithEntryDates().Handle(Command(apply: false), CancellationToken.None);
+
+        var start = result.MembershipStart!;
+        start.StartDate.ShouldBe("2099-01-15");
+        start.PersonCount.ShouldBe(1);
+        start.PersonsEnteredBeforeStartCount.ShouldBe(1);
+        start.PersonsWithoutEntryDateCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Apply_InEntryDateMode_StartsThePersonOnTheirOwnEntryDate()
+    {
+        var result = await HandlerWithEntryDates().Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi =>
+            gi.ClientId == NewClientId && gi.ValidFrom == new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc)));
+        result.MembershipStart!.Mode.ShouldBe(GroupMembershipStartMode.EntryDate);
+        result.MembershipStart.EarliestStartDate.ShouldBe("2024-02-01");
+    }
+
+    [Test]
+    public async Task Apply_Fixed_KeepsTheOldBehaviourOfTheCompanyToday()
+    {
+        await HandlerWithEntryDates().Handle(Command(apply: true), CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi => gi.ClientId == NewClientId && gi.ValidFrom == CompanyToday));
+    }
+
+    [Test]
+    public async Task Preview_CountsOnlyThePersonsTheApplyWouldAdd()
+    {
+        var preview = await _handler.Handle(Command(apply: false), CancellationToken.None);
+        var applied = await _handler.Handle(Command(apply: true), CancellationToken.None);
+
+        preview.MembershipStart!.PersonCount.ShouldBe(1);
+        preview.AlreadyMemberCount.ShouldBe(1);
+        preview.MembershipStart.PersonCount.ShouldBe(applied.MembershipStart!.PersonCount);
+    }
+
+    [Test]
+    public async Task EntryDate_ReportsExistingMembersWhoseStartIsLaterThanTheirEntry_WithoutChangingThem()
+    {
+        _groupItemRepository.GetByClientAndGroup(MemberClientId, GroupId).Returns(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = MemberClientId,
+            GroupId = GroupId,
+            ValidFrom = CompanyToday
+        });
+        var handler = new FillGroupByCriteriaCommandHandler(
+            _searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, (MemberClientId, new DateOnly(2020, 1, 1))));
+        var command = Command(apply: false) with { StartMode = GroupMembershipStartMode.EntryDate };
+
+        var preview = await handler.Handle(command, CancellationToken.None);
+        var applied = await handler.Handle(command with { Apply = true }, CancellationToken.None);
+
+        preview.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        applied.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        await _groupItemRepository.DidNotReceive().Put(Arg.Any<GroupItem>());
     }
 }

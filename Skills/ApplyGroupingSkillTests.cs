@@ -13,6 +13,7 @@ using Klacks.Api.Application.DTOs.Grouping;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Infrastructure.Mediator;
+using Klacks.Api.Domain.Interfaces.Settings;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -58,10 +59,7 @@ public class ApplyGroupingSkillTests
             Arg.Any<CancellationToken>());
     }
 
-    [TestCase("1. Juni 2026")]
-    [TestCase("01.06.2026")]
-    [TestCase("06/01/2026")]
-    [TestCase("today")]
+    [TestCase("garbage")]
     [TestCase("2026-13-45")]
     public async Task Apply_WithUnparseableValidFrom_FailsInsteadOfSilentlyUsingToday(string validFrom)
     {
@@ -101,7 +99,7 @@ public class ApplyGroupingSkillTests
     }
 
     private Task<SkillResult> Execute(Dictionary<string, object> parameters) =>
-        new ApplyGroupingSkill(_mediator).ExecuteAsync(Ctx(), parameters);
+        NewSkill().ExecuteAsync(Ctx(), parameters);
 
     private void SetResult(DateTime appliedValidFrom)
     {
@@ -127,4 +125,37 @@ public class ApplyGroupingSkillTests
         UserName = "tester",
         UserPermissions = new List<string> { "CanEditClients", "CanViewGroups" }
     };
+
+    private ApplyGroupingSkill NewSkill()
+    {
+        var clock = Substitute.For<ICompanyClock>();
+        clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
+        return new ApplyGroupingSkill(_mediator, clock);
+    }
+
+    [TestCase("today")]
+    [TestCase("Today")]
+    public async Task Apply_TodayWord_IsResolvedAgainstTheCompanyDay_LikeInTheSiblingSkills(string word)
+    {
+        SetResult(CompanyToday);
+
+        var result = await Execute(Parameters("Customer", word));
+
+        result.Success.ShouldBeTrue();
+        await _mediator.Received(1).Send(
+            Arg.Is<ApplyCustomerGroupingCommand>(c => c.ValidFrom == CompanyToday && c.StartMode == GroupMembershipStartMode.Fixed),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_IsoDate_IsPassedAsUtcMidnight()
+    {
+        SetResult(CompanyToday);
+
+        await Execute(Parameters("Customer", "2026-06-01"));
+
+        await _mediator.Received(1).Send(
+            Arg.Is<ApplyCustomerGroupingCommand>(c => c.ValidFrom == new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc)),
+            Arg.Any<CancellationToken>());
+    }
 }

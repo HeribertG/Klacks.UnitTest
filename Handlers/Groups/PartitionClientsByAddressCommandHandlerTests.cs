@@ -21,6 +21,7 @@ using Klacks.Api.Domain.Interfaces.Geo;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Domain.Enums;
 
 namespace Klacks.UnitTest.Handlers.Groups;
 
@@ -68,9 +69,9 @@ public class PartitionClientsByAddressCommandHandlerTests
         _visibilityPreservation = Substitute.For<IGroupVisibilityPreservationService>();
 
         _handler = new PartitionClientsByAddressCommandHandler(
-            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork, _companyClock,
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
             _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
-            TestGroupWriteVisibility.UnrestrictedGroups());
+            TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupMembershipStart.Planner(_companyClock));
 
         _groupRepository.List().Returns(new List<Group>());
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<PartitionApplyOutcome>>>())
@@ -370,5 +371,175 @@ public class PartitionClientsByAddressCommandHandlerTests
         await _handler.Handle(Command(apply: true), CancellationToken.None);
 
         added.Single(g => g.Name == "BE").Description.ShouldBe("Bern");
+    }
+
+    private static readonly DateOnly BernEntry = new(2024, 2, 1);
+
+    private PartitionClientsByAddressCommandHandler HandlerWithEntryDate(Guid clientId) => new(
+        _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+        _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
+        TestGroupWriteVisibility.UnrestrictedGroups(), TestGroupMembershipStart.Planner(_companyClock, (clientId, BernEntry)));
+
+    [Test]
+    public async Task Preview_StatesTheDefaultStartToday_AndHowManyEnteredEarlier()
+    {
+        var client = Bern();
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+
+        var result = await HandlerWithEntryDate(client.Id).Handle(Command(apply: false), CancellationToken.None);
+
+        var start = result.MembershipStart!;
+        start.Mode.ShouldBe(GroupMembershipStartMode.Fixed);
+        start.StartDateGiven.ShouldBeFalse();
+        start.StartDate.ShouldBe("2099-01-15");
+        start.PersonCount.ShouldBe(1);
+        start.PersonsEnteredBeforeStartCount.ShouldBe(1);
+        start.EarliestEntryDate.ShouldBe("2024-02-01");
+    }
+
+    [Test]
+    public async Task Apply_Fixed_WithoutADate_StillStartsOnTheCompanyToday()
+    {
+        var client = Bern();
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+
+        await HandlerWithEntryDate(client.Id).Handle(Command(apply: true), CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi => gi.ValidFrom == CompanyToday));
+        await _groupRepository.Received(2).Add(Arg.Is<Group>(g => g.ValidFrom == CompanyToday));
+    }
+
+    [Test]
+    public async Task Apply_InEntryDateMode_StartsThePersonAndTheNewGroupsOnTheEntryDate()
+    {
+        var client = Bern();
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        var entry = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var result = await HandlerWithEntryDate(client.Id).Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi => gi.ValidFrom == entry));
+        await _groupRepository.Received(2).Add(Arg.Is<Group>(g => g.ValidFrom == entry));
+        result.MembershipStart!.Mode.ShouldBe(GroupMembershipStartMode.EntryDate);
+        result.MembershipStart.PersonsEnteredBeforeStartCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Apply_InEntryDateMode_AFutureEntry_NeverPushesTheGroupBeyondToday()
+    {
+        var client = Bern();
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        var handler = new PartitionClientsByAddressCommandHandler(
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, (client.Id, new DateOnly(2099, 6, 1))));
+
+        await handler.Handle(Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        await _groupRepository.Received(2).Add(Arg.Is<Group>(g => g.ValidFrom == CompanyToday));
+        await _groupItemRepository.Received(1).Add(
+            Arg.Is<GroupItem>(gi => gi.ValidFrom == new DateTime(2099, 6, 1, 0, 0, 0, DateTimeKind.Utc)));
+    }
+
+    private static Client Zurich()
+    {
+        var clientId = Guid.NewGuid();
+        return new Client
+        {
+            Id = clientId,
+            FirstName = "Zoe",
+            Name = "Keller",
+            Type = EntityTypeEnum.Employee,
+            Addresses = new List<Address>
+            {
+                new() { ClientId = clientId, Type = AddressTypeEnum.Employee, State = "ZH", City = "Zürich", Country = "CH", ValidFrom = CompanyToday }
+            }
+        };
+    }
+
+    [Test]
+    public async Task Preview_ExcludesAnExistingMemberOfAnExistingGroup_LikeTheApplyDoes()
+    {
+        var regionId = Guid.NewGuid();
+        var beId = Guid.NewGuid();
+        var client = Bern();
+        client.GroupItems.Add(new GroupItem { Id = Guid.NewGuid(), ClientId = client.Id, GroupId = beId });
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = regionId, Name = "Deutschschweiz Mitte", Parent = null },
+            new() { Id = beId, Name = "BE", Parent = regionId }
+        });
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        _groupItemRepository.GetByClientAndGroup(client.Id, beId)
+            .Returns(new GroupItem { Id = Guid.NewGuid(), ClientId = client.Id, GroupId = beId });
+        var handler = HandlerWithEntryDate(client.Id);
+
+        var preview = await handler.Handle(Command(apply: false, includeAlreadyGrouped: true), CancellationToken.None);
+        var applied = await handler.Handle(Command(apply: true, includeAlreadyGrouped: true), CancellationToken.None);
+
+        preview.MembershipStart!.PersonCount.ShouldBe(0);
+        applied.MembershipStart!.PersonCount.ShouldBe(0);
+        applied.AlreadyMemberCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task EntryDate_ReportsPersonsWhoAreAlreadyGroupedWithALaterStart_AndLeavesThemAlone()
+    {
+        var client = Bern();
+        client.GroupItems.Add(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = client.Id,
+            GroupId = Guid.NewGuid(),
+            ValidFrom = CompanyToday
+        });
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        var handler = HandlerWithEntryDate(client.Id);
+        var entryMode = Command(apply: false) with { StartMode = GroupMembershipStartMode.EntryDate };
+
+        var preview = await handler.Handle(entryMode, CancellationToken.None);
+        var applied = await handler.Handle(entryMode with { Apply = true }, CancellationToken.None);
+
+        preview.MembershipStart!.PersonCount.ShouldBe(0);
+        preview.MembershipStart.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        preview.MembershipStart.ExistingMembersEarliestEntryDate.ShouldBe("2024-02-01");
+        applied.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
+        await _groupItemRepository.DidNotReceive().Put(Arg.Any<GroupItem>());
+        await _groupItemRepository.DidNotReceive().Delete(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task Apply_InEntryDateMode_EachNewGroupStartsOnItsOwnMembersMinimum_AndParentsOnTheirChildrens()
+    {
+        var bern = Bern();
+        var zurich = Zurich();
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { bern, zurich });
+        var added = new List<Group>();
+        await _groupRepository.Add(Arg.Do<Group>(added.Add));
+        var handler = new PartitionClientsByAddressCommandHandler(
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(
+                _companyClock, (bern.Id, new DateOnly(2020, 1, 1)), (zurich.Id, new DateOnly(2024, 3, 1))));
+
+        await handler.Handle(Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        var bernStart = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var zurichStart = new DateTime(2024, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+        added.Single(g => g.Name == "BE").ValidFrom.ShouldBe(bernStart);
+        added.Single(g => g.Name == "ZH").ValidFrom.ShouldBe(zurichStart);
+        added.Single(g => g.Name == "Deutschschweiz Mitte").ValidFrom.ShouldBe(bernStart);
+        added.Single(g => g.Name == "Deutschschweiz Zürich").ValidFrom.ShouldBe(zurichStart);
     }
 }

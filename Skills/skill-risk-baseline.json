@@ -129,6 +129,7 @@
   "delete_workchange": "Sensitive",
   "detect_conflicts": "ReadOnly",
   "diagnose_holiday_outcome": "ReadOnly",
+  "diagnose_planning_period": "ReadOnly",
   "diagnose_work_booking": "ReadOnly",
   "disable_feature_plugin": "Irreversible",
   "dismiss_skill_relation": "Irreversible",

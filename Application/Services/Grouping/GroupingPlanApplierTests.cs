@@ -15,6 +15,8 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Domain.Interfaces.Settings;
 
 namespace Klacks.UnitTest.Application.Services.Grouping;
 
@@ -43,7 +45,8 @@ public class GroupingPlanApplierTests
         _items.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(call => call.Arg<IReadOnlyCollection<Guid>>().Count);
         _groups.Exists(Arg.Any<Guid>()).Returns(true);
-        _sut = new GroupingPlanApplier(_groups, _items, _unitOfWork);
+        _sut = new GroupingPlanApplier(
+            _groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(Substitute.For<ICompanyClock>()));
     }
 
     private static GroupingApplyCommand Command(params GroupingProposal[] proposals) =>
@@ -133,5 +136,111 @@ public class GroupingPlanApplierTests
 
         await Should.ThrowAsync<ArgumentException>(() => _sut.ApplyAsync(command, CancellationToken.None));
         await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<GroupingApplyResult>>>());
+    }
+
+    [Test]
+    public async Task EntryDateMode_StartsClientsOnTheirEntry_ButShiftsOnTheCommandDate()
+    {
+        var clock = Substitute.For<ICompanyClock>();
+        clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(ValidFrom);
+        var sut = new GroupingPlanApplier(
+            _groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(clock, (ClientId, new DateOnly(2020, 1, 1))));
+
+        var result = await sut.ApplyAsync(
+            Command(
+                new GroupingProposal(GroupingProposalKind.AddClient, GroupId, null, ClientId, null, GroupingFindingCode.ClientWithoutGroup),
+                new GroupingProposal(GroupingProposalKind.AddShift, GroupId, null, null, ShiftId, GroupingFindingCode.ShiftWithoutGroup))
+                with { StartMode = GroupMembershipStartMode.EntryDate },
+            CancellationToken.None);
+
+        await _items.Received(1).Add(Arg.Is<GroupItem>(item =>
+            item.ClientId == ClientId && item.ValidFrom == new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        await _items.Received(1).Add(Arg.Is<GroupItem>(item => item.ShiftId == ShiftId && item.ValidFrom == ValidFrom));
+        result.MembershipStart!.Mode.ShouldBe(GroupMembershipStartMode.EntryDate);
+        result.MembershipStart.PersonCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task EntryDateMode_AGroupWithOnlyShifts_StartsOnTheShiftStart_NotOnToday()
+    {
+        var clock = Substitute.For<ICompanyClock>();
+        clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(ValidFrom.AddDays(40));
+        var sut = new GroupingPlanApplier(_groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(clock));
+
+        await sut.ApplyAsync(
+            Command(
+                new GroupingProposal(GroupingProposalKind.AddShift, null, GroupingFeasibilityDefaults.NewGroupKey, null, ShiftId, GroupingFindingCode.ShiftWithoutGroup),
+                new GroupingProposal(GroupingProposalKind.CreateGroup, null, GroupingFeasibilityDefaults.NewGroupKey, null, null, GroupingFindingCode.ShiftWithoutGroup))
+                with { StartMode = GroupMembershipStartMode.EntryDate },
+            CancellationToken.None);
+
+        await _groups.Received(1).Add(Arg.Is<Group>(group => group.ValidFrom == ValidFrom));
+    }
+
+    [Test]
+    public async Task EntryDateMode_AGroupWithClients_StartsOnItsClientsEarliestEntry_ButNotAfterItsShifts()
+    {
+        var clock = Substitute.For<ICompanyClock>();
+        clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(ValidFrom.AddDays(40));
+        var sut = new GroupingPlanApplier(
+            _groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(clock, (ClientId, new DateOnly(2020, 1, 1))));
+        var clientOnly = Command(
+            new GroupingProposal(GroupingProposalKind.AddClient, null, GroupingFeasibilityDefaults.NewGroupKey, ClientId, null, GroupingFindingCode.ClientWithoutGroup),
+            new GroupingProposal(GroupingProposalKind.CreateGroup, null, GroupingFeasibilityDefaults.NewGroupKey, null, null, GroupingFindingCode.ClientWithoutGroup))
+            with { StartMode = GroupMembershipStartMode.EntryDate };
+
+        await sut.ApplyAsync(clientOnly, CancellationToken.None);
+
+        await _groups.Received(1).Add(Arg.Is<Group>(group => group.ValidFrom == new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+    }
+
+    [Test]
+    public async Task PreviewStart_ExcludesAnExistingMember_AndReportsHimWhenHisStartIsLaterThanHisEntry()
+    {
+        var clock = Substitute.For<ICompanyClock>();
+        clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(ValidFrom);
+        var sut = new GroupingPlanApplier(
+            _groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(clock, (ClientId, new DateOnly(2020, 1, 1))));
+        _items.GetByClientAndGroup(ClientId, GroupId).Returns(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientId,
+            GroupId = GroupId,
+            ValidFrom = ValidFrom
+        });
+        var command = Command(
+            new GroupingProposal(GroupingProposalKind.AddClient, GroupId, null, ClientId, null, GroupingFindingCode.ClientWithoutGroup))
+            with { StartMode = GroupMembershipStartMode.EntryDate };
+
+        var info = await sut.PreviewStartAsync(command, CancellationToken.None);
+
+        info.PersonCount.ShouldBe(0);
+        info.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        await _items.DidNotReceive().Add(Arg.Any<GroupItem>());
+    }
+
+    [Test]
+    public async Task PreviewStart_AndApply_CountTheSamePersons()
+    {
+        var command = Command(
+            new GroupingProposal(GroupingProposalKind.AddClient, GroupId, null, ClientId, null, GroupingFindingCode.ClientWithoutGroup));
+
+        var preview = await _sut.PreviewStartAsync(command, CancellationToken.None);
+        var applied = await _sut.ApplyAsync(command, CancellationToken.None);
+
+        preview.PersonCount.ShouldBe(1);
+        preview.PersonCount.ShouldBe(applied.MembershipStart!.PersonCount);
+    }
+
+    [Test]
+    public async Task AStartDateThatWasNotGiven_IsReportedAsDefaulted()
+    {
+        var command = Command(
+            new GroupingProposal(GroupingProposalKind.AddClient, GroupId, null, ClientId, null, GroupingFindingCode.ClientWithoutGroup))
+            with { StartDateGiven = false };
+
+        var applied = await _sut.ApplyAsync(command, CancellationToken.None);
+
+        applied.MembershipStart!.StartDateGiven.ShouldBeFalse();
     }
 }
