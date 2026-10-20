@@ -111,7 +111,6 @@ public class LayerDependencyGuardTests
         @"Application\Services\Assistant\Evaluation\TurnEval\TurnEvalMemoryProbe.cs -> KnowledgeIndex",
         @"Application\Services\Assistant\Learning\SkillIndexStateVerifier.cs -> KnowledgeIndex",
         @"Infrastructure\Services\Assistant\SelfApiRouteResolver.cs -> Presentation",
-        @"Presentation\Controllers\Internal\DatabaseController.cs -> Infrastructure",
         @"Presentation\Controllers\UserBackend\RouteOptimizationController.cs -> Infrastructure",
         @"Presentation\Controllers\UserBackend\RouteOptimizationController.cs -> DataBaseContext",
         @"Presentation\Mcp\McpEndpointExtensions.cs -> Infrastructure",
