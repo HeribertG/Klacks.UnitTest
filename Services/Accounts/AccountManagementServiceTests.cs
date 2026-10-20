@@ -4,8 +4,6 @@ using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Services.Accounts;
 using Klacks.Api.Application.DTOs;
 using Klacks.Api.Application.DTOs.Registrations;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -17,7 +15,7 @@ public class AccountManagementServiceTests
     private AccountManagementService _managementService;
     private IUserManagementService _mockUserManagementService;
     private ILogger<AccountManagementService> _mockLogger;
-    private DataBaseContext _dbContext;
+    private IAppUserRepository _mockAppUserRepository;
 
     [SetUp]
     public void SetUp()
@@ -25,20 +23,9 @@ public class AccountManagementServiceTests
         _mockUserManagementService = Substitute.For<IUserManagementService>();
         _mockLogger = Substitute.For<ILogger<AccountManagementService>>();
 
-        var options = new DbContextOptionsBuilder<DataBaseContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        _dbContext = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
-        _dbContext.Database.EnsureCreated();
+        _mockAppUserRepository = Substitute.For<IAppUserRepository>();
 
-        _managementService = new AccountManagementService(_mockUserManagementService, _dbContext, _mockLogger);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _dbContext.Database.EnsureDeleted();
-        _dbContext.Dispose();
+        _managementService = new AccountManagementService(_mockUserManagementService, _mockAppUserRepository, _mockLogger);
     }
 
     [Test]
@@ -174,34 +161,13 @@ public class AccountManagementServiceTests
     }
 
     [Test]
-    public async Task ReorderUsersAsync_SetsDisplayOrderToSubmittedPosition()
+    public async Task ReorderUsersAsync_DelegatesTheOrderToTheRepositoryAndReportsSuccess()
     {
-        var userA = new AppUser { Id = "user-a", FirstName = "A", LastName = "A", DisplayOrder = 5 };
-        var userB = new AppUser { Id = "user-b", FirstName = "B", LastName = "B", DisplayOrder = 6 };
-        var userC = new AppUser { Id = "user-c", FirstName = "C", LastName = "C", DisplayOrder = 7 };
-        _dbContext.AppUser.AddRange(userA, userB, userC);
-        await _dbContext.SaveChangesAsync();
+        IReadOnlyList<string> orderedUserIds = ["user-c", "user-a", "user-b"];
 
-        var result = await _managementService.ReorderUsersAsync(new[] { "user-c", "user-a", "user-b" });
+        var result = await _managementService.ReorderUsersAsync(orderedUserIds);
 
         result.Success.ShouldBeTrue();
-        var reordered = await _dbContext.AppUser.ToDictionaryAsync(u => u.Id);
-        reordered["user-c"].DisplayOrder.ShouldBe(1);
-        reordered["user-a"].DisplayOrder.ShouldBe(2);
-        reordered["user-b"].DisplayOrder.ShouldBe(3);
-    }
-
-    [Test]
-    public async Task ReorderUsersAsync_UnknownUserIdInList_IsSilentlyIgnored()
-    {
-        var userA = new AppUser { Id = "user-a", FirstName = "A", LastName = "A", DisplayOrder = 1 };
-        _dbContext.AppUser.Add(userA);
-        await _dbContext.SaveChangesAsync();
-
-        var result = await _managementService.ReorderUsersAsync(new[] { "user-ghost", "user-a" });
-
-        result.Success.ShouldBeTrue();
-        var reordered = await _dbContext.AppUser.SingleAsync(u => u.Id == "user-a");
-        reordered.DisplayOrder.ShouldBe(2);
+        await _mockAppUserRepository.Received(1).ApplyDisplayOrderAsync(orderedUserIds, Arg.Any<CancellationToken>());
     }
 }
