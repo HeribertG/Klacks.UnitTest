@@ -37,6 +37,24 @@ namespace Klacks.UnitTest.Mocks
             return group;
         }
 
+        public async Task<int> LowerValidFromAsync(
+            IReadOnlyDictionary<Guid, DateTime> newStarts, CancellationToken cancellationToken = default)
+        {
+            var changed = 0;
+            foreach (var (groupId, start) in newStarts)
+            {
+                var group = await context.Group.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+                if (group != null && group.ValidFrom > start)
+                {
+                    group.ValidFrom = start;
+                    changed++;
+                }
+            }
+
+            await context.SaveChangesAsync(cancellationToken);
+            return changed;
+        }
+
         public async Task<bool> SetCoordinatesAsync(Guid groupId, double latitude, double longitude, CancellationToken cancellationToken = default)
         {
             var group = await context.Group.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);

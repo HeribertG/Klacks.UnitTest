@@ -32,7 +32,7 @@ public class AddSelectedClientsToGroupCommandHandlerTests
     private static readonly Guid GroupId = Guid.NewGuid();
     private static readonly Guid NewClientId = Guid.NewGuid();
     private static readonly Guid MemberClientId = Guid.NewGuid();
-    private static readonly DateTime CompanyToday = new(2099, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime CompanyToday = new(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc);
 
     [SetUp]
     public void Setup()
@@ -158,7 +158,7 @@ public class AddSelectedClientsToGroupCommandHandlerTests
         var start = result.MembershipStart!;
         start.Mode.ShouldBe(GroupMembershipStartMode.Fixed);
         start.StartDateGiven.ShouldBeFalse();
-        start.StartDate.ShouldBe("2099-01-15");
+        start.StartDate.ShouldBe("2026-10-20");
         start.PersonCount.ShouldBe(1);
         start.PersonsEnteredBeforeStartCount.ShouldBe(1);
         start.EarliestEntryDate.ShouldBe("2024-02-01");
@@ -196,28 +196,122 @@ public class AddSelectedClientsToGroupCommandHandlerTests
         result.MembershipStart.PersonsEnteredBeforeStartCount.ShouldBe(1);
     }
 
-    [Test]
-    public async Task EntryDate_ReportsExistingMembersWhoseStartIsLaterThanTheirEntry_WithoutChangingThem()
+    private static readonly Guid MemberItemId = Guid.NewGuid();
+    private static readonly DateTime MemberEntry = new(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private AddSelectedClientsToGroupCommandHandler HandlerWithAnExistingMemberStartingLater()
     {
         _groupItemRepository.GetByClientAndGroup(MemberClientId, GroupId).Returns(new GroupItem
         {
-            Id = Guid.NewGuid(),
+            Id = MemberItemId,
             ClientId = MemberClientId,
             GroupId = GroupId,
             ValidFrom = CompanyToday
         });
+        _groupItemRepository.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [MemberItemId] = MemberEntry });
+        _groupItemRepository.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>())
+            .Returns(1);
+        return new AddSelectedClientsToGroupCommandHandler(
+            _clientRepository, _groupItemRepository, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupWriteVisibility.AllClientsVisible(),
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, Substitute.For<IGroupRepository>(),
+                (MemberClientId, new DateOnly(2020, 1, 1))));
+    }
+
+    [Test]
+    public async Task EntryDate_Preview_AnnouncesThePullForward_AndWritesNothing()
+    {
+        var handler = HandlerWithAnExistingMemberStartingLater();
+
+        var preview = await handler.Handle(
+            Command(apply: false) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        preview.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        preview.MembershipStart.PulledForwardEarliestEntryDate.ShouldBe("2020-01-01");
+        preview.MembershipStart.ExistingMembersStartingAfterEntryCount.ShouldBe(0);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task EntryDate_Apply_PullsTheExistingMembershipForwardToTheEntryDate_InOneBatch_AndVerifies()
+    {
+        var handler = HandlerWithAnExistingMemberStartingLater();
+
+        var applied = await handler.Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        await _groupItemRepository.Received(1).PullForwardValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map[MemberItemId] == MemberEntry),
+            Arg.Any<CancellationToken>());
+        await _groupItemRepository.Received(1).GetValidFromByIdsAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EntryDate_Apply_APullForwardAloneStillRunsInsideATransaction()
+    {
+        var handler = HandlerWithAnExistingMemberStartingLater();
+        _clientRepository.GetByIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { new() { Id = MemberClientId, FirstName = "Eva", Name = "Meier", Type = EntityTypeEnum.Employee } });
+
+        var applied = await handler.Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        applied.AddedCount.ShouldBe(0);
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>());
+        await _unitOfWork.Received(1).CompleteAsync();
+    }
+
+    [Test]
+    public async Task Fixed_Apply_NeverTouchesTheExistingMembership()
+    {
+        var handler = HandlerWithAnExistingMemberStartingLater();
+
+        var applied = await handler.Handle(Command(apply: true), CancellationToken.None);
+
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(0);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task EntryDate_AnEndedMembership_IsNotPulledForward_ButCounted()
+    {
+        _groupItemRepository.GetByClientAndGroup(MemberClientId, GroupId).Returns(new GroupItem
+        {
+            Id = MemberItemId,
+            ClientId = MemberClientId,
+            GroupId = GroupId,
+            ValidFrom = CompanyToday,
+            ValidUntil = CompanyToday.AddYears(1)
+        });
         var handler = new AddSelectedClientsToGroupCommandHandler(
             _clientRepository, _groupItemRepository, _unitOfWork, TestGroupWriteVisibility.UnrestrictedGroups(),
             TestGroupWriteVisibility.AllClientsVisible(),
-            TestGroupMembershipStart.Planner(_companyClock, (MemberClientId, new DateOnly(2020, 1, 1))));
-        var command = Command(apply: false) with { StartMode = GroupMembershipStartMode.EntryDate };
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, Substitute.For<IGroupRepository>(),
+                (MemberClientId, new DateOnly(2020, 1, 1))));
 
-        var preview = await handler.Handle(command, CancellationToken.None);
-        var applied = await handler.Handle(command with { Apply = true }, CancellationToken.None);
+        var applied = await handler.Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
 
-        preview.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
-        applied.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
-        await _groupItemRepository.DidNotReceive().Put(Arg.Any<GroupItem>());
-        await _groupItemRepository.DidNotReceive().Add(Arg.Is<GroupItem>(gi => gi.ClientId == MemberClientId));
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(0);
+        applied.MembershipStart.ExistingMembersNotPulledForwardCount.ShouldBe(1);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task EntryDate_Apply_ReportsTheNumberTheRepositoryActuallyChanged()
+    {
+        var handler = HandlerWithAnExistingMemberStartingLater();
+        _groupItemRepository.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>())
+            .Returns(0);
+
+        var applied = await handler.Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(0);
     }
 }

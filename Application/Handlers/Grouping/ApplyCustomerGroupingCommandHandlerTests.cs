@@ -20,6 +20,7 @@ using Klacks.Api.Application.Interfaces.Grouping;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Domain.Enums;
+using Klacks.Api.Application.Interfaces;
 
 namespace Klacks.UnitTest.Application.Handlers.Grouping;
 
@@ -29,7 +30,7 @@ public class ApplyCustomerGroupingCommandHandlerTests
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid Canton = Guid.NewGuid();
     private static readonly Guid City = Guid.NewGuid();
-    private static readonly DateTime CompanyToday = new(2099, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime CompanyToday = new(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime RequestedValidFrom = new(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private ICustomerGroupingPlanner _planner = null!;
@@ -229,5 +230,32 @@ public class ApplyCustomerGroupingCommandHandlerTests
         result.MembershipStart!.PersonsEnteredBeforeStartCount.ShouldBe(1);
         result.MembershipStart.EarliestEntryDate.ShouldBe("2021-04-01");
         result.MembershipStart.StartDateGiven.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task Handle_InEntryDateMode_AnExistingTargetMembershipIsReportedButNeverPulledForward()
+    {
+        SetProposal(new CustomerGroupingAssignment(
+            ClientId, "Anna Meier", new[] { "ZH" }, City, "Zürich", 3.2, new[] { Canton }, new[] { "ZH" },
+            "nearest coordinates (main address)"));
+        _groupItemRepository.GetByClientAndGroup(ClientId, Canton).Returns((GroupItem?)null);
+        _groupItemRepository.GetByClientAndGroup(ClientId, City).Returns(new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = ClientId,
+            GroupId = City,
+            ValidFrom = CompanyToday
+        });
+        var handler = new ApplyCustomerGroupingCommandHandler(
+            _planner, _groupItemRepository, _unitOfWork,
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, Substitute.For<IGroupRepository>(),
+                (ClientId, new DateOnly(2021, 4, 1))));
+
+        var result = await handler.Handle(
+            new ApplyCustomerGroupingCommand(StartMode: GroupMembershipStartMode.EntryDate), CancellationToken.None);
+
+        result.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        result.MembershipStart.ExistingMembersPulledForwardCount.ShouldBe(0);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
     }
 }

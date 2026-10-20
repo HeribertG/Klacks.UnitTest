@@ -132,4 +132,76 @@ public class GroupMembershipStartHintTests
     {
         GroupMembershipStartHint.For(Entry() with { PersonCount = 0 }, applied: true).ShouldBeEmpty();
     }
+
+    [Test]
+    public void PulledForwardMemberships_AreAnnouncedInThePreview_AndReportedAsDoneOnApply()
+    {
+        var info = Entry() with
+        {
+            PersonCount = 0,
+            ExistingMembersPulledForwardCount = 4000,
+            PulledForwardEarliestEntryDate = "2019-03-01"
+        };
+
+        var preview = GroupMembershipStartHint.For(info, applied: false);
+        var applied = GroupMembershipStartHint.For(info, applied: true);
+
+        preview.ShouldContain("would pull forward 4000 existing membership(s)");
+        preview.ShouldContain("earliest entry 2019-03-01");
+        preview.ShouldNotContain("Tell the user this");
+        applied.ShouldContain("pulled forward 4000 existing membership(s)");
+        applied.ShouldContain("Tell the user this");
+        applied.ShouldNotContain("would pull");
+    }
+
+    [Test]
+    public void PulledForwardAndUnchangedMembers_AreBothReported()
+    {
+        var info = Entry() with
+        {
+            ExistingMembersPulledForwardCount = 3,
+            PulledForwardEarliestEntryDate = "2019-03-01",
+            ExistingMembersStartingAfterEntryCount = 2,
+            ExistingMembersEarliestEntryDate = "2023-05-01"
+        };
+
+        var text = GroupMembershipStartHint.For(info, applied: true);
+
+        text.ShouldContain("pulled forward 3 existing membership(s)");
+        text.ShouldContain("2 existing member(s)");
+        text.ShouldContain("does not change");
+    }
+
+    [Test]
+    public void NotPulledForward_IsReportedWithItsReason()
+    {
+        var info = Entry() with { PersonCount = 0, ExistingMembersNotPulledForwardCount = 7 };
+
+        var text = GroupMembershipStartHint.For(info, applied: false);
+
+        text.ShouldContain("7 existing membership(s)");
+        text.ShouldContain("ended");
+        text.ShouldContain("group change");
+        text.ShouldContain("not pulled forward");
+    }
+
+    [Test]
+    public void ImplausibleEntryDates_AreReportedSeparately()
+    {
+        var info = Entry() with { PersonsWithImplausibleEntryDateCount = 3 };
+
+        var text = GroupMembershipStartHint.For(info, applied: true);
+
+        text.ShouldContain("3 person(s)");
+        text.ShouldContain("implausible employment entry date");
+        text.ShouldContain("not used");
+    }
+
+    [Test]
+    public void OnlyImplausibleEntryDates_AreNotHiddenWhenNoPersonIsPlaced()
+    {
+        var info = Entry() with { PersonCount = 0, PersonsWithImplausibleEntryDateCount = 2 };
+
+        GroupMembershipStartHint.For(info, applied: false).ShouldContain("implausible employment entry date");
+    }
 }

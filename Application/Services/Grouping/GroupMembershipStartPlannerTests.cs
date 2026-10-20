@@ -12,6 +12,8 @@ using Klacks.Api.Application.Services.Grouping;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Interfaces.Grouping;
 
 namespace Klacks.UnitTest.Application.Services.Grouping;
 
@@ -231,5 +233,365 @@ public class GroupMembershipStartPlannerTests
 
         plan.GroupStart([Early]).ShouldBe(new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc));
         plan.GroupStart([Late]).ShouldBe(Today);
+    }
+
+    private static readonly Guid ItemOfEarly = Guid.NewGuid();
+    private static readonly Guid TargetGroup = Guid.NewGuid();
+    private static readonly DateTime LaterStart = new(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime EarlyEntry = new(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private IGroupItemRepository _items = null!;
+    private IGroupRepository _groups = null!;
+
+    private async Task<(IGroupMembershipStartPlanner Planner, GroupMembershipStartPlan Plan)> EntryPlanAsync(
+        params (Guid ClientId, DateOnly EntryDate)[] entries)
+    {
+        _items = Substitute.For<IGroupItemRepository>();
+        _groups = Substitute.For<IGroupRepository>();
+        var planner = TestGroupMembershipStart.Planner(_clock, _items, _groups, entries);
+        var plan = await planner.PlanAsync(
+            entries.Select(e => e.ClientId).ToList(), null, GroupMembershipStartMode.EntryDate, null, CancellationToken.None);
+        return (planner, plan);
+    }
+
+    private static ExistingMembershipStart Held(Guid clientId, DateTime? start, Guid? itemId = null, Guid? groupId = null) =>
+        new(clientId, start, itemId ?? ItemOfEarly, groupId ?? TargetGroup);
+
+    [Test]
+    public async Task Describe_CountsPullableExistingMembershipsSeparatelyFromUnchangeable()
+    {
+        var (_, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)), (Late, new DateOnly(2025, 5, 1)));
+
+        var info = plan.Describe(
+            [],
+            [
+                Held(Early, LaterStart),
+                new ExistingMembershipStart(Late, LaterStart)
+            ]);
+
+        info.ExistingMembersPulledForwardCount.ShouldBe(1);
+        info.PulledForwardEarliestEntryDate.ShouldBe("2024-02-01");
+        info.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        info.ExistingMembersEarliestEntryDate.ShouldBe("2025-05-01");
+    }
+
+    [Test]
+    public async Task Stage_PullsAnExistingMembershipForwardToTheEntryDate()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+
+        batch.Count.ShouldBe(1);
+        await _items.Received(1).PullForwardValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map[ItemOfEarly] == EarlyEntry),
+            Arg.Any<CancellationToken>());
+        await _groups.Received(1).LowerValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map[TargetGroup] == EarlyEntry),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Stage_NeverMovesAStartLater_NorOnTheEntryDay()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+
+        var earlier = await planner.StagePullForwardAsync(plan, [Held(Early, new DateTime(2023, 1, 1, 0, 0, 0, DateTimeKind.Utc))], CancellationToken.None);
+        var same = await planner.StagePullForwardAsync(plan, [Held(Early, EarlyEntry)], CancellationToken.None);
+        var open = await planner.StagePullForwardAsync(plan, [Held(Early, null)], CancellationToken.None);
+
+        earlier.Count.ShouldBe(0);
+        same.Count.ShouldBe(0);
+        open.Count.ShouldBe(0);
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        await _groups.DidNotReceiveWithAnyArgs().LowerValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Stage_LeavesOutAPersonWithoutAMembershipRecord()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(NoRecord, LaterStart)], CancellationToken.None);
+
+        batch.Count.ShouldBe(0);
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Stage_LeavesOutAPersonWhoLeftBeforeTheExistingStart()
+    {
+        var left = Guid.NewGuid();
+        _items = Substitute.For<IGroupItemRepository>();
+        _groups = Substitute.For<IGroupRepository>();
+        var windows = new Dictionary<Guid, Klacks.Api.Domain.Models.Associations.MembershipWindow>
+        {
+            [left] = new(new DateOnly(2020, 1, 1), new DateOnly(2021, 1, 1))
+        };
+        var reader = Substitute.For<Klacks.Api.Domain.Interfaces.Associations.IMembershipWindowReader>();
+        reader.GetWindowsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>()).Returns(windows);
+        _items.GetEndedMembershipsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<(Guid ClientId, Guid GroupId, DateTime ValidUntil)>());
+        var planner = new GroupMembershipStartPlanner(reader, _clock, _items, _groups, Substitute.For<Klacks.Api.Domain.Interfaces.IUnitOfWork>());
+        var plan = await planner.PlanAsync([left], null, GroupMembershipStartMode.EntryDate, null, CancellationToken.None);
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(left, LaterStart)], CancellationToken.None);
+
+        batch.Count.ShouldBe(0);
+        plan.Describe([], [Held(left, LaterStart)]).ExistingMembersPulledForwardCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Stage_InFixedMode_NeverTouchesExistingMemberships()
+    {
+        _items = Substitute.For<IGroupItemRepository>();
+        _groups = Substitute.For<IGroupRepository>();
+        var planner = TestGroupMembershipStart.Planner(_clock, _items, _groups, (Early, new DateOnly(2024, 2, 1)));
+        var plan = await planner.PlanAsync([Early], null, GroupMembershipStartMode.Fixed, null, CancellationToken.None);
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+
+        batch.Count.ShouldBe(0);
+        plan.Describe([], [Held(Early, LaterStart)]).ExistingMembersPulledForwardCount.ShouldBe(0);
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        await _groups.DidNotReceiveWithAnyArgs().LowerValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Stage_AGroupGetsItsMembersEarliestEntry_AndAnItemWithoutAnIdIsSkipped()
+    {
+        var otherGroup = Guid.NewGuid();
+        var (planner, plan) = await EntryPlanAsync(
+            (Early, new DateOnly(2024, 2, 1)), (Late, new DateOnly(2022, 3, 1)), (NoRecord, new DateOnly(2021, 1, 1)));
+        var secondItem = Guid.NewGuid();
+        var thirdItem = Guid.NewGuid();
+
+        var batch = await planner.StagePullForwardAsync(
+            plan,
+            [
+                Held(Early, LaterStart),
+                Held(Late, LaterStart, secondItem, TargetGroup),
+                Held(NoRecord, LaterStart, thirdItem, otherGroup),
+                new ExistingMembershipStart(Early, LaterStart)
+            ],
+            CancellationToken.None);
+
+        batch.Count.ShouldBe(3);
+        batch.GroupStarts[TargetGroup].ShouldBe(new DateTime(2022, 3, 1, 0, 0, 0, DateTimeKind.Utc));
+        batch.GroupStarts[otherGroup].ShouldBe(new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task Stage_FiveThousandPersons_AreWrittenInOneBatchedCallPerRepository()
+    {
+        var clients = Enumerable.Range(0, 5000).Select(_ => Guid.NewGuid()).ToList();
+        var (planner, plan) = await EntryPlanAsync(clients.Select(c => (c, new DateOnly(2024, 2, 1))).ToArray());
+
+        var batch = await planner.StagePullForwardAsync(
+            plan, clients.Select(c => Held(c, LaterStart, Guid.NewGuid(), TargetGroup)).ToList(), CancellationToken.None);
+
+        batch.Count.ShouldBe(5000);
+        await _items.Received(1).PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>());
+        await _groups.Received(1).LowerValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Verify_PassesWhenEveryItemStartsOnOrBeforeItsNewStart()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+        _items.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [ItemOfEarly] = EarlyEntry });
+
+        await planner.VerifyPullForwardAsync(batch, CancellationToken.None);
+    }
+
+    [Test]
+    public async Task Verify_ThrowsWhenAnItemWasNotMoved_SoTheTransactionRollsBack()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+        _items.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [ItemOfEarly] = LaterStart });
+
+        await Should.ThrowAsync<Klacks.Api.Domain.Exceptions.SkillVerificationException>(
+            () => planner.VerifyPullForwardAsync(batch, CancellationToken.None));
+    }
+
+    [Test]
+    public async Task Verify_OfAnEmptyBatch_ReadsNothing()
+    {
+        var (planner, _) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+
+        await planner.VerifyPullForwardAsync(PullForwardBatch.Empty, CancellationToken.None);
+
+        await _items.DidNotReceiveWithAnyArgs().GetValidFromByIdsAsync(default!, default);
+    }
+
+    private static DateTime Utc(int year, int month, int day) => new(year, month, day, 0, 0, 0, DateTimeKind.Utc);
+
+    private async Task<(IGroupMembershipStartPlanner Planner, GroupMembershipStartPlan Plan)> EntryPlanWithEndedAsync(
+        IEnumerable<(Guid ClientId, Guid GroupId, DateTime ValidUntil)> ended,
+        params (Guid ClientId, DateOnly EntryDate)[] entries)
+    {
+        _items = Substitute.For<IGroupItemRepository>();
+        _groups = Substitute.For<IGroupRepository>();
+        var planner = TestGroupMembershipStart.Planner(_clock, _items, _groups, entries);
+        _items.GetEndedMembershipsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>()).Returns(ended.ToList());
+        var plan = await planner.PlanAsync(
+            entries.Select(e => e.ClientId).ToList(), null, GroupMembershipStartMode.EntryDate, null, CancellationToken.None);
+        return (planner, plan);
+    }
+
+    [Test]
+    public async Task Stage_NeverPullsAnEndedMembershipForward_AndCountsIt()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+        var ended = new ExistingMembershipStart(Early, LaterStart, ItemOfEarly, TargetGroup, ValidUntil: Utc(2026, 12, 31));
+
+        var batch = await planner.StagePullForwardAsync(plan, [ended], CancellationToken.None);
+
+        batch.Count.ShouldBe(0);
+        plan.Describe([], [ended]).ExistingMembersNotPulledForwardCount.ShouldBe(1);
+        plan.Describe([], [ended]).ExistingMembersPulledForwardCount.ShouldBe(0);
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task Stage_AfterAGroupChange_NeverGoesBeforeTheDayAfterTheEarlierGroupEnded()
+    {
+        var otherGroup = Guid.NewGuid();
+        var (planner, plan) = await EntryPlanWithEndedAsync(
+            [(Early, otherGroup, Utc(2025, 6, 30))], (Early, new DateOnly(2024, 2, 1)));
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+
+        batch.ItemStarts[ItemOfEarly].ShouldBe(Utc(2025, 7, 1));
+        plan.Describe([], [Held(Early, LaterStart)]).PulledForwardEarliestEntryDate.ShouldBe("2025-07-01");
+    }
+
+    [Test]
+    public async Task Stage_AnEndedMembershipOfTheSameGroup_DoesNotHoldTheStartBack()
+    {
+        var (planner, plan) = await EntryPlanWithEndedAsync(
+            [(Early, TargetGroup, Utc(2025, 6, 30))], (Early, new DateOnly(2024, 2, 1)));
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+
+        batch.ItemStarts[ItemOfEarly].ShouldBe(Utc(2024, 2, 1));
+    }
+
+    [Test]
+    public async Task Stage_SkipsAndCounts_WhenTheGroupChangeLeavesNothingToPullForward()
+    {
+        var otherGroup = Guid.NewGuid();
+        var (planner, plan) = await EntryPlanWithEndedAsync(
+            [(Early, otherGroup, Utc(2026, 10, 19))], (Early, new DateOnly(2024, 2, 1)));
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+
+        batch.Count.ShouldBe(0);
+        plan.Describe([], [Held(Early, LaterStart)]).ExistingMembersNotPulledForwardCount.ShouldBe(1);
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task PlanAsync_ReadsTheEndedMembershipsOnce_AndOnlyInEntryDateMode()
+    {
+        var (_, _) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)), (Late, new DateOnly(2022, 3, 1)));
+        await _items.Received(1).GetEndedMembershipsAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2), Arg.Any<CancellationToken>());
+
+        var planner = TestGroupMembershipStart.Planner(_clock, _items, _groups, (Early, new DateOnly(2024, 2, 1)));
+        _items.ClearReceivedCalls();
+        await planner.PlanAsync([Early], null, GroupMembershipStartMode.Fixed, null, CancellationToken.None);
+
+        await _items.DidNotReceiveWithAnyArgs().GetEndedMembershipsAsync(default!, default);
+    }
+
+    [TestCase(1, 1, 1)]
+    [TestCase(1900, 1, 1)]
+    public async Task AnImplausibleEntryDate_IsNeverUsed_NotToPullForward_NorForANewMembership(int year, int month, int day)
+    {
+        var placeholder = new DateOnly(year, month, day);
+        var (planner, plan) = await EntryPlanAsync((Early, placeholder));
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+        var info = plan.Describe([Early], [Held(Early, LaterStart)]);
+
+        batch.Count.ShouldBe(0);
+        plan.StartFor(Early).ShouldBe(Today);
+        info.PersonsWithImplausibleEntryDateCount.ShouldBe(1);
+        info.PersonsEnteredBeforeStartCount.ShouldBe(0);
+        info.ExistingMembersPulledForwardCount.ShouldBe(0);
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+    }
+
+    [Test]
+    public async Task APlausibleEntryDate_IsNotCountedAsImplausible()
+    {
+        var (_, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+
+        plan.Describe([Early]).PersonsWithImplausibleEntryDateCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task Stage_ALoweredGroupStart_IsNeverAfterToday()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2030, 1, 1)));
+        var farFuture = Utc(2099, 1, 1);
+
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, farFuture)], CancellationToken.None);
+
+        batch.ItemStarts[ItemOfEarly].ShouldBe(Utc(2030, 1, 1));
+        batch.GroupStarts[TargetGroup].ShouldBe(Today);
+    }
+
+    [Test]
+    public async Task Stage_ReportsTheNumberOfItemsTheRepositoryActuallyChanged()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)), (Late, new DateOnly(2024, 2, 1)));
+        _items.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>()).Returns(1);
+
+        var batch = await planner.StagePullForwardAsync(
+            plan, [Held(Early, LaterStart), Held(Late, LaterStart, Guid.NewGuid(), TargetGroup)], CancellationToken.None);
+
+        batch.Count.ShouldBe(2);
+        batch.ChangedCount.ShouldBe(1);
+        batch.ReportOn(plan.Describe([], [])).ExistingMembersPulledForwardCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task Verify_OnAMismatch_DiscardsTheTrackedChanges_AndExplainsWhatWentWrong()
+    {
+        _items = Substitute.For<IGroupItemRepository>();
+        _groups = Substitute.For<IGroupRepository>();
+        var unitOfWork = Substitute.For<Klacks.Api.Domain.Interfaces.IUnitOfWork>();
+        var planner = TestGroupMembershipStart.Planner(_clock, _items, _groups, unitOfWork, (Early, new DateOnly(2024, 2, 1)));
+        var plan = await planner.PlanAsync([Early], null, GroupMembershipStartMode.EntryDate, null, CancellationToken.None);
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+        _items.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?>());
+
+        var ex = await Should.ThrowAsync<Klacks.Api.Domain.Exceptions.SkillVerificationException>(
+            () => planner.VerifyPullForwardAsync(batch, CancellationToken.None));
+
+        unitOfWork.Received(1).DiscardTrackedChanges();
+        ex.Message.ShouldContain("could not be found");
+        ex.Message.ShouldContain("nothing was saved");
+    }
+
+    [Test]
+    public async Task Verify_OfAnItemThatStillStartsLater_NamesThatReason()
+    {
+        var (planner, plan) = await EntryPlanAsync((Early, new DateOnly(2024, 2, 1)));
+        var batch = await planner.StagePullForwardAsync(plan, [Held(Early, LaterStart)], CancellationToken.None);
+        _items.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [ItemOfEarly] = LaterStart });
+
+        var ex = await Should.ThrowAsync<Klacks.Api.Domain.Exceptions.SkillVerificationException>(
+            () => planner.VerifyPullForwardAsync(batch, CancellationToken.None));
+
+        ex.Message.ShouldContain("still start later");
     }
 }

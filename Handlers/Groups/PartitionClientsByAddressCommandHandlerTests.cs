@@ -29,7 +29,7 @@ namespace Klacks.UnitTest.Handlers.Groups;
 [TestFixture]
 public class PartitionClientsByAddressCommandHandlerTests
 {
-    private static readonly DateTime CompanyToday = new(2099, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime CompanyToday = new(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc);
 
     private IClientRepository _clientRepository = null!;
     private IGroupRepository _groupRepository = null!;
@@ -545,7 +545,7 @@ public class PartitionClientsByAddressCommandHandlerTests
         var start = result.MembershipStart!;
         start.Mode.ShouldBe(GroupMembershipStartMode.Fixed);
         start.StartDateGiven.ShouldBeFalse();
-        start.StartDate.ShouldBe("2099-01-15");
+        start.StartDate.ShouldBe("2026-10-20");
         start.PersonCount.ShouldBe(1);
         start.PersonsEnteredBeforeStartCount.ShouldBe(1);
         start.EarliestEntryDate.ShouldBe("2024-02-01");
@@ -591,13 +591,13 @@ public class PartitionClientsByAddressCommandHandlerTests
             _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
             _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
             TestGroupWriteVisibility.UnrestrictedGroups(),
-            TestGroupMembershipStart.Planner(_companyClock, (client.Id, new DateOnly(2099, 6, 1))));
+            TestGroupMembershipStart.Planner(_companyClock, (client.Id, new DateOnly(2027, 6, 1))));
 
         await handler.Handle(Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
 
         await _groupRepository.Received(2).Add(Arg.Is<Group>(g => g.ValidFrom == CompanyToday));
         await _groupItemRepository.Received(1).Add(
-            Arg.Is<GroupItem>(gi => gi.ValidFrom == new DateTime(2099, 6, 1, 0, 0, 0, DateTimeKind.Utc)));
+            Arg.Is<GroupItem>(gi => gi.ValidFrom == new DateTime(2027, 6, 1, 0, 0, 0, DateTimeKind.Utc)));
     }
 
     private static Client Zurich()
@@ -694,5 +694,74 @@ public class PartitionClientsByAddressCommandHandlerTests
         added.Single(g => g.Name == "ZH").ValidFrom.ShouldBe(zurichStart);
         added.Single(g => g.Name == "Deutschschweiz Mitte").ValidFrom.ShouldBe(bernStart);
         added.Single(g => g.Name == "Deutschschweiz Zürich").ValidFrom.ShouldBe(zurichStart);
+    }
+
+    [Test]
+    public async Task EntryDate_PullsTheExistingMembershipOfAnExistingTargetGroupForward_ButNotOtherGroups()
+    {
+        var regionId = Guid.NewGuid();
+        var beId = Guid.NewGuid();
+        var otherGroupId = Guid.NewGuid();
+        var client = Bern();
+        var leafItemId = Guid.NewGuid();
+        var otherItemId = Guid.NewGuid();
+        client.GroupItems.Add(new GroupItem { Id = leafItemId, ClientId = client.Id, GroupId = beId, ValidFrom = CompanyToday });
+        client.GroupItems.Add(new GroupItem { Id = otherItemId, ClientId = client.Id, GroupId = otherGroupId, ValidFrom = CompanyToday });
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = regionId, Name = "Deutschschweiz Mitte", Parent = null },
+            new() { Id = beId, Name = "BE", Parent = regionId }
+        });
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        _groupItemRepository.GetByClientAndGroup(client.Id, beId)
+            .Returns(new GroupItem { Id = leafItemId, ClientId = client.Id, GroupId = beId, ValidFrom = CompanyToday });
+        var entry = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+        _groupItemRepository.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [leafItemId] = entry });
+        _groupItemRepository.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>())
+            .Returns(1);
+        var handler = new PartitionClientsByAddressCommandHandler(
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, _groupRepository, (client.Id, BernEntry)));
+        var command = Command(apply: false, includeAlreadyGrouped: true) with { StartMode = GroupMembershipStartMode.EntryDate };
+
+        var preview = await handler.Handle(command, CancellationToken.None);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        var applied = await handler.Handle(command with { Apply = true }, CancellationToken.None);
+
+        preview.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        await _groupItemRepository.Received(1).PullForwardValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map.ContainsKey(leafItemId) && map[leafItemId] == entry),
+            Arg.Any<CancellationToken>());
+        await _groupRepository.Received(1).LowerValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map[beId] == entry),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EntryDate_PersonsGroupedElsewhereAndSkipped_AreNeverPulledForward()
+    {
+        var client = Bern();
+        var otherItemId = Guid.NewGuid();
+        client.GroupItems.Add(new GroupItem { Id = otherItemId, ClientId = client.Id, GroupId = Guid.NewGuid(), ValidFrom = CompanyToday });
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { client });
+        var handler = new PartitionClientsByAddressCommandHandler(
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _regionProvider, _countryResolver, _stateRepository, _settingsReader, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, _groupRepository, (client.Id, BernEntry)));
+
+        var applied = await handler.Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(0);
+        applied.MembershipStart.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        await _groupRepository.DidNotReceiveWithAnyArgs().LowerValidFromAsync(default!, default);
     }
 }

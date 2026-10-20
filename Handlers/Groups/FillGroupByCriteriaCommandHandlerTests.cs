@@ -31,7 +31,7 @@ public class FillGroupByCriteriaCommandHandlerTests
     private static readonly Guid GroupId = Guid.NewGuid();
     private static readonly Guid NewClientId = Guid.NewGuid();
     private static readonly Guid MemberClientId = Guid.NewGuid();
-    private static readonly DateTime CompanyToday = new(2099, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime CompanyToday = new(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc);
 
     [SetUp]
     public void Setup()
@@ -201,7 +201,7 @@ public class FillGroupByCriteriaCommandHandlerTests
         var result = await HandlerWithEntryDates().Handle(Command(apply: false), CancellationToken.None);
 
         var start = result.MembershipStart!;
-        start.StartDate.ShouldBe("2099-01-15");
+        start.StartDate.ShouldBe("2026-10-20");
         start.PersonCount.ShouldBe(1);
         start.PersonsEnteredBeforeStartCount.ShouldBe(1);
         start.PersonsWithoutEntryDateCount.ShouldBe(0);
@@ -238,26 +238,56 @@ public class FillGroupByCriteriaCommandHandlerTests
         preview.MembershipStart.PersonCount.ShouldBe(applied.MembershipStart!.PersonCount);
     }
 
-    [Test]
-    public async Task EntryDate_ReportsExistingMembersWhoseStartIsLaterThanTheirEntry_WithoutChangingThem()
+    private static readonly Guid MemberItemId = Guid.NewGuid();
+    private static readonly DateTime MemberEntry = new(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private FillGroupByCriteriaCommandHandler HandlerWithAnExistingMemberStartingLater()
     {
         _groupItemRepository.GetByClientAndGroup(MemberClientId, GroupId).Returns(new GroupItem
         {
-            Id = Guid.NewGuid(),
+            Id = MemberItemId,
             ClientId = MemberClientId,
             GroupId = GroupId,
             ValidFrom = CompanyToday
         });
-        var handler = new FillGroupByCriteriaCommandHandler(
+        _groupItemRepository.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [MemberItemId] = MemberEntry });
+        _groupItemRepository.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>())
+            .Returns(1);
+        return new FillGroupByCriteriaCommandHandler(
             _searchRepository, _groupItemRepository, _unitOfWork, _companyClock, TestGroupWriteVisibility.UnrestrictedGroups(),
-            TestGroupMembershipStart.Planner(_companyClock, (MemberClientId, new DateOnly(2020, 1, 1))));
-        var command = Command(apply: false) with { StartMode = GroupMembershipStartMode.EntryDate };
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, Substitute.For<IGroupRepository>(),
+                (MemberClientId, new DateOnly(2020, 1, 1))));
+    }
 
-        var preview = await handler.Handle(command, CancellationToken.None);
-        var applied = await handler.Handle(command with { Apply = true }, CancellationToken.None);
+    [Test]
+    public async Task EntryDate_Preview_AnnouncesThePullForward_AndWritesNothing()
+    {
+        var preview = await HandlerWithAnExistingMemberStartingLater().Handle(
+            Command(apply: false) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
 
-        preview.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
-        applied.MembershipStart!.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
-        await _groupItemRepository.DidNotReceive().Put(Arg.Any<GroupItem>());
+        preview.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    [Test]
+    public async Task EntryDate_Apply_PullsTheExistingMembershipForward_AndReportsIt()
+    {
+        var applied = await HandlerWithAnExistingMemberStartingLater().Handle(
+            Command(apply: true) with { StartMode = GroupMembershipStartMode.EntryDate }, CancellationToken.None);
+
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        await _groupItemRepository.Received(1).PullForwardValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map[MemberItemId] == MemberEntry),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Fixed_Apply_NeverTouchesTheExistingMembership()
+    {
+        await HandlerWithAnExistingMemberStartingLater().Handle(Command(apply: true), CancellationToken.None);
+
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
     }
 }

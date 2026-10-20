@@ -200,7 +200,7 @@ public class GroupingPlanApplierTests
         var clock = Substitute.For<ICompanyClock>();
         clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(ValidFrom);
         var sut = new GroupingPlanApplier(
-            _groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(clock, (ClientId, new DateOnly(2020, 1, 1))));
+            _groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(clock, _items, _groups, (ClientId, new DateOnly(2020, 1, 1))));
         _items.GetByClientAndGroup(ClientId, GroupId).Returns(new GroupItem
         {
             Id = Guid.NewGuid(),
@@ -215,8 +215,9 @@ public class GroupingPlanApplierTests
         var info = await sut.PreviewStartAsync(command, CancellationToken.None);
 
         info.PersonCount.ShouldBe(0);
-        info.ExistingMembersStartingAfterEntryCount.ShouldBe(1);
+        info.ExistingMembersPulledForwardCount.ShouldBe(1);
         await _items.DidNotReceive().Add(Arg.Any<GroupItem>());
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
     }
 
     [Test]
@@ -242,5 +243,39 @@ public class GroupingPlanApplierTests
         var applied = await _sut.ApplyAsync(command, CancellationToken.None);
 
         applied.MembershipStart!.StartDateGiven.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task EntryDate_Apply_PullsAnExistingClientMembershipForward_ButNeverAShift()
+    {
+        var clock = Substitute.For<ICompanyClock>();
+        clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(ValidFrom);
+        var sut = new GroupingPlanApplier(
+            _groups, _items, _unitOfWork, TestGroupMembershipStart.Planner(clock, _items, _groups, (ClientId, new DateOnly(2020, 1, 1))));
+        var itemId = Guid.NewGuid();
+        _items.GetByClientAndGroup(ClientId, GroupId).Returns(new GroupItem
+        {
+            Id = itemId,
+            ClientId = ClientId,
+            GroupId = GroupId,
+            ValidFrom = ValidFrom
+        });
+        _items.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [itemId] = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc) });
+        _items.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>()).Returns(1);
+        var command = Command(
+            new GroupingProposal(GroupingProposalKind.AddClient, GroupId, null, ClientId, null, GroupingFindingCode.ClientWithoutGroup),
+            new GroupingProposal(GroupingProposalKind.AddShift, GroupId, null, null, ShiftId, GroupingFindingCode.ShiftWithoutGroup))
+            with { StartMode = GroupMembershipStartMode.EntryDate };
+
+        var preview = await sut.PreviewStartAsync(command, CancellationToken.None);
+        await _items.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        var applied = await sut.ApplyAsync(command, CancellationToken.None);
+
+        preview.ExistingMembersPulledForwardCount.ShouldBe(1);
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        await _items.Received(1).PullForwardValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map.ContainsKey(itemId)),
+            Arg.Any<CancellationToken>());
     }
 }

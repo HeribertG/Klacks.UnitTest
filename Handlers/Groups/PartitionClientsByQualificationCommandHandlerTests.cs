@@ -396,4 +396,46 @@ public class PartitionClientsByQualificationCommandHandlerTests
         added.Single(g => g.Name == "Erste Hilfe").ValidFrom.ShouldBe(new DateTime(2025, 3, 1, 0, 0, 0, DateTimeKind.Utc));
         added.Single(g => g.Name == "Qualifikationen").ValidFrom.ShouldBe(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
     }
+
+    [Test]
+    public async Task EntryDate_PullsAnExistingHoldersMembershipForward_AndLowersTheGroupStart()
+    {
+        var root = new Group { Id = Guid.NewGuid(), Name = "Qualifikationen" };
+        var forkliftGroup = new Group { Id = Guid.NewGuid(), Name = "Staplerfahrer", Parent = root.Id };
+        _groups = [root, forkliftGroup];
+        var member = Holder(_forklift);
+        var itemId = Guid.NewGuid();
+        member.GroupItems.Add(new GroupItem
+        {
+            Id = itemId,
+            ClientId = member.Id,
+            GroupId = forkliftGroup.Id,
+            ValidFrom = CompanyToday
+        });
+        _employees = [member, Holder(_forklift)];
+        var entry = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        _groupItemRepository.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, DateTime?> { [itemId] = entry });
+        _groupItemRepository.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>())
+            .Returns(1);
+        var handler = new PartitionClientsByQualificationCommandHandler(
+            _clientRepository, _qualificationRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            _companyClock, _languageResolver, _groupVisibilityRepository, _visibilityPreservation,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, _groupRepository, (member.Id, new DateOnly(2020, 1, 1))));
+        var command = Command(apply: false) with { StartMode = GroupMembershipStartMode.EntryDate };
+
+        var preview = await handler.Handle(command, CancellationToken.None);
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+        var applied = await handler.Handle(command with { Apply = true }, CancellationToken.None);
+
+        preview.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        applied.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        await _groupItemRepository.Received(1).PullForwardValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map[itemId] == entry),
+            Arg.Any<CancellationToken>());
+        await _groupRepository.Received(1).LowerValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map[forkliftGroup.Id] == entry),
+            Arg.Any<CancellationToken>());
+    }
 }

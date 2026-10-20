@@ -142,4 +142,111 @@ public class GroupItemRepositoryTests
         _context.GroupItem.Add(item);
         return item;
     }
+
+    private GroupItem AddItem(DateTime? validFrom, bool deleted = false)
+    {
+        var item = new GroupItem
+        {
+            Id = Guid.NewGuid(),
+            ClientId = Guid.NewGuid(),
+            GroupId = GroupId,
+            ValidFrom = validFrom,
+            IsDeleted = deleted
+        };
+        _context.GroupItem.Add(item);
+        return item;
+    }
+
+    [Test]
+    public async Task PullForwardValidFromAsync_MovesALaterStartForward_NeverLaterAndNeverAnOpenOrDeletedOne()
+    {
+        var later = AddItem(new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc));
+        var earlier = AddItem(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var open = AddItem(null);
+        var deleted = AddItem(new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc), deleted: true);
+        await _context.SaveChangesAsync();
+        var target = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var changed = await _repository.PullForwardValidFromAsync(
+            new Dictionary<Guid, DateTime> { [later.Id] = target, [earlier.Id] = target, [open.Id] = target, [deleted.Id] = target });
+        await _context.SaveChangesAsync();
+
+        changed.ShouldBe(1);
+        var stored = await _repository.GetValidFromByIdsAsync([later.Id, earlier.Id, open.Id, deleted.Id]);
+        stored[later.Id].ShouldBe(target);
+        stored[earlier.Id].ShouldBe(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        stored[open.Id].ShouldBeNull();
+        stored.ContainsKey(deleted.Id).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task PullForwardValidFromAsync_FiveThousandItems_AreWrittenCorrectly()
+    {
+        var items = Enumerable.Range(0, 5000).Select(_ => AddItem(new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc))).ToList();
+        await _context.SaveChangesAsync();
+        var target = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var changed = await _repository.PullForwardValidFromAsync(items.ToDictionary(i => i.Id, _ => target));
+        await _context.SaveChangesAsync();
+
+        changed.ShouldBe(5000);
+        var stored = await _repository.GetValidFromByIdsAsync(items.Select(i => i.Id).ToList());
+        stored.Count.ShouldBe(5000);
+        stored.Values.ShouldAllBe(value => value == target);
+    }
+
+    [Test]
+    public async Task PullForwardValidFromAsync_IsRetrySafe_TheSecondCallBeforeASaveStillCountsTheItem()
+    {
+        var later = AddItem(new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc));
+        await _context.SaveChangesAsync();
+        var target = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+        var map = new Dictionary<Guid, DateTime> { [later.Id] = target };
+
+        var first = await _repository.PullForwardValidFromAsync(map);
+        var second = await _repository.PullForwardValidFromAsync(map);
+        await _context.SaveChangesAsync();
+        var third = await _repository.PullForwardValidFromAsync(map);
+
+        first.ShouldBe(1);
+        second.ShouldBe(1);
+        third.ShouldBe(0);
+        (await _repository.GetValidFromByIdsAsync([later.Id]))[later.Id].ShouldBe(target);
+    }
+
+    [Test]
+    public async Task GetEndedMembershipsAsync_ReturnsOnlyRealEndedClientMemberships()
+    {
+        var clientId = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        var ended = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = GroupId, ValidUntil = new DateTime(2025, 6, 30, 0, 0, 0, DateTimeKind.Utc) };
+        var open = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = other };
+        var scenario = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = other, ValidUntil = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc), AnalyseToken = Guid.NewGuid() };
+        var shift = new GroupItem { Id = Guid.NewGuid(), ShiftId = Guid.NewGuid(), GroupId = other, ValidUntil = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var deleted = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = other, ValidUntil = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc), IsDeleted = true };
+        _context.GroupItem.AddRange(ended, open, scenario, shift, deleted);
+        await _context.SaveChangesAsync();
+
+        var result = await _repository.GetEndedMembershipsAsync([clientId]);
+
+        result.Count.ShouldBe(1);
+        result[0].ClientId.ShouldBe(clientId);
+        result[0].GroupId.ShouldBe(GroupId);
+        result[0].ValidUntil.ShouldBe(new DateTime(2025, 6, 30, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task GetByClientAndGroup_WithSeveralRows_PrefersTheActiveOne_ThenTheLatestStart()
+    {
+        var clientId = Guid.NewGuid();
+        var endedLate = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = GroupId, ValidFrom = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), ValidUntil = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var activeOld = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = GroupId, ValidFrom = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var activeNew = new GroupItem { Id = Guid.NewGuid(), ClientId = clientId, GroupId = GroupId, ValidFrom = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
+        _context.GroupItem.AddRange(endedLate, activeOld, activeNew);
+        await _context.SaveChangesAsync();
+
+        var result = await _repository.GetByClientAndGroup(clientId, GroupId);
+
+        result!.Id.ShouldBe(activeNew.Id);
+    }
 }
