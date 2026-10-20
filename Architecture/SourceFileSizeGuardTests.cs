@@ -54,13 +54,12 @@ public class SourceFileSizeGuardTests
     // Relative path -> its measured line count on the day it was allowlisted. See ShrinkOnlyHint.
     private static readonly IReadOnlyDictionary<string, int> FileCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 859,
-        [@"Domain\Services\Assistant\LLMService.cs"] = 1104,
+        [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 807,
+        [@"Domain\Services\Assistant\LLMService.cs"] = 1088,
         [@"Domain\Services\RouteOptimization\ContainerAutofillService.cs"] = 841,
-        [@"Infrastructure\Services\AnalyseScenarios\AnalyseScenarioService.cs"] = 978,
-        [@"Infrastructure\Services\Plugins\FeaturePluginService.cs"] = 805,
-        [@"Infrastructure\Services\Settings\RegionSetupService.cs"] = 3595,
-        [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs"] = 965,
+        [@"Infrastructure\Services\AnalyseScenarios\AnalyseScenarioService.cs"] = 930,
+        [@"Infrastructure\Services\Settings\RegionSetupService.cs"] = 3561,
+        [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs"] = 946,
         [@"Application\Services\Assistant\Planning\PlanStepExecutor.cs"] = 819,
     };
 
@@ -76,27 +75,23 @@ public class SourceFileSizeGuardTests
     // above the default limit - so that correction only lands together with splitting the loop.
     private static readonly IReadOnlyDictionary<string, int> MethodCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Application\Skills\BundleNearbyTimeRangeShiftsIntoContainerSkill.cs::ExecuteAsync"] = 279,
+        [@"Application\Skills\BundleNearbyTimeRangeShiftsIntoContainerSkill.cs::ExecuteAsync"] = 273,
         [@"Application\Skills\CreateContainerTemplateSkill.cs::ExecuteAsync"] = 181,
-        [@"Application\Skills\CreateEmployeeSkill.cs::ExecuteAsync"] = 272,
-        [@"Application\Skills\CreateShiftSkill.cs::ExecuteAsync"] = 243,
+        [@"Application\Skills\CreateEmployeeSkill.cs::ExecuteAsync"] = 271,
+        [@"Application\Skills\CreateShiftSkill.cs::ExecuteAsync"] = 221,
         [@"Application\Skills\CutShiftSkill.cs::ExecuteAsync"] = 153,
-        [@"Application\Skills\FillGroupByCriteriaSkill.cs::ExecuteAsync"] = 164,
-        [@"Application\Skills\ScheduleRecurringTaskSkill.cs::ExecuteAsync"] = 186,
         [@"Application\Skills\UpdateCalendarSelectionSkill.cs::ExecuteAsync"] = 192,
         [@"Application\Skills\UpdateClientSkill.cs::ExecuteAsync"] = 178,
-        [@"Application\Skills\UpdateContractSkill.cs::ExecuteAsync"] = 179,
+        [@"Application\Skills\UpdateContractSkill.cs::ExecuteAsync"] = 153,
         [@"Infrastructure\Email\EmailTestService.cs::TestConnectionAsync"] = 219,
-        [@"Infrastructure\Exceptions\ErrorHandlingMiddleware.cs::Invoke"] = 286,
+        [@"Infrastructure\Exceptions\ErrorHandlingMiddleware.cs::Invoke"] = 277,
         [@"Domain\Services\Assistant\LLMService.cs::ProcessStreamAsync"] = 247,
-        [@"Domain\Services\Assistant\LLMService.cs::HistoryBudgetFor"] = 235,
+        [@"Domain\Services\Assistant\LLMService.cs::HistoryBudgetFor"] = 234,
         [@"Infrastructure\Services\Assistant\LLMModelSyncService.cs::SyncProviderAsync"] = 174,
         [@"Infrastructure\Services\Schedules\HarmonizerJobRunner.cs::RunJobAsync"] = 181,
         [@"Infrastructure\Services\Schedules\WizardJobRunner.cs::RunJobAsync"] = 192,
-        [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs::RunKindAsync"] = 152,
-        [@"Application\Services\Schedules\HolisticHarmonizer\HolisticHarmonizerEngine.cs::RunAsync"] = 294,
+        [@"Application\Services\Schedules\HolisticHarmonizer\HolisticHarmonizerEngine.cs::RunAsync"] = 268,
         [@"Domain\Services\Assistant\Skills\SkillExecutorService.cs::ExecuteAsync"] = 178,
-        [@"Application\Services\Assistant\Evaluation\TurnEval\TurnReplayService.cs::ReplayAsync"] = 170,
     };
 
     private static readonly Regex MemberSignature = new(
