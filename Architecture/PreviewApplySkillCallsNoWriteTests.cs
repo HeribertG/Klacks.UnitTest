@@ -248,7 +248,7 @@ public class PreviewApplySkillCallsNoWriteTests
             .Returns(new List<Client> { EmployeeLivingInCity() });
         var regionProvider = Substitute.For<ICountryRegionProvider>();
         regionProvider.GetRegionByStateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+            .Returns(new Dictionary<string, Klacks.Api.Domain.Models.Geo.CountryRegion>(StringComparer.OrdinalIgnoreCase));
         var countryResolver = Substitute.For<ICountryResolver>();
         var stateRepository = Substitute.For<IStateRepository>();
         stateRepository.List().Returns(new List<State>());

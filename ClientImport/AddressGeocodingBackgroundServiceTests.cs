@@ -172,7 +172,7 @@ public class AddressGeocodingBackgroundServiceTests
 
         var unitOfWork = Substitute.For<IUnitOfWork>();
         var states = Substitute.For<IStateRepository>();
-        states.List().Returns([new State { Abbreviation = "ZH", Name = new MultiLanguage { De = "Zürich" } }]);
+        states.List().Returns([new State { Abbreviation = "ZH", CountryPrefix = "CH", Name = new MultiLanguage { De = "Zürich" } }]);
         var stateResolver = new StateAbbreviationResolver(states);
 
         var processor = new AddressGeocodingProcessor(repository, geocoding, countries, stateResolver, unitOfWork,

@@ -61,9 +61,9 @@ public class ShiftSeedStatementSnapshotTests
     {
         var (script, containerIds) = ShiftSeed.GenerateContainers();
 
-        Count(script, ShiftInsert).ShouldBe(240);
+        Count(script, ShiftInsert).ShouldBe(300);
         Count(script, ShiftUpdate).ShouldBe(0);
-        containerIds.Count.ShouldBe(240);
+        containerIds.Count.ShouldBe(300);
     }
 
     [Test]
@@ -71,12 +71,12 @@ public class ShiftSeedStatementSnapshotTests
     {
         var (script, shiftIds) = ShiftSeed.GenerateTimeRangeShiftsWithClients();
 
-        Count(script, ShiftInsert).ShouldBe(800);
-        Count(script, ShiftUpdate).ShouldBe(400);
-        Matches(script, OrderRowPattern).ShouldBe(400);
-        Matches(script, OriginalShiftRowPattern).ShouldBe(400);
-        Matches(script, @"false, false, true, 1, '00:00:00', '00:00:00',").ShouldBe(800);
-        shiftIds.Count.ShouldBe(800);
+        Count(script, ShiftInsert).ShouldBe(1000);
+        Count(script, ShiftUpdate).ShouldBe(500);
+        Matches(script, OrderRowPattern).ShouldBe(500);
+        Matches(script, OriginalShiftRowPattern).ShouldBe(500);
+        Matches(script, @"false, false, true, 1, '00:00:00', '00:00:00',").ShouldBe(1000);
+        shiftIds.Count.ShouldBe(1000);
     }
 
     [Test]

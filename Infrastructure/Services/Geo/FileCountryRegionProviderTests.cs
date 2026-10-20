@@ -7,6 +7,9 @@ namespace Klacks.UnitTest.Infrastructure.Services.Geo;
 [TestFixture]
 public class FileCountryRegionProviderTests
 {
+    private const string WestNames = """{ "de": "Westschweiz", "en": "Western Switzerland", "fr": "Suisse romande", "it": "Svizzera romanda" }""";
+    private const string EastNames = """{ "de": "Ost", "en": "East", "fr": "Est", "it": "Est" }""";
+
     private string _root = null!;
 
     [SetUp]
@@ -26,18 +29,29 @@ public class FileCountryRegionProviderTests
     }
 
     [Test]
-    public async Task GetRegionByStateAsync_FileExists_MapsEveryStateCodeToItsRegion()
+    public async Task GetRegionByStateAsync_FileExists_MapsEveryStateCodeToItsRegionWithKeyAndNames()
     {
-        File.WriteAllText(Path.Combine(_root, "CH.json"),
-            """{ "regions": [ { "name": "Westschweiz", "states": ["GE", "vd"] }, { "name": "Ost", "states": ["SG"] } ] }""");
+        Write("CH", $$"""{ "regions": [ { "key": "west", "names": {{WestNames}}, "states": ["GE", "vd"] }, { "key": "ost", "names": {{EastNames}}, "states": ["SG"] } ] }""");
         var provider = new FileCountryRegionProvider(_root);
 
         var map = await provider.GetRegionByStateAsync("ch");
 
         map.Count.ShouldBe(3);
-        map["GE"].ShouldBe("Westschweiz");
-        map["VD"].ShouldBe("Westschweiz");
-        map["sg"].ShouldBe("Ost");
+        map["GE"].Key.ShouldBe("west");
+        map["VD"].Names.GetValue("fr").ShouldBe("Suisse romande");
+        map["sg"].Key.ShouldBe("ost");
+        map["sg"].Names.GetValue("de").ShouldBe("Ost");
+    }
+
+    [Test]
+    public async Task GetRegionByStateAsync_AlphaThreeCountryCode_ReadsTheAlphaTwoFile()
+    {
+        Write("US", $$"""{ "regions": [ { "key": "south", "names": {{EastNames}}, "states": ["DC"] } ] }""");
+        var provider = new FileCountryRegionProvider(_root);
+
+        var map = await provider.GetRegionByStateAsync("USA");
+
+        map["DC"].Key.ShouldBe("south");
     }
 
     [Test]
@@ -63,47 +77,93 @@ public class FileCountryRegionProviderTests
     [Test]
     public async Task GetRegionByStateAsync_MalformedFile_ThrowsNamingTheFile()
     {
-        File.WriteAllText(Path.Combine(_root, "AT.json"), "{ not json");
-        var provider = new FileCountryRegionProvider(_root);
+        Write("AT", "{ not json");
 
-        var ex = await Should.ThrowAsync<InvalidDataException>(() => provider.GetRegionByStateAsync("AT"));
-
-        ex.Message.ShouldContain("AT.json");
+        await ShouldFailNamingTheFile("AT");
     }
 
     [Test]
     public async Task GetRegionByStateAsync_NullDocument_ThrowsNamingTheFile()
     {
-        File.WriteAllText(Path.Combine(_root, "AT.json"), "null");
-        var provider = new FileCountryRegionProvider(_root);
+        Write("AT", "null");
 
-        var ex = await Should.ThrowAsync<InvalidDataException>(() => provider.GetRegionByStateAsync("AT"));
-
-        ex.Message.ShouldContain("AT.json");
+        await ShouldFailNamingTheFile("AT");
     }
 
     [Test]
-    public async Task GetRegionByStateAsync_RegionWithoutName_ThrowsNamingTheFile()
+    public async Task GetRegionByStateAsync_RegionWithoutKey_ThrowsNamingTheFile()
     {
-        File.WriteAllText(Path.Combine(_root, "AT.json"), """{ "regions": [ { "states": ["GE"] } ] }""");
-        var provider = new FileCountryRegionProvider(_root);
+        Write("AT", $$"""{ "regions": [ { "names": {{WestNames}}, "states": ["GE"] } ] }""");
 
-        var ex = await Should.ThrowAsync<InvalidDataException>(() => provider.GetRegionByStateAsync("AT"));
+        await ShouldFailNamingTheFile("AT", "without a key");
+    }
 
-        ex.Message.ShouldContain("AT.json");
+    [Test]
+    public async Task GetRegionByStateAsync_OldNameOnlyFormat_IsRejected()
+    {
+        Write("AT", """{ "regions": [ { "name": "Westschweiz", "states": ["GE"] } ] }""");
+
+        await ShouldFailNamingTheFile("AT", "without a key");
+    }
+
+    [Test]
+    public async Task GetRegionByStateAsync_MissingCoreLanguage_ThrowsNamingTheFileAndLanguage()
+    {
+        Write("AT", """{ "regions": [ { "key": "west", "names": { "de": "Westschweiz", "en": "West", "fr": "Ouest" }, "states": ["GE"] } ] }""");
+
+        await ShouldFailNamingTheFile("AT", "'it'");
+    }
+
+    [Test]
+    public async Task GetRegionByStateAsync_DuplicateKey_ThrowsNamingTheFile()
+    {
+        Write("AT", $$"""{ "regions": [ { "key": "west", "names": {{WestNames}}, "states": ["GE"] }, { "key": "WEST", "names": {{EastNames}}, "states": ["SG"] } ] }""");
+
+        await ShouldFailNamingTheFile("AT", "more than once");
+    }
+
+    [Test]
+    public async Task GetRegionByStateAsync_StateInTwoRegions_ThrowsNamingTheFile()
+    {
+        Write("AT", $$"""{ "regions": [ { "key": "west", "names": {{WestNames}}, "states": ["GE"] }, { "key": "ost", "names": {{EastNames}}, "states": ["ge"] } ] }""");
+
+        await ShouldFailNamingTheFile("AT", "state 'GE'");
+    }
+
+    [Test]
+    public async Task GetRegionByStateAsync_RegionWithoutStates_ThrowsNamingTheFile()
+    {
+        Write("AT", $$"""{ "regions": [ { "key": "west", "names": {{WestNames}}, "states": [] } ] }""");
+
+        await ShouldFailNamingTheFile("AT", "lists no states");
     }
 
     [Test]
     public async Task GetRegionByStateAsync_SecondCall_ServesFromCache()
     {
-        var path = Path.Combine(_root, "CH.json");
-        File.WriteAllText(path, """{ "regions": [ { "name": "Westschweiz", "states": ["GE"] } ] }""");
+        Write("CH", $$"""{ "regions": [ { "key": "west", "names": {{WestNames}}, "states": ["GE"] } ] }""");
         var provider = new FileCountryRegionProvider(_root);
         await provider.GetRegionByStateAsync("CH");
 
-        File.Delete(path);
+        File.Delete(Path.Combine(_root, "CH.json"));
         var map = await provider.GetRegionByStateAsync("CH");
 
-        map["GE"].ShouldBe("Westschweiz");
+        map["GE"].Key.ShouldBe("west");
+    }
+
+    private void Write(string country, string content) =>
+        File.WriteAllText(Path.Combine(_root, country + ".json"), content);
+
+    private async Task ShouldFailNamingTheFile(string country, string? detail = null)
+    {
+        var provider = new FileCountryRegionProvider(_root);
+
+        var ex = await Should.ThrowAsync<InvalidDataException>(() => provider.GetRegionByStateAsync(country));
+
+        ex.Message.ShouldContain(country + ".json");
+        if (detail != null)
+        {
+            ex.Message.ShouldContain(detail);
+        }
     }
 }

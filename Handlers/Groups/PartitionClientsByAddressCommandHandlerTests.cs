@@ -19,6 +19,7 @@ using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Geo;
 using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Geo;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Domain.Enums;
@@ -54,7 +55,7 @@ public class PartitionClientsByAddressCommandHandlerTests
 
         _regionProvider = Substitute.For<ICountryRegionProvider>();
         _regionProvider.GetRegionByStateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["BE"] = "Deutschschweiz Mitte", ["ZH"] = "Deutschschweiz Zürich" });
+            .Returns(RegionMap(("BE", GermanOnlyRegion("mitte", "Deutschschweiz Mitte")), ("ZH", GermanOnlyRegion("zurich", "Deutschschweiz Zürich"))));
         _countryResolver = Substitute.For<ICountryResolver>();
         _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>())
             .Returns(new Countries { Id = Guid.NewGuid(), Abbreviation = "CH" });
@@ -79,6 +80,35 @@ public class PartitionClientsByAddressCommandHandlerTests
         _groupItemRepository.GetByClientAndGroup(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns((GroupItem?)null);
         _groupItemRepository.CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ci.Arg<IReadOnlyCollection<Guid>>().Count);
+    }
+
+    private static CountryRegion GermanOnlyRegion(string key, string german)
+    {
+        var names = new MultiLanguage();
+        names.SetValue("de", german);
+        return new CountryRegion(key, names);
+    }
+
+    private static CountryRegion WestRegion()
+    {
+        var names = new MultiLanguage();
+        names.SetValue("de", "Westschweiz");
+        names.SetValue("en", "Western Switzerland");
+        names.SetValue("fr", "Suisse romande");
+        names.SetValue("it", "Svizzera romanda");
+        return new CountryRegion("west", names);
+    }
+
+    private static IReadOnlyDictionary<string, CountryRegion> RegionMap(params (string State, CountryRegion Region)[] entries) =>
+        entries.ToDictionary(e => e.State, e => e.Region, StringComparer.OrdinalIgnoreCase);
+
+    private static Client Geneva()
+    {
+        var client = Bern();
+        var address = client.Addresses.First();
+        address.State = "GE";
+        address.City = "Genève";
+        return client;
     }
 
     private static MultiLanguage StateName(string german)
@@ -371,6 +401,129 @@ public class PartitionClientsByAddressCommandHandlerTests
         await _handler.Handle(Command(apply: true), CancellationToken.None);
 
         added.Single(g => g.Name == "BE").Description.ShouldBe("Bern");
+    }
+
+    [Test]
+    public async Task Handle_RegionName_FollowsTheInstallationLanguage()
+    {
+        _regionProvider.GetRegionByStateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(RegionMap(("GE", WestRegion())));
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>()).Returns([Geneva()]);
+        _settingsReader.GetSetting(SettingKeys.DefaultLanguage).Returns(new Settings { Value = "fr" });
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.Groups.Single(g => g.ParentName == null).Name.ShouldBe("Suisse romande");
+    }
+
+    [Test]
+    public async Task Handle_RegionName_FallsBackToEnglish_WhenTheInstallationLanguageHasNoName()
+    {
+        _regionProvider.GetRegionByStateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(RegionMap(("GE", WestRegion())));
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>()).Returns([Geneva()]);
+        _settingsReader.GetSetting(SettingKeys.DefaultLanguage).Returns(new Settings { Value = "ja" });
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.Groups.Single(g => g.ParentName == null).Name.ShouldBe("Western Switzerland");
+    }
+
+    [Test]
+    public async Task Handle_RegionRoot_InAnotherLanguage_IsReused_NoSecondRoot()
+    {
+        var rootId = Guid.NewGuid();
+        var geId = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = rootId, Name = "Westschweiz" },
+            new() { Id = geId, Name = "GE", Parent = rootId }
+        });
+        _regionProvider.GetRegionByStateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(RegionMap(("GE", WestRegion())));
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>()).Returns([Geneva()]);
+        _settingsReader.GetSetting(SettingKeys.DefaultLanguage).Returns(new Settings { Value = "fr" });
+
+        var result = await _handler.Handle(Command(apply: true), CancellationToken.None);
+
+        result.Groups.ShouldAllBe(g => g.Existed);
+        result.Groups.Single(g => g.Name == "GE").GroupId.ShouldBe(geId);
+        await _groupRepository.DidNotReceive().Add(Arg.Any<Group>());
+    }
+
+    [Test]
+    public async Task Handle_AlphaThreeAddressCountry_UsesTheAlphaTwoRegionFileAndStateNames()
+    {
+        var newYork = Bern();
+        var address = newYork.Addresses.First();
+        address.Country = "USA";
+        address.State = "NY";
+        address.City = "New York";
+        _stateRepository.List().Returns(new List<State>
+        {
+            new() { Id = Guid.NewGuid(), Abbreviation = "NY", CountryPrefix = "USA", Name = StateName("New York") }
+        });
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>()).Returns([newYork]);
+        var added = new List<Group>();
+        await _groupRepository.Add(Arg.Do<Group>(added.Add));
+
+        await _handler.Handle(Command(apply: true), CancellationToken.None);
+
+        await _regionProvider.Received(1).GetRegionByStateAsync("US", Arg.Any<CancellationToken>());
+        added.Single(g => g.Name == "NY").Description.ShouldBe("New York");
+    }
+
+    [Test]
+    public async Task Handle_ClusterRerun_ReusesTheExistingCluster_LeavesItsCoordinates_AndCountsOnlyNewClients()
+    {
+        var regionId = Guid.NewGuid();
+        var stateId = Guid.NewGuid();
+        var clusterId = Guid.NewGuid();
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = regionId, Name = "Deutschschweiz Mitte" },
+            new() { Id = stateId, Name = "BE", Parent = regionId },
+            new() { Id = clusterId, Name = "Bern", Parent = stateId, Latitude = 46.9, Longitude = 7.4 }
+        });
+        var grouped = Enumerable.Range(0, 3).Select(_ => Bern()).ToList();
+        foreach (var client in grouped)
+        {
+            client.Addresses.First().Latitude = 46.95;
+            client.Addresses.First().Longitude = 7.45;
+            client.GroupItems.Add(new GroupItem { Id = Guid.NewGuid(), ClientId = client.Id, GroupId = clusterId, ValidFrom = CompanyToday });
+        }
+
+        var newcomer = Bern();
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns(grouped.Append(newcomer).ToList());
+
+        var result = await _handler.Handle(Command(apply: true, level: GroupPartitionLevelEnum.Cluster), CancellationToken.None);
+
+        await _groupRepository.DidNotReceive().Add(Arg.Any<Group>());
+        var cluster = result.Groups.Single(g => g.Name == "Bern");
+        cluster.GroupId.ShouldBe(clusterId);
+        cluster.ClientCount.ShouldBe(1);
+        cluster.HasCoordinates.ShouldBeTrue();
+        result.PopulationCount.ShouldBe(4);
+        result.SkippedAlreadyGroupedCount.ShouldBe(3);
+        result.AssignedCount.ShouldBe(1);
+        result.Method.ShouldContain("thresholds: BE 1 of 4");
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi => gi.ClientId == newcomer.Id && gi.GroupId == clusterId));
+    }
+
+    [Test]
+    public async Task Handle_ReportsUnassignableClientsGroupedByReason()
+    {
+        var noAddress1 = Bern();
+        noAddress1.Addresses.Clear();
+        var noAddress2 = Bern();
+        noAddress2.Addresses.Clear();
+        var noState = Bern();
+        noState.Addresses.First().State = string.Empty;
+        _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(EntityTypeEnum.Employee, Arg.Any<CancellationToken>())
+            .Returns([noAddress1, noAddress2, noState, Bern()]);
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.UnassignableByReason!.Select(r => (r.Reason, r.Count))
+            .ShouldBe([("no address on record", 2), ("address has no state/province", 1)]);
     }
 
     private static readonly DateOnly BernEntry = new(2024, 2, 1);

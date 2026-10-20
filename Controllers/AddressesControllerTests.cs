@@ -10,6 +10,8 @@
 
 using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
+using Klacks.Api.Domain.Interfaces.Settings;
+using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Services.Common;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.Api.Presentation.Controllers.UserBackend.Staffs;
@@ -27,6 +29,7 @@ public class AddressesControllerTests
     private IGeocodingService _mockGeocodingService = null!;
     private IAddressCoordinateWriter _mockCoordinateWriter = null!;
     private StateAbbreviationResolver _stateResolver = null!;
+    private ICountryResolver _mockCountryResolver = null!;
     private AddressesController _controller = null!;
 
     [SetUp]
@@ -36,10 +39,11 @@ public class AddressesControllerTests
         _mockLogger = Substitute.For<ILogger<AddressesController>>();
         _mockGeocodingService = Substitute.For<IGeocodingService>();
         _mockCoordinateWriter = Substitute.For<IAddressCoordinateWriter>();
+        _mockCountryResolver = Substitute.For<ICountryResolver>();
         var mockStateRepository = Substitute.For<Klacks.Api.Domain.Interfaces.Settings.IStateRepository>();
         _stateResolver = new StateAbbreviationResolver(mockStateRepository);
         _controller = new AddressesController(
-            _mockMediator, _mockLogger, _mockGeocodingService, _mockCoordinateWriter, _stateResolver);
+            _mockMediator, _mockLogger, _mockGeocodingService, _mockCoordinateWriter, _stateResolver, _mockCountryResolver);
     }
 
     [Test]
@@ -256,33 +260,48 @@ public class AddressesControllerTests
     }
 
     [Test]
-    public async Task Validate_DefaultsCountryToCH_WhenEmpty()
+    public async Task Validate_UsesConfiguredDefaultCountry_WhenAddressHasNone()
     {
         // Arrange
-        var resource = new AddressResource
-        {
-            Street = "Bahnhofstrasse 1",
-            Zip = "8001",
-            City = "Zürich",
-            Country = ""
-        };
-
-        _mockGeocodingService.ValidateExactAddressAsync(
-            resource.Street, resource.Zip, resource.City, "CH")
-            .Returns(new GeocodingValidationResult
-            {
-                Found = true,
-                Latitude = 47.3769,
-                Longitude = 8.5417,
-                MatchType = "exact"
-            });
+        _mockCountryResolver.GetDefaultAsync(Arg.Any<CancellationToken>())
+            .Returns(new Countries { Abbreviation = "DE" });
+        _mockGeocodingService.ValidateExactAddressAsync("Hauptstrasse 1", "10115", "Berlin", "DE")
+            .Returns(new GeocodingValidationResult { Found = true, MatchType = "exact" });
 
         // Act
-        await _controller.Validate(new AddressValidationRequest { Street = resource.Street, Zip = resource.Zip, City = resource.City, Country = resource.Country });
+        await _controller.Validate(new AddressValidationRequest { Street = "Hauptstrasse 1", Zip = "10115", City = "Berlin", Country = "" });
 
         // Assert
-        await _mockGeocodingService.Received(1).ValidateExactAddressAsync(
-            resource.Street, resource.Zip, resource.City, "CH");
+        await _mockGeocodingService.Received(1).ValidateExactAddressAsync("Hauptstrasse 1", "10115", "Berlin", "DE");
+    }
+
+    [Test]
+    public async Task Validate_PassesEmptyCountry_WhenAddressAndInstallationHaveNone()
+    {
+        // Arrange
+        _mockCountryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns((Countries?)null);
+        _mockGeocodingService.ValidateExactAddressAsync("Bahnhofstrasse 1", "8001", "Zürich", string.Empty)
+            .Returns(new GeocodingValidationResult { Found = true, MatchType = "exact" });
+
+        // Act
+        await _controller.Validate(new AddressValidationRequest { Street = "Bahnhofstrasse 1", Zip = "8001", City = "Zürich", Country = "" });
+
+        // Assert
+        await _mockGeocodingService.Received(1).ValidateExactAddressAsync("Bahnhofstrasse 1", "8001", "Zürich", string.Empty);
+    }
+
+    [Test]
+    public async Task Validate_KeepsAddressCountry_WithoutConsultingTheDefault()
+    {
+        // Arrange
+        _mockGeocodingService.ValidateExactAddressAsync("Bahnhofstrasse 1", "8001", "Zürich", "CH")
+            .Returns(new GeocodingValidationResult { Found = true, MatchType = "exact" });
+
+        // Act
+        await _controller.Validate(new AddressValidationRequest { Street = "Bahnhofstrasse 1", Zip = "8001", City = "Zürich", Country = "CH" });
+
+        // Assert
+        await _mockCountryResolver.DidNotReceive().GetDefaultAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]

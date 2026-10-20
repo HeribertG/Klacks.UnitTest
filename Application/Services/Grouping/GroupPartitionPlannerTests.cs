@@ -25,20 +25,33 @@ public class GroupPartitionPlannerTests
     private const string Switzerland = "CH";
     private const int DefaultSharePercent = 10;
 
-    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> SwissRegions =
-        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
-        {
-            [Switzerland] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["BE"] = "Deutschschweiz Mitte",
-                ["ZH"] = "Deutschschweiz Zürich",
-                ["AG"] = "Deutschschweiz Zürich",
-                ["GE"] = "Westschweiz"
-            }
-        };
+    private static readonly RegionDescriptor Mitte =
+        new("mitte", "Deutschschweiz Mitte", ["Deutschschweiz Mitte", "Suisse alémanique – Centre"]);
 
-    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> NoRegions =
-        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+    private static readonly RegionDescriptor ZurichRegion =
+        new("zurich", "Deutschschweiz Zürich", ["Deutschschweiz Zürich", "Suisse alémanique – Zurich"]);
+
+    private static readonly RegionDescriptor West =
+        new("west", "Westschweiz", ["Westschweiz", "Suisse romande", "Western Switzerland"]);
+
+    private static readonly RegionDescriptor East =
+        new("ost", "Deutschschweiz Ost", ["Deutschschweiz Ost", "Suisse alémanique – Est"]);
+
+    private static readonly RegionDescriptor Italian =
+        new("italian", "Italienische Schweiz", ["Italienische Schweiz", "Suisse italienne", "Svizzera italiana"]);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, RegionDescriptor>> SwissRegions =
+        RegionMap(("BE", Mitte), ("ZH", ZurichRegion), ("AG", ZurichRegion), ("GE", West));
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, RegionDescriptor>> NoRegions =
+        new Dictionary<string, IReadOnlyDictionary<string, RegionDescriptor>>(StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, RegionDescriptor>> RegionMap(
+        params (string State, RegionDescriptor Region)[] entries) =>
+        new Dictionary<string, IReadOnlyDictionary<string, RegionDescriptor>>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Switzerland] = entries.ToDictionary(e => e.State, e => e.Region, StringComparer.OrdinalIgnoreCase)
+        };
 
     private static readonly IReadOnlyDictionary<string, string> StateNames =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["CH|BE"] = "Bern", ["CH|ZH"] = "Zürich" };
@@ -49,7 +62,7 @@ public class GroupPartitionPlannerTests
         IReadOnlyList<Group>? existingGroups = null,
         Guid? rootGroupId = null,
         bool includeAlreadyGrouped = false,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? regions = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, RegionDescriptor>>? regions = null,
         int sharePercent = DefaultSharePercent) =>
         GroupPartitionPlanner.Plan(
             clients, existingGroups ?? [], level, rootGroupId, includeAlreadyGrouped,
@@ -304,9 +317,10 @@ public class GroupPartitionPlannerTests
     }
 
     [Test]
-    public void Plan_ClusterLevel_SmallTownWithoutCoordinates_IsUnassignableWithReason()
+    public void Plan_ClusterLevel_SmallTownWithoutCoordinates_IsUnassignableWithPlaceReason()
     {
         var clients = Enumerable.Range(0, 20).Select(i => ClientWithAddress("Z" + i, "Zürich", "ZH", "Zürich", 47.37, 8.54))
+            .Concat(Enumerable.Range(0, 20).Select(i => ClientWithAddress("W" + i, "Winterthur", "ZH", "Winterthur", 47.50, 8.72)))
             .Append(ClientWithAddress("U", "Uster", "ZH", "Uster"))
             .ToList();
         var uster = clients[^1];
@@ -314,7 +328,87 @@ public class GroupPartitionPlannerTests
         var plan = PlanWith(clients, GroupPartitionLevelEnum.Cluster);
 
         plan.Unassignable.Single().ClientId.ShouldBe(uster.Id);
-        plan.Unassignable.Single().Reason.ShouldBe(AddressClusterPlanner.ReasonNoCoordinates);
+        plan.Unassignable.Single().Reason.ShouldBe(string.Format(AddressClusterPlanner.ReasonPlaceWithoutPosition, "Uster"));
+    }
+
+    [Test]
+    public void Plan_ClusterLevel_SecondRunForTheRemainder_LandsInTheGroupsOfTheFirstRun()
+    {
+        var zurich = Enumerable.Range(0, 30)
+            .Select(i => i < 2
+                ? ClientWithAddress("Z" + i, "Zürich", "ZH", "Zürich", 47.37, 8.54)
+                : ClientWithAddress("Z" + i, "Zürich", "ZH", "Zürich"))
+            .ToList();
+        var village = new List<Client>
+        {
+            ClientWithAddress("O0", "Oberengstringen", "ZH", "Oberengstringen", 47.41, 8.46),
+            ClientWithAddress("O1", "Oberengstringen", "ZH", "Oberengstringen"),
+            ClientWithAddress("O2", "Oberengstringen", "ZH", "Oberengstringen")
+        };
+        var clients = zurich.Concat(village).ToList();
+
+        var first = PlanWith(clients, GroupPartitionLevelEnum.Cluster);
+
+        first.Groups.Select(g => g.Name).ShouldBe(["Deutschschweiz Zürich", "ZH", "Zürich"]);
+        first.Assignments.Count.ShouldBe(33);
+        first.Unassignable.ShouldBeEmpty();
+        var zurichCluster = first.Groups.Single(g => g.Name == "Zürich");
+        zurichCluster.DirectCount.ShouldBe(30);
+        zurichCluster.AttachedCount.ShouldBe(3);
+        zurichCluster.AttachedPlaceCount.ShouldBe(1);
+
+        var regionId = Guid.NewGuid();
+        var stateId = Guid.NewGuid();
+        var clusterId = Guid.NewGuid();
+        var existing = new List<Group>
+        {
+            new() { Id = regionId, Name = "Deutschschweiz Zürich" },
+            new() { Id = stateId, Name = "ZH", Parent = regionId },
+            new() { Id = clusterId, Name = "Zürich", Parent = stateId, Latitude = 47.37, Longitude = 8.54 }
+        };
+        foreach (var grouped in zurich.Append(village[0]))
+        {
+            grouped.GroupItems.Add(new GroupItem { Id = Guid.NewGuid(), ClientId = grouped.Id, GroupId = clusterId });
+        }
+
+        var second = PlanWith(clients, GroupPartitionLevelEnum.Cluster, existingGroups: existing);
+
+        second.SkippedAlreadyGroupedCount.ShouldBe(31);
+        second.PopulationCount.ShouldBe(33);
+        second.Groups.ShouldAllBe(g => g.Existed);
+        second.Groups.ShouldNotContain(g => g.Name == "Oberengstringen");
+        second.Groups.Single(g => g.Name == "Zürich").ClientCount.ShouldBe(2);
+        second.Assignments.Count.ShouldBe(2);
+        second.Assignments.ShouldAllBe(a => a.LeafGroupKey == second.Groups.Single(g => g.Name == "Zürich").Key);
+        second.ClusterPlaceAttachments!.Single().Place.ShouldBe("Oberengstringen");
+        second.StateThresholds!.Single().Population.ShouldBe(33);
+    }
+
+    [Test]
+    public void Plan_ClusterLevel_RemainderOfSmallVillages_NeverBecomesCentres()
+    {
+        var zurich = Enumerable.Range(0, 100)
+            .Select(i => ClientWithAddress("Z" + i, "Zürich", "ZH", "Zürich", 47.37, 8.54))
+            .ToList();
+        var villages = new[] { "Adlikon", "Buchs", "Dänikon", "Hüttikon", "Otelfingen" }
+            .SelectMany((name, index) => Enumerable.Range(0, 4)
+                .Select(i => ClientWithAddress(name + i, name, "ZH", name, 47.40 + index * 0.02, 8.40)))
+            .ToList();
+        var bern = Enumerable.Range(0, 5)
+            .Select(i => ClientWithAddress("B" + i, "Bern", "BE", "Bern", 46.95, 7.45))
+            .ToList();
+        foreach (var grouped in zurich.Concat(bern))
+        {
+            grouped.GroupItems.Add(new GroupItem { Id = Guid.NewGuid(), ClientId = grouped.Id, GroupId = Guid.NewGuid() });
+        }
+
+        var plan = PlanWith(zurich.Concat(villages).Concat(bern).ToList(), GroupPartitionLevelEnum.Cluster);
+
+        plan.Groups.Where(g => g.Method == Klacks.Api.Application.Constants.PartitionGroupMethods.Cluster)
+            .Select(g => g.Name).ShouldBe(["Zürich"]);
+        plan.Assignments.Count.ShouldBe(20);
+        plan.Groups.ShouldNotContain(g => g.Name == "BE" || g.Name == "Bern" || g.Name == "Deutschschweiz Mitte");
+        plan.StateThresholds!.Select(t => t.State).ShouldBe(["ZH"]);
     }
 
     [Test]
@@ -441,6 +535,81 @@ public class GroupPartitionPlannerTests
 
         plan.PlaceAttachments.ShouldBeEmpty();
         plan.Groups.ShouldNotContain(g => g.Name == "Seuzach");
+    }
+
+    [Test]
+    public void Plan_RegionRoot_IsReusedThroughAnotherLanguageVariantOfItsName()
+    {
+        var rootId = Guid.NewGuid();
+        var geId = Guid.NewGuid();
+        var existing = new List<Group>
+        {
+            new() { Id = rootId, Name = "Westschweiz" },
+            new() { Id = geId, Name = "GE", Parent = rootId }
+        };
+        var frenchDisplay = West with { DisplayName = "Suisse romande" };
+        var geneva = ClientWithAddress("A", "B", "GE", "Genève");
+
+        var plan = PlanWith([geneva], GroupPartitionLevelEnum.State, existingGroups: existing, regions: RegionMap(("GE", frenchDisplay)));
+
+        var root = plan.Groups.Single(g => g.ParentKey == null);
+        root.Existed.ShouldBeTrue();
+        root.ExistingGroupId.ShouldBe(rootId);
+        root.Name.ShouldBe("Westschweiz");
+        plan.Groups.Single(g => g.Name == "GE").ExistingGroupId.ShouldBe(geId);
+        plan.Groups.Count.ShouldBe(2);
+        plan.Warnings.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void Plan_RegionKey_StaysTheSameWhenTheInstallationLanguageChanges()
+    {
+        var geneva = ClientWithAddress("A", "B", "GE", "Genève");
+
+        var german = PlanWith([geneva], GroupPartitionLevelEnum.State, regions: RegionMap(("GE", West)));
+        var french = PlanWith([geneva], GroupPartitionLevelEnum.State, regions: RegionMap(("GE", West with { DisplayName = "Suisse romande" })));
+
+        german.Groups.Single(g => g.ParentKey == null).Key.ShouldBe(french.Groups.Single(g => g.ParentKey == null).Key);
+        german.Groups.Single(g => g.ParentKey == null).Name.ShouldBe("Westschweiz");
+        french.Groups.Single(g => g.ParentKey == null).Name.ShouldBe("Suisse romande");
+    }
+
+    [Test]
+    public void Plan_SeveralRootsCarryingNamesOfOneRegion_AreNotReused_AndWarn()
+    {
+        var existing = new List<Group>
+        {
+            new() { Id = Guid.NewGuid(), Name = "Westschweiz" },
+            new() { Id = Guid.NewGuid(), Name = "Suisse romande" }
+        };
+        var geneva = ClientWithAddress("A", "B", "GE", "Genève");
+
+        var plan = PlanWith([geneva], GroupPartitionLevelEnum.State, existingGroups: existing, regions: RegionMap(("GE", West)));
+
+        plan.Groups.Single(g => g.ParentKey == null).Existed.ShouldBeFalse();
+        plan.Warnings.ShouldContain(w => w.Contains("Several root groups carry a name of region 'Westschweiz'"));
+    }
+
+    [Test]
+    public void Plan_StateExistingUnderAnotherRegionRoot_IsNotMoved_ButWarned()
+    {
+        var eastId = Guid.NewGuid();
+        var existing = new List<Group>
+        {
+            new() { Id = eastId, Name = "Deutschschweiz Ost" },
+            new() { Id = Guid.NewGuid(), Name = "TI", Parent = eastId }
+        };
+        var lugano = ClientWithAddress("A", "B", "TI", "Lugano");
+
+        var plan = PlanWith(
+            [lugano], GroupPartitionLevelEnum.State, existingGroups: existing,
+            regions: RegionMap(("TI", Italian), ("SG", East)));
+
+        plan.Groups.Single(g => g.ParentKey == null).Name.ShouldBe("Italienische Schweiz");
+        plan.Groups.Single(g => g.Name == "TI").Existed.ShouldBeFalse();
+        plan.Warnings.ShouldBe([
+            "TI exists under 'Deutschschweiz Ost'; the run creates a second 'TI' under 'Italienische Schweiz' — move the existing group first."
+        ]);
     }
 
     private static List<Client> ZurichDemoClients()

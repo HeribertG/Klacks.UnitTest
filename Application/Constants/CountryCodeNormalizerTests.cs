@@ -7,6 +7,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Domain.Constants;
 
 namespace Klacks.UnitTest.Application.Constants;
 

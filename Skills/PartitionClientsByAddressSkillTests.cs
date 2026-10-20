@@ -10,11 +10,14 @@
 /// </summary>
 
 using Klacks.Api.Application.Commands.Groups;
+using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Groups;
+using Klacks.Api.Application.DTOs.Grouping;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Services.Geo;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -335,5 +338,94 @@ public class PartitionClientsByAddressSkillTests
         result.Message.ShouldContain("Hettlingen (2) joins the nearer sub-cluster Seuzach");
         result.Message.ShouldContain("Wülflingen (2) stays directly in Winterthur");
         result.Message.ShouldContain("Nothing was changed yet");
+    }
+
+    private const string ClusterMethod =
+        "Method: cluster centres are the cities holding at least 10% of their state's addresses " +
+        "(the largest city of a state always is one; thresholds: ZH 183 of 1829); clients of a centre city join it by city name";
+
+    private static PartitionClientsByAddressResult ClusterResult(bool applied, int skipped = 0) =>
+        new(
+            applied, nameof(GroupPartitionLevelEnum.Cluster), "All", 1830, skipped, 3, applied ? 1829 : 0, applied ? 1829 : 0, 0,
+            new List<PartitionGroupSummary>
+            {
+                new("Deutschschweiz Zürich", null, true, HeadOfficeGroupId, 0, Method: PartitionGroupMethods.Region),
+                new("ZH", "Deutschschweiz Zürich", true, Guid.NewGuid(), 0, Method: PartitionGroupMethods.State),
+                new("Zürich", "ZH", false, null, 1829, HasCoordinates: true, DirectCount: 1495, AttachedCount: 334,
+                    AttachedPlaceCount: 5, Method: PartitionGroupMethods.Cluster)
+            },
+            new List<UnassignablePartitionClient>
+            {
+                new(Guid.NewGuid(), "Anna Meier", "no address on record"),
+                new(Guid.NewGuid(), "Beat Huber", "no address on record"),
+                new(Guid.NewGuid(), "Cora Graf", "place 'Hinterdorf' has no geocoded address, so its distance to the cluster centres cannot be measured")
+            },
+            new List<string>(),
+            0,
+            PopulationCount: 5000,
+            UnassignableByReason: new List<PartitionReasonCount>
+            {
+                new("no address on record", 2),
+                new("place 'Hinterdorf' has no geocoded address, so its distance to the cluster centres cannot be measured", 1)
+            },
+            ClusterPlaceAttachments: new List<ClusterPlaceAttachment>
+            {
+                new("CH", "ZH", "Oberengstringen", "Zürich", 85, 80, 6.34),
+                new("CH", "ZH", "Hinterdorf", "Zürich", 2, 0, null)
+            },
+            Method: ClusterMethod + "; every other place joins the nearest centre of its state as a whole.");
+
+    [Test]
+    public async Task Preview_ClusterLevel_StatesTheMethod_ThePerGroupBasis_AndWherePlacesWent()
+    {
+        _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ClusterResult(applied: false)));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Message.ShouldContain(ClusterMethod);
+        result.Message.ShouldContain("Zürich (1829: 1495 by city name + 334 attached from 5 place(s); centre has coordinates, new)");
+        result.Message.ShouldContain("Oberengstringen (85) → Zürich, 6.3 km");
+        result.Message.ShouldContain("Hinterdorf (2) → Zürich, only centre of its state (distance not measured)");
+        result.Message.ShouldContain("ZH (0, existing)");
+    }
+
+    [Test]
+    public async Task Preview_GroupsTheUnassignableClientsByReasonWithCounts()
+    {
+        _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ClusterResult(applied: false)));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Message.ShouldContain(
+            "3 could not be placed (2× no address on record, 1× place 'Hinterdorf' has no geocoded address, so its distance to the cluster centres cannot be measured)");
+    }
+
+    [Test]
+    public async Task Preview_WithSkippedClients_SaysTheStructureCameFromEveryClient()
+    {
+        _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ClusterResult(applied: false, skipped: 4615)));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        result.Message.ShouldContain(
+            "structure computed from all 5000 client(s) with a usable address; 4615 already grouped kept their membership and were not re-placed");
+    }
+
+    [Test]
+    public async Task Apply_ClusterLevel_RepeatsTheMethodAndThePerGroupBasis()
+    {
+        _mediator.Send(Arg.Any<PartitionClientsByAddressCommand>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ClusterResult(applied: true)));
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("Added 1829 membership(s)");
+        result.Message.ShouldContain(ClusterMethod);
+        result.Message.ShouldContain("Zürich (1829: 1495 by city name + 334 attached from 5 place(s); centre has coordinates, new)");
+        result.Message.ShouldContain("Oberengstringen (85) → Zürich, 6.3 km");
     }
 }

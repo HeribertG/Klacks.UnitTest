@@ -99,7 +99,25 @@ public class AddressClusterPlannerTests
     }
 
     [Test]
-    public void Plan_SmallTownAddressWithoutCoordinates_IsRejected()
+    public void Plan_SmallTownWithoutLocatedAddress_RejectsAllWithPlaceReason()
+    {
+        var addresses = Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Zürich", 47.37, 8.54))
+            .Concat(Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Winterthur", 47.50, 8.72)))
+            .Append(Addr("ZH", "Uster", null, null))
+            .Append(Addr("ZH", "Uster", null, null))
+            .ToList();
+        var usterIds = addresses.Where(a => a.City == "Uster").Select(a => a.ClientId).ToList();
+
+        var plan = AddressClusterPlanner.Plan(addresses, DefaultSharePercent);
+
+        plan.Rejections.Select(r => r.ClientId).ShouldBe(usterIds, ignoreOrder: true);
+        plan.Rejections.ShouldAllBe(r => r.Reason ==
+            "place 'Uster' has no geocoded address, so its distance to the cluster centres cannot be measured");
+        plan.PlaceAttachments.ShouldNotContain(p => p.Place == "Uster");
+    }
+
+    [Test]
+    public void Plan_SmallTownWithoutLocatedAddress_JoinsTheOnlyCentreOfItsState()
     {
         var addresses = Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Zürich", 47.37, 8.54))
             .Append(Addr("ZH", "Uster", null, null))
@@ -108,8 +126,83 @@ public class AddressClusterPlannerTests
 
         var plan = AddressClusterPlanner.Plan(addresses, DefaultSharePercent);
 
-        plan.Rejections.Single().ClientId.ShouldBe(uster.ClientId);
-        plan.Rejections.Single().Reason.ShouldBe(AddressClusterPlanner.ReasonNoCoordinates);
+        plan.Rejections.ShouldBeEmpty();
+        var assignment = plan.Assignments.Single(a => a.ClientId == uster.ClientId);
+        assignment.City.ShouldBe("Zürich");
+        assignment.DistanceKm.ShouldBeNull();
+        plan.PlaceAttachments.Single().DistanceKm.ShouldBeNull();
+    }
+
+    [Test]
+    public void Plan_SmallTownWithOneLocatedAddress_AttachesWholeTownToNearestCentre()
+    {
+        var addresses = Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Zürich", 47.37, 8.54))
+            .Concat(Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Winterthur", 47.50, 8.72)))
+            .Append(Addr("ZH", "Oberengstringen", 47.41, 8.46))
+            .Append(Addr("ZH", "Oberengstringen", null, null))
+            .Append(Addr("ZH", "Oberengstringen", null, null))
+            .ToList();
+        var villageIds = addresses.Where(a => a.City == "Oberengstringen").Select(a => a.ClientId).ToHashSet();
+
+        var plan = AddressClusterPlanner.Plan(addresses, DefaultSharePercent);
+
+        plan.Rejections.ShouldBeEmpty();
+        var village = plan.Assignments.Where(a => villageIds.Contains(a.ClientId)).ToList();
+        village.Count.ShouldBe(3);
+        village.ShouldAllBe(a => a.City == "Zürich" && a.AttachedByDistance);
+        village.Select(a => a.DistanceKm).Distinct().Count().ShouldBe(1);
+        plan.Clusters.Single(c => c.City == "Zürich").AttachedCount.ShouldBe(3);
+    }
+
+    [Test]
+    public void Plan_NeighboursOfOneVillage_NeverSplitBetweenCentres()
+    {
+        var addresses = Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Zürich", 47.37, 8.54))
+            .Concat(Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Winterthur", 47.50, 8.72)))
+            .Append(Addr("ZH", "Mittendorf", 47.39, 8.57))
+            .Append(Addr("ZH", "Mittendorf", 47.48, 8.70))
+            .Append(Addr("ZH", "Mittendorf", 47.40, 8.58))
+            .ToList();
+        var villageIds = addresses.Where(a => a.City == "Mittendorf").Select(a => a.ClientId).ToHashSet();
+
+        var plan = AddressClusterPlanner.Plan(addresses, DefaultSharePercent);
+
+        plan.Assignments.Where(a => villageIds.Contains(a.ClientId)).Select(a => a.City).Distinct().Count().ShouldBe(1);
+    }
+
+    [Test]
+    public void Plan_ReportsPlaceAttachmentWithDistance()
+    {
+        var addresses = Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Zürich", 47.37, 8.54))
+            .Concat(Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Winterthur", 47.50, 8.72)))
+            .Append(Addr("ZH", "Oberengstringen", 47.41, 8.46))
+            .Append(Addr("ZH", "Oberengstringen", null, null))
+            .ToList();
+
+        var plan = AddressClusterPlanner.Plan(addresses, DefaultSharePercent);
+
+        var attachment = plan.PlaceAttachments.Single();
+        attachment.Country.ShouldBe("CH");
+        attachment.State.ShouldBe("ZH");
+        attachment.Place.ShouldBe("Oberengstringen");
+        attachment.CentreCity.ShouldBe("Zürich");
+        attachment.ClientCount.ShouldBe(2);
+        attachment.LocatedAddressCount.ShouldBe(1);
+        attachment.DistanceKm!.Value.ShouldBeInRange(5.0, 9.0);
+    }
+
+    [Test]
+    public void Plan_ReportsCentreThresholdPerState()
+    {
+        var addresses = Enumerable.Range(0, 20).Select(_ => Addr("ZH", "Zürich", 47.37, 8.54))
+            .Concat(Enumerable.Range(0, 21).Select(_ => Addr("ZH", "Winterthur", 47.50, 8.72)))
+            .Append(Addr("BE", "Bern", 46.95, 7.45))
+            .ToList();
+
+        var plan = AddressClusterPlanner.Plan(addresses, DefaultSharePercent);
+
+        plan.StateThresholds.Select(t => (t.State, t.Population, t.MinimumForCentre))
+            .ShouldBe([("BE", 1, 1), ("ZH", 41, 5)]);
     }
 
     [Test]
