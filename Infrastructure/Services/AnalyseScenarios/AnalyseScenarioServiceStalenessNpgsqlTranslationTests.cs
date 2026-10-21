@@ -9,6 +9,7 @@
 /// in the integration test (AcceptDayLockSeamTests).
 /// </summary>
 
+using Klacks.UnitTest.TestHelpers;
 using System.Data;
 using System.Data.Common;
 using Klacks.Api.Domain.Enums;
@@ -51,7 +52,7 @@ public class AnalyseScenarioServiceStalenessNpgsqlTranslationTests
     [TestCase(true, true)]
     public async Task StalenessCheck_TranslatesEveryQuery(bool grouped, bool builtOnAScenario)
     {
-        var service = new AnalyseScenarioService(_context);
+        var service = AnalyseScenarioTestServiceFactory.Create(_context);
         var scenario = new AnalyseScenario
         {
             Id = Guid.NewGuid(),

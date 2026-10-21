@@ -10,6 +10,7 @@
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.AnalyseScenarios;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -31,7 +32,7 @@ public class AnalyseScenarioServiceTests
             .Options;
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
-        _service = new AnalyseScenarioService(_context);
+        _service = AnalyseScenarioTestServiceFactory.Create(_context);
     }
 
     [TearDown]

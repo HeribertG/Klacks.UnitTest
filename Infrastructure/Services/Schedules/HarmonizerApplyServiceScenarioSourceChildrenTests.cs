@@ -59,7 +59,7 @@ public class HarmonizerApplyServiceScenarioSourceChildrenTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
-        _scenarioService = new AnalyseScenarioService(_context);
+        _scenarioService = AnalyseScenarioTestServiceFactory.Create(_context);
         _cache = new HarmonizerResultCache();
         _bulkCommands.Clear();
 

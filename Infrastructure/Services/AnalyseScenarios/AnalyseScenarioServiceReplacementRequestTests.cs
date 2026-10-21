@@ -10,6 +10,7 @@
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Services.AnalyseScenarios;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,7 +37,7 @@ public class AnalyseScenarioServiceReplacementRequestTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         _context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
-        _service = new AnalyseScenarioService(_context);
+        _service = AnalyseScenarioTestServiceFactory.Create(_context);
         _token = Guid.NewGuid();
     }
 
