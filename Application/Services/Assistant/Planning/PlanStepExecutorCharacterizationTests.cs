@@ -290,6 +290,101 @@ public class PlanStepExecutorCharacterizationTests
     }
 
     [Test]
+    public async Task AutonomyReadThrows_AfterTheExecutingPersist_AndLeavesThePlanExecuting()
+    {
+        _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AgentAutonomyPreferenceRow?>>(_ => throw new InvalidOperationException("db down"));
+        var plan = Plan(new[] { Step(1, "skill_a") });
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _sut.ExecutePlanAsync(plan.Id, Context()));
+
+        plan.Status.ShouldBe(PlanStatus.Executing);
+        await _planRepository.Received(1).UpdateAsync(plan, Arg.Any<CancellationToken>());
+        Received.InOrder(() =>
+        {
+            _planRepository.UpdateAsync(plan, Arg.Any<CancellationToken>());
+            _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task SelfReflectionLookups_RunAfterTheExecutingPersist()
+    {
+        var plan = Plan(new[] { Step(1, "skill_a") }, origin: AgentPlanOrigin.SelfReflection);
+        plan.Status = PlanStatus.PausedForApproval;
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>())
+            .Returns(ApprovedCandidate(plan, Guid.NewGuid()));
+
+        await _sut.ApproveAndContinueAsync(plan.Id, Context());
+
+        Received.InOrder(() =>
+        {
+            _planRepository.UpdateAsync(plan, Arg.Any<CancellationToken>());
+            _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>());
+            _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            _planRepository.UpdateAsync(plan, Arg.Any<CancellationToken>());
+            _planRepository.UpdateAsync(plan, Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Test]
+    public async Task AutonomyReadCancelled_IsInsideTheAbortBoundary()
+    {
+        using var cts = new CancellationTokenSource();
+        _autonomyRepository.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AgentAutonomyPreferenceRow?>>(_ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+        var plan = Plan(new[] { Step(1, "skill_a") });
+
+        var result = await _sut.ExecutePlanAsync(plan.Id, Context(), cts.Token);
+
+        result.Status.ShouldBe(PlanStatus.Aborted);
+        await _planRepository.Received(1).UpdateAsync(plan, CancellationToken.None);
+        Invocations().ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ResumeTokenIssueCancelled_IsInsideTheAbortBoundary()
+    {
+        using var cts = new CancellationTokenSource();
+        var plan = Plan(new[] { Step(1, "skill_a") }, origin: AgentPlanOrigin.SelfReflection);
+        plan.Status = PlanStatus.PausedForApproval;
+        _goalCandidateRepository.GetByPlanIdAsync(plan.Id, Arg.Any<CancellationToken>())
+            .Returns(ApprovedCandidate(plan, Guid.NewGuid()));
+        _tokenIssuer.IssueForOwnerAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<InternalTokenResult>>(_ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        var result = await _sut.ApproveAndContinueAsync(plan.Id, Context(), cts.Token);
+
+        result.Status.ShouldBe(PlanStatus.Aborted);
+        await _planRepository.Received(1).UpdateAsync(plan, CancellationToken.None);
+        Invocations().ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ApprovalBypass_IsPerRun_SoALaterRunOnTheSameExecutorPausesAgain()
+    {
+        var resumed = Plan(new[] { Step(1, "irrev_one") });
+        resumed.Status = PlanStatus.PausedForApproval;
+        await _sut.ApproveAndContinueAsync(resumed.Id, Context());
+
+        var fresh = Plan(new[] { Step(1, "irrev_two") });
+        var result = await _sut.ExecutePlanAsync(fresh.Id, Context());
+
+        resumed.Status.ShouldBe(PlanStatus.Completed);
+        result.Status.ShouldBe(PlanStatus.PausedForApproval);
+        Invocations().Select(i => i.SkillName).ShouldBe(new[] { "irrev_one" });
+    }
+
+    [Test]
     public async Task RenewedToken_CarriesForward_WhenTheNextRenewalFails()
     {
         var ownerId = Guid.NewGuid();
