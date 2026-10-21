@@ -14,6 +14,7 @@ using Klacks.Api.Domain.Services.RouteOptimization;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Shouldly;
+using RouteSegmentDirections = Klacks.Api.Domain.Services.RouteOptimization.RouteSegmentDirections;
 using SettingsEntity = Klacks.Api.Domain.Models.Settings.Settings;
 
 namespace Klacks.UnitTest.Services.RouteOptimization;
