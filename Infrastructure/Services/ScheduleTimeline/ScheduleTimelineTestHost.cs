@@ -17,8 +17,10 @@ using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Domain.Services.Schedules;
 using Microsoft.AspNetCore.Http;
+using Klacks.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -112,7 +114,7 @@ internal sealed class ScheduleTimelineTestHost : IAsyncDisposable
 
         _provider = BuildProvider().BuildServiceProvider();
         Service = new ScheduleTimelineBackgroundService(
-            _provider, NullLogger<ScheduleTimelineBackgroundService>.Instance, Store);
+            _provider, NullLogger<ScheduleTimelineBackgroundService>.Instance);
     }
 
     public DbContextOptions<DataBaseContext> ContextOptions { get; }
@@ -261,6 +263,8 @@ internal sealed class ScheduleTimelineTestHost : IAsyncDisposable
         services.AddSingleton(HolidayWork);
         services.AddSingleton(PlanningRules);
         services.AddSingleton(Store);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddScheduleTimelineChecks();
         return services;
     }
 }
