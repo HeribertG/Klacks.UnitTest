@@ -1,8 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Characterization tests for the action dispatcher, written against the code as it stood before it was
-/// split into collaborators (2026-10-21). They pin what the other fixtures only test by substring or not at
+/// Characterization tests for the action dispatcher, first written and proven green against the single-class
+/// dispatcher before its split into collaborators (2026-10-21). They pin what the other fixtures only test by substring or not at
 /// all: the exact audit details and report texts of every outcome, the per-kind scope of the governance
 /// cache and the tick cap, the per-kind exception boundary, the cascade guard's GroupId fallback and the
 /// executor's edge cases (lost success transition, null arguments, blank result message). A split that
@@ -13,6 +13,7 @@ using System.Globalization;
 using Klacks.Api.Application.Services.Assistant.Conditions;
 using Klacks.Api.Domain.Constants;
 using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.ExceptionExtensions;
 
@@ -511,9 +512,213 @@ public class AgentConditionActionServiceCharacterizationTests
         });
     }
 
+    [Test]
+    public async Task GateOrder_MaxActionRunsBeforeTheCascadeGuard()
+    {
+        GivenGovernance(Kind, ProactiveMaxAction.Hint);
+        GivenExecutedCondition(entityId: Guid.NewGuid(), groupId: GroupId);
+        var condition = GivenApprovedCondition(groupId: GroupId, detectedAtUtc: NowUtc.AddMinutes(-1));
+        _repository.Stored(condition.Id).EntityId = null;
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SkippedCascade, Is.Zero);
+            Assert.That(_repository.Stored(condition.Id).CausedByConditionId, Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task GateOrder_TheCascadeGuardRunsBeforeTheEscalation()
+    {
+        var condition = GivenApprovedCondition();
+        _repository.Stored(condition.Id).CausedByConditionId = Guid.NewGuid();
+        _repository.Stored(condition.Id).AttemptCount = AgentConditionActionDefaults.MaxAttemptsBeforeEscalation;
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SkippedCascade, Is.EqualTo(1));
+            Assert.That(result.Escalated, Is.Zero);
+            Assert.That(_repository.Stored(condition.Id).Status, Is.EqualTo(AgentConditionStatus.Reported));
+        });
+    }
+
+    [Test]
+    public async Task GateOrder_TheQuietWindowRunsBeforeTheBinder()
+    {
+        _quietWindow.IsQuietForAsync(Arg.Any<AgentCondition>(), Arg.Any<CancellationToken>()).Returns(true);
+        _registry.BindsNothing = true;
+        GivenApprovedCondition();
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SkippedQuiet, Is.EqualTo(1));
+            Assert.That(result.SkippedUnbindable, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task GateOrder_TheBinderRunsBeforeTheStaleApprovalWithdrawal()
+    {
+        _registry.BindsNothing = true;
+        var condition = GivenApprovedCondition();
+        _repository.Stored(condition.Id).ApprovedAtUtc =
+            NowUtc.AddMinutes(-AgentConditionActionDefaults.ApprovalExecutionWindowMinutes - 1);
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SkippedUnbindable, Is.EqualTo(1));
+            Assert.That(result.ApprovalsWithdrawn, Is.Zero);
+            Assert.That(_repository.Stored(condition.Id).ApprovedByUserId, Is.EqualTo(ApproverUserId));
+        });
+    }
+
+    [Test]
+    public async Task GateOrder_TheStaleApprovalWithdrawalRunsBeforeTheTickCap()
+    {
+        GivenRowsThatFillTheTickCap();
+        var stale = GivenApprovedCondition(detectedAtUtc: NowUtc.AddMinutes(-30));
+        _repository.Stored(stale.Id).ApprovedAtUtc =
+            NowUtc.AddMinutes(-AgentConditionActionDefaults.ApprovalExecutionWindowMinutes - 1);
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ApprovalsWithdrawn, Is.EqualTo(1));
+            Assert.That(result.LeftForBudget, Is.Zero);
+            Assert.That(_reports.Any(report => report.Message.Contains("absolute cap", StringComparison.Ordinal)), Is.False);
+        });
+    }
+
+    [Test]
+    public async Task GateOrder_TheTickCapRunsBeforeTheBudget_AndStopsTheKind()
+    {
+        var exhaustedGroupId = Guid.NewGuid();
+        GivenGroupGovernance(Kind, exhaustedGroupId, dailyActionBudget: 0);
+        GivenRowsThatFillTheTickCap();
+        GivenApprovedCondition(groupId: exhaustedGroupId, detectedAtUtc: NowUtc.AddMinutes(-30));
+        GivenApprovedCondition(groupId: exhaustedGroupId, detectedAtUtc: NowUtc.AddMinutes(-20));
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Considered, Is.EqualTo(AgentConditionActionDefaults.MaxExecutionsPerKindPerTick + 1));
+            Assert.That(result.LeftForBudget, Is.EqualTo(2));
+            Assert.That(_reports.Single().Message, Does.Contain("the absolute cap of 5 action(s) per kind per scan is reached"));
+        });
+    }
+
+    [Test]
+    public async Task ANullSkillResult_AbortsTheKindOutsideTheFailureHandling_AndTheNextKindStillRuns()
+    {
+        _registry = new CharacterizationRegistry([Kind, OtherKind]);
+        var condition = GivenApprovedCondition();
+        var other = GivenApprovedCondition(kind: OtherKind);
+        var calls = 0;
+        _skillExecutor
+            .ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => calls++ == 0 ? null! : SkillResult.SuccessResult(null, SkillMessage));
+
+        var result = await RunAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Failed, Is.Zero);
+            Assert.That(result.Executed, Is.EqualTo(1));
+            Assert.That(_repository.Stored(condition.Id).Status, Is.EqualTo(AgentConditionStatus.Prepared));
+            Assert.That(_repository.Stored(condition.Id).AttemptCount, Is.EqualTo(1));
+            Assert.That(
+                _repository.EventsFor(condition.Id).Any(e => e.EventType == AgentConditionEventTypes.AttemptFailed),
+                Is.False);
+            Assert.That(_repository.Stored(other.Id).Status, Is.EqualTo(AgentConditionStatus.Executed));
+        });
+    }
+
+    [Test]
+    public async Task Collaborators_LogThroughTheDispatchersOwnLogger()
+    {
+        var logger = new RecordingLogger<AgentConditionActionService>();
+        _skillExecutor
+            .ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("the API was unreachable"));
+        var cause = GivenExecutedCondition(entityId: Guid.NewGuid(), groupId: GroupId);
+        var cascade = GivenApprovedCondition(groupId: GroupId, detectedAtUtc: NowUtc.AddMinutes(-1));
+        _repository.Stored(cascade.Id).EntityId = null;
+        var throwing = GivenApprovedCondition(detectedAtUtc: NowUtc.AddMinutes(-2));
+
+        await CreateService(logger).RunAsync(CancellationToken.None);
+
+        var messages = logger.Entries.Select(entry => (entry.Level, entry.Message)).ToList();
+        Assert.Multiple(() =>
+        {
+            Assert.That(messages, Does.Contain((LogLevel.Information,
+                $"Condition {cascade.Id} appeared after Klacksy executed condition {cause.Id} on the same "
+                + "target and is only ever hinted from now on")));
+            Assert.That(messages, Does.Contain((LogLevel.Error,
+                $"Remediation {SkillName} threw on condition {throwing.Id}")));
+            Assert.That(
+                messages.Count(message => message.Level == LogLevel.Information
+                    && message.Message.StartsWith("Proactive action tick: 2 considered, 0 executed, 1 failed", StringComparison.Ordinal)),
+                Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ABudgetStop_IsLoggedThroughTheDispatchersOwnLogger()
+    {
+        var logger = new RecordingLogger<AgentConditionActionService>();
+        GivenGovernance(Kind, ProactiveMaxAction.Execute, dailyActionBudget: 1);
+        GivenApprovedCondition(detectedAtUtc: NowUtc.AddHours(-3));
+        GivenApprovedCondition(detectedAtUtc: NowUtc.AddHours(-2));
+
+        await CreateService(logger).RunAsync(CancellationToken.None);
+
+        Assert.That(
+            logger.Entries.Select(entry => (entry.Level, entry.Message)),
+            Does.Contain((LogLevel.Warning,
+                $"Proactive actions on {Kind} stopped: the daily action budget of 1 is used up. 1 finding(s) stay open this tick")));
+    }
+
     private Task<AgentConditionActionTickResult> RunAsync() => CreateService().RunAsync(CancellationToken.None);
 
-    private AgentConditionActionService CreateService() =>
+    private void GivenRowsThatFillTheTickCap()
+    {
+        for (var offset = 0; offset < AgentConditionActionDefaults.MaxExecutionsPerKindPerTick; offset++)
+        {
+            GivenCondition(AgentConditionStatus.Reported, detectedAtUtc: NowUtc.AddHours(-10 + offset));
+        }
+    }
+
+    private void GivenGroupGovernance(string kind, Guid groupId, int dailyActionBudget)
+    {
+        var decision = new ProactiveGovernanceDecision(
+            TriggerKind: kind,
+            GroupId: groupId,
+            EffectiveMaxAction: ProactiveMaxAction.Execute,
+            ConfiguredMaxAction: ProactiveMaxAction.Execute,
+            Enabled: true,
+            KillSwitchActive: false,
+            DailyActionBudget: dailyActionBudget,
+            WindowActionLimit: 50,
+            WindowMinutes: 60,
+            IsStored: true,
+            GlobalAutonomyCap: ProactiveMaxAction.Execute);
+
+        _governance
+            .ResolveAsync(kind, groupId, Arg.Any<CancellationToken>())
+            .Returns(decision);
+    }
+
+    private AgentConditionActionService CreateService(ILogger<AgentConditionActionService>? logger = null) =>
         new(
             _repository,
             _ledger,
@@ -527,7 +732,7 @@ public class AgentConditionActionServiceCharacterizationTests
             _standingApprovals,
             _timeProvider,
             _companyClock,
-            NullLogger<AgentConditionActionService>.Instance);
+            logger ?? NullLogger<AgentConditionActionService>.Instance);
 
     private static string WithdrawnReport(AgentCondition condition, string reason) =>
         "An approved remediation was NOT carried out.\n\n"
