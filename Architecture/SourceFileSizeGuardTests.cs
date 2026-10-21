@@ -68,11 +68,9 @@ public class SourceFileSizeGuardTests
         [@"Application\Skills\UpdateClientSkill.cs::ExecuteAsync"] = 178,
         [@"Application\Skills\UpdateContractSkill.cs::ExecuteAsync"] = 153,
         [@"Infrastructure\Email\EmailTestService.cs::TestConnectionAsync"] = 219,
-        [@"Infrastructure\Exceptions\ErrorHandlingMiddleware.cs::Invoke"] = 277,
         [@"Infrastructure\Services\Assistant\LLMModelSyncService.cs::SyncProviderAsync"] = 174,
         [@"Infrastructure\Services\Schedules\HarmonizerJobRunner.cs::RunJobAsync"] = 181,
         [@"Infrastructure\Services\Schedules\WizardJobRunner.cs::RunJobAsync"] = 192,
-        [@"Application\Services\Schedules\HolisticHarmonizer\HolisticHarmonizerEngine.cs::RunAsync"] = 268,
         [@"Domain\Services\Assistant\Skills\SkillExecutorService.cs::ExecuteAsync"] = 178,
     };
 
