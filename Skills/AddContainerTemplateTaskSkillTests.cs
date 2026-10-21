@@ -146,6 +146,51 @@ public class AddContainerTemplateTaskSkillTests
     }
 
     [Test]
+    public async Task EligibilityCheck_QueriesTheNormalSlotOfTheWeekdayTemplate()
+    {
+        _mediator.Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new ContainerLockResource { Id = LockId, Acquired = true });
+
+        await _skill.ExecuteAsync(Ctx(), Params());
+
+        await _availableTasksService.Received(1).GetAvailableTasksAsync(
+            ContainerId, StorageWeekday, Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
+            Arg.Any<string?>(), Arg.Any<Guid?>(),
+            Arg.Is<bool?>(v => v == false), Arg.Is<bool?>(v => v == false),
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public async Task EligibilityCheck_QueriesTheSlotOfTheHolidayTemplate_WhenTheWeekdayHasOnlyAHolidayTemplate(
+        bool isHoliday, bool isWeekdayAndHoliday)
+    {
+        var holidayTemplate = new ContainerTemplateResource
+        {
+            Id = Guid.NewGuid(),
+            ContainerId = ContainerId,
+            Weekday = StorageWeekday,
+            IsHoliday = isHoliday,
+            IsWeekdayAndHoliday = isWeekdayAndHoliday,
+            FromTime = new TimeOnly(6, 0),
+            UntilTime = new TimeOnly(22, 0),
+            ContainerTemplateItems = new List<ContainerTemplateItemResource>()
+        };
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ContainerTemplateResource> { holidayTemplate });
+        _mediator.Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new ContainerLockResource { Id = LockId, Acquired = false });
+
+        await _skill.ExecuteAsync(Ctx(), Params());
+
+        await _availableTasksService.Received(1).GetAvailableTasksAsync(
+            ContainerId, StorageWeekday, Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
+            Arg.Any<string?>(), Arg.Any<Guid?>(),
+            Arg.Is<bool?>(v => v == isHoliday), Arg.Is<bool?>(v => v == isWeekdayAndHoliday),
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task ReturnsError_AndSendsNothingElse_WhenLockCannotBeAcquired()
     {
         _mediator.Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>())
