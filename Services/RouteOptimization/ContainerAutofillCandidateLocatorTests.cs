@@ -125,6 +125,21 @@ public class ContainerAutofillCandidateLocatorTests
     }
 
     [Test]
+    public async Task ExtractLocations_CancelledWrite_PropagatesInsteadOfBeingLogged()
+    {
+        // Arrange
+        _coordinateWriter
+            .UpdateCoordinatesAsync(Arg.Any<Guid>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new OperationCanceledException()));
+        var shifts = new List<Shift> { CreateShiftWithoutCoordinates("A") };
+
+        // Act & Assert
+        await Should.ThrowAsync<OperationCanceledException>(() =>
+            CreateSut().ExtractLocationsFromShiftsAsync(shifts, ContainerTransportMode.ByCar, CancellationToken.None));
+        _logger.Entries.ShouldNotContain(e => e.Level == LogLevel.Warning);
+    }
+
+    [Test]
     public async Task ExtractLocations_AddressWithoutCountry_IsGeocodedWithTheCompanyDefaultCountry()
     {
         // Arrange
