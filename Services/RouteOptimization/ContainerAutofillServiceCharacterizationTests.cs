@@ -28,6 +28,7 @@ public class ContainerAutofillServiceCharacterizationTests
     private const string EndAddress = "End";
     private const double BaseLatitude = 0;
     private const double EndLatitude = 5;
+    private const string DefaultCountryQueryName = "Österreich";
 
     private static readonly TimeOnly ContainerFrom = new(8, 0);
     private static readonly TimeOnly ContainerUntil = new(12, 0);
@@ -37,6 +38,7 @@ public class ContainerAutofillServiceCharacterizationTests
     private IGeocodingService _geocoding = null!;
     private IAddressCoordinateWriter _coordinateWriter = null!;
     private ISettingsReader _settingsReader = null!;
+    private ICountryResolver _countryResolver = null!;
     private IRouteDirectionsBuilder _directionsBuilder = null!;
     private List<RouteSegmentDirections> _directions = null!;
     private bool _matrixIsEstimated;
@@ -50,6 +52,7 @@ public class ContainerAutofillServiceCharacterizationTests
         _geocoding = Substitute.For<IGeocodingService>();
         _coordinateWriter = Substitute.For<IAddressCoordinateWriter>();
         _settingsReader = Substitute.For<ISettingsReader>();
+        _countryResolver = Substitute.For<ICountryResolver>();
         _directionsBuilder = Substitute.For<IRouteDirectionsBuilder>();
         _directions = [];
         _matrixIsEstimated = false;
@@ -64,6 +67,13 @@ public class ContainerAutofillServiceCharacterizationTests
             .GeocodeAddressAsync(EndAddress, Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(((double?)EndLatitude, (double?)0));
         _settingsReader.GetSetting(Arg.Any<string>()).Returns((SettingsEntity?)null);
+        _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns(new Countries
+        {
+            Id = Guid.NewGuid(),
+            Abbreviation = "AT",
+            Prefix = "+43",
+            Name = new MultiLanguage { De = DefaultCountryQueryName, En = "Austria" }
+        });
         _directionsBuilder
             .GetRouteDirectionsAsync(Arg.Any<List<Location>>(), Arg.Any<DistanceMatrix>(), Arg.Any<ContainerTransportMode>())
             .Returns(_ => _directions);
@@ -172,7 +182,7 @@ public class ContainerAutofillServiceCharacterizationTests
         result.SegmentDirections.ShouldBeSameAs(_directions);
         await _directionsBuilder.Received(1).GetRouteDirectionsAsync(
             result.OptimizedRoute, Arg.Any<DistanceMatrix>(), ContainerTransportMode.ByCar);
-        await _geocoding.Received(2).GeocodeAddressAsync(BaseAddress, "Switzerland", Arg.Any<CancellationToken>());
+        await _geocoding.Received(2).GeocodeAddressAsync(BaseAddress, DefaultCountryQueryName, Arg.Any<CancellationToken>());
         await _coordinateWriter.DidNotReceiveWithAnyArgs().UpdateCoordinatesAsync(default, default, default, default);
     }
 
@@ -264,7 +274,7 @@ public class ContainerAutofillServiceCharacterizationTests
     }
 
     [Test]
-    public async Task EmptyCountry_IsPassedAsIs_AndUngeocodableShiftIsDropped()
+    public async Task EmptyCountry_UsesTheCompanyDefaultCountry_AndUngeocodableShiftIsDropped()
     {
         // Arrange
         var stored = CreateShift("A", 1);
@@ -282,7 +292,7 @@ public class ContainerAutofillServiceCharacterizationTests
 
         // Assert
         result.SelectedShiftIds.ShouldBe([stored.Id]);
-        await _geocoding.Received(1).GeocodeAddressAsync("B-Street 1, 8000 B-City", string.Empty, Arg.Any<CancellationToken>());
+        await _geocoding.Received(1).GeocodeAddressAsync("B-Street 1, 8000 B-City", DefaultCountryQueryName, Arg.Any<CancellationToken>());
         await _coordinateWriter.DidNotReceiveWithAnyArgs().UpdateCoordinatesAsync(default, default, default, default);
     }
 
@@ -500,6 +510,7 @@ public class ContainerAutofillServiceCharacterizationTests
         services.AddSingleton(_geocoding);
         services.AddSingleton(_coordinateWriter);
         services.AddSingleton(_settingsReader);
+        services.AddSingleton(_countryResolver);
         services.AddSingleton(_directionsBuilder);
         services.AddContainerAutofillServices();
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
