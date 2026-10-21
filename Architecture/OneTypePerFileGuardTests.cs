@@ -6,12 +6,12 @@
 /// 1. A file declares at most one top-level class, record, struct or interface. Nested types are fine, and
 ///    enums and delegates are not named by the rule, so neither is counted. A partial type declared twice in
 ///    one file counts once; Foo and Foo&lt;T&gt; are two types.
-/// 2. A file that declares exactly one such type is named after it: Name.cs, Name.Part.cs for one part of a
-///    partial type, or Name{T}.cs for a generic type (the StyleCop SA1649 form, used where a non-generic and
+/// 2. A file that declares exactly one such type is named after it: Name.cs, Name.Part.cs (e.g. one part of
+///    a partial type), or Name{T}.cs for a generic type (the StyleCop SA1649 form, used where a non-generic and
 ///    a generic type share a name, e.g. Infrastructure/Mediator/IRequest{TResponse}.cs).
 ///
 /// A source scan rather than reflection: reflection sees types, not the file a type was declared in.
-/// Comments and string/char literals are blanked first (CSharpSourceBlanker), then a token walk tracks the
+/// Comments, string/char literals and preprocessor lines are blanked first, then a token walk tracks the
 /// brace scopes - a declaration counts only while every enclosing scope is a namespace, which covers
 /// file-scoped and block-scoped namespaces alike. "record" is a contextual keyword, so it counts only after
 /// a modifier, an attribute or a statement/brace boundary; "class"/"struct" after ':' or ',' are generic
@@ -43,7 +43,8 @@ public class OneTypePerFileGuardTests
     private const string SeedDirectory = @"Infrastructure\Persistence\Seed\";
     private const string NamespaceKeyword = "namespace";
     private const string RecordKeyword = "record";
-    private const string DelegateKeyword = "delegate";
+    private const string ClassKeyword = "class";
+    private const string StructKeyword = "struct";
     private const string WhereKeyword = "where";
     private const string SourceFilePattern = "*.cs";
 
@@ -66,12 +67,7 @@ public class OneTypePerFileGuardTests
 
     private static readonly HashSet<string> CountedKeywords = new(StringComparer.Ordinal)
     {
-        "class", "record", "struct", "interface",
-    };
-
-    private static readonly HashSet<string> SkippedKeywords = new(StringComparer.Ordinal)
-    {
-        "enum", DelegateKeyword,
+        ClassKeyword, RecordKeyword, StructKeyword, "interface",
     };
 
     private static readonly HashSet<string> Modifiers = new(StringComparer.Ordinal)
@@ -88,6 +84,13 @@ public class OneTypePerFileGuardTests
         @"@?[A-Za-z_][A-Za-z0-9_]*|\S",
         RegexOptions.Compiled | RegexOptions.CultureInvariant,
         TimeSpan.FromSeconds(1));
+
+    private static readonly Regex PreprocessorLine = new(
+        @"^[ \t]*#.*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline,
+        TimeSpan.FromSeconds(1));
+
+    private static readonly Lazy<ScanResult> CachedScan = new(ScanApiTree);
 
     private static readonly Regex Identifier = new(
         @"^@?[A-Za-z_][A-Za-z0-9_]*$",
@@ -127,7 +130,7 @@ public class OneTypePerFileGuardTests
     public void EverySingleTypeFile_IsNamedAfterItsType()
     {
         var offenders = Scan().Files
-            .Where(file => file.Types.Count == 1 && !IsNamedAfter(Path.GetFileName(file.RelativePath), file.Types[0]))
+            .Where(file => file.Types.Count == 1 && !IsNamedAfter(file.FileName, file.Types[0]))
             .Select(file => $"{file.RelativePath}: declares {file.Types[0]}")
             .OrderBy(line => line, StringComparer.Ordinal)
             .ToList();
@@ -173,7 +176,7 @@ public class OneTypePerFileGuardTests
             "file class First { }\n" +
             "public class Fifth<TKey, TValue> where TKey : struct { }\n";
 
-        var types = DeclaredTypes(CSharpSourceBlanker.BlankCommentsAndStrings(source)).Select(type => type.ToString()).ToList();
+        var types = DeclaredTypes(Blank(source)).Select(type => type.ToString()).ToList();
 
         types.ShouldBe(["First<1>", "Second", "IThird", "Fourth", "First", "Fifth<2>"]);
     }
@@ -191,9 +194,25 @@ public class OneTypePerFileGuardTests
             "    namespace C { internal interface IDeep { } }\n" +
             "}\n";
 
-        var types = DeclaredTypes(CSharpSourceBlanker.BlankCommentsAndStrings(source)).Select(type => type.ToString()).ToList();
+        var types = DeclaredTypes(Blank(source)).Select(type => type.ToString()).ToList();
 
         types.ShouldBe(["Outer", "IDeep"]);
+    }
+
+    [Test]
+    public void Scanner_IgnoresContextualRecordInTopLevelStatements_AndSeesRecordsAfterDirectives()
+    {
+        const string source =
+            "var record = 1;\n" +
+            "record = 2;\n" +
+            "System.Console.WriteLine(record);\n" +
+            "#region Types\n" +
+            "record Pair(int A, int B);\n" +
+            "#endregion\n";
+
+        var types = DeclaredTypes(Blank(source)).Select(type => type.ToString()).ToList();
+
+        types.ShouldBe(["Pair"]);
     }
 
     [TestCase("Foo.cs", "Foo", 0, ExpectedResult = true)]
@@ -208,7 +227,12 @@ public class OneTypePerFileGuardTests
         return IsNamedAfter(fileName, new DeclaredType(typeName, arity));
     }
 
-    private static ScanResult Scan()
+    private static ScanResult Scan() => CachedScan.Value;
+
+    private static string Blank(string source) =>
+        PreprocessorLine.Replace(CSharpSourceBlanker.BlankCommentsAndStrings(source), string.Empty);
+
+    private static ScanResult ScanApiTree()
     {
         var root = RepositoryRootLocator.ApiProject;
         var files = new List<ScannedFile>();
@@ -221,8 +245,8 @@ public class OneTypePerFileGuardTests
             }
 
             var relative = NormalizeSeparators(Path.GetRelativePath(root, path));
-            var types = DeclaredTypes(CSharpSourceBlanker.BlankCommentsAndStrings(File.ReadAllText(path)));
-            files.Add(new ScannedFile(relative, types));
+            var types = DeclaredTypes(Blank(File.ReadAllText(path)));
+            files.Add(new ScannedFile(relative, Path.GetFileName(path), types));
         }
 
         return new ScanResult(files);
@@ -272,7 +296,7 @@ public class OneTypePerFileGuardTests
             }
 
             var nameIndex = index + 1;
-            if (token == RecordKeyword && nameIndex < tokens.Count && (tokens[nameIndex] == "struct" || tokens[nameIndex] == "class"))
+            if (token == RecordKeyword && nameIndex < tokens.Count && (tokens[nameIndex] == StructKeyword || tokens[nameIndex] == ClassKeyword))
             {
                 nameIndex++;
             }
@@ -282,7 +306,7 @@ public class OneTypePerFileGuardTests
                 continue;
             }
 
-            if (SkippedKeywords.Contains(token) || !scopes.All(isNamespace => isNamespace))
+            if (!scopes.All(isNamespace => isNamespace))
             {
                 continue;
             }
@@ -299,7 +323,7 @@ public class OneTypePerFileGuardTests
 
     private static bool IsTypeDeclarationKeyword(string token, string? previous)
     {
-        if (!CountedKeywords.Contains(token) && !SkippedKeywords.Contains(token))
+        if (!CountedKeywords.Contains(token))
         {
             return false;
         }
@@ -309,7 +333,7 @@ public class OneTypePerFileGuardTests
             return false;
         }
 
-        if ((token == "struct" || token == "class") && previous == RecordKeyword)
+        if ((token == StructKeyword || token == ClassKeyword) && previous == RecordKeyword)
         {
             return false;
         }
@@ -375,7 +399,7 @@ public class OneTypePerFileGuardTests
         public override string ToString() => Arity == 0 ? Name : $"{Name}<{Arity}>";
     }
 
-    private sealed record ScannedFile(string RelativePath, IReadOnlyList<DeclaredType> Types);
+    private sealed record ScannedFile(string RelativePath, string FileName, IReadOnlyList<DeclaredType> Types);
 
     private sealed record ScanResult(IReadOnlyList<ScannedFile> Files);
 }
