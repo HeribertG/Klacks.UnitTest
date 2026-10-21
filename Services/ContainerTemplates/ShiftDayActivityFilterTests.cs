@@ -1,10 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Table tests of ShiftDayActivityFilter, the day rule of the available-task list and the container autofill, over an
-/// in-memory query: every stored weekday (0=Sunday .. 6=Saturday) maps to its own flag on a normal day and on a holiday,
-/// an out-of-range weekday does not restrict the weekday, and the FT template of every holiday only takes the shifts that
-/// run on every holiday.
+/// Table tests of ShiftDayActivityFilter, the slot rule of the available-task list and the container autofill, over an
+/// in-memory query: every stored weekday (0=Sunday .. 6=Saturday) maps to its own flag in the normal slot and in the holiday
+/// slot of that weekday, an out-of-range weekday does not restrict the weekday, and the generic holiday slot (every public
+/// holiday, also when IsWeekdayAndHoliday is not given) only takes the shifts that run on every holiday.
 /// </summary>
 
 using Klacks.Api.Domain.Models.Schedules;
@@ -45,7 +45,7 @@ public class ShiftDayActivityFilterTests
     [TestCase(4)]
     [TestCase(5)]
     [TestCase(6)]
-    public void HolidayOfAWeekday_KeepsHolidayShiftsAndTheWeekdayAndHolidayShiftOfThatWeekday(int weekday)
+    public void HolidaySlotOfAWeekday_KeepsHolidayShiftsAndTheWeekdayAndHolidayShiftOfThatWeekday(int weekday)
     {
         // Arrange
         var weekdayAndHoliday = Enumerable.Range(0, DaysPerWeek).Select(day => Ticked(day, isWeekdayAndHoliday: true)).ToList();
@@ -54,7 +54,7 @@ public class ShiftDayActivityFilterTests
 
         // Act
         var result = ShiftDayActivityFilter.Apply(
-            weekdayAndHoliday.Concat(plain).Append(pureHoliday).AsQueryable(), weekday, isHoliday: true, isWeekdayAndHoliday: null);
+            weekdayAndHoliday.Concat(plain).Append(pureHoliday).AsQueryable(), weekday, isHoliday: true, isWeekdayAndHoliday: true);
 
         // Assert
         result.ShouldBe([weekdayAndHoliday[weekday], pureHoliday], ignoreOrder: true);
@@ -71,15 +71,16 @@ public class ShiftDayActivityFilterTests
 
         // Act
         var normalDay = ShiftDayActivityFilter.Apply(shifts, OutOfRangeWeekday, isHoliday: null, isWeekdayAndHoliday: null);
-        var holiday = ShiftDayActivityFilter.Apply(shifts, OutOfRangeWeekday, isHoliday: true, isWeekdayAndHoliday: null);
+        var holiday = ShiftDayActivityFilter.Apply(shifts, OutOfRangeWeekday, isHoliday: true, isWeekdayAndHoliday: true);
 
         // Assert
         normalDay.ShouldBe([monday, tuesdayAndHoliday, nothingTicked], ignoreOrder: true);
         holiday.ShouldBe([tuesdayAndHoliday]);
     }
 
-    [Test]
-    public void EveryHolidayTemplate_KeepsOnlyShiftsThatRunOnEveryHoliday_WhateverTheWeekday()
+    [TestCase(false)]
+    [TestCase(null)]
+    public void GenericHolidaySlot_KeepsOnlyShiftsThatRunOnEveryHoliday_WhateverTheWeekday(bool? isWeekdayAndHoliday)
     {
         // Arrange
         var pureHoliday = new Shift { Id = Guid.NewGuid(), IsHoliday = true };
@@ -101,7 +102,7 @@ public class ShiftDayActivityFilterTests
         var shifts = new[] { pureHoliday, mondayAndHoliday, everyWeekdayAndHoliday, mondayWeekdayAndHoliday, monday }.AsQueryable();
 
         // Act
-        var result = ShiftDayActivityFilter.Apply(shifts, 1, isHoliday: true, isWeekdayAndHoliday: false);
+        var result = ShiftDayActivityFilter.Apply(shifts, 1, isHoliday: true, isWeekdayAndHoliday: isWeekdayAndHoliday);
 
         // Assert
         result.ShouldBe([pureHoliday, mondayAndHoliday, everyWeekdayAndHoliday], ignoreOrder: true);

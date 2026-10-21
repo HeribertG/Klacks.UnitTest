@@ -409,25 +409,26 @@ public class ContainerAutofillServiceCharacterizationTests
         await _availableTasks.Received(1).GetAvailableTasksAsync(
             Arg.Any<Guid>(), Arg.Any<int>(), Arg.Is(ContainerFrom), Arg.Is(ContainerUntil),
             Arg.Is<string?>(v => v == null), Arg.Is<Guid?>(v => v == null),
-            Arg.Is<bool?>(v => v == false), Arg.Is<bool?>(v => v == null),
+            Arg.Is<bool?>(v => v == false), Arg.Is<bool?>(v => v == false),
             Arg.Is(lockIds), Arg.Any<CancellationToken>());
     }
 
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task HolidayFlag_IsPassedToTheAvailableTasksQuery_AndTheWeekdayAndHolidayFlagStaysUnset(bool isHoliday)
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public async Task SlotFlags_ArePassedToTheAvailableTasksQuery(bool isHoliday, bool isWeekdayAndHoliday)
     {
         // Arrange
         GivenTasks(CreateShift("A", 1));
 
         // Act
-        await CreateSut().AutofillAsync(CreateRequest(isHoliday: isHoliday));
+        await CreateSut().AutofillAsync(CreateRequest(isHoliday: isHoliday, isWeekdayAndHoliday: isWeekdayAndHoliday));
 
         // Assert
         await _availableTasks.Received(1).GetAvailableTasksAsync(
             Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
             Arg.Any<string?>(), Arg.Any<Guid?>(),
-            Arg.Is<bool?>(v => v == isHoliday), Arg.Is<bool?>(v => v == null),
+            Arg.Is<bool?>(v => v == isHoliday), Arg.Is<bool?>(v => v == isWeekdayAndHoliday),
             Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
     }
 
@@ -552,11 +553,12 @@ public class ContainerAutofillServiceCharacterizationTests
         double tolerance = 0.5,
         List<TimeBlock>? timeBlocks = null,
         IReadOnlyCollection<Guid>? additionalWorkIds = null,
-        bool isHoliday = false)
+        bool isHoliday = false,
+        bool isWeekdayAndHoliday = false)
     {
         return new ContainerAutofillRequest(
             Guid.NewGuid(), 1, isHoliday, startBase, endBase, ContainerFrom, ContainerUntil,
-            transportMode, tolerance, CancellationToken.None, timeBlocks, additionalWorkIds);
+            transportMode, tolerance, CancellationToken.None, timeBlocks, additionalWorkIds, isWeekdayAndHoliday);
     }
 
     private static Shift CreateShift(
