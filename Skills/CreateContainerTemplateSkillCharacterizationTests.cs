@@ -350,6 +350,24 @@ public class CreateContainerTemplateSkillCharacterizationTests
     }
 
     [Test]
+    public async Task TemplatesRoute_IsResolvedBeforeTheLock_SoAFailingResolverSendsNothing()
+    {
+        var routes = Substitute.For<ISelfApiRouteResolver>();
+        routes.Resolve(Arg.Any<Type>()).Returns<string>(_ =>
+        {
+            _calls.Add("route");
+            throw new InvalidOperationException("no route");
+        });
+        var skill = new CreateContainerTemplateSkill(
+            _shiftRepository, _containerTemplateRepository, _api.Client, routes, _shiftVisibilityGuard);
+
+        (await Should.ThrowAsync<InvalidOperationException>(() => skill.ExecuteAsync(Ctx(), Params())))
+            .Message.ShouldBe("no route");
+        _calls.ShouldBe(["shift-get", "shift-visible", "templates-get", "route"]);
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task MissingRequiredParameters_ThrowInDeclarationOrder()
     {
         (await Should.ThrowAsync<ArgumentException>(() => _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>())))

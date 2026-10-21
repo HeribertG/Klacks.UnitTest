@@ -373,6 +373,19 @@ public class CreateShiftSkillCharacterizationTests
         _calls.ShouldNotContain("group-get");
     }
 
+    [TestCase("fromDate", "someday")]
+    [TestCase("untilDate", "2026-05-31")]
+    [TestCase("sumEmployees", 0)]
+    [TestCase("quantity", 0)]
+    [TestCase("endTime", "xyz")]
+    public async Task ScheduleAndCountErrors_ComeBeforeTheGroupLookup(string key, object value)
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), With(("groupIds", GroupId.ToString()), (key, value)));
+
+        result.Success.ShouldBeFalse();
+        _calls.ShouldBe(CallsUpToMacro);
+    }
+
     [Test]
     public async Task UnknownGroup_IsRefused_WithoutAskingTheVisibilityGuard()
     {
