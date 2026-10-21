@@ -56,7 +56,6 @@ public class SourceFileSizeGuardTests
     {
         [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 806,
         [@"Domain\Services\RouteOptimization\ContainerAutofillService.cs"] = 841,
-        [@"Infrastructure\Services\AnalyseScenarios\AnalyseScenarioService.cs"] = 930,
         [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs"] = 946,
         [@"Application\Services\Assistant\Planning\PlanStepExecutor.cs"] = 819,
     };

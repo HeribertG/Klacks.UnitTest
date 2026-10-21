@@ -349,7 +349,7 @@ public class RestrictedTimeWindowEvaluatorTests
     public async Task EvaluateAsync_ScenarioClonedGroupItem_TaggedRuleStillFires()
     {
         // Regression: a scenario clones the shift under a FRESH id and clones its GroupItem link to that
-        // clone id under the scenario token (AnalyseScenarioService.CloneShifts). The cloned work carries
+        // clone id under the scenario token (ScenarioShiftCloner.CloneShifts). The cloned work carries
         // the clone shift id + token. Reading GroupItem by shift id with NO token filter must still resolve
         // the tag - a token == null filter would blind every tagged rule in scenario mode.
         var token = Guid.NewGuid();

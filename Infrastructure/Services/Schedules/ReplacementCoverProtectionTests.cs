@@ -271,7 +271,7 @@ public class ReplacementCoverProtectionTests
         AddChange(covered, WorkChangeType.ReplacementWithin, _substitute, token);
         var plain = AddWork(_substitute, Day, token);
         await _context.SaveChangesAsync();
-        var service = new Klacks.Api.Infrastructure.Services.AnalyseScenarios.AnalyseScenarioService(_context);
+        var service = AnalyseScenarioTestServiceFactory.Create(_context);
 
         await service.SoftDeleteClonedWorksOnSlotsAsync(token, From, Until, new HashSet<(Guid, DateOnly)> { (_shift, Day) }, CancellationToken.None);
         await _context.SaveChangesAsync();

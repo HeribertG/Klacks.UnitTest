@@ -42,10 +42,10 @@ public class AnalyseScenarioCloneSourceSqlTests
     {
         var queries = new[]
         {
-            AnalyseScenarioService.WhereFromSource(_context.Work, Source).ToQueryString(),
-            AnalyseScenarioService.WhereFromSource(_context.Break, Source).ToQueryString(),
-            AnalyseScenarioService.WhereFromSource(_context.ScheduleNotes, Source).ToQueryString(),
-            AnalyseScenarioService.WhereFromSource(_context.ScheduleCommands, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereFromSource(_context.Work, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereFromSource(_context.Break, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereFromSource(_context.ScheduleNotes, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereFromSource(_context.ScheduleCommands, Source).ToQueryString(),
         };
 
         foreach (var sql in queries.Select(Normalize))
@@ -63,13 +63,13 @@ public class AnalyseScenarioCloneSourceSqlTests
     {
         var queries = new[]
         {
-            AnalyseScenarioService.WhereEitherWorld(_context.Work, Source).ToQueryString(),
-            AnalyseScenarioService.WhereEitherWorld(_context.WorkChange, Source).ToQueryString(),
-            AnalyseScenarioService.WhereEitherWorld(_context.Expenses, Source).ToQueryString(),
-            AnalyseScenarioService.WhereEitherWorld(_context.Shift, Source).ToQueryString(),
-            AnalyseScenarioService.WhereEitherWorld(_context.Set<Klacks.Api.Domain.Models.Associations.GroupItem>(), Source).ToQueryString(),
-            AnalyseScenarioService.WhereEitherWorld(_context.Set<Klacks.Api.Domain.Models.Associations.ClientShiftPreference>(), Source).ToQueryString(),
-            AnalyseScenarioService.WhereEitherWorld(_context.Set<Klacks.Api.Domain.Models.Schedules.ShiftExpenses>(), Source).ToQueryString(),
+            ScenarioSourceFilters.WhereEitherWorld(_context.Work, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereEitherWorld(_context.WorkChange, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereEitherWorld(_context.Expenses, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereEitherWorld(_context.Shift, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereEitherWorld(_context.Set<Klacks.Api.Domain.Models.Associations.GroupItem>(), Source).ToQueryString(),
+            ScenarioSourceFilters.WhereEitherWorld(_context.Set<Klacks.Api.Domain.Models.Associations.ClientShiftPreference>(), Source).ToQueryString(),
+            ScenarioSourceFilters.WhereEitherWorld(_context.Set<Klacks.Api.Domain.Models.Schedules.ShiftExpenses>(), Source).ToQueryString(),
         };
 
         foreach (var sql in queries.Select(Normalize))
@@ -85,9 +85,9 @@ public class AnalyseScenarioCloneSourceSqlTests
         var clients = (Real: new List<Guid> { Guid.NewGuid() }, WithSource: new List<Guid> { Guid.NewGuid(), Guid.NewGuid() });
         var queries = new[]
         {
-            AnalyseScenarioService.WhereClientInScope(_context.Break, clients, Source).ToQueryString(),
-            AnalyseScenarioService.WhereClientInScope(_context.ScheduleNotes, clients, Source).ToQueryString(),
-            AnalyseScenarioService.WhereClientInScope(_context.ScheduleCommands, clients, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereClientInScope(_context.Break, clients, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereClientInScope(_context.ScheduleNotes, clients, Source).ToQueryString(),
+            ScenarioSourceFilters.WhereClientInScope(_context.ScheduleCommands, clients, Source).ToQueryString(),
         };
 
         foreach (var sql in queries.Select(Normalize))
@@ -101,8 +101,8 @@ public class AnalyseScenarioCloneSourceSqlTests
     [Test]
     public void Filters_OfTheRealPlan_StayThePlainRealPlanFilter()
     {
-        var work = Normalize(AnalyseScenarioService.WhereFromSource(_context.Work, ScenarioCloneSource.RealPlan).ToQueryString());
-        var change = Normalize(AnalyseScenarioService.WhereEitherWorld(_context.WorkChange, ScenarioCloneSource.RealPlan).ToQueryString());
+        var work = Normalize(ScenarioSourceFilters.WhereFromSource(_context.Work, ScenarioCloneSource.RealPlan).ToQueryString());
+        var change = Normalize(ScenarioSourceFilters.WhereEitherWorld(_context.WorkChange, ScenarioCloneSource.RealPlan).ToQueryString());
 
         foreach (var sql in new[] { work, change })
         {
