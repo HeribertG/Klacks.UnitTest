@@ -252,16 +252,17 @@ public class UpdateContractSkillCharacterizationTests
     }
 
     [Test]
-    public async Task ClearGuaranteedHoursAndPercent_AfterValidFrom_ValueAndClearTogether_AreBothListed()
+    public async Task ClearGuaranteedHoursAndPercent_BetweenValidFromAndValidUntil_ValueAndClearTogether_AreBothListed()
     {
         _existing.Percent = 80m;
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(
-            ("guaranteedHours", 120m), ("clearGuaranteedHours", true), ("clearPercent", true), ("validFrom", "2026-02-01")));
+            ("guaranteedHours", 120m), ("clearGuaranteedHours", true), ("clearPercent", true), ("validFrom", "2026-02-01"),
+            ("validUntil", "2026-12-31")));
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldBe(
-            $"Contract 'Vollzeit 160' (id {ContractId}) updated (guaranteedHours, validFrom, guaranteedHours, percent).");
+            $"Contract 'Vollzeit 160' (id {ContractId}) updated (guaranteedHours, validFrom, guaranteedHours, percent, validUntil).");
         _put!.GuaranteedHours.ShouldBeNull();
         _put.Percent.ShouldBeNull();
     }
