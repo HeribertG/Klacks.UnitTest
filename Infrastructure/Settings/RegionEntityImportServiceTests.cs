@@ -354,4 +354,22 @@ public class RegionEntityImportServiceTests
         _updatedMacros.ShouldBeEmpty();
         imported.Content.ShouldBe("import hour\nOUTPUT 1, Hour * 2");
     }
+
+    [Test]
+    public async Task ApplyEntityImportsAsync_NewRateRevision_DispatchesRateRevisionsImportedEventAfterCommit()
+    {
+        var json = """
+            { "version": 1, "industryProfiles": { "security": {
+                "schedulingRulePresets": [ { "name": "Sec Std", "rateRevisions": [ { "validFrom": "2027-03-01", "nightRate": 0.25 } ] } ] } } }
+            """;
+
+        await CreateService().ApplyEntityImportsAsync(ParseProfile(json));
+
+        var rule = _addedSchedulingRules.Single();
+        await _eventDispatcher.Received(1).DispatchAsync(
+            Arg.Is<SchedulingRuleRateRevisionsImportedEvent>(e =>
+                e.RuleIds.SequenceEqual(new[] { rule.Id }) && e.EarliestChangedValidFrom == new DateOnly(2027, 3, 1)),
+            Arg.Any<CancellationToken>());
+        await _eventDispatcher.DidNotReceive().DispatchAsync(Arg.Any<SurchargeSettingsChangedEvent>(), Arg.Any<CancellationToken>());
+    }
 }

@@ -34,7 +34,7 @@ using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
 namespace Klacks.UnitTest.Infrastructure.Settings;
 
 [TestFixture]
-public class RegionSetupServiceTests
+public partial class RegionSetupServiceTests
 {
     private ISettingsRepository _settingsRepository = null!;
     private ICalendarSelectionRepository _calendarSelectionRepository = null!;
