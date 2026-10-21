@@ -54,7 +54,6 @@ public class SourceFileSizeGuardTests
     // Relative path -> its measured line count on the day it was allowlisted. See ShrinkOnlyHint.
     private static readonly IReadOnlyDictionary<string, int> FileCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Application\Services\Assistant\Planning\PlanStepExecutor.cs"] = 819,
     };
 
     // "RelativePath::MethodName" -> its measured body length on the day it was allowlisted.
