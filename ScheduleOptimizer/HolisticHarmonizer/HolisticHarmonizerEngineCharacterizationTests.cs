@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Services.Schedules.HolisticHarmonizer;
@@ -9,6 +10,8 @@ using Klacks.ScheduleOptimizer.Harmonizer.Bitmap;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Llm;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Loop;
 using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
+using Klacks.UnitTest.TestHelpers;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
@@ -35,6 +38,9 @@ public class HolisticHarmonizerEngineCharacterizationTests
     private const int LongRawLength = 700;
     private const int PreviewLength = 600;
     private const string FitnessFormat = "G12";
+    private const string ElapsedPlaceholder = "elapsed=*ms";
+    private static readonly Regex ElapsedPattern = new(@"elapsed=\d+ms", RegexOptions.Compiled);
+    private static readonly Regex RouletteIntentPattern = new(@"iter=(\d+) intent=[a-z_]+ candidates=\d+", RegexOptions.Compiled);
     private static readonly DateOnly PeriodFrom = new(2026, 1, 5);
     private static readonly DateOnly PeriodUntil = new(2026, 1, 8);
     private static readonly Guid AgentGuid = new("aaaaaaaa-0000-0000-0000-000000000001");
@@ -48,7 +54,94 @@ public class HolisticHarmonizerEngineCharacterizationTests
         var run = await RunAsync(EmptyContext(), (_, index) => Batches(index, new PlanCellSwap(0, 0, 1, 0, ProbeReason)));
 
         run.Requests.ShouldAllBe(request => request.CandidateMoves != null && request.CandidateMoves.Count == 0);
+        run.Progress[0].ElapsedMs.ShouldBe(0);
         run.Trace.ShouldBe(Expected.EmptyBitmapPlateau);
+    }
+
+    [Test]
+    public async Task EmptyBitmap_TwoRunsOnOneEngine_StartFromAFreshRunState()
+    {
+        var requests = new List<PlanProposalRequest>();
+        var provider = HealthyProvider();
+        provider
+            .ProposeAsync(Arg.Any<PlanProposalRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                requests.Add(call.Arg<PlanProposalRequest>());
+                return Batches(requests.Count - 1, new PlanCellSwap(0, 0, 1, 0, ProbeReason));
+            });
+        var engine = CreateEngine(ContextBuilder(EmptyContext()), provider);
+        var firstProgress = new RecordingProgress();
+        var secondProgress = new RecordingProgress();
+
+        var first = await engine.RunAsync(Request(), firstProgress, CancellationToken.None);
+        var second = await engine.RunAsync(Request(), secondProgress, CancellationToken.None);
+
+        requests.Count.ShouldBe(10);
+        requests.Skip(5).Select(request => (request.IterationIndex, request.MaxStepsPerBatch, request.PriorRejections.Count))
+            .ShouldBe(requests.Take(5).Select(request => (request.IterationIndex, request.MaxStepsPerBatch, request.PriorRejections.Count)));
+        requests[5].IterationIndex.ShouldBe(0);
+        requests[5].MaxStepsPerBatch.ShouldBe(3);
+        requests[5].PriorRejections.ShouldBeEmpty();
+        secondProgress.Reports.Select(report => (report.IterationIndex, report.AcceptedBatchCount, report.RejectedBatchCount))
+            .ShouldBe(firstProgress.Reports.Select(report => (report.IterationIndex, report.AcceptedBatchCount, report.RejectedBatchCount)));
+        second.Iterations.Count.ShouldBe(first.Iterations.Count);
+        second.Iterations.ShouldNotBeSameAs(first.Iterations);
+    }
+
+    [Test]
+    public async Task TwoStepLessBatchesThenRejects_CountTheDroppedIterationsOnceTowardThePlateau()
+    {
+        var run = await RunAsync(EmptyContext(), (_, index) => index < 2
+            ? Batches(index)
+            : Batches(index, new PlanCellSwap(0, 0, 1, 0, ProbeReason)));
+
+        run.Requests.Count.ShouldBe(5);
+        run.Trace.ShouldBe(Expected.StepLessThenRejects);
+    }
+
+    [Test]
+    public async Task StepLessStreakIsResetByAnEvaluatedBatch()
+    {
+        var run = await RunAsync(EmptyContext(), (_, index) => index switch
+        {
+            0 or 1 or 3 or 4 => Batches(index),
+            2 => Batches(index, new PlanCellSwap(0, 0, 1, 0, ProbeReason)),
+            _ => Satisfied(),
+        });
+
+        run.Result.AbortedOnUnusableResponses.ShouldBeFalse();
+        run.Trace.ShouldBe(Expected.StepLessStreakReset);
+    }
+
+    [Test]
+    public async Task ParsingErrorThenTwoStepLessBatches_AbortsWithTheParsingErrorNotTheFallback()
+    {
+        var run = await RunAsync(EmptyContext(), (_, index) => index == 0 ? Unparsable("broken") : Batches(index));
+
+        run.Result.LlmParsingError.ShouldBe(ParsingFailure);
+        run.Trace.ShouldBe(Expected.ParsingErrorThenStepLessAbort);
+    }
+
+    [Test]
+    public async Task ThreeResponsesWithoutBatchesOrSatisfiedSignal_AbortWithTheNoUsableBatchError()
+    {
+        var run = await RunAsync(EmptyContext(), (_, _) => NotSatisfiedWithoutBatches());
+
+        run.Result.LlmParsingError.ShouldBe("Model response contained no usable batch.");
+        run.Trace.ShouldBe(Expected.NoBatchesWithoutSatisfiedAbort);
+    }
+
+    [Test]
+    public async Task PlanningRulesWithoutARule_PassTheInvalidRuleIdsThrough()
+    {
+        var invalidRuleId = new Guid("eeeeeeee-0000-0000-0000-000000000001");
+        var context = EmptyContext() with { Rules = new BitmapPlanningRules([], [], 0, InvalidHardRuleIds: [invalidRuleId]) };
+
+        var run = await RunAsync(context, (_, _) => Satisfied());
+
+        run.Result.InvalidPlanningRuleIds.ShouldBe([invalidRuleId]);
+        run.Result.PlanningRuleHardCounts.ShouldBeNull();
     }
 
     [Test]
@@ -205,21 +298,20 @@ public class HolisticHarmonizerEngineCharacterizationTests
                 return script(request, requests.Count - 1);
             });
         var progress = new RecordingProgress();
+        var logger = new RecordingLogger<HolisticHarmonizerEngine>();
 
-        var result = await CreateEngine(ContextBuilder(context), provider)
+        var result = await CreateEngine(ContextBuilder(context), provider, logger)
             .RunAsync(Request(language: null), progress, CancellationToken.None);
 
-        var trace = BuildTrace(result, requests, progress.Reports);
-        TestContext.Out.WriteLine("TRACE-BEGIN " + TestContext.CurrentContext.Test.Name);
-        TestContext.Out.WriteLine(trace);
-        TestContext.Out.WriteLine("TRACE-END");
+        var trace = BuildTrace(result, requests, progress.Reports, logger.Entries);
         return new RunCapture(result, requests, progress.Reports, trace);
     }
 
     private static string BuildTrace(
         HolisticHarmonizerRunResult result,
         IReadOnlyList<PlanProposalRequest> requests,
-        IReadOnlyList<HolisticHarmonizerProgress> progress)
+        IReadOnlyList<HolisticHarmonizerProgress> progress,
+        IReadOnlyList<RecordedLogEntry> logEntries)
     {
         var trace = new StringBuilder();
         for (var i = 0; i < requests.Count; i++)
@@ -255,7 +347,25 @@ public class HolisticHarmonizerEngineCharacterizationTests
         trace.Append(CultureInfo.InvariantCulture,
             $"result: model={result.LlmModelId} before={Format(result.FitnessBefore)} after={Format(result.FitnessAfter)} error={result.LlmParsingError ?? "<null>"} preview={result.LlmRawResponsePreview ?? "<null>"} aborted={result.AbortedOnUnusableResponses} finalIsOriginal={ReferenceEquals(result.FinalBitmap, result.OriginalBitmap)} invalidRules={result.InvalidPlanningRuleIds.Count} hardCounts={(result.PlanningRuleHardCounts is null ? "<null>" : "set")}\n");
         trace.Append(CultureInfo.InvariantCulture, $"final: {Rows(HarmonyBitmapTextRenderer.Render(result.FinalBitmap))}");
+        foreach (var entry in logEntries)
+        {
+            trace.Append(CultureInfo.InvariantCulture, $"\nlog: {entry.Level} {NormalizeLogMessage(entry.Message)}");
+        }
+
         return trace.ToString();
+    }
+
+    /// <summary>
+    /// Removes the non-deterministic parts of the engine log: the elapsed milliseconds and, from iteration 1 on, the
+    /// focused intent the unseeded roulette picks together with the size of its candidate list (iteration 0 always logs
+    /// the baseline intent).
+    /// </summary>
+    private static string NormalizeLogMessage(string message)
+    {
+        var withoutElapsed = ElapsedPattern.Replace(message, ElapsedPlaceholder);
+        return RouletteIntentPattern.Replace(
+            withoutElapsed,
+            match => match.Groups[1].Value == "0" ? match.Value : $"iter={match.Groups[1].Value} intent=* candidates=*");
     }
 
     private static string Format(double value) => value.ToString(FitnessFormat, CultureInfo.InvariantCulture);
@@ -281,13 +391,19 @@ public class HolisticHarmonizerEngineCharacterizationTests
     private static PlanProposalResponse Satisfied()
         => new(Batches: [], RawResponse: "{\"batches\":[]}", ParsingError: null, LlmSignaledSatisfied: true);
 
+    private static PlanProposalResponse NotSatisfiedWithoutBatches()
+        => new(Batches: [], RawResponse: "{\"batches\":[{\"steps\":[]}]}", ParsingError: null);
+
     private static PlanProposalResponse Unparsable(string raw)
         => new(Batches: [], RawResponse: raw, ParsingError: ParsingFailure);
 
     private static Guid BatchId(int index) => new($"00000000-0000-0000-0000-{index:D12}");
 
-    private static HolisticHarmonizerEngine CreateEngine(IHarmonizerContextBuilder contextBuilder, IPlanProposalProvider provider)
-        => new(contextBuilder, provider, new HolisticHarmonizerModelCapabilityCache(), NullLogger<HolisticHarmonizerEngine>.Instance);
+    private static HolisticHarmonizerEngine CreateEngine(
+        IHarmonizerContextBuilder contextBuilder,
+        IPlanProposalProvider provider,
+        ILogger<HolisticHarmonizerEngine>? logger = null)
+        => new(contextBuilder, provider, new HolisticHarmonizerModelCapabilityCache(), logger ?? NullLogger<HolisticHarmonizerEngine>.Instance);
 
     private static IHarmonizerContextBuilder ContextBuilder(BitmapInput context)
     {
@@ -304,6 +420,9 @@ public class HolisticHarmonizerEngineCharacterizationTests
         provider
             .CapabilityCheckAsync(ModelId, Arg.Any<CancellationToken>())
             .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 25, Error: null));
+        provider
+            .PingAsync(ModelId, Arg.Any<CancellationToken>())
+            .Returns(new PlanProposalPingResult(IsHealthy: true, LatencyMs: 10, Error: null));
         return provider;
     }
 
@@ -370,6 +489,103 @@ public class HolisticHarmonizerEngineCharacterizationTests
 
     private static class Expected
     {
+        public const string StepLessThenRejects =
+            "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
+            + "request 1: model=stub-model iter=1 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 2: model=stub-model iter=2 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 3: model=stub-model iter=3 cap=2 lang=en priorRejections=1 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 4: model=stub-model iter=4 cap=1 lang=en priorRejections=2 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "progress: iter=0 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "progress: iter=1 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "progress: iter=2 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "progress: iter=3 max=10 best=0.529182389937 accepted=0 rejected=1\n"
+            + "progress: iter=4 max=10 best=0.529182389937 accepted=0 rejected=2\n"
+            + "progress: iter=5 max=10 best=0.529182389937 accepted=0 rejected=3\n"
+            + "evaluation: batch=00000000-0000-0000-0000-000000000002 intent=consolidate_block result=Rejected stoppedAt=0 applied=0 reverted=0 reasons=[NoEffect] score 0.529182389937 -> 0.529182389937\n"
+            + "evaluation: batch=00000000-0000-0000-0000-000000000003 intent=consolidate_block result=Rejected stoppedAt=0 applied=0 reverted=0 reasons=[NoEffect] score 0.529182389937 -> 0.529182389937\n"
+            + "evaluation: batch=00000000-0000-0000-0000-000000000004 intent=consolidate_block result=Rejected stoppedAt=0 applied=0 reverted=0 reasons=[NoEffect] score 0.529182389937 -> 0.529182389937\n"
+            + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=<null> preview=<null> aborted=False finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=2 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=2 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=2 batch=00000000-0000-0000-0000-000000000002 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=3 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=3 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=3 batch=00000000-0000-0000-0000-000000000003 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=4 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=4 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=4 batch=00000000-0000-0000-0000-000000000004 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer inner loop hit plateau after iter=5\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=3 acceptedBatches=0 rejectedBatches=3 fitness 0.529 -> 0.529 elapsed=*ms";
+
+        public const string StepLessStreakReset =
+            "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
+            + "request 1: model=stub-model iter=1 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 2: model=stub-model iter=2 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 3: model=stub-model iter=3 cap=2 lang=en priorRejections=1 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 4: model=stub-model iter=4 cap=2 lang=en priorRejections=1 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "progress: iter=0 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "progress: iter=1 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "progress: iter=2 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "progress: iter=3 max=10 best=0.529182389937 accepted=0 rejected=1\n"
+            + "progress: iter=4 max=10 best=0.529182389937 accepted=0 rejected=1\n"
+            + "progress: iter=5 max=10 best=0.529182389937 accepted=0 rejected=1\n"
+            + "evaluation: batch=00000000-0000-0000-0000-000000000002 intent=consolidate_block result=Rejected stoppedAt=0 applied=0 reverted=0 reasons=[NoEffect] score 0.529182389937 -> 0.529182389937\n"
+            + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=<null> preview=<null> aborted=False finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=2 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=2 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=2 batch=00000000-0000-0000-0000-000000000002 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=3 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=3 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=4 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=4 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer inner loop hit plateau after iter=5\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=1 acceptedBatches=0 rejectedBatches=1 fitness 0.529 -> 0.529 elapsed=*ms";
+
+        public const string ParsingErrorThenStepLessAbort =
+            "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
+            + "request 1: model=stub-model iter=1 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 2: model=stub-model iter=2 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "progress: iter=0 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "progress: iter=2 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=balanced-brace scan found no JSON object preview={\"batches\":[{\"steps\":0}]} aborted=True finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Warning Holistic Harmonizer iter=0 parsing failed: balanced-brace scan found no JSON object\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=2 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=2 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=0 acceptedBatches=0 rejectedBatches=0 fitness 0.529 -> 0.529 elapsed=*ms";
+
+        public const string NoBatchesWithoutSatisfiedAbort =
+            "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
+            + "request 1: model=stub-model iter=1 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "request 2: model=stub-model iter=2 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "progress: iter=0 max=10 best=0.529182389937 accepted=0 rejected=0\n"
+            + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=Model response contained no usable batch. preview={\"batches\":[{\"steps\":[]}]} aborted=True finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Warning Holistic Harmonizer iter=0 produced no usable batch without signalling satisfaction\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Warning Holistic Harmonizer iter=1 produced no usable batch without signalling satisfaction\n"
+            + "log: Information Holistic Harmonizer iter=2 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Warning Holistic Harmonizer iter=2 produced no usable batch without signalling satisfaction\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=0 acceptedBatches=0 rejectedBatches=0 fitness 0.529 -> 0.529 elapsed=*ms";
+
         public const string EmptyBitmapPlateau =
             "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
             + "request 1: model=stub-model iter=1 cap=2 lang=en priorRejections=1 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
@@ -388,7 +604,25 @@ public class HolisticHarmonizerEngineCharacterizationTests
             + "evaluation: batch=00000000-0000-0000-0000-000000000003 intent=consolidate_block result=Rejected stoppedAt=0 applied=0 reverted=0 reasons=[NoEffect] score 0.529182389937 -> 0.529182389937\n"
             + "evaluation: batch=00000000-0000-0000-0000-000000000004 intent=consolidate_block result=Rejected stoppedAt=0 applied=0 reverted=0 reasons=[NoEffect] score 0.529182389937 -> 0.529182389937\n"
             + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=<null> preview=<null> aborted=False finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
-            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _";
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch=00000000-0000-0000-0000-000000000000 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=1 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=1 batch=00000000-0000-0000-0000-000000000001 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=2 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=2 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=2 batch=00000000-0000-0000-0000-000000000002 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=3 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=3 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=3 batch=00000000-0000-0000-0000-000000000003 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=4 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=4 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=4 batch=00000000-0000-0000-0000-000000000004 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer inner loop hit plateau after iter=5\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=5 acceptedBatches=0 rejectedBatches=5 fitness 0.529 -> 0.529 elapsed=*ms";
 
         public const string AssignmentAccepted =
             "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=2 plan=r00 Agent 0     E    _    E    _|r01 Agent 1     _    E    _    E agents=r00 Agent 0: target=16h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=16h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS (deterministic, pre-computed by the host):|- r00: 2 work blocks (lengths 1,1), free gap days [1]|- r01: 2 work blocks (lengths 1,1), free gap days [2]|TARGET ROWS for consolidate_block (most fragmented first): r00, r01|Use these rows as the primary candidates: propose batches that fill their gap days by swapping with neighbouring rows that work on those days (DayA == DayB).|\n"
@@ -397,7 +631,14 @@ public class HolisticHarmonizerEngineCharacterizationTests
             + "progress: iter=1 max=10 best=0.796358974359 accepted=1 rejected=0\n"
             + "evaluation: batch=00000000-0000-0000-0000-000000000000 intent=consolidate_block result=Accepted stoppedAt= applied=2 reverted=0 reasons=[] score 0.647691056911 -> 0.796358974359\n"
             + "result: model=stub-model before=0.647691056911 after=0.796358974359 error=<null> preview=<null> aborted=False finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
-            + "final: r00 Agent 0     E    E    _    _|r01 Agent 1     _    _    E    E";
+            + "final: r00 Agent 0     E    E    _    _|r01 Agent 1     _    _    E    E\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=2 excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch intent=consolidate_block steps=2 fromCandidates=2/2 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch=00000000-0000-0000-0000-000000000000 intent=consolidate_block result=Accepted reason=- stoppedAtStep=(null) rejectedAt=- applied=r0d1<->r1d1,r1d2<->r0d2 reverted=- score 0.6477 -> 0.7964\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 returned an empty batches array — LLM signals satisfied\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=1 acceptedBatches=1 rejectedBatches=0 fitness 0.648 -> 0.796 elapsed=*ms";
 
         public const string AssignmentDropped =
             "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=2 plan=r00 Agent 0     E    _    E    _|r01 Agent 1     _    E    _    E agents=r00 Agent 0: target=16h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=16h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS (deterministic, pre-computed by the host):|- r00: 2 work blocks (lengths 1,1), free gap days [1]|- r01: 2 work blocks (lengths 1,1), free gap days [2]|TARGET ROWS for consolidate_block (most fragmented first): r00, r01|Use these rows as the primary candidates: propose batches that fill their gap days by swapping with neighbouring rows that work on those days (DayA == DayB).|\n"
@@ -405,7 +646,14 @@ public class HolisticHarmonizerEngineCharacterizationTests
             + "progress: iter=0 max=10 best=0.647691056911 accepted=0 rejected=0\n"
             + "progress: iter=1 max=10 best=0.647691056911 accepted=0 rejected=0\n"
             + "result: model=stub-model before=0.647691056911 after=0.647691056911 error=<null> preview=<null> aborted=False finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
-            + "final: r00 Agent 0     E    _    E    _|r01 Agent 1     _    E    _    E";
+            + "final: r00 Agent 0     E    _    E    _|r01 Agent 1     _    E    _    E\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=2 excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=1\n"
+            + "log: Information Holistic Harmonizer iter=0 batch intent=consolidate_block skipped: all steps were self-proposed and dropped (strict-candidate mode)\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 returned an empty batches array — LLM signals satisfied\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=0 acceptedBatches=0 rejectedBatches=0 fitness 0.648 -> 0.648 elapsed=*ms";
 
         public const string ParsingErrorRecovered =
             "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
@@ -415,14 +663,29 @@ public class HolisticHarmonizerEngineCharacterizationTests
             + "progress: iter=2 max=10 best=0.529182389937 accepted=0 rejected=1\n"
             + "evaluation: batch=00000000-0000-0000-0000-000000000001 intent=consolidate_block result=Rejected stoppedAt=0 applied=0 reverted=0 reasons=[NoEffect] score 0.529182389937 -> 0.529182389937\n"
             + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=<null> preview=<null> aborted=False finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
-            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _";
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Warning Holistic Harmonizer iter=0 parsing failed: balanced-brace scan found no JSON object\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 batch intent=consolidate_block steps=1 fromCandidates=0/1 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=1 batch=00000000-0000-0000-0000-000000000001 intent=consolidate_block result=Rejected reason=NoEffect stoppedAtStep=0 rejectedAt=r0d0<->r1d0 applied=- reverted=- score 0.5292 -> 0.5292\n"
+            + "log: Information Holistic Harmonizer iter=2 intent=* candidates=* excludedByRejectMemory=1\n"
+            + "log: Information Holistic Harmonizer iter=2 returned an empty batches array — LLM signals satisfied\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=1 acceptedBatches=0 rejectedBatches=1 fitness 0.529 -> 0.529 elapsed=*ms";
 
         public const string ParsingErrorThenSatisfied =
             "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
             + "request 1: model=stub-model iter=1 cap=3 lang=en priorRejections=0 png=True plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
             + "progress: iter=0 max=10 best=0.529182389937 accepted=0 rejected=0\n"
             + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=balanced-brace scan found no JSON object preview={\"batches\":[]} aborted=False finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
-            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _";
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Warning Holistic Harmonizer iter=0 parsing failed: balanced-brace scan found no JSON object\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 returned an empty batches array — LLM signals satisfied\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=0 acceptedBatches=0 rejectedBatches=0 fitness 0.529 -> 0.529 elapsed=*ms";
 
         public const string StepLessBatchesAbort =
             "request 0: model=stub-model iter=0 cap=3 lang=en priorRejections=0 png=True intent=consolidate_block candidates=0 plan=r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _ agents=r00 Agent 0: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]|r01 Agent 1: target=100h maxWeekly=0h maxConsec=0 minPause=0h minRestDaysPerWeek=0 preferred=[]| fragmentation=FRAGMENTATION ANALYSIS: no row has 2+ work blocks separated by free gap days. Reply with {\"batches\":[]}.\n"
@@ -432,6 +695,14 @@ public class HolisticHarmonizerEngineCharacterizationTests
             + "progress: iter=1 max=10 best=0.529182389937 accepted=0 rejected=0\n"
             + "progress: iter=2 max=10 best=0.529182389937 accepted=0 rejected=0\n"
             + "result: model=stub-model before=0.529182389937 after=0.529182389937 error=Model produced 3 consecutive responses without a usable batch. preview={\"batches\":[{\"steps\":0}]} aborted=True finalIsOriginal=False invalidRules=0 hardCounts=<null>\n"
-            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _";
+            + "final: r00 Agent 0     _    _    _    _|r01 Agent 1     _    _    _    _\n"
+            + "log: Information Holistic Harmonizer pre-flight: model=stub-model healthy=True latency=25ms error=<none>\n"
+            + "log: Information Holistic Harmonizer iter=0 intent=consolidate_block candidates=0 excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=0 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=1 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=1 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer iter=2 intent=* candidates=* excludedByRejectMemory=0\n"
+            + "log: Information Holistic Harmonizer iter=2 batch intent=consolidate_block steps=0 fromCandidates=0/0 droppedSelfProposed=0\n"
+            + "log: Information Holistic Harmonizer run finished: model=stub-model iterations=0 acceptedBatches=0 rejectedBatches=0 fitness 0.529 -> 0.529 elapsed=*ms";
     }
 }

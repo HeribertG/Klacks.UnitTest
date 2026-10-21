@@ -401,6 +401,46 @@ public class ErrorHandlingMiddlewareCharacterizationTests
     }
 
     [Test]
+    public async Task UnhandledExceptionWithoutHostEnvironment_SetsStatusAndProblemContentTypeBeforeTheLookupFails()
+    {
+        var logger = new RecordingLogger<ErrorHandlingMiddleware>();
+        var thrown = new ApplicationException("boom");
+        var middleware = new ErrorHandlingMiddleware(_ => throw thrown, logger);
+        var context = new DefaultHttpContext { RequestServices = new ServiceCollection().BuildServiceProvider() };
+        context.Response.Body = new MemoryStream();
+
+        await Should.ThrowAsync<InvalidOperationException>(() => middleware.Invoke(context));
+
+        context.Response.StatusCode.ShouldBe(StatusCodes.Status500InternalServerError);
+        context.Response.ContentType.ShouldBe("application/problem+json");
+        context.Response.Body.Length.ShouldBe(0);
+        logger.Entries.Count.ShouldBe(1);
+        logger.Entries[0].Level.ShouldBe(LogLevel.Error);
+        logger.Entries[0].Exception.ShouldBeSameAs(thrown);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task CancelledRequest_StripsLineBreaksFromTheLoggedMethod(bool postgresCancellation)
+    {
+        var logger = new RecordingLogger<ErrorHandlingMiddleware>();
+        Exception thrown = postgresCancellation
+            ? new PostgresException("canceling statement due to user request", "ERROR", "ERROR", "57014")
+            : new OperationCanceledException();
+        var middleware = new ErrorHandlingMiddleware(_ => throw thrown, logger);
+        var context = CreateContext(ProductionEnvironment);
+        context.Request.Method = "GE\r\nT";
+
+        await middleware.Invoke(context);
+
+        context.Response.StatusCode.ShouldBe(499);
+        logger.Entries.Count.ShouldBe(1);
+        logger.Entries[0].Message.ShouldBe(postgresCancellation
+            ? $"PostgreSQL query cancelled: GET {RequestPath}"
+            : $"Request cancelled: GET {RequestPath}");
+    }
+
+    [Test]
     public async Task NoException_LeavesTheResponseAndTheLogUntouched()
     {
         var logger = new RecordingLogger<ErrorHandlingMiddleware>();
