@@ -5,12 +5,13 @@
 /// split into collaborators can be proven behaviour-neutral. The distance matrix is a 1D line (latitude =
 /// position, 1 unit = 1 km = 600 s), so every travel time is exact. Only scenarios with at most two selected
 /// stops assert the route order: above two stops the unseeded ant colony optimizer reorders the route.
-/// The service is built through one helper so a constructor change during the split touches nothing else.
+/// The service is resolved through AddContainerAutofillServices, so the tests also prove the DI wiring of the split.
 /// </summary>
 
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.Api.Domain.Services.RouteOptimization;
+using Klacks.Api.Infrastructure.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Shouldly;
@@ -482,7 +483,7 @@ public class ContainerAutofillServiceCharacterizationTests
         services.AddSingleton(_coordinateWriter);
         services.AddSingleton(_settingsReader);
         services.AddSingleton(_directionsBuilder);
-        services.AddScoped<IContainerAutofillService, ContainerAutofillService>();
+        services.AddContainerAutofillServices();
         _provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         return _provider.CreateScope().ServiceProvider.GetRequiredService<IContainerAutofillService>();
     }

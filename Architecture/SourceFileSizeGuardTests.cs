@@ -55,7 +55,6 @@ public class SourceFileSizeGuardTests
     private static readonly IReadOnlyDictionary<string, int> FileCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
         [@"Infrastructure\Services\ScheduleTimelineBackgroundService.cs"] = 806,
-        [@"Domain\Services\RouteOptimization\ContainerAutofillService.cs"] = 841,
         [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs"] = 946,
         [@"Application\Services\Assistant\Planning\PlanStepExecutor.cs"] = 819,
     };
