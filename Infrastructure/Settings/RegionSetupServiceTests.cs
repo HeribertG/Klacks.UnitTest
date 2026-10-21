@@ -22,6 +22,8 @@ using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Services.Macros;
 using Klacks.Api.Infrastructure.Services.Settings;
+using Klacks.Api.Infrastructure.Services.Settings.RegionSetup;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1318,7 +1320,7 @@ public partial class RegionSetupServiceTests
 
     // The six sections that existed before per-section markers were introduced. Used where a test
     // exercises the legacy-global-marker backfill path specifically, which — by design — never
-    // touches Compliance (a brand-new section; see RegionSetupService.LegacySections).
+    // touches Compliance (a brand-new section; see RegionSetupSectionPlanner.LegacySections).
     private static readonly string[] LegacySectionMarkerKeys =
     {
         SettingKeys.RegionSetupAppliedLanguages,
@@ -2607,7 +2609,7 @@ public partial class RegionSetupServiceTests
                 { "seasonFrom": "06-15", "seasonTo": "09-15", "dailyStart": "12:30", "dailyEnd": "15:00", "appliesToGroupTag": "outdoor" },
                 { "seasonFrom": "07-01", "seasonTo": "08-31", "dailyStart": "10:00", "dailyEnd": "11:00", "appliesToGroupTag": "outdoor" } ] } }
             """;
-        var logger = Substitute.For<ILogger<RegionSetupService>>();
+        var logger = Substitute.For<ILogger<RestrictedTimeWindowRuleImporter>>();
         var service = CreateService(WriteTempFile(json), logger);
 
         await service.ApplyAsync();
@@ -2632,7 +2634,7 @@ public partial class RegionSetupServiceTests
         {
             new() { Name = "Outdoor" }
         });
-        var logger = Substitute.For<ILogger<RegionSetupService>>();
+        var logger = Substitute.For<ILogger<RestrictedTimeWindowRuleImporter>>();
         var service = CreateService(WriteTempFile(json), logger);
 
         await service.ApplyAsync();
@@ -2865,7 +2867,7 @@ public partial class RegionSetupServiceTests
             new[] { SettingKeys.SurchargeNightStart, SettingKeys.SurchargeNightEnd });
     }
 
-    private RegionSetupService CreateService(string? filePath, ILogger<RegionSetupService>? logger = null)
+    private RegionSetupService CreateService(string? filePath, ILogger<RestrictedTimeWindowRuleImporter>? restrictedTimeWindowLogger = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -2874,7 +2876,7 @@ public partial class RegionSetupServiceTests
             })
             .Build();
 
-        return new RegionSetupService(
+        return RegionSetupTestServiceFactory.CreateRegionSetupService(
             configuration,
             _languagePluginService,
             _settingsRepository,
@@ -2891,7 +2893,7 @@ public partial class RegionSetupServiceTests
             new MacroScriptValidator(),
             _unitOfWork,
             _eventDispatcher,
-            logger ?? NullLogger<RegionSetupService>.Instance);
+            restrictedTimeWindowLogger);
     }
 
     private string WriteTempFile(string content)

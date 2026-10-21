@@ -124,6 +124,24 @@ public partial class RegionSetupServiceTests
     }
 
     [Test]
+    public async Task ApplyAsync_TransactionLambdaRetried_DispatchesOnlyTheChangesOfTheLastAttempt()
+    {
+        _unitOfWork
+            .ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
+            .Returns(async callInfo =>
+            {
+                var operation = callInfo.Arg<Func<Task<int>>>();
+                await operation();
+                return await operation();
+            });
+
+        await CreateService(WriteTempFile(PresetWithRevisionJson)).ApplyAsync();
+
+        var dispatched = _dispatchedEvents.OfType<SchedulingRuleRateRevisionsImportedEvent>().Single();
+        dispatched.RuleIds.ShouldBe(new[] { _addedSchedulingRules.Last().Id });
+    }
+
+    [Test]
     public async Task ApplyAsync_FullyAppliedInstallationNewRateRevision_DispatchesRateRevisionsImportedEvent()
     {
         StubAllSectionMarkersExist();

@@ -20,6 +20,7 @@ using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Services.Macros;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -385,7 +386,7 @@ public class RegionSetupExampleProfileTests
             .ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>())
             .Returns(callInfo => callInfo.Arg<Func<Task<int>>>()());
 
-        return new RegionSetupService(
+        return RegionSetupTestServiceFactory.CreateRegionSetupService(
             configuration,
             languagePluginService,
             settingsRepository,
@@ -401,7 +402,6 @@ public class RegionSetupExampleProfileTests
             macroImportRepository,
             new MacroScriptValidator(),
             unitOfWork,
-            Substitute.For<Klacks.Api.Domain.Events.IDomainEventDispatcher>(),
-            NullLogger<RegionSetupService>.Instance);
+            Substitute.For<Klacks.Api.Domain.Events.IDomainEventDispatcher>());
     }
 }

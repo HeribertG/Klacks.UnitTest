@@ -58,7 +58,6 @@ public class SourceFileSizeGuardTests
         [@"Domain\Services\Assistant\LLMService.cs"] = 1088,
         [@"Domain\Services\RouteOptimization\ContainerAutofillService.cs"] = 841,
         [@"Infrastructure\Services\AnalyseScenarios\AnalyseScenarioService.cs"] = 930,
-        [@"Infrastructure\Services\Settings\RegionSetupService.cs"] = 3561,
         [@"Application\Services\Assistant\Conditions\AgentConditionActionService.cs"] = 946,
         [@"Application\Services\Assistant\Planning\PlanStepExecutor.cs"] = 819,
     };

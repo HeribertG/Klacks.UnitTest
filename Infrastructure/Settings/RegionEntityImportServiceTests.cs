@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for the marketplace entity-import path (IRegionEntityImportService on RegionSetupService):
+/// Unit tests for the marketplace entity-import path (IRegionEntityImportService, implemented by RegionEntityImportService):
 /// applies industry-profile presets, qualification catalogs, industry-bound compliance rows, macros and
 /// the package identity settings from a parsed profile, while never touching the once-only settings
 /// sections, their markers, top-level compliance rows or the ACTIVE_INDUSTRIES setting.
@@ -19,6 +19,7 @@ using Klacks.Api.Domain.Interfaces.Scheduling;
 using Klacks.Api.Domain.Models.Scheduling;
 using Klacks.Api.Infrastructure.Services.Macros;
 using Klacks.Api.Infrastructure.Services.Settings;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -174,7 +175,7 @@ public class RegionEntityImportServiceTests
     {
         var configuration = new ConfigurationBuilder().Build();
 
-        return new RegionSetupService(
+        return RegionSetupTestServiceFactory.CreateRegionEntityImportService(
             configuration,
             _languagePluginService,
             _settingsRepository,
@@ -190,8 +191,7 @@ public class RegionEntityImportServiceTests
             _macroImportRepository,
             new MacroScriptValidator(),
             _unitOfWork,
-            _eventDispatcher,
-            NullLogger<RegionSetupService>.Instance);
+            _eventDispatcher);
     }
 
     private static Klacks.Api.Application.DTOs.Setup.RegionSetupProfile ParseProfile(string json)
