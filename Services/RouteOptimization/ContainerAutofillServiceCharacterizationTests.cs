@@ -409,8 +409,26 @@ public class ContainerAutofillServiceCharacterizationTests
         await _availableTasks.Received(1).GetAvailableTasksAsync(
             Arg.Any<Guid>(), Arg.Any<int>(), Arg.Is(ContainerFrom), Arg.Is(ContainerUntil),
             Arg.Is<string?>(v => v == null), Arg.Is<Guid?>(v => v == null),
-            Arg.Is<bool?>(v => v == null), Arg.Is<bool?>(v => v == null),
+            Arg.Is<bool?>(v => v == false), Arg.Is<bool?>(v => v == null),
             Arg.Is(lockIds), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task HolidayFlag_IsPassedToTheAvailableTasksQuery_AndTheWeekdayAndHolidayFlagStaysUnset(bool isHoliday)
+    {
+        // Arrange
+        GivenTasks(CreateShift("A", 1));
+
+        // Act
+        await CreateSut().AutofillAsync(CreateRequest(isHoliday: isHoliday));
+
+        // Assert
+        await _availableTasks.Received(1).GetAvailableTasksAsync(
+            Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<TimeOnly>(), Arg.Any<TimeOnly>(),
+            Arg.Any<string?>(), Arg.Any<Guid?>(),
+            Arg.Is<bool?>(v => v == isHoliday), Arg.Is<bool?>(v => v == null),
+            Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -533,10 +551,11 @@ public class ContainerAutofillServiceCharacterizationTests
         ContainerTransportMode transportMode = ContainerTransportMode.ByCar,
         double tolerance = 0.5,
         List<TimeBlock>? timeBlocks = null,
-        IReadOnlyCollection<Guid>? additionalWorkIds = null)
+        IReadOnlyCollection<Guid>? additionalWorkIds = null,
+        bool isHoliday = false)
     {
         return new ContainerAutofillRequest(
-            Guid.NewGuid(), 1, false, startBase, endBase, ContainerFrom, ContainerUntil,
+            Guid.NewGuid(), 1, isHoliday, startBase, endBase, ContainerFrom, ContainerUntil,
             transportMode, tolerance, CancellationToken.None, timeBlocks, additionalWorkIds);
     }
 
