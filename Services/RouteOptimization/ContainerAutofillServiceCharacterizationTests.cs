@@ -121,6 +121,24 @@ public class ContainerAutofillServiceCharacterizationTests
     }
 
     [Test]
+    public async Task GreedySelectsNothing_ReturnsEmptyResult_NotARouteOverTheBases()
+    {
+        // Arrange
+        GivenTasks(CreateShift("A", 12), CreateShift("B", 1, isTimeRange: false));
+
+        // Act
+        var result = await CreateSut().AutofillAsync(CreateRequest());
+
+        // Assert
+        result.OptimizedRoute.ShouldBeEmpty();
+        result.FullRouteIndices.ShouldBeEmpty();
+        result.DistanceMatrix.Length.ShouldBe(0);
+        result.TotalAvailableShifts.ShouldBe(1);
+        result.SegmentDirections.ShouldBeNull();
+        await _directionsBuilder.DidNotReceiveWithAnyArgs().GetRouteDirectionsAsync(default!, default!, default);
+    }
+
+    [Test]
     public async Task TwoStops_SameBase_BuildsExactResult()
     {
         // Arrange
@@ -186,7 +204,7 @@ public class ContainerAutofillServiceCharacterizationTests
     }
 
     [Test]
-    public async Task ClientWithoutName_IsNamedUnknown()
+    public async Task ShiftWithoutClient_IsSkipped_AndClientWithoutName_IsNamedUnknown()
     {
         // Arrange
         var a = CreateShift("A", 1);
