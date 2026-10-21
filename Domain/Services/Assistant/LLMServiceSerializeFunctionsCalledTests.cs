@@ -19,13 +19,13 @@ public class LLMServiceSerializeFunctionsCalledTests
     [Test]
     public void EmptyCallList_SerializesToEmptyArray()
     {
-        LLMService.SerializeFunctionsCalled([]).ShouldBe("[]");
+        TurnTelemetry.SerializeFunctionsCalled([]).ShouldBe("[]");
     }
 
     [Test]
     public void Calls_SerializesDistinctNamesCaseInsensitive()
     {
-        var json = LLMService.SerializeFunctionsCalled(
+        var json = TurnTelemetry.SerializeFunctionsCalled(
         [
             new LLMFunctionCall { FunctionName = "list_open_shifts" },
             new LLMFunctionCall { FunctionName = "LIST_OPEN_SHIFTS" },
@@ -39,7 +39,7 @@ public class LLMServiceSerializeFunctionsCalledTests
     [Test]
     public void CallsRejectedWithoutRunning_AreNotRecordedAsInvoked()
     {
-        var json = LLMService.SerializeFunctionsCalled(
+        var json = TurnTelemetry.SerializeFunctionsCalled(
         [
             new LLMFunctionCall { FunctionName = "list_open_shifts" },
             new LLMFunctionCall { FunctionName = "delete_client", IsRejectedOutsideToolset = true },
@@ -57,7 +57,7 @@ public class LLMServiceSerializeFunctionsCalledTests
             .Select(i => new LLMFunctionCall { FunctionName = $"skill_with_a_long_name_number_{i:00}" })
             .ToList();
 
-        var json = LLMService.SerializeFunctionsCalled(calls);
+        var json = TurnTelemetry.SerializeFunctionsCalled(calls);
 
         json.Length.ShouldBeLessThanOrEqualTo(200);
         var names = JsonSerializer.Deserialize<List<string>>(json);

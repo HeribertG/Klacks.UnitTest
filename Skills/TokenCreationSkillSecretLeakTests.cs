@@ -3,7 +3,7 @@
 /// <summary>
 /// Guards the two skills that used to mint a credential and hand its plaintext back in the skill
 /// result. LLMFunctionExecutor composes a tool result as $"{result.Message}\nData: {dataJson}" and
-/// LLMService.FormatFunctionResults folds that string into the next request to the external
+/// ToolCallLoopSteps.FormatFunctionResults folds that string into the next request to the external
 /// language-model provider, so anything either field carries leaves the system. Both skills must
 /// therefore return guidance only: no secret in Data, no secret in Message, and no create command
 /// sent at all — a token minted here could never be handed to the user, because the plaintext is

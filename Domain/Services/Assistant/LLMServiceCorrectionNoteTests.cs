@@ -96,7 +96,7 @@ public class LLMServiceCorrectionNoteTests
     [Test]
     public void TheCorrectionNote_IsFoldedIntoTheVolatileSegment()
     {
-        var volatilePrompt = LLMService.BuildVolatilePrompt(
+        var volatilePrompt = VolatilePromptComposer.BuildVolatilePrompt(
             TemporalContext, Context(CorrectionNote), SoulPrompt);
 
         volatilePrompt.ShouldContain(CorrectionNote);
@@ -107,7 +107,7 @@ public class LLMServiceCorrectionNoteTests
     [Test]
     public void WithoutACorrection_TheVolatileSegmentIsUnchanged()
     {
-        var withNote = LLMService.BuildVolatilePrompt(TemporalContext, Context(null), SoulPrompt);
+        var withNote = VolatilePromptComposer.BuildVolatilePrompt(TemporalContext, Context(null), SoulPrompt);
 
         withNote.ShouldNotContain(CorrectionNote);
         withNote.ShouldContain(TemporalContext);
@@ -120,7 +120,7 @@ public class LLMServiceCorrectionNoteTests
     public async Task TheCorrectionNote_ReachesTheProvidersVolatileSystemPrompt()
     {
         var context = Context(CorrectionNote);
-        var volatilePrompt = LLMService.BuildVolatilePrompt(TemporalContext, context, SoulPrompt);
+        var volatilePrompt = VolatilePromptComposer.BuildVolatilePrompt(TemporalContext, context, SoulPrompt);
         var captured = new List<LLMProviderRequest>();
 
         await _service.ExecuteMultiTurnLoopAsync(
@@ -134,7 +134,7 @@ public class LLMServiceCorrectionNoteTests
     public async Task WithoutACorrection_TheProvidersVolatileSystemPromptCarriesNoNote()
     {
         var context = Context(null);
-        var volatilePrompt = LLMService.BuildVolatilePrompt(TemporalContext, context, SoulPrompt);
+        var volatilePrompt = VolatilePromptComposer.BuildVolatilePrompt(TemporalContext, context, SoulPrompt);
         var captured = new List<LLMProviderRequest>();
 
         await _service.ExecuteMultiTurnLoopAsync(

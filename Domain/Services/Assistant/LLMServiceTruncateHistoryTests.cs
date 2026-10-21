@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for LLMService.TruncateHistory: the no-summary path stays byte-identical (same
+/// Unit tests for ConversationHistoryBudget.TruncateHistory: the no-summary path stays byte-identical (same
 /// list instance returned when it already fits), legacy free-text summaries render exactly as
 /// before inside the wrapper markers, and structured summaries render as a compact section block.
 /// Also covers the count and token-budget truncation limits.
@@ -41,7 +41,7 @@ public class LLMServiceTruncateHistoryTests
     {
         var history = History(3);
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, null);
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, null);
 
         result.ShouldBeSameAs(history);
     }
@@ -51,7 +51,7 @@ public class LLMServiceTruncateHistoryTests
     {
         var history = History(3);
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, "   ");
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, "   ");
 
         result.ShouldBeSameAs(history);
     }
@@ -62,7 +62,7 @@ public class LLMServiceTruncateHistoryTests
         var history = History(3);
         const string freeText = "The user is a nurse in Bern and works night shifts.";
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, freeText);
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, freeText);
 
         result.Count.ShouldBe(4);
         result[0].Role.ShouldBe("system");
@@ -78,7 +78,7 @@ public class LLMServiceTruncateHistoryTests
         const string json =
             "{\"openTasks\":[\"Finish the roster\"],\"facts\":[\"Prefers mornings\"]}";
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, json);
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, json);
 
         result[0].Role.ShouldBe("system");
         result[0].Content.ShouldStartWith(SummaryOpenMarker);
@@ -94,11 +94,11 @@ public class LLMServiceTruncateHistoryTests
     {
         var history = History(25);
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, null);
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, null);
 
         result.Count.ShouldBe(21);
         result[0].Role.ShouldBe("system");
-        result[0].Content.ShouldBe(LLMService.TruncationNotice);
+        result[0].Content.ShouldBe(ConversationHistoryBudget.TruncationNotice);
         result[^1].Content.ShouldBe("message-24");
     }
 
@@ -114,10 +114,10 @@ public class LLMServiceTruncateHistoryTests
             Msg("user", "newest-kept")
         };
 
-        var result = LLMService.TruncateHistory(history, 25, null);
+        var result = ConversationHistoryBudget.TruncateHistory(history, 25, null);
 
         result[0].Role.ShouldBe("system");
-        result[0].Content.ShouldBe(LLMService.TruncationNotice);
+        result[0].Content.ShouldBe(ConversationHistoryBudget.TruncationNotice);
         result[^1].Content.ShouldBe("newest-kept");
         result.ShouldNotContain(m => m.Content == new string('a', 40));
     }
@@ -127,10 +127,10 @@ public class LLMServiceTruncateHistoryTests
     {
         var history = History(25);
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, null);
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, null);
 
         result.Count.ShouldBe(21);
-        result[0].Content.ShouldBe(LLMService.TruncationNotice);
+        result[0].Content.ShouldBe(ConversationHistoryBudget.TruncationNotice);
     }
 
     [Test]
@@ -138,11 +138,11 @@ public class LLMServiceTruncateHistoryTests
     {
         var history = History(25);
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, null, maxHistoryMessages: 8);
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, null, maxHistoryMessages: 8);
 
         result.Count.ShouldBe(9);
         result[0].Role.ShouldBe("system");
-        result[0].Content.ShouldBe(LLMService.TruncationNotice);
+        result[0].Content.ShouldBe(ConversationHistoryBudget.TruncationNotice);
         result[^1].Content.ShouldBe("message-24");
     }
 
@@ -151,10 +151,10 @@ public class LLMServiceTruncateHistoryTests
     {
         var history = History(45);
 
-        var result = LLMService.TruncateHistory(history, LargeBudget, null, maxHistoryMessages: 40);
+        var result = ConversationHistoryBudget.TruncateHistory(history, LargeBudget, null, maxHistoryMessages: 40);
 
         result.Count.ShouldBe(41);
-        result[0].Content.ShouldBe(LLMService.TruncationNotice);
+        result[0].Content.ShouldBe(ConversationHistoryBudget.TruncationNotice);
     }
 
     // The notice sits at position 0 of every truncated history, i.e. inside the prompt prefix that
@@ -163,8 +163,8 @@ public class LLMServiceTruncateHistoryTests
     [Test]
     public void TruncationNotice_IsIdenticalAcrossDifferentTruncationSizes()
     {
-        var small = LLMService.TruncateHistory(History(25), LargeBudget, null, maxHistoryMessages: 8);
-        var large = LLMService.TruncateHistory(History(45), LargeBudget, null, maxHistoryMessages: 40);
+        var small = ConversationHistoryBudget.TruncateHistory(History(25), LargeBudget, null, maxHistoryMessages: 8);
+        var large = ConversationHistoryBudget.TruncateHistory(History(45), LargeBudget, null, maxHistoryMessages: 40);
 
         small[0].Content.ShouldBe(large[0].Content);
         small[0].Content.ShouldNotContain("8");

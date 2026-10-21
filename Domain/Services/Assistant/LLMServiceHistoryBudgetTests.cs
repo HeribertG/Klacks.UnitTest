@@ -58,13 +58,13 @@ public class LLMServiceHistoryBudgetTests
                 required = function.RequiredParameters
             }
         });
-        return json.Length / LLMService.CharsPerToken;
+        return json.Length / ConversationHistoryBudget.CharsPerToken;
     }
 
     [Test]
     public void EstimateToolDefinitionReserveTokens_NullFunctions_ReturnsZero()
     {
-        var result = LLMService.EstimateToolDefinitionReserveTokens(null);
+        var result = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(null);
 
         result.ShouldBe(0);
     }
@@ -72,7 +72,7 @@ public class LLMServiceHistoryBudgetTests
     [Test]
     public void EstimateToolDefinitionReserveTokens_EmptyList_ReturnsZero()
     {
-        var result = LLMService.EstimateToolDefinitionReserveTokens(new List<LLMFunction>());
+        var result = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(new List<LLMFunction>());
 
         result.ShouldBe(0);
     }
@@ -83,9 +83,9 @@ public class LLMServiceHistoryBudgetTests
         var function = MakeFunction(
             "get_current_time", "Returns the current date and time in the user's timezone.", parameterCount: 1);
         var rawTokens = ExpectedRawTokens(function);
-        var expected = rawTokens + (rawTokens * LLMService.ToolDefinitionSafetyMarginPercent / 100);
+        var expected = rawTokens + (rawTokens * ConversationHistoryBudget.ToolDefinitionSafetyMarginPercent / 100);
 
-        var result = LLMService.EstimateToolDefinitionReserveTokens(new List<LLMFunction> { function });
+        var result = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(new List<LLMFunction> { function });
 
         result.ShouldBe(expected);
         result.ShouldBeGreaterThan(rawTokens);
@@ -98,7 +98,7 @@ public class LLMServiceHistoryBudgetTests
             .Select(i => MakeFunction($"skill_{i}", $"Handles operation number {i} for the assistant.", parameterCount: 2))
             .ToList();
 
-        var result = LLMService.EstimateToolDefinitionReserveTokens(functions);
+        var result = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(functions);
 
         result.ShouldBeLessThan(OldFlatReserveTokens);
     }
@@ -111,7 +111,7 @@ public class LLMServiceHistoryBudgetTests
             .Select(i => MakeFunction($"large_skill_{i}", maximalDescription, parameterCount: 12))
             .ToList();
 
-        var result = LLMService.EstimateToolDefinitionReserveTokens(functions);
+        var result = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(functions);
 
         result.ShouldBeGreaterThan(OldFlatReserveTokens);
     }
@@ -129,8 +129,8 @@ public class LLMServiceHistoryBudgetTests
             MakeFunction("skill_b", "Second skill description.", parameterCount: 1)
         };
 
-        var oneResult = LLMService.EstimateToolDefinitionReserveTokens(oneFunction);
-        var twoResult = LLMService.EstimateToolDefinitionReserveTokens(twoFunctions);
+        var oneResult = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(oneFunction);
+        var twoResult = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(twoFunctions);
 
         twoResult.ShouldBeGreaterThan(oneResult);
     }
@@ -139,9 +139,9 @@ public class LLMServiceHistoryBudgetTests
     public void ComputeHistoryBudget_ZeroToolDefinitionTokens_OnlyReservesOutputSystemAndFixedOverhead()
     {
         var expected = EffectiveInputLimit - MaxOutputTokens - SystemPromptTokens
-            - LLMService.InteractionHeadroomTokens - LLMService.SafetyMarginTokens;
+            - ConversationHistoryBudget.InteractionHeadroomTokens - ConversationHistoryBudget.SafetyMarginTokens;
 
-        var result = LLMService.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 0);
+        var result = ConversationHistoryBudget.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 0);
 
         result.ShouldBe(expected);
     }
@@ -151,8 +151,8 @@ public class LLMServiceHistoryBudgetTests
     {
         const int toolDefinitionTokens = 6_886;
 
-        var withoutTools = LLMService.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 0);
-        var withTools = LLMService.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens);
+        var withoutTools = ConversationHistoryBudget.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 0);
+        var withTools = ConversationHistoryBudget.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens);
 
         (withoutTools - withTools).ShouldBe(toolDefinitionTokens);
     }
@@ -160,23 +160,23 @@ public class LLMServiceHistoryBudgetTests
     [Test]
     public void ComputeHistoryBudget_ReservationsExceedLimit_ClampsToMinHistoryBudgetTokens()
     {
-        var result = LLMService.ComputeHistoryBudget(
+        var result = ConversationHistoryBudget.ComputeHistoryBudget(
             effectiveInputLimit: 10_000,
             maxOutputTokens: MaxOutputTokens,
             systemPromptTokens: SystemPromptTokens,
             toolDefinitionTokens: 50_000);
 
-        result.ShouldBe(LLMService.MinHistoryBudgetTokens);
+        result.ShouldBe(ConversationHistoryBudget.MinHistoryBudgetTokens);
     }
 
     [Test]
     public void ComputeHistoryBudget_HugeToolDefinitionTokens_NeverGoesBelowFloorRegardlessOfMagnitude()
     {
-        var resultAtOneMillion = LLMService.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 1_000_000);
-        var resultAtTenMillion = LLMService.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 10_000_000);
+        var resultAtOneMillion = ConversationHistoryBudget.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 1_000_000);
+        var resultAtTenMillion = ConversationHistoryBudget.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, toolDefinitionTokens: 10_000_000);
 
-        resultAtOneMillion.ShouldBe(LLMService.MinHistoryBudgetTokens);
-        resultAtTenMillion.ShouldBe(LLMService.MinHistoryBudgetTokens);
+        resultAtOneMillion.ShouldBe(ConversationHistoryBudget.MinHistoryBudgetTokens);
+        resultAtTenMillion.ShouldBe(ConversationHistoryBudget.MinHistoryBudgetTokens);
     }
 
     [Test]
@@ -187,9 +187,9 @@ public class LLMServiceHistoryBudgetTests
                 $"skill_{i}", $"Performs scheduling operation {i} for shifts, clients and absences.", parameterCount: 3))
             .ToList();
 
-        var newReserve = LLMService.EstimateToolDefinitionReserveTokens(functions);
-        var budgetWithNewReserve = LLMService.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, newReserve);
-        var budgetWithOldFlatReserve = LLMService.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, OldFlatReserveTokens);
+        var newReserve = ConversationHistoryBudget.EstimateToolDefinitionReserveTokens(functions);
+        var budgetWithNewReserve = ConversationHistoryBudget.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, newReserve);
+        var budgetWithOldFlatReserve = ConversationHistoryBudget.ComputeHistoryBudget(EffectiveInputLimit, MaxOutputTokens, SystemPromptTokens, OldFlatReserveTokens);
 
         newReserve.ShouldBeLessThan(OldFlatReserveTokens);
         budgetWithNewReserve.ShouldBeGreaterThan(budgetWithOldFlatReserve);

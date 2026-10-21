@@ -13,6 +13,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.Domain.Services.Assistant.Skills.Adapters;
+using Klacks.Api.Domain.Services.Assistant.ChatTurn;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
@@ -38,7 +39,7 @@ public class ToolResultFormatterTests
     [Test]
     public void TaintedFunctionCall_ThroughTheChatLoopFormatter_IsFlagged()
     {
-        var formatted = LLMService.FormatFunctionResults(
+        var formatted = ToolCallLoopSteps.FormatFunctionResults(
         [
             new LLMFunctionCall { FunctionName = WrapperSkill, Result = "relayed", ContainsExternalContent = true }
         ]);
@@ -120,6 +121,6 @@ public class ToolResultFormatterTests
             new LLMContext { Message = "analyze", UserId = Guid.NewGuid().ToString() }, [call]);
 
         call.ContainsExternalContent.ShouldBeTrue();
-        LLMService.FormatFunctionResults([call]).ShouldContain(ToolResultMarkers.ResultUntrustedFlag);
+        ToolCallLoopSteps.FormatFunctionResults([call]).ShouldContain(ToolResultMarkers.ResultUntrustedFlag);
     }
 }

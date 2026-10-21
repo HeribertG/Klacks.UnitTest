@@ -33,19 +33,19 @@ public class LLMServiceTurnHelpersCharacterizationTests
     [TestCase("", Note, Note)]
     public void CombineVolatile_WithAMissingPart_ReturnsTheOtherPart(string? basePrompt, string? note, string expected)
     {
-        LLMService.CombineVolatile(basePrompt, note).ShouldBe(expected);
+        VolatilePromptComposer.CombineVolatile(basePrompt, note).ShouldBe(expected);
     }
 
     [Test]
     public void CombineVolatile_WithBothParts_SeparatesThemByABlankLine()
     {
-        LLMService.CombineVolatile(BasePrompt, Note).ShouldBe($"{BasePrompt}\n\n{Note}");
+        VolatilePromptComposer.CombineVolatile(BasePrompt, Note).ShouldBe($"{BasePrompt}\n\n{Note}");
     }
 
     [Test]
     public void ElapsedMsFor_WithoutATurnClock_IsNull()
     {
-        LLMService.ElapsedMsFor(new LLMContext { TurnStartTimestamp = null }).ShouldBeNull();
+        TurnTelemetry.ElapsedMsFor(new LLMContext { TurnStartTimestamp = null }).ShouldBeNull();
     }
 
     [Test]
@@ -53,7 +53,7 @@ public class LLMServiceTurnHelpersCharacterizationTests
     {
         var context = new LLMContext { TurnStartTimestamp = Stopwatch.GetTimestamp() };
 
-        var elapsed = LLMService.ElapsedMsFor(context);
+        var elapsed = TurnTelemetry.ElapsedMsFor(context);
 
         elapsed.ShouldNotBeNull();
         elapsed.Value.ShouldBeGreaterThanOrEqualTo(0);
@@ -64,13 +64,13 @@ public class LLMServiceTurnHelpersCharacterizationTests
     {
         var turnId = Guid.NewGuid();
 
-        LLMService.TurnCorrelationFor(new LLMContext { TurnId = turnId }).ShouldBe(TurnCorrelation.Format(turnId));
+        TurnTelemetry.TurnCorrelationFor(new LLMContext { TurnId = turnId }).ShouldBe(TurnCorrelation.Format(turnId));
     }
 
     [Test]
     public void TurnCorrelationFor_WithoutATurnId_FallsBackToTheAmbientCorrelation()
     {
-        LLMService.TurnCorrelationFor(new LLMContext { TurnId = null }).ShouldBe(TurnCorrelation.CurrentOrNone);
+        TurnTelemetry.TurnCorrelationFor(new LLMContext { TurnId = null }).ShouldBe(TurnCorrelation.CurrentOrNone);
     }
 
     [Test]
@@ -78,7 +78,7 @@ public class LLMServiceTurnHelpersCharacterizationTests
     {
         var history = new List<ProviderLLMMessage> { Message(UserRole, 40), Message(AssistantRole, 40) };
 
-        LLMService.FitRunningHistoryToBudget(history, Text(40), 1_000);
+        ConversationHistoryBudget.FitRunningHistoryToBudget(history, Text(40), 1_000);
 
         history.Count.ShouldBe(2);
     }
@@ -91,7 +91,7 @@ public class LLMServiceTurnHelpersCharacterizationTests
         var newest = Message(UserRole, 400);
         var history = new List<ProviderLLMMessage> { oldest, middle, newest };
 
-        LLMService.FitRunningHistoryToBudget(history, Text(400), 250);
+        ConversationHistoryBudget.FitRunningHistoryToBudget(history, Text(400), 250);
 
         history.ShouldBe(new[] { newest });
     }
@@ -104,7 +104,7 @@ public class LLMServiceTurnHelpersCharacterizationTests
         var newer = Message(AssistantRole, 400);
         var history = new List<ProviderLLMMessage> { summary, older, newer };
 
-        LLMService.FitRunningHistoryToBudget(history, Text(400), 250);
+        ConversationHistoryBudget.FitRunningHistoryToBudget(history, Text(400), 250);
 
         history.ShouldBe(new[] { summary });
     }
@@ -115,7 +115,7 @@ public class LLMServiceTurnHelpersCharacterizationTests
         var summary = Message(SystemRole, 4_000);
         var history = new List<ProviderLLMMessage> { summary };
 
-        LLMService.FitRunningHistoryToBudget(history, Text(4_000), 10);
+        ConversationHistoryBudget.FitRunningHistoryToBudget(history, Text(4_000), 10);
 
         history.ShouldBe(new[] { summary });
     }
@@ -127,7 +127,7 @@ public class LLMServiceTurnHelpersCharacterizationTests
         var newer = Message(AssistantRole, 400);
         var history = new List<ProviderLLMMessage> { older, newer };
 
-        LLMService.FitRunningHistoryToBudget(history, Text(800), 300);
+        ConversationHistoryBudget.FitRunningHistoryToBudget(history, Text(800), 300);
 
         history.ShouldBe(new[] { newer });
     }

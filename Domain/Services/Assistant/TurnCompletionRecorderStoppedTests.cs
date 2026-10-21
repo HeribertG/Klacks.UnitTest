@@ -398,7 +398,7 @@ public class TurnCompletionRecorderStoppedTests
         await _recorder.RecordStoppedAsync(CancellationToken.None);
 
         await _repository.Received(1).TrackUsageAsync(Arg.Is<RepositoryLLMUsage>(u =>
-            u.OutputTokens == StreamedChars / LLMService.CharsPerToken
+            u.OutputTokens == StreamedChars / ConversationHistoryBudget.CharsPerToken
             && u.InputTokens == 0
             && u.Cost == 0m));
     }
