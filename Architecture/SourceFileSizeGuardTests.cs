@@ -59,10 +59,6 @@ public class SourceFileSizeGuardTests
     // "RelativePath::MethodName" -> its measured body length on the day it was allowlisted.
     private static readonly IReadOnlyDictionary<string, int> MethodCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Application\Skills\BundleNearbyTimeRangeShiftsIntoContainerSkill.cs::ExecuteAsync"] = 273,
-        [@"Application\Skills\CreateContainerTemplateSkill.cs::ExecuteAsync"] = 181,
-        [@"Application\Skills\CreateEmployeeSkill.cs::ExecuteAsync"] = 271,
-        [@"Application\Skills\CreateShiftSkill.cs::ExecuteAsync"] = 221,
         [@"Application\Skills\CutShiftSkill.cs::ExecuteAsync"] = 153,
         [@"Application\Skills\UpdateCalendarSelectionSkill.cs::ExecuteAsync"] = 192,
         [@"Application\Skills\UpdateClientSkill.cs::ExecuteAsync"] = 178,
