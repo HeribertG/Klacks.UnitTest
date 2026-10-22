@@ -5,7 +5,8 @@
 /// default tag of the klacks-stt image in every compose file (server, on-prem, the marketplace mirror of the on-prem
 /// bundle) must equal it, the klacks-stt service block must be identical in all of them, and the native Windows workflow
 /// must check out Klacks.Stt at the same version, so a Docker customer and a native customer never run different
-/// speech services from the same release. A floating :latest or :edge would also pull untested main builds.
+/// speech services from the same release. A floating :latest or :edge would also pull untested main builds. The Api
+/// image carries the pin as label org.klacks.stt-version, from which the on-prem updater moves KLACKS_STT_TAG.
 ///
 /// Klacks.Marketplace is a sibling repository; where it is not checked out its mirror is skipped, the same split
 /// OnPremTemplateMarketplaceMirrorGuardTests makes.
@@ -26,6 +27,8 @@ public class SttImagePinGuardTests
     private const string VersionPattern = @"^\d+\.\d+\.\d+$";
     private const string WorkflowVersionStep = "deploy/stt-version";
     private const string WorkflowCheckoutRef = "ref: v${{ steps.sttver.outputs.version }}";
+    private const string ImageBuildArg = "KLACKS_STT_VERSION=${{ steps.sttver.outputs.version }}";
+    private const string DockerfileLabel = "LABEL org.klacks.stt-version=\"${KLACKS_STT_VERSION}\"";
 
     private static readonly string[] VersionFileSegments = ["Klacks.Api", "deploy", "stt-version"];
     private static readonly string[] ServerComposeSegments = ["Klacks.Api", "deploy", "docker-compose-server.yml"];
@@ -33,6 +36,8 @@ public class SttImagePinGuardTests
     private static readonly string[] MarketplaceComposeSegments =
         ["Klacks.Marketplace", "Resources", "OnPremTemplate", "docker-compose.yml"];
     private static readonly string[] NativeWorkflowSegments = ["Klacks.Api", ".github", "workflows", "native-windows.yml"];
+    private static readonly string[] DeployWorkflowSegments = ["Klacks.Api", ".github", "workflows", "deploy.yml"];
+    private static readonly string[] DockerfileSegments = ["Klacks.Api", "Dockerfile"];
 
     [Test]
     public void SttVersionFile_HoldsASemanticVersion()
@@ -90,6 +95,17 @@ public class SttImagePinGuardTests
 
         workflow.ShouldContain(WorkflowVersionStep);
         workflow.ShouldContain(WorkflowCheckoutRef);
+    }
+
+    [Test]
+    public void ApiImage_CarriesThePinnedSttVersionAsLabelForTheUpdater()
+    {
+        var workflow = Read(RepositoryRootLocator.RequireFile(DeployWorkflowSegments));
+        var dockerfile = Read(RepositoryRootLocator.RequireFile(DockerfileSegments));
+
+        workflow.ShouldContain(WorkflowVersionStep);
+        workflow.ShouldContain(ImageBuildArg);
+        dockerfile.ShouldContain(DockerfileLabel);
     }
 
     private static string ReadPinnedVersion() =>
