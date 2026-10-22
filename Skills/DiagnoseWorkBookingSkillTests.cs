@@ -319,9 +319,13 @@ public class DiagnoseWorkBookingSkillTests
     private DiagnoseWorkBookingSkill Sut() =>
         new(_search, _clients, _clientGuard, _shifts, _shiftGuard, Substitute.For<IShiftGroupFilterService>(), _diagnosis);
 
-    private void GivenClientSearch(params ClientSearchItem[] items) =>
+    private void GivenClientSearch(params ClientSearchItem[] items)
+    {
         _search.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult { Items = items.ToList() });
+        _search.SearchByFuzzyNameAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [] });
+    }
 
     private static string JsonText(string sentence) => JsonSerializer.Serialize(sentence).Trim('"');
 

@@ -841,13 +841,13 @@ public class UpdateContractSkillTests
     }
 
     [Test]
-    public async Task ContractId_WithATypo_IsRejected_NoFuzzyMatchOnAWritingSkill()
+    public async Task ContractId_WithATypo_IsAskedBack_NoFuzzyMatchOnAWritingSkill()
     {
         var (result, mediator) = await RunByReferenceAsync("Volzeit 160 BE");
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("No contract found matching 'Volzeit 160 BE'");
-        result.Message.ShouldContain("Vollzeit 160 BE");
+        result.Message.ShouldContain("Did the user mean 'Vollzeit 160 BE'?");
+        NameResolutionAskBack.IsAskBack(result.Message).ShouldBeTrue();
         await mediator.DidNotReceive().Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>());
         await AssertNotPut(mediator);
     }

@@ -55,6 +55,10 @@ public class UpdateClientBirthdateSkillTests
                 Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
                 Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult { Items = items, TotalCount = items.Length });
+        _searchRepository.SearchByFuzzyNameAsync(
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [], TotalCount = 0 });
     }
 
     private Client WireResolvedClient(string firstName = "Anna", string lastName = "Müller")
