@@ -104,10 +104,6 @@ public class LayerDependencyGuardTests
     {
         @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Application.Interfaces",
         @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Domain",
-        @"Domain\Services\Absences\AbsencePaginationService.cs -> Microsoft.EntityFrameworkCore",
-        @"Domain\Services\Groups\GroupSearchService.cs -> Microsoft.EntityFrameworkCore",
-        @"Domain\Services\Settings\CalendarRulePaginationService.cs -> Microsoft.EntityFrameworkCore",
-        @"Domain\Services\Shifts\ShiftPaginationService.cs -> Microsoft.EntityFrameworkCore",
         @"Application\Services\Assistant\Evaluation\TurnEval\TurnEvalMemoryProbe.cs -> Klacks.Api.KnowledgeIndex.Application.Services",
         @"Application\Services\Assistant\Learning\SkillIndexStateVerifier.cs -> Klacks.Api.KnowledgeIndex.Application.Services",
         @"Presentation\Mcp\McpEndpointExtensions.cs -> Klacks.Api.Infrastructure.Authentication",
