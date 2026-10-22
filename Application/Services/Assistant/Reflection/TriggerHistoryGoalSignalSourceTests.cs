@@ -4,7 +4,8 @@
 /// Unit tests for TriggerHistoryGoalSignalSource — covers the (UserId, TriggerKind) aggregation,
 /// the exclusion of self-referential/meta trigger kinds (CuriosityQuestion, MuteSuggestion), the
 /// exclusion of kinds without a GoalTypeCatalog entry, the summary being built from the catalogue's
-/// plain-language description rather than the trigger identifier, and the empty-history path.
+/// plain-language description rather than the trigger identifier, the empty-history path, and the open_order
+/// measure: distinct reported company days (from the summary dedup keys), raised from three of seven days on.
 /// IProactiveTriggerDispatchRepository is mocked; no database involved.
 /// </summary>
 
@@ -137,5 +138,78 @@ public class TriggerHistoryGoalSignalSourceTests
         signal.Summary.ShouldNotContain(AgentTriggerKinds.TargetHoursDrift);
         signal.LookbackDays.ShouldBeGreaterThan(0);
         signal.Summary.ShouldContain(signal.LookbackDays.ToString());
+    }
+
+    private static ProactiveTriggerDispatchRow OpenOrderRow(string userId, string dedupKey, DateTime createTimeUtc)
+    {
+        var row = Row(userId, AgentTriggerKinds.OpenOrder, createTimeUtc);
+        row.DedupKey = dedupKey;
+        return row;
+    }
+
+    [Test]
+    public async Task CollectAsync_OpenOrder_CountsDistinctReportedCompanyDays_NotMessages()
+    {
+        var day = new DateTime(2026, 10, 18, 7, 0, 0, DateTimeKind.Utc);
+        SetupRows(
+            OpenOrderRow(UserA, "2026-10-18#5", day),
+            OpenOrderRow(UserA, "2026-10-18#7", day.AddHours(5)),
+            OpenOrderRow(UserA, "2026-10-19#7", day.AddDays(1)),
+            OpenOrderRow(UserA, "2026-10-21#4", day.AddDays(3)),
+            OpenOrderRow(UserA, "2026-10-21#9", day.AddDays(3).AddHours(2)));
+
+        var signal = (await _sut.CollectAsync()).ShouldHaveSingleItem();
+
+        signal.Kind.ShouldBe(AgentTriggerKinds.OpenOrder);
+        signal.OccurrenceCount.ShouldBe(3, "Three distinct company days, although five summaries were delivered.");
+        signal.LookbackDays.ShouldBe(7);
+        signal.Summary.ShouldContain("3 of the last 7 days");
+        signal.Summary.ShouldNotContain(AgentTriggerKinds.OpenOrder);
+    }
+
+    [Test]
+    public async Task CollectAsync_OpenOrder_OnFewerThanThreeDays_RaisesNoSignal()
+    {
+        var day = new DateTime(2026, 10, 18, 7, 0, 0, DateTimeKind.Utc);
+        SetupRows(
+            OpenOrderRow(UserA, "2026-10-18#5", day),
+            OpenOrderRow(UserA, "2026-10-18#6", day.AddHours(1)),
+            OpenOrderRow(UserA, "2026-10-18#8", day.AddHours(2)),
+            OpenOrderRow(UserA, "2026-10-20#2", day.AddDays(2)));
+
+        var signals = await _sut.CollectAsync();
+
+        signals.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task CollectAsync_OpenOrder_IgnoresRowsOfTheFormerPerOrderShape()
+    {
+        var day = new DateTime(2026, 10, 18, 7, 0, 0, DateTimeKind.Utc);
+        SetupRows(
+            OpenOrderRow(UserA, $"{Guid.NewGuid()}:2026-10-25", day),
+            OpenOrderRow(UserA, $"{Guid.NewGuid()}:2026-10-26", day.AddDays(1)),
+            OpenOrderRow(UserA, $"{Guid.NewGuid()}:2026-10-27", day.AddDays(2)),
+            OpenOrderRow(UserA, "2026-10-21#3", day.AddDays(3)));
+
+        var signals = await _sut.CollectAsync();
+
+        signals.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task CollectAsync_OpenOrder_IsCountedPerRecipient()
+    {
+        var day = new DateTime(2026, 10, 18, 7, 0, 0, DateTimeKind.Utc);
+        SetupRows(
+            OpenOrderRow(UserA, "2026-10-18#5", day),
+            OpenOrderRow(UserA, "2026-10-19#5", day.AddDays(1)),
+            OpenOrderRow(UserA, "2026-10-20#5", day.AddDays(2)),
+            OpenOrderRow(UserB, "2026-10-18#1", day),
+            OpenOrderRow(UserB, "2026-10-19#1", day.AddDays(1)));
+
+        var signal = (await _sut.CollectAsync()).ShouldHaveSingleItem();
+
+        signal.UserId.ShouldBe(UserA);
     }
 }
