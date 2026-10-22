@@ -165,23 +165,43 @@ public class ErrorHandlingMiddlewareCharacterizationTests
             true);
 
         yield return new MappingCase(
-            "DomainDatabaseUpdateException",
+            "DomainDatabaseUpdateExceptionDuplicate",
             () => new DatabaseUpdateException("duplicate key value", isDuplicate: true),
-            500,
+            400,
             JsonContentType,
-            "{\"title\":\"An unexpected error occurred\",\"status\":500,\"detail\":\"An internal server error has occurred.\"}",
+            "{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"A duplicate entry already exists.\"}",
             LogLevel.Error,
-            "An unhandled exception occurred: duplicate key value",
+            "DatabaseUpdateException caught by middleware: duplicate key value",
+            true);
+
+        yield return new MappingCase(
+            "DomainDatabaseUpdateExceptionForeignKey",
+            () => new DatabaseUpdateException("violates foreign key constraint", isForeignKeyViolation: true),
+            400,
+            JsonContentType,
+            "{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"Referenced data not found or constraint violation.\"}",
+            LogLevel.Error,
+            "DatabaseUpdateException caught by middleware: violates foreign key constraint",
+            true);
+
+        yield return new MappingCase(
+            "DomainDatabaseUpdateExceptionOther",
+            () => new DatabaseUpdateException("value too long"),
+            400,
+            JsonContentType,
+            "{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"Database constraint violation.\"}",
+            LogLevel.Error,
+            "DatabaseUpdateException caught by middleware: value too long",
             true);
 
         yield return new MappingCase(
             "DomainConcurrencyException",
             () => new ConcurrencyException("The record was modified by another user. Please refresh and try again."),
-            500,
+            400,
             JsonContentType,
-            "{\"title\":\"An unexpected error occurred\",\"status\":500,\"detail\":\"An internal server error has occurred.\"}",
+            "{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"The record was modified by another user. Please refresh and try again.\"}",
             LogLevel.Error,
-            "An unhandled exception occurred: The record was modified by another user. Please refresh and try again.",
+            "ConcurrencyException caught by middleware: The record was modified by another user. Please refresh and try again.",
             true);
 
         yield return new MappingCase(
