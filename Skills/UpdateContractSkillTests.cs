@@ -846,7 +846,8 @@ public class UpdateContractSkillTests
         var (result, mediator) = await RunByReferenceAsync("Volzeit 160 BE");
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("Did the user mean 'Vollzeit 160 BE'?");
+        result.Message.ShouldContain("Vollzeit 160 BE");
+        result.Message.ShouldNotContain("No contract found matching");
         NameResolutionAskBack.IsAskBack(result.Message).ShouldBeTrue();
         await mediator.DidNotReceive().Send(Arg.Any<GetQuery<ContractResource>>(), Arg.Any<CancellationToken>());
         await AssertNotPut(mediator);
