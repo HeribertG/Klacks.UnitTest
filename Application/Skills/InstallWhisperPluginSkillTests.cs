@@ -71,6 +71,36 @@ public class InstallWhisperPluginSkillTests
             Arg.Is<InstallWhisperPluginCommand>(c => c.ModelAlias == expectedAlias), Arg.Any<CancellationToken>());
     }
 
+    [TestCase("")]
+    [TestCase("   ")]
+    public async Task ExecuteAsync_BlankAlias_FallsBackToTheLanguageDefault(string blankAlias)
+    {
+        EnqueueSucceeds();
+
+        var result = await _skill.ExecuteAsync(
+            Context(), new Dictionary<string, object> { [ModelAliasParameter] = blankAlias });
+
+        result.Success.ShouldBeTrue();
+        await _mediator.Received(1).Send(
+            Arg.Is<InstallWhisperPluginCommand>(c => c.ModelAlias == WhisperPluginConstants.ModelAliasParakeet),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ExecuteAsync_AliasIsMatchedCaseInsensitively()
+    {
+        EnqueueSucceeds();
+
+        var result = await _skill.ExecuteAsync(
+            Context(),
+            new Dictionary<string, object> { [ModelAliasParameter] = WhisperPluginConstants.ModelAliasParakeet.ToUpperInvariant() });
+
+        result.Success.ShouldBeTrue();
+        await _mediator.Received(1).Send(
+            Arg.Is<InstallWhisperPluginCommand>(c => c.ModelAlias == WhisperPluginConstants.ModelAliasParakeet),
+            Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task ExecuteAsync_ExplicitAlias_WinsOverTheInstallationLanguage()
     {
