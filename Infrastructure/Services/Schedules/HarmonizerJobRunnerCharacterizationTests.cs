@@ -401,6 +401,63 @@ public class HarmonizerJobRunnerCharacterizationTests
     }
 
     [Test]
+    public async Task FinishedJob_HandsTheCancellableJobToken_ToEveryScopedCollaborator()
+    {
+        await RunAsync();
+
+        await _contextBuilder.Received(1).BuildContextAsync(Arg.Any<HarmonizerContextRequest>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+        await _markerService.Received(1).ComputeAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<Guid?>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+        await _matrixBuilder.Received(1).BuildAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<EligibilitySlot>>(),
+            Arg.Any<IReadOnlySet<(string, Guid, DateOnly)>?>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+        await _sink.Received(1).RecordAsync(Arg.Any<HarmonizerRunTelemetry>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+    }
+
+    [Test]
+    public async Task ConductorOnlyRun_BroadcastsTheSeedGenerationAsProgress()
+    {
+        var progress = new System.Collections.Concurrent.ConcurrentQueue<HarmonizerJobProgressDto>();
+        _client.OnProgress(Arg.Do<HarmonizerJobProgressDto>(p => progress.Enqueue(p)));
+
+        var jobId = await RunAsync();
+
+        await WaitUntilAsync(() => !progress.IsEmpty);
+        progress.TryPeek(out var first).ShouldBeTrue();
+        first!.JobId.ShouldBe(jobId);
+        first.Generation.ShouldBe(0);
+        first.MaxGenerations.ShouldBe(0);
+        first.EarlyStopping.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task ProgressBroadcastThatThrows_OnlyWarns_AndTheJobCompletes()
+    {
+        _client.OnProgress(Arg.Any<HarmonizerJobProgressDto>()).Returns(Task.FromException(new InvalidOperationException("hub down")));
+
+        var jobId = await RunAsync();
+
+        (await _stateCache.TryGetAsync(jobId)).Status.ShouldBe(WizardJobStatusValues.Completed);
+        await WaitUntilAsync(() => _logger.Entries.ToList().Any(e => e.Level == LogLevel.Warning));
+        _logger.Entries.ToList().Single(e => e.Level == LogLevel.Warning).Message
+            .ShouldBe($"Failed to broadcast harmonizer progress for job {jobId} gen 0");
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + JobTimeout;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                Assert.Fail("The expected event did not arrive in time.");
+            }
+
+            await Task.Delay(25);
+        }
+    }
+
+    [Test]
     public async Task FinishedJob_ReleasesTheRunLock_SoTheSamePeriodCanStartAgain()
     {
         await RunAsync();

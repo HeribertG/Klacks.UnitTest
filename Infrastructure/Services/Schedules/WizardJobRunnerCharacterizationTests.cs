@@ -247,7 +247,7 @@ public class WizardJobRunnerCharacterizationTests
         var warning = _logger.Entries.Single(e => e.Level == LogLevel.Warning);
         warning.Message.ShouldBe($"Wizard job {jobId} completed but the broadcast failed");
         warning.Exception.ShouldBeSameAs(broadcastFailure);
-        _logger.Entries.Last().ShouldBeSameAs(warning);
+        _logger.Entries.Last(e => !e.Message.StartsWith($"Wizard job {jobId} gen=", StringComparison.Ordinal)).ShouldBeSameAs(warning);
     }
 
     [Test]
@@ -370,6 +370,17 @@ public class WizardJobRunnerCharacterizationTests
         (await _stateCache.TryGetAsync(jobId)).Status.ShouldBe(WizardJobStatusValues.Cancelled);
         await _contextBuilder.DidNotReceiveWithAnyArgs().BuildContextAsync(default!, default);
         _logger.Entries.ShouldNotContain(e => e.Level >= LogLevel.Warning);
+    }
+
+    [Test]
+    public async Task FinishedJob_HandsTheCancellableJobToken_ToEveryScopedCollaborator()
+    {
+        await RunAsync();
+
+        await _contextBuilder.Received(1).BuildContextAsync(Arg.Any<WizardContextRequest>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
+        await _matrixBuilder.Received(1).BuildAsync(
+            Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<EligibilitySlot>>(),
+            Arg.Any<IReadOnlySet<(string, Guid, DateOnly)>?>(), Arg.Is<CancellationToken>(t => t.CanBeCanceled));
     }
 
     [Test]

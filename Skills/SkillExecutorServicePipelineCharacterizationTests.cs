@@ -217,6 +217,54 @@ public class SkillExecutorServicePipelineCharacterizationTests
     }
 
     [Test]
+    public async Task UiAction_WinsOverAGenericHandlerAndAnImplementation()
+    {
+        Register(Descriptor(typeof(ISkillImplementation)) with
+        {
+            ExecutionType = LlmExecutionTypes.UiAction,
+            HandlerType = HandlerType,
+            HandlerConfig = "{}",
+        });
+        _context = _context with { SupportsUiActions = true };
+
+        var result = await RunAsync();
+
+        result.UiActionSteps.ShouldBe("{}");
+        await _dispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default, default!, default);
+        _dispatcher.DidNotReceiveWithAnyArgs().CanHandle(default);
+        _services.DidNotReceiveWithAnyArgs().GetService(default!);
+    }
+
+    [Test]
+    public async Task GenericHandler_WinsOverAnImplementation()
+    {
+        Register(Descriptor(typeof(ISkillImplementation)) with { HandlerType = HandlerType, HandlerConfig = "{}" });
+        var dispatched = SkillResult.SuccessResult("generic");
+        _dispatcher.ExecuteAsync(default!, default!, default!, default, default!, default).ReturnsForAnyArgs(dispatched);
+
+        var result = await RunAsync();
+
+        result.ShouldBeSameAs(dispatched);
+        _services.DidNotReceiveWithAnyArgs().GetService(default!);
+    }
+
+    [Test]
+    public async Task CancellationNotCausedByTheCaller_IsAnExecutionError_NotACancelledResult()
+    {
+        Register(Descriptor() with { HandlerType = HandlerType, HandlerConfig = "{}" });
+        DispatcherThrows(new OperationCanceledException("timed out"));
+
+        var result = await RunAsync();
+
+        result.Type.ShouldBe(SkillResultType.Error);
+        result.Message.ShouldBe("Execution error: timed out");
+        result.Metadata![SkillErrorKeys.ExceptionType].ShouldBe(nameof(OperationCanceledException));
+        await _tracker.Received(1).TrackFailureAsync(
+            Canonical, SkillFailureKind.Exception, _context, _parameters, result.Message, Arg.Any<TimeSpan>(), SkillCategory.Crud, CancellationToken.None);
+        Logs().Last().ShouldBe((LogLevel.Error, $"Unexpected error executing skill: {Invoked}"));
+    }
+
+    [Test]
     public async Task GenericHandlerWithoutConfig_NamesTheInvokedSkill_AndNeverDispatches()
     {
         Register(Descriptor() with { HandlerType = HandlerType, HandlerConfig = " " });
