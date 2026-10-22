@@ -198,6 +198,19 @@ public class SearchEmployeesSkillTests
     }
 
     [Test]
+    public async Task CustomerNamedByItsCompany_StaysInResults()
+    {
+        var customer = new ClientSearchItem { Id = Guid.NewGuid(), Company = "Migros Aare", IdNumber = 50 };
+        WireSearch(1, customer);
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Migros", ["entityType"] = "Customer" });
+
+        Assert.That(Data(result).GetProperty("Results").GetArrayLength(), Is.EqualTo(1));
+        Assert.That(NameResolutionAskBack.IsAskBack(result.Message), Is.False);
+    }
+
+    [Test]
     public async Task RecipeCapture_TakesTheNamedPerson()
     {
         var named = Item("Hans", "Meier", 40);

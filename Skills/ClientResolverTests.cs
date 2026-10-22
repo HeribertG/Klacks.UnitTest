@@ -200,6 +200,22 @@ public class ClientResolverTests
     }
 
     [Test]
+    public async Task ExactCompanyName_DoesNotPushThePersonWithThatLastNameAside()
+    {
+        SearchReturns(
+            new ClientSearchItem { Id = SecondDuplicateId, Company = "Meier", IdNumber = 28 },
+            Person(FirstDuplicateId, "Hans", "Meier", 29));
+        _clientRepository.Get(FirstDuplicateId)
+            .Returns(new Client { Id = FirstDuplicateId, FirstName = "Hans", Name = "Meier" });
+
+        var (client, error) = await ClientResolver.ResolveByNameAsync(
+            _searchRepository, _clientRepository, null, "Meier", null, CancellationToken.None);
+
+        Assert.That(error, Is.Null);
+        Assert.That(client!.Id, Is.EqualTo(FirstDuplicateId));
+    }
+
+    [Test]
     public async Task DuplicateNames_AmbiguityIsANameAskBack()
     {
         SearchReturnsDuplicateLya();
