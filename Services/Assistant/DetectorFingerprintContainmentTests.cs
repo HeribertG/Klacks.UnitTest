@@ -13,7 +13,7 @@
 /// do return different sizes and the containment assertion has something to prove. Substituted
 /// repositories mimic their real counterparts' cap semantics (Take(maxResults) / RowCount over unique
 /// shift ids) rather than ignoring the argument, otherwise the capped path would silently return
-/// everything and the test would pass vacuously. The three shift-scanning detectors run on the real
+/// everything and the test would pass vacuously. The two shift-scanning detectors run on the real
 /// ShiftRepository and ContainerTemplateRepository over EF InMemory (InMemoryShiftStore), so their caps are the
 /// repositories' own.
 ///
@@ -25,7 +25,8 @@
 /// Uncapped detectors cannot appear here at all: with no cap, DetectAsync and the fingerprint scan
 /// return the same number of findings, so "fingerprints.Count > events.Count" is unsatisfiable. That is
 /// why TargetHoursDriftDetector is absent, and why AvailabilityGapDetector and
-/// ClientMissingCoreDataDetector left this file when they became aggregates, and why
+/// ClientMissingCoreDataDetector left this file when they became aggregates, and why OpenOrderDetector left
+/// it when it became one daily summary (2026-10-22), and why
 /// the capped UnstaffedShift7dDetector case left it when UnstaffedShiftPeriodDetector (one collective
 /// event per root group, Paket D) replaced that detector. Their lockstep is pinned
 /// as set EQUALITY inside their own fixtures instead - a stronger assertion than containment.
@@ -45,26 +46,6 @@ namespace Klacks.UnitTest.Services.Assistant;
 public class DetectorFingerprintContainmentTests
 {
     private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-    [Test]
-    public async Task OpenOrderDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
-    {
-        using var store = new InMemoryShiftStore();
-        var orders = Enumerable.Range(0, OpenOrderDetector.MaxCandidatesToScan + 5)
-            .Select(offset => new Shift
-            {
-                Id = Guid.NewGuid(),
-                Name = "Order",
-                Status = ShiftStatus.OriginalOrder,
-                FromDate = Today.AddDays(offset % 60)
-            })
-            .ToList();
-        store.Seed(orders);
-
-        var sut = new OpenOrderDetector(store.Reader, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<OpenOrderDetector>.Instance);
-
-        await AssertContainmentAsync(sut, sut, expectedCappedCount: OpenOrderDetector.MaxCandidatesToScan);
-    }
 
     [Test]
     public async Task UncutFullDayShiftDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()

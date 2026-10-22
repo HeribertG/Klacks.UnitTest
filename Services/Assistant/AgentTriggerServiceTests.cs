@@ -1282,7 +1282,7 @@ public class OperationalTriggerEventDedupKeyTests
         var availabilityGap = new AvailabilityGapTriggerEvent(Guid.NewGuid(), "Jane", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 10);
         var periodOverdue = new PeriodOverdueTriggerEvent(Guid.NewGuid(), "GE", new DateOnly(2026, 6, 30), 10);
         var missingCoreData = new ClientMissingCoreDataTriggerEvent(Guid.NewGuid(), "Jane", ClientMissingCoreDataTriggerEvent.AddressField);
-        var openOrder = new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 6, 30), null, 3, Array.Empty<Guid>());
+        var openOrder = new OpenOrdersSummaryTriggerEvent(new DateOnly(2026, 6, 27), [new OpenOrderSnapshot(Guid.NewGuid(), new DateOnly(2026, 6, 30), Array.Empty<Guid>())]);
         var uncutFulldayShift = new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 6, 30), 3, Array.Empty<Guid>());
         var emptyContainer = new EmptyContainerTriggerEvent(
             Guid.NewGuid(), "Container A", new DateOnly(2026, 6, 30), null, Array.Empty<Guid>(),
@@ -1464,7 +1464,7 @@ public class OperationalTriggerEventDedupKeyTests
             new UnstaffedShiftSummaryTriggerEvent(
                 groupId, "GE", new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), 4, 2, new DateOnly(2026, 8, 3), 2),
             new LockConflictDetectedTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 2, new[] { groupId }),
-            new OpenOrderTriggerEvent(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 8, 3), null, 3, new[] { groupId }),
+            new OpenOrdersSummaryTriggerEvent(new DateOnly(2026, 7, 31), [new OpenOrderSnapshot(Guid.NewGuid(), new DateOnly(2026, 8, 3), new[] { groupId })]),
             new UncutFullDayShiftTriggerEvent(Guid.NewGuid(), new DateOnly(2026, 8, 3), 3, new[] { groupId }),
             new EmptyContainerTriggerEvent(
                 Guid.NewGuid(), "Container A", new DateOnly(2026, 8, 3), null, new[] { groupId },

@@ -12,11 +12,14 @@
 /// Completed/CompletedWithWarnings/Failed decision (all-rejected but parseable is a warning, malformed XML
 /// fails), exception linking to the ledger row, heartbeat cadence by order count and by time, abort on a
 /// lost heartbeat, cancellation without finish, and an unexpected error finishing the row as Interrupted.
+/// Also pins that a run with at least one Completed/CompletedWithWarnings file rescans the open-order summary once,
+/// and that a failed file, a lost finish or an empty run does not.
 /// </summary>
 
 using System.Security.Cryptography;
 using System.Text;
 using Klacks.Api.Application.DTOs.Imports;
+using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Interfaces.Imports;
 using Klacks.Api.Application.Services.Imports;
 using Klacks.Api.Domain.Constants;
@@ -62,6 +65,7 @@ public class ErpOrderImportRunnerTests
     private IShiftRepository _shiftRepository = null!;
     private IWorkRepository _workRepository = null!;
     private IAgentTriggerService _triggerService = null!;
+    private IOpenOrderSummaryRescan _openOrderSummaryRescan = null!;
     private IErpImportExceptionRepository _exceptionRepository = null!;
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
@@ -89,6 +93,7 @@ public class ErpOrderImportRunnerTests
         _shiftRepository = Substitute.For<IShiftRepository>();
         _workRepository = Substitute.For<IWorkRepository>();
         _triggerService = Substitute.For<IAgentTriggerService>();
+        _openOrderSummaryRescan = Substitute.For<IOpenOrderSummaryRescan>();
         _exceptionRepository = Substitute.For<IErpImportExceptionRepository>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
@@ -160,7 +165,7 @@ public class ErpOrderImportRunnerTests
         _runner = new ErpOrderImportRunner(
             _dropPointRepository, _defaultDropPointProvider, legacyFolderMigrator, _fileRepository, retentionService, inboxRegistration, importer,
             _settingsRepository, companyClock, _unitOfWork, _runState, _time,
-            NullLogger<ErpOrderImportRunner>.Instance, new ErpCronTimeZoneDriftNotifier());
+            NullLogger<ErpOrderImportRunner>.Instance, new ErpCronTimeZoneDriftNotifier(), _openOrderSummaryRescan);
     }
 
     [Test]
@@ -595,6 +600,82 @@ public class ErpOrderImportRunnerTests
         await _triggerService.Received(1).OnEventAsync(
             Arg.Is<IAgentTriggerEvent>(e => e.Kind == AgentTriggerKinds.OrderImportFailed), Arg.Any<CancellationToken>());
         await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task RunAsync_CompletedFiles_RescanTheOpenOrderSummaryOnceAfterTheRun()
+    {
+        // Arrange
+        GivenReceivedFile(NewOrder("ORD-1"));
+        GivenReceivedFile(NewOrder("ORD-2"));
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        _finishes.Select(finish => finish.Status).ShouldAllBe(status => status == ErpImportFileStatus.Completed);
+        await _openOrderSummaryRescan.Received(1).RunAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_FileCompletedWithWarnings_RescansTheOpenOrderSummary()
+    {
+        // Arrange
+        GivenReceivedFile(new OrderImportParseResult
+        {
+            Orders = [NewOrder("ORD-1")],
+            Errors = [new OrderImportValidationError { OrderIndex = 1, ExternalOrderReference = "ORD-2", Field = "fromDate", Message = "Missing" }]
+        });
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        _finishes.ShouldHaveSingleItem().Status.ShouldBe(ErpImportFileStatus.CompletedWithWarnings);
+        await _openOrderSummaryRescan.Received(1).RunAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_FailedFile_DoesNotRescanTheOpenOrderSummary()
+    {
+        // Arrange
+        GivenReceivedFile(new OrderImportParseResult
+        {
+            Errors = [new OrderImportValidationError { Field = "root", Message = "Malformed XML: unexpected end" }]
+        });
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        _finishes.ShouldHaveSingleItem().Status.ShouldBe(ErpImportFileStatus.Failed);
+        await _openOrderSummaryRescan.DidNotReceive().RunAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_FinishLostToAnotherInstance_DoesNotRescanTheOpenOrderSummary()
+    {
+        // Arrange
+        GivenReceivedFile(NewOrder("ORD-1"));
+        _fileRepository.FinishAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<ErpImportFileStatus>(), Arg.Any<ErpImportFileProgress>(), Arg.Any<string?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        await _openOrderSummaryRescan.DidNotReceive().RunAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task RunAsync_NothingReceived_DoesNotRescanTheOpenOrderSummary()
+    {
+        // Act
+        await _runner.RunAsync();
+
+        // Assert
+        _finishes.ShouldBeEmpty();
+        await _openOrderSummaryRescan.DidNotReceive().RunAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]

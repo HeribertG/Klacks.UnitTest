@@ -5,11 +5,13 @@
 /// Program.cs calls them, and the messaging plugin registrar, with the framework registrations Program.cs adds outside it mirrored as in ClarificationExpirySweepContainerTests)
 /// and checks that ValidateOnBuild reports no failure naming the ledger-based ERP import chain: the runner,
 /// the per-file importer, the per-order processor, the inbox registration, the legacy folder migrator, the
-/// retention purge and the ledger repository. The
+/// retention purge, the ledger repository and the open-order summary rescan the runner triggers after a completed
+/// import (with the detector and the detector runner it resolves from its own scope). The
 /// DbContext never connects.
 /// </summary>
 
 using Klacks.Api.Application.Mappers;
+using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Application.Services.Imports;
 using Klacks.Api.Domain.Interfaces.Imports;
 using Klacks.Api.Domain.Models.Authentification;
@@ -45,7 +47,10 @@ public class ErpOrderImportRunnerContainerTests
         "DeleteErpOrderFileCommandHandler",
         nameof(ErpImportFileRegistrar),
         nameof(ErpImportFileRepository),
-        nameof(ErpImportInstanceIdentity)
+        nameof(ErpImportInstanceIdentity),
+        nameof(OpenOrderSummaryRescan),
+        nameof(OpenOrderDetector),
+        nameof(AgentTriggerDetectorRunner)
     ];
 
     [Test]

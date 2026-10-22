@@ -21,6 +21,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Services.Assistant.Conditions;
+using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -305,6 +306,8 @@ public class AgentTriggerBackgroundServiceTests
         services.AddScoped(_ => _ledger);
         services.AddScoped(_ => _actionService);
         services.AddScoped(_ => _reminderService);
+        services.AddScoped<IAgentTriggerDetectorRunner>(_ => new AgentTriggerDetectorRunner(
+            _triggerService, _ledger, NullLogger<AgentTriggerDetectorRunner>.Instance));
 
         using var provider = services.BuildServiceProvider();
         using var sut = new AgentTriggerBackgroundService(
