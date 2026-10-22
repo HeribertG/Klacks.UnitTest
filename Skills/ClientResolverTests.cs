@@ -200,19 +200,86 @@ public class ClientResolverTests
     }
 
     [Test]
-    public async Task ExactCompanyName_DoesNotPushThePersonWithThatLastNameAside()
+    public async Task CompanyAndPersonCalledLikeTheBareLastName_AreAskedBack_NotSilentlyPicked()
     {
         SearchReturns(
-            new ClientSearchItem { Id = SecondDuplicateId, Company = "Meier", IdNumber = 28 },
+            new ClientSearchItem { Id = SecondDuplicateId, Company = "Meier", IdNumber = 28, EntityType = "Customer" },
             Person(FirstDuplicateId, "Hans", "Meier", 29));
-        _clientRepository.Get(FirstDuplicateId)
-            .Returns(new Client { Id = FirstDuplicateId, FirstName = "Hans", Name = "Meier" });
 
         var (client, error) = await ClientResolver.ResolveByNameAsync(
             _searchRepository, _clientRepository, null, "Meier", null, CancellationToken.None);
 
+        Assert.That(client, Is.Null);
+        Assert.That(error, Does.Contain("#28"));
+        Assert.That(error, Does.Contain("#29"));
+        Assert.That(NameResolutionAskBack.IsAskBack(error), Is.True);
+        await _clientRepository.DidNotReceive().Get(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task EmployeeIsNotCalledByTheCompanyTheyWorkFor()
+    {
+        SearchReturns(new ClientSearchItem
+        {
+            Id = FirstDuplicateId, FirstName = "Anna", LastName = "Keller", Company = "Meier Transport AG",
+            IdNumber = 30, EntityType = "Employee"
+        });
+
+        var (client, error) = await ClientResolver.ResolveByNameAsync(
+            _searchRepository, _clientRepository, null, "Meier", null, CancellationToken.None);
+
+        Assert.That(client, Is.Null);
+        await AssertAskedBackWithoutLoading(error, "Anna Keller (#30)");
+    }
+
+    [Test]
+    public async Task IncompleteSearchPage_IsAskedBack_EvenWithASingleNamedRowOnIt()
+    {
+        _searchRepository.SearchAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [Person(FirstDuplicateId, "Hans", "Meier", 31)], TotalCount = 150 });
+        FuzzySearchReturns();
+
+        var (client, error) = await ClientResolver.ResolveByNameAsync(
+            _searchRepository, _clientRepository, "Hans", "Meier", null, CancellationToken.None);
+
+        Assert.That(client, Is.Null);
+        Assert.That(error, Does.Contain("incomplete"));
+        Assert.That(error, Does.Contain(ClientResolver.IdNumberParameterName));
+        Assert.That(NameResolutionAskBack.IsAskBack(error), Is.True);
+        await _clientRepository.DidNotReceive().Get(Arg.Any<Guid>());
+    }
+
+    [Test]
+    public async Task IncompleteSearchPage_ResolvesWhenTheClientNumberNamesAJudgedMatch()
+    {
+        _searchRepository.SearchAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [Person(FirstDuplicateId, "Hans", "Meier", 31)], TotalCount = 150 });
+        _clientRepository.Get(FirstDuplicateId)
+            .Returns(new Client { Id = FirstDuplicateId, FirstName = "Hans", Name = "Meier" });
+
+        var (client, error) = await ClientResolver.ResolveByNameAsync(
+            _searchRepository, _clientRepository, "Hans", "Meier", 31, CancellationToken.None);
+
         Assert.That(error, Is.Null);
         Assert.That(client!.Id, Is.EqualTo(FirstDuplicateId));
+    }
+
+    [Test]
+    public async Task StrictResolution_JudgesUpToOneHundredRows()
+    {
+        SearchReturns(Person(FirstDuplicateId, "Hans", "Meier", 32));
+        _clientRepository.Get(FirstDuplicateId)
+            .Returns(new Client { Id = FirstDuplicateId, FirstName = "Hans", Name = "Meier" });
+
+        await ClientResolver.ResolveByNameAsync(
+            _searchRepository, _clientRepository, "Hans", "Meier", null, CancellationToken.None);
+
+        await _searchRepository.Received(1).SearchAsync(
+            "Hans Meier", null, null, null, 100, Arg.Any<CancellationToken>());
     }
 
     [Test]

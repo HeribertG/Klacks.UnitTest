@@ -45,7 +45,7 @@ public class ClientFuzzySearchGuardTests
             "the name ask-back; its Lenient callers are checked by NameMatchPolicyLenientGuardTests",
         ["Application/Skills/SearchEmployeesSkill.cs"] =
             "captured by recipes, but only rows the user named (ClientNameMatch) go to Results; fuzzy rows are " +
-            "listed under Suggestions without an id, so no capture can take them",
+            "listed under OtherMatches with names and client number but without the id, so no capture can take them",
         ["Application/Services/Assistant/ClientNameCandidateGrounder.cs"] =
             "prompt grounding only; a person found through a similar name is rendered as a name the user must " +
             "confirm, never as a spelling to copy into a tool call",

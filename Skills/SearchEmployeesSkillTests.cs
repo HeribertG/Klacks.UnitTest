@@ -53,6 +53,14 @@ public class SearchEmployeesSkillTests
             .Returns(new ClientSearchResult { Items = items, TotalCount = totalCount });
     }
 
+    private void WireJudgedSearch(int totalCount, params ClientSearchItem[] items)
+    {
+        _searchRepository.SearchAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), 100, Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = items, TotalCount = totalCount });
+    }
+
     private void WireFuzzySearch(params ClientSearchItem[] items)
     {
         _searchRepository.SearchByFuzzyNameAsync(
@@ -131,6 +139,7 @@ public class SearchEmployeesSkillTests
     public async Task ReportsTruncation_WhenMoreResultsThanLimit()
     {
         WireSearch(12, Item("Anna", "Müller"), Item("Max", "Müller"));
+        WireJudgedSearch(12, Enumerable.Range(1, 12).Select(i => Item("Person" + i, "Müller", i)).ToArray());
 
         var result = await _skill.ExecuteAsync(
             Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Müller", ["limit"] = 2 });
@@ -138,6 +147,56 @@ public class SearchEmployeesSkillTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Contain("Found 12"));
         Assert.That(result.Message, Does.Contain("Showing first 2"));
+        Assert.That(Data(result).GetProperty("HasMore").GetBoolean(), Is.True);
+    }
+
+    [Test]
+    public async Task LoneNamedRowOnAnIncompletePage_IsNotCapturable_WhenTheFullResultNamesMore()
+    {
+        var onPage = Item("Hans", "Meier", 60);
+        var page = new[] { onPage }
+            .Concat(Enumerable.Range(1, 9).Select(i => Item("Peter", "Meierhans" + i, 60 + i)))
+            .ToArray();
+        WireSearch(11, page);
+        WireJudgedSearch(11, page.Append(Item("Hans", "Meier", 99)).ToArray());
+        var plan = PlanAtSearchStep("Hans Meier");
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Hans Meier" });
+        plan.Observe([ExecutedCall(result)]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(Data(result).GetProperty("Results").GetArrayLength(), Is.EqualTo(2));
+            Assert.That(Data(result).GetProperty("TotalCount").GetInt32(), Is.EqualTo(2));
+            Assert.That(plan.Slots.ContainsKey("clientId"), Is.False);
+            Assert.That(plan.CurrentIsAsk, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task ResultStillIncompleteAfterTheJudgedSearch_PicksNobody_AndAsksBack()
+    {
+        var rows = Enumerable.Range(1, 10).Select(i => Item("Hans", "Meier", i)).ToArray();
+        WireSearch(500, rows);
+        WireJudgedSearch(500, rows);
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Hans Meier" });
+
+        Assert.That(Data(result).GetProperty("Results").GetArrayLength(), Is.EqualTo(0));
+        Assert.That(result.Message, Does.Contain("incomplete"));
+        Assert.That(NameResolutionAskBack.IsAskBack(result.Message), Is.True);
+    }
+
+    [Test]
+    public async Task SeveralMatches_AreNeverCutDownToASingleCapturableRow()
+    {
+        WireSearch(3, Item("Anna", "Müller", 1), Item("Max", "Müller", 2), Item("Eva", "Müller", 3));
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Müller", ["limit"] = 1 });
+
+        Assert.That(Data(result).GetProperty("Results").GetArrayLength(), Is.EqualTo(2));
+        Assert.That(Data(result).GetProperty("HasMore").GetBoolean(), Is.True);
     }
 
     [Test]

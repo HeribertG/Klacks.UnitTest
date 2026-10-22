@@ -6,8 +6,9 @@
 /// and the recipe continues afterwards; without such a question step the forcing is released and the run aborted.
 /// From the ask-back on, every side-effecting call of the turn is rejected, whatever its skill (also a write by id
 /// after a lenient read), while reads and previews still run. Any other failure keeps the forcing and its
-/// corrected retry, and a successful call that merely carries the marker text (a search suggestion) changes
-/// nothing.
+/// corrected retry. A successful search that only found similar names (the marker on a success) marks the turn too:
+/// a later write is rejected, a recipe whose capturing search it was rewinds to its question, and a forced write step
+/// is released.
 /// </summary>
 
 using System.Text.Json;
@@ -184,16 +185,42 @@ public class RecipeTurnStateNameAskBackTests
     }
 
     [Test]
-    public async Task SuccessfulCallCarryingTheMarkerText_IsIgnored()
+    public async Task SuccessfulSuggestion_BlocksEveryLaterWrite_AndReleasesAForcedWriteStep()
     {
         var plan = new RecipeExecutionPlan(
             RecipeName, [new RecipeStep { Kind = RecipeStepKinds.Mutate, Skill = GroupSkill }]);
         var state = await BeginAsync(plan);
         var search = new LLMFunctionCall
         {
-            FunctionName = "search_shifts",
+            FunctionName = "search_employees",
             Success = true,
-            Result = NameResolutionMessages.SuggestedName("Nachtdienst") + "\nData: {\"TotalCount\":0,\"Shifts\":[]}"
+            Result = NameResolutionMessages.SuggestedName("Hans Mayer (#12)") + "\nData: {\"Results\":[]}"
+        };
+        state.ObserveExecuted([search]);
+
+        var write = Call(WriteByIdSkill, "Region North");
+        var executable = state.RejectWrites([write]);
+        await state.FinalizeAsync(CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(state.NameAskBackSeen, Is.True);
+            Assert.That(state.Forcing, Is.Null);
+            Assert.That(executable, Is.Empty);
+            Assert.That(write.IsRejectedAfterNameAskBack, Is.True);
+            Assert.That(write.Success, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task SuccessfulSuggestion_WithoutARecipe_StillBlocksAWriteInTheSameTurn()
+    {
+        var state = await BeginWithoutRecipeAsync();
+        var search = new LLMFunctionCall
+        {
+            FunctionName = "search_employees",
+            Success = true,
+            Result = NameResolutionMessages.SuggestedName("Hans Mayer (#12)") + "\nData: {\"Results\":[]}"
         };
         state.ObserveExecuted([search]);
 
@@ -202,9 +229,49 @@ public class RecipeTurnStateNameAskBackTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(state.NameAskBackSeen, Is.False);
+            Assert.That(state.NameAskBackSeen, Is.True);
+            Assert.That(executable, Is.Empty);
+            Assert.That(write.IsRejectedAfterNameAskBack, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task SuccessfulSuggestionOfTheCapturingSearchStep_RewindsToTheQuestion_AndKeepsThePlan()
+    {
+        var plan = new RecipeExecutionPlan(
+            RecipeName,
+            [
+                new RecipeStep { Kind = RecipeStepKinds.Ask, Slot = "clientName", Prompt = "Which employee?" },
+                new RecipeStep
+                {
+                    Kind = RecipeStepKinds.Search, Skill = "search_employees",
+                    Inject = new Dictionary<string, string> { ["searchTerm"] = "$clientName" },
+                    Capture = "Results[].Id as clientId"
+                },
+                new RecipeStep
+                {
+                    Kind = RecipeStepKinds.Mutate, Skill = WriteByIdSkill,
+                    Inject = new Dictionary<string, string> { ["clientId"] = "$clientId" }
+                }
+            ],
+            new Dictionary<string, string> { ["clientName"] = "Hans Meier" },
+            1);
+        var state = await BeginAsync(plan);
+        var search = new LLMFunctionCall
+        {
+            FunctionName = "search_employees",
+            Success = true,
+            Result = NameResolutionMessages.SuggestedName("Hans Mayer (#12)") + "\nData: {\"Results\":[]}"
+        };
+        state.ObserveExecuted([search]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(state.NameAskBackSeen, Is.True);
             Assert.That(state.Forcing, Is.SameAs(plan));
-            Assert.That(executable, Has.Count.EqualTo(1));
+            Assert.That(plan.IsActive, Is.True);
+            Assert.That(plan.CurrentIsAsk, Is.True);
+            Assert.That(plan.CurrentStep!.Slot, Is.EqualTo("clientName"));
         });
     }
 
