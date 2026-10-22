@@ -152,6 +152,60 @@ public class NameResolutionPolicyTests
         result.Match!.Name.ShouldBe("Region Nord");
     }
 
+    [TestCase("Zurich", "Zürich")]
+    [TestCase("Bac Ninh", "Bắc Ninh")]
+    [TestCase("Zürich", "Zürich")]
+    [TestCase("Bắc Ninh", "Bắc Ninh")]
+    public void DiacriticsAreIgnored_OnlyWhenTheQueryHasNone_OrTheyMatchExactly(string query, string expected)
+    {
+        var result = Resolve([expected, "Bern"], query);
+
+        result.Match!.Name.ShouldBe(expected);
+    }
+
+    [TestCase("Bác Ninh", "Bắc Ninh")]
+    [TestCase("Zürich", "Zurich")]
+    public void DiacriticMismatch_IsOnlySuggestedUnderStrict(string query, string suggested)
+    {
+        var strict = Resolve([suggested, "Bern"], query);
+        var lenient = Resolve([suggested, "Bern"], query, NameMatchPolicy.Lenient);
+
+        strict.Match.ShouldBeNull();
+        strict.Suggestion!.Name.ShouldBe(suggested);
+        lenient.Match!.Name.ShouldBe(suggested);
+    }
+
+    [TestCase("東京", "東京支店")]
+    [TestCase("トウキョウ", "トウキョウ支店")]
+    [TestCase("กรุงเทพ", "สาขากรุงเทพ")]
+    public void UniqueSubstring_InAScriptWithoutWordSeparators_IsAcceptedUnderStrict(string query, string expected)
+    {
+        var result = Resolve([expected, "大阪支店", "สาขาเชียงใหม่"], query);
+
+        result.Match!.Name.ShouldBe(expected);
+    }
+
+    [Test]
+    public void SeveralSubstrings_InAScriptWithoutWordSeparators_StayAmbiguous()
+    {
+        var result = Resolve(["東京支店", "東京本社", "大阪支店"], "東京");
+
+        result.Match.ShouldBeNull();
+        result.Suggestion.ShouldBeNull();
+        result.Candidates.Select(item => item.Name).ShouldBe(["東京支店", "東京本社"], ignoreOrder: true);
+    }
+
+    [TestCase("Gruppe")]
+    [TestCase("  gruppe ")]
+    public void QueryThatIsOnlyALabelWord_FindsNothingUnderStrict(string query)
+    {
+        var result = Resolve(["Gruppe Nord", "Bern"], query, labelWords: GroupLabelWords);
+
+        result.Match.ShouldBeNull();
+        result.Suggestion.ShouldBeNull();
+        result.Candidates.ShouldBeEmpty();
+    }
+
     [Test]
     public void SeveralForwardSubstrings_StayAmbiguousUnderStrict()
     {
