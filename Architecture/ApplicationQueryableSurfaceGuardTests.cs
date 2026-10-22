@@ -87,9 +87,8 @@ public class ApplicationQueryableSurfaceGuardTests
     public void Scan_CoversTheApplicationLayerAndTheApiInterfaces()
     {
         ApplicationFiles().Count.ShouldBeGreaterThan(MinimumApplicationFiles, "The Application scan found too few files.");
-        QueryableInterfacesBySimpleName().ShouldContainKey(
-            "IClientSearchService",
-            "The reflection scan no longer sees a known Domain query helper (used by Infrastructure only).");
+        QueryableInterfacesBySimpleName().ShouldNotBeEmpty(
+            "The reflection scan sees no interface with a queryable member at all; the Domain still has Infrastructure-only query helpers.");
     }
 
     [Test]

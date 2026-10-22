@@ -7,7 +7,6 @@
 
 using Klacks.Api.Application.Services.Clients;
 using Klacks.Api.Domain.Services.Common;
-using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Services.Clients;
 
@@ -15,7 +14,7 @@ namespace Klacks.UnitTest.Services.Clients;
 public class ClientVisibilityGuardTests
 {
     private IClientSearchRepository _clientSearchRepository = null!;
-    private IClientGroupFilterService _clientGroupFilterService = null!;
+    private ICallerGroupRestriction _callerGroupRestriction = null!;
     private ClientVisibilityGuard _guard = null!;
     private Guid _visibleId;
     private Guid _hiddenId;
@@ -31,9 +30,9 @@ public class ClientVisibilityGuardTests
         _clientSearchRepository
             .FilterVisibleToCallerAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(call => (IReadOnlySet<Guid>)((IReadOnlyCollection<Guid>)call[0]).Where(id => id == _visibleId).ToHashSet());
-        _clientGroupFilterService = Substitute.For<IClientGroupFilterService>();
-        _clientGroupFilterService.IsCallerUnrestrictedAsync().Returns(false);
-        _guard = new ClientVisibilityGuard(_clientSearchRepository, _clientGroupFilterService);
+        _callerGroupRestriction = Substitute.For<ICallerGroupRestriction>();
+        _callerGroupRestriction.IsCallerUnrestrictedAsync().Returns(false);
+        _guard = new ClientVisibilityGuard(_clientSearchRepository, _callerGroupRestriction);
     }
 
     // Admins and owner-less background work are answered without a query, so an unknown or soft-deleted client
@@ -41,7 +40,7 @@ public class ClientVisibilityGuardTests
     [Test]
     public async Task UnrestrictedCaller_SeesEverythingWithoutAQuery()
     {
-        _clientGroupFilterService.IsCallerUnrestrictedAsync().Returns(true);
+        _callerGroupRestriction.IsCallerUnrestrictedAsync().Returns(true);
         var rows = new List<Row> { new(_visibleId, "a"), new(_hiddenId, "b") };
 
         (await _guard.IsVisibleAsync(_hiddenId)).ShouldBeTrue();
