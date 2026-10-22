@@ -155,6 +155,36 @@ public class ErrorHandlingMiddlewareCharacterizationTests
             true);
 
         yield return new MappingCase(
+            "DbUpdateConcurrencyException",
+            () => new DbUpdateConcurrencyException("row moved"),
+            400,
+            JsonContentType,
+            "{\"title\":\"Database Update Error\",\"status\":400,\"detail\":\"A database error occurred. Please check your input.\"}",
+            LogLevel.Error,
+            "DbUpdateException caught by middleware: row moved",
+            true);
+
+        yield return new MappingCase(
+            "DomainDatabaseUpdateException",
+            () => new DatabaseUpdateException("duplicate key value", isDuplicate: true),
+            500,
+            JsonContentType,
+            "{\"title\":\"An unexpected error occurred\",\"status\":500,\"detail\":\"An internal server error has occurred.\"}",
+            LogLevel.Error,
+            "An unhandled exception occurred: duplicate key value",
+            true);
+
+        yield return new MappingCase(
+            "DomainConcurrencyException",
+            () => new ConcurrencyException("The record was modified by another user. Please refresh and try again."),
+            500,
+            JsonContentType,
+            "{\"title\":\"An unexpected error occurred\",\"status\":500,\"detail\":\"An internal server error has occurred.\"}",
+            LogLevel.Error,
+            "An unhandled exception occurred: The record was modified by another user. Please refresh and try again.",
+            true);
+
+        yield return new MappingCase(
             "ContainerLockedException",
             () => new ContainerLockedException("The container is locked."),
             423,
