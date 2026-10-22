@@ -107,6 +107,63 @@ public class WhisperPluginHandlerTests
     }
 
     [Test]
+    public async Task Install_enqueues_parakeet_with_its_model_id()
+    {
+        _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        UpdateHistory? added = null;
+        await _updateRepository.AddAsync(Arg.Do<UpdateHistory>(e => added = e), Arg.Any<CancellationToken>());
+
+        var result = await CreateInstallHandler().Handle(
+            new InstallWhisperPluginCommand(WhisperPluginConstants.ModelAliasParakeet, "admin"), CancellationToken.None);
+
+        result.Enqueued.ShouldBeTrue();
+        added.ShouldNotBeNull();
+        added!.OperationType.ShouldBe(UpdateOperationType.WhisperInstall);
+        added.TargetVersion.ShouldBe(WhisperPluginConstants.ModelAliasParakeet);
+        added.ArtifactRef.ShouldBe(WhisperPluginConstants.ParakeetModelId);
+    }
+
+    [Test]
+    public async Task Status_maps_parakeet_model_id_back_to_its_alias()
+    {
+        _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
+            .Returns(EnabledProvider(WhisperPluginConstants.ParakeetModelId));
+        _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        _updateRepository.GetLatestByTypesAsync(Arg.Any<IReadOnlyCollection<UpdateOperationType>>(), Arg.Any<CancellationToken>())
+            .Returns((UpdateHistory?)null);
+
+        var result = await CreateStatusHandler().Handle(new GetWhisperPluginStatusQuery(), CancellationToken.None);
+
+        result.Installed.ShouldBeTrue();
+        result.ModelAlias.ShouldBe(WhisperPluginConstants.ModelAliasParakeet);
+        result.ModelId.ShouldBe(WhisperPluginConstants.ParakeetModelId);
+    }
+
+    [Test]
+    public async Task Uninstall_records_the_parakeet_alias_of_the_installed_engine()
+    {
+        _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
+            .Returns(EnabledProvider(WhisperPluginConstants.ParakeetModelId));
+        _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+        UpdateHistory? added = null;
+        await _updateRepository.AddAsync(Arg.Do<UpdateHistory>(e => added = e), Arg.Any<CancellationToken>());
+
+        var result = await CreateUninstallHandler().Handle(new UninstallWhisperPluginCommand("admin"), CancellationToken.None);
+
+        result.Enqueued.ShouldBeTrue();
+        added!.TargetVersion.ShouldBe(WhisperPluginConstants.ModelAliasParakeet);
+    }
+
+    [TestCase(WhisperPluginConstants.ModelAliasSmall, WhisperPluginConstants.SmallModelId)]
+    [TestCase(WhisperPluginConstants.ModelAliasLarge, WhisperPluginConstants.LargeModelId)]
+    [TestCase(WhisperPluginConstants.ModelAliasParakeet, WhisperPluginConstants.ParakeetModelId)]
+    public void Alias_and_model_id_resolve_both_ways(string alias, string modelId)
+    {
+        WhisperPluginConstants.ResolveModelId(alias).ShouldBe(modelId);
+        WhisperPluginConstants.ResolveModelAlias(modelId).ShouldBe(alias);
+    }
+
+    [Test]
     public async Task Install_maps_db_conflict_to_operation_in_progress()
     {
         _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
