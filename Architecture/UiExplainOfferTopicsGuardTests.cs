@@ -74,7 +74,7 @@ public class UiExplainOfferTopicsGuardTests
         repository.GetSinceAsync(Arg.Any<DateTime>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rows);
         var logger = Substitute.For<ILogger<TriggerHistoryGoalSignalSource>>();
 
-        var signals = await new TriggerHistoryGoalSignalSource(repository, logger).CollectAsync();
+        var signals = await new TriggerHistoryGoalSignalSource(repository, new Klacks.UnitTest.TestHelpers.FixedCompanyClock(DateTimeOffset.UtcNow), logger).CollectAsync();
 
         signals.ShouldBeEmpty();
         logger.ReceivedCalls()

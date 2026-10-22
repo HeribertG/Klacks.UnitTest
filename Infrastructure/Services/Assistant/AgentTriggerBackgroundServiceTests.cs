@@ -3,7 +3,7 @@
 /// <summary>
 /// Unit tests for the tick integration: the ledger upsert that runs as a sibling step BEFORE the
 /// notification, the STATUS-driven Detected-to-Reported transition (Etappe 5b replaced the original
-/// "only what is new gets announced" gate, see AgentTriggerBackgroundService.RunDetectorAsync for why),
+/// "only what is new gets announced" gate, see AgentTriggerDetectorRunner.RunAsync for why),
 /// the resolve reconciliation restricted to detectors that promise a complete fingerprint set, and the
 /// exclusion of companion events from the ledger altogether.
 ///
@@ -282,7 +282,7 @@ public class AgentTriggerBackgroundServiceTests
     }
 
     /// <summary>
-    /// A substitute whose OnEventAsync is configured to return Empty by default, so RunDetectorAsync's
+    /// A substitute whose OnEventAsync is configured to return Empty by default, so AgentTriggerDetectorRunner.RunAsync's
     /// unconditional outcome.Add(...) never sees a null - production code deliberately does not
     /// null-coalesce an unconfigured test double, so the double must be configured instead.
     /// </summary>

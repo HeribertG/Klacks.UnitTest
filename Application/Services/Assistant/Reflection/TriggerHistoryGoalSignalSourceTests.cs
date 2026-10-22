@@ -15,6 +15,7 @@ using Klacks.Api.Application.Services.Assistant.Reflection;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 
 [TestFixture]
@@ -30,7 +31,10 @@ public class TriggerHistoryGoalSignalSourceTests
     public void Setup()
     {
         _dispatchRepository = Substitute.For<IProactiveTriggerDispatchRepository>();
-        _sut = new TriggerHistoryGoalSignalSource(_dispatchRepository, NullLogger<TriggerHistoryGoalSignalSource>.Instance);
+        _sut = new TriggerHistoryGoalSignalSource(
+            _dispatchRepository,
+            new FixedCompanyClock(new DateTimeOffset(2026, 10, 22, 8, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc),
+            NullLogger<TriggerHistoryGoalSignalSource>.Instance);
     }
 
     private static ProactiveTriggerDispatchRow Row(string userId, string triggerKind, DateTime createTimeUtc) => new()
@@ -195,6 +199,24 @@ public class TriggerHistoryGoalSignalSourceTests
         var signals = await _sut.CollectAsync();
 
         signals.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task CollectAsync_OpenOrder_CountsOnlyTheLastSevenCompanyDays_NeverMoreThanSeven()
+    {
+        // Company today is 2026-10-22, so the counted days are 16.10. to 22.10.; a summary of 15.10. (eighth day back,
+        // still inside a 7x24h UTC row window) and one of a future day must not count.
+        var morning = new DateTime(2026, 10, 15, 7, 0, 0, DateTimeKind.Utc);
+        var rows = Enumerable.Range(0, 8)
+            .Select(offset => OpenOrderRow(UserA, $"2026-10-{15 + offset}#4", morning.AddDays(offset)))
+            .Append(OpenOrderRow(UserA, "2026-10-23#4", morning.AddDays(7)))
+            .ToArray();
+        SetupRows(rows);
+
+        var signal = (await _sut.CollectAsync()).ShouldHaveSingleItem();
+
+        signal.OccurrenceCount.ShouldBe(7);
+        signal.LookbackDays.ShouldBe(7);
     }
 
     [Test]

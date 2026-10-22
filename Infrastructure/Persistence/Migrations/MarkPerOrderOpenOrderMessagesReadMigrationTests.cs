@@ -3,8 +3,9 @@
 /// <summary>
 /// Unit tests for the MarkPerOrderOpenOrderMessagesRead migration: one UPDATE that stamps read_at_utc on the
 /// proactive inbox rows of the former per-order open-order shape only (kind open_order AND content key
-/// i18n:assistant.proactive.openOrder), never on the daily summary (assistant.proactive.openOrdersSummary), only on
-/// rows still unread (idempotent), and never deletes anything. The literals are frozen here on purpose: a migration
+/// i18n:assistant.proactive.openOrder), never on the daily summary (assistant.proactive.openOrdersSummary), keeps an
+/// existing read stamp, takes every such row out of the reminder loop, touches only rows still unread or still in that
+/// loop (idempotent), and never deletes anything. The literals are frozen here on purpose: a migration
 /// is history.
 /// </summary>
 
@@ -27,7 +28,8 @@ public class MarkPerOrderOpenOrderMessagesReadMigrationTests
 
         operations.ShouldHaveSingleItem();
         sql.ShouldContain("UPDATE agent_trigger_dispatches");
-        sql.ShouldContain("SET read_at_utc = now()");
+        sql.ShouldContain("SET read_at_utc = COALESCE(read_at_utc, now())");
+        sql.ShouldContain("next_reminder_at_utc = NULL");
         sql.ShouldNotContain("DELETE", Case.Insensitive);
         sql.ShouldNotContain("is_deleted", Case.Insensitive);
     }
@@ -44,9 +46,9 @@ public class MarkPerOrderOpenOrderMessagesReadMigrationTests
     }
 
     [Test]
-    public void Up_TouchesOnlyUnreadRows_SoRunningItAgainChangesNothing()
+    public void Up_TouchesOnlyRowsStillUnreadOrStillInTheReminderLoop_SoRunningItAgainChangesNothing()
     {
-        UpSql().ShouldContain("AND read_at_utc IS NULL");
+        UpSql().ShouldContain("AND (read_at_utc IS NULL OR next_reminder_at_utc IS NOT NULL)");
     }
 
     [Test]

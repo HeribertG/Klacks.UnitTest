@@ -7,7 +7,8 @@
 /// groups their GroupVisibility covers, a planner who may see none nothing at all. Within one company day a recipient
 /// gets a further summary only when their own count rose above the highest count already delivered to them; the same
 /// or a lower count sends nothing, and the next day starts afresh. A dispatch that loses the unique-index race to a
-/// concurrent writer of the same row is counted as deduped, never logged as a lost notification. The dispatch
+/// concurrent writer of the same row is counted as deduped, never logged as a lost notification, and a summary row never
+/// enters the reminder loop. The dispatch
 /// repository substitute answers the dedup reads from the rows recorded in the test, like the real table would.
 /// </summary>
 
@@ -35,6 +36,7 @@ public class AgentTriggerServiceGroupScopedTests
     private IAgentTriggerRateLimiter _rateLimiter = null!;
     private IProactiveTriggerDispatchRepository _dispatchRepository = null!;
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
+    private IAgentConditionRepository _conditionRepository = null!;
     private RecordingLogger<AgentTriggerService> _logger = null!;
     private List<ProactiveTriggerDispatchRow> _rows = null!;
     private AgentTriggerService _sut = null!;
@@ -71,9 +73,10 @@ public class AgentTriggerServiceGroupScopedTests
             .Returns(Users(Admin, PlannerB));
 
         _logger = new RecordingLogger<AgentTriggerService>();
+        _conditionRepository = Substitute.For<IAgentConditionRepository>();
         _sut = new AgentTriggerService(
             _rateLimiter, preferenceService, notificationService, _dispatchRepository,
-            Substitute.For<IAgentConditionRepository>(), Substitute.For<IUserActivityTracker>(), _planningAudienceResolver,
+            _conditionRepository, Substitute.For<IUserActivityTracker>(), _planningAudienceResolver,
             Substitute.For<IOfflineMessengerNotifier>(), Substitute.For<IProactiveMessengerTextComposer>(),
             new SettableTimeProvider(new DateTime(2026, 10, 22, 8, 0, 0, DateTimeKind.Utc)),
             _logger);
@@ -209,6 +212,22 @@ public class AgentTriggerServiceGroupScopedTests
 
         Assert.That(RecipientsSince(firstDayRows), Is.EquivalentTo(new[] { Admin, PlannerA, SecondPlannerA, PlannerB }));
         Assert.That(_rows.Last(row => row.UserId == PlannerA).DedupKey, Is.EqualTo("2026-10-23#1"));
+    }
+
+    [Test]
+    public async Task OnEventAsync_LinkedSummaryRows_NeverEnterTheReminderLoop()
+    {
+        // A newer summary of the same day supersedes the older one, so reminding of the older row would resurface
+        // stale numbers; the rows are condition-linked (for dismissal and delegation) but carry no reminder due date.
+        var conditionId = Guid.NewGuid();
+        _conditionRepository.FindOpenByFingerprintAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new AgentCondition { Id = conditionId, TriggerKind = AgentTriggerKinds.OpenOrder, Fingerprint = "open_order:2026-10-22" });
+
+        await _sut.OnEventAsync(Summary(MorningOrders));
+
+        _rows.ShouldNotBeEmpty();
+        _rows.ShouldAllBe(row => row.ConditionId == conditionId);
+        _rows.ShouldAllBe(row => row.NextReminderAtUtc == null);
     }
 
     [Test]
