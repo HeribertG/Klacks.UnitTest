@@ -4,6 +4,7 @@ namespace Klacks.UnitTest.Services.Assistant.Providers;
 
 using System.Net;
 using Klacks.Api.Application.Constants;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Stt;
@@ -181,6 +182,64 @@ public class CustomRestSttSessionTests
 
         var ex = await Should.ThrowAsync<InvalidOperationException>(() => session.ReceiveAsync());
         ex.Message.ShouldContain("422");
+    }
+
+    [Test]
+    public async Task ReceiveAsync_ShouldThrowUnsupportedLanguage_WhenEngineRejectsTheLanguage()
+    {
+        _handler.Response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                """{"error":{"code":"unsupported_language","message":"Language 'ja' is not supported."}}"""),
+        };
+        await using var session = MakeSession(MakeProvider(), "ja");
+        await session.SendAudioAsync([1, 2, 3]);
+
+        var ex = await Should.ThrowAsync<UnsupportedSttLanguageException>(() => session.ReceiveAsync());
+        ex.Language.ShouldBe("ja");
+    }
+
+    [Test]
+    public async Task ReceiveAsync_ShouldKeepInvalidOperation_ForBadRequestWithAnotherErrorCode()
+    {
+        _handler.Response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"error":{"code":"invalid_audio","message":"Not a WAV file."}}"""),
+        };
+        await using var session = MakeSession(MakeProvider(), "de");
+        await session.SendAudioAsync([1, 2, 3]);
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => session.ReceiveAsync());
+        ex.ShouldNotBeOfType<UnsupportedSttLanguageException>();
+        ex.Message.ShouldContain("400");
+    }
+
+    [TestCase("not json at all")]
+    [TestCase("""{"detail":"bad request"}""")]
+    [TestCase("""{"error":"unsupported_language"}""")]
+    [TestCase("""{"error":{"message":"no code here"}}""")]
+    public async Task ReceiveAsync_ShouldKeepInvalidOperation_ForBadRequestWithUnrecognisedBody(string body)
+    {
+        _handler.Response = new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent(body) };
+        await using var session = MakeSession(MakeProvider(), "de");
+        await session.SendAudioAsync([1, 2, 3]);
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => session.ReceiveAsync());
+        ex.ShouldNotBeOfType<UnsupportedSttLanguageException>();
+    }
+
+    [Test]
+    public async Task ReceiveAsync_ShouldKeepInvalidOperation_WhenUnsupportedLanguageCodeComesWithAnotherStatus()
+    {
+        _handler.Response = new HttpResponseMessage(HttpStatusCode.UnprocessableEntity)
+        {
+            Content = new StringContent("""{"error":{"code":"unsupported_language"}}"""),
+        };
+        await using var session = MakeSession(MakeProvider(), "ja");
+        await session.SendAudioAsync([1, 2, 3]);
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => session.ReceiveAsync());
+        ex.ShouldNotBeOfType<UnsupportedSttLanguageException>();
     }
 
     [TestCase("http://whisper-stt:8000", "http://whisper-stt:8000/v1/audio/transcriptions")]
