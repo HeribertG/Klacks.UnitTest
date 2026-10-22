@@ -7,7 +7,9 @@
 /// group scope looks unrestricted; an administrator with unrestricted scope gets full access, while a
 /// supervisor (or an administrator with a restricted scope) gets a scope of exactly the visible group
 /// subtrees, cannot name a hidden group, cannot run the group assignment and carries that very scope on the
-/// preview, the inline apply and the enqueued background job; the default call is a preview that tells the user sealing
+/// preview, the inline apply and the enqueued background job; a groupName is only accepted as an exact name or an
+/// unambiguous part of one, so neither a hidden "Region South" nor a misspelling is ever replaced by the visible
+/// "Region North", and the resolved group is named in the preview; the default call is a preview that tells the user sealing
 /// cannot be undone, and apply=true either seals inline (sealable count at or below the synchronous
 /// limit) or is handed to the background job queue instead (above it) using the very same preview count.
 /// </summary>
@@ -169,6 +171,72 @@ public class SealOpenOrdersSkillTests
         hidden.Message.ShouldBe(missing.Message.Replace(missingName, hiddenRoot.Name));
         hidden.Message.ShouldContain("Available groups: Alpha, Alpha Lakeside.");
         await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    private void SupervisorSeesRegionNorthButNotRegionSouth(bool regionSouthExists)
+    {
+        var regionNorth = RootGroup("Region North");
+        var northCity = ChildGroup("North City", regionNorth);
+        var groups = new List<Group> { regionNorth, northCity };
+        if (regionSouthExists)
+        {
+            groups.Add(RootGroup("Region South"));
+        }
+
+        _groupRepository.List().Returns(groups);
+        _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Restricted([regionNorth.Id], [regionNorth.Name]));
+    }
+
+    [Test]
+    public async Task Supervisor_HiddenSimilarlyNamedGroup_IsNeverReplacedByTheVisibleOne()
+    {
+        SupervisorSeesRegionNorthButNotRegionSouth(regionSouthExists: true);
+        var parameters = new Dictionary<string, object> { ["groupName"] = "Region South", ["apply"] = true };
+
+        var hidden = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldContain("Group 'Region South' not found");
+        hidden.Message.ShouldContain("a similarly spelled group is never substituted");
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+        _jobQueue.DidNotReceive().Enqueue(Arg.Any<SealOpenOrdersJob>());
+
+        SupervisorSeesRegionNorthButNotRegionSouth(regionSouthExists: false);
+        var missing = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+
+        hidden.Message.ShouldBe(missing.Message);
+    }
+
+    [Test]
+    public async Task Admin_MisspelledGroupName_IsRefusedInsteadOfFuzzyMatched()
+    {
+        var regionNorth = RootGroup("Region North");
+        _groupRepository.List().Returns(new List<Group> { regionNorth, RootGroup("Region South") });
+
+        var result = await _skill.ExecuteAsync(
+            Ctx(), new Dictionary<string, object> { ["groupName"] = "Regoin North", ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("a similarly spelled group is never substituted");
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("Region North")]
+    [TestCase("region north")]
+    [TestCase("Gruppe Region North")]
+    [TestCase("Region-North")]
+    public async Task Supervisor_ExactGroupName_IsResolved_AndNamedInThePreview(string groupName)
+    {
+        SupervisorSeesRegionNorthButNotRegionSouth(regionSouthExists: true);
+
+        var result = await _skill.ExecuteAsync(
+            SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = groupName });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("Group: 'Region North'.");
+        await _mediator.Received(1).Send(
+            Arg.Is<SealOpenOrdersCommand>(c => c.GroupId.HasValue), Arg.Any<CancellationToken>());
     }
 
     [Test]
