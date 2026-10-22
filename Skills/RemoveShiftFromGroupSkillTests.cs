@@ -48,8 +48,7 @@ public class RemoveShiftFromGroupSkillTests
 
         _shiftRepository.Exists(ShiftId).Returns(true);
         _groupRepository.Get(GroupId).Returns(new Group { Id = GroupId, Name = "Bern" });
-        _groupItemRepository.GetQuery().Returns(new TestAsyncEnumerable<GroupItem>(
-            new List<GroupItem> { new() { Id = GroupItemId, ShiftId = ShiftId, GroupId = GroupId } }));
+        _groupItemRepository.FindShiftLinkIdAsync(ShiftId, GroupId, Arg.Any<CancellationToken>()).Returns(GroupItemId);
         _groupItemRepository.GetGroupIdsByShiftId(ShiftId, Arg.Any<CancellationToken>()).Returns(new List<Guid>());
 
     }
@@ -87,7 +86,7 @@ public class RemoveShiftFromGroupSkillTests
     [Test]
     public async Task Rejects_WhenShiftIsNotLinkedToGroup()
     {
-        _groupItemRepository.GetQuery().Returns(new TestAsyncEnumerable<GroupItem>(new List<GroupItem>()));
+        _groupItemRepository.FindShiftLinkIdAsync(ShiftId, GroupId, Arg.Any<CancellationToken>()).Returns((Guid?)null);
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 

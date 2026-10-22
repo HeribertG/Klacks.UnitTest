@@ -17,7 +17,7 @@ public class ClientRepositoryRefactoredTests
 {
     private DataBaseContext _context;
     private IClientRepository _clientRepository;
-    private IClientFilterRepository _clientFilterRepository;
+    private ClientFilterRepository _clientFilterRepository;
     private IClientBreakPlaceholderRepository _clientBreakPlaceholderRepository;
     private IWorkRepository _workRepository;
     private IClientSearchFilterService _mockSearchFilterService;

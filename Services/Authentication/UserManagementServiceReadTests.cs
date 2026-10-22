@@ -11,6 +11,7 @@ using Klacks.Api.Application.Services.Authentication;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Authentification;
 using Klacks.Api.Domain.Security;
+using Klacks.Api.Infrastructure.Repositories.Authentification;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -45,7 +46,8 @@ public class UserManagementServiceReadTests
             new IdentityErrorDescriber(),
             null!,
             NullLogger<UserManager<AppUser>>.Instance);
-        _sut = new UserManagementService(_userManager, Substitute.For<ILogger<UserManagementService>>());
+        _sut = new UserManagementService(
+            _userManager, new AppUserReader(_userManager), Substitute.For<ILogger<UserManagementService>>());
     }
 
     [TearDown]

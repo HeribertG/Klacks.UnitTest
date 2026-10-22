@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Unit tests for AnalyzeGroupSemanticsSkill: category detection incl. multi-match, per-group
-/// active member counts that ignore scenario and shift-assignment rows, the ungrouped count per
+/// member counts from the repository (which rows count is pinned in GroupItemSkillReadsOverRepositoryTests), the ungrouped count per
 /// requested entity type, the empty-scope fallback, and group-scope restriction.
 /// </summary>
 
@@ -73,7 +73,8 @@ public class AnalyzeGroupSemanticsSkillTests
 
         _contractRepository.List().Returns(new List<Contract>());
 
-        _groupItemRepository.GetQuery().Returns(new TestAsyncEnumerable<GroupItem>(new List<GroupItem>()));
+        _groupItemRepository.CountRealClientRowsPerGroupAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, int>());
 
         _clientRepository.GetByTypeWithAddressesAndGroupItemsAsync(Arg.Any<EntityTypeEnum>(), Arg.Any<CancellationToken>())
             .Returns(new List<Client>());
@@ -164,22 +165,19 @@ public class AnalyzeGroupSemanticsSkillTests
     }
 
     [Test]
-    public async Task CountsActiveMembers_ExcludingScenarioAndShiftAssignments()
+    public async Task ReportsTheRepositoryCountPerGroup_ZeroForGroupsWithoutRows_LargestFirst()
     {
-        _groupItemRepository.GetQuery().Returns(new TestAsyncEnumerable<GroupItem>(new List<GroupItem>
-        {
-            new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), GroupId = _bernGroupId },
-            new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), GroupId = _bernGroupId },
-            new() { Id = Guid.NewGuid(), ClientId = Guid.NewGuid(), GroupId = _bernGroupId, AnalyseToken = Guid.NewGuid() },
-            new() { Id = Guid.NewGuid(), ShiftId = Guid.NewGuid(), GroupId = _bernGroupId }
-        }));
+        _groupItemRepository.CountRealClientRowsPerGroupAsync(
+                Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Contains(_bernGroupId) && ids.Contains(_zurichGroupId)),
+                Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, int> { [_bernGroupId] = 2, [_zurichGroupId] = 5 });
 
         var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
         var data = (AnalyzeGroupSemanticsResult)result.Data!;
-        var bern = data.GroupMemberCounts.Single(m => m.GroupId == _bernGroupId);
-
-        bern.ActiveMemberCount.ShouldBe(2);
+        data.GroupMemberCounts.Single(m => m.GroupId == _bernGroupId).ActiveMemberCount.ShouldBe(2);
+        data.GroupMemberCounts.Single(m => m.GroupId == _otherGroupId).ActiveMemberCount.ShouldBe(0);
+        data.GroupMemberCounts[0].GroupId.ShouldBe(_zurichGroupId);
     }
 
     [Test]

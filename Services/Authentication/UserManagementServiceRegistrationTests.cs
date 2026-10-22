@@ -36,7 +36,8 @@ public class UserManagementServiceRegistrationTests
             Substitute.For<IServiceProvider>(),
             Substitute.For<ILogger<UserManager<AppUser>>>());
 
-        _sut = new UserManagementService(_userManager, Substitute.For<ILogger<UserManagementService>>());
+        _sut = new UserManagementService(
+            _userManager, Substitute.For<IAppUserReader>(), Substitute.For<ILogger<UserManagementService>>());
     }
 
     [TearDown]

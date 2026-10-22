@@ -51,8 +51,16 @@ public class TargetHoursDriftDetectorTests
         Type = type
     };
 
-    private void SetupClients(params Client[] clients) =>
-        _clientRepository.GetQuery().Returns(new TestAsyncEnumerable<Client>(clients));
+    // Mirrors the repository's roster contract (not deleted, not a customer); the rule itself runs over the real
+    // ClientRepository in TargetHoursDriftDetectorOverRepositoryTests and against PostgreSQL in the integration tests.
+    private void SetupClients(params Client[] clients)
+    {
+        var roster = clients.Where(c => !c.IsDeleted && c.Type != EntityTypeEnum.Customer).ToList();
+        _clientRepository.GetNonCustomerClientNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(roster.Select(c => new ClientNameParts(c.Id, c.FirstName, c.Name)).ToList());
+        _clientRepository.GetNonCustomerClientIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(roster.Select(c => c.Id).ToList());
+    }
 
     [Test]
     public async Task DetectAsync_NoClients_ReturnsEmpty()

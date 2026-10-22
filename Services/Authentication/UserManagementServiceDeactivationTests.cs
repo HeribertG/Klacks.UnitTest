@@ -38,6 +38,7 @@ public class UserManagementServiceDeactivationTests
 
         _sut = new UserManagementService(
             _userManager,
+            Substitute.For<IAppUserReader>(),
             Substitute.For<ILogger<UserManagementService>>());
     }
 

@@ -1,7 +1,8 @@
 ﻿// Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Tests for the ListClientsQueryHandler: paging, mapping, and base query delegation.
+/// Tests for the ListClientsQueryHandler: paging arguments, mapping, and base query delegation (the paging itself is
+/// pinned over the real service in ListClientsOverBaseQueryServiceTests).
 /// </summary>
 /// <param name="_baseQueryService">Mock for the central ClientBaseQueryService</param>
 using Shouldly;
@@ -65,8 +66,11 @@ public class ListClientsQueryHandlerTests
         await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        await _baseQueryService.Received(1).BuildBaseQuery(
-            Arg.Is<ClientBaseFilter>(f => f.SearchString == "TestSearch"));
+        await _baseQueryService.Received(1).GetPageWithGroupItemsAsync(
+            Arg.Is<ClientBaseFilter>(f => f.SearchString == "TestSearch"),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -87,6 +91,8 @@ public class ListClientsQueryHandlerTests
         // Assert
         result.TotalCount.ShouldBe(5);
         result.Clients.Count().ShouldBe(2);
+        await _baseQueryService.Received(1).GetPageWithGroupItemsAsync(
+            Arg.Any<ClientBaseFilter>(), 2, 2, Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -126,20 +132,29 @@ public class ListClientsQueryHandlerTests
         await _handler.Handle(query, CancellationToken.None);
 
         // Assert
-        await _baseQueryService.Received(1).BuildBaseQuery(
+        await _baseQueryService.Received(1).GetPageWithGroupItemsAsync(
             Arg.Is<ClientBaseFilter>(f =>
                 f.SelectedGroup == groupId &&
                 f.ShowEmployees == true &&
-                f.ShowExtern == false));
+                f.ShowExtern == false),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
     }
 
     private void SetupBaseQueryToReturnAllClients()
     {
-        _baseQueryService.BuildBaseQuery(Arg.Any<ClientBaseFilter>())
-            .Returns(_ => Task.FromResult(_context.Client
-                .Include(c => c.Membership)
-                .Where(c => c.Type != EntityTypeEnum.Customer)
-                .AsQueryable()));
+        _baseQueryService.GetPageWithGroupItemsAsync(
+                Arg.Any<ClientBaseFilter>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var all = _context.Client
+                    .Include(c => c.Membership)
+                    .Where(c => c.Type != EntityTypeEnum.Customer)
+                    .ToList();
+                IReadOnlyList<Client> page = all.Skip((int)call[1]).Take((int)call[2]).ToList();
+                return Task.FromResult((page, all.Count));
+            });
     }
 
     private void SeedClients(int count)

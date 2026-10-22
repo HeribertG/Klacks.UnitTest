@@ -41,10 +41,10 @@ public class GetShiftCoverageStatisticsQueryHandlerTests
         _readRepository.GetShiftGroupAssignments(Arg.Any<CancellationToken>())
             .Returns(days.Select(day => ((Guid?)day.ShiftId, GroupId)).Distinct().ToList());
         _scheduleService
-            .GetShiftScheduleQuery(
+            .GetShiftScheduleListAsync(
                 Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<DateOnly>?>(), Arg.Any<List<Guid>?>(),
-                Arg.Any<bool>(), Arg.Any<Guid?>())
-            .Returns(new TestAsyncEnumerable<ShiftDayAssignment>(days));
+                Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(days.ToList());
     }
 
     private async Task<ShiftCoverageStatisticsResource> HandleSingleAsync()
