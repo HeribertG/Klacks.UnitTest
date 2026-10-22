@@ -2,9 +2,12 @@
 
 /// <summary>
 /// Unit tests for SealOpenOrdersSkill: groupName and autoAssignGroups are refused together because the
-/// assignment works on orders without any group and would therefore write outside the requested group,
-/// a caller whose group scope is restricted is rejected before the handler is ever reached because the
-/// run seals across the whole installation, the default call is a preview that tells the user sealing
+/// assignment works on orders without any group and would therefore write outside the requested group;
+/// a caller without CanEditShifts (the planner floor) is refused before anything is read, even when the
+/// group scope looks unrestricted; an administrator with unrestricted scope gets full access, while a
+/// supervisor (or an administrator with a restricted scope) gets a scope of exactly the visible group
+/// subtrees, cannot name a hidden group, cannot run the group assignment and carries that very scope on the
+/// preview, the inline apply and the enqueued background job; the default call is a preview that tells the user sealing
 /// cannot be undone, and apply=true either seals inline (sealable count at or below the synchronous
 /// limit) or is handed to the background job queue instead (above it) using the very same preview count.
 /// </summary>
@@ -12,6 +15,7 @@
 using Klacks.Api.Application.Commands.Orders;
 using Klacks.Api.Application.DTOs.Orders;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -57,26 +61,192 @@ public class SealOpenOrdersSkillTests
         BlockedCount: 0, FailedCount: 0, BlockedOnlyByMissingGroupCount: 0, AutoAssignedCount: 0,
         AutoAssignRequested: false, SealedSample: [], BlockedSample: [], Failures: []);
 
-    private static SkillExecutionContext Ctx() => new()
+    private static SkillExecutionContext Ctx() => CtxFor(Roles.Admin);
+
+    private static SkillExecutionContext SupervisorCtx() => CtxFor(Roles.Authorised);
+
+    private static SkillExecutionContext PlannerCtx() => CtxFor();
+
+    private static SkillExecutionContext CtxFor(params string[] roles) => new()
     {
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditShifts" }
+        UserPermissions = Permissions.ExpandRoles(roles)
     };
 
-    [Test]
-    public async Task RejectsACallerWithARestrictedGroupScope()
-    {
-        _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
-            .Returns(GroupScopeAccess.Restricted([Guid.NewGuid()], ["Region Bern"]));
+    private static Group RootGroup(string name) => new() { Id = Guid.NewGuid(), Name = name };
 
-        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+    private static Group ChildGroup(string name, Group root) =>
+        new() { Id = Guid.NewGuid(), Name = name, Parent = root.Id, Root = root.Id };
+
+    private (Group VisibleRoot, Group VisibleChild, Group HiddenRoot) SupervisorSeesOnlyRegionNorth()
+    {
+        var visibleRoot = RootGroup("Region North");
+        var visibleChild = ChildGroup("North City", visibleRoot);
+        var hiddenRoot = RootGroup("Region South");
+        _groupRepository.List().Returns(new List<Group> { visibleRoot, visibleChild, hiddenRoot });
+        _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Restricted([visibleRoot.Id], [visibleRoot.Name]));
+        return (visibleRoot, visibleChild, hiddenRoot);
+    }
+
+    [Test]
+    public async Task Planner_IsRefused_EvenWhenTheGroupScopeLooksUnrestricted()
+    {
+        Permissions.PlannerFloor.ShouldNotContain(Permissions.CanEditShifts);
+
+        var result = await _skill.ExecuteAsync(PlannerCtx(), new Dictionary<string, object> { ["apply"] = true });
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("unrestricted group scope");
-        result.Message.ShouldContain("Region Bern");
+        result.Message.ShouldContain("right to edit shifts");
         await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+        _jobQueue.DidNotReceive().Enqueue(Arg.Any<SealOpenOrdersJob>());
+    }
+
+    [Test]
+    public async Task Admin_WithUnrestrictedScope_GetsFullAccess()
+    {
+        await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SealOpenOrdersCommand>(c => c.Scope.HasFullAccess), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_WithUnrestrictedLookingScope_NeverGetsFullAccess()
+    {
+        var group = RootGroup("Only Group");
+        _groupRepository.List().Returns(new List<Group> { group });
+
+        await _skill.ExecuteAsync(SupervisorCtx(), new Dictionary<string, object>());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SealOpenOrdersCommand>(c => !c.Scope.HasFullAccess), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_IsScopedToTheVisibleGroupSubtrees()
+    {
+        var (visibleRoot, visibleChild, hiddenRoot) = SupervisorSeesOnlyRegionNorth();
+
+        var result = await _skill.ExecuteAsync(SupervisorCtx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldContain("orders without a group can only be sealed by an administrator");
+        await _mediator.Received(1).Send(
+            Arg.Is<SealOpenOrdersCommand>(c => !c.Scope.HasFullAccess
+                && c.Scope.VisibleGroupIds.SetEquals(new[] { visibleRoot.Id, visibleChild.Id })
+                && !c.Scope.VisibleGroupIds.Contains(hiddenRoot.Id)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AdminWithRestrictedScope_IsScopedLikeASupervisor()
+    {
+        var (visibleRoot, visibleChild, _) = SupervisorSeesOnlyRegionNorth();
+
+        await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SealOpenOrdersCommand>(c => !c.Scope.HasFullAccess
+                && c.Scope.VisibleGroupIds.SetEquals(new[] { visibleRoot.Id, visibleChild.Id })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_HiddenGroupName_IsAnsweredExactlyLikeAMissingGroup()
+    {
+        var (_, _, hiddenRoot) = SupervisorSeesOnlyRegionNorth();
+        const string missingName = "Region Nowhere";
+
+        var hidden = await _skill.ExecuteAsync(
+            SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = hiddenRoot.Name });
+        var missing = await _skill.ExecuteAsync(
+            SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = missingName });
+
+        hidden.Success.ShouldBeFalse();
+        hidden.Message.ShouldBe(missing.Message.Replace(missingName, hiddenRoot.Name));
+        hidden.Message.ShouldContain("Available groups: Region North, North City.");
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_VisibleGroupName_IsResolved()
+    {
+        var (_, visibleChild, _) = SupervisorSeesOnlyRegionNorth();
+
+        var result = await _skill.ExecuteAsync(
+            SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = visibleChild.Name });
+
+        result.Success.ShouldBeTrue();
+        await _mediator.Received(1).Send(
+            Arg.Is<SealOpenOrdersCommand>(c => c.GroupId == visibleChild.Id), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_AutoAssignGroups_IsRefused()
+    {
+        SupervisorSeesOnlyRegionNorth();
+
+        var result = await _skill.ExecuteAsync(
+            SupervisorCtx(), new Dictionary<string, object> { ["autoAssignGroups"] = true, ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("autoAssignGroups is only available to administrators");
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_WithoutAnyVisibleGroup_IsRefused()
+    {
+        _groupRepository.List().Returns(new List<Group> { RootGroup("Region South") });
+        _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Restricted([], []));
+
+        var result = await _skill.ExecuteAsync(SupervisorCtx(), new Dictionary<string, object>());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("No group is assigned to your group scope");
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_InlineApply_SendsPreviewAndApplyWithTheIdenticalScope()
+    {
+        SupervisorSeesOnlyRegionNorth();
+        var commands = new List<SealOpenOrdersCommand>();
+        _mediator.When(m => m.Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>()))
+            .Do(ci => commands.Add(ci.Arg<SealOpenOrdersCommand>()));
+
+        await _skill.ExecuteAsync(SupervisorCtx(), new Dictionary<string, object> { ["apply"] = true });
+
+        commands.Count.ShouldBe(2);
+        commands[0].Apply.ShouldBeFalse();
+        commands[1].Apply.ShouldBeTrue();
+        commands[1].Scope.ShouldBeSameAs(commands[0].Scope);
+        commands[1].ShouldBe(commands[0] with { Apply = true });
+    }
+
+    [Test]
+    public async Task Supervisor_AboveTheSynchronousLimit_EnqueuesAJobCarryingTheScopedCommand()
+    {
+        var (visibleRoot, visibleChild, _) = SupervisorSeesOnlyRegionNorth();
+        _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => !c.Apply), Arg.Any<CancellationToken>())
+            .Returns(PreviewWithSealableCount(SynchronousLimit + 1));
+        SealOpenOrdersJob? enqueued = null;
+        _jobQueue.Enqueue(Arg.Do<SealOpenOrdersJob>(j => enqueued = j)).Returns(true);
+        var ctx = SupervisorCtx();
+
+        var result = await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeTrue();
+        enqueued.ShouldNotBeNull();
+        enqueued.UserId.ShouldBe(ctx.UserId);
+        enqueued.Command.Apply.ShouldBeTrue();
+        enqueued.Command.Scope.HasFullAccess.ShouldBeFalse();
+        enqueued.Command.Scope.VisibleGroupIds.ShouldBe(
+            new[] { visibleRoot.Id, visibleChild.Id }, ignoreOrder: true);
     }
 
     [Test]

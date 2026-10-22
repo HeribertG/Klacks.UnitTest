@@ -5,12 +5,15 @@
 /// sealing requirements and the transition itself are the ones seal_shift uses: a preview classifies
 /// sealable and blocked orders without writing, an apply seals every sealable order and keeps going when
 /// one of them throws, a refusal is recorded against its own order, and autoAssignGroups sends the
-/// assignment command before the sealing pass instead of duplicating its logic.
+/// assignment command before the sealing pass instead of duplicating its logic. With a group scope only orders
+/// linked to at least one visible group are considered at all (never orders without a group), maxCount is
+/// applied after that filter, preview and apply cover the identical set, and the group assignment is refused.
 /// </summary>
 
 using Klacks.UnitTest.TestHelpers;
 using Klacks.Api.Application.Commands.Orders;
 using Klacks.Api.Application.DTOs.Orders;
+using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.Orders;
 using Klacks.Api.Application.Services.Orders;
 using Klacks.Api.Domain.DTOs.Filter;
@@ -40,9 +43,17 @@ public class SealOpenOrdersCommandHandlerTests
             .Returns(ci => ci.Arg<Func<Task<Guid>>>()());
     }
 
-    private static SealOpenOrdersCommand Command(bool apply, bool autoAssignGroups = false) =>
+    private static SealOpenOrdersCommand Command(
+        bool apply, bool autoAssignGroups = false, OpenOrderSealingScope? scope = null, int? maxCount = null) =>
         new(SourceSystemId: null, FromDate: null, UntilDate: null, CustomerName: null, GroupId: null,
-            MaxCount: null, autoAssignGroups, ValidFrom: null, apply, "tester");
+            maxCount, autoAssignGroups, ValidFrom: null, apply, "tester", scope ?? OpenOrderSealingScope.FullAccess());
+
+    private static Shift OrderInGroups(string name, params Guid[] groupIds)
+    {
+        var order = SealableOrder(name);
+        order.GroupItems = groupIds.Select(id => new GroupItem { Id = Guid.NewGuid(), GroupId = id }).ToList();
+        return order;
+    }
 
     private static Shift SealableOrder(string name) => new()
     {
@@ -202,5 +213,132 @@ public class SealOpenOrdersCommandHandlerTests
             Arg.Any<AssignOrdersToGroupsCommand>(), Arg.Any<CancellationToken>());
         result.AutoAssignRequested.ShouldBeFalse();
         result.AutoAssignedCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task FullAccess_IncludesOrdersWithoutAGroup()
+    {
+        OpenOrders(SealableOrder("with group"), OrderWithoutGroup("without group"));
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.TotalOrders.ShouldBe(2);
+        result.BlockedSample.Select(b => b.OrderName).ShouldContain("without group");
+    }
+
+    [Test]
+    public async Task GroupScope_ConsidersOnlyOrdersInVisibleGroups_AndNeverOrdersWithoutAGroup()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var hiddenGroupId = Guid.NewGuid();
+        OpenOrders(
+            OrderInGroups("visible", visibleGroupId),
+            OrderInGroups("hidden", hiddenGroupId),
+            OrderWithoutGroup("ungrouped"));
+
+        var result = await _handler.Handle(
+            Command(apply: false, scope: OpenOrderSealingScope.ForGroups([visibleGroupId])), CancellationToken.None);
+
+        result.TotalOrders.ShouldBe(1);
+        result.SealableCount.ShouldBe(1);
+        result.BlockedCount.ShouldBe(0);
+        result.BlockedOnlyByMissingGroupCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task GroupScope_IncludesAnOrderLinkedToAtLeastOneVisibleGroup_LikeSealShift()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var mixed = OrderInGroups("mixed", visibleGroupId, Guid.NewGuid());
+        OpenOrders(mixed);
+        MakeSealable(mixed);
+
+        var result = await _handler.Handle(
+            Command(apply: true, scope: OpenOrderSealingScope.ForGroups([visibleGroupId])), CancellationToken.None);
+
+        result.SealedCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task GroupScope_IgnoresADeletedLinkToAVisibleGroup()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var order = OrderInGroups("deleted link", visibleGroupId, Guid.NewGuid());
+        order.GroupItems.First(gi => gi.GroupId == visibleGroupId).IsDeleted = true;
+        OpenOrders(order);
+
+        var result = await _handler.Handle(
+            Command(apply: false, scope: OpenOrderSealingScope.ForGroups([visibleGroupId])), CancellationToken.None);
+
+        result.TotalOrders.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task GroupScope_AppliesMaxCountAfterTheScopeFilter()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        OpenOrders(
+            OrderInGroups("hidden 1", Guid.NewGuid()),
+            OrderInGroups("hidden 2", Guid.NewGuid()),
+            OrderInGroups("visible 1", visibleGroupId),
+            OrderInGroups("visible 2", visibleGroupId),
+            OrderInGroups("visible 3", visibleGroupId));
+
+        var result = await _handler.Handle(
+            Command(apply: false, scope: OpenOrderSealingScope.ForGroups([visibleGroupId]), maxCount: 2),
+            CancellationToken.None);
+
+        result.TotalOrders.ShouldBe(2);
+        await _shiftRepository.Received(1).GetOpenOrdersAsync(
+            Arg.Is<OpenOrderFilter>(f => f.MaxCount == null), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task FullAccess_PassesMaxCountToTheRepository()
+    {
+        OpenOrders(SealableOrder("one"));
+
+        await _handler.Handle(Command(apply: false, maxCount: 7), CancellationToken.None);
+
+        await _shiftRepository.Received(1).GetOpenOrdersAsync(
+            Arg.Is<OpenOrderFilter>(f => f.MaxCount == 7), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GroupScope_PreviewAndApplyCoverTheIdenticalSet_AndHiddenOrdersAreNeverWritten()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var visibleA = OrderInGroups("visible a", visibleGroupId);
+        var visibleB = OrderInGroups("visible b", visibleGroupId);
+        var hidden = OrderInGroups("hidden", Guid.NewGuid());
+        var ungrouped = OrderWithoutGroup("ungrouped");
+        OpenOrders(visibleA, hidden, visibleB, ungrouped);
+        MakeSealable(visibleA);
+        MakeSealable(visibleB);
+        MakeSealable(hidden);
+        var scope = OpenOrderSealingScope.ForGroups([visibleGroupId]);
+
+        var preview = await _handler.Handle(Command(apply: false, scope: scope), CancellationToken.None);
+        var applied = await _handler.Handle(Command(apply: true, scope: scope), CancellationToken.None);
+
+        applied.TotalOrders.ShouldBe(preview.TotalOrders);
+        applied.SealedCount.ShouldBe(preview.SealableCount);
+        applied.SealedSample.Select(s => s.OrderId).ShouldBe(new[] { visibleA.Id, visibleB.Id }, ignoreOrder: true);
+        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Is<Shift>(s => s.Id == hidden.Id));
+        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Is<Shift>(s => s.Id == ungrouped.Id));
+    }
+
+    [Test]
+    public async Task GroupScope_RefusesTheGroupAssignment_WithAForbiddenRejection()
+    {
+        OpenOrders(OrderWithoutGroup("ungrouped"));
+
+        await Should.ThrowAsync<ForbiddenException>(() => _handler.Handle(
+            Command(apply: true, autoAssignGroups: true, scope: OpenOrderSealingScope.ForGroups([Guid.NewGuid()])),
+            CancellationToken.None));
+
+        await _mediator.DidNotReceive().Send(
+            Arg.Any<AssignOrdersToGroupsCommand>(), Arg.Any<CancellationToken>());
+        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
     }
 }
