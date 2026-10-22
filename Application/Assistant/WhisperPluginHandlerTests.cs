@@ -49,11 +49,13 @@ public class WhisperPluginHandlerTests
     private GetWhisperPluginStatusQueryHandler CreateStatusHandler() =>
         new(_providerRepository, _updateRepository, _installation);
 
+    private const string TestProviderApiUrl = "http://whisper-stt:8000";
+
     private static CustomSttProvider EnabledProvider(string modelId = WhisperPluginConstants.LargeModelId) => new()
     {
         Id = WhisperPluginConstants.ProviderId,
         Name = WhisperPluginConstants.ProviderName,
-        ApiUrl = WhisperPluginConstants.ProviderApiUrl,
+        ApiUrl = TestProviderApiUrl,
         LanguageModel = modelId,
         IsEnabled = true,
         IsSystem = true,
@@ -78,18 +80,16 @@ public class WhisperPluginHandlerTests
         await _updateRepository.DidNotReceive().AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
     }
 
-    [Test]
-    public async Task Install_on_native_rejects_whisper_aliases_without_touching_the_queue()
+    [TestCase(WhisperPluginConstants.ModelAliasSmall)]
+    [TestCase(WhisperPluginConstants.ModelAliasLarge)]
+    public async Task Install_on_native_rejects_whisper_aliases_without_touching_the_queue(string alias)
     {
         UseInstallation(InstallationKind.Native);
 
-        foreach (var alias in new[] { WhisperPluginConstants.ModelAliasSmall, WhisperPluginConstants.ModelAliasLarge })
-        {
-            var result = await CreateInstallHandler().Handle(new InstallWhisperPluginCommand(alias, "admin"), CancellationToken.None);
+        var result = await CreateInstallHandler().Handle(new InstallWhisperPluginCommand(alias, "admin"), CancellationToken.None);
 
-            result.Enqueued.ShouldBeFalse();
-            result.Reason.ShouldBe(WhisperPluginReasons.UnsupportedOnInstallation);
-        }
+        result.Enqueued.ShouldBeFalse();
+        result.Reason.ShouldBe(WhisperPluginReasons.UnsupportedOnInstallation);
 
         await _updateRepository.DidNotReceive().AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
         await _updateRepository.DidNotReceive().GetActiveOperationAsync(Arg.Any<CancellationToken>());
@@ -155,11 +155,32 @@ public class WhisperPluginHandlerTests
         WhisperPluginConstants.IsSupportedOn(kind, alias).ShouldBe(expected);
     }
 
-    [TestCase(InstallationKind.Docker)]
-    [TestCase(InstallationKind.Native)]
-    public void Default_alias_is_parakeet_on_every_installation(InstallationKind kind)
+    [TestCase(InstallationKind.Docker, "de", WhisperPluginConstants.ModelAliasParakeet)]
+    [TestCase(InstallationKind.Docker, "de-CH", WhisperPluginConstants.ModelAliasParakeet)]
+    [TestCase(InstallationKind.Docker, "UK", WhisperPluginConstants.ModelAliasParakeet)]
+    [TestCase(InstallationKind.Docker, null, WhisperPluginConstants.ModelAliasParakeet)]
+    [TestCase(InstallationKind.Docker, "", WhisperPluginConstants.ModelAliasParakeet)]
+    [TestCase(InstallationKind.Docker, "ja", WhisperPluginConstants.ModelAliasLarge)]
+    [TestCase(InstallationKind.Docker, "zh-CN", WhisperPluginConstants.ModelAliasLarge)]
+    [TestCase(InstallationKind.Docker, "nb", WhisperPluginConstants.ModelAliasLarge)]
+    [TestCase(InstallationKind.Native, "de", WhisperPluginConstants.ModelAliasParakeet)]
+    [TestCase(InstallationKind.Native, "ja", WhisperPluginConstants.ModelAliasParakeet)]
+    public void Default_alias_is_parakeet_unless_docker_installation_language_is_not_covered(
+        InstallationKind kind, string? language, string expected)
     {
-        WhisperPluginConstants.GetDefaultAlias(kind).ShouldBe(WhisperPluginConstants.ModelAliasParakeet);
+        WhisperPluginConstants.GetDefaultAlias(kind, language).ShouldBe(expected);
+    }
+
+    [Test]
+    public async Task Status_exposes_the_parakeet_language_coverage()
+    {
+        _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
+            .Returns((CustomSttProvider?)null);
+
+        var result = await CreateStatusHandler().Handle(new GetWhisperPluginStatusQuery(), CancellationToken.None);
+
+        result.ParakeetLanguages.ShouldBe(ParakeetLanguageCoverage.Languages);
+        result.ParakeetLanguages.Count.ShouldBe(25);
     }
 
     [Test]

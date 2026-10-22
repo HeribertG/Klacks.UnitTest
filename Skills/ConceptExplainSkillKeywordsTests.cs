@@ -25,6 +25,15 @@ public class ConceptExplainSkillKeywordsTests
         Assert.That(result, Does.Contain(SkillNames.ExplainShiftLifecycle));
     }
 
+    [TestCase("Was ist Parakeet?", "explain_whisper_setup")]
+    [TestCase("Laeuft Whisper bei uns im Haus?", "explain_whisper_setup")]
+    public void SpeechEngineNames_ResolveTheWhisperSetupSkill(string message, string expectedSkill)
+    {
+        var result = ConceptExplainSkillKeywords.ResolveSkillNames(message);
+
+        Assert.That(result, Does.Contain(expectedSkill));
+    }
+
     [TestCase("Wie viele Mitarbeiter haben wir?")]
     [TestCase("Erstelle einen neuen Mitarbeiter")]
     [TestCase("")]

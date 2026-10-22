@@ -187,6 +187,20 @@ public class ErrorHandlingMiddlewareTests
     }
 
     [Test]
+    public async Task UnsupportedSttLanguageException_Is400WithTheCodeAndTheLanguage()
+    {
+        var response = await Invoke(new UnsupportedSttLanguageException("ja"));
+
+        response.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+        using var problem = JsonDocument.Parse(response.Body);
+        var root = problem.RootElement;
+        root.GetProperty("errorCode").GetString().ShouldBe(SttErrorCodes.UnsupportedLanguage);
+        root.GetProperty("code").GetString().ShouldBe(SttErrorCodes.UnsupportedLanguage);
+        root.GetProperty("language").GetString().ShouldBe("ja");
+        root.GetProperty("detail").GetString().ShouldContain("'ja'");
+    }
+
+    [Test]
     public async Task WorkBookingRefusedException_ADetailNamedLikeTheCodeCannotOverwriteIt()
     {
         var refusal = new WorkBookingRefusedException(

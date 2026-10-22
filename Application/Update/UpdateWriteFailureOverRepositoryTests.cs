@@ -104,7 +104,7 @@ public class UpdateWriteFailureOverRepositoryTests
         {
             Id = WhisperPluginConstants.ProviderId,
             Name = WhisperPluginConstants.ProviderName,
-            ApiUrl = WhisperPluginConstants.ProviderApiUrl,
+            ApiUrl = "http://whisper-stt:8000",
             LanguageModel = WhisperPluginConstants.LargeModelId,
             IsEnabled = true,
             IsSystem = true,
