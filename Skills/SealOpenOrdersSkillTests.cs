@@ -80,11 +80,11 @@ public class SealOpenOrdersSkillTests
     private static Group ChildGroup(string name, Group root) =>
         new() { Id = Guid.NewGuid(), Name = name, Parent = root.Id, Root = root.Id };
 
-    private (Group VisibleRoot, Group VisibleChild, Group HiddenRoot) SupervisorSeesOnlyRegionNorth()
+    private (Group VisibleRoot, Group VisibleChild, Group HiddenRoot) SupervisorSeesOnlyAlpha()
     {
-        var visibleRoot = RootGroup("Region North");
-        var visibleChild = ChildGroup("North City", visibleRoot);
-        var hiddenRoot = RootGroup("Region South");
+        var visibleRoot = RootGroup("Alpha");
+        var visibleChild = ChildGroup("Alpha Lakeside", visibleRoot);
+        var hiddenRoot = RootGroup("Bravo");
         _groupRepository.List().Returns(new List<Group> { visibleRoot, visibleChild, hiddenRoot });
         _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(GroupScopeAccess.Restricted([visibleRoot.Id], [visibleRoot.Name]));
@@ -128,7 +128,7 @@ public class SealOpenOrdersSkillTests
     [Test]
     public async Task Supervisor_IsScopedToTheVisibleGroupSubtrees()
     {
-        var (visibleRoot, visibleChild, hiddenRoot) = SupervisorSeesOnlyRegionNorth();
+        var (visibleRoot, visibleChild, hiddenRoot) = SupervisorSeesOnlyAlpha();
 
         var result = await _skill.ExecuteAsync(SupervisorCtx(), new Dictionary<string, object>());
 
@@ -144,7 +144,7 @@ public class SealOpenOrdersSkillTests
     [Test]
     public async Task AdminWithRestrictedScope_IsScopedLikeASupervisor()
     {
-        var (visibleRoot, visibleChild, _) = SupervisorSeesOnlyRegionNorth();
+        var (visibleRoot, visibleChild, _) = SupervisorSeesOnlyAlpha();
 
         await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
 
@@ -157,8 +157,8 @@ public class SealOpenOrdersSkillTests
     [Test]
     public async Task Supervisor_HiddenGroupName_IsAnsweredExactlyLikeAMissingGroup()
     {
-        var (_, _, hiddenRoot) = SupervisorSeesOnlyRegionNorth();
-        const string missingName = "Region Nowhere";
+        var (_, _, hiddenRoot) = SupervisorSeesOnlyAlpha();
+        const string missingName = "Kilo";
 
         var hidden = await _skill.ExecuteAsync(
             SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = hiddenRoot.Name });
@@ -167,14 +167,14 @@ public class SealOpenOrdersSkillTests
 
         hidden.Success.ShouldBeFalse();
         hidden.Message.ShouldBe(missing.Message.Replace(missingName, hiddenRoot.Name));
-        hidden.Message.ShouldContain("Available groups: Region North, North City.");
+        hidden.Message.ShouldContain("Available groups: Alpha, Alpha Lakeside.");
         await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task Supervisor_VisibleGroupName_IsResolved()
     {
-        var (_, visibleChild, _) = SupervisorSeesOnlyRegionNorth();
+        var (_, visibleChild, _) = SupervisorSeesOnlyAlpha();
 
         var result = await _skill.ExecuteAsync(
             SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = visibleChild.Name });
@@ -187,7 +187,7 @@ public class SealOpenOrdersSkillTests
     [Test]
     public async Task Supervisor_AutoAssignGroups_IsRefused()
     {
-        SupervisorSeesOnlyRegionNorth();
+        SupervisorSeesOnlyAlpha();
 
         var result = await _skill.ExecuteAsync(
             SupervisorCtx(), new Dictionary<string, object> { ["autoAssignGroups"] = true, ["apply"] = true });
@@ -200,7 +200,7 @@ public class SealOpenOrdersSkillTests
     [Test]
     public async Task Supervisor_WithoutAnyVisibleGroup_IsRefused()
     {
-        _groupRepository.List().Returns(new List<Group> { RootGroup("Region South") });
+        _groupRepository.List().Returns(new List<Group> { RootGroup("Bravo") });
         _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(GroupScopeAccess.Restricted([], []));
 
@@ -214,7 +214,7 @@ public class SealOpenOrdersSkillTests
     [Test]
     public async Task Supervisor_InlineApply_SendsPreviewAndApplyWithTheIdenticalScope()
     {
-        SupervisorSeesOnlyRegionNorth();
+        SupervisorSeesOnlyAlpha();
         var commands = new List<SealOpenOrdersCommand>();
         _mediator.When(m => m.Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>()))
             .Do(ci => commands.Add(ci.Arg<SealOpenOrdersCommand>()));
@@ -231,7 +231,7 @@ public class SealOpenOrdersSkillTests
     [Test]
     public async Task Supervisor_AboveTheSynchronousLimit_EnqueuesAJobCarryingTheScopedCommand()
     {
-        var (visibleRoot, visibleChild, _) = SupervisorSeesOnlyRegionNorth();
+        var (visibleRoot, visibleChild, _) = SupervisorSeesOnlyAlpha();
         _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => !c.Apply), Arg.Any<CancellationToken>())
             .Returns(PreviewWithSealableCount(SynchronousLimit + 1));
         SealOpenOrdersJob? enqueued = null;
