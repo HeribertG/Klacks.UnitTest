@@ -264,6 +264,10 @@ public class OpenScheduleSkillTests
                 Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
                 Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult { Items = [], TotalCount = 0 });
+        _clientSearch.SearchByFuzzyNameAsync(
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [], TotalCount = 0 });
 
         var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
         {

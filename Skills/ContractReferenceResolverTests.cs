@@ -4,11 +4,13 @@
 /// Unit tests for the shared contract reference resolver: a GUID is taken as the id without touching the
 /// repository, a name is resolved against the non-deleted contracts, an unknown, ambiguous or malformed value
 /// is a clean error that lists the real contract names (capped), and the strict id parser used by the
-/// destructive skill never matches by name and never throws.
+/// destructive skill never matches by name and never throws. The Strict mode of the writing skills accepts only
+/// equal words or a forward match on whole words; a partial word or a typo is answered with the name ask-back.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Services.Contracts;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Associations;
 
 namespace Klacks.UnitTest.Skills;
@@ -17,7 +19,7 @@ namespace Klacks.UnitTest.Skills;
 public class ContractReferenceResolverTests
 {
     private const string Parameter = "contractId";
-    private const ContractNameMatchMode Mode = ContractNameMatchMode.ExactOrUniquePartial;
+    private const ContractNameMatchMode Mode = ContractNameMatchMode.Strict;
 
     private static IContractRepository Repository(IEnumerable<Contract> contracts)
     {
@@ -106,32 +108,61 @@ public class ContractReferenceResolverTests
     }
 
     [Test]
-    public async Task Typo_IsRejectedInExactOrUniquePartialMode_ButResolvedWithFuzzy()
+    public async Task Typo_IsAskedBackInStrictMode_ButResolvedWithFuzzy()
     {
         var contract = new Contract { Id = Guid.NewGuid(), Name = "Vollzeit 160 BE" };
         var repository = Repository([contract, new Contract { Id = Guid.NewGuid(), Name = "Teilzeit 0 Std BE" }]);
 
         var (strictId, strictError) = await ContractReferenceResolver.ResolveIdAsync(
-            repository, "Volzeit 160 BE", Parameter, ContractNameMatchMode.ExactOrUniquePartial, CancellationToken.None);
+            repository, "Volzeit 160 BE", Parameter, ContractNameMatchMode.Strict, CancellationToken.None);
         var (fuzzyId, fuzzyError) = await ContractReferenceResolver.ResolveIdAsync(
             repository, "Volzeit 160 BE", Parameter, ContractNameMatchMode.WithFuzzy, CancellationToken.None);
 
         strictId.ShouldBeNull();
-        strictError.ShouldContain("No contract found matching");
-        strictError.ShouldContain("Vollzeit 160 BE");
+        strictError.ShouldContain("Did the user mean 'Vollzeit 160 BE'?");
+        NameResolutionAskBack.IsAskBack(strictError).ShouldBeTrue();
         fuzzyId.ShouldBe(contract.Id);
         fuzzyError.ShouldBeNull();
     }
 
     [Test]
-    public async Task LabelPrefixedQuery_IsNotAnExactOrPartialNameInStrictMode()
+    public async Task LabelPrefixedQuery_ResolvesInStrictMode_BecauseTheLabelIsAWholeWord()
     {
-        var repository = Repository([new Contract { Id = Guid.NewGuid(), Name = "Teilzeit 0 Std BE" }]);
+        var contract = new Contract { Id = Guid.NewGuid(), Name = "Teilzeit 0 Std BE" };
 
         var (resolved, error) = await ContractReferenceResolver.ResolveIdAsync(
-            repository, "Vertrag Teilzeit 0 Std BE", Parameter, Mode, CancellationToken.None);
+            Repository([contract]), "Vertrag Teilzeit 0 Std BE", Parameter, Mode, CancellationToken.None);
+
+        resolved.ShouldBe(contract.Id);
+        error.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task PartialWord_IsAskedBackInStrictMode_EvenWhenItIsTheOnlyContractContainingIt()
+    {
+        var repository = Repository([
+            new Contract { Id = Guid.NewGuid(), Name = "Vollzeit 160 BE" },
+            new Contract { Id = Guid.NewGuid(), Name = "Teilzeit 0 Std BE" }
+        ]);
+
+        var (resolved, error) = await ContractReferenceResolver.ResolveIdAsync(
+            repository, "Vollz", Parameter, Mode, CancellationToken.None);
 
         resolved.ShouldBeNull();
-        error.ShouldContain("No contract found matching");
+        error.ShouldContain("Did the user mean 'Vollzeit 160 BE'?");
+        NameResolutionAskBack.IsAskBack(error).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task UniqueWholeWordPartial_ResolvesInStrictMode()
+    {
+        var contract = new Contract { Id = Guid.NewGuid(), Name = "Vollzeit 160 BE" };
+        var repository = Repository([contract, new Contract { Id = Guid.NewGuid(), Name = "Teilzeit 0 Std BE" }]);
+
+        var (resolved, error) = await ContractReferenceResolver.ResolveIdAsync(
+            repository, "Vollzeit 160", Parameter, Mode, CancellationToken.None);
+
+        resolved.ShouldBe(contract.Id);
+        error.ShouldBeNull();
     }
 }

@@ -10,9 +10,10 @@
 /// 🔴 The group-visibility tests are load bearing. Until 2026-08-22 this fixture handed
 /// SearchAsync a bare IClientGroupFilterService substitute and asserted nothing about it, so the
 /// suite stayed green while SearchAsync never called the filter at all — every Klacksy search and
-/// every name-based client edit crossed group boundaries. Any change that makes SearchAsync stop
-/// routing its query (and its fuzzy fallback) through the filter, or that counts before filtering,
-/// must fail here.
+/// every name-based client edit crossed group boundaries. Any change that makes SearchAsync or
+/// SearchByFuzzyNameAsync stop routing its query through the filter, or that counts before filtering,
+/// must fail here. SearchAsync itself has no fuzzy fallback any more: a misheard name is only ranked by
+/// SearchByFuzzyNameAsync, whose callers ClientFuzzySearchGuardTests restricts.
 /// </para>
 /// </summary>
 
@@ -330,7 +331,7 @@ public class ClientSearchRepositoryTests
     }
 
     [Test]
-    public async Task SearchAsync_FuzzyFallback_RestrictedUser_DoesNotLeakClientOfAnInvisibleGroup()
+    public async Task SearchByFuzzyNameAsync_RestrictedUser_DoesNotLeakClientOfAnInvisibleGroup()
     {
         var visibleGroupId = Guid.NewGuid();
         var invisibleGroupId = Guid.NewGuid();
@@ -339,14 +340,14 @@ public class ClientSearchRepositoryTests
             .Returns(new List<Client> { new() { Id = foreignClientId, FirstName = "Petra", Name = "Mayer", IdNumber = 8003 } });
         var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
 
-        var result = await repository.SearchAsync(searchTerm: "Meier", limit: 10);
+        var result = await repository.SearchByFuzzyNameAsync("Meier", limit: 10);
 
         result.Items.ShouldBeEmpty();
         result.TotalCount.ShouldBe(0);
     }
 
     [Test]
-    public async Task SearchAsync_FuzzyFallback_RestrictedUser_StillFindsClientOfAVisibleGroup()
+    public async Task SearchByFuzzyNameAsync_RestrictedUser_StillFindsClientOfAVisibleGroup()
     {
         var visibleGroupId = Guid.NewGuid();
         var ownClientId = AddClientInGroup("Petra", "Mayer", 8004, visibleGroupId);
@@ -354,9 +355,24 @@ public class ClientSearchRepositoryTests
             .Returns(new List<Client> { new() { Id = ownClientId, FirstName = "Petra", Name = "Mayer", IdNumber = 8004 } });
         var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
 
-        var result = await repository.SearchAsync(searchTerm: "Meier", limit: 10);
+        var result = await repository.SearchByFuzzyNameAsync("Meier", limit: 10);
 
         result.Items.Select(i => i.Id).ShouldBe(new[] { ownClientId });
+    }
+
+    [Test]
+    public async Task SearchAsync_TextMiss_DoesNotFallBackToTheFuzzySearch()
+    {
+        var visibleGroupId = Guid.NewGuid();
+        var ownClientId = AddClientInGroup("Petra", "Mayer", 8005, visibleGroupId);
+        _fuzzySearchService.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Client> { new() { Id = ownClientId, FirstName = "Petra", Name = "Mayer", IdNumber = 8005 } });
+        var repository = CreateRepositoryForRestrictedUser(visibleGroupId);
+
+        var result = await repository.SearchAsync(searchTerm: "Meier", limit: 10);
+
+        result.Items.ShouldBeEmpty();
+        await _fuzzySearchService.DidNotReceiveWithAnyArgs().SearchAsync(default!, default, default);
     }
 
     // FindList is the duplicate check of "new client" (GET api/backend/Clients/FindClient/...). Owner

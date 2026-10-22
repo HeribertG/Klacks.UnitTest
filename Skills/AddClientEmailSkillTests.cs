@@ -134,6 +134,10 @@ public class AddClientEmailSkillTests
                 Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
                 Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult { Items = [], TotalCount = 0 });
+        _searchRepository.SearchByFuzzyNameAsync(
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [], TotalCount = 0 });
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 

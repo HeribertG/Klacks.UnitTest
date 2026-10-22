@@ -2,19 +2,30 @@
 
 /// <summary>
 /// Unit tests for the read-only SearchEmployeesSkill — happy path with matches, empty result,
-/// entity-type mapping and the truncation hint when more rows exist than the limit.
+/// entity-type mapping and the truncation hint when more rows exist than the limit. Recipes capture the lone row of
+/// Results, so only a person the term really names may be in Results: a row found inside a word or only by the fuzzy
+/// search is listed under OtherMatches without an id, the message is the name ask-back, and a recipe capturing
+/// "Results[].Id" finds no row and rewinds to the question that asked for the name.
 /// </summary>
 
+using System.Text.Json;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Assistant.Recipes;
+using Klacks.Api.Domain.Services.Assistant;
+using Klacks.Api.Domain.Services.Assistant.Providers;
 
 namespace Klacks.UnitTest.Skills;
 
 [TestFixture]
 public class SearchEmployeesSkillTests
 {
+    private const string SkillName = "search_employees";
+    private const string ClientSlot = "clientName";
+
     private IClientSearchRepository _searchRepository = null!;
     private SearchEmployeesSkill _skill = null!;
 
@@ -23,6 +34,7 @@ public class SearchEmployeesSkillTests
     {
         _searchRepository = Substitute.For<IClientSearchRepository>();
         _skill = new SearchEmployeesSkill(_searchRepository);
+        WireFuzzySearch();
     }
 
     private static SkillExecutionContext Ctx() => new()
@@ -41,24 +53,36 @@ public class SearchEmployeesSkillTests
             .Returns(new ClientSearchResult { Items = items, TotalCount = totalCount });
     }
 
-    private static ClientSearchItem Item(string firstName, string lastName) => new()
+    private void WireFuzzySearch(params ClientSearchItem[] items)
+    {
+        _searchRepository.SearchByFuzzyNameAsync(
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = items, TotalCount = items.Length });
+    }
+
+    private static ClientSearchItem Item(string firstName, string lastName, int idNumber = 1) => new()
     {
         Id = Guid.NewGuid(),
         FirstName = firstName,
         LastName = lastName,
-        IdNumber = 1
+        IdNumber = idNumber
     };
+
+    private static JsonElement Data(SkillResult result) =>
+        JsonDocument.Parse(JsonSerializer.Serialize(result.Data)).RootElement;
 
     [Test]
     public async Task ReturnsMatches_WithCountInMessage()
     {
-        WireSearch(2, Item("Anna", "Müller"), Item("Max", "Meier"));
+        WireSearch(2, Item("Anna", "Müller"), Item("Max", "Müller"));
 
-        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "M" });
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Müller" });
 
         Assert.That(result.Success, Is.True, result.Message);
         Assert.That(result.Message, Does.Contain("Found 2"));
-        Assert.That(result.Message, Does.Contain("'M'"));
+        Assert.That(result.Message, Does.Contain("'Müller'"));
+        Assert.That(Data(result).GetProperty("Results").GetArrayLength(), Is.EqualTo(2));
     }
 
     [Test]
@@ -106,13 +130,132 @@ public class SearchEmployeesSkillTests
     [Test]
     public async Task ReportsTruncation_WhenMoreResultsThanLimit()
     {
-        WireSearch(12, Item("Anna", "Müller"), Item("Max", "Meier"));
+        WireSearch(12, Item("Anna", "Müller"), Item("Max", "Müller"));
 
         var result = await _skill.ExecuteAsync(
-            Ctx(), new Dictionary<string, object> { ["searchTerm"] = "M", ["limit"] = 2 });
+            Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Müller", ["limit"] = 2 });
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.Message, Does.Contain("Found 12"));
         Assert.That(result.Message, Does.Contain("Showing first 2"));
     }
+
+    [Test]
+    public async Task WithoutSearchTerm_ListsEveryRowAndNeverRunsTheFuzzySearch()
+    {
+        WireSearch(2, Item("Anna", "Müller"), Item("Max", "Meier"));
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["canton"] = "BE" });
+
+        Assert.That(Data(result).GetProperty("Results").GetArrayLength(), Is.EqualTo(2));
+        await _searchRepository.DidNotReceiveWithAnyArgs().SearchByFuzzyNameAsync(default!);
+    }
+
+    [Test]
+    public async Task FuzzyOnlyHit_IsAnIdLessOtherMatch_WithTheAskBack()
+    {
+        WireSearch(0);
+        WireFuzzySearch(Item("Hans", "Mayer", 12));
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Hans Meier" });
+
+        var data = Data(result);
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(data.GetProperty("Results").GetArrayLength(), Is.EqualTo(0));
+            Assert.That(data.GetProperty("OtherMatches").GetArrayLength(), Is.EqualTo(1));
+            Assert.That(data.GetProperty("OtherMatches")[0].TryGetProperty("Id", out _), Is.False);
+            Assert.That(result.Message, Does.Contain("Did the user mean 'Hans Mayer (#12)'?"));
+            Assert.That(NameResolutionAskBack.IsAskBack(result.Message), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task TextHitInsideAWord_IsAnOtherMatch_WithTheAskBack()
+    {
+        WireSearch(1, Item("Peter", "Meierhans", 21));
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Meier" });
+
+        Assert.That(Data(result).GetProperty("Results").GetArrayLength(), Is.EqualTo(0));
+        Assert.That(NameResolutionAskBack.IsAskBack(result.Message), Is.True);
+    }
+
+    [Test]
+    public async Task NamedPersonStaysInResults_WhileALooserRowMovesToOtherMatches()
+    {
+        var named = Item("Hans", "Meier", 30);
+        WireSearch(2, named, Item("Peter", "Meierhans", 31));
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Meier Hans" });
+
+        var data = Data(result);
+        Assert.That(data.GetProperty("Results").GetArrayLength(), Is.EqualTo(1));
+        Assert.That(data.GetProperty("Results")[0].GetProperty("Id").GetGuid(), Is.EqualTo(named.Id));
+        Assert.That(data.GetProperty("OtherMatches").GetArrayLength(), Is.EqualTo(1));
+        Assert.That(NameResolutionAskBack.IsAskBack(result.Message), Is.False);
+    }
+
+    [Test]
+    public async Task RecipeCapture_TakesTheNamedPerson()
+    {
+        var named = Item("Hans", "Meier", 40);
+        WireSearch(1, named);
+        var plan = PlanAtSearchStep("Hans Meier");
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Hans Meier" });
+        plan.Observe([ExecutedCall(result)]);
+
+        Assert.That(plan.Slots["clientId"], Is.EqualTo(named.Id.ToString()));
+    }
+
+    [Test]
+    public async Task RecipeCapture_OfAFuzzyOnlyHit_FailsAndRewindsToTheNameQuestion()
+    {
+        WireSearch(0);
+        WireFuzzySearch(Item("Hans", "Mayer", 12));
+        var plan = PlanAtSearchStep("Hans Meier");
+
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Hans Meier" });
+        plan.Observe([ExecutedCall(result)]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Slots.ContainsKey("clientId"), Is.False);
+            Assert.That(plan.Slots.ContainsKey(ClientSlot), Is.False);
+            Assert.That(plan.IsActive, Is.True);
+            Assert.That(plan.CurrentIsAsk, Is.True);
+            Assert.That(plan.CurrentStep!.Slot, Is.EqualTo(ClientSlot));
+        });
+    }
+
+    private static RecipeExecutionPlan PlanAtSearchStep(string clientName)
+    {
+        var plan = new RecipeExecutionPlan("r",
+        [
+            new RecipeStep { Kind = RecipeStepKinds.Ask, Slot = ClientSlot, Prompt = "Which employee?" },
+            new RecipeStep
+            {
+                Kind = RecipeStepKinds.Search, Skill = SkillName,
+                Inject = new Dictionary<string, string> { ["searchTerm"] = "$" + ClientSlot },
+                Capture = "Results[].Id as clientId"
+            },
+            new RecipeStep
+            {
+                Kind = RecipeStepKinds.Mutate, Skill = "add_client_to_group",
+                Inject = new Dictionary<string, string> { ["clientId"] = "$clientId" }
+            }
+        ]);
+        plan.PrefillSlots(new Dictionary<string, string> { [ClientSlot] = clientName });
+        plan.AdvanceOverSatisfied();
+        return plan;
+    }
+
+    private static LLMFunctionCall ExecutedCall(SkillResult result) => new()
+    {
+        FunctionName = SkillName,
+        Success = result.Success,
+        Result = $"{result.Message}\nData: {JsonSerializer.Serialize(result.Data)}"
+    };
 }

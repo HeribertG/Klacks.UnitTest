@@ -24,6 +24,37 @@ public class ClientNameCandidateGrounderTests
         _repository = Substitute.For<IClientSearchRepository>();
         _logger = Substitute.For<ILogger<ClientNameCandidateGrounder>>();
         _grounder = new ClientNameCandidateGrounder(_repository, _logger);
+        _repository.SearchByFuzzyNameAsync(
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = new List<ClientSearchItem>() });
+    }
+
+    [Test]
+    public async Task GroundAsync_FuzzyOnlyHit_IsListedAsASimilarName_NotAsASpellingToCopy()
+    {
+        _repository.SearchAsync(
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = new List<ClientSearchItem>() });
+        _repository.SearchByFuzzyNameAsync(
+                Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(),
+                Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult
+            {
+                Items = new List<ClientSearchItem>
+                {
+                    new() { Id = Guid.NewGuid(), IdNumber = 990004, FirstName = "Petra", LastName = "Mayer" }
+                }
+            });
+        var context = new LLMContext { Message = "Ändere die Nummer von Frau Meier" };
+
+        await _grounder.GroundAsync(context);
+
+        context.EntityGroundingBlock.ShouldNotBeNull();
+        context.EntityGroundingBlock!.ShouldContain("SIMILAR_NAMED_PEOPLE");
+        context.EntityGroundingBlock.ShouldContain("Mayer, Petra (#990004)");
+        context.EntityGroundingBlock.ShouldNotContain("copy EXACTLY this spelling");
     }
 
     [Test]

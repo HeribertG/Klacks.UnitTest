@@ -151,6 +151,8 @@ public class DiagnosePlanningPeriodSkillTests
         var hidden = await Skill(SkillClientVisibility.Hiding(_anna.Id)).ExecuteAsync(Ctx(), Params());
         _search.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult { Items = [], TotalCount = 0 });
+        _search.SearchByFuzzyNameAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [], TotalCount = 0 });
         var unknown = await Skill().ExecuteAsync(Ctx(), Params());
 
         hidden.Success.ShouldBeFalse();

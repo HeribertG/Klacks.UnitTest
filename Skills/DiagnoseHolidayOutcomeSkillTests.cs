@@ -68,6 +68,8 @@ public class DiagnoseHolidayOutcomeSkillTests
 
         _search.SearchAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ClientSearchResult { Items = [] });
+        _search.SearchByFuzzyNameAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EntityTypeEnum?>(), Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ClientSearchResult { Items = [] });
         var unknown = await Sut().ExecuteAsync(Context(Roles.Admin), Parameters());
 
         hidden.Message.ShouldBe(unknown.Message);
