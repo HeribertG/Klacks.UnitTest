@@ -19,6 +19,7 @@ using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
+using Klacks.Api.Domain.Models.Schedules;
 
 namespace Klacks.UnitTest.Application.Handlers.Works;
 
@@ -87,13 +88,12 @@ public class RestoreWorkCommandHandlerTests
         _groupContextResolver.ResolveVisibleGroupIdsAsync().Returns((List<Guid>?)null);
         _completionService.SaveAndTrackAsync(_clientId, _date, _periodStart, _periodEnd, null)
             .Returns(new PeriodHoursResource { Hours = 8 });
-        _scheduleEntriesService.GetScheduleEntriesQuery(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Any<Guid?>())
-            .Returns(new TestAsyncEnumerable<ScheduleCell>(
+        ScheduleEntriesStub.Serve(
+            _scheduleEntriesService,
             [
                 new ScheduleCell { ClientId = _clientId, EntryId = _shiftId },
                 new ScheduleCell { ClientId = Guid.NewGuid(), EntryId = _shiftId },
-            ]));
+            ]);
 
         _handler = new RestoreWorkCommandHandler(
             _workRepository,
@@ -174,7 +174,15 @@ public class RestoreWorkCommandHandlerTests
         result!.PeriodHours!.Hours.ShouldBe(8);
         result.ScheduleEntries.Count.ShouldBe(1);
         await _workRepository.Received(1).RestoreAsync(_work);
-        _scheduleEntriesService.Received(1).GetScheduleEntriesQuery(_date.AddDays(-1), _date.AddDays(1), null, null);
+        await _scheduleEntriesService.Received(1).GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(c =>
+                c.From == _date.AddDays(-1)
+                && c.Until == _date.AddDays(1)
+                && c.VisibleGroupIds == null
+                && c.AnalyseToken == null
+                && c.ClientIds != null
+                && c.ClientIds.SequenceEqual(new[] { _clientId })),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]

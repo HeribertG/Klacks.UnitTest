@@ -55,9 +55,7 @@ public class ReadScheduleStateSkillTests
     private static IScheduleEntriesService ServiceReturning(IEnumerable<ScheduleCell> cells)
     {
         var svc = Substitute.For<IScheduleEntriesService>();
-        svc.GetScheduleEntriesQuery(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Any<Guid?>())
-            .Returns(new TestAsyncEnumerable<ScheduleCell>(cells));
+        ScheduleEntriesStub.Serve(svc, cells);
         return svc;
     }
 
@@ -212,8 +210,8 @@ public class ReadScheduleStateSkillTests
 
         result.Success.ShouldBeTrue();
         DataAsJson(result).GetProperty("IsScenario").GetBoolean().ShouldBeTrue();
-        svc.Received(1).GetScheduleEntriesQuery(
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), token);
+        await svc.Received(1).GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(c => c.AnalyseToken == token), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -224,8 +222,8 @@ public class ReadScheduleStateSkillTests
 
         await skill.ExecuteAsync(Ctx(), Params());
 
-        svc.Received(1).GetScheduleEntriesQuery(
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), (Guid?)null);
+        await svc.Received(1).GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(c => c.AnalyseToken == null), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -293,7 +291,7 @@ public class ReadScheduleStateSkillTests
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe($"Group with ID {GroupId} not found.");
         result.Data.ShouldBeNull();
-        svc.DidNotReceiveWithAnyArgs().GetScheduleEntriesQuery(default, default, default, default);
+        await svc.DidNotReceiveWithAnyArgs().GetScheduleEntriesAsync(default!, default);
     }
 
     [Test]

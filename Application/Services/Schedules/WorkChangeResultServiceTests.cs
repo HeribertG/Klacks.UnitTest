@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Characterization of WorkChangeResultService.GetClientResultAsync: the period hours come from the period hours
-/// service for the given period, the schedule entries are requested for exactly the given three-day window with the
+/// service for the given period, the schedule entries are requested for the three-day window around the given work day with the
 /// caller's visible group list and the analyse token passed through unchanged, and only the rows of the requested
 /// client reach the result, in stub order.
 /// </summary>
@@ -11,6 +11,7 @@ using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Domain.Models.Schedules;
 
 namespace Klacks.UnitTest.Application.Services.Schedules;
 
@@ -21,6 +22,7 @@ public class WorkChangeResultServiceTests
     private static readonly DateOnly PeriodEnd = new(2027, 5, 31);
     private static readonly DateOnly ThreeDayStart = new(2027, 5, 11);
     private static readonly DateOnly ThreeDayEnd = new(2027, 5, 13);
+    private static readonly DateOnly WorkDay = new(2027, 5, 12);
 
     private IPeriodHoursService _periodHoursService = null!;
     private IScheduleEntriesService _scheduleEntriesService = null!;
@@ -59,7 +61,7 @@ public class WorkChangeResultServiceTests
         var ownRows = GivenScheduleEntries();
 
         var result = await _service.GetClientResultAsync(
-            _clientId, PeriodStart, PeriodEnd, ThreeDayStart, ThreeDayEnd, CancellationToken.None, _analyseToken);
+            _clientId, PeriodStart, PeriodEnd, WorkDay, CancellationToken.None, _analyseToken);
 
         ThenWindowWasRequested();
         result.ClientId.ShouldBe(_clientId);
@@ -78,17 +80,21 @@ public class WorkChangeResultServiceTests
             Cell(_clientId, own[1]),
             Cell(_otherClientId, foreign[1]),
         ];
-        _scheduleEntriesService
-            .GetScheduleEntriesQuery(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Any<Guid?>())
-            .Returns(_ => new TestAsyncEnumerable<ScheduleCell>(cells));
+        ScheduleEntriesStub.Serve(_scheduleEntriesService, cells);
         return own;
     }
 
     private void ThenWindowWasRequested()
     {
-        _scheduleEntriesService.Received(1).GetScheduleEntriesQuery(
-            ThreeDayStart, ThreeDayEnd, _visibleGroupIds, _analyseToken);
+        _scheduleEntriesService.Received(1).GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(c =>
+                c.From == ThreeDayStart
+                && c.Until == ThreeDayEnd
+                && ReferenceEquals(c.VisibleGroupIds, _visibleGroupIds)
+                && c.AnalyseToken == _analyseToken
+                && c.ClientIds != null
+                && c.ClientIds.SequenceEqual(new[] { _clientId })),
+            Arg.Any<CancellationToken>());
     }
 
     private static ScheduleCell Cell(Guid clientId, Guid id)

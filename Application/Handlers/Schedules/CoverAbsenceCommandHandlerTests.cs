@@ -183,9 +183,7 @@ public class CoverAbsenceCommandHandlerTests
             .Returns(ci => ci.ArgAt<IReadOnlyCollection<Guid>>(0).Where(isVisible).ToList());
 
     private void SetAbsentSlots(params ScheduleCell[] cells)
-        => _scheduleEntries.GetScheduleEntriesQuery(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Any<Guid?>())
-            .Returns(new TestAsyncEnumerable<ScheduleCell>(cells));
+        => ScheduleEntriesStub.Serve(_scheduleEntries, cells);
 
     private void UseSnapshot(RecoverySnapshot snapshot)
         => _snapshotBuilder.BuildAsync(
@@ -801,7 +799,9 @@ public class CoverAbsenceCommandHandlerTests
                 && s.OwnedShiftIds.Contains(ShiftId) && s.OwnedShiftIds.Contains(RootShiftId)),
             Arg.Any<CancellationToken>());
         await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == SourceToken && s.Token == outcome.Token));
-        _scheduleEntries.Received().GetScheduleEntriesQuery(Date, Date, Arg.Any<List<Guid>?>(), SourceToken);
+        await _scheduleEntries.Received().GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(c => c.From == Date && c.Until == Date && c.AnalyseToken == SourceToken),
+            Arg.Any<CancellationToken>());
         await _mediator.Received(1).Send(
             Arg.Is<PostCommand<WorkChangeResource>>(c => c.Resource.WorkId == ClonedWorkId && c.Resource.ReplaceClientId == CandidateId),
             Arg.Any<CancellationToken>());
@@ -850,8 +850,8 @@ public class CoverAbsenceCommandHandlerTests
         await _scenarioRepo.Received(1).Add(Arg.Is<AnalyseScenario>(s => s.SourceToken == null));
         await _scenarioService.DidNotReceive().ResolveRootShiftIdsAsync(
             Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
-        _scheduleEntries.DidNotReceive().GetScheduleEntriesQuery(
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Is<Guid?>(t => t != null));
+        await _scheduleEntries.DidNotReceive().GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(c => c.AnalyseToken != null), Arg.Any<CancellationToken>());
         outcome.Covered.ShouldHaveSingleItem().ShiftId.ShouldBe(ShiftId);
     }
 

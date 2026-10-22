@@ -18,6 +18,7 @@ using Klacks.Api.Domain.Services.Schedules;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Klacks.Api.Domain.Models.Schedules;
 
 namespace Klacks.UnitTest.Application.Handlers.Works;
 
@@ -171,7 +172,7 @@ public class WorkThreeDayRefreshCharacterizationTests
         var result = await NewReassignHandler().Handle(
             new ReassignWorkClientCommand(_workId, _clientId), CancellationToken.None);
 
-        ThenThreeDayWindowWasRequested();
+        ThenThreeDayWindowWasRequested(_clientId, _sourceClientId);
         result!.Work!.ScheduleEntries.Select(e => e.Id).ShouldBe(targetRows);
         result.SourceScheduleEntries.Select(e => e.Id).ShouldBe(sourceRows);
     }
@@ -190,16 +191,23 @@ public class WorkThreeDayRefreshCharacterizationTests
 
     private void GivenScheduleEntries(params ScheduleCell[] cells)
     {
-        _scheduleEntriesService
-            .GetScheduleEntriesQuery(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Any<Guid?>())
-            .Returns(_ => new TestAsyncEnumerable<ScheduleCell>(cells));
+        ScheduleEntriesStub.Serve(_scheduleEntriesService, cells);
     }
 
-    private void ThenThreeDayWindowWasRequested()
+    private void ThenThreeDayWindowWasRequested(params Guid[] clientIds)
     {
-        _scheduleEntriesService.Received(1).GetScheduleEntriesQuery(
-            Day.AddDays(-1), Day.AddDays(1), _visibleGroupIds, _analyseToken);
+        Guid[] expectedClients = clientIds.Length == 0 ? [_clientId] : clientIds;
+        _scheduleEntriesService.Received(1).GetScheduleEntriesAsync(
+            Arg.Is<ScheduleEntriesCriteria>(c =>
+                c.From == Day.AddDays(-1)
+                && c.Until == Day.AddDays(1)
+                && ReferenceEquals(c.VisibleGroupIds, _visibleGroupIds)
+                && c.AnalyseToken == _analyseToken
+                && c.ClientIds != null
+                && c.ClientIds.SequenceEqual(expectedClients)
+                && c.EntryType == null
+                && !c.OrderByStartTime),
+            Arg.Any<CancellationToken>());
     }
 
     private static ScheduleCell Cell(Guid clientId, Guid id)

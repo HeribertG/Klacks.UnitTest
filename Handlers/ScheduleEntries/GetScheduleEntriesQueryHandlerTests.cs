@@ -53,8 +53,7 @@ public class GetScheduleEntriesQueryHandlerTests
         _groupFilterService = Substitute.For<IShiftGroupFilterService>();
         _clientAvailabilityScheduleService = Substitute.For<IClientAvailabilityScheduleService>();
 
-        _scheduleEntriesService.GetScheduleEntriesQuery(default, default, default, default)
-            .ReturnsForAnyArgs(new TestAsyncEnumerable<ScheduleCell>(Enumerable.Empty<ScheduleCell>()));
+        ScheduleEntriesStub.ServeNothing(_scheduleEntriesService);
         _clientAvailabilityScheduleService.GetClientAvailabilityQuery(default, default, default)
             .ReturnsForAnyArgs(new TestAsyncEnumerable<ClientAvailabilityScheduleEntry>(Enumerable.Empty<ClientAvailabilityScheduleEntry>()));
         _workRepository.GetPeriodHoursForClients(default!, default, default, default, default)

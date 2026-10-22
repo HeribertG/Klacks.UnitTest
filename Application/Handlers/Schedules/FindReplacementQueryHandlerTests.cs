@@ -190,9 +190,7 @@ public class FindReplacementQueryHandlerTests
             .Returns(new PreCommitCheckResult(conflicts.ToList()));
 
     private void SetOnLeave(params ScheduleCell[] breakCells)
-        => _scheduleEntries.GetScheduleEntriesQuery(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Any<Guid?>())
-            .Returns(new TestAsyncEnumerable<ScheduleCell>(breakCells));
+        => ScheduleEntriesStub.Serve(_scheduleEntries, breakCells);
 
     private void SetPreferences(params ClientShiftPreference[] prefs)
         => _prefRepo.GetByShiftIdAsync(ShiftId, Arg.Any<CancellationToken>()).Returns(prefs.ToList());

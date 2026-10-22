@@ -53,8 +53,7 @@ public class ExpensesSealAndScopeTests
         _clientVisibilityGuard.AreAllVisibleAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(true);
         _periodHoursService.GetPeriodBoundariesAsync(Arg.Any<DateOnly>()).Returns((Day, Day));
-        _scheduleEntriesService.GetScheduleEntriesQuery(default, default, default, default)
-            .ReturnsForAnyArgs(_ => new TestAsyncEnumerable<ScheduleCell>(Enumerable.Empty<ScheduleCell>()));
+        ScheduleEntriesStub.ServeNothing(_scheduleEntriesService);
         _expensesRepository.Put(Arg.Any<ExpensesEntity>()).Returns(ci => ci.ArgAt<ExpensesEntity>(0));
 
         WorksTestHelpers.GivenUserIsAdmin(_httpContextAccessor, UserName);

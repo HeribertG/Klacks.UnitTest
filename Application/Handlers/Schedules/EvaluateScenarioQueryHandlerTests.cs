@@ -78,12 +78,8 @@ public class EvaluateScenarioQueryHandlerTests
 
     private void SetGrid(IEnumerable<ScheduleCell> real, IEnumerable<ScheduleCell> scenario)
     {
-        _entries.GetScheduleEntriesQuery(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(),
-                Arg.Is<Guid?>(t => !t.HasValue))
-            .Returns(new TestAsyncEnumerable<ScheduleCell>(real));
-        _entries.GetScheduleEntriesQuery(Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(),
-                Arg.Is<Guid?>(t => t == Token))
-            .Returns(new TestAsyncEnumerable<ScheduleCell>(scenario));
+        ScheduleEntriesStub.Serve(_entries, c => !c.AnalyseToken.HasValue, real);
+        ScheduleEntriesStub.Serve(_entries, c => c.AnalyseToken == Token, scenario);
     }
 
     [Test]

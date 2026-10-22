@@ -89,9 +89,7 @@ public class ReassignWorkClientCommandHandlerTests
             new ScheduleCell { ClientId = _targetClientId, EntryId = _shiftId },
             new ScheduleCell { ClientId = _sourceClientId, EntryId = _shiftId },
         };
-        _scheduleEntriesService.GetScheduleEntriesQuery(
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<List<Guid>?>(), Arg.Any<Guid?>())
-            .Returns(new TestAsyncEnumerable<ScheduleCell>(cells));
+        ScheduleEntriesStub.Serve(_scheduleEntriesService, cells);
 
         _handler = new ReassignWorkClientCommandHandler(
             _workRepository,

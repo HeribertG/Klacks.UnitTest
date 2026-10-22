@@ -57,8 +57,7 @@ public class WorkCreatePlanningPeriodTests
         _clientVisibilityGuard.IsVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
         _clientVisibilityGuard.AreAllVisibleAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(true);
-        _scheduleEntriesService.GetScheduleEntriesQuery(default, default, default, default)
-            .ReturnsForAnyArgs(_ => new TestAsyncEnumerable<ScheduleCell>(Enumerable.Empty<ScheduleCell>()));
+        ScheduleEntriesStub.ServeNothing(_scheduleEntriesService);
         _conflictChecker.CheckAsync(Arg.Any<IReadOnlyList<PlannedWorkRow>>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(new PreCommitCheckResult([]));
     }

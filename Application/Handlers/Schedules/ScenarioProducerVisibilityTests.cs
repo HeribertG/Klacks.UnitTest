@@ -16,6 +16,7 @@ using Klacks.Api.Application.Interfaces.Schedules;
 using Klacks.Api.Application.Queries.Schedules;
 using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Domain.Models.Schedules;
 
 namespace Klacks.UnitTest.Application.Handlers.Schedules;
 
@@ -59,7 +60,7 @@ public class ScenarioProducerVisibilityTests
         var result = await handler.Handle(new EvaluateScenarioQuery(null, scenario.Token), CancellationToken.None);
 
         result.Found.ShouldBeFalse();
-        _entries.DidNotReceiveWithAnyArgs().GetScheduleEntriesQuery(default, default, default, default);
+        await _entries.DidNotReceiveWithAnyArgs().GetScheduleEntriesAsync(default!, default);
     }
 
     [Test]
