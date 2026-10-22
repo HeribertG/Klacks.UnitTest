@@ -7,9 +7,10 @@
 /// group scope looks unrestricted; an administrator with unrestricted scope gets full access, while a
 /// supervisor (or an administrator with a restricted scope) gets a scope of exactly the visible group
 /// subtrees, cannot name a hidden group, cannot run the group assignment and carries that very scope on the
-/// preview, the inline apply and the enqueued background job; a groupName is only accepted as an exact name or an
-/// unambiguous part of one, so neither a hidden "Region South" nor a misspelling is ever replaced by the visible
-/// "Region North", and the resolved group is named in the preview; the default call is a preview that tells the user sealing
+/// preview, the inline apply and the enqueued background job; a groupName is resolved with the central Strict
+/// policy (exact name, whole words, label-decorated name), so neither a hidden "Region South" nor a misspelling is
+/// ever replaced by the visible "Region North" - both get the "Did the user mean ...?" ask-back and nothing is
+/// sealed - and the resolved group is named in the preview; the default call is a preview that tells the user sealing
 /// cannot be undone, and apply=true either seals inline (sealable count at or below the synchronous
 /// limit) or is handed to the background job queue instead (above it) using the very same preview count.
 /// </summary>
@@ -197,8 +198,7 @@ public class SealOpenOrdersSkillTests
         var hidden = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
 
         hidden.Success.ShouldBeFalse();
-        hidden.Message.ShouldContain("Group 'Region South' not found");
-        hidden.Message.ShouldContain("a similarly spelled group is never substituted");
+        hidden.Message.ShouldBe(NameResolutionMessages.SuggestedName("Region North"));
         await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
         _jobQueue.DidNotReceive().Enqueue(Arg.Any<SealOpenOrdersJob>());
 
@@ -218,8 +218,43 @@ public class SealOpenOrdersSkillTests
             Ctx(), new Dictionary<string, object> { ["groupName"] = "Regoin North", ["apply"] = true });
 
         result.Success.ShouldBeFalse();
-        result.Message.ShouldContain("a similarly spelled group is never substituted");
+        result.Message.ShouldBe(NameResolutionMessages.SuggestedName("Region North"));
         await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Supervisor_HiddenGroupWithALabelGluedToAVisibleName_IsAnsweredLikeAMissingOne()
+    {
+        var leitung = RootGroup("Leitung");
+        var hidden = RootGroup("Gruppenleitung");
+        _groupScopeGuard.GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(GroupScopeAccess.Restricted([leitung.Id], [leitung.Name]));
+        var parameters = new Dictionary<string, object> { ["groupName"] = "Gruppenleitung", ["apply"] = true };
+
+        _groupRepository.List().Returns(new List<Group> { leitung, hidden });
+        var whenHidden = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+        _groupRepository.List().Returns(new List<Group> { leitung });
+        var whenMissing = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+
+        whenHidden.Success.ShouldBeFalse();
+        whenHidden.Message.ShouldBe(whenMissing.Message);
+        whenHidden.Message.ShouldBe(NameResolutionMessages.SuggestedName("Leitung"));
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+        _jobQueue.DidNotReceive().Enqueue(Arg.Any<SealOpenOrdersJob>());
+    }
+
+    [Test]
+    public async Task Supervisor_GroupNameEndingInsideAWord_IsAskedBack_AndNothingIsSealed()
+    {
+        SupervisorSeesRegionNorthButNotRegionSouth(regionSouthExists: true);
+
+        var result = await _skill.ExecuteAsync(
+            SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = "Regio", ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(NameResolutionMessages.SuggestedName("Region North"));
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+        _jobQueue.DidNotReceive().Enqueue(Arg.Any<SealOpenOrdersJob>());
     }
 
     [TestCase("Region North")]
