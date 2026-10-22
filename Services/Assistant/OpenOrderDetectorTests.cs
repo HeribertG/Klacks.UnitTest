@@ -20,17 +20,20 @@ namespace Klacks.UnitTest.Services.Assistant;
 [TestFixture]
 public class OpenOrderDetectorTests
 {
-    private IShiftRepository _repo = null!;
+    private InMemoryShiftStore _store = null!;
     private IShiftGroupScopeReader _groupScopeReader = null!;
     private OpenOrderDetector _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _repo = Substitute.For<IShiftRepository>();
+        _store = new InMemoryShiftStore();
         _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
-        _sut = new OpenOrderDetector(_repo, _groupScopeReader, new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<OpenOrderDetector>.Instance);
+        _sut = new OpenOrderDetector(_store.Shifts, _groupScopeReader, new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<OpenOrderDetector>.Instance);
     }
+
+    [TearDown]
+    public void TearDown() => _store.Dispose();
 
     private static Shift MakeShift(
         DateOnly fromDate,
@@ -52,7 +55,7 @@ public class OpenOrderDetectorTests
     [Test]
     public async Task DetectAsync_NoShifts_ReturnsEmpty()
     {
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift>()));
+        _store.Seed();
 
         var events = await _sut.DetectAsync();
 
@@ -64,7 +67,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3));
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = await _sut.DetectAsync();
 
@@ -79,7 +82,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(15));
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().ToList();
 
@@ -91,7 +94,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(45));
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().ToList();
 
@@ -103,7 +106,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(-1));
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = await _sut.DetectAsync();
 
@@ -115,7 +118,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3), analyseToken: Guid.NewGuid());
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = await _sut.DetectAsync();
 
@@ -127,7 +130,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3), scenarioSourceShiftId: Guid.NewGuid());
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = await _sut.DetectAsync();
 
@@ -139,7 +142,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3), isDeleted: true);
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = await _sut.DetectAsync();
 
@@ -151,7 +154,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3), status: ShiftStatus.SealedOrder);
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = await _sut.DetectAsync();
 
@@ -163,7 +166,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3));
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var firstKey = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().Single().DedupKey;
         var secondKey = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().Single().DedupKey;
@@ -184,7 +187,7 @@ public class OpenOrderDetectorTests
             .Select(i => MakeShift(today.AddDays(i)))
             .ToList();
         var insertionOrder = shifts.OrderByDescending(s => s.FromDate).ToList();
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(insertionOrder));
+        _store.Seed(insertionOrder);
 
         var events = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().ToList();
 
@@ -205,7 +208,7 @@ public class OpenOrderDetectorTests
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3));
         var groupId = Guid.NewGuid();
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
         ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (shift.Id, new[] { groupId }));
 
         var openOrder = (OpenOrderTriggerEvent)(await _sut.DetectAsync()).Single();
@@ -223,7 +226,7 @@ public class OpenOrderDetectorTests
         var shift = MakeShift(today.AddDays(3));
         var firstGroupId = Guid.NewGuid();
         var secondGroupId = Guid.NewGuid();
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
         ShiftGroupScopeReaderStub.SetGroups(_groupScopeReader, (shift.Id, new[] { firstGroupId, secondGroupId }));
 
         var openOrder = (OpenOrderTriggerEvent)(await _sut.DetectAsync()).Single();
@@ -238,7 +241,7 @@ public class OpenOrderDetectorTests
         // AgentTriggerService route this to Admins instead of broadcasting it to every planner.
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shift = MakeShift(today.AddDays(3));
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var openOrder = (OpenOrderTriggerEvent)(await _sut.DetectAsync()).Single();
 
@@ -251,7 +254,7 @@ public class OpenOrderDetectorTests
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var shifts = Enumerable.Range(0, 20).Select(i => MakeShift(today.AddDays(i))).ToList();
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts));
+        _store.Seed(shifts);
 
         await _sut.DetectAsync();
 
@@ -269,9 +272,9 @@ public class OpenOrderDetectorTests
             "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
-        _sut = new OpenOrderDetector(_repo, _groupScopeReader, clock, NullLogger<OpenOrderDetector>.Instance);
+        _sut = new OpenOrderDetector(_store.Shifts, _groupScopeReader, clock, NullLogger<OpenOrderDetector>.Instance);
         var shift = MakeShift(new DateOnly(2026, 6, 30));
-        _repo.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { shift }));
+        _store.Seed(shift);
 
         var events = (await _sut.DetectAsync()).Cast<OpenOrderTriggerEvent>().ToList();
 

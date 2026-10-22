@@ -27,7 +27,7 @@ public class UncutFullDayShiftDetectorTests
 
     private const int RotationBacklogOverflow = 5;
 
-    private IShiftRepository _shiftRepository = null!;
+    private InMemoryShiftStore _store = null!;
     private IShiftGroupScopeReader _groupScopeReader = null!;
     private IAgentConditionRepository _agentConditionRepository = null!;
     private UncutFullDayShiftDetector _sut = null!;
@@ -35,14 +35,17 @@ public class UncutFullDayShiftDetectorTests
     [SetUp]
     public void Setup()
     {
-        _shiftRepository = Substitute.For<IShiftRepository>();
+        _store = new InMemoryShiftStore();
         _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
         _agentConditionRepository = Substitute.For<IAgentConditionRepository>();
         SetOpenLedgerRows();
         _sut = new UncutFullDayShiftDetector(
-            _shiftRepository, _groupScopeReader, _agentConditionRepository,
+            _store.Shifts, _groupScopeReader, _agentConditionRepository,
             new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<UncutFullDayShiftDetector>.Instance);
     }
+
+    [TearDown]
+    public void TearDown() => _store.Dispose();
 
     /// <summary>
     /// Stubs the ledger rows GetOpenByKindAsync returns for this detector's Kind -- an empty list by
@@ -89,7 +92,7 @@ public class UncutFullDayShiftDetectorTests
 
     private void SetupQuery(params Shift[] shifts)
     {
-        _shiftRepository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts.ToList()));
+        _store.Seed(shifts);
     }
 
     private async Task<List<Guid>> ReportedShiftIdsAsync() =>
@@ -429,7 +432,7 @@ public class UncutFullDayShiftDetectorTests
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
         _sut = new UncutFullDayShiftDetector(
-            _shiftRepository, _groupScopeReader, _agentConditionRepository, clock, NullLogger<UncutFullDayShiftDetector>.Instance);
+            _store.Shifts, _groupScopeReader, _agentConditionRepository, clock, NullLogger<UncutFullDayShiftDetector>.Instance);
         var shift = MakeUncutFullDayShift(new DateOnly(2026, 6, 30));
         SetupQuery(shift);
 

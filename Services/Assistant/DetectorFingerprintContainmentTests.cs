@@ -13,7 +13,9 @@
 /// do return different sizes and the containment assertion has something to prove. Substituted
 /// repositories mimic their real counterparts' cap semantics (Take(maxResults) / RowCount over unique
 /// shift ids) rather than ignoring the argument, otherwise the capped path would silently return
-/// everything and the test would pass vacuously.
+/// everything and the test would pass vacuously. The three shift-scanning detectors run on the real
+/// ShiftRepository and ContainerTemplateRepository over EF InMemory (InMemoryShiftStore), so their caps are the
+/// repositories' own.
 ///
 /// Scope note - what this does NOT cover: it cannot prove the two paths agree against the real
 /// database, only that they agree over the same in-memory candidate set. A predicate that EF Core
@@ -47,7 +49,7 @@ public class DetectorFingerprintContainmentTests
     [Test]
     public async Task OpenOrderDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
     {
-        var repository = Substitute.For<IShiftRepository>();
+        using var store = new InMemoryShiftStore();
         var orders = Enumerable.Range(0, OpenOrderDetector.MaxCandidatesToScan + 5)
             .Select(offset => new Shift
             {
@@ -57,9 +59,9 @@ public class DetectorFingerprintContainmentTests
                 FromDate = Today.AddDays(offset % 60)
             })
             .ToList();
-        repository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(orders));
+        store.Seed(orders);
 
-        var sut = new OpenOrderDetector(repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<OpenOrderDetector>.Instance);
+        var sut = new OpenOrderDetector(store.Shifts, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<OpenOrderDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: OpenOrderDetector.MaxCandidatesToScan);
     }
@@ -67,7 +69,7 @@ public class DetectorFingerprintContainmentTests
     [Test]
     public async Task UncutFullDayShiftDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
     {
-        var repository = Substitute.For<IShiftRepository>();
+        using var store = new InMemoryShiftStore();
         var time = new TimeOnly(7, 0);
         var shifts = Enumerable.Range(0, UncutFullDayShiftDetector.MaxFindingsPerTick + 40)
             .Select(offset => new Shift
@@ -82,7 +84,7 @@ public class DetectorFingerprintContainmentTests
                 EndShift = time
             })
             .ToList();
-        repository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(shifts));
+        store.Seed(shifts);
 
         // Nothing open in the ledger yet -- every candidate is in the never-opened rotation group, so
         // the rotation cap alone decides how many of them DetectAsync reports this tick.
@@ -91,7 +93,7 @@ public class DetectorFingerprintContainmentTests
             .Returns(new List<AgentCondition>());
 
         var sut = new UncutFullDayShiftDetector(
-            repository, ShiftGroupScopeReaderStub.WithoutAnyGroups(), agentConditionRepository,
+            store.Shifts, ShiftGroupScopeReaderStub.WithoutAnyGroups(), agentConditionRepository,
             FixedClock(), NullLogger<UncutFullDayShiftDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: UncutFullDayShiftDetector.MaxFindingsPerTick);
@@ -100,8 +102,7 @@ public class DetectorFingerprintContainmentTests
     [Test]
     public async Task EmptyContainerDetector_EmittedEventsAreAllCoveredByTheFingerprintScan()
     {
-        var shiftRepository = Substitute.For<IShiftRepository>();
-        var templateRepository = Substitute.For<IContainerTemplateRepository>();
+        using var store = new InMemoryShiftStore();
 
         var containers = Enumerable.Range(0, EmptyContainerDetector.MaxFindingsPerTick + 10)
             .Select(offset => new Shift
@@ -115,9 +116,8 @@ public class DetectorFingerprintContainmentTests
             .ToList();
 
         var containerWithTemplate = containers[0];
-        shiftRepository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(containers));
-        templateRepository.GetQuery().Returns(new TestAsyncEnumerable<ContainerTemplate>(
-            new List<ContainerTemplate> { new() { Id = Guid.NewGuid(), ContainerId = containerWithTemplate.Id } }));
+        store.Seed(containers);
+        store.SeedTemplates(new ContainerTemplate { Id = Guid.NewGuid(), ContainerId = containerWithTemplate.Id });
 
         // All candidates already open in the ledger: isolates this test to the first slice's own cap,
         // which is what expectedCappedCount below asserts -- the second slice's ledger-exclusion
@@ -127,7 +127,7 @@ public class DetectorFingerprintContainmentTests
             .Returns(containers.Select(container => new AgentCondition { EntityId = container.Id }).ToList());
 
         var sut = new EmptyContainerDetector(
-            shiftRepository, templateRepository, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
+            store.Shifts, store.ContainerTemplates, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
             agentConditionRepository, FixedClock(), NullLogger<EmptyContainerDetector>.Instance);
 
         var fingerprints = await AssertContainmentAsync(
