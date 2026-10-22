@@ -29,6 +29,7 @@ public class AgentConditionDigestSeedFailureTests
     private static readonly DateTime PastTargetUtc = new(2026, 8, 24, 6, 31, 0, DateTimeKind.Utc);
 
     private ISettingsRepository _settingsRepository = null!;
+    private IUnitOfWork _unitOfWork = null!;
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private IAgentTriggerService _triggerService = null!;
     private AgentConditionDigestService _service = null!;
@@ -37,6 +38,7 @@ public class AgentConditionDigestSeedFailureTests
     public void SetUp()
     {
         _settingsRepository = Substitute.For<ISettingsRepository>();
+        _unitOfWork = Substitute.For<IUnitOfWork>();
         _planningAudienceResolver = Substitute.For<IPlanningAudienceResolver>();
         _triggerService = Substitute.For<IAgentTriggerService>();
     }
@@ -49,7 +51,19 @@ public class AgentConditionDigestSeedFailureTests
         var result = await _service.RunIfDueAsync();
 
         result.Outcome.ShouldBe(AgentConditionDigestOutcome.AlreadyRanToday);
+        _unitOfWork.Received(1).DiscardTrackedChanges();
         await AssertNothingClaimedOrDispatched();
+    }
+
+    [Test]
+    public async Task RunIfDue_AnotherInstanceSeededTheNeverRanMarker_TheRunGoesOnToClaimTheDay()
+    {
+        GivenSeedFails(new DatabaseUpdateException("duplicate key value", isDuplicate: true), seededByAnotherInstance: string.Empty);
+
+        var result = await _service.RunIfDueAsync();
+
+        result.Outcome.ShouldBe(AgentConditionDigestOutcome.LostRace);
+        await _settingsRepository.Received(1).TryAdvanceSettingAsync(WatermarkKey, string.Empty, TodayKey);
     }
 
     [Test]
@@ -59,6 +73,7 @@ public class AgentConditionDigestSeedFailureTests
 
         await Should.ThrowAsync<DatabaseUpdateException>(() => _service.RunIfDueAsync());
 
+        _unitOfWork.DidNotReceive().DiscardTrackedChanges();
         await AssertNothingClaimedOrDispatched();
     }
 
@@ -67,8 +82,7 @@ public class AgentConditionDigestSeedFailureTests
         _settingsRepository.GetSettingNoTracking(WatermarkKey).Returns(
             (SettingsEntity?)null,
             new SettingsEntity { Id = Guid.NewGuid(), Type = WatermarkKey, Value = seededByAnotherInstance });
-        var unitOfWork = Substitute.For<IUnitOfWork>();
-        unitOfWork.CompleteAsync().ThrowsAsync(failure);
+        _unitOfWork.CompleteAsync().ThrowsAsync(failure);
 
         _service = new AgentConditionDigestService(
             Substitute.For<IAgentConditionRepository>(),
@@ -76,7 +90,7 @@ public class AgentConditionDigestSeedFailureTests
             _planningAudienceResolver,
             _triggerService,
             _settingsRepository,
-            unitOfWork,
+            _unitOfWork,
             Options.Create(new BackgroundServiceOptions()),
             new FixedCompanyClock(PastTargetUtc, TimeZoneInfo.Utc),
             Substitute.For<ILogger<AgentConditionDigestService>>());
