@@ -33,6 +33,7 @@ public class GoalPlanDraftServiceTests
     private IPlanChatService _planChatService = null!;
     private IAgentPlanRepository _planRepository = null!;
     private BackgroundServiceOptions _options = null!;
+    private IScheduleActivityProbe _setupProbe = null!;
     private GoalPlanDraftService _sut = null!;
 
     [SetUp]
@@ -42,8 +43,10 @@ public class GoalPlanDraftServiceTests
         _planChatService = Substitute.For<IPlanChatService>();
         _planRepository = Substitute.For<IAgentPlanRepository>();
         _options = new BackgroundServiceOptions { GoalReflectionPlanDrafting = true };
+        _setupProbe = Substitute.For<IScheduleActivityProbe>();
         _sut = new GoalPlanDraftService(
-            _goalCandidateRepository, _planChatService, _planRepository, Options.Create(_options), NullLogger<GoalPlanDraftService>.Instance);
+            _goalCandidateRepository, _planChatService, _planRepository, new GoalTypeResolver(_setupProbe),
+            Options.Create(_options), NullLogger<GoalPlanDraftService>.Instance);
     }
 
     private static GoalCandidate MakeCandidate(string status = "approved", Guid? planId = null) => new()
@@ -67,6 +70,56 @@ public class GoalPlanDraftServiceTests
         StepsJson = stepsJson,
         Status = "drafting"
     };
+
+    [TestCase(false, TestName = "DraftForCandidateAsync_NoScheduleYetWithoutOrders_DraftsNoPlan")]
+    [TestCase(true, TestName = "DraftForCandidateAsync_NoScheduleYetWithOrdersButNoPlannableShift_DraftsNoPlan")]
+    public async Task DraftForCandidateAsync_NoScheduleYetWithoutPlannableShifts_NeverDraftsASchedulingPlan(bool hasOrders)
+    {
+        var candidate = MakeCandidate();
+        candidate.GoalType = AgentTriggerKinds.NoScheduleYet;
+        _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(hasOrders, false, false, true, true));
+
+        var result = await _sut.DraftForCandidateAsync(candidate.Id, CancellationToken.None);
+
+        result.ShouldBeNull();
+        candidate.PlanId.ShouldBeNull();
+        await _planChatService.DidNotReceiveWithAnyArgs().DraftPlanAsync(default!, default!, default, default, default!);
+        await _planRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+    }
+
+    [Test]
+    public async Task DraftForCandidateAsync_NoScheduleYetOnceWorkExists_DraftsNoPlan()
+    {
+        var candidate = MakeCandidate();
+        candidate.GoalType = AgentTriggerKinds.NoScheduleYet;
+        _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, true, true, true, true));
+
+        var result = await _sut.DraftForCandidateAsync(candidate.Id, CancellationToken.None);
+
+        result.ShouldBeNull();
+        await _planChatService.DidNotReceiveWithAnyArgs().DraftPlanAsync(default!, default!, default, default, default!);
+    }
+
+    [Test]
+    public async Task DraftForCandidateAsync_NoScheduleYetWithPlannableShifts_DraftsTheSchedulingPlan()
+    {
+        var candidate = MakeCandidate();
+        candidate.GoalType = AgentTriggerKinds.NoScheduleYet;
+        _goalCandidateRepository.GetByIdAsync(candidate.Id, Arg.Any<CancellationToken>()).Returns(candidate);
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, true, false, true, true));
+        var plan = MakePlan();
+        _planChatService.DraftPlanAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(plan);
+
+        var result = await _sut.DraftForCandidateAsync(candidate.Id, CancellationToken.None);
+
+        result.ShouldBe(plan.Id);
+    }
 
     [Test]
     public async Task DraftForCandidateAsync_CandidateNotApproved_ReturnsNullWithoutDrafting()

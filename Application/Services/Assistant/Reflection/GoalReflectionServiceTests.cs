@@ -37,6 +37,7 @@ public class GoalReflectionServiceTests
     private IPlanningAudienceResolver _planningAudienceResolver = null!;
     private ILLMProvider _provider = null!;
     private BackgroundServiceOptions _options = null!;
+    private IScheduleActivityProbe _setupProbe = null!;
     private GoalReflectionService _sut = null!;
     private List<GoalCandidate> _persistedCandidates = null!;
 
@@ -69,11 +70,13 @@ public class GoalReflectionServiceTests
         };
         _cheapestModelResolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns((model, _provider));
 
+        _setupProbe = Substitute.For<IScheduleActivityProbe>();
         _sut = new GoalReflectionService(
             _signalSource,
             _goalCandidateRepository,
             _cheapestModelResolver,
             _planningAudienceResolver,
+            new GoalTypeResolver(_setupProbe),
             Options.Create(_options),
             NullLogger<GoalReflectionService>.Instance);
     }
@@ -95,6 +98,51 @@ public class GoalReflectionServiceTests
     private void SetLlmResponse(string content) =>
         _provider.ProcessAsync(Arg.Any<LLMProviderRequest>(), Arg.Any<CancellationToken>())
             .Returns(new LLMProviderResponse { Success = true, Content = content });
+
+    [Test]
+    public async Task RunReflectionCycleAsync_NoScheduleYetWithOrdersButNoShifts_PersistsTheSealGoalWording()
+    {
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, false, false, true, true));
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA, AgentTriggerKinds.NoScheduleYet) });
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.NoScheduleYet)));
+
+        await _sut.RunReflectionCycleAsync();
+
+        var persisted = _persistedCandidates.Single();
+        persisted.GoalType.ShouldBe(AgentTriggerKinds.NoScheduleYet);
+        persisted.Title.ShouldBe(GoalTypeCatalog.FindForStage(ScheduleSetupStage.OrdersButNoShifts).PlannerTitle);
+    }
+
+    [Test]
+    public async Task RunReflectionCycleAsync_OpenOrderWithoutPlannableShifts_IsNotProposedNextToTheSetupGoal()
+    {
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, false, false, true, true));
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA, AgentTriggerKinds.OpenOrder) });
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.OpenOrder)));
+
+        var result = await _sut.RunReflectionCycleAsync();
+
+        result.ShouldBe(0);
+        _persistedCandidates.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task RunReflectionCycleAsync_NoScheduleYetOnceWorkExists_IsNotProposed()
+    {
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, true, true, true, true));
+        _signalSource.CollectAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<GoalSignal> { Signal(UserA, AgentTriggerKinds.NoScheduleYet) });
+        SetLlmResponse(Response(Candidate(AgentTriggerKinds.NoScheduleYet)));
+
+        await _sut.RunReflectionCycleAsync();
+
+        _persistedCandidates.ShouldBeEmpty();
+    }
 
     [Test]
     public async Task RunReflectionCycleAsync_NoSignals_ReturnsZeroWithoutLlmCallOrPersistence()

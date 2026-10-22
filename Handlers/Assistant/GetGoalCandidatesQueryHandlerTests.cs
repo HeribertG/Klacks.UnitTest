@@ -10,6 +10,8 @@
 
 using Klacks.Api.Application.Handlers.Assistant;
 using Klacks.Api.Application.Queries.Assistant;
+using Klacks.Api.Application.Services.Assistant.Reflection;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -26,13 +28,15 @@ public class GetGoalCandidatesQueryHandlerTests
     private const string OtherUserId = "user-b";
 
     private IGoalCandidateRepository _goalCandidateRepository = null!;
+    private IScheduleActivityProbe _setupProbe = null!;
     private GetGoalCandidatesQueryHandler _sut = null!;
 
     [SetUp]
     public void Setup()
     {
         _goalCandidateRepository = Substitute.For<IGoalCandidateRepository>();
-        _sut = new GetGoalCandidatesQueryHandler(_goalCandidateRepository);
+        _setupProbe = Substitute.For<IScheduleActivityProbe>();
+        _sut = new GetGoalCandidatesQueryHandler(_goalCandidateRepository, new GoalTypeResolver(_setupProbe));
     }
 
     private static GoalCandidate MakeCandidate(string userId) => new()
@@ -196,4 +200,70 @@ public class GetGoalCandidatesQueryHandlerTests
         dto.RationaleParams.ShouldBeNull();
         dto.TitleKey.ShouldNotBeNull();
     }
+
+    [Test]
+    public async Task Handle_StoredNoScheduleYetCandidateWithOrdersButNoShifts_ShowsTheSealGoalAndHandsItToTheChat()
+    {
+        var candidate = MakeCandidate(OwnerUserId);
+        candidate.GoalType = AgentTriggerKinds.NoScheduleYet;
+        candidate.RationaleParamsJson = "{\"count\":\"2\",\"days\":\"7\"}";
+        GivenCandidates(candidate);
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, false, false, true, true));
+
+        var result = await _sut.Handle(new GetGoalCandidatesQuery { UserId = OwnerUserId }, CancellationToken.None);
+
+        var expected = GoalTypeCatalog.FindForStage(ScheduleSetupStage.OrdersButNoShifts);
+        var dto = result.Single();
+        dto.TitleKey.ShouldBe(expected.TitleKey);
+        dto.RationaleKey.ShouldBe(expected.RationaleKey);
+        dto.ChatPromptKey.ShouldBe(SetupChatPromptKeys.SealOpenOrdersRequest);
+    }
+
+    [Test]
+    public async Task Handle_NoScheduleYetCandidateOnceWorkExists_IsNotListed()
+    {
+        var candidate = MakeCandidate(OwnerUserId);
+        candidate.GoalType = AgentTriggerKinds.NoScheduleYet;
+        GivenCandidates(candidate);
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, true, true, true, true));
+
+        var result = await _sut.Handle(new GetGoalCandidatesQuery { UserId = OwnerUserId }, CancellationToken.None);
+
+        result.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task Handle_OpenOrderCandidateWithoutPlannableShifts_IsNotListedNextToTheSetupGoal()
+    {
+        var openOrder = MakeCandidate(OwnerUserId);
+        openOrder.GoalType = AgentTriggerKinds.OpenOrder;
+        var setup = MakeCandidate(OwnerUserId);
+        setup.GoalType = AgentTriggerKinds.NoScheduleYet;
+        GivenCandidates(openOrder, setup);
+        _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>())
+            .Returns(new ScheduleSetupState(true, false, false, true, true));
+
+        var result = await _sut.Handle(new GetGoalCandidatesQuery { UserId = OwnerUserId }, CancellationToken.None);
+
+        result.Select(dto => dto.GoalType).ShouldBe([AgentTriggerKinds.NoScheduleYet]);
+    }
+
+    [Test]
+    public async Task Handle_StageIndependentCandidate_CarriesNoChatPrompt()
+    {
+        var candidate = MakeCandidate(OwnerUserId);
+        candidate.GoalType = AgentTriggerKinds.TargetHoursDrift;
+        GivenCandidates(candidate);
+
+        var result = await _sut.Handle(new GetGoalCandidatesQuery { UserId = OwnerUserId }, CancellationToken.None);
+
+        result.Single().ChatPromptKey.ShouldBeNull();
+    }
+
+    private void GivenCandidates(params GoalCandidate[] candidates) =>
+        _goalCandidateRepository
+            .GetForUserAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(candidates.ToList());
 }

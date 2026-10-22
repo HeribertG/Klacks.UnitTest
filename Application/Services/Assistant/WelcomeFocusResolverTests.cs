@@ -88,14 +88,15 @@ public class WelcomeFocusResolverTests
         result!.Kind.ShouldBe(AgentTriggerKinds.NoScheduleYet);
         result.PromptKey.ShouldBe(WelcomeFocusI18nKeys.NoOrdersPrompt);
         result.ActionKind.ShouldBe(WelcomeFocusActionKinds.Consultation);
-        result.ActionLabelKey.ShouldBe(WelcomeFocusI18nKeys.SetupConsultationAction);
+        result.ActionLabelKey.ShouldBe(WelcomeFocusI18nKeys.SetupConsultationAccept);
+        result.ActionPromptKey.ShouldBeNull();
         result.ActionRoute.ShouldBeNull();
         result.ConditionId.ShouldBeNull();
         result.PromptParams.ShouldBeEmpty();
     }
 
     [Test]
-    public async Task ResolveAsync_OrdersButNoShifts_ReturnsNoShiftsPromptAsConsultation()
+    public async Task ResolveAsync_OrdersButNoShifts_AnswersTheSealQuestionWithASealRequest()
     {
         _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>()).Returns(OrdersButNoShifts());
 
@@ -103,7 +104,9 @@ public class WelcomeFocusResolverTests
 
         result.ShouldNotBeNull();
         result!.PromptKey.ShouldBe(WelcomeFocusI18nKeys.NoShiftsPrompt);
-        result.ActionKind.ShouldBe(WelcomeFocusActionKinds.Consultation);
+        result.ActionKind.ShouldBe(WelcomeFocusActionKinds.Prompt);
+        result.ActionLabelKey.ShouldBe(WelcomeFocusI18nKeys.NoShiftsAction);
+        result.ActionPromptKey.ShouldBe(SetupChatPromptKeys.SealOpenOrdersRequest);
         result.ActionRoute.ShouldBeNull();
     }
 

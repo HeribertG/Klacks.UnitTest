@@ -9,10 +9,10 @@ namespace Klacks.UnitTest.Application.Constants;
 [TestFixture]
 public class WelcomeFocusI18nKeysTests
 {
-    private const int ExpectedKeyCount = 12;
+    private const int ExpectedKeyCount = 13;
 
     [Test]
-    public void All_ContainsExactlyTheTwelveNewFocusKeys()
+    public void All_ContainsExactlyTheThirteenFocusKeys()
     {
         WelcomeFocusI18nKeys.All.Count.ShouldBe(ExpectedKeyCount);
         WelcomeFocusI18nKeys.All.Distinct().Count().ShouldBe(ExpectedKeyCount);
@@ -32,6 +32,7 @@ public class WelcomeFocusI18nKeysTests
     {
         WelcomeFocusI18nKeys.All.ShouldContain(WelcomeFocusI18nKeys.NoOrdersPrompt);
         WelcomeFocusI18nKeys.All.ShouldContain(WelcomeFocusI18nKeys.NoShiftsPrompt);
+        WelcomeFocusI18nKeys.All.ShouldContain(WelcomeFocusI18nKeys.NoShiftsAction);
         WelcomeFocusI18nKeys.All.ShouldContain(WelcomeFocusI18nKeys.NoWorkPrompt);
         WelcomeFocusI18nKeys.All.ShouldContain(WelcomeFocusI18nKeys.PeriodOverduePrompt);
         WelcomeFocusI18nKeys.All.ShouldContain(WelcomeFocusI18nKeys.PeriodOverdueAction);
@@ -52,9 +53,17 @@ public class WelcomeFocusI18nKeysTests
     }
 
     [Test]
-    public void ActionKinds_AreTheTwoValuesTheFrontendSwitchesOn()
+    public void ActionKinds_AreTheThreeValuesTheFrontendSwitchesOn()
     {
         WelcomeFocusActionKinds.Navigate.ShouldBe("navigate");
         WelcomeFocusActionKinds.Consultation.ShouldBe("consultation");
+        WelcomeFocusActionKinds.Prompt.ShouldBe("prompt");
+    }
+
+    [Test]
+    public void SetupConsultationAccept_ReusesTheExistingOfferAcceptKey()
+    {
+        WelcomeFocusI18nKeys.SetupConsultationAccept.ShouldBe("setupConsultation.offerAccept");
+        WelcomeFocusI18nKeys.All.ShouldNotContain(WelcomeFocusI18nKeys.SetupConsultationAccept);
     }
 }

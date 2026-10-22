@@ -11,6 +11,7 @@ namespace Klacks.UnitTest.Domain.Constants;
 
 using System.Reflection;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Enums;
 
 [TestFixture]
 public class GoalTypeCatalogTests
@@ -98,6 +99,67 @@ public class GoalTypeCatalogTests
         {
             definition.PlannerRationaleFormat.ShouldContain("{0}");
             definition.PlannerRationaleFormat.ShouldContain("{1}");
+        }
+    }
+
+    [Test]
+    public void FindForStage_GivesTheStagesWithoutPlannableShiftsTheirOwnTexts()
+    {
+        var nothingYet = GoalTypeCatalog.FindForStage(ScheduleSetupStage.NothingYet);
+        var ordersButNoShifts = GoalTypeCatalog.FindForStage(ScheduleSetupStage.OrdersButNoShifts);
+
+        nothingYet.TitleKey.ShouldBe("assistant-chat.goal-candidates.type.noScheduleYet.nothingYet.title");
+        nothingYet.RationaleKey.ShouldBe("assistant-chat.goal-candidates.type.noScheduleYet.nothingYet.rationale");
+        ordersButNoShifts.TitleKey.ShouldBe("assistant-chat.goal-candidates.type.noScheduleYet.ordersButNoShifts.title");
+        ordersButNoShifts.RationaleKey.ShouldBe("assistant-chat.goal-candidates.type.noScheduleYet.ordersButNoShifts.rationale");
+        nothingYet.TriggerKind.ShouldBe(AgentTriggerKinds.NoScheduleYet);
+        ordersButNoShifts.TriggerKind.ShouldBe(AgentTriggerKinds.NoScheduleYet);
+    }
+
+    [Test]
+    public void FindForStage_ShiftsButNoWorkKeepsTheSchedulingGoal()
+    {
+        GoalTypeCatalog.FindForStage(ScheduleSetupStage.ShiftsButNoWork)
+            .ShouldBeSameAs(GoalTypeCatalog.ByTriggerKind[AgentTriggerKinds.NoScheduleYet]);
+        GoalTypeCatalog.ByTriggerKind[AgentTriggerKinds.NoScheduleYet].ChatPromptKey.ShouldBeNull();
+    }
+
+    [Test]
+    public void StagesWithoutPlannableShifts_AreHandedToTheChatInsteadOfAPlan()
+    {
+        GoalTypeCatalog.FindForStage(ScheduleSetupStage.NothingYet).ChatPromptKey
+            .ShouldBe(SetupChatPromptKeys.SetupConsultationTrigger);
+        GoalTypeCatalog.FindForStage(ScheduleSetupStage.OrdersButNoShifts).ChatPromptKey
+            .ShouldBe(SetupChatPromptKeys.SealOpenOrdersRequest);
+    }
+
+    [Test]
+    public void OnlyTheOpenOrderGoal_RequiresPlannableShifts()
+    {
+        GoalTypeCatalog.ByTriggerKind
+            .Where(entry => entry.Value.RequiresPlannableShifts)
+            .Select(entry => entry.Key)
+            .ShouldBe([AgentTriggerKinds.OpenOrder]);
+    }
+
+    [Test]
+    public void StageEntries_KeepTheCatalogueTextRules()
+    {
+        var identifiers = AllTriggerKinds().ToList();
+        var stageEntries = Enum.GetValues<ScheduleSetupStage>().Select(GoalTypeCatalog.FindForStage).ToList();
+        var allKeys = GoalTypeCatalog.ByTriggerKind.Values.Concat(stageEntries).Distinct()
+            .SelectMany(d => new[] { d.TitleKey, d.RationaleKey })
+            .ToList();
+
+        allKeys.Distinct().Count().ShouldBe(allKeys.Count);
+        foreach (var definition in stageEntries)
+        {
+            definition.PlannerRationaleFormat.ShouldContain("{0}");
+            definition.PlannerRationaleFormat.ShouldContain("{1}");
+            foreach (var text in new[] { definition.SignalDescription, definition.PlannerTitle, definition.PlannerRationaleFormat })
+            {
+                identifiers.Any(text.Contains).ShouldBeFalse($"'{text}' contains a trigger identifier.");
+            }
         }
     }
 }
