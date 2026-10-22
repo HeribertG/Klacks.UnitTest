@@ -311,10 +311,10 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         var knownKeys = new Dictionary<string, string>
         {
             ["klacksy.welcome.suggestion.edit_settings"] = "/workplace/settings",
-            ["klacksy.welcome.suggestion.manage_providers"] = "/workplace/settings/llm",
+            ["klacksy.welcome.suggestion.manage_providers"] = "/workplace/settings",
             ["klacksy.welcome.suggestion.view_schedule"] = "/workplace/schedule",
             ["klacksy.welcome.suggestion.review_absences"] = "/workplace/absence",
-            ["klacksy.welcome.suggestion.create_employee"] = "/workplace/new-employee",
+            ["klacksy.welcome.suggestion.create_employee"] = "/workplace/edit-address",
             ["klacksy.welcome.suggestion.find_person"] = "/workplace/client",
         };
 
@@ -342,6 +342,36 @@ public class GetWelcomeQueryHandlerWeatherFallbackTests
         var result = await _handler.Handle(BuildQuery(), CancellationToken.None);
 
         result.SuggestionRoutes.ShouldNotContainKey("klacksy.welcome.suggestion.show_help");
+    }
+
+    [Test]
+    public async Task SuggestionTargets_ManageProvidersScrollsToTheLlmProviderSection()
+    {
+        _suggestionsRanker
+            .RankAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<string>)new List<string>
+            {
+                "klacksy.welcome.suggestion.manage_providers",
+                "klacksy.welcome.suggestion.edit_settings",
+            });
+
+        var result = await _handler.Handle(BuildQuery(), CancellationToken.None);
+
+        result.SuggestionRoutes["klacksy.welcome.suggestion.manage_providers"].ShouldBe("/workplace/settings");
+        result.SuggestionTargets["klacksy.welcome.suggestion.manage_providers"].ShouldBe("llm-provider");
+        result.SuggestionTargets.ShouldNotContainKey("klacksy.welcome.suggestion.edit_settings");
+    }
+
+    [Test]
+    public async Task SuggestionTargets_OnlyCarriesTargetsOfRankedSuggestions()
+    {
+        _suggestionsRanker
+            .RankAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyList<string>)new List<string> { "klacksy.welcome.suggestion.find_person" });
+
+        var result = await _handler.Handle(BuildQuery(), CancellationToken.None);
+
+        result.SuggestionTargets.ShouldBeEmpty();
     }
 
     private GetWelcomeQuery BuildQuery() => new()

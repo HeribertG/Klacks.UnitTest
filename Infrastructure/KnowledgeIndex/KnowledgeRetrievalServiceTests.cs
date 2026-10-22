@@ -278,6 +278,26 @@ public class KnowledgeRetrievalServiceTests
         result.Candidates[0].Entry.SourceId.ShouldBe("create_shift");
     }
 
+    [TestCase("/workplace/client", "get_client_details")]
+    [TestCase("/workplace/settings", "update_llm_provider")]
+    [TestCase("/workplace/settings", "update_general_settings")]
+    public async Task RetrieveAsync_RealAngularRoute_LiftsItsPageSkill(string route, string pageSkillName)
+    {
+        var pageSkill = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = pageSkillName, Text = "Page skill." };
+        var unrelated = new KnowledgeEntry { Kind = KnowledgeEntryKind.Skill, SourceId = "unrelated_skill", Text = "Something else." };
+
+        _repo.FindNearestAsync(Arg.Any<float[]>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([pageSkill, unrelated]);
+
+        _reranker.ScoreAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new double[] { 0.5, 0.53 });
+
+        var result = await _service.RetrieveAsync(
+            "query", [], false, 5, route, CancellationToken.None);
+
+        result.Candidates[0].Entry.SourceId.ShouldBe(pageSkillName);
+    }
+
     [Test]
     public async Task RetrieveAsync_CurrentRouteNotInBoostTable_NoBoostApplied()
     {
