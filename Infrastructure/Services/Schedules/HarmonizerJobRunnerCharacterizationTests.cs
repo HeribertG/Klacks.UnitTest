@@ -53,7 +53,7 @@ public class HarmonizerJobRunnerCharacterizationTests
     private IHarmonizerJobClient _client = null!;
     private HarmonizerResultCache _resultCache = null!;
     private JobTerminalStateCache<HarmonizerJobResultDto> _stateCache = null!;
-    private RecordingLogger<HarmonizerJobRunner> _logger = null!;
+    private ConcurrentRecordingLogger<HarmonizerJobRunner> _logger = null!;
     private HarmonizerJobRunner _runner = null!;
     private ScheduleSnapshotMarker _marker = null!;
     private BitmapInput _input = null!;
@@ -100,7 +100,7 @@ public class HarmonizerJobRunnerCharacterizationTests
 
         _resultCache = new HarmonizerResultCache();
         _stateCache = JobTerminalStateCacheTestFactory.Create<HarmonizerJobResultDto>();
-        _logger = new RecordingLogger<HarmonizerJobRunner>();
+        _logger = new ConcurrentRecordingLogger<HarmonizerJobRunner>();
         _runner = new HarmonizerJobRunner(
             _provider.GetRequiredService<IServiceScopeFactory>(),
             _hub,

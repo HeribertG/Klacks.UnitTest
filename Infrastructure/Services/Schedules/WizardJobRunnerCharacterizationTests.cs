@@ -53,7 +53,7 @@ public class WizardJobRunnerCharacterizationTests
     private IWizardJobClient _client = null!;
     private WizardResultCache _resultCache = null!;
     private JobTerminalStateCache<WizardJobResultDto> _stateCache = null!;
-    private ConcurrentRecordingLogger _logger = null!;
+    private ConcurrentRecordingLogger<WizardJobRunner> _logger = null!;
     private WizardJobRunner _runner = null!;
     private CoreWizardContext _context = null!;
     private WizardJobResultDto? _completedDto;
@@ -95,7 +95,7 @@ public class WizardJobRunnerCharacterizationTests
 
         _resultCache = new WizardResultCache();
         _stateCache = JobTerminalStateCacheTestFactory.Create<WizardJobResultDto>();
-        _logger = new ConcurrentRecordingLogger();
+        _logger = new ConcurrentRecordingLogger<WizardJobRunner>();
         _runner = new WizardJobRunner(
             _provider.GetRequiredService<IServiceScopeFactory>(),
             _hub,
@@ -441,24 +441,6 @@ public class WizardJobRunnerCharacterizationTests
     }
 
     private static string Json<T>(T value) => JsonSerializer.Serialize(value);
-
-    /// <summary>
-    /// Thread-safe recording logger: the GA reports progress on pool threads while the runner logs on its own.
-    /// </summary>
-    private sealed class ConcurrentRecordingLogger : ILogger<WizardJobRunner>
-    {
-        private readonly ConcurrentQueue<RecordedLogEntry> _entries = new();
-
-        public List<RecordedLogEntry> Entries => _entries.ToList();
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
-            _entries.Enqueue(new RecordedLogEntry(logLevel, formatter(state, exception), exception));
-    }
 
     private static CoreWizardContext BuildContext() => new()
     {
