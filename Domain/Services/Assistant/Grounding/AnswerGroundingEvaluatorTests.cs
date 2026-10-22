@@ -158,6 +158,7 @@ public class AnswerGroundingEvaluatorTests
     [TestCase(nameof(LLMFunctionCall.IsRejectedRepeat))]
     [TestCase(nameof(LLMFunctionCall.IsRejectedOutsideToolset))]
     [TestCase(nameof(LLMFunctionCall.IsRejectedByReadOnlyRecipeGuard))]
+    [TestCase(nameof(LLMFunctionCall.IsRejectedAfterNameAskBack))]
     public async Task CallRejectedWithoutRunning_DoesNotSkipTheTurn(string flag)
     {
         var rejected = new LLMFunctionCall { FunctionName = "x", Success = false };
