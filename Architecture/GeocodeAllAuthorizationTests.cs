@@ -41,6 +41,13 @@ public class GeocodeAllAuthorizationTests
         attributes.ShouldAllBe(a => a.AuthenticationSchemes == JwtBearerDefaults.AuthenticationScheme);
     }
 
+    [Test]
+    public void GeocodeAll_IsNotMarkedAllowAnonymous()
+    {
+        GeocodeAllAction().GetCustomAttributes<AllowAnonymousAttribute>(inherit: true).ShouldBeEmpty();
+        typeof(RouteOptimizationController).GetCustomAttributes<AllowAnonymousAttribute>(inherit: true).ShouldBeEmpty();
+    }
+
     private static MethodInfo GeocodeAllAction()
     {
         var action = typeof(RouteOptimizationController)
