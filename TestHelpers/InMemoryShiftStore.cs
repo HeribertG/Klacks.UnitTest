@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Klacks.UnitTest.TestHelpers;
 
 /// <summary>
-/// A fresh EF Core InMemory database with the real ShiftRepository and ContainerTemplateRepository on top, so a
+/// A fresh EF Core InMemory database with the real ShiftRepository, ShiftReader and ContainerTemplateRepository on top, so a
 /// caller's shift reads run through the repository's own query (filters, order, cap) instead of a substitute that
 /// only replays a list. The store cannot prove SQL translation; the Npgsql integration tests do that.
 /// </summary>
@@ -37,6 +37,8 @@ public sealed class InMemoryShiftStore : IDisposable
             new ScheduleMapper(),
             companyClock ?? new FixedCompanyClock(DateTimeOffset.UtcNow));
 
+        Reader = new ShiftReader(Context);
+
         ContainerTemplates = new ContainerTemplateRepository(
             Context,
             Substitute.For<ILogger<ContainerTemplate>>(),
@@ -47,6 +49,8 @@ public sealed class InMemoryShiftStore : IDisposable
     public DataBaseContext Context { get; }
 
     public ShiftRepository Shifts { get; }
+
+    public ShiftReader Reader { get; }
 
     public ContainerTemplateRepository ContainerTemplates { get; }
 

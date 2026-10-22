@@ -17,6 +17,7 @@ namespace Klacks.UnitTest.Skills;
 public class CutShiftByDateSkillTests
 {
     private IShiftRepository _shiftRepository = null!;
+    private IShiftReader _shiftReader = null!;
     private IShiftCutFacade _shiftCutFacade = null!;
     private CutShiftByDateSkill _skill = null!;
 
@@ -29,8 +30,9 @@ public class CutShiftByDateSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftReader = Substitute.For<IShiftReader>();
         _shiftCutFacade = Substitute.For<IShiftCutFacade>();
-        _skill = new CutShiftByDateSkill(_shiftRepository, _shiftCutFacade, ShiftVisibilityGuards.AllowAll());
+        _skill = new CutShiftByDateSkill(_shiftRepository, _shiftReader, _shiftCutFacade, ShiftVisibilityGuards.AllowAll());
 
         _shiftRepository.GetGroupsForShift(Arg.Any<Guid>()).Returns(new List<Group>());
         _shiftCutFacade.ProcessBatchCutsAsync(Arg.Any<List<CutOperation>>()).Returns(new List<Shift>());
@@ -109,7 +111,7 @@ public class CutShiftByDateSkillTests
         var target = MakeOriginalShift();
 
         _shiftRepository.Get(SealedOrderId).Returns(sealedOrder);
-        _shiftRepository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { target }));
+        ShiftLineageStub.Serve(_shiftReader, () => [target]);
 
         List<CutOperation>? capturedOps = null;
         _shiftCutFacade.ProcessBatchCutsAsync(Arg.Do<List<CutOperation>>(ops => capturedOps = ops))

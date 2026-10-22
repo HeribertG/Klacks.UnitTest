@@ -26,6 +26,7 @@ public class CutShiftSkillCharacterizationTests
     private static readonly Guid GroupB = Guid.Parse("66666666-6666-6666-6666-666666666666");
 
     private IShiftRepository _shiftRepository = null!;
+    private IShiftReader _shiftReader = null!;
     private IShiftCutFacade _shiftCutFacade = null!;
     private IShiftVisibilityGuard _visibilityGuard = null!;
     private CutShiftSkill _skill = null!;
@@ -47,6 +48,7 @@ public class CutShiftSkillCharacterizationTests
         _facadeResult = [new Shift(), new Shift()];
 
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftReader = Substitute.For<IShiftReader>();
         _shiftCutFacade = Substitute.For<IShiftCutFacade>();
         _visibilityGuard = Substitute.For<IShiftVisibilityGuard>();
 
@@ -54,8 +56,7 @@ public class CutShiftSkillCharacterizationTests
             .Returns(_ => { _calls.Add("get"); return _loaded; });
         _visibilityGuard.IsVisibleAsync(Arg.Any<Shift>(), Arg.Any<CancellationToken>())
             .Returns(_ => { _calls.Add("visible"); return _visible; });
-        _shiftRepository.GetQuery()
-            .Returns(_ => { _calls.Add("query"); return new TestAsyncEnumerable<Shift>(_queryRows); });
+        ShiftLineageStub.Serve(_shiftReader, () => _queryRows, () => _calls.Add("query"));
         _shiftRepository.GetGroupsForShift(Arg.Any<Guid>())
             .Returns(_ =>
             {
@@ -70,7 +71,7 @@ public class CutShiftSkillCharacterizationTests
                 return _facadeResult;
             });
 
-        _skill = new CutShiftSkill(_shiftRepository, _shiftCutFacade, _visibilityGuard);
+        _skill = new CutShiftSkill(_shiftRepository, _shiftReader, _shiftCutFacade, _visibilityGuard);
     }
 
     private static Shift Original() => new()

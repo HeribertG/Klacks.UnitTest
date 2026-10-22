@@ -7,8 +7,8 @@ namespace Klacks.UnitTest.TestHelpers;
 /// <summary>
 /// In-memory IQueryable that also implements IAsyncEnumerable so that EF Core async terminators
 /// (ToListAsync, CountAsync, FirstOrDefaultAsync) work against substituted services that return a
-/// raw IQueryable (e.g. ClientAvailabilityScheduleService.GetClientAvailabilityQuery, backed by a stored procedure
-/// that cannot run on the in-memory provider). Wrap a plain list and feed it to the service mock.
+/// raw IQueryable (e.g. a repository GetQuery() whose provider cannot run in memory). Wrap a plain list and feed
+/// it to the mock.
 /// </summary>
 internal sealed class TestAsyncEnumerable<T> : EnumerableQuery<T>, IAsyncEnumerable<T>, IQueryable<T>
 {

@@ -1,7 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Tests for GetClientAvailabilityRangesQueryHandler: pass-through mapping from the SQL-function-backed schedule service.
+/// Tests for GetClientAvailabilityRangesQueryHandler: pass-through mapping from the SQL-function-backed schedule service, which the stubs answer materialised.
 /// </summary>
 using Klacks.Api.Application.DTOs.Staffs;
 using Klacks.Api.Application.Handlers.ClientAvailabilities;
@@ -37,8 +37,8 @@ public class GetClientAvailabilityRangesQueryHandlerTests
             AvailabilityDate = new DateTime(2026, 3, 10),
             AvailabilityRanges = "08:00-12:00,14:00-18:00"
         };
-        _scheduleService.GetClientAvailabilityQuery(default, default, default)
-            .ReturnsForAnyArgs(new TestAsyncEnumerable<ClientAvailabilityScheduleEntry>(new[] { entry }));
+        _scheduleService.GetClientAvailabilityAsync(default, default, default!, default)
+            .ReturnsForAnyArgs(new[] { entry });
 
         var result = await _handler.Handle(
             new GetClientAvailabilityRangesQuery(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), new List<Guid> { clientId }),
@@ -60,8 +60,8 @@ public class GetClientAvailabilityRangesQueryHandlerTests
             new ClientAvailabilityScheduleEntry { ClientId = clientA, AvailabilityDate = new DateTime(2026, 3, 1), AvailabilityRanges = "09:00-11:00" },
             new ClientAvailabilityScheduleEntry { ClientId = clientB, AvailabilityDate = new DateTime(2026, 3, 2), AvailabilityRanges = "13:00-17:00" },
         };
-        _scheduleService.GetClientAvailabilityQuery(default, default, default)
-            .ReturnsForAnyArgs(new TestAsyncEnumerable<ClientAvailabilityScheduleEntry>(entries));
+        _scheduleService.GetClientAvailabilityAsync(default, default, default!, default)
+            .ReturnsForAnyArgs(entries);
 
         var result = await _handler.Handle(
             new GetClientAvailabilityRangesQuery(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), new List<Guid> { clientA, clientB }),
@@ -75,31 +75,31 @@ public class GetClientAvailabilityRangesQueryHandlerTests
     [Test]
     public async Task Handle_EmptyClientIds_ReturnsEmptyResult()
     {
-        _scheduleService.GetClientAvailabilityQuery(default, default, default)
-            .ReturnsForAnyArgs(new TestAsyncEnumerable<ClientAvailabilityScheduleEntry>(Enumerable.Empty<ClientAvailabilityScheduleEntry>()));
+        _scheduleService.GetClientAvailabilityAsync(default, default, default!, default)
+            .ReturnsForAnyArgs(Array.Empty<ClientAvailabilityScheduleEntry>());
 
         var result = await _handler.Handle(
             new GetClientAvailabilityRangesQuery(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), new List<Guid>()),
             CancellationToken.None);
 
         result.ShouldBeEmpty();
-        _scheduleService.Received(1).GetClientAvailabilityQuery(
-            new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), Arg.Is<List<Guid>>(l => l.Count == 0));
+        await _scheduleService.Received(1).GetClientAvailabilityAsync(
+            new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), Arg.Is<IReadOnlyCollection<Guid>>(l => l.Count == 0), Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task Handle_PassesStartEndDateAndClientIdsToService()
     {
         var clientId = Guid.NewGuid();
-        _scheduleService.GetClientAvailabilityQuery(default, default, default)
-            .ReturnsForAnyArgs(new TestAsyncEnumerable<ClientAvailabilityScheduleEntry>(Enumerable.Empty<ClientAvailabilityScheduleEntry>()));
+        _scheduleService.GetClientAvailabilityAsync(default, default, default!, default)
+            .ReturnsForAnyArgs(Array.Empty<ClientAvailabilityScheduleEntry>());
 
         var startDate = new DateOnly(2026, 4, 1);
         var endDate = new DateOnly(2026, 4, 30);
         await _handler.Handle(new GetClientAvailabilityRangesQuery(startDate, endDate, new List<Guid> { clientId }), CancellationToken.None);
 
-        _scheduleService.Received(1).GetClientAvailabilityQuery(
-            startDate, endDate, Arg.Is<List<Guid>>(l => l.Single() == clientId));
+        await _scheduleService.Received(1).GetClientAvailabilityAsync(
+            startDate, endDate, Arg.Is<IReadOnlyCollection<Guid>>(l => l.Single() == clientId), Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -107,8 +107,8 @@ public class GetClientAvailabilityRangesQueryHandlerTests
     {
         var visibleClientId = Guid.NewGuid();
         var hiddenClientId = Guid.NewGuid();
-        _scheduleService.GetClientAvailabilityQuery(default, default, default)
-            .ReturnsForAnyArgs(new TestAsyncEnumerable<ClientAvailabilityScheduleEntry>(Enumerable.Empty<ClientAvailabilityScheduleEntry>()));
+        _scheduleService.GetClientAvailabilityAsync(default, default, default!, default)
+            .ReturnsForAnyArgs(Array.Empty<ClientAvailabilityScheduleEntry>());
         var handler = new GetClientAvailabilityRangesQueryHandler(
             _scheduleService,
             TestGroupWriteVisibility.ClientsHidden(hiddenClientId),
@@ -119,7 +119,7 @@ public class GetClientAvailabilityRangesQueryHandlerTests
                 new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), new List<Guid> { visibleClientId, hiddenClientId }),
             CancellationToken.None);
 
-        _scheduleService.Received(1).GetClientAvailabilityQuery(
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Is<List<Guid>>(l => l.Single() == visibleClientId));
+        await _scheduleService.Received(1).GetClientAvailabilityAsync(
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Is<IReadOnlyCollection<Guid>>(l => l.Single() == visibleClientId), Arg.Any<CancellationToken>());
     }
 }

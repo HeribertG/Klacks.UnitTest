@@ -40,7 +40,7 @@ public class UncutFullDayShiftDetectorTests
         _agentConditionRepository = Substitute.For<IAgentConditionRepository>();
         SetOpenLedgerRows();
         _sut = new UncutFullDayShiftDetector(
-            _store.Shifts, _groupScopeReader, _agentConditionRepository,
+            _store.Reader, _groupScopeReader, _agentConditionRepository,
             new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<UncutFullDayShiftDetector>.Instance);
     }
 
@@ -432,7 +432,7 @@ public class UncutFullDayShiftDetectorTests
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
         _sut = new UncutFullDayShiftDetector(
-            _store.Shifts, _groupScopeReader, _agentConditionRepository, clock, NullLogger<UncutFullDayShiftDetector>.Instance);
+            _store.Reader, _groupScopeReader, _agentConditionRepository, clock, NullLogger<UncutFullDayShiftDetector>.Instance);
         var shift = MakeUncutFullDayShift(new DateOnly(2026, 6, 30));
         SetupQuery(shift);
 

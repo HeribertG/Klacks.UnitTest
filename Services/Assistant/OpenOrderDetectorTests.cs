@@ -29,7 +29,7 @@ public class OpenOrderDetectorTests
     {
         _store = new InMemoryShiftStore();
         _groupScopeReader = ShiftGroupScopeReaderStub.WithoutAnyGroups();
-        _sut = new OpenOrderDetector(_store.Shifts, _groupScopeReader, new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<OpenOrderDetector>.Instance);
+        _sut = new OpenOrderDetector(_store.Reader, _groupScopeReader, new FixedCompanyClock(DateTimeOffset.UtcNow), NullLogger<OpenOrderDetector>.Instance);
     }
 
     [TearDown]
@@ -272,7 +272,7 @@ public class OpenOrderDetectorTests
             "2026-06-27T23:30:00Z", System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
-        _sut = new OpenOrderDetector(_store.Shifts, _groupScopeReader, clock, NullLogger<OpenOrderDetector>.Instance);
+        _sut = new OpenOrderDetector(_store.Reader, _groupScopeReader, clock, NullLogger<OpenOrderDetector>.Instance);
         var shift = MakeShift(new DateOnly(2026, 6, 30));
         _store.Seed(shift);
 

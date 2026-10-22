@@ -35,7 +35,7 @@ public class GetShiftsByIdsQueryHandlerTests
         _groupFilter = Substitute.For<IShiftGroupFilterService>();
         _groupFilter.ResolveShiftListGroupIdsAsync(null).Returns((List<Guid>?)null);
         _sut = new GetShiftsByIdsQueryHandler(
-            _store.Shifts, _groupFilter, new ScheduleMapper(), NullLogger<GetShiftsByIdsQueryHandler>.Instance);
+            _store.Reader, _groupFilter, new ScheduleMapper(), NullLogger<GetShiftsByIdsQueryHandler>.Instance);
     }
 
     [TearDown]

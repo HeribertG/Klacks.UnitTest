@@ -19,6 +19,7 @@ namespace Klacks.UnitTest.Skills;
 public class ResetShiftCutsSkillTests
 {
     private IShiftRepository _shiftRepository = null!;
+    private IShiftReader _shiftReader = null!;
     private IMediator _mediator = null!;
     private ResetShiftCutsSkill _skill = null!;
 
@@ -31,8 +32,9 @@ public class ResetShiftCutsSkillTests
     public void Setup()
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
+        _shiftReader = Substitute.For<IShiftReader>();
         _mediator = Substitute.For<IMediator>();
-        _skill = new ResetShiftCutsSkill(_shiftRepository, _mediator, ShiftVisibilityGuards.AllowAll());
+        _skill = new ResetShiftCutsSkill(_shiftRepository, _shiftReader, _mediator, ShiftVisibilityGuards.AllowAll());
 
         var part = new Shift
         {
@@ -48,7 +50,7 @@ public class ResetShiftCutsSkillTests
         var sealedOrder = new Shift { Id = SealedOrderId, Name = "24h-Schichtdienst", Status = ShiftStatus.SealedOrder, FromDate = OrderFrom, UntilDate = OrderUntil };
         _shiftRepository.GetSealedOrder(SealedOrderId).Returns(sealedOrder);
 
-        _shiftRepository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift> { part }));
+        ShiftLineageStub.Serve(_shiftReader, () => [part]);
 
         _mediator.Send(Arg.Any<GetResetDateRangeQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ResetDateRangeResponse { EarliestResetDate = OrderFrom, UntilDate = OrderUntil });
@@ -102,7 +104,7 @@ public class ResetShiftCutsSkillTests
     [Test]
     public async Task ReturnsError_WhenOrderIsNotSplit()
     {
-        _shiftRepository.GetQuery().Returns(new TestAsyncEnumerable<Shift>(new List<Shift>()));
+        ShiftLineageStub.Serve(_shiftReader, () => []);
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(PartId, new DateOnly(2026, 6, 1)));
 

@@ -61,7 +61,7 @@ public class DetectorFingerprintContainmentTests
             .ToList();
         store.Seed(orders);
 
-        var sut = new OpenOrderDetector(store.Shifts, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<OpenOrderDetector>.Instance);
+        var sut = new OpenOrderDetector(store.Reader, ShiftGroupScopeReaderStub.WithoutAnyGroups(), FixedClock(), NullLogger<OpenOrderDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: OpenOrderDetector.MaxCandidatesToScan);
     }
@@ -93,7 +93,7 @@ public class DetectorFingerprintContainmentTests
             .Returns(new List<AgentCondition>());
 
         var sut = new UncutFullDayShiftDetector(
-            store.Shifts, ShiftGroupScopeReaderStub.WithoutAnyGroups(), agentConditionRepository,
+            store.Reader, ShiftGroupScopeReaderStub.WithoutAnyGroups(), agentConditionRepository,
             FixedClock(), NullLogger<UncutFullDayShiftDetector>.Instance);
 
         await AssertContainmentAsync(sut, sut, expectedCappedCount: UncutFullDayShiftDetector.MaxFindingsPerTick);
@@ -127,7 +127,7 @@ public class DetectorFingerprintContainmentTests
             .Returns(containers.Select(container => new AgentCondition { EntityId = container.Id }).ToList());
 
         var sut = new EmptyContainerDetector(
-            store.Shifts, store.ContainerTemplates, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
+            store.Reader, store.ContainerTemplates, ShiftGroupScopeReaderStub.WithoutAnyGroups(),
             agentConditionRepository, FixedClock(), NullLogger<EmptyContainerDetector>.Instance);
 
         var fingerprints = await AssertContainmentAsync(

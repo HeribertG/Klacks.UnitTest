@@ -8,13 +8,12 @@
 /// Shift and ContainerTemplate, dedup-key stability, the active-period severity rule, the
 /// MaxFindingsPerTick emission cap, and the rotation that decides which candidates fill that
 /// cap -- never-opened candidates first, then the open ledger rows least recently observed.
-/// Uses a real EF Core InMemory DataBaseContext with the real ShiftRepository and
-/// ContainerTemplateRepository (as ContainerAvailableTasksServiceTests.cs does) because the
-/// detector composes IQueryable via GetQuery() and awaits ToListAsync(), which a plain
-/// NSubstitute-mocked IQueryable cannot support.
+/// Uses a real EF Core InMemory DataBaseContext with the real ShiftReader and
+/// ContainerTemplateRepository (as ContainerAvailableTasksServiceTests.cs does), so the scan's filters,
+/// order and anti-join are the readers' own (ScanRealPlanKeysAsync, ScanRealPlanAsync,
+/// GetContainerIdsWithTemplateAsync) rather than a replayed list.
 /// </summary>
 
-using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Services.Assistant.Triggers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Schedules;
@@ -36,7 +35,7 @@ public class EmptyContainerDetectorTests
     private const int RotationBacklogOverflow = 10;
 
     private DataBaseContext _context = null!;
-    private ShiftRepository _shiftRepository = null!;
+    private ShiftReader _shiftReader = null!;
     private ContainerTemplateRepository _containerTemplateRepository = null!;
     private IShiftGroupScopeReader _groupScopeReader = null!;
     private AgentConditionRepository _agentConditionRepository = null!;
@@ -52,25 +51,11 @@ public class EmptyContainerDetectorTests
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
 
-        var shiftLogger = Substitute.For<ILogger<Shift>>();
         var containerTemplateLogger = Substitute.For<ILogger<ContainerTemplate>>();
         var detectorLogger = Substitute.For<ILogger<EmptyContainerDetector>>();
 
         var collectionUpdateService = new EntityCollectionUpdateService(_context);
-        var shiftValidator = Substitute.For<IShiftValidator>();
-        var queryPipeline = Substitute.For<IShiftQueryPipelineService>();
-        var groupManagementService = Substitute.For<IShiftGroupManagementService>();
-        var scheduleMapper = new ScheduleMapper();
-
-        _shiftRepository = new ShiftRepository(
-            _context,
-            shiftLogger,
-            queryPipeline,
-            groupManagementService,
-            collectionUpdateService,
-            shiftValidator,
-            scheduleMapper,
-            new FixedCompanyClock(DateTimeOffset.UtcNow));
+        _shiftReader = new ShiftReader(_context);
 
         var containerTemplateServiceLogger = Substitute.For<ILogger<ContainerTemplateService>>();
         var unitOfWork = Substitute.For<IUnitOfWork>();
@@ -86,7 +71,7 @@ public class EmptyContainerDetectorTests
         _agentConditionRepository = new AgentConditionRepository(_context);
 
         _sut = new EmptyContainerDetector(
-            _shiftRepository, _containerTemplateRepository, _groupScopeReader, _agentConditionRepository,
+            _shiftReader, _containerTemplateRepository, _groupScopeReader, _agentConditionRepository,
             new FixedCompanyClock(DateTimeOffset.UtcNow), detectorLogger);
     }
 
@@ -579,7 +564,7 @@ public class EmptyContainerDetectorTests
             System.Globalization.DateTimeStyles.AdjustToUniversal);
         var clock = new FixedCompanyClock(instant, TimeZoneInfo.FindSystemTimeZoneById("Pacific/Auckland"));
         _sut = new EmptyContainerDetector(
-            _shiftRepository, _containerTemplateRepository, _groupScopeReader, _agentConditionRepository,
+            _shiftReader, _containerTemplateRepository, _groupScopeReader, _agentConditionRepository,
             clock, Substitute.For<ILogger<EmptyContainerDetector>>());
         var container = MakeContainer(new DateOnly(2026, 6, 28), new DateOnly(2026, 6, 30));
         await _context.Shift.AddAsync(container);

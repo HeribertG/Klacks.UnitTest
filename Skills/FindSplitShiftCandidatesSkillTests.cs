@@ -39,7 +39,7 @@ public class FindSplitShiftCandidatesSkillTests
                 Items = [new GroupSearchItem { Id = GroupId, Name = GroupName }],
                 TotalCount = 1,
             });
-        _sut = new FindSplitShiftCandidatesSkill(_store.Shifts, _groupSearch);
+        _sut = new FindSplitShiftCandidatesSkill(_store.Reader, _groupSearch);
     }
 
     [TearDown]
@@ -98,6 +98,24 @@ public class FindSplitShiftCandidatesSkillTests
         order.GetProperty("SealedOrderId").GetGuid().ShouldBe(hiddenOrderId);
         order.GetProperty("OrderShiftId").GetGuid().ShouldBe(plan.Id);
         order.GetProperty("Name").GetString().ShouldBe("Plan only");
+    }
+
+    /// <summary>
+    /// Pins a known gap, not the wanted behaviour: the read has no scenario filter, and ScenarioShiftCloner copies a
+    /// group's shifts together with their group links, so a scenario copy of an order is listed as a second order.
+    /// </summary>
+    [Test]
+    public async Task KnownGap_AScenarioCopyOfAnOrder_IsListedAsASecondOrder()
+    {
+        var real = Make("Alpha", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0));
+        var scenarioCopy = Make("Alpha", ShiftStatus.SealedOrder, originalId: null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0));
+        scenarioCopy.AnalyseToken = Guid.NewGuid();
+        scenarioCopy.ScenarioSourceShiftId = real.Id;
+        _store.Seed(real, scenarioCopy);
+
+        var orders = await OrdersAsync();
+
+        orders.Select(o => o.GetProperty("SealedOrderId").GetGuid()).ShouldBe([real.Id, scenarioCopy.Id], ignoreOrder: true);
     }
 
     private async Task<List<JsonElement>> OrdersAsync()
