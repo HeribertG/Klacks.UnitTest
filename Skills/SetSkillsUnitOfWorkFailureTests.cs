@@ -4,9 +4,10 @@
 /// Pins what set_client_qualification, set_shift_required_qualification and set_shift_preferences do when their command
 /// fails. The commands persist through IUnitOfWork.CompleteAsync, which turns every EF Core write failure into the Domain
 /// DatabaseUpdateException (unknown employee/shift/qualification = foreign-key violation) or ConcurrencyException
-/// (Klacks.IntegrationTest UnitOfWorkFailureTranslationTests proves it on PostgreSQL); neither is an EF Core
-/// DbUpdateException, so both escape the skills unchanged. A KeyNotFoundException (caller may not see the employee/shift)
-/// becomes the skill's error message in the two qualification skills and escapes set_shift_preferences.
+/// (Klacks.IntegrationTest UnitOfWorkFailureTranslationTests proves it on PostgreSQL). A foreign-key violation becomes the
+/// skill's friendly error message; every other database failure and a concurrency failure escape unchanged. A
+/// KeyNotFoundException (caller may not see the employee/shift) becomes the skill's error message in the two qualification
+/// skills and escapes set_shift_preferences.
 /// </summary>
 
 using Klacks.Api.Application.Commands.ClientShiftPreferences;
@@ -23,22 +24,64 @@ public class SetSkillsUnitOfWorkFailureTests
 {
     private const string ClientQualificationError = "Could not set the qualification — the employee or qualification id may not exist.";
     private const string RequiredQualificationError = "Could not set the required qualification — the shift or qualification id may not exist.";
+    private const string PreferenceError = "Could not set the preference — the employee or shift id may not exist.";
 
     private static readonly Guid ClientId = Guid.NewGuid();
     private static readonly Guid ShiftId = Guid.NewGuid();
     private static readonly Guid QualificationId = Guid.NewGuid();
 
-    private static IEnumerable<TestCaseData> UnitOfWorkFailures()
+    private static IEnumerable<TestCaseData> EscapingUnitOfWorkFailures()
     {
         yield return new TestCaseData((Func<Exception>)(() =>
-            new DatabaseUpdateException("insert or update violates foreign key constraint", isForeignKeyViolation: true)))
-            .SetName("{m}_ForeignKeyViolation");
+            new DatabaseUpdateException("duplicate key value", isDuplicate: true)))
+            .SetName("{m}_DuplicateKey");
+        yield return new TestCaseData((Func<Exception>)(() => new DatabaseUpdateException("database error")))
+            .SetName("{m}_OtherDatabaseFailure");
         yield return new TestCaseData((Func<Exception>)(() => new ConcurrencyException("modified by another user")))
             .SetName("{m}_ConcurrencyFailure");
     }
 
-    [TestCaseSource(nameof(UnitOfWorkFailures))]
-    public async Task SetClientQualification_UnitOfWorkFailure_Escapes(Func<Exception> failure)
+    private static DatabaseUpdateException ForeignKeyViolation() =>
+        new("insert or update violates foreign key constraint", isForeignKeyViolation: true);
+
+    [Test]
+    public async Task SetClientQualification_ForeignKeyViolation_ReturnsTheErrorMessage()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<SetClientQualificationCommand>(), Arg.Any<CancellationToken>()).ThrowsAsync(ForeignKeyViolation());
+
+        var result = await new SetClientQualificationSkill(mediator).ExecuteAsync(Ctx(), ClientQualificationParameters());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(ClientQualificationError);
+    }
+
+    [Test]
+    public async Task SetShiftRequiredQualification_ForeignKeyViolation_ReturnsTheErrorMessage()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<SetShiftRequiredQualificationCommand>(), Arg.Any<CancellationToken>()).ThrowsAsync(ForeignKeyViolation());
+
+        var result = await new SetShiftRequiredQualificationSkill(mediator).ExecuteAsync(Ctx(), RequiredQualificationParameters());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(RequiredQualificationError);
+    }
+
+    [Test]
+    public async Task SetShiftPreferences_ForeignKeyViolation_ReturnsTheErrorMessage()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<SetShiftPreferenceCommand>(), Arg.Any<CancellationToken>()).ThrowsAsync(ForeignKeyViolation());
+
+        var result = await new SetShiftPreferencesSkill(mediator).ExecuteAsync(Ctx(), PreferenceParameters());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(PreferenceError);
+    }
+
+    [TestCaseSource(nameof(EscapingUnitOfWorkFailures))]
+    public async Task SetClientQualification_OtherUnitOfWorkFailure_Escapes(Func<Exception> failure)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<SetClientQualificationCommand>(), Arg.Any<CancellationToken>()).ThrowsAsync(failure());
@@ -48,8 +91,8 @@ public class SetSkillsUnitOfWorkFailureTests
         thrown.GetType().ShouldBe(failure().GetType());
     }
 
-    [TestCaseSource(nameof(UnitOfWorkFailures))]
-    public async Task SetShiftRequiredQualification_UnitOfWorkFailure_Escapes(Func<Exception> failure)
+    [TestCaseSource(nameof(EscapingUnitOfWorkFailures))]
+    public async Task SetShiftRequiredQualification_OtherUnitOfWorkFailure_Escapes(Func<Exception> failure)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<SetShiftRequiredQualificationCommand>(), Arg.Any<CancellationToken>()).ThrowsAsync(failure());
@@ -59,8 +102,8 @@ public class SetSkillsUnitOfWorkFailureTests
         thrown.GetType().ShouldBe(failure().GetType());
     }
 
-    [TestCaseSource(nameof(UnitOfWorkFailures))]
-    public async Task SetShiftPreferences_UnitOfWorkFailure_Escapes(Func<Exception> failure)
+    [TestCaseSource(nameof(EscapingUnitOfWorkFailures))]
+    public async Task SetShiftPreferences_OtherUnitOfWorkFailure_Escapes(Func<Exception> failure)
     {
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<SetShiftPreferenceCommand>(), Arg.Any<CancellationToken>()).ThrowsAsync(failure());
