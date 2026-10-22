@@ -79,6 +79,18 @@ public class GetGroupDetailsSkillTests
     }
 
     [Test]
+    public async Task ReturnsDetails_ByDamagedName_BecauseReadOnlySkillsResolveLeniently()
+    {
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupName"] = "Filiale Brn"
+        });
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(result.Message, Does.Contain("Verkauf > Filiale Bern"));
+    }
+
+    [Test]
     public async Task ReturnsDetails_ByName()
     {
         var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>

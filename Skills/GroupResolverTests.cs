@@ -6,8 +6,10 @@
 /// ambiguous partial name returns a disambiguation error instead of silently picking one, an
 /// unknown name lists the real groups, and soft-deleted groups are ignored. Also covers the
 /// 2026-07-07 failure classes: a label-prefixed query ("Gruppe Deutschschweiz Zürich") resolves
-/// to the most specific group, accent-damaged input (mojibake, missing umlauts, single typos)
-/// still resolves, and a short group code is never hijacked by a label word.
+/// to the most specific group, missing umlauts resolve under both policies, damaged input (mojibake,
+/// single typos, misheard names) resolves only under the Lenient policy of read-only skills while the
+/// default Strict policy answers with the "Did the user mean ...?" ask-back, and a short group code is
+/// never hijacked by a label word.
 /// </summary>
 
 using Klacks.Api.Application.Skills;
@@ -30,20 +32,21 @@ public class GroupResolverTests
     };
 
     [Test]
-    public void MisheardSpokenName_ResolvesPhonetically()
+    public void MisheardSpokenName_ResolvesPhonetically_OnlyWhenLenient()
     {
-        // STT delivers "Mayer" for the group "Meier": Levenshtein distance 2 at length 5 is
-        // beyond the fuzzy tolerance, so only the phonetic stage can bridge it.
         var groups = new List<Group>
         {
             new() { Id = BernId, Name = "Meier" },
             new() { Id = ZurichId, Name = "Zürich" }
         };
 
-        var (group, error) = GroupResolver.Resolve(groups, "Mayer");
+        var (group, error) = GroupResolver.Resolve(groups, "Mayer", NameMatchPolicy.Lenient);
+        var (strictGroup, strictError) = GroupResolver.Resolve(groups, "Mayer");
 
         Assert.That(error, Is.Null);
         Assert.That(group!.Id, Is.EqualTo(BernId));
+        Assert.That(strictGroup, Is.Null);
+        Assert.That(strictError, Is.EqualTo(NameResolutionMessages.SuggestedName("Meier")));
     }
 
     [Test]
@@ -177,12 +180,16 @@ public class GroupResolverTests
     }
 
     [Test]
-    public void MojibakeDamagedUmlaut_StillResolvesCorrectGroup_NotTheShortCode()
+    public void MojibakeDamagedUmlaut_ResolvesCorrectGroupWhenLenient_AndIsSuggestedWhenStrict()
     {
-        var (group, error) = GroupResolver.Resolve(SwissGroups(), "Gruppe Deutschschweiz Z├╝rich");
+        var (group, error) = GroupResolver.Resolve(
+            SwissGroups(), "Gruppe Deutschschweiz Z├╝rich", NameMatchPolicy.Lenient);
+        var (strictGroup, strictError) = GroupResolver.Resolve(SwissGroups(), "Gruppe Deutschschweiz Z├╝rich");
 
         Assert.That(error, Is.Null);
         Assert.That(group!.Id, Is.EqualTo(DeutschschweizZurichId));
+        Assert.That(strictGroup, Is.Null);
+        Assert.That(strictError, Is.EqualTo(NameResolutionMessages.SuggestedName("Deutschschweiz Zürich")));
     }
 
     [Test]
@@ -195,12 +202,35 @@ public class GroupResolverTests
     }
 
     [Test]
-    public void SingleTypoInGroupName_StillResolves()
+    public void SingleTypoInGroupName_ResolvesWhenLenient_AndIsSuggestedWhenStrict()
     {
-        var (group, error) = GroupResolver.Resolve(SwissGroups(), "Zürih");
+        var (group, error) = GroupResolver.Resolve(SwissGroups(), "Zürih", NameMatchPolicy.Lenient);
+        var (strictGroup, strictError) = GroupResolver.Resolve(SwissGroups(), "Zürih");
 
         Assert.That(error, Is.Null);
         Assert.That(group!.Id, Is.EqualTo(ZurichId));
+        Assert.That(strictGroup, Is.Null);
+        Assert.That(strictError, Is.EqualTo(NameResolutionMessages.SuggestedName("Zürich")));
+    }
+
+    [Test]
+    public void RegionSouth_IsNeverSilentlyResolvedToRegionNorth_UnderTheDefaultPolicy()
+    {
+        var northId = Guid.NewGuid();
+        var groups = new List<Group>
+        {
+            new() { Id = northId, Name = "Region North" },
+            new() { Id = ZurichId, Name = "Zürich" }
+        };
+
+        var (strictGroup, strictError) = GroupResolver.Resolve(groups, "Region South");
+        var (lenientGroup, lenientError) = GroupResolver.Resolve(groups, "Region South", NameMatchPolicy.Lenient);
+
+        Assert.That(strictGroup, Is.Null);
+        Assert.That(strictError, Is.EqualTo(NameResolutionMessages.SuggestedName("Region North")));
+        Assert.That(strictError, Does.Contain("Nothing was changed"));
+        Assert.That(lenientError, Is.Null);
+        Assert.That(lenientGroup!.Id, Is.EqualTo(northId));
     }
 
     [Test]

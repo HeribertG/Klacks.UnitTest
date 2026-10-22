@@ -3,8 +3,9 @@
 /// <summary>
 /// Unit tests for MacroResolver: spoken or decorated queries ("Makro-All-Shift", "all shift")
 /// resolve the camel-case macro "AllShift" via the compact stage with label-word stripping
-/// (2026-07-11 transcript regression), lightly damaged STT input still resolves, several
-/// plausible macros return a disambiguation error, and an unknown name lists the real macros.
+/// (2026-07-11 transcript regression), lightly damaged STT input resolves only under the Lenient
+/// policy (Strict answers with the ask-back), several plausible macros return a disambiguation
+/// error, and an unknown name lists the real macros.
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Settings;
@@ -31,7 +32,6 @@ public class MacroResolverTests
     [TestCase("Makro All Shift")]
     [TestCase("All Shift")]
     [TestCase("All-Shift")]
-    [TestCase("all schift")]
     public void Resolve_SpokenOrDecoratedVariants_FindAllShift(string query)
     {
         var (macro, error) = MacroResolver.Resolve(DefaultMacros(), query);
@@ -39,6 +39,18 @@ public class MacroResolverTests
         Assert.That(error, Is.Null);
         Assert.That(macro, Is.Not.Null);
         Assert.That(macro!.Id, Is.EqualTo(AllShiftId));
+    }
+
+    [Test]
+    public void Resolve_DamagedSttInput_ResolvesWhenLenient_AndIsSuggestedWhenStrict()
+    {
+        var (macro, error) = MacroResolver.Resolve(DefaultMacros(), "all schift", NameMatchPolicy.Lenient);
+        var (strictMacro, strictError) = MacroResolver.Resolve(DefaultMacros(), "all schift");
+
+        Assert.That(error, Is.Null);
+        Assert.That(macro!.Id, Is.EqualTo(AllShiftId));
+        Assert.That(strictMacro, Is.Null);
+        Assert.That(strictError, Is.EqualTo(NameResolutionMessages.SuggestedName("AllShift")));
     }
 
     [Test]

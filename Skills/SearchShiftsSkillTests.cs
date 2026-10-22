@@ -272,6 +272,27 @@ public class SearchShiftsSkillTests
     }
 
     [Test]
+    public async Task SearchShifts_EmptyDbFilter_TypoOnlyMatch_AsksBackWithoutReturningARow()
+    {
+        var mediator = MediatorWithCatalog(
+            "Nachtdinst",
+            new ShiftResource { Id = Guid.NewGuid(), Name = "Nachtdienst", Abbreviation = "ND" },
+            new ShiftResource { Id = Guid.NewGuid(), Name = "Frühdienst", Abbreviation = "FD" });
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["searchString"] = "Nachtdinst"
+        });
+
+        result.Success.ShouldBeTrue();
+        result.Message.ShouldBe(NameResolutionMessages.SuggestedName("Nachtdienst"));
+        var data = JsonSerializer.SerializeToElement(result.Data);
+        data.GetProperty("TotalCount").GetInt32().ShouldBe(0);
+        data.GetProperty("Shifts").GetArrayLength().ShouldBe(0);
+    }
+
+    [Test]
     public async Task SearchShifts_EmptyDbFilter_SeveralPlausibleShifts_AsksForDisambiguation()
     {
         var mediator = MediatorWithCatalog(

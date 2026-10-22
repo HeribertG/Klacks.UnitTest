@@ -197,7 +197,7 @@ public class AddClientToGroupByNameSkillTests
     }
 
     [Test]
-    public async Task MojibakeDamagedGroupName_StillResolvesTheIntendedGroup()
+    public async Task MojibakeDamagedGroupName_AsksBackInsteadOfWriting()
     {
         var zurichGroupId = Guid.NewGuid();
         _groupRepository.List().Returns(new List<Group>
@@ -217,8 +217,33 @@ public class AddClientToGroupByNameSkillTests
 
         var result = await _skill.ExecuteAsync(Ctx(), parameters);
 
-        Assert.That(result.Success, Is.True);
-        _api.BodyOf<GroupItemResource>()!.GroupId.ShouldBe(zurichGroupId);
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Is.EqualTo(NameResolutionMessages.SuggestedName("Deutschschweiz Zürich")));
+        _api.Calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task SimilarButDifferentGroupName_AsksBackAndNeverWritesToTheOtherGroup()
+    {
+        _groupRepository.List().Returns(new List<Group>
+        {
+            new() { Id = Guid.NewGuid(), Name = "Region North" },
+            new() { Id = Guid.NewGuid(), Name = "Zürich" }
+        });
+
+        var parameters = new Dictionary<string, object>
+        {
+            ["firstName"] = "Max",
+            ["lastName"] = "Müller",
+            ["groupName"] = "Region South",
+            ["validFrom"] = "2026-06-01"
+        };
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Is.EqualTo(NameResolutionMessages.SuggestedName("Region North")));
+        _api.Calls.ShouldBeEmpty();
     }
 
     [Test]

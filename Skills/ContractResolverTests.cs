@@ -5,7 +5,8 @@
 /// label-prefixed query ("Vertrag Teilzeit 0 Std BE") resolves to the real contract, a verbatim
 /// user sentence that is no contract name at all yields a not-found error that forbids retrying
 /// with the same value, an ambiguous partial name lists all candidates instead of silently
-/// picking one, a single typo still resolves, and soft-deleted contracts are ignored.
+/// picking one, a single typo resolves only under the Lenient policy (the default Strict policy
+/// answers with the "Did the user mean ...?" ask-back), and soft-deleted contracts are ignored.
 /// </summary>
 
 using Klacks.Api.Application.Skills;
@@ -74,12 +75,15 @@ public class ContractResolverTests
     }
 
     [Test]
-    public void SingleTypo_StillResolves()
+    public void SingleTypo_ResolvesWhenLenient_AndIsSuggestedWhenStrict()
     {
-        var (contract, error) = ContractResolver.Resolve(Contracts(), "Teilzeit 0 Sdt BE");
+        var (contract, error) = ContractResolver.Resolve(Contracts(), "Teilzeit 0 Sdt BE", NameMatchPolicy.Lenient);
+        var (strictContract, strictError) = ContractResolver.Resolve(Contracts(), "Teilzeit 0 Sdt BE");
 
         Assert.That(error, Is.Null);
         Assert.That(contract!.Id, Is.EqualTo(PartTimeBeId));
+        Assert.That(strictContract, Is.Null);
+        Assert.That(strictError, Is.EqualTo(NameResolutionMessages.SuggestedName("Teilzeit 0 Std BE")));
     }
 
     [Test]
