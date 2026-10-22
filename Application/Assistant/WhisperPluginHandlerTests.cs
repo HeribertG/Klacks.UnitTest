@@ -25,6 +25,7 @@ public class WhisperPluginHandlerTests
     private ICustomSttProviderRepository _providerRepository = null!;
     private ISettingsRepository _settingsRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
+    private IInstallationIdentityProvider _installation = null!;
 
     [SetUp]
     public void SetUp()
@@ -33,15 +34,20 @@ public class WhisperPluginHandlerTests
         _providerRepository = Substitute.For<ICustomSttProviderRepository>();
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
+        _installation = Substitute.For<IInstallationIdentityProvider>();
+        UseInstallation(InstallationKind.Docker);
     }
 
-    private InstallWhisperPluginCommandHandler CreateInstallHandler() => new(_updateRepository);
+    private void UseInstallation(InstallationKind kind) =>
+        _installation.Get().Returns(new InstallationIdentity(kind, "test-rid"));
+
+    private InstallWhisperPluginCommandHandler CreateInstallHandler() => new(_updateRepository, _installation);
 
     private UninstallWhisperPluginCommandHandler CreateUninstallHandler() =>
         new(_updateRepository, _providerRepository, _settingsRepository, _unitOfWork);
 
     private GetWhisperPluginStatusQueryHandler CreateStatusHandler() =>
-        new(_providerRepository, _updateRepository);
+        new(_providerRepository, _updateRepository, _installation);
 
     private static CustomSttProvider EnabledProvider(string modelId = WhisperPluginConstants.LargeModelId) => new()
     {
@@ -70,6 +76,97 @@ public class WhisperPluginHandlerTests
         result.Enqueued.ShouldBeFalse();
         result.Reason.ShouldBe(WhisperPluginReasons.UnknownModel);
         await _updateRepository.DidNotReceive().AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Install_on_native_rejects_whisper_aliases_without_touching_the_queue()
+    {
+        UseInstallation(InstallationKind.Native);
+
+        foreach (var alias in new[] { WhisperPluginConstants.ModelAliasSmall, WhisperPluginConstants.ModelAliasLarge })
+        {
+            var result = await CreateInstallHandler().Handle(new InstallWhisperPluginCommand(alias, "admin"), CancellationToken.None);
+
+            result.Enqueued.ShouldBeFalse();
+            result.Reason.ShouldBe(WhisperPluginReasons.UnsupportedOnInstallation);
+        }
+
+        await _updateRepository.DidNotReceive().AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+        await _updateRepository.DidNotReceive().GetActiveOperationAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Install_on_native_enqueues_parakeet()
+    {
+        UseInstallation(InstallationKind.Native);
+        _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
+
+        var result = await CreateInstallHandler().Handle(
+            new InstallWhisperPluginCommand(WhisperPluginConstants.ModelAliasParakeet, "admin"), CancellationToken.None);
+
+        result.Enqueued.ShouldBeTrue();
+        await _updateRepository.Received(1).AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Install_reports_unknown_model_before_unsupported_on_installation()
+    {
+        UseInstallation(InstallationKind.Native);
+
+        var result = await CreateInstallHandler().Handle(new InstallWhisperPluginCommand("gigantic", "admin"), CancellationToken.None);
+
+        result.Reason.ShouldBe(WhisperPluginReasons.UnknownModel);
+    }
+
+    [Test]
+    public async Task Status_lists_all_three_aliases_with_parakeet_first_on_docker()
+    {
+        _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
+            .Returns((CustomSttProvider?)null);
+
+        var result = await CreateStatusHandler().Handle(new GetWhisperPluginStatusQuery(), CancellationToken.None);
+
+        result.SupportedAliases.ShouldBe(
+            [WhisperPluginConstants.ModelAliasParakeet, WhisperPluginConstants.ModelAliasSmall, WhisperPluginConstants.ModelAliasLarge]);
+    }
+
+    [Test]
+    public async Task Status_lists_only_parakeet_on_native()
+    {
+        UseInstallation(InstallationKind.Native);
+        _providerRepository.GetByIdAsync(WhisperPluginConstants.ProviderId, Arg.Any<CancellationToken>())
+            .Returns((CustomSttProvider?)null);
+
+        var result = await CreateStatusHandler().Handle(new GetWhisperPluginStatusQuery(), CancellationToken.None);
+
+        result.SupportedAliases.ShouldBe([WhisperPluginConstants.ModelAliasParakeet]);
+    }
+
+    [TestCase(InstallationKind.Docker, WhisperPluginConstants.ModelAliasParakeet, true)]
+    [TestCase(InstallationKind.Docker, WhisperPluginConstants.ModelAliasSmall, true)]
+    [TestCase(InstallationKind.Docker, WhisperPluginConstants.ModelAliasLarge, true)]
+    [TestCase(InstallationKind.Docker, "gigantic", false)]
+    [TestCase(InstallationKind.Docker, null, false)]
+    [TestCase(InstallationKind.Native, WhisperPluginConstants.ModelAliasParakeet, true)]
+    [TestCase(InstallationKind.Native, WhisperPluginConstants.ModelAliasSmall, false)]
+    [TestCase(InstallationKind.Native, WhisperPluginConstants.ModelAliasLarge, false)]
+    public void IsSupportedOn_follows_the_installation_kind(InstallationKind kind, string? alias, bool expected)
+    {
+        WhisperPluginConstants.IsSupportedOn(kind, alias).ShouldBe(expected);
+    }
+
+    [TestCase(InstallationKind.Docker)]
+    [TestCase(InstallationKind.Native)]
+    public void Default_alias_is_parakeet_on_every_installation(InstallationKind kind)
+    {
+        WhisperPluginConstants.GetDefaultAlias(kind).ShouldBe(WhisperPluginConstants.ModelAliasParakeet);
+    }
+
+    [Test]
+    public void Provider_engine_value_is_the_custom_prefix_plus_the_provider_id()
+    {
+        WhisperPluginConstants.ProviderEngineValue.ShouldBe($"custom:{WhisperPluginConstants.ProviderId}");
+        WhisperPluginConstants.LocalEngineValue.ShouldBe("local");
     }
 
     [Test]

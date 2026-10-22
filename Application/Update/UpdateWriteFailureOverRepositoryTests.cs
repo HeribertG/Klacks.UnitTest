@@ -34,6 +34,13 @@ public class UpdateWriteFailureOverRepositoryTests
     private const string Requester = "admin";
     private const string LatestVersion = "9.9.9";
 
+    private static IInstallationIdentityProvider DockerInstallation()
+    {
+        var installation = Substitute.For<IInstallationIdentityProvider>();
+        installation.Get().Returns(new InstallationIdentity(InstallationKind.Docker, "linux-x64"));
+        return installation;
+    }
+
     private SaveChangesFailingDataBaseContext _context = null!;
     private UpdateHistoryRepository _repository = null!;
 
@@ -83,7 +90,7 @@ public class UpdateWriteFailureOverRepositoryTests
     {
         _context.FailNextSave = failure;
 
-        var result = await new InstallWhisperPluginCommandHandler(_repository).Handle(
+        var result = await new InstallWhisperPluginCommandHandler(_repository, DockerInstallation()).Handle(
             new InstallWhisperPluginCommand(WhisperPluginConstants.ModelAliasLarge, Requester), CancellationToken.None);
 
         ShouldBeRejectedAsInProgress(result);
