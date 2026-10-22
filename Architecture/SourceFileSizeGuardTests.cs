@@ -59,11 +59,6 @@ public class SourceFileSizeGuardTests
     // "RelativePath::MethodName" -> its measured body length on the day it was allowlisted.
     private static readonly IReadOnlyDictionary<string, int> MethodCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        [@"Infrastructure\Email\EmailTestService.cs::TestConnectionAsync"] = 219,
-        [@"Infrastructure\Services\Assistant\LLMModelSyncService.cs::SyncProviderAsync"] = 174,
-        [@"Infrastructure\Services\Schedules\HarmonizerJobRunner.cs::RunJobAsync"] = 181,
-        [@"Infrastructure\Services\Schedules\WizardJobRunner.cs::RunJobAsync"] = 192,
-        [@"Domain\Services\Assistant\Skills\SkillExecutorService.cs::ExecuteAsync"] = 178,
     };
 
     private static readonly Regex MemberSignature = new(
