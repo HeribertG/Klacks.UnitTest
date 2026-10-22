@@ -27,7 +27,7 @@ namespace Klacks.UnitTest.Handlers.ClientAvailabilities;
 public class ListClientsQueryHandlerTests
 {
     private DataBaseContext _context = null!;
-    private IClientBaseQueryService _baseQueryService = null!;
+    private IClientPageReader _baseQueryService = null!;
     private ListClientsQueryHandler _handler = null!;
 
     [SetUp]
@@ -39,7 +39,7 @@ public class ListClientsQueryHandlerTests
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         _context = new DataBaseContext(options, httpContextAccessor);
 
-        _baseQueryService = Substitute.For<IClientBaseQueryService>();
+        _baseQueryService = Substitute.For<IClientPageReader>();
 
         var logger = Substitute.For<ILogger<ListClientsQueryHandler>>();
         _handler = new ListClientsQueryHandler(_baseQueryService, logger);

@@ -32,6 +32,7 @@ using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Application.Handlers.Schedules;
 

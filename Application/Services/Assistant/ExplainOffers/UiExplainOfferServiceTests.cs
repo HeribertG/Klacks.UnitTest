@@ -8,9 +8,10 @@
 /// mutes, the third unanswered "shown" mutes; an unknown topic or outcome writes nothing; while the offers are off or
 /// the topic is already muted a reaction is accepted but writes nothing, except the one answer to the offer whose "shown"
 /// muted the topic (the user's newest row is that unanswered "shown"). Passive topic (work-booking-refusal): never offered
-/// by state, stores only "accepted" keyed by the company-local day (no Guid, so RecordAsync's dedup makes a second click of
-/// the day a no-op), never reads or writes the mute, writes nothing while the offers are off, and treats a concurrent
-/// duplicate (unique-index violation for a row that now exists) as already recorded.
+/// by state, stores only "accepted" keyed by the company-local day (no Guid, so the repository's dedup makes a second click
+/// of the day a no-op) through TryRecordAsync, never reads or writes the mute, writes nothing while the offers are off, and
+/// treats a lost race (TryRecordAsync false) as already recorded; the race itself is pinned over the real repository in
+/// UiExplainOfferPassiveClickOverRepositoryTests.
 /// </summary>
 
 using System.Text.Json;
@@ -19,7 +20,6 @@ using Klacks.Api.Application.Services.Assistant.ExplainOffers;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.UnitTest.TestHelpers;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.ExplainOffers;
@@ -85,9 +85,13 @@ public class UiExplainOfferServiceTests
         ContentParamsJson = JsonSerializer.Serialize(new Dictionary<string, string> { ["outcome"] = outcome })
     };
 
+    private static bool IsRecordCall(NSubstitute.Core.ICall call) =>
+        call.GetMethodInfo().Name is nameof(IProactiveTriggerDispatchRepository.RecordAsync)
+            or nameof(IProactiveTriggerDispatchRepository.TryRecordAsync);
+
     private ProactiveTriggerDispatchRow RecordedRow() =>
         (ProactiveTriggerDispatchRow)_dispatches.ReceivedCalls()
-            .Single(call => call.GetMethodInfo().Name == nameof(IProactiveTriggerDispatchRepository.RecordAsync))
+            .Single(IsRecordCall)
             .GetArguments()[0]!;
 
     [Test]
@@ -382,7 +386,7 @@ public class UiExplainOfferServiceTests
         await _sut.RecordReactionAsync(_userId, Topic, UiExplainOfferOutcomes.Shown);
 
         var keys = _dispatches.ReceivedCalls()
-            .Where(call => call.GetMethodInfo().Name == nameof(IProactiveTriggerDispatchRepository.RecordAsync))
+            .Where(IsRecordCall)
             .Select(call => ((ProactiveTriggerDispatchRow)call.GetArguments()[0]!).DedupKey)
             .ToList();
         keys.Count.ShouldBe(2);
@@ -419,7 +423,7 @@ public class UiExplainOfferServiceTests
         await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted);
 
         var keys = _dispatches.ReceivedCalls()
-            .Where(call => call.GetMethodInfo().Name == nameof(IProactiveTriggerDispatchRepository.RecordAsync))
+            .Where(IsRecordCall)
             .Select(call => ((ProactiveTriggerDispatchRow)call.GetArguments()[0]!).DedupKey)
             .ToList();
         keys.Count.ShouldBe(2);
@@ -433,7 +437,7 @@ public class UiExplainOfferServiceTests
 
         await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted);
 
-        await _dispatches.Received(1).RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
+        await _dispatches.Received(1).TryRecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
     }
 
     [TestCase(UiExplainOfferOutcomes.Shown)]
@@ -444,6 +448,7 @@ public class UiExplainOfferServiceTests
         (await _sut.RecordReactionAsync(_userId, PassiveTopic, outcome)).ShouldBeTrue();
 
         await _dispatches.DidNotReceive().RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
+        await _dispatches.DidNotReceive().TryRecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
         await _preferences.DidNotReceive().MuteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
     }
 
@@ -455,15 +460,14 @@ public class UiExplainOfferServiceTests
         (await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted)).ShouldBeTrue();
 
         await _dispatches.DidNotReceive().RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
+        await _dispatches.DidNotReceive().TryRecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>());
     }
 
     [Test]
     public async Task PassiveClick_ConcurrentDuplicate_IsTreatedAsRecorded()
     {
-        _dispatches.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new DbUpdateException("duplicate")));
-        _dispatches.WasDispatchedAsync(_userId, PassiveKind, PassiveTopic + ":accepted:2026-10-19", null, Arg.Any<CancellationToken>())
-            .Returns(true);
+        _dispatches.TryRecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
+            .Returns(false);
 
         (await _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted)).ShouldBeTrue();
     }
@@ -471,11 +475,9 @@ public class UiExplainOfferServiceTests
     [Test]
     public async Task PassiveClick_OtherWriteFailure_IsNotSwallowed()
     {
-        _dispatches.RecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new DbUpdateException("other")));
-        _dispatches.WasDispatchedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _dispatches.TryRecordAsync(Arg.Any<ProactiveTriggerDispatchRow>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("other")));
 
-        await Should.ThrowAsync<DbUpdateException>(() => _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted));
+        await Should.ThrowAsync<InvalidOperationException>(() => _sut.RecordReactionAsync(_userId, PassiveTopic, UiExplainOfferOutcomes.Accepted));
     }
 }

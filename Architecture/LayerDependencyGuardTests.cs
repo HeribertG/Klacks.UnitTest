@@ -4,9 +4,11 @@
 /// Guards the dependency direction of the Klacks.Api layers (.claude/rules/backend-architecture.md):
 /// Domain depends on nothing, Application only on Domain, Infrastructure on Application and Domain,
 /// Presentation on Application and Domain. On top of the table: DataBaseContext stays inside
-/// Infrastructure, the Domain layer does not use Microsoft.EntityFrameworkCore, and the host Domain does
-/// not reference the KnowledgeIndex module (the module itself consumes the host Domain, so the reverse
-/// edge would be a cycle).
+/// Infrastructure, neither the Domain nor the Application layer uses Microsoft.EntityFrameworkCore (Application
+/// reads through materialising repositories and catches the Domain DatabaseUpdateException/ConcurrencyException the
+/// repositories and the unit of work translate EF Core's write failures into; ApplicationQueryableSurfaceGuardTests
+/// keeps IQueryable out of it), and the host Domain does not reference the KnowledgeIndex module (the module itself
+/// consumes the host Domain, so the reverse edge would be a cycle).
 ///
 /// Klacks.Api is one assembly, so the compiler cannot enforce any of this; the layers are folders and
 /// namespaces. A source scan sees exactly the violation: a using directive, a fully qualified name, or a
@@ -103,7 +105,6 @@ public class LayerDependencyGuardTests
         @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Application.Interfaces",
         @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Domain",
         @"Domain\Services\Absences\AbsencePaginationService.cs -> Microsoft.EntityFrameworkCore",
-        @"Domain\Services\ContainerTemplates\ContainerAvailableTasksService.cs -> Microsoft.EntityFrameworkCore",
         @"Domain\Services\Groups\GroupSearchService.cs -> Microsoft.EntityFrameworkCore",
         @"Domain\Services\Settings\CalendarRulePaginationService.cs -> Microsoft.EntityFrameworkCore",
         @"Domain\Services\Shifts\ShiftPaginationService.cs -> Microsoft.EntityFrameworkCore",
@@ -193,6 +194,24 @@ public class LayerDependencyGuardTests
         findings.ShouldBe(["1:Infrastructure", "9:Application", "10:DataBaseContext", "11:Infrastructure"]);
     }
 
+    [TestCase(Domain, true)]
+    [TestCase(Application, true)]
+    [TestCase(Infrastructure, false)]
+    [TestCase(Presentation, false)]
+    public void Scanner_FlagsEntityFrameworkCore_InDomainAndApplicationOnly(string layer, bool flagged)
+    {
+        const string source =
+            "using Microsoft.EntityFrameworkCore;\n" +
+            "catch (Microsoft.EntityFrameworkCore.DbUpdateException) { }\n";
+
+        var findings = FindReferences(layer, CSharpSourceBlanker.BlankCommentsAndStrings(source))
+            .Where(finding => finding.Edge == EntityFrameworkEdge)
+            .Select(finding => finding.Line)
+            .ToList();
+
+        findings.ShouldBe(flagged ? [1, 2] : []);
+    }
+
     private static ScanResult Scan()
     {
         var root = RepositoryRootLocator.ApiProject;
@@ -279,7 +298,7 @@ public class LayerDependencyGuardTests
                 yield return new Finding(lineNumber, DataBaseContextEdge, DataBaseContextEdge);
             }
 
-            if (layer == Domain && EntityFrameworkName.IsMatch(line))
+            if ((layer == Domain || layer == Application) && EntityFrameworkName.IsMatch(line))
             {
                 yield return new Finding(lineNumber, EntityFrameworkEdge, EntityFrameworkNamespace);
             }

@@ -265,15 +265,6 @@ public class ContainerAutofillHolidayFilterTests
     private static IContainerAvailableTasksService CreateAvailableTasksService(DataBaseContext context)
     {
         var collectionUpdateService = new EntityCollectionUpdateService(context);
-        var shiftRepository = new ShiftRepository(
-            context,
-            Substitute.For<ILogger<Shift>>(),
-            Substitute.For<IShiftQueryPipelineService>(),
-            Substitute.For<IShiftGroupManagementService>(),
-            collectionUpdateService,
-            Substitute.For<IShiftValidator>(),
-            new ScheduleMapper(),
-            new FixedCompanyClock(DateTimeOffset.UtcNow));
         var groupItemRepository = new GroupItemRepository(context, Substitute.For<ILogger<GroupItem>>());
         var containerTemplateService = new ContainerTemplateService(
             Substitute.For<IUnitOfWork>(), Substitute.For<ILogger<ContainerTemplateService>>());
@@ -281,7 +272,7 @@ public class ContainerAutofillHolidayFilterTests
             context, Substitute.For<ILogger<ContainerTemplate>>(), collectionUpdateService, containerTemplateService);
 
         return new ContainerAvailableTasksService(
-            shiftRepository,
+            new ShiftReader(context),
             groupItemRepository,
             containerTemplateRepository,
             Substitute.For<ILogger<ContainerAvailableTasksService>>());

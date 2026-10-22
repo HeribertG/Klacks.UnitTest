@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Klacks.UnitTest.FakeData;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 
 namespace Klacks.UnitTest.Repository;

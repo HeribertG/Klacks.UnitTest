@@ -9,6 +9,7 @@ using Klacks.Api.Infrastructure.Interfaces;
 using Klacks.Api.Application.Services.Clients;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Services.Clients;
 

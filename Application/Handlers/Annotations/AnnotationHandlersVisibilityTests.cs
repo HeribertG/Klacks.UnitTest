@@ -43,7 +43,7 @@ public class AnnotationHandlersVisibilityTests
             .FilterVisibleToCallerAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<IReadOnlySet<Guid>>(
                 call.ArgAt<IReadOnlyCollection<Guid>>(0).Where(_visibleClientIds.Contains).ToHashSet()));
-        _clientVisibilityGuard = new ClientVisibilityGuard(_clientSearchRepository, Substitute.For<Klacks.Api.Domain.Services.Common.IClientGroupFilterService>());
+        _clientVisibilityGuard = new ClientVisibilityGuard(_clientSearchRepository, Substitute.For<Klacks.Api.Infrastructure.Services.Clients.IClientGroupFilterService>());
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _mapper = new SettingsMapper();
     }

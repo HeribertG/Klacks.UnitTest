@@ -65,7 +65,7 @@ public class ContainerAvailableTasksServiceTests
         _containerTemplateRepository = new ContainerTemplateRepository(_context, containerTemplateLogger, collectionUpdateService, containerTemplateService);
 
         _service = new ContainerAvailableTasksService(
-            _shiftRepository,
+            new ShiftReader(_context),
             _groupItemRepository,
             _containerTemplateRepository,
             _logger);

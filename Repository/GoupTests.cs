@@ -21,6 +21,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Klacks.UnitTest.FakeData;
 using Klacks.UnitTest.TestHelpers;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Repository;
 

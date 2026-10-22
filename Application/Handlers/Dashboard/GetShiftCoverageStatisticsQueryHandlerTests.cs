@@ -21,14 +21,14 @@ public class GetShiftCoverageStatisticsQueryHandlerTests
     private const string GroupName = "Team";
 
     private IShiftCoverageReadRepository _readRepository = null!;
-    private IShiftScheduleService _scheduleService = null!;
+    private IShiftScheduleReader _scheduleService = null!;
     private IGroupVisibilityService _visibility = null!;
 
     [SetUp]
     public void SetUp()
     {
         _readRepository = Substitute.For<IShiftCoverageReadRepository>();
-        _scheduleService = Substitute.For<IShiftScheduleService>();
+        _scheduleService = Substitute.For<IShiftScheduleReader>();
         _visibility = Substitute.For<IGroupVisibilityService>();
         _visibility.GetVisibilityScopeAsync().Returns(GroupVisibilityScope.Unrestricted());
         _readRepository.GetActiveGroups(Arg.Any<CancellationToken>()).Returns([(GroupId, GroupName)]);

@@ -28,6 +28,7 @@ using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 [TestFixture]
 public class PeriodHoursServicePeriodBoundariesTests

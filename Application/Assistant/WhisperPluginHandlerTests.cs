@@ -12,7 +12,7 @@ using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Update;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Update;
-using Microsoft.EntityFrameworkCore;
+using Klacks.Api.Domain.Exceptions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
@@ -111,7 +111,7 @@ public class WhisperPluginHandlerTests
     {
         _updateRepository.GetActiveOperationAsync(Arg.Any<CancellationToken>()).Returns((UpdateHistory?)null);
         _updateRepository.AddAsync(Arg.Any<UpdateHistory>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new DbUpdateException());
+            .ThrowsAsync(new DatabaseUpdateException("duplicate key value", isDuplicate: true));
 
         var result = await CreateInstallHandler().Handle(
             new InstallWhisperPluginCommand(WhisperPluginConstants.ModelAliasLarge, "admin"), CancellationToken.None);

@@ -7,6 +7,7 @@
 
 using Klacks.Api.Application.Services.Clients;
 using Klacks.Api.Domain.Services.Common;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Services.Clients;
 

@@ -26,7 +26,7 @@ namespace Klacks.UnitTest.Integration;
 public class ShiftPerformanceIntegrationTests
 {
     private DataBaseContext _context;
-    private IShiftRepository _shiftRepository;
+    private ShiftRepository _shiftRepository;
     private IDateRangeFilterService _dateRangeFilterService;
     private IShiftSearchService _searchService;
     private IShiftSortingService _sortingService;

@@ -12,6 +12,7 @@
 using Klacks.Api.Domain.Services.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Infrastructure.Repositories.Schedules;
 

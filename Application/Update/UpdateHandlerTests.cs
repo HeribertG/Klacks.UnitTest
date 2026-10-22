@@ -11,7 +11,7 @@ using Klacks.Api.Application.Services.Update;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Interfaces.Update;
 using Klacks.Api.Domain.Models.Update;
-using Microsoft.EntityFrameworkCore;
+using Klacks.Api.Domain.Exceptions;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -255,7 +255,7 @@ public class UpdateHandlerTests
         var entry = Entry(UpdateOperationStatus.Pending);
         _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
         _repository.UpdateAsync(entry, Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new DbUpdateConcurrencyException()));
+            .Returns(Task.FromException(new ConcurrencyException("status moved")));
 
         var result = await CreateCancelHandler().Handle(new CancelUpdateCommand(entry.Id), CancellationToken.None);
 
@@ -268,7 +268,7 @@ public class UpdateHandlerTests
         var entry = Entry(UpdateOperationStatus.Pending);
         _repository.GetByIdAsync(entry.Id, Arg.Any<CancellationToken>()).Returns(entry);
         _repository.DeleteAsync(entry, Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new DbUpdateConcurrencyException()));
+            .Returns(Task.FromException(new ConcurrencyException("status moved")));
 
         var result = await CreateDeleteHandler().Handle(new DeleteUpdateHistoryCommand(entry.Id), CancellationToken.None);
 
