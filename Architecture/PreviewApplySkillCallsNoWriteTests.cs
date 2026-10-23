@@ -476,7 +476,9 @@ public class PreviewApplySkillCallsNoWriteTests
             .Returns(ci => sealHandler.Handle(ci.Arg<SealOpenOrdersCommand>(), ci.Arg<CancellationToken>()));
         var jobQueue = Substitute.For<ISealOpenOrdersJobQueue>();
         var skill = new SealOpenOrdersSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), _mediator, _companyClock, jobQueue);
+            new SealOpenOrdersPlanner(_groupRepository, TestGroupScopeGuard.Unrestricted(), _mediator, _companyClock),
+            _mediator,
+            jobQueue);
         var parameters = WithApply(applyShape, new Dictionary<string, object> { ["autoAssignGroups"] = true });
 
         var result = await RunPreviewAsync(SealOpenOrders, skill, Ctx(), parameters);
