@@ -1,6 +1,10 @@
 using Shouldly;
 using Klacks.Api.Domain.Models.Schedules;
 using Klacks.Api.Domain.Services.Shifts;
+using Klacks.Api.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 
 namespace Klacks.UnitTest.Services.Shifts;
 
@@ -104,17 +108,31 @@ public class DateRangeFilterServiceTests
     }
 
     [Test]
-    public void ApplyDateRangeFilter_NoFlags_ReturnsEmpty()
+    public async Task ApplyDateRangeFilter_NoFlags_ReturnsAnEmptyResultTheDatabaseCanExecute()
     {
         // Arrange
-        var query = _testShifts.AsQueryable();
+        var options = new DbContextOptionsBuilder<DataBaseContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        await using var context = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
+        foreach (var shift in _testShifts)
+        {
+            shift.Description = shift.Name;
+        }
+
+        context.Shift.AddRange(_testShifts);
+        await context.SaveChangesAsync();
+        var query = context.Shift.AsQueryable();
 
         // Act
         var result = _service.ApplyDateRangeFilter(query, activeDateRange: false, formerDateRange: false, futureDateRange: false, today: _today);
-        var shifts = result.ToList();
+        var unfiltered = _service.ApplyDateRangeFilter(query, activeDateRange: true, formerDateRange: true, futureDateRange: true, today: _today);
 
         // Assert
-        shifts.ShouldBeEmpty();
+        result.Provider.ShouldBeSameAs(query.Provider);
+        (await result.CountAsync()).ShouldBe(0);
+        (await result.ToListAsync()).ShouldBeEmpty();
+        (await unfiltered.CountAsync()).ShouldBe(_testShifts.Count);
     }
 
     [Test]
