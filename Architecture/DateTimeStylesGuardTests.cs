@@ -244,20 +244,13 @@ public class DateTimeStylesGuardTests
             "to work around a guard bug.");
     }
 
-    [TestCase("var a = DateTime.Parse(s, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal);
-")]
-    [TestCase("var a = DateTimeOffset.TryParse(s, CultureInfo.CurrentUICulture, DateTimeStyles.AssumeUniversal, out var v);
-")]
-    [TestCase("var a = DateTime.Parse(s, Thread.CurrentThread.CurrentCulture, DateTimeStyles.AssumeUniversal);
-")]
-    [TestCase("var a = DateOnly.TryParse(s, Thread.CurrentThread.CurrentCulture, out var v);
-")]
-    [TestCase("var a = TimeOnly.Parse(s, CultureInfo.CurrentUICulture);
-")]
-    [TestCase("var a = DateTime.Parse(s, null, DateTimeStyles.AssumeUniversal);
-")]
-    [TestCase("var a = DateTime.TryParse(s, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var v);
-")]
+    [TestCase("var a = DateTime.Parse(s, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal);\n")]
+    [TestCase("var a = DateTimeOffset.TryParse(s, CultureInfo.CurrentUICulture, DateTimeStyles.AssumeUniversal, out var v);\n")]
+    [TestCase("var a = DateTime.Parse(s, Thread.CurrentThread.CurrentCulture, DateTimeStyles.AssumeUniversal);\n")]
+    [TestCase("var a = DateOnly.TryParse(s, Thread.CurrentThread.CurrentCulture, out var v);\n")]
+    [TestCase("var a = TimeOnly.Parse(s, CultureInfo.CurrentUICulture);\n")]
+    [TestCase("var a = DateTime.Parse(s, null, DateTimeStyles.AssumeUniversal);\n")]
+    [TestCase("var a = DateTime.TryParse(s, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var v);\n")]
     public void ScannerSelfTest_FlagsAmbientCultureAndNullProvider(string sample)
     {
         var (violationLines, matchCount) = FindViolationLines(sample);
@@ -270,10 +263,8 @@ public class DateTimeStylesGuardTests
     public void ScannerSelfTest_DoesNotFlagAnExplicitInvariantProvider()
     {
         const string sample =
-            "var a = DateTime.Parse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
-"
-            + "var b = TimeOnly.TryParseExact(s, Format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var v);
-";
+            "var a = DateTime.Parse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);\n"
+            + "var b = TimeOnly.TryParseExact(s, Format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var v);\n";
 
         var (violationLines, matchCount) = FindViolationLines(sample);
 
