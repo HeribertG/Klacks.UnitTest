@@ -1,6 +1,8 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
-using Klacks.Api.Infrastructure.Extensions;
+using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Infrastructure.Extensions;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Constants;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Application.Services;
@@ -22,7 +24,9 @@ namespace Klacks.UnitTest.Infrastructure.KnowledgeIndex;
 [TestFixture]
 public class KnowledgeIndexServiceRegistrationTests
 {
-    private static ServiceProvider BuildProvider(bool onnxEnabled = true)
+    private static ServiceProvider BuildProvider(bool onnxEnabled = true) => BuildServices(onnxEnabled).BuildServiceProvider();
+
+    private static ServiceCollection BuildServices(bool onnxEnabled = true)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -45,7 +49,20 @@ public class KnowledgeIndexServiceRegistrationTests
 
         services.AddKnowledgeIndexServices(configuration);
 
-        return services.BuildServiceProvider();
+        return services;
+    }
+
+    // The engine resolves the recipe search from its own child scope, and the adapter borrows that scope's
+    // connection: a singleton would capture one scope's connection for the process lifetime.
+    [Test]
+    public void AddKnowledgeIndexServices_RegistersTheRecipeCandidateRetrieverOnceAsScopedAdapter()
+    {
+        var descriptor = BuildServices()
+            .Where(registration => registration.ServiceType == typeof(IRecipeCandidateRetriever))
+            .ShouldHaveSingleItem();
+
+        descriptor.Lifetime.ShouldBe(ServiceLifetime.Scoped);
+        descriptor.ImplementationType.ShouldBe(typeof(KnowledgeIndexRecipeCandidateRetriever));
     }
 
     [Test]
