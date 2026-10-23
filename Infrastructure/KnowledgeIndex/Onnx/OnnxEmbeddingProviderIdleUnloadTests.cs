@@ -14,8 +14,8 @@ public class OnnxEmbeddingProviderIdleUnloadTests
     private const int ParallelCallers = 4;
     private const int CallsPerCaller = 2;
 
-    // More than two batch chunks, so the loop inside EmbedBatchAsync is wide enough for the unloader
-    // to look at the provider several times while a single lease is held.
+    // More than two batch chunks, so the loop inside EmbedBatchAsync crosses at least two chunk boundaries
+    // while a single lease is held.
     private const int BatchTextCount = KnowledgeIndexConstants.EmbeddingBatchSize * 2 + 8;
 
     private static string CacheDir =>
@@ -169,52 +169,36 @@ public class OnnxEmbeddingProviderIdleUnloadTests
 
     // A bulk pass spans several chunks of EmbeddingBatchSize and must hold ONE lease across all of
     // them, so the sweep cannot pull the session out from under the loop.
-    // The provider is deliberately NOT warmed up first: a session that already exists before the batch
-    // starts can legitimately be unloaded in the gap between Task.Run and the batch taking its lease,
-    // and that unrelated release would be indistinguishable from the failure under test. With nothing
-    // loaded beforehand, the batch's own load is the only one that may ever happen - so a load count of
-    // one at the end, after thousands of zero-threshold unload attempts, says the session was held for
-    // the entire loop. A lease taken per chunk instead would let the sweep in between two chunks, and
-    // both the successful-unload counter and the load count would show it.
+    // The sweep is attempted from inside the loop itself: every access to the texts after the first one
+    // happens within the chunk loop (the loop condition, chunk building), and each access runs
+    // TryUnloadIfIdleAsync(Zero) synchronously on the batch's own thread. A lease released before a later
+    // chunk is read, or one released at the end of a chunk and re-taken inside the next, lets one of these
+    // attempts succeed deterministically (the loop condition reads the texts in between).
+    // The provider is deliberately NOT warmed up first, so a load count of one at the end means the
+    // batch never had to rebuild its session.
     [Test]
     [Category("SlowModelLoad")]
     public async Task EmbedBatchAsync_WhileBatchIsRunning_SessionIsNeverUnloadedMidLoop()
     {
         await using var provider = Create();
 
-        var texts = BatchTexts();
-        var batch = Task.Run(() => provider.EmbedBatchAsync(texts, CancellationToken.None));
-
-        var unloadsWhileRunning = 0;
-        var refusalsWhileRunning = 0;
-        while (!batch.IsCompleted)
+        var texts = new LeaseProbingTextList(BatchTexts(), () =>
         {
-            // LoadCount is incremented as the LAST statement of the load, after both the session and
-            // the 17 MB tokenizer are built, so a non-zero count means the seconds-long load window is
-            // over. From there on the session is non-null and no elapsed time is ever below
-            // TimeSpan.Zero, which leaves a running call as the reason for a refusal - the two
-            // statements between the counter and the lock release are the one other possibility, and
-            // they are nanoseconds against a poll every millisecond over a multi-second batch. Without
-            // this guard a refusal could come from the load window itself, and the assertion would say
-            // nothing about the chunk loop.
-            var running = provider.LoadCount >= 1 && provider.IsLoaded;
-            if (await provider.TryUnloadIfIdleAsync(TimeSpan.Zero, CancellationToken.None))
-            {
-                unloadsWhileRunning++;
-            }
-            else if (running)
-            {
-                refusalsWhileRunning++;
-            }
+            var unloaded = provider.TryUnloadIfIdleAsync(TimeSpan.Zero, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            return !unloaded && provider.IsLoaded;
+        });
 
-            await Task.Delay(1);
-        }
+        var vectors = await provider.EmbedBatchAsync(texts, CancellationToken.None);
 
-        var vectors = await batch;
-
-        vectors.Length.ShouldBe(texts.Length);
-        unloadsWhileRunning.ShouldBe(0);
-        refusalsWhileRunning.ShouldBeGreaterThan(0);
+        vectors.Length.ShouldBe(BatchTextCount);
+        texts.ProbeResults.Count.ShouldBeGreaterThanOrEqualTo(BatchTextCount - 1);
+        texts.ProbeResults.ShouldAllBe(held => held, "the sweep unloaded the session inside the chunk loop");
         provider.LoadCount.ShouldBe(1);
+
+        var unloadedAfterBatch = await provider.TryUnloadIfIdleAsync(TimeSpan.Zero, CancellationToken.None);
+
+        unloadedAfterBatch.ShouldBeTrue("once the batch released its lease, the idle session must be reclaimable");
+        provider.IsLoaded.ShouldBeFalse();
     }
 }

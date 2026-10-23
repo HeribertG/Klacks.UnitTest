@@ -17,6 +17,8 @@ public class OnnxRerankerProviderIdleUnloadTests
     private const int CallsPerCaller = 4;
     private const string BrokenTokenizerContent = "not json";
     private const string BrokenModelDirectoryPrefix = "klacks-broken-tokenizer-";
+    private const int IdleWindowPollMilliseconds = 5;
+    private static readonly TimeSpan IdleWindowObservationDeadline = TimeSpan.FromSeconds(10);
 
     private static readonly string[] Candidates =
     [
@@ -140,6 +142,13 @@ public class OnnxRerankerProviderIdleUnloadTests
     // InferenceSession while Run() is executing on it faults the process instead of throwing. The
     // LoadCount assertion is what keeps the test honest - without it the run passes just as happily
     // when the unloader never managed to unload anything at all.
+    //
+    // Two bursts, not one fixed set of calls (same structure as the embedding provider's test): a single
+    // burst only hopes every caller happens to be between calls at the instant the unloader samples
+    // activeRuns == 0, which under load fails with "LoadCount should be greater than 1 but was 1" despite
+    // nothing being broken. Task.WhenAll on the first burst guarantees activeRuns == 0, the poll loop waits
+    // for the running unloader to observe that window, and the second burst's first call is then a
+    // structural reload, not a probabilistic one.
     [Test]
     [Category("SlowModelLoad")]
     public async Task ScoreAsync_ParallelCallersWhileUnloaderRuns_NeverFaultsAndReloadsAtLeastOnce()
@@ -159,24 +168,45 @@ public class OnnxRerankerProviderIdleUnloadTests
             }
         });
 
-        var callers = Enumerable.Range(0, ParallelCallers)
-            .Select(_ => Task.Run(async () =>
-            {
-                var results = new List<double[]>();
-                for (var i = 0; i < CallsPerCaller; i++)
+        async Task<double[][]> RunBurstAsync()
+        {
+            var callers = Enumerable.Range(0, ParallelCallers)
+                .Select(_ => Task.Run(async () =>
                 {
-                    results.Add(await provider.ScoreAsync(Query, Candidates, CancellationToken.None));
-                }
+                    var results = new List<double[]>();
+                    for (var i = 0; i < CallsPerCaller; i++)
+                    {
+                        results.Add(await provider.ScoreAsync(Query, Candidates, CancellationToken.None));
+                    }
 
-                return results;
-            }))
-            .ToArray();
+                    return results;
+                }))
+                .ToArray();
 
-        var scored = await Task.WhenAll(callers);
+            var scored = await Task.WhenAll(callers);
+            return scored.SelectMany(r => r).ToArray();
+        }
+
+        var firstBurst = await RunBurstAsync();
+        var loadCountAfterFirstBurst = provider.LoadCount;
+
+        var deadline = DateTime.UtcNow + IdleWindowObservationDeadline;
+        while (provider.IsLoaded && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(IdleWindowPollMilliseconds, CancellationToken.None);
+        }
+
+        provider.IsLoaded.ShouldBeFalse(
+            "The unloader never reclaimed the session during the guaranteed idle window between the " +
+            "two bursts (all callers had returned, so activeRuns was 0) - either TryUnloadIfIdleAsync " +
+            "stopped seeing an idle session, or something is holding a lease open.");
+
+        var secondBurst = await RunBurstAsync();
+
         await callersDone.CancelAsync();
         await unloader;
 
-        foreach (var scores in scored.SelectMany(r => r))
+        foreach (var scores in firstBurst.Concat(secondBurst))
         {
             for (var i = 0; i < reference.Length; i++)
             {
@@ -184,6 +214,6 @@ public class OnnxRerankerProviderIdleUnloadTests
             }
         }
 
-        provider.LoadCount.ShouldBeGreaterThan(1);
+        provider.LoadCount.ShouldBeGreaterThan(loadCountAfterFirstBurst);
     }
 }
