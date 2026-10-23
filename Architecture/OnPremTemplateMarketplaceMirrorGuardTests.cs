@@ -15,7 +15,8 @@
 ///
 /// Scope note — what this guard does NOT cover:
 /// - The per-country region profiles (deploy/onprem/regions/*.json). The marketplace adds the patched
-///   profile of the requested country to each download itself, so the template carries none.
+///   profile of the requested country to each download itself, so the template carries none. The marketplace copy
+///   of those profiles (Resources/RegionProfiles) is guarded by RegionProfileMarketplaceMirrorGuardTests.
 /// - deploy/onprem/.gitignore, which only matters inside the Klacks.Api repository.
 /// - The files the marketplace generates at download time (install-xx wrappers, compose .env.example
 ///   and README-compose.md in RegionArtifactService).
