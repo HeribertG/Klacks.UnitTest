@@ -53,7 +53,7 @@ public class WorkRepositorySortingTests
             _context,
             mockGroupFilterService,
             mockSearchFilterService,
-            new Klacks.Api.Domain.Services.Clients.ClientSearchService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService(),
             mockFuzzySearchService);
 
         var mockLogger = Substitute.For<ILogger<Klacks.Api.Domain.Models.Schedules.Work>>();

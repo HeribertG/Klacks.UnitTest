@@ -110,13 +110,13 @@ internal class ClientTests
         DataSeed(_truncatedClient);
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
-        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService();
+        var searchService = new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
+        var entityManagementService = new Klacks.Api.Infrastructure.Services.Clients.ClientEntityManagementService(clientValidator);
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
@@ -162,13 +162,13 @@ internal class ClientTests
         DataSeed(_truncatedClient);
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
-        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService();
+        var searchService = new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
+        var entityManagementService = new Klacks.Api.Infrastructure.Services.Clients.ClientEntityManagementService(clientValidator);
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
@@ -215,13 +215,13 @@ internal class ClientTests
         DataSeed(_truncatedClient);
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
-        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService();
+        var searchService = new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
+        var entityManagementService = new Klacks.Api.Infrastructure.Services.Clients.ClientEntityManagementService(clientValidator);
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
@@ -311,13 +311,13 @@ internal class ClientTests
         dbContext.SaveChanges();
 
         // Use real domain services for proper filtering behavior in integration tests
-        var clientFilterService = new Klacks.Api.Domain.Services.Clients.ClientFilterService();
-        var membershipFilterService = new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService();
-        var searchService = new Klacks.Api.Domain.Services.Clients.ClientSearchService();
-        var sortingService = new Klacks.Api.Domain.Services.Clients.ClientSortingService();
+        var clientFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService();
+        var membershipFilterService = new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService();
+        var searchService = new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService();
+        var sortingService = new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService();
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
-        var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
+        var entityManagementService = new Klacks.Api.Infrastructure.Services.Clients.ClientEntityManagementService(clientValidator);
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();

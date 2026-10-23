@@ -13,6 +13,7 @@ using Klacks.Api.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Repository;
 

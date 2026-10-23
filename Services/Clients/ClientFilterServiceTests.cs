@@ -1,4 +1,5 @@
 ﻿using Klacks.Api.Domain.Services.Clients;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Services.Clients
 {

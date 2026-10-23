@@ -48,10 +48,10 @@ internal class ExportClientListSelectionTests
         var filterRepository = new ClientFilterRepository(
             _dbContext,
             groupFilterService,
-            new Klacks.Api.Domain.Services.Clients.ClientFilterService(),
-            new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(),
-            new Klacks.Api.Domain.Services.Clients.ClientSearchService(),
-            new Klacks.Api.Domain.Services.Clients.ClientSortingService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService(),
             Substitute.For<IClientFuzzySearchService>());
 
         _handler = new ExportClientListQueryHandler(

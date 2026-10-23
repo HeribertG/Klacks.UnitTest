@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Klacks.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Services.Clients;
 

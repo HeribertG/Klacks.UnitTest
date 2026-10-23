@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Klacks.Api.Infrastructure.Services.Clients;
 
 namespace Klacks.UnitTest.Repository;
 

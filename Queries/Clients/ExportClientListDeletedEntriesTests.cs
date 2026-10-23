@@ -125,10 +125,10 @@ internal class ExportClientListDeletedEntriesTests
         var filterRepository = new ClientFilterRepository(
             _dbContext,
             _groupFilterService,
-            new Klacks.Api.Domain.Services.Clients.ClientFilterService(),
-            new Klacks.Api.Domain.Services.Clients.ClientMembershipFilterService(),
-            new Klacks.Api.Domain.Services.Clients.ClientSearchService(),
-            new Klacks.Api.Domain.Services.Clients.ClientSortingService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientFilterService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientMembershipFilterService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientSearchService(),
+            new Klacks.Api.Infrastructure.Services.Clients.ClientSortingService(),
             Substitute.For<IClientFuzzySearchService>());
 
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
