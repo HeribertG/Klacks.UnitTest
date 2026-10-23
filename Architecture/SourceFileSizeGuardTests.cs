@@ -61,9 +61,16 @@ public class SourceFileSizeGuardTests
     {
     };
 
+    // Matches a member declaration at ANY indentation (file-scoped and block-scoped namespaces, nested types).
+    // The return type is optional so constructors are measured, may contain spaces (generic arguments) and
+    // parenthesised tuple types, and the name may carry generic type parameters. The first modifier must not be
+    // "new", otherwise an object-creation line inside a field initializer would look like a member.
     private static readonly Regex MemberSignature = new(
-        @"^\s{4}(?:\[[^\]]*\]\s*)?(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|partial|new|extern|unsafe)\s+)+[\w<>\[\],\?\.]+\s+(\w+)\s*\(",
-        RegexOptions.Compiled);
+        @"^\s*(?:\[[^\]]*\]\s*)?(?:public|private|protected|internal|static|async|override|virtual|sealed|partial|extern|unsafe)\s+" +
+        @"(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|partial|new|extern|unsafe)\s+)*" +
+        @"(?:(?:[\w<>\[\],\?\.]|\([^()]*\)|\s)+?\s+)?" +
+        @"(\w+)\s*(?:<[^>()]*>)?\s*\(",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex TypeDeclaration = new(
         @"\b(class|record|struct|interface|enum)\b", RegexOptions.Compiled);
@@ -140,13 +147,17 @@ public class SourceFileSizeGuardTests
             $"{Environment.NewLine}{ShrinkOnlyHint}");
     }
 
+    private static bool IsBodylessTerminator(string line) =>
+        line.TrimEnd().EndsWith(';') || line.Contains("=>", StringComparison.Ordinal);
+
     /// <summary>
     /// Brace-counting from a member signature to its matching close. Good enough on purpose: a brace
     /// inside a string literal can overstate a body, which errs towards flagging - and a flagged method
     /// is read by a human before anything is allowlisted. An expression-bodied member and an abstract
-    /// declaration have no body and are skipped.
+    /// declaration have no body and are skipped, including when the "=>" or the ";" sits on a later line of a
+    /// multi-line signature.
     /// </summary>
-    private static IEnumerable<(string Method, int Length)> MethodBodies(IReadOnlyList<string> lines)
+    internal static IEnumerable<(string Method, int Length)> MethodBodies(IReadOnlyList<string> lines)
     {
         for (var i = 0; i < lines.Count; i++)
         {
@@ -167,6 +178,11 @@ public class SourceFileSizeGuardTests
 
             while (end < lines.Count)
             {
+                if (!started && end > i && IsBodylessTerminator(lines[end]))
+                {
+                    break;
+                }
+
                 depth += lines[end].Count(c => c == '{') - lines[end].Count(c => c == '}');
                 if (lines[end].Contains('{', StringComparison.Ordinal))
                 {
@@ -190,4 +206,152 @@ public class SourceFileSizeGuardTests
             i = end;
         }
     }
+
+    [Test]
+    public void MethodBodies_TupleReturnType_IsMeasured()
+    {
+        var source = Snippet(
+            "    private async Task<(AnalyseScenarioResource Scenario, WizardApplyOutcome Outcome)> ApplyAsScenarioAsync(",
+            3,
+            "    ",
+            "        int a,",
+            "        int b)");
+
+        Describe(source).ShouldBe("ApplyAsScenarioAsync:8");
+    }
+
+    [Test]
+    public void MethodBodies_PlainTupleReturnType_IsMeasured()
+    {
+        var source = Snippet("    public static (int Low, int High) Range()", 2, "    ");
+
+        Describe(source).ShouldBe("Range:5");
+    }
+
+    [Test]
+    public void MethodBodies_GenericReturnTypeWithSpaces_IsMeasured()
+    {
+        var source = Snippet("    public Task<Dictionary<string, int>> Load()", 2, "    ");
+
+        Describe(source).ShouldBe("Load:5");
+    }
+
+    [Test]
+    public void MethodBodies_GenericMethod_IsMeasured()
+    {
+        var source = Snippet("    public static T Convert<T>(object value)", 2, "    ");
+
+        Describe(source).ShouldBe("Convert:5");
+    }
+
+    [Test]
+    public void MethodBodies_BlockScopedNamespaceIndentation_IsMeasured()
+    {
+        var source = Snippet("        public void Run()", 2, "        ");
+
+        Describe(source).ShouldBe("Run:5");
+    }
+
+    [Test]
+    public void MethodBodies_TabIndentation_IsMeasured()
+    {
+        var source = Snippet("\tpublic void Run()", 2, "\t");
+
+        Describe(source).ShouldBe("Run:5");
+    }
+
+    [Test]
+    public void MethodBodies_Constructor_IsMeasured()
+    {
+        var source = Snippet("    public WizardApplyService(int dependency)", 2, "    ");
+
+        Describe(source).ShouldBe("WizardApplyService:5");
+    }
+
+    [Test]
+    public void MethodBodies_ConstructorWithBaseCall_IsMeasured()
+    {
+        var source = Snippet("    protected WizardApplyService(int dependency)", 2, "    ", "        : base(dependency)");
+
+        Describe(source).ShouldBe("WizardApplyService:6");
+    }
+
+    [Test]
+    public void MethodBodies_StaticConstructor_IsMeasured()
+    {
+        var source = Snippet("    static WizardApplyService()", 2, "    ");
+
+        Describe(source).ShouldBe("WizardApplyService:5");
+    }
+
+    [Test]
+    public void MethodBodies_ExpressionBodiedMember_OnLaterLine_DoesNotSwallowNextMember()
+    {
+        var source = new List<string>
+        {
+            "    public int Answer()",
+            "        => 42;",
+            ""
+        };
+        source.AddRange(Snippet("    public void Next()", 2, "    "));
+
+        Describe(source).ShouldBe("Next:5");
+    }
+
+    [Test]
+    public void MethodBodies_ObjectCreationInInitializer_IsNotAMember()
+    {
+        var source = new List<string>
+        {
+            "    private static readonly Item[] Items =",
+            "    [",
+            "        new Item(\"a\"),",
+            "        new Item(\"b\")",
+            "    ];",
+            "    private readonly Dictionary<string, int> map = new(StringComparer.Ordinal);"
+        };
+
+        MethodBodies(source).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void MethodBodies_TypeDeclarationWithPrimaryConstructor_IsNotAMember()
+    {
+        var source = new List<string>
+        {
+            "    public sealed class Handler(int dependency)",
+            "    {",
+            "    }"
+        };
+
+        MethodBodies(source).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void MethodBodies_BodyAboveTheLimit_IsReportedAboveTheLimit()
+    {
+        var source = Snippet("    private async Task<(int First, int Second)> Long()", MethodLineLimit, "    ");
+
+        var measured = MethodBodies(source).ToList();
+
+        measured.Count.ShouldBe(1);
+        measured[0].Length.ShouldBeGreaterThan(MethodLineLimit);
+    }
+
+    private static List<string> Snippet(string signature, int bodyLines, string indent, params string[] continuation)
+    {
+        var lines = new List<string> { signature };
+        lines.AddRange(continuation);
+        lines.Add($"{indent}{{");
+        for (var i = 0; i < bodyLines; i++)
+        {
+            lines.Add($"{indent}    var value{i} = {i};");
+        }
+
+        lines.Add($"{indent}}}");
+        return lines;
+    }
+
+    private static string Describe(IReadOnlyList<string> lines) =>
+        string.Join(",", MethodBodies(lines).Select(m => $"{m.Method}:{m.Length}"));
 }
