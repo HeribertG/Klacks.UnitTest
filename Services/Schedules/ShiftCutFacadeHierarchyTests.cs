@@ -63,6 +63,7 @@ public class ShiftCutFacadeHierarchyTests
             new ScheduleMapper(),
             _unitOfWork,
             ShiftVisibilityGuards.AllowAll(),
+            NoStoredExpenses(),
             Substitute.For<ILogger<ShiftCutFacade>>());
     }
 
@@ -189,6 +190,13 @@ public class ShiftCutFacadeHierarchyTests
         await _shiftRepository.DidNotReceiveWithAnyArgs().Add(default!);
         await _shiftRepository.DidNotReceiveWithAnyArgs().PutCutUpdate(default!);
         await _unitOfWork.DidNotReceive().CompleteAsync();
+    }
+
+    private static IShiftExpensesRepository NoStoredExpenses()
+    {
+        var expenses = Substitute.For<IShiftExpensesRepository>();
+        expenses.GetByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>()).Returns(new List<ShiftExpenses>());
+        return expenses;
     }
 
     private void Store(Shift shift) => _stored[shift.Id] = shift;
