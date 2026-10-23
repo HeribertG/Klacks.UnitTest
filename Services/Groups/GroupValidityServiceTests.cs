@@ -247,7 +247,7 @@ public class GroupValidityServiceTests
     }
 
     [Test]
-    public async Task ApplyDateRangeFilter_WithNoRangesSelected_ShouldReturnEmptyResult()
+    public async Task ApplyDateRangeFilter_WithNoRangesSelected_ShouldReturnAnEmptyResultTheDatabaseCanExecute()
     {
         // Arrange
         var groupId = Guid.NewGuid();
@@ -269,9 +269,7 @@ public class GroupValidityServiceTests
         // Act
         var result = _validityService.ApplyDateRangeFilter(baseQuery, false, false, false, DateOnly.FromDateTime(DateTime.UtcNow));
 
-        // The service returns Enumerable.Empty<Group>().AsQueryable() which can't be used with EF async operations
-        // So we use the synchronous version
-        var groups = result.ToList();
+        var groups = await result.ToListAsync();
 
         // Assert
         groups.ShouldBeEmpty();
