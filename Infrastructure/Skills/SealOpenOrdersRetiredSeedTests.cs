@@ -4,11 +4,13 @@
 /// Owner decision 2026-10-23 ("Massen-Versiegeln: nein"): Klacksy may no longer call seal_open_orders at all - not in the
 /// chat, not in a plan, not over MCP or a background path. The skill is switched off in its seed, with a raised version so
 /// the loader switches the stored row off on existing installations too, and the registry only ever loads enabled rows.
-/// Mass sealing comes back only as part of the guided order review (Phase B). The single-order seal_shift stays enabled.
+/// Mass sealing comes back only as part of the guided order review (Phase B). Should the row ever be switched on again, the
+/// skill still classifies Sensitive through the classifier's fail-closed default. The single-order seal_shift stays enabled.
 /// </summary>
 
 using System.Text.Json.Nodes;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Application.Skills.Meta;
 using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Skills;
@@ -36,6 +38,14 @@ public class SealOpenOrdersRetiredSeedTests
 
         seed["isEnabled"]!.GetValue<bool>().ShouldBeFalse();
         seed["version"]!.GetValue<int>().ShouldBeGreaterThan(LastEnabledVersion);
+    }
+
+    [Test]
+    public void SealOpenOrders_StaysSensitive_ShouldItEverBeSwitchedOnAgain()
+    {
+        var descriptor = new SkillDescriptor(SealOpenOrdersSkill.SkillName, "retired", SkillCategory.Crud, [], [], [], null);
+
+        new SkillRiskClassifier().Classify(descriptor).ShouldBe(SkillRiskClass.Sensitive);
     }
 
     [Test]
