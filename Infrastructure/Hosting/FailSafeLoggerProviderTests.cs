@@ -29,6 +29,7 @@ public class FailSafeLoggerProviderTests
     [TearDown]
     public void TearDown()
     {
+        _innerProvider.Dispose();
         _errorOutput.Dispose();
     }
 
