@@ -202,7 +202,9 @@ public class CutShiftSkillCharacterizationTests
         result.Message.ShouldBe(
             "Cut the plannable shift '24h Dienst' into 2 part(s): Early, Late Shift, 24h Dienst (23:00-07:00). " +
             "The first part reuses the plannable shift (reduced, status -> SplitShift); " +
-            "the order (Bestellung) itself stays unchanged.");
+            "the order (Bestellung) itself stays unchanged. Default expenses booked with every work of a part - " +
+            "'Early': no default expenses; 'Late Shift': no default expenses; " +
+            "'24h Dienst (23:00-07:00)': no default expenses. Tell the user these expenses per part.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
             "{\"SealedOrderId\":\"" + SealedOrderId + "\",\"OrderName\":\"24h Dienst\",\"PartCount\":2,\"GroupCount\":2," +
             "\"Parts\":[" +
