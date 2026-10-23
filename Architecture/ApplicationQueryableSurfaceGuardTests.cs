@@ -17,7 +17,6 @@
 /// LayerDependencyGuardTests.
 /// </summary>
 
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.UnitTest.TestHelpers;
@@ -31,7 +30,7 @@ public class ApplicationQueryableSurfaceGuardTests
     private const string InfrastructureNamespace = "Klacks.Api.Infrastructure";
     private const string PresentationNamespace = "Klacks.Api.Presentation";
     private const int MinimumApplicationFiles = 1000;
-    private const char GenericArityMarker = '`';
+    private const int MinimumScannedInterfaces = 500;
 
     private static readonly string[] ExcludedPathFragments =
     [
@@ -87,8 +86,8 @@ public class ApplicationQueryableSurfaceGuardTests
     public void Scan_CoversTheApplicationLayerAndTheApiInterfaces()
     {
         ApplicationFiles().Count.ShouldBeGreaterThan(MinimumApplicationFiles, "The Application scan found too few files.");
-        QueryableInterfacesBySimpleName().ShouldNotBeEmpty(
-            "The reflection scan sees no interface with a queryable member at all; the Domain still has Infrastructure-only query helpers.");
+        ScannedInterfaces().Count.ShouldBeGreaterThan(
+            MinimumScannedInterfaces, "The reflection scan found too few Domain/Application interfaces; the guard would pass vacuously.");
     }
 
     [Test]
@@ -117,13 +116,19 @@ public class ApplicationQueryableSurfaceGuardTests
         QueryableName.IsMatch(blanked[3]).ShouldBeTrue();
     }
 
-    private static Dictionary<string, List<string>> QueryableInterfacesBySimpleName()
+    private static List<Type> ScannedInterfaces()
     {
         return typeof(IUnitOfWork).Assembly.GetTypes()
             .Where(type => type.IsInterface && type.Namespace != null)
             .Where(type => !type.Namespace!.StartsWith(InfrastructureNamespace, StringComparison.Ordinal)
                            && !type.Namespace.StartsWith(PresentationNamespace, StringComparison.Ordinal))
-            .Select(type => (Name: SimpleName(type), Members: QueryableMembers(type)))
+            .ToList();
+    }
+
+    private static Dictionary<string, List<string>> QueryableInterfacesBySimpleName()
+    {
+        return ScannedInterfaces()
+            .Select(type => (Name: QueryableSignatureInspector.SimpleName(type), Members: QueryableMembers(type)))
             .Where(entry => entry.Members.Count > 0)
             .GroupBy(entry => entry.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.SelectMany(entry => entry.Members).Distinct().ToList(), StringComparer.Ordinal);
@@ -135,41 +140,9 @@ public class ApplicationQueryableSurfaceGuardTests
     {
         return new[] { interfaceType }
             .Concat(interfaceType.GetInterfaces())
-            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
-            .Where(method => CarriesQueryable(method.ReturnType)
-                             || method.GetParameters().Any(parameter => CarriesQueryable(parameter.ParameterType)))
-            .Select(method => $"{SimpleName(method.DeclaringType!)}.{method.Name}")
+            .SelectMany(QueryableSignatureInspector.ExposedQueryableMembers)
             .Distinct(StringComparer.Ordinal)
             .ToList();
-    }
-
-    private static bool CarriesQueryable(Type type)
-    {
-        if (type.IsByRef || type.IsArray || type.IsPointer)
-        {
-            return CarriesQueryable(type.GetElementType()!);
-        }
-
-        if (type.IsGenericParameter)
-        {
-            return false;
-        }
-
-        if (typeof(IQueryable).IsAssignableFrom(type)
-            || (type.IsGenericType && type.GetGenericTypeDefinition().GetInterfaces().Contains(typeof(IQueryable)))
-            || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IQueryable<>)))
-        {
-            return true;
-        }
-
-        return type.IsGenericType && type.GetGenericArguments().Any(CarriesQueryable);
-    }
-
-    private static string SimpleName(Type type)
-    {
-        var name = type.Name;
-        var marker = name.IndexOf(GenericArityMarker);
-        return marker < 0 ? name : name[..marker];
     }
 
     private static List<SourceFile> ApplicationFiles()
