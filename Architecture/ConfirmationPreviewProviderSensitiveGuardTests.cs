@@ -66,7 +66,9 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
             BulkDeleteWorksSkill.SkillName,
             MacroAssignmentSkillNames.AssignToShift,
             MacroAssignmentSkillNames.AssignToAbsenceType,
-            MacroAssignmentSkillNames.Revert
+            MacroAssignmentSkillNames.Revert,
+            "seal_open_orders",
+            "seal_shift"
         ];
 
         foreach (var name in bound)

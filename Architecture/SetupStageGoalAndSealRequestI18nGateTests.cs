@@ -84,7 +84,7 @@ public class SetupStageGoalAndSealRequestI18nGateTests
                 WelcomeFocusI18nKeys.NoShiftsPrompt,
                 WelcomeFocusI18nKeys.NoShiftsAction,
                 WelcomeFocusI18nKeys.SetupConsultationAccept,
-                SetupChatPromptKeys.SealOpenOrdersRequest,
+                "klacksy.orders.review.request",
                 SetupChatPromptKeys.SetupConsultationTrigger,
                 ChatOnlyGoalHintKey,
                 ChatBusyKey,

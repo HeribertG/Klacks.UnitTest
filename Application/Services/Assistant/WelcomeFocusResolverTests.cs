@@ -96,7 +96,7 @@ public class WelcomeFocusResolverTests
     }
 
     [Test]
-    public async Task ResolveAsync_OrdersButNoShifts_AnswersTheSealQuestionWithASealRequest()
+    public async Task ResolveAsync_OrdersButNoShifts_AnswersWithAReviewRequestThatSealsNothing()
     {
         _setupProbe.GetSetupStateAsync(Arg.Any<CancellationToken>()).Returns(OrdersButNoShifts());
 
@@ -106,7 +106,7 @@ public class WelcomeFocusResolverTests
         result!.PromptKey.ShouldBe(WelcomeFocusI18nKeys.NoShiftsPrompt);
         result.ActionKind.ShouldBe(WelcomeFocusActionKinds.Prompt);
         result.ActionLabelKey.ShouldBe(WelcomeFocusI18nKeys.NoShiftsAction);
-        result.ActionPromptKey.ShouldBe(SetupChatPromptKeys.SealOpenOrdersRequest);
+        result.ActionPromptKey.ShouldBe("klacksy.orders.review.request");
         result.ActionRoute.ShouldBeNull();
     }
 

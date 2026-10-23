@@ -130,7 +130,13 @@ public class GoalTypeCatalogTests
         GoalTypeCatalog.FindForStage(ScheduleSetupStage.NothingYet).ChatPromptKey
             .ShouldBe(SetupChatPromptKeys.SetupConsultationTrigger);
         GoalTypeCatalog.FindForStage(ScheduleSetupStage.OrdersButNoShifts).ChatPromptKey
-            .ShouldBe(SetupChatPromptKeys.SealOpenOrdersRequest);
+            .ShouldBe("klacksy.orders.review.request");
+    }
+
+    [Test]
+    public void TheOpenOrderGoal_StartsTheReviewInTheChatInsteadOfDraftingAPlan()
+    {
+        GoalTypeCatalog.ByTriggerKind[AgentTriggerKinds.OpenOrder].ChatPromptKey.ShouldBe("klacksy.orders.review.request");
     }
 
     [Test]
