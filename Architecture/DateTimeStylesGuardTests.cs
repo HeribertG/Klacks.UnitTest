@@ -91,45 +91,6 @@ public class DateTimeStylesGuardTests
         };
 
     /// <summary>
-    /// DateOnly/TimeOnly call sites that already existed when the culture rule was introduced. They read
-    /// CultureInfo.CurrentCulture, so the same LLM- or import-supplied string becomes a different day in
-    /// the production container than on a developer machine. They are counted rather than hidden: the
-    /// count may only go down as call sites move to SkillCalendarStringParser, and any NEW occurrence
-    /// fails the guard.
-    /// </summary>
-    private static readonly IReadOnlyDictionary<string, int> CultureSensitiveBacklog =
-        new Dictionary<string, int>
-        {
-            ["Application/Services/Assistant/PlanningScopeEnricher.cs"] = 1,
-            ["Application/Services/Schedules/WizardContextBuilder.cs"] = 3,
-            ["Application/Skills/AddBreakSkill.cs"] = 2,
-            ["Application/Skills/AddWorkChangeSkill.cs"] = 2,
-            ["Application/Skills/AssignContractByNameSkill.cs"] = 2,
-            ["Application/Skills/AssignContractToClientSkill.cs"] = 2,
-            ["Application/Skills/BundleNearbyTimeRangeShiftsIntoContainerSkill.cs"] = 4,
-            ["Application/Skills/CreateContainerTemplateSkill.cs"] = 2,
-            ["Application/Skills/CreateIndividualPeriodSkill.cs"] = 2,
-            ["Application/Skills/CreateShiftSkill.cs"] = 4,
-            ["Application/Skills/CreateTestEnvironmentSkill.cs"] = 1,
-            ["Application/Skills/CutShiftSkill.cs"] = 2,
-            ["Application/Skills/DetectConflictsSkill.cs"] = 2,
-            ["Application/Skills/GeneratePeriodSummarySkill.cs"] = 2,
-            ["Application/Skills/PlaceWorkSkill.cs"] = 2,
-            ["Application/Skills/ProposePlanSkill.cs"] = 3,
-            ["Application/Skills/ReadScheduleStateSkill.cs"] = 2,
-            ["Application/Skills/ResetContainerDaySkill.cs"] = 1,
-            ["Application/Skills/SearchClientAbsencesSkill.cs"] = 1,
-            ["Application/Skills/SetClientAvailabilitySkill.cs"] = 1,
-            ["Application/Skills/SetSealedOrderUntilDateSkill.cs"] = 1,
-            ["Application/Skills/UpdateBreakSkill.cs"] = 2,
-            ["Application/Skills/UpdateIndividualPeriodSkill.cs"] = 2,
-            ["Application/Skills/UpdateShiftSkill.cs"] = 4,
-            ["Application/Skills/UpdateWorkChangeSkill.cs"] = 2,
-            ["Application/Skills/UpdateWorkSkill.cs"] = 2,
-            ["Domain/Services/Assistant/Grounding/ToolResultGroundingPoolBuilder.cs"] = 1
-        };
-
-    /// <summary>
     /// Real multi-line call sites that DO pass DateTimeStyles (split onto their own line, which is why a
     /// naive line-by-line scan would misflag them). Asserted to be both scanned (anti-vacuous: the guard
     /// must actually inspect these files) and NOT flagged (proves the statement-level scan, not a
@@ -154,7 +115,6 @@ public class DateTimeStylesGuardTests
 
         var violations = occurrences
             .Where(o => !AllowedOccurrences.ContainsKey(o.Key))
-            .Where(o => !IsWithinTheBacklog(o.Key, o.Value.Count))
             .ToList();
 
         var report = new StringBuilder();
@@ -193,29 +153,6 @@ public class DateTimeStylesGuardTests
             {
                 stale.AppendLine($"  {path}: expected {expectedCount} occurrence(s) but found {actual.Count} " +
                                  $"at line(s) {string.Join(", ", actual.Lines)}.");
-            }
-        }
-
-        foreach (var (path, expectedCount) in CultureSensitiveBacklog)
-        {
-            if (!occurrences.TryGetValue(path, out var remaining))
-            {
-                stale.AppendLine($"  {path}: listed in the culture-sensitive backlog but contains no " +
-                                 "occurrence anymore - remove the entry.");
-                continue;
-            }
-
-            if (remaining.Count > expectedCount)
-            {
-                stale.AppendLine($"  {path}: the backlog allows {expectedCount} occurrence(s) but found " +
-                                 $"{remaining.Count} at line(s) {string.Join(", ", remaining.Lines)}. " +
-                                 "The backlog is a ratchet - new occurrences are not allowed.");
-            }
-
-            if (remaining.Count < expectedCount)
-            {
-                stale.AppendLine($"  {path}: only {remaining.Count} of {expectedCount} backlog " +
-                                 "occurrence(s) are left - lower the number so the ratchet keeps its grip.");
             }
         }
 
@@ -303,9 +240,6 @@ public class DateTimeStylesGuardTests
             "\"DateTimeStyles.None\" would wrongly flag this as None-only and correct callers would have " +
             "to work around a guard bug.");
     }
-
-    private static bool IsWithinTheBacklog(string relativePath, int count) =>
-        CultureSensitiveBacklog.TryGetValue(relativePath, out var allowed) && count <= allowed;
 
     private static (
         Dictionary<string, (int Count, List<int> Lines)> Occurrences,
