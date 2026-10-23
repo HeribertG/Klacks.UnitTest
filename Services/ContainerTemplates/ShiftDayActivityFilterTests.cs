@@ -32,7 +32,7 @@ public class ShiftDayActivityFilterTests
         var shifts = Enumerable.Range(0, DaysPerWeek).Select(day => Ticked(day, isHoliday: day % 2 == 0)).ToList();
 
         // Act
-        var result = ShiftDayActivityFilter.Apply(shifts.AsQueryable(), weekday, isHoliday: false, isWeekdayAndHoliday: false);
+        var result = shifts.AsQueryable().Where(ShiftDayActivityFilter.RunsOn(weekday, isHoliday: false, isWeekdayAndHoliday: false));
 
         // Assert
         result.ShouldBe([shifts[weekday]]);
@@ -53,8 +53,8 @@ public class ShiftDayActivityFilterTests
         var pureHoliday = new Shift { Id = Guid.NewGuid(), IsHoliday = true };
 
         // Act
-        var result = ShiftDayActivityFilter.Apply(
-            weekdayAndHoliday.Concat(plain).Append(pureHoliday).AsQueryable(), weekday, isHoliday: true, isWeekdayAndHoliday: true);
+        var result = weekdayAndHoliday.Concat(plain).Append(pureHoliday).AsQueryable()
+            .Where(ShiftDayActivityFilter.RunsOn(weekday, isHoliday: true, isWeekdayAndHoliday: true));
 
         // Assert
         result.ShouldBe([weekdayAndHoliday[weekday], pureHoliday], ignoreOrder: true);
@@ -70,8 +70,8 @@ public class ShiftDayActivityFilterTests
         var shifts = new[] { monday, tuesdayAndHoliday, nothingTicked }.AsQueryable();
 
         // Act
-        var normalDay = ShiftDayActivityFilter.Apply(shifts, OutOfRangeWeekday, isHoliday: null, isWeekdayAndHoliday: null);
-        var holiday = ShiftDayActivityFilter.Apply(shifts, OutOfRangeWeekday, isHoliday: true, isWeekdayAndHoliday: true);
+        var normalDay = shifts.Where(ShiftDayActivityFilter.RunsOn(OutOfRangeWeekday, isHoliday: null, isWeekdayAndHoliday: null));
+        var holiday = shifts.Where(ShiftDayActivityFilter.RunsOn(OutOfRangeWeekday, isHoliday: true, isWeekdayAndHoliday: true));
 
         // Assert
         normalDay.ShouldBe([monday, tuesdayAndHoliday, nothingTicked], ignoreOrder: true);
@@ -102,7 +102,7 @@ public class ShiftDayActivityFilterTests
         var shifts = new[] { pureHoliday, mondayAndHoliday, everyWeekdayAndHoliday, mondayWeekdayAndHoliday, monday }.AsQueryable();
 
         // Act
-        var result = ShiftDayActivityFilter.Apply(shifts, 1, isHoliday: true, isWeekdayAndHoliday: isWeekdayAndHoliday);
+        var result = shifts.Where(ShiftDayActivityFilter.RunsOn(1, isHoliday: true, isWeekdayAndHoliday: isWeekdayAndHoliday));
 
         // Assert
         result.ShouldBe([pureHoliday, mondayAndHoliday, everyWeekdayAndHoliday], ignoreOrder: true);
