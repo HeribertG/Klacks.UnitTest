@@ -123,18 +123,25 @@ public class ChatControllerStreamCharacterizationTests
             return Chunks(SseChunk.Done());
         };
 
-        await CreateController().ProcessMessageStream(
+        var pageContext = new AssistantPageContext { CurrentRoute = "/workplace/schedule", SelectedGroupId = "group-1" };
+
+        await CreateController(authorization: "Bearer token-123").ProcessMessageStream(
             new LLMRequest
             {
                 Message = "Zeig mir alles",
                 ConversationId = "conv-1",
                 ModelId = "model-1",
                 Language = "de",
-                IsVoiceMode = true
+                IsVoiceMode = true,
+                PageContext = pageContext
             },
             CancellationToken.None);
 
         seen.ShouldNotBeNull();
+        seen.PageContext.ShouldBeSameAs(pageContext);
+        seen.AccessToken.ShouldNotBeNull();
+        seen.AccessToken.Value.ShouldBe("token-123");
+        seen.StopToken.CanBeCanceled.ShouldBeTrue();
         seen.Message.ShouldBe("Zeig mir alles");
         seen.UserId.ShouldBe(OwnerId);
         seen.ConversationId.ShouldBe("conv-1");
@@ -143,6 +150,43 @@ public class ChatControllerStreamCharacterizationTests
         seen.IsVoiceMode.ShouldBeTrue();
         seen.TurnId.ShouldNotBe(Guid.Empty);
         seen.TurnStartTimestamp.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task NormalTurn_WithoutAuthorizationHeader_HandsNoAccessToken()
+    {
+        LLMStreamRequest? seen = null;
+        _script = request =>
+        {
+            seen = request;
+            return Chunks(SseChunk.Done());
+        };
+
+        await CreateController().ProcessMessageStream(new LLMRequest { Message = "Zeig mir alles" }, CancellationToken.None);
+
+        seen.ShouldNotBeNull();
+        seen.AccessToken.ShouldBeNull();
+        seen.PageContext.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task NormalTurn_WithoutAUserId_StreamsWithAStopTokenThatCanNeverBeCancelled()
+    {
+        LLMStreamRequest? seen = null;
+        _script = request =>
+        {
+            seen = request;
+            return Chunks(SseChunk.Done());
+        };
+
+        await CreateController(userId: null).ProcessMessageStream(
+            new LLMRequest { Message = "Zeig mir alles" }, CancellationToken.None);
+
+        seen.ShouldNotBeNull();
+        seen.UserId.ShouldBe(string.Empty);
+        seen.StopToken.ShouldBe(CancellationToken.None);
+        seen.StopToken.CanBeCanceled.ShouldBeFalse();
+        EventNames(ReadBody()).ShouldBe([SseEventNames.Status, SseEventNames.Done]);
     }
 
     [Test]
@@ -169,12 +213,17 @@ public class ChatControllerStreamCharacterizationTests
         return new StreamReader(_body).ReadToEnd();
     }
 
-    private ChatController CreateController()
+    private ChatController CreateController(string? userId = OwnerId, string? authorization = null)
     {
-        var principal = new ClaimsPrincipal(
-            new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, OwnerId) }, "Test"));
+        var principal = userId == null
+            ? new ClaimsPrincipal(new ClaimsIdentity("Test"))
+            : new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, userId) }, "Test"));
         var httpContext = new DefaultHttpContext { User = principal };
         httpContext.Response.Body = _body;
+        if (authorization != null)
+        {
+            httpContext.Request.Headers.Authorization = authorization;
+        }
 
         return new ChatController(
             Substitute.For<ILogger<ChatController>>(),

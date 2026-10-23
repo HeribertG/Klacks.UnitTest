@@ -54,30 +54,28 @@ public class AnthropicProviderStreamCharacterizationTests
 
         """;
 
-    private const string SkippedLinesBody = """
-        : keep-alive comment
-        event: content_block_delta
-        data:
-
-        event: content_block_delta
-        data: {not json
-
-        event: content_block_delta
-        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"A"}}
-
-        event: content_block_start
-        data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use"}}
-
-        event: content_block_delta
-        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"B"}}
-
-        event: message_stop
-        data: {"type":"message_stop"}
-
-        event: content_block_delta
-        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"after stop"}}
-
-        """;
+    private const string SkippedLinesBody =
+        ": keep-alive comment\n" +
+        "event: content_block_delta\n" +
+        "data:\n" +
+        "data: \n" +
+        "data:   \t \n\n" +
+        "event: content_block_delta\n" +
+        "data: {not json\n\n" +
+        "event: content_block_delta\n" +
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"A\"}}\n\n" +
+        "event: content_block_start\n" +
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\"}}\n\n" +
+        "event: content_block_delta\n" +
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"B\"}}\n\n" +
+        "event: message_stop\n" +
+        "data:  \n\n" +
+        "event: content_block_delta\n" +
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"C\"}}\n\n" +
+        "event: message_stop\n" +
+        "data: {\"type\":\"message_stop\"}\n\n" +
+        "event: content_block_delta\n" +
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"after stop\"}}\n\n";
 
     private const string DeltaUsageWithoutStartBody = """
         event: content_block_delta
@@ -298,8 +296,25 @@ public class AnthropicProviderStreamCharacterizationTests
 
         var tokens = await CollectAsync(provider, CreateRequest());
 
-        tokens.ShouldBe(["A", "B"]);
+        tokens.ShouldBe(["A", "B", "C"]);
         logger.Entries.ShouldContain(e => e.Message == "Anthropic stream result: hasToolCalls=False toolCallCount=0");
+    }
+
+    [Test]
+    public async Task ABlankDataLineUnderMessageStop_IsSkippedBeforeTheStopCheck_SoReadingContinues()
+    {
+        const string body =
+            "event: content_block_delta\n" +
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"before\"}}\n\n" +
+            "event: message_stop\n" +
+            "data:    \n\n" +
+            "event: content_block_delta\n" +
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"after blank stop\"}}\n\n";
+        var (provider, _, _) = CreateProvider(body);
+
+        var tokens = await CollectAsync(provider, CreateRequest());
+
+        tokens.ShouldBe(["before", "after blank stop"]);
     }
 
     [Test]

@@ -282,6 +282,76 @@ public class GroupUngroupedByCityNameCommandHandlerCharacterizationTests
     }
 
     [Test]
+    public async Task Apply_InEntryDateMode_OnlyAPullForward_RunsTheTransactionWithoutAddingOrCounting()
+    {
+        var anna = Employee("Anna", At("Bern"));
+        SetEmployees(anna);
+        var itemId = Guid.NewGuid();
+        var entry = new DateTime(2021, 4, 1, 0, 0, 0, DateTimeKind.Utc);
+        _groupItemRepository.GetByClientAndGroup(anna.Id, _bernGroupId)
+            .Returns(new GroupItem { Id = itemId, ClientId = anna.Id, GroupId = _bernGroupId, ValidFrom = CompanyToday });
+        var handler = new GroupUngroupedByCityNameCommandHandler(
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, _groupRepository, (anna.Id, new DateOnly(2021, 4, 1))));
+        var calls = new List<string>();
+        _groupItemRepository.PullForwardValidFromAsync(Arg.Any<IReadOnlyDictionary<Guid, DateTime>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                calls.Add("PullForward");
+                return ci.Arg<IReadOnlyDictionary<Guid, DateTime>>().Count;
+            });
+        _unitOfWork.When(u => u.CompleteAsync()).Do(_ => calls.Add("Complete"));
+        _groupItemRepository.GetValidFromByIdsAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                calls.Add("VerifyPullForward");
+                return new Dictionary<Guid, DateTime?> { [itemId] = entry };
+            });
+        var command = new GroupUngroupedByCityNameCommand(null, null, true, "tester", GroupMembershipStartMode.EntryDate);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        result.Applied.ShouldBeTrue();
+        result.MatchCount.ShouldBe(1);
+        result.AddedCount.ShouldBe(0);
+        result.VerifiedCount.ShouldBe(0);
+        result.MembershipStart!.PersonCount.ShouldBe(0);
+        result.MembershipStart.ExistingMembersPulledForwardCount.ShouldBe(1);
+        calls.ShouldBe(new[] { "PullForward", "Complete", "VerifyPullForward" });
+        await _unitOfWork.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>());
+        await _groupItemRepository.DidNotReceive().Add(Arg.Any<GroupItem>());
+        await _groupItemRepository.DidNotReceive()
+            .CountExistingByIds(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>());
+        await _groupItemRepository.Received(1).PullForwardValidFromAsync(
+            Arg.Is<IReadOnlyDictionary<Guid, DateTime>>(map => map.Count == 1 && map[itemId] == entry),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Preview_InEntryDateMode_OnlyAPullForward_ReportsItWithoutWriting()
+    {
+        var anna = Employee("Anna", At("Bern"));
+        SetEmployees(anna);
+        _groupItemRepository.GetByClientAndGroup(anna.Id, _bernGroupId)
+            .Returns(new GroupItem { Id = Guid.NewGuid(), ClientId = anna.Id, GroupId = _bernGroupId, ValidFrom = CompanyToday });
+        var handler = new GroupUngroupedByCityNameCommandHandler(
+            _clientRepository, _groupRepository, _groupItemRepository, _unitOfWork,
+            TestGroupWriteVisibility.UnrestrictedGroups(),
+            TestGroupMembershipStart.Planner(_companyClock, _groupItemRepository, _groupRepository, (anna.Id, new DateOnly(2021, 4, 1))));
+        var command = new GroupUngroupedByCityNameCommand(null, null, false, "tester", GroupMembershipStartMode.EntryDate);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        result.Applied.ShouldBeFalse();
+        result.AddedCount.ShouldBe(0);
+        result.MembershipStart!.ExistingMembersPulledForwardCount.ShouldBe(1);
+        result.MembershipStart.PulledForwardEarliestEntryDate.ShouldBe("2021-04-01");
+        await _unitOfWork.DidNotReceive().ExecuteInTransactionAsync(Arg.Any<Func<Task<int>>>());
+        await _groupItemRepository.DidNotReceiveWithAnyArgs().PullForwardValidFromAsync(default!, default);
+    }
+
+    [Test]
     public async Task GroupName_IsReportedUntrimmed_WhileTheCityIsTrimmed()
     {
         var spacedId = Guid.NewGuid();

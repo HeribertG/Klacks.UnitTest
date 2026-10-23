@@ -205,11 +205,13 @@ public class EmailPollingBackgroundServiceCharacterizationTests
     [Test]
     public async Task FolderNames_AreComparedCaseInsensitively()
     {
+        AnalysisReturns(Analysis(_resolvedClientId));
         var inboxEmail = Email("inbox");
 
         await ProcessAsync(inboxEmail);
 
         await _spamFilterService.Received(1).ClassifyAsync(inboxEmail, Arg.Any<CancellationToken>());
+        inboxEmail.ProcessedAt.ShouldNotBeNull();
 
         var junkEmail = Email("JUNK");
 
@@ -218,6 +220,9 @@ public class EmailPollingBackgroundServiceCharacterizationTests
         junkEmail.ProcessedAt.ShouldNotBeNull();
         await _spamFilterService.DidNotReceive().ClassifyAsync(junkEmail, Arg.Any<CancellationToken>());
         await _clientAssignmentService.DidNotReceive().ResolveClientAsync(junkEmail, Arg.Any<CancellationToken>());
+        await _intentAnalysisService.Received(1).AnalyzeAsync(
+            Arg.Any<Guid>(), Arg.Any<EntityTypeEnum>(), Arg.Any<InboundSource>(), Arg.Any<CancellationToken>());
+        _logger.Entries.ShouldBeEmpty();
     }
 
     [Test]

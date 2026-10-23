@@ -32,7 +32,20 @@ public class SkillToolsetGuaranteeResolverCharacterizationTests
     private const string CutShiftSkill = "cut_shift";
     private const string TwoMutationsMessage = "Erstelle den Mitarbeiter Hans Muster. Lösche den Mitarbeiter Peter Meier.";
     private const string OneMutationMessage = "Erstelle den Mitarbeiter Hans Muster.";
+    private const string ForcingRecipeTwoMutationsMessage = "Erstelle einen Dienst aus der Bestellung. Schneide ihn in drei Teile.";
+    private const string EngineRecipeTwoMutationsMessage = "Erstelle einen neuen Auftrag. Lösche den Mitarbeiter Peter Meier.";
 
+    private static readonly AgentRecipe OrderRecipe = new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "create-shift-order",
+        Goal = "Create a shift order.",
+        TriggerJson = """{"allOf":[{"anyWordStart":["erstell"]},{"anySubstring":["auftrag"]}],"noneOf":[]}""",
+        StepsJson = """[{"kind":"mutate","skill":"create_shift"}]""",
+        IsEnabled = true,
+    };
+
+    private List<AgentRecipe> _recipes = null!;
     private IPendingUserNoteRepository _pendingNotes = null!;
     private ITurnIntentExplainGuarantee _turnIntent = null!;
     private Guid _agentId;
@@ -43,6 +56,7 @@ public class SkillToolsetGuaranteeResolverCharacterizationTests
     {
         _agentId = Guid.NewGuid();
         _userId = Guid.NewGuid();
+        _recipes = new List<AgentRecipe>();
         _pendingNotes = Substitute.For<IPendingUserNoteRepository>();
         _pendingNotes.CountPendingAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(0);
         _turnIntent = new NoTurnIntentExplainGuarantee();
@@ -54,7 +68,7 @@ public class SkillToolsetGuaranteeResolverCharacterizationTests
         relations.GetByAgentAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<SkillRelation>());
 
         var recipeRepository = Substitute.For<IAgentRecipeRepository>();
-        recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
+        recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(_recipes);
         var skillRepository = SkillRepositoryStubs.WithoutRequirements();
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
@@ -190,6 +204,44 @@ public class SkillToolsetGuaranteeResolverCharacterizationTests
     {
         var result = await Resolve([Skill(PlanSkillDefaults.CreatePlanSkillName)], OneMutationMessage);
 
+        Names(result).ShouldNotContain(PlanSkillDefaults.CreatePlanSkillName);
+    }
+
+    [Test]
+    public async Task TwoMutationTargets_CoveredByAForcingRecipe_DoNotGuaranteeCreatePlan()
+    {
+        PlanTriggerHeuristic.IsPlanCandidate(ForcingRecipeTwoMutationsMessage, false).ShouldBeTrue();
+        RecipeForcingResolver.GuaranteedSkillNames(ForcingRecipeTwoMutationsMessage).ShouldNotBeEmpty();
+
+        var result = await Resolve(
+            [Skill(PlanSkillDefaults.CreatePlanSkillName), Skill(CreateShiftSkill)], ForcingRecipeTwoMutationsMessage);
+
+        result.GuaranteedSources[CreateShiftSkill].ShouldBe(ToolsetSkillSource.RecipeStep);
+        Names(result).ShouldNotContain(PlanSkillDefaults.CreatePlanSkillName);
+    }
+
+    [Test]
+    public async Task TwoMutationTargets_WithoutAnyRecipe_GuaranteeCreatePlan()
+    {
+        PlanTriggerHeuristic.IsPlanCandidate(EngineRecipeTwoMutationsMessage, false).ShouldBeTrue();
+        RecipeForcingResolver.GuaranteedSkillNames(EngineRecipeTwoMutationsMessage).ShouldBeEmpty();
+
+        var result = await Resolve(
+            [Skill(PlanSkillDefaults.CreatePlanSkillName), Skill(CreateShiftSkill)], EngineRecipeTwoMutationsMessage);
+
+        result.GuaranteedSources[PlanSkillDefaults.CreatePlanSkillName].ShouldBe(ToolsetSkillSource.Hint);
+        Names(result).ShouldNotContain(CreateShiftSkill);
+    }
+
+    [Test]
+    public async Task TwoMutationTargets_CoveredByAnEngineRecipe_DoNotGuaranteeCreatePlan()
+    {
+        _recipes.Add(OrderRecipe);
+
+        var result = await Resolve(
+            [Skill(PlanSkillDefaults.CreatePlanSkillName), Skill(CreateShiftSkill)], EngineRecipeTwoMutationsMessage);
+
+        result.GuaranteedSources[CreateShiftSkill].ShouldBe(ToolsetSkillSource.RecipeStep);
         Names(result).ShouldNotContain(PlanSkillDefaults.CreatePlanSkillName);
     }
 

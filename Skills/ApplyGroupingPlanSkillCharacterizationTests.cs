@@ -4,8 +4,9 @@
 /// Characterization tests for ApplyGroupingPlanSkill.ExecuteAsync, written before its long body was split into
 /// private steps. They complement ApplyGroupingPlanSkillTests with the exact texts (missing fingerprint, stale plan,
 /// nothing to change, preview gate, nothing permitted, preview with skipped changes and the group-name question,
-/// missing group name, applied summary), the leading part of the serialized result data, that the preview gate is
-/// checked before the permission partition, and the call order preview-start -> record preview, respectively
+/// missing group name, unreadable start date, applied summary), the leading part of the serialized result data, that
+/// the preview gate is checked before the permission partition, that a padded new group name reaches the applier
+/// trimmed (preview and apply), and the call order preview-start -> record preview, respectively
 /// apply -> drop snapshot -> forget preview -> recompute.
 /// </summary>
 
@@ -264,5 +265,56 @@ public class ApplyGroupingPlanSkillCharacterizationTests
             _analyzer.AnalyzeAsync(Arg.Any<GroupingAnalysisRequest>(), Arg.Any<CancellationToken>());
         });
         _previews.DidNotReceiveWithAnyArgs().RecordPreview(default, default!, default);
+    }
+
+    [Test]
+    public async Task Apply_WithAnUnreadableStartDate_IsRefused_AndAppliesNothing()
+    {
+        GivenPlan(AddClient());
+        var parameters = Params(apply: true);
+        parameters[ApplyGroupingPlanSkill.ValidFromParameter] = "irgendwann";
+
+        var result = await _skill.ExecuteAsync(Ctx(Roles.Admin), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(SkillDateParser.InvalidDateMessageFor(ApplyGroupingPlanSkill.ValidFromParameter, "irgendwann"));
+        await _applier.DidNotReceiveWithAnyArgs().ApplyAsync(default!, default);
+        await _applier.DidNotReceiveWithAnyArgs().PreviewStartAsync(default!, default);
+        _snapshotStore.DidNotReceiveWithAnyArgs().Remove(default!);
+        _previews.DidNotReceiveWithAnyArgs().Forget(default, default!);
+        _previews.DidNotReceiveWithAnyArgs().RecordPreview(default, default!, default);
+    }
+
+    [Test]
+    public async Task Apply_OfANewGroup_PassesTheTrimmedGroupNameToTheApplier()
+    {
+        GivenPlan(CreateGroup(), AddShiftToNewGroup());
+        var parameters = Params(apply: true);
+        parameters[ApplyGroupingPlanSkill.NewGroupNameParameter] = "  Team Nord  ";
+
+        var result = await _skill.ExecuteAsync(Ctx(Roles.Admin), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _applier.Received(1).ApplyAsync(
+            Arg.Is<GroupingApplyCommand>(command => command.NewGroupName == "Team Nord"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Preview_OfANewGroup_WithAPaddedName_UsesTheTrimmedName_AndDoesNotAskForIt()
+    {
+        GivenPlan(CreateGroup(), AddShiftToNewGroup());
+        var parameters = Params();
+        parameters[ApplyGroupingPlanSkill.NewGroupNameParameter] = "  Team Nord  ";
+
+        var result = await _skill.ExecuteAsync(Ctx(Roles.Admin), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldEndWith(" Nothing was changed yet." + StartDateSentence + ConfirmSentence);
+        result.Message.ShouldNotContain(ApplyGroupingPlanSkill.NewGroupNameParameter);
+        await _applier.Received(1).PreviewStartAsync(
+            Arg.Is<GroupingApplyCommand>(command => command.NewGroupName == "Team Nord"),
+            Arg.Any<CancellationToken>());
+        await _applier.DidNotReceiveWithAnyArgs().ApplyAsync(default!, default);
     }
 }

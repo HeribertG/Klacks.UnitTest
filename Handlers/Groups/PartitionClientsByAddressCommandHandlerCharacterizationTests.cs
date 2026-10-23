@@ -188,6 +188,31 @@ public class PartitionClientsByAddressCommandHandlerCharacterizationTests
     }
 
     [Test]
+    public async Task Apply_WithARootGroup_AttachesTheTopmostNewGroupToTheRoot()
+    {
+        var rootId = Guid.NewGuid();
+        SetEmployees(Bern("Anna"));
+        var added = new List<Group>();
+        await _groupRepository.Add(Arg.Do<Group>(added.Add));
+        var command = new PartitionClientsByAddressCommand(
+            GroupPartitionLevelEnum.State, [EntityTypeEnum.Employee], RootGroupId: rootId, RootGroupName: "Standorte",
+            false, null, true, "tester", 10);
+
+        var result = await Handler().Handle(command, CancellationToken.None);
+
+        var state = added.ShouldHaveSingleItem();
+        state.Name.ShouldBe("BE");
+        state.Parent.ShouldBe(rootId);
+        var summary = result.Groups.ShouldHaveSingleItem();
+        summary.Name.ShouldBe("BE");
+        summary.ParentName.ShouldBe("Standorte");
+        summary.GroupId.ShouldBe(state.Id);
+        summary.Existed.ShouldBeFalse();
+        await _groupItemRepository.Received(1).Add(Arg.Is<GroupItem>(gi => gi.GroupId == state.Id));
+        await _regionProvider.Received(1).GetRegionByStateAsync("CH", Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Apply_VerificationMismatch_ThrowsTheExactRollbackMessage()
     {
         SetEmployees(Bern("Anna"), Bern("Ben"));
