@@ -329,6 +329,15 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
     }
 
+    // Owner decision 2026-10-23 ("cutting always with confirmation"): a cut splits the plannable shift of an order into
+    // parts, and every part carries its own copy of the default expenses, so it is held at every autonomy level.
+    [TestCase("cut_shift")]
+    [TestCase("cut_shift_by_date")]
+    public void Classify_ShiftCutWriters_ReturnsSensitive(string name)
+    {
+        Assert.That(_sut.Classify(Descriptor(name)), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
     // Membership dates are the plannability boundary - the reason delete_membership is Sensitive.
     [TestCase("end_client_membership")]
     [TestCase("update_membership")]
