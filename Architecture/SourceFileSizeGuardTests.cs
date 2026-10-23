@@ -16,9 +16,10 @@
 /// operators) and every AccessorDeclarationSyntax (get/set/init/add/remove) that has a block body or an
 /// expression body, plus expression-bodied properties and indexers ("=>" on the property itself). Bodyless
 /// declarations (abstract, interface, partial, extern, auto-accessors) are not members with a body and are skipped.
-/// Local functions are not measured on their own: one always sits inside a measured member, which contains its
-/// lines and therefore exceeds the limit first. Lambdas, field initializers and top-level statements (Program.cs)
-/// are not members; FileLineLimit covers them.
+/// Local functions are not measured on their own: inside a measured member, that member contains their lines and
+/// therefore exceeds the limit first. Local functions of top-level statements (Program.cs) have no enclosing member
+/// and are not measured at all (known gap; the regex guard measured them). Lambdas, field initializers and
+/// top-level statements are not members; FileLineLimit covers them.
 ///
 /// How a member is counted is unchanged from the regex guard: from the first line of the declaration (the
 /// modifier or, without one, the return type or name - attribute lists and doc comments above it do not count)
