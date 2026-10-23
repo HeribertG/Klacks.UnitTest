@@ -10,6 +10,7 @@
 using System.Text.Json;
 using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Application.Common;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.UnitTest.TestHelpers;
 
@@ -71,7 +72,7 @@ public class CutShiftSkillCharacterizationTests
                 return _facadeResult;
             });
 
-        _skill = new CutShiftSkill(_shiftRepository, _shiftReader, _shiftCutFacade, _visibilityGuard);
+        _skill = new CutShiftSkill(new ShiftTimeCutPlanner(_shiftRepository, _shiftReader, _visibilityGuard), _shiftCutFacade);
     }
 
     private static Shift Original() => new()
