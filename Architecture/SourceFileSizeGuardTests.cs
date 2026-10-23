@@ -1,33 +1,42 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Size guard for the Klacks.Api source tree: no file above FileLineLimit lines and no method body above
+/// Size guard for the Klacks.Api source tree: no file above FileLineLimit lines and no member body above
 /// MethodLineLimit lines, unless it is named in one of the two allowlists WITH the line count it had when
 /// it was added. The allowlists are ceilings, not exemptions - an allowlisted file that grows fails just
 /// like a new offender, so the only way the list can change is downwards.
 ///
 /// A source scan rather than reflection, for the same reason ForbidChallengeSchemeGuardTests scans: the
 /// property being measured is a property of the text (lines, a method body), and reflection sees neither.
-/// Members are recognised at any indentation (file-scoped or block-scoped namespace, nested types, tabs), with
-/// tuple and generic return types, generic methods and constructors. Type declarations are skipped, judged only
-/// by the text BEFORE the member name: a "where T : class" constraint or a parameter named "record" after the
-/// name must not hide a method.
+/// Since 2026-10-23 the members are found by the Roslyn parser (Microsoft.CodeAnalysis.CSharp syntax trees, no
+/// compilation), not by a regex and a brace counter. That closes the gaps the regex had: members without a
+/// modifier, explicit interface implementations, operators, and braces inside strings, raw strings and comments.
 ///
-/// KNOWN GAP: a member needs at least one explicit modifier (public, private, static, ...). Members without one
-/// - implicit private methods, default interface methods, explicit interface implementations - are not
-/// measured, because without a modifier the text cannot be told from a statement. The gap is pinned by
-/// MethodBodies_MemberWithoutModifier_IsNotMeasured_KnownGap; closing it needs a parser (Roslyn), not a regex.
+/// What is measured: every BaseMethodDeclarationSyntax (methods, constructors, destructors, operators, conversion
+/// operators) and every AccessorDeclarationSyntax (get/set/init/add/remove) that has a block body or an
+/// expression body, plus expression-bodied properties and indexers ("=>" on the property itself). Bodyless
+/// declarations (abstract, interface, partial, extern, auto-accessors) are not members with a body and are skipped.
+/// Local functions are not measured on their own: one always sits inside a measured member, which contains its
+/// lines and therefore exceeds the limit first. Lambdas, field initializers and top-level statements (Program.cs)
+/// are not members; FileLineLimit covers them.
 ///
-/// Two properties of the allowlists are deliberate and easy to misread. First, a ceiling encodes what the
-/// brace counter measured, not what a human would count: a brace inside a string literal can overstate a
-/// body, and the number is still the right ceiling, because it is the number this test will produce
-/// again. Second, the method key is "path::name", so overloads and same-named members of one file share
-/// ONE ceiling, set by the longest of them - the guard exists to stop growth, not to tell members apart.
+/// How a member is counted is unchanged from the regex guard: from the first line of the declaration (the
+/// modifier or, without one, the return type or name - attribute lists and doc comments above it do not count)
+/// to the line of its last token, both included. For a block body that is the closing brace, for an expression
+/// body the semicolon. A file the parser rejects is reported as an offender, because a file that cannot be
+/// measured must not pass silently.
+///
+/// The method key is "path::name", so overloads and same-named members of one file share ONE ceiling, set by
+/// the longest of them - the guard exists to stop growth, not to tell members apart. Accessors are keyed
+/// "Property.get", operators "operator +", conversions "implicit operator T", destructors "~Type".
 /// Introduced 2026-09-16 with the graceful-correction work, after LLMService.cs had reached 1760 lines
 /// around a block that belonged in its own service.
 /// </summary>
 
-using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using NUnit.Framework;
 using Shouldly;
 using Klacks.UnitTest.TestHelpers;
@@ -43,6 +52,10 @@ public class SourceFileSizeGuardTests
     private const string ShrinkOnlyHint =
         "This allowlist may only LOSE entries. Do not add a line and do not raise a ceiling: split the " +
         "file or the method instead. If a split is genuinely impossible, the owner decides - not the test.";
+
+    private const string ProbeTypeName = "WizardApplyService";
+
+    private static readonly CSharpParseOptions ParseOptions = new(LanguageVersion.Latest);
 
     // .claude is excluded because Klacks.Api\.claude\worktrees\ holds gitignored symlinks to entirely
     // separate sibling repositories (e.g. Klacks.ScheduleOptimizer), kept there only for agent
@@ -67,20 +80,6 @@ public class SourceFileSizeGuardTests
     private static readonly IReadOnlyDictionary<string, int> MethodCeilings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
     };
-
-    // Matches a member declaration at ANY indentation.
-    // The return type is optional so constructors are measured, may contain spaces (generic arguments) and
-    // parenthesised tuple types, and the name may carry generic type parameters. The first modifier must not be
-    // "new", otherwise an object-creation line inside a field initializer would look like a member.
-    private static readonly Regex MemberSignature = new(
-        @"^\s*(?:\[[^\]]*\]\s*)?(?:public|private|protected|internal|static|async|override|virtual|sealed|partial|extern|unsafe)\s+" +
-        @"(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|partial|new|extern|unsafe)\s+)*" +
-        @"(?:(?:[\w<>\[\],\?\.]|\([^()]*\)|\s)+?\s+)?" +
-        @"(\w+)\s*(?:<[^>()]*>)?\s*\(",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    private static readonly Regex TypeDeclaration = new(
-        @"\b(class|record|struct|interface|enum)\b", RegexOptions.Compiled);
 
     /// <summary>
     /// Same walk-up as ForbidChallengeSchemeGuardTests.LocateApiProject, including its failure mode: a
@@ -137,14 +136,22 @@ public class SourceFileSizeGuardTests
         foreach (var path in SourceFiles(root))
         {
             var relative = NormalizeSeparators(Path.GetRelativePath(root, path));
-            foreach (var (method, length) in MethodBodies(File.ReadAllLines(path)))
+            var tree = Parse(File.ReadAllText(path));
+            var parseError = FirstParseError(tree);
+            if (parseError is not null)
+            {
+                offenders.Add($"{relative}: cannot be measured, the parser rejects it ({parseError})");
+                continue;
+            }
+
+            foreach (var (method, line, length) in MethodBodies(tree))
             {
                 var key = $"{relative}::{method}";
                 var ceiling = MethodCeilings.TryGetValue(key, out var allowed) ? allowed : MethodLineLimit;
 
                 if (length > ceiling)
                 {
-                    offenders.Add($"{key}: {length} lines (ceiling {ceiling})");
+                    offenders.Add($"{key}: {length} lines from line {line} (ceiling {ceiling})");
                 }
             }
         }
@@ -154,64 +161,59 @@ public class SourceFileSizeGuardTests
             $"{Environment.NewLine}{ShrinkOnlyHint}");
     }
 
-    private static bool IsBodylessTerminator(string line) =>
-        line.TrimEnd().EndsWith(';') || line.Contains("=>", StringComparison.Ordinal);
+    internal static SyntaxTree Parse(string source) => CSharpSyntaxTree.ParseText(source, ParseOptions);
+
+    internal static Diagnostic? FirstParseError(SyntaxTree tree) =>
+        tree.GetDiagnostics().FirstOrDefault(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
     /// <summary>
-    /// Brace-counting from a member signature to its matching close. Good enough on purpose: a brace
-    /// inside a string literal can overstate a body, which errs towards flagging - and a flagged method
-    /// is read by a human before anything is allowlisted. An expression-bodied member and an abstract
-    /// declaration have no body and are skipped, including when the "=>" or the ";" sits on a later line of a
-    /// multi-line signature.
+    /// Every measured member of the tree in document order, with its 1-based first line and its length in lines.
     /// </summary>
-    internal static IEnumerable<(string Method, int Length)> MethodBodies(IReadOnlyList<string> lines)
+    /// <param name="tree">A syntax tree without parse errors; see FirstParseError.</param>
+    internal static IEnumerable<(string Method, int Line, int Length)> MethodBodies(SyntaxTree tree) =>
+        tree.GetRoot().DescendantNodes()
+            .Select(node => (Node: node, Name: MeasuredName(node)))
+            .Where(member => member.Name is not null)
+            .Select(member => Measure(tree, member.Node, member.Name!));
+
+    private static string? MeasuredName(SyntaxNode node) => node switch
     {
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var match = MemberSignature.Match(lines[i]);
-            if (!match.Success || TypeDeclaration.IsMatch(lines[i][..match.Groups[1].Index]))
-            {
-                continue;
-            }
+        BaseMethodDeclarationSyntax { Body: null, ExpressionBody: null } => null,
+        MethodDeclarationSyntax method => method.Identifier.Text,
+        ConstructorDeclarationSyntax constructor => constructor.Identifier.Text,
+        DestructorDeclarationSyntax destructor => $"{destructor.TildeToken.Text}{destructor.Identifier.Text}",
+        OperatorDeclarationSyntax op => $"{op.OperatorKeyword.Text} {op.OperatorToken.Text}",
+        ConversionOperatorDeclarationSyntax conversion =>
+            $"{conversion.ImplicitOrExplicitKeyword.Text} {conversion.OperatorKeyword.Text} {conversion.Type}",
+        AccessorDeclarationSyntax { Body: null, ExpressionBody: null } => null,
+        AccessorDeclarationSyntax accessor => $"{AccessorOwnerName(accessor)}.{accessor.Keyword.Text}",
+        PropertyDeclarationSyntax { ExpressionBody: not null } property => property.Identifier.Text,
+        IndexerDeclarationSyntax { ExpressionBody: not null } indexer => indexer.ThisKeyword.Text,
+        _ => null
+    };
 
-            if (lines[i].TrimEnd().EndsWith(';') || lines[i].Contains("=>", StringComparison.Ordinal))
-            {
-                continue;
-            }
+    private static string AccessorOwnerName(AccessorDeclarationSyntax accessor) => accessor.Parent?.Parent switch
+    {
+        PropertyDeclarationSyntax property => property.Identifier.Text,
+        IndexerDeclarationSyntax indexer => indexer.ThisKeyword.Text,
+        EventDeclarationSyntax eventDeclaration => eventDeclaration.Identifier.Text,
+        _ => string.Empty
+    };
 
-            var depth = 0;
-            var started = false;
-            var end = i;
+    private static (string Method, int Line, int Length) Measure(SyntaxTree tree, SyntaxNode member, string name)
+    {
+        var first = FirstTokenAfterAttributes(member);
+        var span = tree.GetLineSpan(TextSpan.FromBounds(first.SpanStart, member.GetLastToken().Span.End));
+        var firstLine = span.StartLinePosition.Line;
 
-            while (end < lines.Count)
-            {
-                if (!started && end > i && IsBodylessTerminator(lines[end]))
-                {
-                    break;
-                }
+        return (name, firstLine + 1, span.EndLinePosition.Line - firstLine + 1);
+    }
 
-                depth += lines[end].Count(c => c == '{') - lines[end].Count(c => c == '}');
-                if (lines[end].Contains('{', StringComparison.Ordinal))
-                {
-                    started = true;
-                }
+    private static SyntaxToken FirstTokenAfterAttributes(SyntaxNode member)
+    {
+        var first = member.ChildNodesAndTokens().First(child => !child.IsKind(SyntaxKind.AttributeList));
 
-                if (started && depth <= 0)
-                {
-                    break;
-                }
-
-                end++;
-            }
-
-            if (!started || end >= lines.Count)
-            {
-                continue;
-            }
-
-            yield return (match.Groups[1].Value, end - i + 1);
-            i = end;
-        }
+        return first.IsToken ? first.AsToken() : first.AsNode()!.GetFirstToken();
     }
 
     [Test]
@@ -231,6 +233,14 @@ public class SourceFileSizeGuardTests
     public void MethodBodies_PlainTupleReturnType_IsMeasured()
     {
         var source = Snippet("    public static (int Low, int High) Range()", 2, "    ");
+
+        Describe(source).ShouldBe("Range:5");
+    }
+
+    [Test]
+    public void MethodBodies_ModifierlessTupleReturnType_IsMeasured()
+    {
+        var source = Snippet("    (int Low, int High) Range()", 2, "    ");
 
         Describe(source).ShouldBe("Range:5");
     }
@@ -270,29 +280,61 @@ public class SourceFileSizeGuardTests
     [Test]
     public void MethodBodies_Constructor_IsMeasured()
     {
-        var source = Snippet("    public WizardApplyService(int dependency)", 2, "    ");
+        var source = Snippet($"    public {ProbeTypeName}(int dependency)", 2, "    ");
 
-        Describe(source).ShouldBe("WizardApplyService:5");
+        Describe(source).ShouldBe($"{ProbeTypeName}:5");
     }
 
     [Test]
     public void MethodBodies_ConstructorWithBaseCall_IsMeasured()
     {
-        var source = Snippet("    protected WizardApplyService(int dependency)", 2, "    ", "        : base(dependency)");
+        var source = Snippet($"    protected {ProbeTypeName}(int dependency)", 2, "    ", "        : base(dependency)");
 
-        Describe(source).ShouldBe("WizardApplyService:6");
+        Describe(source).ShouldBe($"{ProbeTypeName}:6");
+    }
+
+    [Test]
+    public void MethodBodies_ModifierlessConstructorWithThisCall_IsMeasured()
+    {
+        var source = Snippet($"    {ProbeTypeName}()", 2, "    ", "        : this(0)");
+
+        Describe(source).ShouldBe($"{ProbeTypeName}:6");
     }
 
     [Test]
     public void MethodBodies_StaticConstructor_IsMeasured()
     {
-        var source = Snippet("    static WizardApplyService()", 2, "    ");
+        var source = Snippet($"    static {ProbeTypeName}()", 2, "    ");
 
-        Describe(source).ShouldBe("WizardApplyService:5");
+        Describe(source).ShouldBe($"{ProbeTypeName}:5");
     }
 
     [Test]
-    public void MethodBodies_ExpressionBodiedMember_OnLaterLine_DoesNotSwallowNextMember()
+    public void MethodBodies_Destructor_IsMeasured()
+    {
+        var source = Snippet($"    ~{ProbeTypeName}()", 2, "    ");
+
+        Describe(source).ShouldBe($"~{ProbeTypeName}:5");
+    }
+
+    [Test]
+    public void MethodBodies_Operator_IsMeasured()
+    {
+        var source = Snippet($"    public static {ProbeTypeName} operator +({ProbeTypeName} left, {ProbeTypeName} right)", 2, "    ");
+
+        Describe(source).ShouldBe("operator +:5");
+    }
+
+    [Test]
+    public void MethodBodies_ConversionOperator_IsMeasured()
+    {
+        var source = Snippet($"    public static implicit operator int({ProbeTypeName} value)", 2, "    ");
+
+        Describe(source).ShouldBe("implicit operator int:5");
+    }
+
+    [Test]
+    public void MethodBodies_ExpressionBodiedMember_OnLaterLine_IsMeasuredToItsSemicolon_AndDoesNotSwallowNextMember()
     {
         var source = new List<string>
         {
@@ -302,7 +344,28 @@ public class SourceFileSizeGuardTests
         };
         source.AddRange(Snippet("    public void Next()", 2, "    "));
 
-        Describe(source).ShouldBe("Next:5");
+        Describe(source).ShouldBe("Answer:2,Next:5");
+    }
+
+    [Test]
+    public void MethodBodies_SingleLineExpressionBody_IsMeasured()
+    {
+        var source = new List<string> { "    private static int Answer() => 42;" };
+
+        Describe(source).ShouldBe("Answer:1");
+    }
+
+    [Test]
+    public void MethodBodies_MultiLineExpressionBody_IsMeasuredToItsSemicolon()
+    {
+        var source = new List<string>
+        {
+            "    private static string Join(IEnumerable<string> values) =>",
+            "        string.Join(\", \",",
+            "            values);"
+        };
+
+        Describe(source).ShouldBe("Join:3");
     }
 
     [Test]
@@ -317,7 +380,7 @@ public class SourceFileSizeGuardTests
             "    ];"
         };
 
-        MethodBodies(source).ShouldBeEmpty();
+        Describe(source).ShouldBeEmpty();
     }
 
     [Test]
@@ -337,6 +400,14 @@ public class SourceFileSizeGuardTests
     }
 
     [Test]
+    public void MethodBodies_GenericConstraintOnItsOwnLine_IsMeasured()
+    {
+        var source = Snippet("    T Create<T>()", 2, "    ", "        where T : class, new()");
+
+        Describe(source).ShouldBe("Create:6");
+    }
+
+    [Test]
     public void MethodBodies_ParameterNamedRecord_IsMeasured()
     {
         var source = Snippet("    private async Task Save(Entity record, CancellationToken ct)", 2, "    ");
@@ -345,11 +416,200 @@ public class SourceFileSizeGuardTests
     }
 
     [Test]
-    public void MethodBodies_MemberWithoutModifier_IsNotMeasured_KnownGap()
+    public void MethodBodies_ModifierlessMemberWithParameterNamedRecord_IsMeasured()
+    {
+        var source = Snippet("    Task Save(Entity record, Type @class)", 2, "    ");
+
+        Describe(source).ShouldBe("Save:5");
+    }
+
+    [Test]
+    public void MethodBodies_MemberWithoutModifier_IsMeasured()
     {
         var source = Snippet("    void Implicit()", 2, "    ");
 
+        Describe(source).ShouldBe("Implicit:5");
+    }
+
+    [Test]
+    public void MethodBodies_ExplicitInterfaceImplementation_IsMeasured()
+    {
+        var source = Snippet("    void IDisposable.Dispose()", 2, "    ");
+
+        Describe(source).ShouldBe("Dispose:5");
+    }
+
+    [Test]
+    public void MethodBodies_AttributeAndDocCommentAboveTheSignature_AreNotCounted()
+    {
+        var source = new List<string>
+        {
+            "    /// <summary>",
+            "    /// Runs.",
+            "    /// </summary>",
+            "    [Obsolete]"
+        };
+        source.AddRange(Snippet("    public void Run()", 2, "    "));
+
+        Describe(source).ShouldBe("Run:5");
+    }
+
+    [Test]
+    public void MethodBodies_ClosingBraceInStringLiteral_IsNotCounted()
+    {
+        var source = new List<string>
+        {
+            "    public string Run()",
+            "    {",
+            "        var close = \"}\";",
+            "        var verbatim = @\"}}\";",
+            "        var interpolated = $\"{{{close}\";",
+            "        return close;",
+            "    }"
+        };
+
+        Describe(source).ShouldBe("Run:7");
+    }
+
+    [Test]
+    public void MethodBodies_OpeningBraceInRawStringLiteral_DoesNotSwallowNextMember()
+    {
+        var source = new List<string>
+        {
+            "    public string Template()",
+            "    {",
+            "        return \"\"\"",
+            "            { \"open\": [",
+            "            \"\"\";",
+            "    }",
+            ""
+        };
+        source.AddRange(Snippet("    public void Next()", 2, "    "));
+
+        Describe(source).ShouldBe("Template:6,Next:5");
+    }
+
+    [Test]
+    public void MethodBodies_ClosingBraceInComment_IsNotCounted()
+    {
+        var source = new List<string>
+        {
+            "    public void Run()",
+            "    {",
+            "        // }",
+            "        /* } */",
+            "        var value = 1;",
+            "    }"
+        };
+
+        Describe(source).ShouldBe("Run:6");
+    }
+
+    [Test]
+    public void MethodBodies_BlockAccessors_AreMeasuredOneByOne()
+    {
+        var source = new List<string>
+        {
+            "    private int _value;",
+            "    public int Value",
+            "    {",
+            "        get",
+            "        {",
+            "            return _value;",
+            "        }",
+            "        private set",
+            "        {",
+            "            _value = value;",
+            "        }",
+            "    }"
+        };
+
+        Describe(source).ShouldBe("Value.get:4,Value.set:4");
+    }
+
+    [Test]
+    public void MethodBodies_ExpressionBodiedAccessorAndProperty_AreMeasured_AutoAccessorsAreNot()
+    {
+        var source = new List<string>
+        {
+            "    public int Auto { get; init; }",
+            "    public int Value",
+            "    {",
+            "        get => _value;",
+            "        set => _value = value;",
+            "    }",
+            "    public int Total =>",
+            "        Auto + Value;"
+        };
+
+        Describe(source).ShouldBe("Value.get:1,Value.set:1,Total:2");
+    }
+
+    [Test]
+    public void MethodBodies_IndexerAndEventAccessors_AreMeasured()
+    {
+        var source = new List<string>
+        {
+            "    public int this[int index]",
+            "    {",
+            "        get { return index; }",
+            "    }",
+            "    public event EventHandler Changed",
+            "    {",
+            "        add { }",
+            "        remove { }",
+            "    }"
+        };
+
+        Describe(source).ShouldBe("this.get:1,Changed.add:1,Changed.remove:1");
+    }
+
+    [Test]
+    public void MethodBodies_BodylessDeclarations_AreNotMeasured()
+    {
+        var source = new List<string>
+        {
+            "    public abstract Task Run(",
+            "        int a);",
+            "    partial void Hook();",
+            "    [System.Runtime.InteropServices.DllImport(\"native\")]",
+            "    private static extern int Native();",
+            "    private interface IProbe",
+            "    {",
+            "        void Contract();",
+            "    }"
+        };
+
         Describe(source).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void MethodBodies_DefaultInterfaceMethod_IsMeasured()
+    {
+        var source = new List<string> { "    private interface IProbe", "    {" };
+        source.AddRange(Snippet("        void Default()", 2, "        "));
+        source.Add("    }");
+
+        Describe(source).ShouldBe("Default:5");
+    }
+
+    [Test]
+    public void MethodBodies_LocalFunction_CountsOnlyAsPartOfItsMember()
+    {
+        var source = new List<string>
+        {
+            "    public int Run()",
+            "    {",
+            "        return Local();",
+            "",
+            "        int Local()",
+            "        {",
+            "            return 1;",
+            "        }",
+            "    }"
+        };
+
+        Describe(source).ShouldBe("Run:9");
     }
 
     [Test]
@@ -362,7 +622,25 @@ public class SourceFileSizeGuardTests
             "    }"
         };
 
-        MethodBodies(source).ShouldBeEmpty();
+        Describe(source).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void MethodBodies_MembersOfNestedTypes_AreMeasured()
+    {
+        var source = new List<string> { "    private sealed class Nested", "    {" };
+        source.AddRange(Snippet("        public void Inner()", 2, "        "));
+        source.Add("    }");
+
+        Describe(source).ShouldBe("Inner:5");
+    }
+
+    [Test]
+    public void FirstParseError_SourceTheParserRejects_IsReported()
+    {
+        var tree = Parse($"public class {ProbeTypeName} {{ public void Run( {{ }}");
+
+        FirstParseError(tree).ShouldNotBeNull();
     }
 
     [Test]
@@ -370,7 +648,7 @@ public class SourceFileSizeGuardTests
     {
         var source = Snippet("    private async Task<(int First, int Second)> Long()", MethodLineLimit, "    ");
 
-        var measured = MethodBodies(source).ToList();
+        var measured = MethodBodies(ParseProbe(source)).ToList();
 
         measured.Count.ShouldBe(1);
         measured[0].Length.ShouldBeGreaterThan(MethodLineLimit);
@@ -390,6 +668,17 @@ public class SourceFileSizeGuardTests
         return lines;
     }
 
-    private static string Describe(IReadOnlyList<string> lines) =>
-        string.Join(",", MethodBodies(lines).Select(m => $"{m.Method}:{m.Length}"));
+    private static SyntaxTree ParseProbe(IReadOnlyList<string> members)
+    {
+        var lines = new List<string> { $"public abstract partial class {ProbeTypeName}", "{" };
+        lines.AddRange(members);
+        lines.Add("}");
+
+        var tree = Parse(string.Join("\n", lines));
+        FirstParseError(tree).ShouldBeNull();
+        return tree;
+    }
+
+    private static string Describe(IReadOnlyList<string> members) =>
+        string.Join(",", MethodBodies(ParseProbe(members)).Select(m => $"{m.Method}:{m.Length}"));
 }
