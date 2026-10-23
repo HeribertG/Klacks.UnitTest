@@ -9,7 +9,7 @@ namespace Klacks.UnitTest.Application.Services.Assistant.Learning;
 
 using Klacks.Api.Application.Services.Assistant.Learning;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
-using Klacks.Api.KnowledgeIndex.Application.Services;
+using Klacks.Api.KnowledgeIndex.Application.Constants;
 using Klacks.Api.KnowledgeIndex.Domain;
 using NSubstitute;
 using NUnit.Framework;

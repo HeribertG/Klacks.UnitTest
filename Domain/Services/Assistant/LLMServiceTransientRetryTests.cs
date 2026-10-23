@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.DependencyInjection;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
@@ -53,7 +54,7 @@ public class LLMServiceTransientRetryTests
         serviceProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
         var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
         serviceProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
-        serviceProvider.GetService(typeof(IKnowledgeRetrievalService)).Returns(retrieval);
+        serviceProvider.GetService(typeof(IRecipeCandidateRetriever)).Returns(new KnowledgeIndexRecipeCandidateRetriever(retrieval));
         scope.ServiceProvider.Returns(serviceProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

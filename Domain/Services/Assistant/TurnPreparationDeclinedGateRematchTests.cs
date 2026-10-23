@@ -14,6 +14,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -92,7 +93,7 @@ public class TurnPreparationDeclinedGateRematchTests
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
         var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
         scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
-        scopedProvider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_knowledge);
+        scopedProvider.GetService(typeof(IRecipeCandidateRetriever)).Returns(new KnowledgeIndexRecipeCandidateRetriever(_knowledge));
         scope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

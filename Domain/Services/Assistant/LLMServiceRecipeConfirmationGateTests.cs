@@ -23,6 +23,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.DependencyInjection;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
@@ -79,7 +80,7 @@ public class LLMServiceRecipeConfirmationGateTests
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
         provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
-        provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
+        provider.GetService(typeof(IRecipeCandidateRetriever)).Returns(new KnowledgeIndexRecipeCandidateRetriever(_retrieval));
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

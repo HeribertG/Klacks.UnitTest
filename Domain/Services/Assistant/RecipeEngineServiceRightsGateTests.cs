@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -96,7 +97,7 @@ public class RecipeEngineServiceRightsGateTests
         var provider = Substitute.For<IServiceProvider>();
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
         provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
-        provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
+        provider.GetService(typeof(IRecipeCandidateRetriever)).Returns(new KnowledgeIndexRecipeCandidateRetriever(_retrieval));
 
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(provider);

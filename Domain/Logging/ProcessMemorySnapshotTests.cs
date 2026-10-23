@@ -1,10 +1,10 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
-using Klacks.Api.KnowledgeIndex.Application.Services;
+using Klacks.Api.Domain.Logging;
 using NUnit.Framework;
 using Shouldly;
 
-namespace Klacks.UnitTest.Infrastructure.KnowledgeIndex;
+namespace Klacks.UnitTest.Domain.Logging;
 
 [TestFixture]
 public class ProcessMemorySnapshotTests

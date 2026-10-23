@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Infrastructure.Persistence.Seed.Models;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Klacks.UnitTest.TestHelpers;
@@ -108,7 +109,7 @@ public class RecipeEngineServiceSemanticAnchorTests
         provider.GetService(typeof(IAgentRecipeRepository)).Returns(_recipeRepository);
         var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
         provider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
-        provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
+        provider.GetService(typeof(IRecipeCandidateRetriever)).Returns(new KnowledgeIndexRecipeCandidateRetriever(_retrieval));
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

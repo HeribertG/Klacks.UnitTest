@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
 using Klacks.Api.KnowledgeIndex.Domain;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -56,7 +57,7 @@ public class RecipeEngineServiceSemanticFallbackTests
         _skillRepository.GetRequiredPermissionsByNameAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<string, string?>());
         provider.GetService(typeof(IAgentSkillRepository)).Returns(_skillRepository);
-        provider.GetService(typeof(IKnowledgeRetrievalService)).Returns(_retrieval);
+        provider.GetService(typeof(IRecipeCandidateRetriever)).Returns(new KnowledgeIndexRecipeCandidateRetriever(_retrieval));
         scope.ServiceProvider.Returns(provider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);

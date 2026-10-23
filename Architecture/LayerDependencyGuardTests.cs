@@ -25,7 +25,9 @@
 /// keyed "relative path -> referenced name" (the qualified namespace or type, DataBaseContext, or
 /// Microsoft.EntityFrameworkCore), so a second forbidden reference in an allowlisted file still fails. The
 /// list is shrink-only: a new violation fails, and so does an entry that no longer occurs - remove it in the
-/// same change that fixes the file.
+/// same change that fixes the file. It was emptied on 2026-10-23 (RecipeEngineService behind the Domain port
+/// IRecipeCandidateRetriever, the two KnowledgeIndex helpers moved, the personal access token scheme registered from
+/// Infrastructure/Extensions); keep it empty.
 /// </summary>
 
 using System.Text.RegularExpressions;
@@ -100,14 +102,7 @@ public class LayerDependencyGuardTests
     ];
 
     // "relative path -> referenced name". See ShrinkOnlyHint.
-    private static readonly IReadOnlySet<string> KnownViolations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Application.Interfaces",
-        @"Domain\Services\Assistant\RecipeEngineService.cs -> Klacks.Api.KnowledgeIndex.Domain",
-        @"Application\Services\Assistant\Evaluation\TurnEval\TurnEvalMemoryProbe.cs -> Klacks.Api.KnowledgeIndex.Application.Services",
-        @"Application\Services\Assistant\Learning\SkillIndexStateVerifier.cs -> Klacks.Api.KnowledgeIndex.Application.Services",
-        @"Presentation\Mcp\McpEndpointExtensions.cs -> Klacks.Api.Infrastructure.Authentication",
-    };
+    private static readonly IReadOnlySet<string> KnownViolations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     private static readonly Regex QualifiedApiName = new(
         @"\bKlacks\.Api\.(?:Domain|Application|Infrastructure|Presentation|KnowledgeIndex|Data)(?:\.[A-Za-z_][A-Za-z0-9_]*)*",

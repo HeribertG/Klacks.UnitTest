@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.KnowledgeIndex.Application.Interfaces;
+using Klacks.Api.Infrastructure.Services.Assistant;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -72,7 +73,7 @@ public class TurnPreparationAmbiguousConfirmationTests
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
         var skillRepositoryStub = Klacks.UnitTest.TestHelpers.SkillRepositoryStubs.WithoutRequirements();
         scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
-        scopedProvider.GetService(typeof(IKnowledgeRetrievalService)).Returns(Substitute.For<IKnowledgeRetrievalService>());
+        scopedProvider.GetService(typeof(IRecipeCandidateRetriever)).Returns(new KnowledgeIndexRecipeCandidateRetriever(Substitute.For<IKnowledgeRetrievalService>()));
         scope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
