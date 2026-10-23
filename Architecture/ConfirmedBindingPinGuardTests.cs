@@ -56,6 +56,11 @@ public class ConfirmedBindingPinGuardTests
             ["lastName"] = "Muster",
             ["fromDate"] = "2026-11-01"
         },
+        CutShiftSkill.SkillName => new Dictionary<string, object>
+        {
+            [CutShiftSkill.ShiftIdParameter] = Guid.NewGuid().ToString(),
+            [CutShiftSkill.PartsParameter] = "07:00-15:00,15:00-07:00"
+        },
         MacroAssignmentSkillNames.AssignToShift => new Dictionary<string, object>
         {
             [MacroAssignmentParameters.ShiftId] = Guid.NewGuid().ToString(),
