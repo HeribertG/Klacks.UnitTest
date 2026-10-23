@@ -70,6 +70,14 @@ public class ConfirmedBindingPinGuardTests
         {
             [MacroAssignmentParameters.SwitchId] = Guid.NewGuid().ToString()
         },
+        SealOpenOrdersSkill.SkillName => new Dictionary<string, object>
+        {
+            [PreviewApplySkillCalls.ApplyParameter] = true
+        },
+        SealShiftSkill.SkillName => new Dictionary<string, object>
+        {
+            [SealShiftSkill.ShiftIdParameter] = Guid.NewGuid().ToString()
+        },
         MessagingConstants.SkillSendMessage => new Dictionary<string, object>
         {
             ["provider"] = "telegram",

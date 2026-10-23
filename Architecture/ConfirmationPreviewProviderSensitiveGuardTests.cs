@@ -67,8 +67,8 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
             MacroAssignmentSkillNames.AssignToShift,
             MacroAssignmentSkillNames.AssignToAbsenceType,
             MacroAssignmentSkillNames.Revert,
-            "seal_open_orders",
-            "seal_shift"
+            SealOpenOrdersSkill.SkillName,
+            SealShiftSkill.SkillName
         ];
 
         foreach (var name in bound)

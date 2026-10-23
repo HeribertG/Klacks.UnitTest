@@ -106,7 +106,7 @@ public class WelcomeFocusResolverTests
         result!.PromptKey.ShouldBe(WelcomeFocusI18nKeys.NoShiftsPrompt);
         result.ActionKind.ShouldBe(WelcomeFocusActionKinds.Prompt);
         result.ActionLabelKey.ShouldBe(WelcomeFocusI18nKeys.NoShiftsAction);
-        result.ActionPromptKey.ShouldBe("klacksy.orders.review.request");
+        result.ActionPromptKey.ShouldBe(SetupChatPromptKeys.OrdersReviewRequest);
         result.ActionRoute.ShouldBeNull();
     }
 

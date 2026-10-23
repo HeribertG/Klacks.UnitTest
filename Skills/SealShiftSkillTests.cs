@@ -4,7 +4,8 @@
 /// Unit tests for SealShiftSkill: sealing an order is written inside a transaction and both the sealed
 /// order and its newly created plannable shift are re-read from the database; a confirmed read reports
 /// a verified success, a missing plannable shift rolls the write back and reports an error instead of a
-/// false success, and orders that are not sealable (wrong status, missing group) are rejected up front.
+/// false success, and orders that are not sealable (wrong status, missing group) are rejected up front. The skill only runs
+/// as the confirmed replay of its preview: a binding made for another order is refused and nothing is read.
 /// </summary>
 
 using Klacks.UnitTest.TestHelpers;
@@ -45,7 +46,8 @@ public class SealShiftSkillTests
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditShifts" }
+        UserPermissions = new List<string> { "CanEditShifts" },
+        ConfirmedActionBinding = SealShiftSkill.BindingFor(OrderId)
     };
 
     private static Dictionary<string, object> Params() => new()
@@ -127,6 +129,19 @@ public class SealShiftSkillTests
 
         Assert.That(result.Success, Is.False);
         Assert.That(result.Message, Does.Contain("at least one group"));
+        await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task RefusesABindingMadeForAnotherOrder_AndReadsNothing()
+    {
+        var ctx = Ctx() with { ConfirmedActionBinding = SealShiftSkill.BindingFor(Guid.NewGuid()) };
+
+        var result = await _skill.ExecuteAsync(ctx, Params());
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Message, Does.Contain("Nothing was changed"));
+        await _shiftRepository.DidNotReceive().Get(Arg.Any<Guid>());
         await _shiftRepository.DidNotReceive().PutWithSealedOrderHandling(Arg.Any<Shift>());
     }
 }

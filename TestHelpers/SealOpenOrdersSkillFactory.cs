@@ -5,6 +5,7 @@
 /// is a substitute that grants an administrator unrestricted group scope and answers a fixed company day.
 /// </summary>
 
+using Klacks.Api.Application.Services.Orders;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Infrastructure.Mediator;
 
@@ -24,6 +25,7 @@ public static class SealOpenOrdersSkillFactory
         var companyClock = Substitute.For<ICompanyClock>();
         companyClock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(CompanyToday);
 
-        return new SealOpenOrdersSkill(groupRepository, groupScopeGuard, mediator, companyClock, jobQueue);
+        return new SealOpenOrdersSkill(
+            new SealOpenOrdersPlanner(groupRepository, groupScopeGuard, mediator, companyClock), mediator, jobQueue);
     }
 }

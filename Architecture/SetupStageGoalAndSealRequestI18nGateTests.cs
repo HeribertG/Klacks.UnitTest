@@ -1,10 +1,11 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Guards the texts of the stage-aware setup goal and the welcome seal bubble in all 25 UI languages: the four
+/// Guards the texts of the stage-aware setup goal and the welcome no-shifts bubble in all 25 UI languages: the four
 /// core catalogues of Klacks.Ui and the 21 language-plugin catalogues. A key missing in one of them shows the
-/// fallback language in exactly the place where Klacksy proposes an irreversible step (sealing orders), and a
-/// goal rationale without its two placeholders shows raw braces. Inconclusive when Klacks.Ui is not checked out.
+/// fallback language in exactly the place where Klacksy proposes to go through the open orders before an irreversible
+/// step (sealing), and a goal rationale without its two placeholders shows raw braces. The retired request that asked
+/// Klacksy to seal every open order must be gone from every catalogue. Inconclusive when Klacks.Ui is not checked out.
 /// </summary>
 
 using System.Text.Json;
@@ -29,6 +30,8 @@ public class SetupStageGoalAndSealRequestI18nGateTests
     private const int ExpectedCatalogues = 25;
     private const string ChatOnlyGoalHintKey = "assistant-chat.goal-candidates.chat-hint";
     private const string ChatBusyKey = "assistant-chat.goal-candidates.chat-busy";
+    private const string GoalHintKey = "assistant-chat.goal-candidates.hint";
+    private const string RetiredSealRequestKey = "klacksy.setup.seal-open-orders.request";
 
     [Test]
     public void EveryNewKey_ExistsAndIsFilledInAllTwentyFiveCatalogues()
@@ -71,6 +74,23 @@ public class SetupStageGoalAndSealRequestI18nGateTests
         }
     }
 
+    [Test]
+    public void TheRetiredSealRequest_IsGoneFromAllCatalogues()
+    {
+        var catalogues = LoadCatalogues();
+        if (catalogues == null)
+        {
+            Assert.Inconclusive(RepositoryRootLocator.NotFoundMessage(UiCatalogueRelativePath));
+            return;
+        }
+
+        catalogues.Count.ShouldBe(ExpectedCatalogues);
+        foreach (var (name, texts) in catalogues)
+        {
+            texts.ContainsKey(RetiredSealRequestKey).ShouldBeFalse($"'{RetiredSealRequestKey}' is still in the '{name}' catalogue.");
+        }
+    }
+
     private static IEnumerable<GoalTypeDefinitionKeys> StageDefinitions() =>
         new[] { ScheduleSetupStage.NothingYet, ScheduleSetupStage.OrdersButNoShifts }
             .Select(GoalTypeCatalog.FindForStage)
@@ -84,10 +104,11 @@ public class SetupStageGoalAndSealRequestI18nGateTests
                 WelcomeFocusI18nKeys.NoShiftsPrompt,
                 WelcomeFocusI18nKeys.NoShiftsAction,
                 WelcomeFocusI18nKeys.SetupConsultationAccept,
-                "klacksy.orders.review.request",
+                SetupChatPromptKeys.OrdersReviewRequest,
                 SetupChatPromptKeys.SetupConsultationTrigger,
                 ChatOnlyGoalHintKey,
                 ChatBusyKey,
+                GoalHintKey,
             ]);
 
     private static List<(string Name, Dictionary<string, string> Texts)>? LoadCatalogues()
