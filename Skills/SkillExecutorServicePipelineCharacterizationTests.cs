@@ -13,6 +13,7 @@
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.Extensions.Logging;
@@ -232,7 +233,7 @@ public class SkillExecutorServicePipelineCharacterizationTests
         result.UiActionSteps.ShouldBe("{}");
         await _dispatcher.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, default!, default, default!, default);
         _dispatcher.DidNotReceiveWithAnyArgs().CanHandle(default);
-        _services.DidNotReceiveWithAnyArgs().GetService(default!);
+        _services.DidNotReceive().GetService(Arg.Is<Type>(type => type != typeof(IInstallationLanguageResolver)));
     }
 
     [Test]
@@ -245,7 +246,7 @@ public class SkillExecutorServicePipelineCharacterizationTests
         var result = await RunAsync();
 
         result.ShouldBeSameAs(dispatched);
-        _services.DidNotReceiveWithAnyArgs().GetService(default!);
+        _services.DidNotReceive().GetService(Arg.Is<Type>(type => type != typeof(IInstallationLanguageResolver)));
     }
 
     [Test]
