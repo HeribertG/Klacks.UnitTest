@@ -117,7 +117,6 @@ internal class ClientTests
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
-        var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
@@ -170,7 +169,6 @@ internal class ClientTests
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
-        var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
@@ -224,7 +222,6 @@ internal class ClientTests
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
-        var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();
@@ -321,7 +318,6 @@ internal class ClientTests
         var changeTrackingService = new Klacks.Api.Infrastructure.Services.Clients.ClientChangeTrackingService(dbContext, sortingService);
         var clientValidator = new Klacks.Api.Domain.Services.Clients.ClientValidator();
         var entityManagementService = new Klacks.Api.Domain.Services.Clients.ClientEntityManagementService(clientValidator);
-        var workFilterService = new Klacks.Api.Domain.Services.Clients.ClientWorkFilterService();
         var collectionUpdateService = new EntityCollectionUpdateService(dbContext);
 
         var mockLogger = Substitute.For<ILogger<ClientRepository>>();

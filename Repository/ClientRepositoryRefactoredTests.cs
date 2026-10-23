@@ -31,7 +31,6 @@ public class ClientRepositoryRefactoredTests
     private IClientSortingService _mockSortingService;
     private IClientChangeTrackingService _mockChangeTrackingService;
     private IClientEntityManagementService _mockEntityManagementService;
-    private IClientWorkFilterService _mockWorkFilterService;
     private IClientValidator _mockClientValidator;
     private IWorkMacroService _mockWorkMacroService;
 
@@ -54,7 +53,6 @@ public class ClientRepositoryRefactoredTests
         _mockSortingService = Substitute.For<IClientSortingService>();
         _mockChangeTrackingService = Substitute.For<IClientChangeTrackingService>();
         _mockEntityManagementService = Substitute.For<IClientEntityManagementService>();
-        _mockWorkFilterService = Substitute.For<IClientWorkFilterService>();
         _mockClientValidator = Substitute.For<IClientValidator>();
 
         var mockGroupFilterService = Substitute.For<IClientGroupFilterService>();
