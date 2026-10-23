@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Klacks.Api.Infrastructure.Services.Schedules;
 
 namespace Klacks.UnitTest.Services.ContainerTemplates;
 
