@@ -101,7 +101,7 @@ public class SealConfirmationBindingPipelineTests
         TenantId = Guid.NewGuid(),
         UserName = "tester",
         UserLanguage = "de",
-        UserPermissions = Permissions.ExpandRoles(Roles.Admin),
+        UserPermissions = Permissions.ExpandRoles([Roles.Admin]),
         UserConfirmation = AffirmationDetector.IsExplicitConfirmation(userMessage, "de")
             ? UserConfirmationEvidence.ExplicitConfirmationReply
             : UserConfirmationEvidence.None

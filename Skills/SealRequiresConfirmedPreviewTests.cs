@@ -40,7 +40,7 @@ public class SealRequiresConfirmedPreviewTests
         TenantId = Guid.NewGuid(),
         UserName = "plan-step",
         UserLanguage = "en",
-        UserPermissions = Permissions.ExpandRoles(Roles.Admin),
+        UserPermissions = Permissions.ExpandRoles([Roles.Admin]),
         BypassAutonomyGate = true
     };
 
