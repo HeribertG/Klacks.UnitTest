@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using System.Globalization;
 using Shouldly;
 using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Interfaces.Schedules;
@@ -7,7 +8,12 @@ using Klacks.Api.Domain.DTOs.Schedules;
 using Klacks.Api.Domain.Interfaces.Associations;
 using Klacks.Api.Domain.Interfaces.Schedules;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Domain.Models.Schedules;
+using Klacks.Api.Infrastructure.Persistence;
+using Klacks.Api.Infrastructure.Services.Schedules;
 using Klacks.ScheduleOptimizer.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -165,6 +171,65 @@ public class WizardContextBuilderTests
 
         // Assert
         result.LevelShortfallOf(agentId.ToString(), shiftId, date).ShouldBe(2);
+    }
+
+    [TestCase("th-TH")]
+    [TestCase("fi-FI")]
+    [TestCase("ar-SA")]
+    [TestCase("de-CH")]
+    [TestCase("en-US")]
+    public async Task BuildContextAsync_SlotsWrittenByTheShiftBuilder_ReachTheAvailabilityCheck_InAnyProcessCulture(
+        string cultureName)
+    {
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+            var agentId = Guid.NewGuid();
+            var shiftId = Guid.NewGuid();
+            var date = new DateOnly(2026, 4, 20);
+            ArrangeAvailabilityHierarchyCase(agentId, shiftId, date, new HardConstraintResult([], [], [], [], []));
+
+            var options = new DbContextOptionsBuilder<DataBaseContext>()
+                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+                .Options;
+            await using var dbContext = new DataBaseContext(options, Substitute.For<IHttpContextAccessor>());
+            dbContext.Shift.Add(new Shift
+            {
+                Id = shiftId,
+                Name = "Early",
+                Abbreviation = "E",
+                FromDate = date,
+                UntilDate = date,
+                StartShift = new TimeOnly(6, 30),
+                EndShift = new TimeOnly(14, 15),
+                WorkTime = 8m,
+                Quantity = 1,
+                IsMonday = true,
+            });
+            await dbContext.SaveChangesAsync();
+            var written = await new WizardShiftBuilder(dbContext)
+                .BuildAsync(null, date, date, null, CancellationToken.None);
+            _shiftBuilder
+                .BuildAsync(Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                .Returns(written);
+
+            await _sut.BuildContextAsync(HierarchyRequest(agentId, date), CancellationToken.None);
+
+            await _availabilityService.Received().GetAsync(
+                Arg.Any<IReadOnlyList<Guid>>(),
+                Arg.Is<IReadOnlyList<AvailabilityShiftSlot>>(slots =>
+                    slots.Count == 1
+                    && slots[0].ShiftId == shiftId
+                    && slots[0].Date == date
+                    && slots[0].Start == new TimeOnly(6, 30)
+                    && slots[0].End == new TimeOnly(14, 15)),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
     }
 
     private static WizardContextRequest HierarchyRequest(Guid agentId, DateOnly date)

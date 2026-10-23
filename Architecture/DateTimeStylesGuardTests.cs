@@ -32,7 +32,9 @@ public class DateTimeStylesGuardTests
     private const string DateTimeStylesToken = "DateTimeStyles";
     private const string DateTimeStylesNoneToken = "DateTimeStyles.None";
     private const string CultureToken = "Culture";
-    private const string CurrentCultureToken = "CultureInfo.CurrentCulture";
+    private const string CurrentCultureToken = "CurrentCulture";
+    private const string CurrentUiCultureToken = "CurrentUICulture";
+    private const string NullLiteral = "null";
     private const string DateOnlyTypeName = "DateOnly";
     private const string TimeOnlyTypeName = "TimeOnly";
     private const int MinimumScannedFiles = 2000;
@@ -56,7 +58,8 @@ public class DateTimeStylesGuardTests
         new(@"\b(DateTime|DateTimeOffset|DateOnly|TimeOnly)\.(Parse|TryParse|ParseExact|TryParseExact)\(",
             RegexOptions.Compiled);
 
-    private static readonly string[] GuardedDirectories = ["Application", "Domain/Services", "Infrastructure"];
+    private static readonly string[] GuardedDirectories =
+        ["Application", "Domain/Services", "Infrastructure", "Presentation", "Plugins"];
 
     private static readonly IReadOnlyDictionary<string, (int Count, string Reason)> AllowedOccurrences =
         new Dictionary<string, (int, string)>
@@ -241,6 +244,43 @@ public class DateTimeStylesGuardTests
             "to work around a guard bug.");
     }
 
+    [TestCase("var a = DateTime.Parse(s, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal);
+")]
+    [TestCase("var a = DateTimeOffset.TryParse(s, CultureInfo.CurrentUICulture, DateTimeStyles.AssumeUniversal, out var v);
+")]
+    [TestCase("var a = DateTime.Parse(s, Thread.CurrentThread.CurrentCulture, DateTimeStyles.AssumeUniversal);
+")]
+    [TestCase("var a = DateOnly.TryParse(s, Thread.CurrentThread.CurrentCulture, out var v);
+")]
+    [TestCase("var a = TimeOnly.Parse(s, CultureInfo.CurrentUICulture);
+")]
+    [TestCase("var a = DateTime.Parse(s, null, DateTimeStyles.AssumeUniversal);
+")]
+    [TestCase("var a = DateTime.TryParse(s, null, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var v);
+")]
+    public void ScannerSelfTest_FlagsAmbientCultureAndNullProvider(string sample)
+    {
+        var (violationLines, matchCount) = FindViolationLines(sample);
+
+        matchCount.ShouldBe(1);
+        violationLines.ShouldBe(new List<int> { 1 });
+    }
+
+    [Test]
+    public void ScannerSelfTest_DoesNotFlagAnExplicitInvariantProvider()
+    {
+        const string sample =
+            "var a = DateTime.Parse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
+"
+            + "var b = TimeOnly.TryParseExact(s, Format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var v);
+";
+
+        var (violationLines, matchCount) = FindViolationLines(sample);
+
+        matchCount.ShouldBe(2);
+        violationLines.ShouldBeEmpty();
+    }
+
     private static (
         Dictionary<string, (int Count, List<int> Lines)> Occurrences,
         int ScannedFiles,
@@ -313,21 +353,38 @@ public class DateTimeStylesGuardTests
     }
 
     /// <summary>
-    /// DateOnly/TimeOnly carry no Kind, so their rule is the culture, not the style: the call must pass
-    /// an explicit format provider, and it must not be CultureInfo.CurrentCulture - exactly the ambient
-    /// this guard exists to remove. DateTime/DateTimeOffset keep the DateTimeStyles rule.
+    /// The ambient culture is a violation for every parsed type, however it is spelled
+    /// (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture, Thread.CurrentThread.CurrentCulture). On top of
+    /// that DateOnly/TimeOnly carry no Kind, so their rule is the culture alone: the call must name an explicit
+    /// format provider. DateTime/DateTimeOffset keep the DateTimeStyles rule and additionally must not pass a
+    /// literal null provider, which silently falls back to the current culture.
     /// </summary>
     private static bool IsViolation(string parsedTypeName, string span)
     {
+        var normalizedSpan = string.Concat(span.Where(c => !char.IsWhiteSpace(c)));
+        if (normalizedSpan.Contains(CurrentCultureToken, StringComparison.Ordinal)
+            || normalizedSpan.Contains(CurrentUiCultureToken, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         if (parsedTypeName is DateOnlyTypeName or TimeOnlyTypeName)
         {
-            var normalizedSpan = string.Concat(span.Where(c => !char.IsWhiteSpace(c)));
-            return !normalizedSpan.Contains(CultureToken, StringComparison.Ordinal)
-                   || normalizedSpan.Contains(CurrentCultureToken, StringComparison.Ordinal);
+            return !normalizedSpan.Contains(CultureToken, StringComparison.Ordinal);
         }
 
         return !span.Contains(DateTimeStylesToken, StringComparison.Ordinal)
-               || IsNoneOnlyStyleArgument(span);
+               || IsNoneOnlyStyleArgument(span)
+               || HasNullArgument(span);
+    }
+
+    private static bool HasNullArgument(string span)
+    {
+        var argsText = span.Length >= 2 && span[0] == '(' && span[^1] == ')' ? span[1..^1] : span.TrimStart('(');
+
+        return SplitTopLevelArguments(argsText)
+            .Select(argument => string.Concat(argument.Where(c => !char.IsWhiteSpace(c))))
+            .Any(argument => string.Equals(argument, NullLiteral, StringComparison.Ordinal));
     }
 
     /// <summary>

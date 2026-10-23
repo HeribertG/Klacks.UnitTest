@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Skills;
 using Klacks.Api.Domain.Services.Assistant.Skills.Implementations;
@@ -35,6 +36,7 @@ public class SkillExecutorUserLanguageTests
 
     private ISkillUsageTracker _usageTracker = null!;
     private DateProbeSkill _probe = null!;
+    private IServiceProvider _serviceProvider = null!;
     private SkillExecutorService _executor = null!;
 
     [SetUp]
@@ -46,13 +48,13 @@ public class SkillExecutorUserLanguageTests
         var registry = Substitute.For<ISkillRegistry>();
         registry.GetSkillByName(SkillName).Returns(Descriptor());
 
-        var serviceProvider = Substitute.For<IServiceProvider>();
-        serviceProvider.GetService(typeof(DateProbeSkill)).Returns(_probe);
+        _serviceProvider = Substitute.For<IServiceProvider>();
+        _serviceProvider.GetService(typeof(DateProbeSkill)).Returns(_probe);
 
         _executor = new SkillExecutorService(
             registry,
             _usageTracker,
-            serviceProvider,
+            _serviceProvider,
             Substitute.For<IGenericSkillDispatcher>(),
             Substitute.For<IAutonomyGate>(),
             Substitute.For<IEntityChangeNotifier>(),
@@ -83,6 +85,47 @@ public class SkillExecutorUserLanguageTests
                 CultureInfo.CurrentCulture = previous;
             }
         }
+    }
+
+    [TestCase("en", 2026, 3, 4)]
+    [TestCase("fr", 2026, 4, 3)]
+    public async Task WithoutALanguage_TheInstallationLanguageDecidesHowAnAmbiguousDateIsRead(
+        string installationLanguage, int year, int month, int day)
+    {
+        var resolver = Substitute.For<IInstallationLanguageResolver>();
+        resolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(installationLanguage);
+        _serviceProvider.GetService(typeof(IInstallationLanguageResolver)).Returns(resolver);
+
+        foreach (var processCulture in ProcessCultures)
+        {
+            var previous = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(processCulture);
+                var result = await _executor.ExecuteAsync(Invocation(), ContextWith(null));
+
+                result.Success.ShouldBeTrue(result.Message);
+                _probe.ReadDate.ShouldBe(new DateOnly(year, month, day));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previous;
+            }
+        }
+    }
+
+    [Test]
+    public async Task AnExplicitLanguage_IsNeverReplacedByTheInstallationLanguage()
+    {
+        var resolver = Substitute.For<IInstallationLanguageResolver>();
+        resolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns("fr");
+        _serviceProvider.GetService(typeof(IInstallationLanguageResolver)).Returns(resolver);
+
+        var result = await _executor.ExecuteAsync(Invocation(), ContextWith("en"));
+
+        result.Success.ShouldBeTrue(result.Message);
+        _probe.ReadDate.ShouldBe(new DateOnly(2026, 3, 4));
+        await resolver.DidNotReceive().ResolveAsync(Arg.Any<CancellationToken>());
     }
 
     [Test]
