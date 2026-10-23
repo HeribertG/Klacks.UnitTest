@@ -385,4 +385,22 @@ public class CutShiftSkillCharacterizationTests
         result.Message!.ShouldStartWith("What this confirmation was given for has changed since the preview");
         _calls.ShouldNotContain("cuts");
     }
+
+    [Test]
+    public async Task Result_NamesTheDefaultExpensesEveryPartCarries()
+    {
+        _binding = Bound(("07:00", "19:00", "Day"), ("19:00", "07:00", "Night"));
+        _shiftCutFacade.ProcessBatchCutsAsync(Arg.Any<List<CutOperation>>())
+            .Returns(ci => ci.Arg<List<CutOperation>>().Select(op => new Shift
+            {
+                Id = op.Data.Id,
+                ShiftExpenses = [new ShiftExpenses { Description = "Meal", Amount = 12.50m, Taxable = false }]
+            }).ToList());
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, "07:00-19:00,19:00-07:00", "Day,Night"));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message!.ShouldContain("'Day': Meal 12.50 (non-taxable expense)");
+        result.Message.ShouldContain("'Night': Meal 12.50 (non-taxable expense)");
+    }
 }
