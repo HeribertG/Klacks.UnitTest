@@ -1,5 +1,8 @@
 using Klacks.Api.Infrastructure.Hosting;
+using System.Reflection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Configuration;
 
 namespace Klacks.UnitTest.Infrastructure.Hosting;
 
@@ -121,6 +124,36 @@ public class FailSafeLoggerProviderTests
         new FailSafeLoggerProvider(_innerProvider, _errorOutput).Dispose();
 
         _innerProvider.Received(1).Dispose();
+    }
+
+    [Test]
+    public void Provider_CarriesTheEventLogAlias()
+    {
+        var alias = typeof(FailSafeLoggerProvider).GetCustomAttribute<ProviderAliasAttribute>();
+
+        alias.ShouldNotBeNull();
+        alias.Alias.ShouldBe("EventLog");
+    }
+
+    [Test]
+    public void Log_WhenEventLogSectionRaisesTheMinimumLevel_AppliesTheConfiguredLevel()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Logging:EventLog:LogLevel:Default"] = "Error" })
+            .Build();
+        _innerLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        using var factory = LoggerFactory.Create(builder =>
+        {
+            builder.AddConfiguration(configuration.GetSection("Logging"));
+            builder.AddProvider(new FailSafeLoggerProvider(_innerProvider, _errorOutput));
+        });
+        var logger = factory.CreateLogger(Category);
+
+        logger.Log(LogLevel.Warning, new EventId(0), State, null, Formatter);
+        logger.Log(LogLevel.Error, new EventId(0), State, null, Formatter);
+
+        _innerLogger.DidNotReceive().Log(LogLevel.Warning, Arg.Any<EventId>(), State, Arg.Any<Exception?>(), Formatter);
+        _innerLogger.Received(1).Log(LogLevel.Error, Arg.Any<EventId>(), State, Arg.Any<Exception?>(), Formatter);
     }
 
     private void MakeInnerLoggerThrow()
