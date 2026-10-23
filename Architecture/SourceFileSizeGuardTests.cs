@@ -8,8 +8,15 @@
 ///
 /// A source scan rather than reflection, for the same reason ForbidChallengeSchemeGuardTests scans: the
 /// property being measured is a property of the text (lines, a method body), and reflection sees neither.
-/// Type declarations are skipped because a file with a block-scoped namespace indents its class by four
-/// spaces and is otherwise indistinguishable from a method signature.
+/// Members are recognised at any indentation (file-scoped or block-scoped namespace, nested types, tabs), with
+/// tuple and generic return types, generic methods and constructors. Type declarations are skipped, judged only
+/// by the text BEFORE the member name: a "where T : class" constraint or a parameter named "record" after the
+/// name must not hide a method.
+///
+/// KNOWN GAP: a member needs at least one explicit modifier (public, private, static, ...). Members without one
+/// - implicit private methods, default interface methods, explicit interface implementations - are not
+/// measured, because without a modifier the text cannot be told from a statement. The gap is pinned by
+/// MethodBodies_MemberWithoutModifier_IsNotMeasured_KnownGap; closing it needs a parser (Roslyn), not a regex.
 ///
 /// Two properties of the allowlists are deliberate and easy to misread. First, a ceiling encodes what the
 /// brace counter measured, not what a human would count: a brace inside a string literal can overstate a
@@ -61,7 +68,7 @@ public class SourceFileSizeGuardTests
     {
     };
 
-    // Matches a member declaration at ANY indentation (file-scoped and block-scoped namespaces, nested types).
+    // Matches a member declaration at ANY indentation.
     // The return type is optional so constructors are measured, may contain spaces (generic arguments) and
     // parenthesised tuple types, and the name may carry generic type parameters. The first modifier must not be
     // "new", otherwise an object-creation line inside a field initializer would look like a member.
@@ -162,7 +169,7 @@ public class SourceFileSizeGuardTests
         for (var i = 0; i < lines.Count; i++)
         {
             var match = MemberSignature.Match(lines[i]);
-            if (!match.Success || TypeDeclaration.IsMatch(lines[i]))
+            if (!match.Success || TypeDeclaration.IsMatch(lines[i][..match.Groups[1].Index]))
             {
                 continue;
             }
@@ -307,11 +314,42 @@ public class SourceFileSizeGuardTests
             "    [",
             "        new Item(\"a\"),",
             "        new Item(\"b\")",
-            "    ];",
-            "    private readonly Dictionary<string, int> map = new(StringComparer.Ordinal);"
+            "    ];"
         };
 
         MethodBodies(source).ShouldBeEmpty();
+    }
+
+    [Test]
+    public void MethodBodies_GenericConstraintClass_IsMeasured()
+    {
+        var source = Snippet("    public static T Create<T>(object value) where T : class", 2, "    ");
+
+        Describe(source).ShouldBe("Create:5");
+    }
+
+    [Test]
+    public void MethodBodies_GenericConstraintStruct_IsMeasured()
+    {
+        var source = Snippet("    private static T? Read<T>(string raw) where T : struct", 2, "    ");
+
+        Describe(source).ShouldBe("Read:5");
+    }
+
+    [Test]
+    public void MethodBodies_ParameterNamedRecord_IsMeasured()
+    {
+        var source = Snippet("    private async Task Save(Entity record, CancellationToken ct)", 2, "    ");
+
+        Describe(source).ShouldBe("Save:5");
+    }
+
+    [Test]
+    public void MethodBodies_MemberWithoutModifier_IsNotMeasured_KnownGap()
+    {
+        var source = Snippet("    void Implicit()", 2, "    ");
+
+        Describe(source).ShouldBeEmpty();
     }
 
     [Test]
