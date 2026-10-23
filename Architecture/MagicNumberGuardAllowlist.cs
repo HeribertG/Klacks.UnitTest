@@ -8,11 +8,14 @@
 ///
 /// Start (2026-10-23): 647 literals in 175 files on Api 669bcab18; the change that introduced the guard
 /// named 165 of them (28 files), leaving 482 in 147 files. ClientFilterService (1) then moved from Domain to
-/// Infrastructure, out of the guarded directories, leaving 481 in 146 files. The largest remaining groups are deliberate for
-/// now: calendar algorithms (HolidaysListCalculator, HijriCalendar), sample and evaluation data
-/// (ExportSampleDataFactory, HarmonizerEvalScenarioFactory, CreateTestEnvironmentSkill), option and DTO
-/// defaults in property initializers, the feature-vector slots of TurnIntentHandFeatures and the Haversine
-/// formula coefficients.
+/// Infrastructure, out of the guarded directories, leaving 481 in 146 files. Round 12 (a1-magic2) named the
+/// business-rule values (trigger severity thresholds, memory importance scale, day and week units, planning
+/// context window, autofill tolerances, token and password sizes, list and search limits, report and model
+/// defaults, cache lifetimes, option defaults) and left 242 in 13 files. What remains is deliberate for now:
+/// calendar algorithms (HolidaysListCalculator, HijriCalendar), sample and evaluation data (ExportSampleDataFactory,
+/// HarmonizerEvalScenarioFactory, CreateTestEnvironmentSkill), the feature-vector slots of TurnIntentHandFeatures,
+/// the Haversine and Wilson-interval formula coefficients, the median halving of two statistics helpers, and the
+/// files other branches still own (AddClientToNearestGroupSkill, UpdateAbsenceTypeSkill, TurnEvalMemoryProbe).
 /// </summary>
 
 namespace Klacks.UnitTest.Architecture;
