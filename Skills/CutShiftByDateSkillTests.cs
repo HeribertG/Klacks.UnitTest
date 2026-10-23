@@ -104,6 +104,48 @@ public class CutShiftByDateSkillTests
     }
 
     [Test]
+    public async Task ReportsTheDefaultExpensesEveryPieceCarries()
+    {
+        var cutDate = new DateOnly(2026, 6, 1);
+        _shiftRepository.Get(OriginalShiftId).Returns(MakeOriginalShift());
+        List<CutOperation>? capturedOps = null;
+        _shiftCutFacade.ProcessBatchCutsAsync(Arg.Do<List<CutOperation>>(ops => capturedOps = ops)).Returns(ci =>
+        {
+            var created = capturedOps!.First(o => o.Type == "CREATE").Data;
+            return new List<Shift>
+            {
+                WithExpenses(new Shift { Id = OriginalShiftId }),
+                WithExpenses(new Shift { Id = created.Id })
+            };
+        });
+        _shiftRepository.CutList(SealedOrderId).Returns(ci =>
+        {
+            var created = capturedOps!.First(o => o.Type == "CREATE").Data;
+            return new List<Shift>
+            {
+                new() { Id = OriginalShiftId, FromDate = FromDate, UntilDate = cutDate.AddDays(-1) },
+                new() { Id = created.Id, FromDate = created.FromDate, UntilDate = created.UntilDate }
+            };
+        });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, cutDate));
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(result.Message, Does.Contain("Meal 12.50 (non-taxable expense)"));
+        Assert.That(result.Message, Does.Contain("Night allowance 20.00 (taxable allowance)"));
+    }
+
+    private static Shift WithExpenses(Shift shift)
+    {
+        shift.ShiftExpenses =
+        [
+            new ShiftExpenses { Id = Guid.NewGuid(), ShiftId = shift.Id, Description = "Meal", Amount = 12.50m, Taxable = false },
+            new ShiftExpenses { Id = Guid.NewGuid(), ShiftId = shift.Id, Description = "Night allowance", Amount = 20.00m, Taxable = true }
+        ];
+        return shift;
+    }
+
+    [Test]
     public async Task ResolvesOrderIdToPlannableShift_LikeCutShift()
     {
         var cutDate = new DateOnly(2026, 6, 1);
