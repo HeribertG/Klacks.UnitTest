@@ -470,4 +470,70 @@ public class ClientSearchServiceTests
 
         clients.Count.ShouldBe(3);
     }
+
+    [TestCase("\"von Oberhausen\"")]
+    [TestCase("„von Oberhausen“")]
+    [TestCase("«von Oberhausen»")]
+    public void ApplySearchFilter_WithQuotedParticleName_ShouldMatchOnlyThePhrase(string searchString)
+    {
+        // Arrange
+        AddParticleNameClients();
+        var query = _context.Client.AsQueryable();
+
+        // Act
+        var clients = _searchService.ApplySearchFilter(query, searchString, false).ToList();
+
+        // Assert
+        clients.Select(c => c.FirstName).ShouldBe(new[] { "Karl" });
+    }
+
+    [Test]
+    public void ApplySearchFilter_WithUnquotedParticleName_ShouldAlsoMatchWordFragments()
+    {
+        // Arrange
+        AddParticleNameClients();
+        var query = _context.Client.AsQueryable();
+
+        // Act
+        var clients = _searchService.ApplySearchFilter(query, "von Oberhausen", false).ToList();
+
+        // Assert
+        clients.Select(c => c.FirstName).ShouldBe(new[] { "Karl", "Yvonne" }, ignoreOrder: true);
+    }
+
+    [Test]
+    public void ApplySearchFilter_WithFirstNameAndQuotedParticleName_ShouldRequireBoth()
+    {
+        // Arrange
+        AddParticleNameClients();
+        var query = _context.Client.AsQueryable();
+
+        // Act
+        var clients = _searchService.ApplySearchFilter(query, "Karl \"von Oberhausen\"", false).ToList();
+
+        // Assert
+        clients.Select(c => c.FirstName).ShouldBe(new[] { "Karl" });
+    }
+
+    [Test]
+    public void ApplySearchFilter_WithQuotedPhraseInPlusAlternatives_ShouldStripQuotesAndOrTheParts()
+    {
+        // Arrange
+        AddParticleNameClients();
+        var query = _context.Client.AsQueryable();
+
+        // Act
+        var clients = _searchService.ApplySearchFilter(query, "\"von Oberhausen\"+Johnson", false).ToList();
+
+        // Assert
+        clients.Select(c => c.FirstName).ShouldBe(new[] { "Karl", "John" }, ignoreOrder: true);
+    }
+
+    private void AddParticleNameClients()
+    {
+        _context.Client.AddRange(
+            new Client { Id = Guid.NewGuid(), Name = "von Oberhausen", FirstName = "Karl", IdNumber = 33333, Gender = GenderEnum.Male },
+            new Client { Id = Guid.NewGuid(), Name = "Oberhausen", FirstName = "Yvonne", IdNumber = 44444, Gender = GenderEnum.Female });
+        _context.SaveChanges();
+    }
 }
