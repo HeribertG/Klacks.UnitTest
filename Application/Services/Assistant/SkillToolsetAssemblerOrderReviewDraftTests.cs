@@ -71,7 +71,8 @@ public class SkillToolsetAssemblerOrderReviewDraftTests
         recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
-        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(SkillRepositoryStubs.WithoutRequirements());
+        var skillRepository = SkillRepositoryStubs.WithoutRequirements();
+        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepository);
         var serviceScope = Substitute.For<IServiceScope>();
         serviceScope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
