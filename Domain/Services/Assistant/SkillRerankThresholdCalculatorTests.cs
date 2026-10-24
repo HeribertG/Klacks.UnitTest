@@ -46,7 +46,7 @@ public class SkillRerankThresholdCalculatorTests
     {
         var outcomes = Generate(4000, (margin, reranked) => margin < 0.07 ? reranked : true);
 
-        SkillRerankThresholdCalculator.Next(outcomes, 0.03, Min, Max)
+        SkillRerankThresholdCalculator.Next(outcomes, 0.03, Min, Max)!.Value
             .ShouldBe(0.03 + SkillRerankTuningDefaults.MaxStep, tolerance: 1e-9);
     }
 
@@ -55,7 +55,7 @@ public class SkillRerankThresholdCalculatorTests
     {
         var outcomes = Generate(4000, (_, _) => true);
 
-        SkillRerankThresholdCalculator.Next(outcomes, 0.03, Min, Max)
+        SkillRerankThresholdCalculator.Next(outcomes, 0.03, Min, Max)!.Value
             .ShouldBe(0.03 - SkillRerankTuningDefaults.MaxStep, tolerance: 1e-9);
     }
 
@@ -64,7 +64,7 @@ public class SkillRerankThresholdCalculatorTests
     {
         var outcomes = Generate(4000, (margin, reranked) => margin < 0.05 ? reranked : true);
 
-        SkillRerankThresholdCalculator.Next(outcomes, 0.05, Min, Max).ShouldBe(0.05, tolerance: 1e-9);
+        SkillRerankThresholdCalculator.Next(outcomes, 0.05, Min, Max)!.Value.ShouldBe(0.05, tolerance: 1e-9);
     }
 
     [Test]
@@ -73,8 +73,8 @@ public class SkillRerankThresholdCalculatorTests
         var helpsEverywhere = Generate(4000, (_, reranked) => reranked);
         var neverHelps = Generate(4000, (_, _) => true);
 
-        SkillRerankThresholdCalculator.Next(helpsEverywhere, Max, Min, Max).ShouldBe(Max, tolerance: 1e-9);
-        SkillRerankThresholdCalculator.Next(neverHelps, Min, Min, Max).ShouldBe(Min, tolerance: 1e-9);
+        SkillRerankThresholdCalculator.Next(helpsEverywhere, Max, Min, Max)!.Value.ShouldBe(Max, tolerance: 1e-9);
+        SkillRerankThresholdCalculator.Next(neverHelps, Min, Min, Max)!.Value.ShouldBe(Min, tolerance: 1e-9);
     }
 
     // Deterministic traffic: margins sweep 0..0.12 evenly, every second turn is reranked (both orders in every

@@ -85,7 +85,8 @@ public class SkillRerankThresholdTunerTests
 
         var tuned = await _tuner.TuneAsync();
 
-        tuned.ShouldBe(0.02, tolerance: 1e-9);
+        tuned.ShouldNotBeNull();
+        tuned!.Value.ShouldBe(0.02, tolerance: 1e-9);
         _threshold.Received(1).Set(0.02);
         await _settings.Received(1).UpsertSettingAsync(SettingsKeys.KLACKSY_SKILL_RERANK_MARGIN, "0.02");
         await _unitOfWork.Received(1).CompleteAsync();
