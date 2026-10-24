@@ -72,7 +72,7 @@ public class LLMServiceRecipeConfirmationGateTests
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
         _pendingRecipeStore = Substitute.For<IPendingRecipeStore>();
 
@@ -164,7 +164,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         SetPendingConfirmation(_pendingRecipeStore);
         var message = "Nein, das brauche ich nicht.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
@@ -182,7 +182,7 @@ public class LLMServiceRecipeConfirmationGateTests
         // additionally EXCLUDES the recipe from the re-match (see the two tests below).
         SetPendingConfirmation(_pendingRecipeStore);
         var message = "Zeig mir die Gruppenliste.";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
@@ -305,7 +305,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         SetPendingConfirmation(_pendingRecipeStore);
         var message = "Nein, lieber onboard ich den Mitarbeiter anders";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
 
         var plan = await _turnPreparation.ResolveOrResumeRecipeAsync(
@@ -320,7 +320,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         _pendingRecipeStore.Peek(UserId, ConversationId).Returns((PendingRecipe?)null);
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([new RetrievalCandidate(
                 new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "irrelevant" },
                 0.82)]));
@@ -382,7 +382,7 @@ public class LLMServiceRecipeConfirmationGateTests
     {
         _pendingRecipeStore.Peek(UserId, ConversationId).Returns((PendingRecipe?)null);
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([new RetrievalCandidate(
                 new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = "onboard-employee", Text = "irrelevant" },
                 0.82)]));

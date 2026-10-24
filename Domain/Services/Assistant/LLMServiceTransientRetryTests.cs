@@ -43,7 +43,7 @@ public class LLMServiceTransientRetryTests
         var retrieval = Substitute.For<IKnowledgeRetrievalService>();
         retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
         var recipeRepository = Substitute.For<IAgentRecipeRepository>();
         recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())

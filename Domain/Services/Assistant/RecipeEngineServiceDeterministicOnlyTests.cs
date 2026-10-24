@@ -50,7 +50,7 @@ public class RecipeEngineServiceDeterministicOnlyTests
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
 
         var provider = Substitute.For<IServiceProvider>();
@@ -99,7 +99,7 @@ public class RecipeEngineServiceDeterministicOnlyTests
 
         await _retrieval.Received(1).RetrieveAsync(
             UnmatchedMessage, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>());
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>());
     }
 
     [Test]

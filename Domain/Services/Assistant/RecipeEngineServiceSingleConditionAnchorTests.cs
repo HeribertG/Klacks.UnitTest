@@ -99,7 +99,7 @@ public class RecipeEngineServiceSingleConditionAnchorTests
     private void RankStrongly(string message, string recipeName) =>
         _knowledge.RetrieveAsync(
                 message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult(
             [
                 new RetrievalCandidate(

@@ -38,7 +38,8 @@ public class KnowledgeIndexRecipeCandidateRetrieverTests
             TopK,
             null,
             cancellation.Token,
-            KnowledgeEntryKind.Recipe);
+            KnowledgeEntryKind.Recipe,
+            Arg.Is<IReadOnlyCollection<string>?>(ids => ids == null));
     }
 
     [Test]
@@ -60,6 +61,24 @@ public class KnowledgeIndexRecipeCandidateRetrieverTests
             new RecipeCandidate("onboard-employee", 0.81),
             new RecipeCandidate("create-group", 0.42),
         ]);
+    }
+
+    [Test]
+    public async Task RetrieveAsync_PassesTheAdmissibleRecipesThrough()
+    {
+        var retrieval = Substitute.For<IKnowledgeRetrievalService>();
+        retrieval.RetrieveAsync(default!, default!, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new RetrievalResult([]));
+        IReadOnlyCollection<string> admissible = ["onboard-employee"];
+
+        await new KnowledgeIndexRecipeCandidateRetriever(retrieval)
+            .RetrieveAsync(Message, TopK, CancellationToken.None, admissible);
+
+        await retrieval.Received(1).RetrieveAsync(
+            Arg.Is(Message), Arg.Any<IReadOnlyCollection<string>>(), Arg.Is(false), Arg.Is(TopK),
+            Arg.Is<string?>(route => route == null), Arg.Any<CancellationToken>(),
+            Arg.Is<KnowledgeEntryKind?>(kind => kind == KnowledgeEntryKind.Recipe),
+            Arg.Is<IReadOnlyCollection<string>?>(ids => ids == admissible));
     }
 
     private static RetrievalCandidate Candidate(string sourceId, double score) =>

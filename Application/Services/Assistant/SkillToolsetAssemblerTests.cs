@@ -420,7 +420,7 @@ public class SkillToolsetAssemblerTests
     {
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(result);
     }
 
@@ -537,7 +537,7 @@ public class SkillToolsetAssemblerTests
 
         await _retrieval.Received(1).RetrieveAsync(
             Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), KnowledgeEntryKind.Skill);
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), KnowledgeEntryKind.Skill, Arg.Any<IReadOnlyCollection<string>?>());
     }
 
     [Test]
@@ -545,7 +545,7 @@ public class SkillToolsetAssemblerTests
     {
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns<RetrievalResult>(_ => throw new InvalidOperationException("embedding backend down"));
 
         var result = await AssembleAsync();
