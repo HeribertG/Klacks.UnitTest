@@ -227,6 +227,7 @@
   "find_replacement": "ReadOnly",
   "find_split_shift_candidates": "ReadOnly",
   "generate_period_summary": "ReadOnly",
+  "geocode_addresses": "FillEmptyOnly",
   "geocode_location_groups": "Irreversible",
   "get_active_industries_settings": "ReadOnly",
   "get_ai_guidelines": "ReadOnly",

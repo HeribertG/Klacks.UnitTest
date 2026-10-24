@@ -31,6 +31,7 @@ public class PlanStepApprovalPolicyTests
 
     [TestCase(SkillRiskClass.ReadOnly, AutonomyLevel.Propose, false)]
     [TestCase(SkillRiskClass.ReadOnly, AutonomyLevel.FullyAutonomous, false)]
+    [TestCase(SkillRiskClass.FillEmptyOnly, AutonomyLevel.Propose, false)]
     [TestCase(SkillRiskClass.Sensitive, AutonomyLevel.Propose, true)]
     [TestCase(SkillRiskClass.Sensitive, AutonomyLevel.FullyAutonomous, true)]
     [TestCase(SkillRiskClass.Reversible, AutonomyLevel.Propose, true)]
@@ -75,6 +76,7 @@ public class PlanStepApprovalPolicyTests
     private static bool ExpectedRequiresApproval(SkillRiskClass riskClass, AutonomyLevel level) => riskClass switch
     {
         SkillRiskClass.ReadOnly => false,
+        SkillRiskClass.FillEmptyOnly => false,
         SkillRiskClass.Sensitive => true,
         SkillRiskClass.Reversible => level < AutonomyLevel.Assisted,
         SkillRiskClass.ScenarioGated => level < AutonomyLevel.Assisted,

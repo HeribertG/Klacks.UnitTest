@@ -98,6 +98,33 @@ public class AutonomyGateServiceTests
         Assert.That(result, Is.Null);
     }
 
+    // Fill-empty-only writers (owner decision 2026-10-24: geocode_addresses stores coordinates without asking)
+    // pass at every level, Propose included, and issue no token.
+    [Test]
+    public async Task Check_FillEmptyOnlySkill_AlwaysAllowed_EvenAtProposeLevel()
+    {
+        var context = YesContext();
+        SetLevel(context.UserId, AutonomyLevel.Propose);
+        SetRisk(SkillRiskClass.FillEmptyOnly);
+
+        var result = await _sut.CheckAsync(Descriptor(), context, new Dictionary<string, object>());
+
+        result.ShouldBeNull();
+        _turnScope.IssuedTokens.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task Check_GeocodeAddresses_WithTheRealClassifier_RunsUnconfirmedAtProposeLevel()
+    {
+        var context = YesContext();
+        SetLevel(context.UserId, AutonomyLevel.Propose);
+
+        var result = await CreateGateWithRealRiskClassifier().CheckAsync(
+            Descriptor("geocode_addresses"), context, new Dictionary<string, object>());
+
+        result.ShouldBeNull();
+    }
+
     [TestCase(SkillRiskClass.Reversible)]
     [TestCase(SkillRiskClass.ScenarioGated)]
     [TestCase(SkillRiskClass.Irreversible)]

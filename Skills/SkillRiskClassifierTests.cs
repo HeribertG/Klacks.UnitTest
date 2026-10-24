@@ -164,6 +164,13 @@ public class SkillRiskClassifierTests
 
     // apply_planning_profile creates real SchedulingRule rows and flips ACTIVE_INDUSTRIES, so it must
     // always require human confirmation (Sensitive) even at the Autonomous default level.
+    [TestCase(SkillCategory.Crud)]
+    [TestCase(SkillCategory.Query)]
+    public void Classify_GeocodeAddresses_IsFillEmptyOnlyWhateverItsCategory(SkillCategory category)
+    {
+        _sut.Classify(Descriptor("geocode_addresses", category)).ShouldBe(SkillRiskClass.FillEmptyOnly);
+    }
+
     [Test]
     public void Classify_ApplyPlanningProfile_ReturnsSensitive()
     {
