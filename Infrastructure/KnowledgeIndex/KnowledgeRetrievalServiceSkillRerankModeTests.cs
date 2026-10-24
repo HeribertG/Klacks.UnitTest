@@ -88,6 +88,61 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
         await _reranker.ReceivedWithAnyArgs(1).ScoreAsync(default!, default!, default);
     }
 
+    // The decision travels with the result so the trajectory can record it: the threshold tuner learns from it.
+    [Test]
+    public async Task Adaptive_RecordsMarginAndDecision()
+    {
+        var result = await RetrieveAsync(SkillRerankMode.Adaptive, TightField);
+
+        result.SkillRerank.ShouldNotBeNull();
+        result.SkillRerank!.Margin.ShouldBe(0.005, tolerance: 1e-4);
+        result.SkillRerank.Reranked.ShouldBeTrue();
+        result.SkillRerank.Explored.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task Adaptive_ReadsTheLiveThreshold()
+    {
+        var threshold = LiveThreshold(current: 0.0, exploration: 0.0);
+
+        var result = await RetrieveAsync(SkillRerankMode.Adaptive, TightField, threshold: threshold);
+
+        await _reranker.DidNotReceiveWithAnyArgs().ScoreAsync(default!, default!, default);
+        result.SkillRerank!.Reranked.ShouldBeFalse();
+    }
+
+    // Exploration flips the rule's decision, so both orders occur at every margin and can be compared.
+    [Test]
+    public async Task Adaptive_Exploration_FlipsTheDecision()
+    {
+        var threshold = LiveThreshold(current: Threshold, exploration: 1.0);
+
+        var result = await RetrieveAsync(SkillRerankMode.Adaptive, ClearField, threshold: threshold);
+
+        await _reranker.ReceivedWithAnyArgs(1).ScoreAsync(default!, default!, default);
+        result.SkillRerank!.Reranked.ShouldBeTrue();
+        result.SkillRerank.Explored.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task Never_DoesNotExplore()
+    {
+        var threshold = LiveThreshold(current: Threshold, exploration: 1.0);
+
+        var result = await RetrieveAsync(SkillRerankMode.Never, TightField, threshold: threshold);
+
+        await _reranker.DidNotReceiveWithAnyArgs().ScoreAsync(default!, default!, default);
+        result.SkillRerank!.Explored.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task RecipePass_RecordsNoSkillDecision()
+    {
+        var result = await RetrieveAsync(SkillRerankMode.Adaptive, ClearField, KnowledgeEntryKind.Recipe);
+
+        result.SkillRerank.ShouldBeNull();
+    }
+
     [TestCase("adaptive", SkillRerankMode.Adaptive)]
     [TestCase("NEVER", SkillRerankMode.Never)]
     [TestCase("bogus", SkillRerankMode.Always)]
@@ -98,8 +153,18 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
         SkillRerankOptions.FromConfiguration(configured, Threshold).Mode.ShouldBe(expected);
     }
 
+    private static ISkillRerankThreshold LiveThreshold(double current, double exploration)
+    {
+        var threshold = Substitute.For<ISkillRerankThreshold>();
+        threshold.Current.Returns(current);
+        threshold.ExplorationRate.Returns(exploration);
+        threshold.IsLearned.Returns(true);
+        return threshold;
+    }
+
     private Task<RetrievalResult> RetrieveAsync(
-        SkillRerankMode mode, double[] cosines, KnowledgeEntryKind kind = KnowledgeEntryKind.Skill)
+        SkillRerankMode mode, double[] cosines, KnowledgeEntryKind kind = KnowledgeEntryKind.Skill,
+        ISkillRerankThreshold? threshold = null)
     {
         var pool = cosines
             .Select((cosine, i) => new KnowledgeEntry
@@ -116,7 +181,7 @@ public class KnowledgeRetrievalServiceSkillRerankModeTests
             .Returns(pool);
 
         var service = new KnowledgeRetrievalService(
-            _embeddings, _reranker, _repo, skillRerank: new SkillRerankOptions(mode, Threshold));
+            _embeddings, _reranker, _repo, skillRerank: new SkillRerankOptions(mode, Threshold), threshold: threshold);
 
         return service.RetrieveAsync("q", [], true, 20, currentRoute: null, CancellationToken.None, kind);
     }
