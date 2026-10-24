@@ -77,7 +77,7 @@ public class OrderReviewLoopSkillTests
     [Test]
     public async Task Start_StoresTheAnalysedOrders_AndReturnsTheKeys()
     {
-        _loader.LoadItemsAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<OrderReviewScope>(), null, Arg.Any<CancellationToken>())
+        _loader.LoadItemsAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<OrderReviewScope>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new List<OrderReviewDraftItem> { Item("B1"), Item("B1"), Item("B1"), Item("S1") });
 
         var result = await new StartOrderReviewSkill(_loader, _store).ExecuteAsync(Ctx(), new Dictionary<string, object>());
