@@ -52,7 +52,13 @@ public class CutShiftConfirmationPreviewProviderTests
             new ShiftTimeCutPlanner(_shiftRepository, reader, ShiftVisibilityGuards.AllowAll(), expensesRepository));
     }
 
-    private static SkillExecutionContext Ctx() => new() { UserId = Guid.NewGuid(), UserName = "tester" };
+    private static SkillExecutionContext Ctx() => new()
+    {
+        UserId = Guid.NewGuid(),
+        TenantId = Guid.NewGuid(),
+        UserName = "tester",
+        UserPermissions = new List<string>()
+    };
 
     private static Dictionary<string, object> Params(Guid shiftId) => new()
     {
