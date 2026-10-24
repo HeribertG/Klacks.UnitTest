@@ -59,9 +59,10 @@ public class LLMServiceCutRecipeGateHoldTests
         var scope = Substitute.For<IServiceScope>();
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
-        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(SkillRepositoryStubs.WithoutRequirements());
-        scopedProvider.GetService(typeof(IRecipeCandidateRetriever))
-            .Returns(new KnowledgeIndexRecipeCandidateRetriever(Substitute.For<IKnowledgeRetrievalService>()));
+        var skillRepositoryStub = SkillRepositoryStubs.WithoutRequirements();
+        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
+        var candidateRetriever = new KnowledgeIndexRecipeCandidateRetriever(Substitute.For<IKnowledgeRetrievalService>());
+        scopedProvider.GetService(typeof(IRecipeCandidateRetriever)).Returns(candidateRetriever);
         scope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
