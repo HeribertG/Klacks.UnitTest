@@ -149,30 +149,35 @@ public class FindSplitShiftCandidatesSkillTests
     }
 
     [Test]
-    public async Task OrdersInAPlaceNamedLikeTheGroup_AreReportedAsTheAddressDifference()
+    public async Task OrdersInAPlaceNamedLikeTheGroup_AreReportedPerCityAndState_OpenAndSealedApart_NeverSummed()
     {
-        _mediator.Send(Arg.Is<GetTruncatedListQuery>(q => q.Filter.City == GroupName), Arg.Any<CancellationToken>())
-            .Returns(
-                new TruncatedShiftResource { Shifts = new List<ShiftResource>(), MaxItems = 133 },
-                new TruncatedShiftResource { Shifts = new List<ShiftResource>(), MaxItems = 4 });
+        StubCount(q => q.Filter.City == GroupName && !q.Filter.IsSealedOrder, 133);
+        StubCount(q => q.Filter.City == GroupName && q.Filter.IsSealedOrder, 4);
+        StubCount(q => q.Filter.State == GroupName && !q.Filter.IsSealedOrder, 400);
+        StubCount(q => q.Filter.State == GroupName && q.Filter.IsSealedOrder, 9);
 
         var (message, data) = await RunAsync();
 
-        message.ShouldContain($"137 order(s) are in the city '{GroupName}' and 0 in the state '{GroupName}'");
-        message.ShouldContain("(137 by address, 0 by group)");
+        message.ShouldContain($"city '{GroupName}' 133 open and 4 sealed order(s)");
+        message.ShouldContain($"state '{GroupName}' 400 open and 9 sealed order(s)");
+        message.ShouldContain("never add the two up");
+        message.ShouldContain("difference to the 0 sealed order(s) linked to the group");
+        message.ShouldNotContain("137");
+        message.ShouldNotContain("533");
         message.ShouldContain("whether one of the orders found by address should be used");
-        data.GetProperty("Scope").GetProperty("OrdersByAddressInCity").GetInt32().ShouldBe(137);
-        await _mediator.Received(1).Send(
-            Arg.Is<GetTruncatedListQuery>(q => q.Filter.City == GroupName
-                && q.Filter.FilterType == ShiftFilterType.Original && !q.Filter.IsSealedOrder),
+        var scope = data.GetProperty("Scope");
+        scope.GetProperty("OrdersByAddressInCity").GetProperty("OpenOrders").GetInt32().ShouldBe(133);
+        scope.GetProperty("OrdersByAddressInState").GetProperty("SealedOrders").GetInt32().ShouldBe(9);
+        await _mediator.Received(4).Send(
+            Arg.Is<GetTruncatedListQuery>(q => q.Filter.FilterType == ShiftFilterType.Original
+                && (q.Filter.City == null) != (q.Filter.State == null)),
             Arg.Any<CancellationToken>());
-        await _mediator.Received(1).Send(
-            Arg.Is<GetTruncatedListQuery>(q => q.Filter.City == GroupName
-                && q.Filter.FilterType == ShiftFilterType.Original && q.Filter.IsSealedOrder),
-            Arg.Any<CancellationToken>());
-        await _mediator.Received(2).Send(
-            Arg.Is<GetTruncatedListQuery>(q => q.Filter.State == GroupName && q.Filter.City == null),
-            Arg.Any<CancellationToken>());
+    }
+
+    private void StubCount(Func<GetTruncatedListQuery, bool> matches, int count)
+    {
+        _mediator.Send(Arg.Is<GetTruncatedListQuery>(q => matches(q)), Arg.Any<CancellationToken>())
+            .Returns(new TruncatedShiftResource { Shifts = new List<ShiftResource>(), MaxItems = count });
     }
 
     private async Task<(string Message, JsonElement Data)> RunAsync()
