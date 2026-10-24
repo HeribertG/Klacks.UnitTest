@@ -1,10 +1,14 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Text.Json;
+using Klacks.Api.Application.DTOs.Filter;
+using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Interfaces;
+using Klacks.Api.Application.Queries.Shifts;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Associations;
+using Klacks.Api.Infrastructure.Mediator;
 using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
@@ -14,7 +18,8 @@ namespace Klacks.UnitTest.Skills;
 /// split parts with a live link to the group; rows grouped by their order (OriginalId, else their own id); the
 /// plannable shift of an order is the first in repository order (original id, from date, start time); parts sorted
 /// by start time; split orders first, then by name. The name filter (ILike) cannot run on InMemory and is pinned by
-/// the integration test ShiftReadShapesTests.
+/// the integration test ShiftReadShapesTests. Every answer says it counts group membership only and reports the orders
+/// without any group and, through the shift list (mediator), the orders that lie in a place named like the group.
 /// </summary>
 [TestFixture]
 public class FindSplitShiftCandidatesSkillTests
@@ -26,6 +31,7 @@ public class FindSplitShiftCandidatesSkillTests
 
     private InMemoryShiftStore _store = null!;
     private IGroupSearchRepository _groupSearch = null!;
+    private IMediator _mediator = null!;
     private FindSplitShiftCandidatesSkill _sut = null!;
 
     [SetUp]
@@ -39,7 +45,10 @@ public class FindSplitShiftCandidatesSkillTests
                 Items = [new GroupSearchItem { Id = GroupId, Name = GroupName }],
                 TotalCount = 1,
             });
-        _sut = new FindSplitShiftCandidatesSkill(_store.Reader, _groupSearch);
+        _mediator = Substitute.For<IMediator>();
+        _mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new TruncatedShiftResource { Shifts = new List<ShiftResource>(), MaxItems = 0 });
+        _sut = new FindSplitShiftCandidatesSkill(_store.Reader, _groupSearch, _mediator);
     }
 
     [TearDown]
@@ -118,6 +127,65 @@ public class FindSplitShiftCandidatesSkillTests
         orders.Select(o => o.GetProperty("SealedOrderId").GetGuid()).ShouldBe([real.Id, scenarioCopy.Id], ignoreOrder: true);
     }
 
+    [Test]
+    public async Task EmptyGroup_SaysItCountsMembershipOnly_AndReportsTheUngroupedOrders()
+    {
+        var openOrder = Make("Open", ShiftStatus.OriginalOrder, null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0), grouped: false);
+        var sealedOrder = Make("Sealed", ShiftStatus.SealedOrder, null, new DateOnly(2026, 6, 1), new TimeOnly(7, 0), grouped: false);
+        var otherOpen = Make("Open 2", ShiftStatus.OriginalOrder, null, new DateOnly(2026, 6, 2), new TimeOnly(7, 0), grouped: false);
+        var scenarioOpen = Make("Scenario", ShiftStatus.OriginalOrder, null, new DateOnly(2026, 6, 2), new TimeOnly(7, 0), grouped: false);
+        scenarioOpen.AnalyseToken = Guid.NewGuid();
+        _store.Seed(openOrder, sealedOrder, otherOpen, scenarioOpen);
+
+        var (message, data) = await RunAsync();
+
+        message.ShouldContain("has no orders linked to it");
+        message.ShouldContain("group membership only");
+        message.ShouldContain("never conclude from it that a place has no orders");
+        message.ShouldContain("2 open (unsealed) and 1 sealed order(s) belong to no group at all");
+        var scope = data.GetProperty("Scope");
+        scope.GetProperty("UngroupedOpenOrders").GetInt32().ShouldBe(2);
+        scope.GetProperty("UngroupedSealedOrders").GetInt32().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task OrdersInAPlaceNamedLikeTheGroup_AreReportedAsTheAddressDifference()
+    {
+        _mediator.Send(Arg.Is<GetTruncatedListQuery>(q => q.Filter.City == GroupName), Arg.Any<CancellationToken>())
+            .Returns(
+                new TruncatedShiftResource { Shifts = new List<ShiftResource>(), MaxItems = 133 },
+                new TruncatedShiftResource { Shifts = new List<ShiftResource>(), MaxItems = 4 });
+
+        var (message, data) = await RunAsync();
+
+        message.ShouldContain($"137 order(s) are in the city '{GroupName}' and 0 in the state '{GroupName}'");
+        message.ShouldContain("(137 by address, 0 by group)");
+        message.ShouldContain("whether one of the orders found by address should be used");
+        data.GetProperty("Scope").GetProperty("OrdersByAddressInCity").GetInt32().ShouldBe(137);
+        await _mediator.Received(1).Send(
+            Arg.Is<GetTruncatedListQuery>(q => q.Filter.City == GroupName
+                && q.Filter.FilterType == ShiftFilterType.Original && !q.Filter.IsSealedOrder),
+            Arg.Any<CancellationToken>());
+        await _mediator.Received(1).Send(
+            Arg.Is<GetTruncatedListQuery>(q => q.Filter.City == GroupName
+                && q.Filter.FilterType == ShiftFilterType.Original && q.Filter.IsSealedOrder),
+            Arg.Any<CancellationToken>());
+        await _mediator.Received(2).Send(
+            Arg.Is<GetTruncatedListQuery>(q => q.Filter.State == GroupName && q.Filter.City == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    private async Task<(string Message, JsonElement Data)> RunAsync()
+    {
+        var result = await _sut.ExecuteAsync(
+            new SkillExecutionContext { UserId = Guid.NewGuid(), TenantId = Guid.NewGuid(), UserName = "planner", UserPermissions = [] },
+            new Dictionary<string, object> { ["groupName"] = GroupName },
+            CancellationToken.None);
+
+        result.Success.ShouldBeTrue(result.Message);
+        return (result.Message, JsonSerializer.SerializeToElement(result.Data));
+    }
+
     private async Task<List<JsonElement>> OrdersAsync()
     {
         var result = await _sut.ExecuteAsync(
@@ -131,7 +199,8 @@ public class FindSplitShiftCandidatesSkillTests
     }
 
     private static Shift Make(
-        string name, ShiftStatus status, Guid? originalId, DateOnly fromDate, TimeOnly start, Guid? groupId = null)
+        string name, ShiftStatus status, Guid? originalId, DateOnly fromDate, TimeOnly start, Guid? groupId = null,
+        bool grouped = true)
     {
         var id = Guid.NewGuid();
         return new Shift
@@ -145,7 +214,7 @@ public class FindSplitShiftCandidatesSkillTests
             FromDate = fromDate,
             StartShift = start,
             EndShift = start.AddHours(12),
-            GroupItems = [new GroupItem { Id = Guid.NewGuid(), GroupId = groupId ?? GroupId, ShiftId = id }],
+            GroupItems = grouped ? [new GroupItem { Id = Guid.NewGuid(), GroupId = groupId ?? GroupId, ShiftId = id }] : [],
         };
     }
 }

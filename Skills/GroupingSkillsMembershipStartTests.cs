@@ -225,7 +225,8 @@ public class GroupingSkillsMembershipStartTests
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(new FillGroupByCriteriaResult(true, "Bern", 1, 1, 1, 0, OneClient(), EntryMode));
         var skill = new FillGroupByCriteriaSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), Substitute.For<IContractRepository>(), _mediator, _companyClock);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), Substitute.For<IContractRepository>(), _mediator, _companyClock,
+            TestAddressLocationResolver.SwissAndGerman());
 
         var result = await skill.ExecuteAsync(
             Ctx(), new Dictionary<string, object> { ["groupName"] = "Bern", ["apply"] = true, ["validFrom"] = "entry" });
@@ -243,7 +244,8 @@ public class GroupingSkillsMembershipStartTests
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(new FillGroupByCriteriaResult(false, "Bern", 1, 0, 0, 0, OneClient(), EarlierEntries));
         var skill = new FillGroupByCriteriaSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), Substitute.For<IContractRepository>(), _mediator, _companyClock);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), Substitute.For<IContractRepository>(), _mediator, _companyClock,
+            TestAddressLocationResolver.SwissAndGerman());
 
         var result = await skill.ExecuteAsync(
             Ctx(), new Dictionary<string, object> { ["groupName"] = "Bern", ["validFrom"] = "2026-10-20" });
