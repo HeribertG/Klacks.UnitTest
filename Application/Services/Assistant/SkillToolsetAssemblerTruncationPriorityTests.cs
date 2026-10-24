@@ -97,7 +97,7 @@ public class SkillToolsetAssemblerTruncationPriorityTests
             Substitute.For<IPendingUserNoteRepository>(),
             CreateRecipeEngine(),
             PendingStoreTestFactory.CreateConfirmationStore(),
-            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(),
             phrases,
             relations,
             new NoTurnIntentExplainGuarantee(),

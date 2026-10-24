@@ -173,7 +173,7 @@ public class SkillToolsetAssemblerAcceptGuaranteeTests
             Substitute.For<IPendingUserNoteRepository>(),
             CreateRecipeEngine(),
             PendingStoreTestFactory.CreateConfirmationStore(),
-            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(),
             CreatePhrases(),
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),

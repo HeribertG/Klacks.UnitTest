@@ -1,5 +1,7 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.Api.Application.Interfaces.Assistant;
+using Klacks.Api.Application.Services.Assistant;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Infrastructure.Persistence;
 using Klacks.Api.Infrastructure.Repositories.Assistant;
@@ -47,6 +49,14 @@ internal static class PendingStoreTestFactory
             context => new PendingOrderReviewDraftRepository(context));
         return new PersistentPendingOrderReviewDraftStore(scopeFactory);
     }
+
+    public static IDraftLoopToolsetPolicy CreateDraftLoopToolsetPolicy(
+        IPendingPlanningProfileDraftStore? planningProfileDraftStore = null,
+        IPendingOrderReviewDraftStore? orderReviewDraftStore = null) =>
+        new DraftLoopToolsetPolicy(
+            planningProfileDraftStore ?? CreatePlanningProfileDraftStore(),
+            orderReviewDraftStore ?? CreateOrderReviewDraftStore(),
+            NullLogger<DraftLoopToolsetPolicy>.Instance);
 
     private static IServiceScopeFactory CreateScopeFactory<TRepository>(Func<DataBaseContext, TRepository> createRepository)
         where TRepository : class

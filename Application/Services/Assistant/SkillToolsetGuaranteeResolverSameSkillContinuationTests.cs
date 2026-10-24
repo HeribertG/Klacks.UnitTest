@@ -65,7 +65,7 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
             Substitute.For<IPendingUserNoteRepository>(),
             recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
-            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(),
             phrases,
             relations,
             new NoTurnIntentExplainGuarantee(),

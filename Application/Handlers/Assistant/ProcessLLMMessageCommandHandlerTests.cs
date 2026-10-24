@@ -108,7 +108,7 @@ public class ProcessLLMMessageCommandHandlerTests
         var guaranteeResolver = new SkillToolsetGuaranteeResolver(
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
-            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(),
             NoLearnedPhrases(),
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),

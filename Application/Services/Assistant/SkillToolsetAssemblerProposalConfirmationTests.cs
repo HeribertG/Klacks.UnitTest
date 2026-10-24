@@ -234,7 +234,7 @@ public class SkillToolsetAssemblerProposalConfirmationTests
             _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
             new SkillToolsetGuaranteeResolver(
                 _pendingUserNoteRepository, _recipeEngine, _confirmationStore,
-                PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+                PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(),
                 NoLearnedPhrases(),
                 Substitute.For<ISkillRelationRepository>(),
                 new NoTurnIntentExplainGuarantee(),

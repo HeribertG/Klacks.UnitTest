@@ -403,7 +403,7 @@ public class SkillToolsetAssemblerTests
         var guaranteeResolver = new SkillToolsetGuaranteeResolver(
             _pendingUserNoteRepository, _recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
-            _planningProfileDraftStore,
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(_planningProfileDraftStore),
             _skillPhrases,
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),
