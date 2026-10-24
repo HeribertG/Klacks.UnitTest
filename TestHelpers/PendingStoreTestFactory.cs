@@ -12,7 +12,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Klacks.UnitTest.TestHelpers;
 
 /// <summary>
-/// Builds a real PersistentPendingConfirmationStore/PersistentPendingCompanyRuleDraftStore backed by a
+/// Builds a real PersistentPendingConfirmationStore or pending draft store (company rule, planning profile, order
+/// review) backed by a
 /// fresh EF InMemory DataBaseContext, for tests of OTHER components (skills, handlers, the autonomy gate)
 /// that need a working pending-store double. Each call gets its own isolated in-memory database, mirroring
 /// the store's own fresh-scope-per-operation design (a new scope resolves a new DbContext instance).
@@ -38,6 +39,13 @@ internal static class PendingStoreTestFactory
         var scopeFactory = CreateScopeFactory<IPendingPlanningProfileDraftRepository>(
             context => new PendingPlanningProfileDraftRepository(context));
         return new PersistentPendingPlanningProfileDraftStore(scopeFactory);
+    }
+
+    public static IPendingOrderReviewDraftStore CreateOrderReviewDraftStore()
+    {
+        var scopeFactory = CreateScopeFactory<IPendingOrderReviewDraftRepository>(
+            context => new PendingOrderReviewDraftRepository(context));
+        return new PersistentPendingOrderReviewDraftStore(scopeFactory);
     }
 
     private static IServiceScopeFactory CreateScopeFactory<TRepository>(Func<DataBaseContext, TRepository> createRepository)

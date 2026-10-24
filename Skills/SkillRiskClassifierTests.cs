@@ -181,6 +181,16 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
+    // The order-review intake steps only touch the ephemeral review draft and must never be gated.
+    [TestCase("start_order_review", SkillCategory.Crud)]
+    [TestCase("set_order_review_decision", SkillCategory.Crud)]
+    [TestCase("cancel_order_review", SkillCategory.Crud)]
+    [TestCase("preview_order_review", SkillCategory.Query)]
+    public void Classify_OrderReviewDraftAndReadSkills_ReturnsReadOnly(string name, SkillCategory category)
+    {
+        Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
+    }
+
     // The grouping apply skill is deliberately NOT Sensitive (owner decision): it is the second half of
     // a propose/apply pair, so the user already approved the full preview before it is ever called. The
     // extra gate asked a second time for the same action and, because the token does not survive into
