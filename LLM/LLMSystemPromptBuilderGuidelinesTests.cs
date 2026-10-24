@@ -81,6 +81,23 @@ public class LLMSystemPromptBuilderGuidelinesTests
         result.ShouldContain("TOOL CALL BATCHING");
     }
 
+    /// <summary>
+    /// Eval 2026-10-24: in about a quarter of the action turns the model first searched or listed although the
+    /// expected tool resolves names itself - one wasted round trip each. The guide tells it to act directly.
+    /// </summary>
+    [Test]
+    public async Task BuildSystemPromptAsync_WithTools_TellsTheModelToCallNameResolvingToolsDirectly()
+    {
+        var context = CreateContext();
+        _translationProvider.GetTranslationsAsync("en").Returns(CreateTranslations());
+
+        var result = await _builder.BuildSystemPromptAsync(context);
+
+        result.ShouldContain("DIRECT ACTION");
+        result.ShouldContain("resolves them itself");
+        result.ShouldContain("Look something up first only when the tool needs an id");
+    }
+
     [Test]
     public async Task BuildSystemPromptAsync_WithoutTools_OmitsToolCallBatchingGuide()
     {
