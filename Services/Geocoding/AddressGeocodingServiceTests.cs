@@ -136,6 +136,25 @@ public class AddressGeocodingServiceTests
     }
 
     [Test]
+    public async Task GeocodeAsync_BackfillNotRunning_ReportsTheRemainderAsDeferred()
+    {
+        // Arrange
+        var first = Candidate(EntityTypeEnum.Customer);
+        var second = Candidate(EntityTypeEnum.Customer);
+        _filler.FillAsync(first, Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>())
+            .Returns(Filled(usedGeocoder: true));
+
+        // Act
+        var summary = await Service(backfillActive: false).GeocodeAsync(
+            [first, second], AddressGeocodingAttribution.SystemScan, new AddressGeocodingBudget(1, 20, true));
+
+        // Assert
+        summary.Queued.ShouldBe(0);
+        summary.Deferred.ShouldBe(1);
+        await _states.DidNotReceiveWithAnyArgs().RequestAsync(default!, default!, default, default);
+    }
+
+    [Test]
     public async Task GeocodeAsync_GeocodingSwitchedOff_ReportsDisabledAndDoesNothing()
     {
         // Arrange
