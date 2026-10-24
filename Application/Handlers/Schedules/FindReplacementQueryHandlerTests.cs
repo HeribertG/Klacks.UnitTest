@@ -204,6 +204,51 @@ public class FindReplacementQueryHandlerTests
 
     private static Client Member(Guid id, string name) => new() { Id = id, Name = name, FirstName = string.Empty };
 
+    private static ScheduleCell NightWork(Guid clientId, DateOnly date) => new()
+    {
+        ClientId = clientId,
+        EntryType = (int)ScheduleEntryType.Work,
+        EntryDate = date.ToDateTime(TimeOnly.MinValue),
+        EntryId = Guid.NewGuid(),
+        StartTime = TimeSpan.FromHours(Start.Hour),
+        EndTime = TimeSpan.FromHours(End.Hour)
+    };
+
+    [Test]
+    public async Task CandidateWhoseNightBlockTheCoverCloses_RanksBeforeALonelyNight()
+    {
+        // Arrange: equally clean candidates; Zora works nights the day before and after, Anna is free around.
+        var anna = Guid.NewGuid();
+        var zora = Guid.NewGuid();
+        SetMembers(Member(anna, "Anna"), Member(zora, "Zora"));
+        SetOnLeave(NightWork(zora, Date.AddDays(-1)), NightWork(zora, Date.AddDays(1)));
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Eligible.Select(c => c.ClientId).ShouldBe(new[] { zora, anna });
+        result.Eligible[0].RhythmDelta.ShouldBeLessThan(0);
+        result.Eligible[1].RhythmDelta.ShouldBeGreaterThan(0);
+    }
+
+    [Test]
+    public async Task Rhythm_IsOnlyATieBreak_ThePreferredCandidateStillRanksFirst()
+    {
+        // Arrange: Anna prefers the shift but would work it alone; Zora would close her night block.
+        var anna = Guid.NewGuid();
+        var zora = Guid.NewGuid();
+        SetMembers(Member(anna, "Anna"), Member(zora, "Zora"));
+        SetOnLeave(NightWork(zora, Date.AddDays(-1)), NightWork(zora, Date.AddDays(1)));
+        SetPreferences(new ClientShiftPreference { ClientId = anna, ShiftId = ShiftId, PreferenceType = ShiftPreferenceType.Preferred });
+
+        // Act
+        var result = await Find();
+
+        // Assert
+        result.Eligible[0].ClientId.ShouldBe(anna);
+    }
+
     private static ScheduleValidationNotificationDto Conflict(Guid clientId, ScheduleValidationType type, string comment)
         => new() { Type = type, ClientId = clientId, Date = Date, Comment = comment };
 
