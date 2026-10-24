@@ -554,6 +554,31 @@ public class SkillToolsetAssemblerTests
         result.HasDomainSkillContext.ShouldBeTrue();
     }
 
+    /// <summary>
+    /// A failure past retrieval (here: the guarantee layer) used to escape the assembler, and the entry point's
+    /// own catch could only hand the model an EMPTY toolset - a turn that then answered as if it had acted.
+    /// The assembler now degrades to the permitted always-on skills itself.
+    /// </summary>
+    [Test]
+    public async Task AssembleAsync_GuaranteeLayerThrows_FallsBackToPermittedAlwaysOn()
+    {
+        SetupRetrievalResult(RetrievalHit(RetrievedSkillName));
+        var failingResolver = Substitute.For<ISkillToolsetGuaranteeResolver>();
+        failingResolver.ResolveAsync(Arg.Any<SkillToolsetGuaranteeRequest>(), Arg.Any<CancellationToken>())
+            .Returns<SkillToolsetGuaranteeResult>(_ => throw new InvalidOperationException("guarantee layer broken"));
+        var assembler = new SkillToolsetAssembler(
+            _skillCache, _retrieval, _retrievalQueryBuilder, _expander,
+            failingResolver,
+            Substitute.For<ILogger<SkillToolsetAssembler>>());
+
+        var result = await assembler.AssembleAsync(
+            _agent, new List<string>(), UserMessage,
+            conversationId: null, currentRoute: null, UserId, language: null, cancellationToken: CancellationToken.None);
+
+        result.Functions.Select(f => f.Name).ShouldBe(new[] { AlwaysOnSkillName });
+        result.HasDomainSkillContext.ShouldBeTrue();
+    }
+
     [Test]
     public async Task AssembleAsync_RetrievedSkillWithoutPermission_IsExcluded()
     {

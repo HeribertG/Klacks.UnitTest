@@ -378,6 +378,48 @@ public class SkillMatchingEngineTests
         throw new InvalidOperationException($"'{skillName}' not found in skill-seeds.json.");
     }
 
+    [Test]
+    public void TopKeywordMatches_TermInMoreSkillsThanTheCap_FlagsThemBroad_AndKeepsTheSelection()
+    {
+        var skills = new[]
+        {
+            Skill("rule_a", ["schicht"]),
+            Skill("rule_b", ["schicht"]),
+            Skill("rule_c", ["schicht"]),
+            Skill("rule_d", ["schicht"]),
+            Skill("rule_e", ["schicht"]),
+            Skill("rule_f", ["schicht"]),
+            Skill("create_night_shift", ["nachtschicht"])
+        };
+        const string message = "erstelle eine nachtschicht für morgen";
+
+        var matches = SkillMatchingEngine.TopKeywordMatches(skills, message);
+
+        matches.Select(m => m.Name).ShouldBe(SkillMatchingEngine.TopKeywordMatchedSkillNames(skills, message));
+        matches[0].ShouldBe(new KeywordSkillMatch("create_night_shift", false));
+        matches.Skip(1).ShouldAllBe(m => m.IsBroadOnly);
+    }
+
+    [Test]
+    public void TopKeywordMatches_OneSpecificTermBesideABroadOne_IsNotBroad()
+    {
+        var shared = new[] { "mitarbeiter" };
+        var skills = new[]
+        {
+            Skill("skill_a", shared),
+            Skill("skill_b", shared),
+            Skill("skill_c", shared),
+            Skill("skill_d", shared),
+            Skill("skill_e", shared),
+            Skill("create_employee", ["mitarbeiter", "neuen mitarbeiter"])
+        };
+
+        var matches = SkillMatchingEngine.TopKeywordMatches(skills, "lege einen neuen mitarbeiter an");
+
+        matches.Single(m => m.Name == "create_employee").IsBroadOnly.ShouldBeFalse();
+        matches.Where(m => m.Name != "create_employee").ShouldAllBe(m => m.IsBroadOnly);
+    }
+
     private static string LocateSkillSeedsFile()
     {
         return RepositoryRootLocator.RequireFile(["Klacks.Api", "Application", "Skills", "Definitions", "skill-seeds.json"]);
