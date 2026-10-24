@@ -291,14 +291,106 @@ public class ClientContractDataProviderInheritedGuaranteedHoursTests
         result.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
     }
 
+    // Flipped 2026-10-25 (owner decision): a client without a contract scales absence days by the settings ratio,
+    // exactly like a contract that repeats the company values would. Before, it was pinned to full workload.
     [Test]
-    public async Task WorkloadPercent_ContractlessClient_IsFullWorkload()
+    public async Task WorkloadPercent_ContractlessClient_IsSettingsGuaranteedOverFullTime()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        await SeedFullTimeSettingAsync(180m);
+
+        var result = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), January);
+
+        result.WorkloadPercent.ShouldBe(SettingsGuaranteedHours / 180m * MonthlyTargetHoursConstants.FullWorkloadPercent);
+        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.SettingsRatio);
+        result.WorkloadRatioBasis.ShouldBe(new WorkloadRatioBasis(SettingsGuaranteedHours, 180m));
+        result.GuaranteedHours.ShouldBe(SettingsGuaranteedHours);
+        result.GuaranteedHoursSource.ShouldBe(ContractValueSource.Settings);
+        result.DefaultWorkingHoursSource.ShouldBe(ContractValueSource.Settings);
+    }
+
+    [Test]
+    public async Task WorkloadPercent_ContractlessClient_MonthRowExists_StaysFullWorkload()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        await SeedFullTimeSettingAsync(180m);
+        await SeedMonthlyTargetHoursAsync(January.Year, January.Month, JanuaryTargetHours);
+
+        var result = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), January);
+
+        result.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
+        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.MonthlyTargetHoursFullWorkload);
+        result.WorkloadRatioBasis.ShouldBeNull();
+        result.GuaranteedHours.ShouldBe(JanuaryTargetHours);
+        result.GuaranteedHoursSource.ShouldBe(ContractValueSource.MonthlyTargetHours);
+    }
+
+    [Test]
+    public async Task WorkloadPercent_ContractlessClient_NoFullTimeSetting_FallsBackToFullWorkload()
     {
         await SeedGuaranteedHoursSettingAsync();
 
         var result = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), January);
 
         result.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
+        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.ImplausibleMasterDataFallback);
+    }
+
+    [Test]
+    public async Task WorkloadPercent_ContractlessClient_BatchAndRangePaths_MatchThePerClientPath()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        await SeedFullTimeSettingAsync(180m);
+        var clientId = Guid.NewGuid();
+
+        var single = await _sut.GetEffectiveContractDataAsync(clientId, January);
+        var batch = await _sut.GetEffectiveContractDataForClientsAsync(new List<Guid> { clientId }, January);
+        var range = await _sut.GetEffectiveContractDataForClientsRangeAsync(new List<Guid> { clientId }, January, January);
+
+        batch[clientId].WorkloadPercent.ShouldBe(single.WorkloadPercent);
+        range[January][clientId].WorkloadPercent.ShouldBe(single.WorkloadPercent);
+        single.WorkloadPercent.ShouldNotBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
+    }
+
+    [Test]
+    public async Task WorkloadPercent_ExplicitContract_CarriesRatioProvenance()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        var clientId = await SeedAsync(guaranteedHours: ExplicitContractHours, percent: null, fullTime: 180m);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.ContractRatio);
+        result.WorkloadRatioBasis.ShouldBe(new WorkloadRatioBasis(ExplicitContractHours, 180m));
+        result.GuaranteedHoursSource.ShouldBe(ContractValueSource.Contract);
+        result.GuaranteedHoursScaledByContractPercent.ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task WorkloadPercent_InheritingContract_CarriesPercentProvenance()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        var clientId = await SeedAsync(guaranteedHours: null, percent: 60m);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.ContractPercent);
+        result.WorkloadRatioBasis.ShouldBeNull();
+        result.GuaranteedHoursSource.ShouldBe(ContractValueSource.Settings);
+        result.GuaranteedHoursScaledByContractPercent.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task WorkloadPercent_RuleGuaranteedHours_CarriesRuleProvenance()
+    {
+        await SeedGuaranteedHoursSettingAsync();
+        var clientId = await SeedAsync(guaranteedHours: ExplicitContractHours, percent: null, withSchedulingRule: true, fullTime: 180m);
+
+        var result = await _sut.GetEffectiveContractDataAsync(clientId, January);
+
+        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.SchedulingRuleRatio);
+        result.WorkloadRatioBasis.ShouldBe(new WorkloadRatioBasis(RuleGuaranteedHours, 180m));
+        result.GuaranteedHoursSource.ShouldBe(ContractValueSource.SchedulingRule);
     }
 
     [Test]
