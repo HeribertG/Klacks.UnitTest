@@ -2,8 +2,9 @@
 
 /// <summary>
 /// Characterization tests for CreateShiftSkill.ExecuteAsync, written before its long body was split into
-/// private steps: every refusal text, the success/draft/reuse texts and serialized result data, the order
-/// in which repositories, guards and the mediator are consulted, and the shift handed to the repository.
+/// private steps: every refusal text, the success and reuse texts and serialized result data, the order
+/// in which repositories, guards and the mediator are consulted, and the shift handed to the repository. Since the owner
+/// decision of 2026-10-24 the created order is always an open order (OriginalOrder); asDraft is ignored.
 /// </summary>
 
 using System.Text.Json;
@@ -143,7 +144,7 @@ public class CreateShiftSkillCharacterizationTests
     private static readonly string[] CallsUpToMacro = ["client-visible", "client-load", "macros", "default-macro"];
 
     [Test]
-    public async Task SealedOrder_ExactMessageDataShiftAndCallOrder()
+    public async Task OpenOrder_ExactMessageDataShiftAndCallOrder()
     {
         var result = await _skill.ExecuteAsync(Ctx(), With(
             ("groupIds", $"{GroupId}, not-a-guid"),
@@ -155,13 +156,15 @@ public class CreateShiftSkillCharacterizationTests
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldBe(
-            "Order 'Reinigung Mueller' (07:00-15:00, 8h) created for customer 'Mueller AG' with calculation macro 'Standard', with 1 group(s). " +
-            "NEXT STEP: if this order is meant to be split into several parts (e.g. a 24h service into early/late/night), " +
-            $"call cut_shift now with shiftId=\"{PlannableShiftId}\" and parts like \"07:00-15:00,15:00-23:00,23:00-07:00\" " +
-            "(optionally partNames=\"Frühdienst,Spätdienst,Nachtdienst\"). Do NOT navigate to the cut page and do NOT write manual cutting instructions. " +
-            "If it is a single shift, the order is already complete.");
+            "Order 'Reinigung Mueller' (07:00-15:00, 8h) created as an open order (status OriginalOrder) for customer " +
+            "'Mueller AG' with calculation macro 'Standard', with 1 group(s) — NOT sealed, so it has no plannable shift yet " +
+            "and cannot be booked or cut. " +
+            "Klacksy never seals an order on create. Once name, abbreviation, fromDate, at least one weekday or holiday, at " +
+            "least one group, quantity>0 and sumEmployees>0 are all set, call seal_shift with " +
+            $"shiftId=\"{PlannableShiftId}\": the user confirms its preview, and only the sealed order gets the plannable shift that " +
+            "can be booked - and split with cut_shift if it should be cut into parts.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
-            "{\"ShiftId\":\"" + PlannableShiftId + "\",\"SealedOrderId\":\"" + _added!.Id + "\",\"Name\":\"Reinigung Mueller\"," +
+            "{\"ShiftId\":\"" + PlannableShiftId + "\",\"Name\":\"Reinigung Mueller\"," +
             "\"Abbreviation\":\"RM\",\"StartTime\":\"07:00\",\"EndTime\":\"15:00\",\"FromDate\":\"2026-06-01\"," +
             "\"UntilDate\":\"2026-12-31\",\"WorkTime\":8,\"SumEmployees\":2,\"GroupCount\":1,\"ClientId\":\"" + ClientId + "\"," +
             "\"ClientName\":\"Mueller AG\",\"MacroId\":\"" + DefaultMacroId + "\",\"MacroName\":\"Standard\"}");
@@ -175,7 +178,7 @@ public class CreateShiftSkillCharacterizationTests
         shift.Description.ShouldBe("Treppenhaus");
         shift.ClientId.ShouldBe(ClientId);
         shift.MacroId.ShouldBe(DefaultMacroId);
-        shift.Status.ShouldBe(ShiftStatus.SealedOrder);
+        shift.Status.ShouldBe(ShiftStatus.OriginalOrder);
         shift.ShiftType.ShouldBe(ShiftType.IsTask);
         shift.IsTimeRange.ShouldBeTrue();
         shift.StartShift.ShouldBe(new TimeOnly(7, 0));
@@ -196,7 +199,7 @@ public class CreateShiftSkillCharacterizationTests
     }
 
     [Test]
-    public async Task SealedOrder_Defaults_AllWeekdays_NoGroups_GivenAbbreviation_PersonClientName_UnknownDefaultMacroName()
+    public async Task OpenOrder_Defaults_AllWeekdays_NoGroups_GivenAbbreviation_PersonClientName_UnknownDefaultMacroName()
     {
         _client = new Client { Id = ClientId, FirstName = "Hans", Name = "Muster", Type = EntityTypeEnum.Customer };
         _defaultShiftMacroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>())
@@ -206,8 +209,8 @@ public class CreateShiftSkillCharacterizationTests
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message!.ShouldStartWith(
-            "Order 'Reinigung Mueller' (22:00-06:00, 8h) created for customer 'Hans Muster' " +
-            "(no default calculation macro configured — set one with category Shift), with 0 group(s). NEXT STEP:");
+            "Order 'Reinigung Mueller' (22:00-06:00, 8h) created as an open order (status OriginalOrder) for customer 'Hans Muster' " +
+            "(no default calculation macro configured — set one with category Shift), with 0 group(s) — NOT sealed");
         JsonSerializer.Serialize(result.Data).ShouldContain("\"Abbreviation\":\"XY\"");
         JsonSerializer.Serialize(result.Data).ShouldContain("\"UntilDate\":null");
         JsonSerializer.Serialize(result.Data).ShouldEndWith(
@@ -237,21 +240,16 @@ public class CreateShiftSkillCharacterizationTests
     }
 
     [Test]
-    public async Task Draft_ExactMessageAndData_SkipsReuseLookup()
+    public async Task AsDraftArgument_IsIgnored_TheOrderIsOpenEitherWay_AndTheReuseLookupRuns()
     {
-        var result = await _skill.ExecuteAsync(Ctx(), With(("asDraft", true)));
+        var withFalse = await _skill.ExecuteAsync(Ctx(), With(("asDraft", false)));
+        var withTrue = await _skill.ExecuteAsync(Ctx(), With(("asDraft", true)));
 
-        result.Success.ShouldBeTrue(result.Message);
-        result.Message.ShouldBe(
-            "Order 'Reinigung Mueller' (07:00-15:00, 8h) created as a DRAFT (status OriginalOrder) " +
-            "for customer 'Mueller AG' with calculation macro 'Standard', with 0 group(s) — NOT sealed yet, so it has no " +
-            "plannable shift and cannot be booked or cut. Continue refining it, then call seal_shift with " +
-            $"shiftId=\"{PlannableShiftId}\" once name, abbreviation, fromDate, at least one weekday or holiday, at " +
-            "least one group, quantity>0 and sumEmployees>0 are all set.");
-        JsonSerializer.Serialize(result.Data).ShouldStartWith(
-            "{\"ShiftId\":\"" + PlannableShiftId + "\",\"SealedOrderId\":\"" + _added!.Id + "\"");
+        withFalse.Message.ShouldBe(withTrue.Message);
+        withTrue.Message!.ShouldContain("created as an open order (status OriginalOrder)");
         _added!.Status.ShouldBe(ShiftStatus.OriginalOrder);
-        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "add", "complete"]);
+        _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "reuse-lookup", "add", "complete",
+            "client-visible", "client-load", "macros", "default-macro", "reuse-lookup", "add", "complete"]);
     }
 
     [Test]
@@ -261,7 +259,10 @@ public class CreateShiftSkillCharacterizationTests
             .Returns(_ =>
             {
                 _calls.Add("reuse-lookup");
-                return new Shift { Id = ReusableShiftId, OriginalId = ReusableSealedId, Name = "Existing" };
+                return new Shift
+                {
+                    Id = ReusableShiftId, OriginalId = ReusableSealedId, Name = "Existing", Status = ShiftStatus.OriginalShift
+                };
             });
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
@@ -273,11 +274,11 @@ public class CreateShiftSkillCharacterizationTests
             "(e.g. parts=\"07:00-15:00,15:00-23:00,23:00-07:00\", partNames=\"Frühdienst,Spätdienst,Nachtdienst\"). " +
             "Do NOT navigate to the cut page and do NOT write manual cutting instructions.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
-            "{\"ShiftId\":\"" + ReusableShiftId + "\",\"SealedOrderId\":\"" + ReusableSealedId + "\",\"Name\":\"Existing\"," +
+            "{\"ShiftId\":\"" + ReusableShiftId + "\",\"Name\":\"Existing\"," +
             "\"Reused\":true,\"ClientId\":\"" + ClientId + "\",\"ClientName\":\"Mueller AG\"}");
         _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "reuse-lookup"]);
         await _shiftRepository.Received(1).FindReusableUncutOrderAsync(
-            Arg.Is<Shift>(s => s.Name == "Reinigung Mueller" && s.ClientId == ClientId && s.Status == ShiftStatus.SealedOrder),
+            Arg.Is<Shift>(s => s.Name == "Reinigung Mueller" && s.ClientId == ClientId && s.Status == ShiftStatus.OriginalOrder),
             Arg.Any<CancellationToken>());
     }
 
