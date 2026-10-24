@@ -4,7 +4,8 @@
 /// The request the welcome focus "orders but no shifts" and the open-order goal send (i18n key
 /// klacksy.orders.review.request) must start the guided order review deterministically: the recipe review-open-orders
 /// matches the request in every language - the four core texts of Klacks.Ui by its structured trigger, every language
-/// pack's text (translations.json) by that pack's recipe synonym - and no other recipe matches it, so the turn never
+/// pack's text (translations.json) by that pack's recipe synonym, with the pack's question-word veto applied - and no
+/// other recipe matches it, so the turn never
 /// depends on the model guessing the intent. The recipe's only step is start_order_review, which seals nothing.
 /// </summary>
 
@@ -48,7 +49,7 @@ public class OrderReviewRequestRecipeRoutingTests
     [TestCase("it")]
     public void CoreRequest_StartsTheOrderReview_AndNoOtherRecipe(string language)
     {
-        AssertOnlyTheReviewMatches(CoreRequests[language], language, synonymsByRecipe: null);
+        AssertOnlyTheReviewMatches(CoreRequests[language], language, synonymsByRecipe: null, vetoesByRecipe: null);
     }
 
     [TestCaseSource(nameof(PackLanguages))]
@@ -59,9 +60,11 @@ public class OrderReviewRequestRecipeRoutingTests
             File.ReadAllText(Path.Combine(directory, "translations.json")))!;
         var synonyms = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(
             File.ReadAllText(Path.Combine(directory, "recipe-synonyms.json")))!;
+        var vetoes = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(
+            File.ReadAllText(Path.Combine(directory, "recipe-vetoes.json")))!;
 
         translations.ShouldContainKey(RequestKey);
-        AssertOnlyTheReviewMatches(translations[RequestKey], language, synonyms);
+        AssertOnlyTheReviewMatches(translations[RequestKey], language, synonyms, vetoes);
     }
 
     [Test]
@@ -77,14 +80,19 @@ public class OrderReviewRequestRecipeRoutingTests
     }
 
     private static void AssertOnlyTheReviewMatches(
-        string request, string language, IReadOnlyDictionary<string, List<string>>? synonymsByRecipe)
+        string request,
+        string language,
+        IReadOnlyDictionary<string, List<string>>? synonymsByRecipe,
+        IReadOnlyDictionary<string, List<string>>? vetoesByRecipe)
     {
         var matched = LoadTriggers()
             .Where(recipe => RecipeTriggerMatcher.Matches(
                 recipe.Trigger,
                 synonymsByRecipe != null && synonymsByRecipe.TryGetValue(recipe.Name, out var synonyms) ? synonyms : null,
                 request,
-                language))
+                null,
+                language,
+                vetoesByRecipe != null && vetoesByRecipe.TryGetValue(recipe.Name, out var vetoes) ? vetoes : null))
             .Select(recipe => recipe.Name)
             .ToList();
 
