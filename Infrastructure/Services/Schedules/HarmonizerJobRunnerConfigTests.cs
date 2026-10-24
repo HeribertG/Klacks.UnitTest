@@ -25,6 +25,12 @@ public class HarmonizerJobRunnerConfigTests
     }
 
     [Test]
+    public void HarmonizerOptions_SwitchesTheHarmonyGuardOnByDefault()
+    {
+        new HarmonizerOptions().HarmonyGuard.ShouldBeTrue();
+    }
+
+    [Test]
     public void BuildEvolutionConfig_ConductorOnly_UsesSeedPlusOnePassAndNoGenerations()
     {
         var config = HarmonizerJobRunner.BuildEvolutionConfig(useEvolution: false, Budget, Seed);
