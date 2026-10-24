@@ -138,7 +138,10 @@ public class SkillToolsetAssemblerBroadKeywordTests
         recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>()).Returns(new List<AgentRecipe>());
         var scopedProvider = Substitute.For<IServiceProvider>();
         scopedProvider.GetService(typeof(IAgentRecipeRepository)).Returns(recipeRepository);
-        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(SkillRepositoryStubs.WithoutRequirements());
+        // Built BEFORE the GetService call it answers: WithoutRequirements configures substitutes itself, and run
+        // inside Returns(...) it would replace the call Returns is meant to attach to (CouldNotSetReturnDueToNoLastCall).
+        var skillRepositoryStub = SkillRepositoryStubs.WithoutRequirements();
+        scopedProvider.GetService(typeof(IAgentSkillRepository)).Returns(skillRepositoryStub);
         var serviceScope = Substitute.For<IServiceScope>();
         serviceScope.ServiceProvider.Returns(scopedProvider);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
