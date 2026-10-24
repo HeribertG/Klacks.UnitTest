@@ -244,6 +244,21 @@ public class AddressGeocodingFillerTests
         await _states.Received(1).TryFillAsync(Arg.Is<AddressGeocodingFill>(f => f.ExpectedCountry == "??"), Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task FillAsync_PostcodeBlankAfterNormalization_IsRecordedAsNotFoundWithoutAsking()
+    {
+        // Arrange
+        var candidate = Candidate() with { Zip = "	 " };
+
+        // Act
+        var result = await _filler.FillAsync(candidate, AddressGeocodingAttribution.SystemScan);
+
+        // Assert
+        result.ShouldBe(new AddressGeocodingFillResult(AddressGeocodingFillStatus.NotFound, false));
+        await _geocoder.DidNotReceiveWithAnyArgs().ValidateExactAddressAsync(default, default!, default!, default!);
+        await _states.Received(1).RecordAttemptAsync(candidate, AddressGeocodingOutcome.NotFound, Now, Arg.Any<CancellationToken>());
+    }
+
     private static AddressGeocodingCandidate Candidate(string country = "CH", string state = "") =>
         new(Guid.NewGuid(), Guid.NewGuid(), EntityTypeEnum.Customer, "Muster AG", "8001", "Zürich", country, state);
 

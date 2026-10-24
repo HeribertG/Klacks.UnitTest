@@ -100,6 +100,25 @@ public class AddressGeocodingBackfillRunnerTests
     }
 
     [Test]
+    public async Task RunBatchAsync_OneAddressThrows_ThePassGoesOn()
+    {
+        // Arrange
+        var broken = Candidate();
+        var next = Candidate();
+        Due(broken, next);
+        _filler.FillAsync(broken, Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>())
+            .Returns<AddressGeocodingFillResult>(_ => throw new InvalidOperationException("broken row"));
+        _filler.FillAsync(next, Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>())
+            .Returns(new AddressGeocodingFillResult(AddressGeocodingFillStatus.NotFound, false));
+
+        // Act
+        await Runner().RunBatchAsync(CancellationToken.None);
+
+        // Assert
+        await _filler.Received(1).FillAsync(next, Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task RunBatchAsync_FullBatch_ReportsMoreDue()
     {
         // Arrange

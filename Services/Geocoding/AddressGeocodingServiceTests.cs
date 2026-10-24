@@ -15,6 +15,7 @@ using Klacks.Api.Application.Services.Geocoding;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Services.Geocoding;
 
@@ -155,6 +156,40 @@ public class AddressGeocodingServiceTests
     }
 
     [Test]
+    public async Task GeocodeAsync_EmployeeAddressPassedWithoutSelection_IsNeverSent()
+    {
+        // Arrange
+        var employee = Candidate(EntityTypeEnum.Employee);
+
+        // Act
+        var summary = await Service().GeocodeAsync([employee], AddressGeocodingAttribution.SystemScan, AddressGeocodingBudget.Unlimited);
+
+        // Assert
+        summary.Filled.ShouldBeEmpty();
+        await _filler.DidNotReceiveWithAnyArgs().FillAsync(default!, default!, default);
+    }
+
+    [Test]
+    public async Task GeocodeAsync_HandOverToTheBackfillFails_StillReportsWhatWasWritten()
+    {
+        // Arrange
+        var first = Candidate(EntityTypeEnum.Customer);
+        var second = Candidate(EntityTypeEnum.Customer);
+        _filler.FillAsync(first, Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>())
+            .Returns(Filled(usedGeocoder: true));
+        _states.RequestAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<AddressGeocodingAttribution>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns<int>(_ => throw new InvalidOperationException("database down"));
+
+        // Act
+        var summary = await Service().GeocodeAsync([first, second], AddressGeocodingAttribution.SystemScan, new AddressGeocodingBudget(1, 20, true));
+
+        // Assert
+        summary.Filled.Select(f => f.Address).ShouldBe([first]);
+        summary.Queued.ShouldBe(0);
+        summary.Deferred.ShouldBe(1);
+    }
+
+    [Test]
     public async Task GeocodeAsync_GeocodingSwitchedOff_ReportsDisabledAndDoesNothing()
     {
         // Arrange
@@ -223,7 +258,7 @@ public class AddressGeocodingServiceTests
 
     private AddressGeocodingService Service(bool backfillActive = true) => new(
         _filler, _states, _settings, _geocoder, new AddressGeocodingBackfillAvailability(backfillActive), _http,
-        new SettableTimeProvider(Now));
+        new SettableTimeProvider(Now), NullLogger<AddressGeocodingService>.Instance);
 
     private static AddressGeocodingFillResult Filled(bool usedGeocoder) => new(
         AddressGeocodingFillStatus.Filled, usedGeocoder, 47.37, 8.54,

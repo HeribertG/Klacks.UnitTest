@@ -308,6 +308,19 @@ public class UnattendedSkillPolicyTests
         decision.DenyReason.ShouldBe(UnattendedDenyReason.SensitiveSkill);
     }
 
+    [TestCase(UnattendedExecutionKind.ScheduledTask)]
+    [TestCase(UnattendedExecutionKind.InboundAutomation)]
+    public void Decide_GeocodeAddresses_RunsOnlyInTheChat_EvenWithOptInAndFullAutonomy(UnattendedExecutionKind kind)
+    {
+        Known("geocode_addresses");
+
+        var decision = _policy.Decide(Request(
+            "geocode_addresses", autonomyLevel: AutonomyLevel.FullyAutonomous, executionKind: kind, allowIrreversibleUnattended: true));
+
+        decision.Allowed.ShouldBeFalse();
+        decision.DenyReason.ShouldBe(UnattendedDenyReason.InteractiveOnly);
+    }
+
     [Test]
     public void Decide_ScenarioGatedSkill_AtAssisted_IsAllowed()
     {

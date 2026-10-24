@@ -134,6 +134,18 @@ public class GeocodeAddressesSkillTests
     }
 
     [Test]
+    public async Task Execute_ClientNumberWithoutName_IsRefusedInsteadOfCoveringEveryone()
+    {
+        // Act
+        var result = await Skill().ExecuteAsync(Context(), new Dictionary<string, object> { ["idNumber"] = 42 });
+
+        // Assert
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("Nothing was written");
+        await _states.DidNotReceiveWithAnyArgs().GetMissingCoordinatesAsync(default, default);
+    }
+
+    [Test]
     public async Task Execute_VisibleClientId_ReadsOnlyThatClient()
     {
         // Arrange
