@@ -71,6 +71,9 @@ public class OrderReviewExecutionPlannerTests
             Id = item.OrderId,
             Name = item.OrderName,
             Status = ShiftStatus.OriginalOrder,
+            StartShift = item.CurrentStart,
+            EndShift = item.CurrentEnd,
+            GroupItems = [new GroupItem { Id = Guid.NewGuid(), GroupId = Guid.NewGuid() }],
             ShiftExpenses = [new ShiftExpenses { Description = "Parkplatz", Amount = 5m }],
         });
         return item;
@@ -138,6 +141,25 @@ public class OrderReviewExecutionPlannerTests
         var plan = await _planner.PlanAsync(Ctx(Roles.Admin), Params(acknowledged: true));
 
         Assert.That(plan.Refusal, Does.Contain("no longer an open order"));
+    }
+
+    [Test]
+    public async Task AnOrderWhoseTimesChangedSinceTheReview_RefusesThePlan()
+    {
+        var item = ReadyItem();
+        _shiftRepository.Get(item.OrderId).Returns(new Shift
+        {
+            Id = item.OrderId,
+            Status = ShiftStatus.OriginalOrder,
+            StartShift = new TimeOnly(6, 0),
+            EndShift = new TimeOnly(14, 0),
+            GroupItems = [new GroupItem { Id = Guid.NewGuid(), GroupId = Guid.NewGuid() }],
+        });
+        Store(item);
+
+        var plan = await _planner.PlanAsync(Ctx(Roles.Admin), Params(acknowledged: true));
+
+        Assert.That(plan.Refusal, Does.Contain("was edited since the review started"));
     }
 
     [Test]

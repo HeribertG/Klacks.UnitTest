@@ -18,6 +18,7 @@
 
 using System.Text.RegularExpressions;
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Application.Skills.OrderReview;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Skills.Implementations;
@@ -82,6 +83,10 @@ public class ConfirmedBindingPinGuardTests
         SealShiftSkill.SkillName => new Dictionary<string, object>
         {
             [SealShiftSkill.ShiftIdParameter] = Guid.NewGuid().ToString()
+        },
+        ExecuteOrderReviewSkill.SkillName => new Dictionary<string, object>
+        {
+            ["target"] = "all"
         },
         MessagingConstants.SkillSendMessage => new Dictionary<string, object>
         {

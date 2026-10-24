@@ -14,6 +14,7 @@ using Klacks.Api.Application.DTOs.Orders.Review;
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Services.Orders.Review;
 using Klacks.Api.Domain.Models.Assistant.OrderReview;
+using Microsoft.Extensions.Logging;
 
 namespace Klacks.UnitTest.Application.Services.Orders.Review;
 
@@ -54,7 +55,8 @@ public class OrderReviewExecutorTests
             .Returns(ci => { _calls.Add("cut"); return ci.Arg<List<CutOperation>>().Select(_ => new Shift()).ToList(); });
         var clock = Substitute.For<ICompanyClock>();
         clock.GetTodayAsync(Arg.Any<CancellationToken>()).Returns(new DateTime(2026, 10, 24, 0, 0, 0, DateTimeKind.Utc));
-        _executor = new OrderReviewExecutor(_shiftRepository, _unitOfWork, _sealing, _cutPlanner, _cutFacade, clock);
+        _executor = new OrderReviewExecutor(
+            _shiftRepository, _unitOfWork, _sealing, _cutPlanner, _cutFacade, clock, Substitute.For<ILogger<OrderReviewExecutor>>());
     }
 
     private static OrderReviewExecutionTarget Target(List<OrderReviewPart>? parts)

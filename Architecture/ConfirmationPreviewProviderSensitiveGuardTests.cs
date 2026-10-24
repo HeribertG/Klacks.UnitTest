@@ -13,6 +13,7 @@
 /// </summary>
 
 using Klacks.Api.Application.Skills;
+using Klacks.Api.Application.Skills.OrderReview;
 using Klacks.Api.Application.Skills.Meta;
 using Klacks.Api.Domain.Enums;
 using Klacks.UnitTest.TestHelpers;
@@ -69,7 +70,8 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
             MacroAssignmentSkillNames.AssignToAbsenceType,
             MacroAssignmentSkillNames.Revert,
             SealOpenOrdersSkill.SkillName,
-            SealShiftSkill.SkillName
+            SealShiftSkill.SkillName,
+            ExecuteOrderReviewSkill.SkillName
         ];
 
         foreach (var name in bound)

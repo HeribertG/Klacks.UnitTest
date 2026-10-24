@@ -66,7 +66,7 @@ public class DraftLoopToolsetPolicyTests
     public void AFailingStore_DegradesToNoRule()
     {
         var failing = Substitute.For<IPendingOrderReviewDraftStore>();
-        failing.Get(Arg.Any<Guid>(), Arg.Any<string>()).Returns(_ => throw new InvalidOperationException("db down"));
+        failing.HasDraft(Arg.Any<Guid>(), Arg.Any<string>()).Returns(_ => throw new InvalidOperationException("db down"));
         var policy = new DraftLoopToolsetPolicy(
             PendingStoreTestFactory.CreatePlanningProfileDraftStore(), failing, NullLogger<DraftLoopToolsetPolicy>.Instance);
 
