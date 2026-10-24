@@ -191,6 +191,12 @@ public class SkillRiskClassifierTests
         Assert.That(_sut.Classify(Descriptor(name, category)), Is.EqualTo(SkillRiskClass.ReadOnly));
     }
 
+    [Test]
+    public void Classify_ExecuteOrderReview_ReturnsSensitive()
+    {
+        Assert.That(_sut.Classify(Descriptor("execute_order_review")), Is.EqualTo(SkillRiskClass.Sensitive));
+    }
+
     // The grouping apply skill is deliberately NOT Sensitive (owner decision): it is the second half of
     // a propose/apply pair, so the user already approved the full preview before it is ever called. The
     // extra gate asked a second time for the same action and, because the token does not survive into
