@@ -87,7 +87,7 @@ public class EvaluateAbsenceHoursSetupSkillTests
         var result = await Sut().ExecuteAsync(Context(), parameters);
 
         var data = JsonSerializer.SerializeToElement(result.Data);
-        data.GetProperty("DesiredHoursPerDay").GetDecimal().ShouldBe(8m);
+        data.GetProperty("DesiredHoursPerDay").GetDecimal().ShouldBe(6m);
         data.GetProperty("Findings").EnumerateArray()
             .Select(finding => finding.GetProperty("Code").GetInt32())
             .ShouldContain((int)AbsenceHoursSetupFindingCode.DesiredHoursNeedChange);

@@ -232,9 +232,10 @@ OUTPUT 1, Hour";
         var booked = await BookAsync(clientId, Wednesday, MonthlyInterval);
 
         calculation.ResultHours.ShouldBe(booked.WorkTime);
-        Math.Round(calculation.ResultHours!.Value, 2).ShouldBe(7.11m);
+        calculation.ResultHours.ShouldBe(SettingsDailyHours);
         calculation.ContractData.HasActiveContract.ShouldBeTrue();
         calculation.ContractData.ContractId.ShouldBe(contract.Id);
+        calculation.ContractData.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.ContractPercentDefault);
         calculation.ContractIgnoredByPaymentInterval.ShouldBeFalse();
         calculation.ContractsActiveOnDate.ShouldHaveSingleItem().FilteredByPaymentInterval.ShouldBeFalse();
     }

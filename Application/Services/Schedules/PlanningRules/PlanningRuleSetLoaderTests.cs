@@ -55,8 +55,8 @@ public class PlanningRuleSetLoaderTests
         _enforcement.GetModeAsync(ComplianceRuleNames.CounterRule).Returns(RuleEnforcementMode.Warn);
         _contracts.GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), From).Returns(new Dictionary<Guid, EffectiveContractData>
         {
-            [_agentA] = new() { HasActiveContract = true, SchedulingRuleId = _industryRule, NightStart = "22:00", NightEnd = "05:00", WorkloadPercent = 50m },
-            [_agentB] = new() { HasActiveContract = true, SchedulingRuleId = Guid.NewGuid() },
+            [_agentA] = new() { SchedulingRuleId = _industryRule, NightStart = "22:00", NightEnd = "05:00", WorkloadPercent = 50m },
+            [_agentB] = new() { SchedulingRuleId = Guid.NewGuid() },
         });
         _carryIn.LoadAsync(
                 Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<IReadOnlyList<PlanRule>>(),
