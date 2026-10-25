@@ -82,7 +82,7 @@ public class EvaluateAbsenceHoursSetupSkillTests
     public async Task DesiredHours_AreHandedToTheAdvisor()
     {
         var parameters = Parameters();
-        parameters["desiredHoursPerDay"] = "8";
+        parameters["desiredHoursPerDay"] = "6";
 
         var result = await Sut().ExecuteAsync(Context(), parameters);
 
@@ -131,16 +131,15 @@ public class EvaluateAbsenceHoursSetupSkillTests
             DefaultWorkingHours = 8m,
             GuaranteedHours = 170m,
             FullTime = 180m,
-            WorkloadPercent = 170m / 180m * 100m,
-            WorkloadPercentSource = WorkloadPercentSource.SettingsRatio,
-            WorkloadRatioBasis = new WorkloadRatioBasis(170m, 180m)
+            WorkloadPercent = 100m,
+            WorkloadPercentSource = WorkloadPercentSource.NoContractFullWorkload
         },
         ContractsActiveOnDate = [],
         Settings = new AbsenceHoursSettingsSummary(170m, 180m, 8m, (int)PaymentInterval.Monthly),
-        MacroInput = new MacroData { Hour = 8m, Weekday = 3, GuaranteedHours = 170m, FullTime = 180m, WorkloadPercent = 170m / 180m * 100m, WeekendDay1 = 6, WeekendDay2 = 7 },
+        MacroInput = new MacroData { Hour = 8m, Weekday = 3, GuaranteedHours = 170m, FullTime = 180m, WorkloadPercent = 100m, WeekendDay1 = 6, WeekendDay2 = 7 },
         IsWeekendDay = false,
         MacroExecuted = true,
-        ResultHours = 7.5555m
+        ResultHours = 8m
     };
 
     private EvaluateAbsenceHoursSetupSkill Sut() => new(_search, _clients, _visibility, _service, _clock);

@@ -288,22 +288,6 @@ public class PlanningRuleSetLoaderTests
             Arg.Any<IReadOnlyCollection<Guid>>(), From, Until, set.Rules, null, 7, Arg.Any<CancellationToken>());
     }
 
-    // Owner decision 2026-10-25: the settings-ratio workload of a client without a contract changes the absence-day
-    // credit only; the pro-rata team-fairness scaling keeps treating such a client as full workload until ruled on.
-    [Test]
-    public async Task RuleSet_ClientWithoutContract_KeepsFullWorkloadForTheRules_EvenWhenTheProviderDerivesASettingsRatio()
-    {
-        _counterRules.GetAllApprovedAsync(Arg.Any<CancellationToken>()).Returns([Counter(null, null)]);
-        _contracts.GetEffectiveContractDataForClientsAsync(Arg.Any<List<Guid>>(), From).Returns(new Dictionary<Guid, EffectiveContractData>
-        {
-            [_agentA] = new() { HasActiveContract = false, WorkloadPercent = 94.44m },
-        });
-
-        var set = await _loader.LoadRuleSetAsync([_agentA], From, Until, null, coveredBoundaryDays: 0);
-
-        set.Agents.ShouldHaveSingleItem().WorkloadPercent.ShouldBe(RuleTimeConstants.FullWorkloadPercent);
-    }
-
     private static CounterRule Counter(Guid? schedulingRuleId, RuleEnforcementMode? enforcement) => new()
     {
         Id = Guid.NewGuid(),

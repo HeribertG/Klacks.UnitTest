@@ -5,11 +5,13 @@
 /// employee and a day must equal the hours BreakMacroService writes on a booked absence of the same shape, on the
 /// real pipeline - real ClientContractDataProvider, real MacroDataProvider, real macro compilation of the seeded
 /// vacation macro - with the same payment interval the Ui sends. It also pins the owner's case: an employee without a
-/// contract and company settings 170 / 180 / 8 h credits 7.56 h per vacation day, and the provenance names the settings.
+/// contract and company settings 170 / 180 / 8 h credits the full 8 h per vacation day (no contract = 100 %, like an
+/// inheriting contract with an empty percent), and a Monthly view sees a MonthlyTargetHours contract (Weg 1).
 /// </summary>
 
 using Klacks.Api.Application.DTOs.Schedules;
 using Klacks.Api.Application.Services.Breaks;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Models.Settings;
 using Klacks.Api.Domain.Models.Staffs;
@@ -126,24 +128,32 @@ OUTPUT 1, Hour";
             .Returns(call => Task.FromResult<IReadOnlyDictionary<string, string>>(
                 _context.Settings.AsNoTracking().ToDictionary(setting => setting.Type, setting => setting.Value)));
 
-        _sut = new AbsenceHoursCalculationService(
+        var monthlyTargetHours = Substitute.For<IMonthlyTargetHoursRepository>();
+        monthlyTargetHours.ListByYear(Arg.Any<int>()).Returns(new List<MonthlyTargetHours>());
+        var facts = new EmployeeContractFactsLoader(
             _clients,
             Substitute.For<ISchedulingRuleRepository>(),
+            monthlyTargetHours,
+            settingsReader,
+            weekConfiguration,
+            new ClientHolidayCalendarResolver(_context, Substitute.For<IHolidayCalculatorCache>()));
+
+        _sut = new AbsenceHoursCalculationService(
+            facts,
             absences,
             breaks,
             contractDataProvider,
             macroDataProvider,
             compilation,
             macroManagement,
-            Substitute.For<IMonthlyTargetHoursRepository>(),
-            settingsReader);
+            monthlyTargetHours);
     }
 
     [TearDown]
     public void TearDown() => _context.Dispose();
 
     [Test]
-    public async Task NoContract_Weekday_MatchesTheBookedHours_AndCreditsTheSettingsRatio()
+    public async Task NoContract_Weekday_MatchesTheBookedHours_AndCreditsFullWorkload()
     {
         var clientId = Guid.NewGuid();
         _clients.Get(clientId).Returns(new Client { Id = clientId, FirstName = "Hans", Name = "Muster" });
@@ -152,11 +162,14 @@ OUTPUT 1, Hour";
         var booked = await BookAsync(clientId, Wednesday, MonthlyInterval);
 
         calculation.ResultHours.ShouldBe(booked.WorkTime);
-        Math.Round(calculation.ResultHours!.Value, 2).ShouldBe(7.56m);
+        calculation.ResultHours.ShouldBe(SettingsDailyHours);
         calculation.ContractData.HasActiveContract.ShouldBeFalse();
-        calculation.ContractData.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.SettingsRatio);
-        calculation.ContractData.WorkloadRatioBasis.ShouldBe(new WorkloadRatioBasis(SettingsGuaranteedHours, SettingsFullTime));
+        calculation.ContractData.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.NoContractFullWorkload);
+        calculation.ContractData.WorkloadRatioBasis.ShouldBeNull();
         calculation.ContractData.DefaultWorkingHoursSource.ShouldBe(ContractValueSource.Settings);
+        calculation.MonthlyTargetHoursOfYear.ShouldNotBeNull();
+        calculation.WorkdaysPerMonth!.Count.ShouldBe(12);
+        calculation.WorkdaysPerMonth[11].ShouldBe(21);
         calculation.PaymentIntervalUsed.ShouldBe(MonthlyInterval);
         calculation.MacroName.ShouldBe("Vacation");
     }
@@ -202,10 +215,28 @@ OUTPUT 1, Hour";
         var booked = await BookAsync(clientId, Wednesday, MonthlyInterval);
 
         calculation.ResultHours.ShouldBe(booked.WorkTime);
-        Math.Round(calculation.ResultHours!.Value, 2).ShouldBe(7.56m);
+        calculation.ResultHours.ShouldBe(SettingsDailyHours);
         calculation.ContractData.HasActiveContract.ShouldBeFalse();
         calculation.ContractIgnoredByPaymentInterval.ShouldBeTrue();
         calculation.ContractsActiveOnDate.ShouldHaveSingleItem().Name.ShouldBe("Weekly 40");
+        calculation.ContractsActiveOnDate[0].FilteredByPaymentInterval.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task MonthlyTargetHoursContract_IsSeenByAMonthlyView_AndMatchesTheBookedHours()
+    {
+        var clientId = Guid.NewGuid();
+        var contract = await SeedContractAsync(clientId, "Weg 1 - 50 %", PaymentInterval.MonthlyTargetHours, 160m, 180m);
+
+        var calculation = await _sut.CalculateAsync(clientId, Wednesday, _vacation, MonthlyInterval);
+        var booked = await BookAsync(clientId, Wednesday, MonthlyInterval);
+
+        calculation.ResultHours.ShouldBe(booked.WorkTime);
+        Math.Round(calculation.ResultHours!.Value, 2).ShouldBe(7.11m);
+        calculation.ContractData.HasActiveContract.ShouldBeTrue();
+        calculation.ContractData.ContractId.ShouldBe(contract.Id);
+        calculation.ContractIgnoredByPaymentInterval.ShouldBeFalse();
+        calculation.ContractsActiveOnDate.ShouldHaveSingleItem().FilteredByPaymentInterval.ShouldBeFalse();
     }
 
     [Test]

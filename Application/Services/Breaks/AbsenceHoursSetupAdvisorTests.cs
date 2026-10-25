@@ -30,8 +30,10 @@ public class AbsenceHoursSetupAdvisorTests
         var recommendation = AbsenceHoursSetupAdvisor.BuildRecommendation(findings, calculation);
 
         findings.ShouldHaveSingleItem().Code.ShouldBe(AbsenceHoursSetupFindingCode.NoContract);
+        findings[0].Statement.ShouldContain("x 100 %");
+        findings[0].Statement.ShouldContain("Any other workload share needs a contract");
         findings[0].WhereToChange.ShouldBe(AbsenceHoursSetupAdvisor.AssignmentPlace);
-        recommendation.ShouldContain("7.56 h");
+        recommendation.ShouldContain("8 h");
         recommendation.ShouldContain("Nothing has been changed");
     }
 
@@ -56,7 +58,7 @@ public class AbsenceHoursSetupAdvisorTests
     [Test]
     public void ContractOnOtherInterval_IsReportedAsIgnored_AndNoSecondContractIsAdvised()
     {
-        var weekly = Contract("Weekly 40", PaymentInterval.Weekly, usedByCalculation: false, guaranteedHours: 40m, fullTime: 42m);
+        var weekly = Contract("Weekly 40", PaymentInterval.Weekly, usedByCalculation: false, guaranteedHours: 40m, fullTime: 42m, filtered: true);
         var calculation = Calculation(NoContractData(), [weekly]);
 
         var findings = AbsenceHoursSetupAdvisor.Analyse(calculation, null);
@@ -72,7 +74,7 @@ public class AbsenceHoursSetupAdvisorTests
     [Test]
     public void ContractOnOtherInterval_StoredEntryFinding_WarnsThatARecalculationReadsTheContract()
     {
-        var weekly = Contract("Weekly 40", PaymentInterval.Weekly, usedByCalculation: false, guaranteedHours: 40m, fullTime: 42m);
+        var weekly = Contract("Weekly 40", PaymentInterval.Weekly, usedByCalculation: false, guaranteedHours: 40m, fullTime: 42m, filtered: true);
         var calculation = Calculation(NoContractData(), [weekly]) with
         {
             ExistingEntry = new AbsenceHoursExistingEntry(Guid.NewGuid(), VacationId, 7.62m, false, WorkLockLevel.None)
@@ -253,12 +255,74 @@ public class AbsenceHoursSetupAdvisorTests
     {
         var calculation = Calculation(NoContractData(), []);
 
-        var findings = AbsenceHoursSetupAdvisor.Analyse(calculation, 8m);
+        var findings = AbsenceHoursSetupAdvisor.Analyse(calculation, 6m);
 
         findings.Select(finding => finding.Code).ShouldBe(
             [AbsenceHoursSetupFindingCode.DesiredHoursNeedChange, AbsenceHoursSetupFindingCode.NoContract]);
-        findings[0].Statement.ShouldContain("assign a contract with guaranteed hours 180");
+        findings[0].Statement.ShouldContain("assign a contract with that workload share (percent field 75");
+        findings[0].Statement.ShouldContain("guaranteed hours 135 at a full time of 180");
         findings[0].WhereToChange.ShouldBe(AbsenceHoursSetupAdvisor.AssignmentPlace);
+    }
+
+    [Test]
+    public void MonthlyTable_PartiallyFilled_ReportsTheMissingMonths()
+    {
+        var calculation = Calculation(NoContractData(), []) with
+        {
+            MonthlyTargetHoursOfYear = new Dictionary<int, decimal> { [1] = 168m, [2] = 160m },
+            WorkdaysPerMonth = FiveDayWorkdays()
+        };
+
+        var findings = AbsenceHoursSetupAdvisor.Analyse(calculation, null);
+
+        var finding = findings.Single(candidate => candidate.Code == AbsenceHoursSetupFindingCode.MonthlyRowsIncomplete);
+        finding.Statement.ShouldContain("2 of 12 months");
+        finding.Statement.ShouldContain("missing: 3, 4, 5, 6, 7, 8, 9, 10, 11, 12");
+        finding.WhereToChange.ShouldBe(AbsenceHoursSetupAdvisor.MonthlyTargetHoursPlace);
+    }
+
+    [Test]
+    public void MonthlyTable_FullyFilled_IsNotReportedAsIncomplete()
+    {
+        var calculation = Calculation(NoContractData(), []) with
+        {
+            MonthlyTargetHoursOfYear = Enumerable.Range(1, 12).ToDictionary(month => month, _ => 168m),
+            WorkdaysPerMonth = FiveDayWorkdays()
+        };
+
+        var findings = AbsenceHoursSetupAdvisor.Analyse(calculation, null);
+
+        findings.ShouldNotContain(candidate => candidate.Code == AbsenceHoursSetupFindingCode.MonthlyRowsIncomplete);
+        findings.ShouldNotContain(candidate => candidate.Code == AbsenceHoursSetupFindingCode.MonthlyRowDeviatesFromWorkdays);
+    }
+
+    [Test]
+    public void MonthlyValue_FarFromWorkdaysTimesDailyHours_IsReported_WithinThresholdIsNot()
+    {
+        var calculation = Calculation(NoContractData(), []) with
+        {
+            MonthlyTargetHoursOfYear = Enumerable.Range(1, 12).ToDictionary(month => month, month => month == 3 ? 120m : 176m),
+            WorkdaysPerMonth = Enumerable.Range(1, 12).ToDictionary(month => month, _ => 22)
+        };
+
+        var findings = AbsenceHoursSetupAdvisor.Analyse(calculation, null);
+
+        var finding = findings.Single(candidate => candidate.Code == AbsenceHoursSetupFindingCode.MonthlyRowDeviatesFromWorkdays);
+        finding.Statement.ShouldContain("3: 120 h vs 22 workdays x 8 h = 176 h (31.82 %)");
+        finding.Statement.ShouldNotContain("1: 176 h");
+        finding.Statement.ShouldContain("full month of vacation");
+    }
+
+    [Test]
+    public void MonthlyTable_NotLoaded_ForFixedContracts_RaisesNoTableFinding()
+    {
+        var contract = Contract("Vollzeit 180", PaymentInterval.Monthly, usedByCalculation: true, guaranteedHours: 180m, fullTime: 180m);
+        var data = ContractData(180m, 180m, 100m, WorkloadPercentSource.ContractRatio);
+        var calculation = Calculation(data, [contract], resultHours: 8m);
+
+        var findings = AbsenceHoursSetupAdvisor.Analyse(calculation, null);
+
+        findings.ShouldHaveSingleItem().Code.ShouldBe(AbsenceHoursSetupFindingCode.SetupConsistent);
     }
 
     [Test]
@@ -355,9 +419,8 @@ public class AbsenceHoursSetupAdvisorTests
         GuaranteedHours = 170m,
         GuaranteedHoursSource = ContractValueSource.Settings,
         FullTime = 180m,
-        WorkloadPercent = 170m / 180m * 100m,
-        WorkloadPercentSource = WorkloadPercentSource.SettingsRatio,
-        WorkloadRatioBasis = new WorkloadRatioBasis(170m, 180m),
+        WorkloadPercent = 100m,
+        WorkloadPercentSource = WorkloadPercentSource.NoContractFullWorkload,
         PaymentInterval = (int)PaymentInterval.Monthly
     };
 
@@ -378,11 +441,14 @@ public class AbsenceHoursSetupAdvisorTests
     };
 
     private static AbsenceHoursContractSummary Contract(
-        string name, PaymentInterval interval, bool usedByCalculation, decimal? guaranteedHours, decimal? fullTime, decimal? percent = null) =>
-        new(Guid.NewGuid(), name, interval, usedByCalculation, guaranteedHours, fullTime, percent, null);
+        string name, PaymentInterval interval, bool usedByCalculation, decimal? guaranteedHours, decimal? fullTime, decimal? percent = null, bool filtered = false) =>
+        new(Guid.NewGuid(), name, interval, usedByCalculation, filtered, guaranteedHours, fullTime, percent, null);
+
+    private static IReadOnlyDictionary<int, int> FiveDayWorkdays() =>
+        Enumerable.Range(1, 12).ToDictionary(month => month, _ => 21);
 
     private static AbsenceHoursCalculation Calculation(
-        EffectiveContractData data, IReadOnlyList<AbsenceHoursContractSummary> contracts, decimal? resultHours = 7.56m) => new()
+        EffectiveContractData data, IReadOnlyList<AbsenceHoursContractSummary> contracts, decimal? resultHours = 8m) => new()
     {
         ClientId = Guid.NewGuid(),
         Date = Wednesday,

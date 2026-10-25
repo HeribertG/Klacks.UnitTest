@@ -291,26 +291,27 @@ public class ClientContractDataProviderInheritedGuaranteedHoursTests
         result.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
     }
 
-    // Flipped 2026-10-25 (owner decision): a client without a contract scales absence days by the settings ratio,
-    // exactly like a contract that repeats the company values would. Before, it was pinned to full workload.
+    // Owner decision 2026-10-25 (final): a client without a contract behaves like a contract that inherits the
+    // company value with an empty percent field - full workload (100 %) is INTENDED, with or without a month row.
+    // The settings ratio variant of the same day was reverted; another workload share needs a contract.
     [Test]
-    public async Task WorkloadPercent_ContractlessClient_IsSettingsGuaranteedOverFullTime()
+    public async Task WorkloadPercent_ContractlessClient_IsFullWorkloadByDesign_EvenWithPartTimeSettings()
     {
         await SeedGuaranteedHoursSettingAsync();
         await SeedFullTimeSettingAsync(180m);
 
         var result = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), January);
 
-        result.WorkloadPercent.ShouldBe(SettingsGuaranteedHours / 180m * MonthlyTargetHoursConstants.FullWorkloadPercent);
-        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.SettingsRatio);
-        result.WorkloadRatioBasis.ShouldBe(new WorkloadRatioBasis(SettingsGuaranteedHours, 180m));
+        result.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
+        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.NoContractFullWorkload);
+        result.WorkloadRatioBasis.ShouldBeNull();
         result.GuaranteedHours.ShouldBe(SettingsGuaranteedHours);
         result.GuaranteedHoursSource.ShouldBe(ContractValueSource.Settings);
         result.DefaultWorkingHoursSource.ShouldBe(ContractValueSource.Settings);
     }
 
     [Test]
-    public async Task WorkloadPercent_ContractlessClient_MonthRowExists_StaysFullWorkload()
+    public async Task WorkloadPercent_ContractlessClient_MonthRowExists_IsFullWorkloadByDesign()
     {
         await SeedGuaranteedHoursSettingAsync();
         await SeedFullTimeSettingAsync(180m);
@@ -326,17 +327,6 @@ public class ClientContractDataProviderInheritedGuaranteedHoursTests
     }
 
     [Test]
-    public async Task WorkloadPercent_ContractlessClient_NoFullTimeSetting_FallsBackToFullWorkload()
-    {
-        await SeedGuaranteedHoursSettingAsync();
-
-        var result = await _sut.GetEffectiveContractDataAsync(Guid.NewGuid(), January);
-
-        result.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
-        result.WorkloadPercentSource.ShouldBe(WorkloadPercentSource.ImplausibleMasterDataFallback);
-    }
-
-    [Test]
     public async Task WorkloadPercent_ContractlessClient_BatchAndRangePaths_MatchThePerClientPath()
     {
         await SeedGuaranteedHoursSettingAsync();
@@ -349,7 +339,7 @@ public class ClientContractDataProviderInheritedGuaranteedHoursTests
 
         batch[clientId].WorkloadPercent.ShouldBe(single.WorkloadPercent);
         range[January][clientId].WorkloadPercent.ShouldBe(single.WorkloadPercent);
-        single.WorkloadPercent.ShouldNotBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
+        single.WorkloadPercent.ShouldBe(MonthlyTargetHoursConstants.FullWorkloadPercent);
     }
 
     [Test]

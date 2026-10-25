@@ -74,13 +74,13 @@ public class GetAbsenceHoursCalculationSkillTests
         data.GetProperty("Employee").GetString().ShouldBe("Anna Müller");
         data.GetProperty("AbsenceType").GetString().ShouldBe("Ferien");
         data.GetProperty("HasActiveContract").GetBoolean().ShouldBeFalse();
-        data.GetProperty("WorkloadPercentSource").GetString().ShouldBe(nameof(WorkloadPercentSource.SettingsRatio));
-        data.GetProperty("WorkloadPercentFormula").GetString().ShouldBe("170 / 180 x 100 = 94.44 %");
+        data.GetProperty("WorkloadPercentSource").GetString().ShouldBe(nameof(WorkloadPercentSource.NoContractFullWorkload));
+        data.GetProperty("WorkloadPercentFormula").ValueKind.ShouldBe(JsonValueKind.Null);
         data.GetProperty("DailyHoursSource").GetString().ShouldBe(nameof(ContractValueSource.Settings));
-        data.GetProperty("ResultHours").GetDecimal().ShouldBe(7.5555m);
-        data.GetProperty("ResultFormula").GetString().ShouldBe("8 h x 94.44 % = 7.56 h");
-        result.Message.ShouldContain("7.5555 h");
-        result.Message.ShouldContain("170 / 180 x 100 = 94.44 %");
+        data.GetProperty("ResultHours").GetDecimal().ShouldBe(8m);
+        data.GetProperty("ResultFormula").GetString().ShouldBe("8 h x 100 % = 8 h");
+        result.Message.ShouldContain("8 h");
+        result.Message.ShouldContain(nameof(WorkloadPercentSource.NoContractFullWorkload));
         result.Message.ShouldContain("never money");
     }
 
@@ -136,16 +136,15 @@ public class GetAbsenceHoursCalculationSkillTests
             DefaultWorkingHours = 8m,
             GuaranteedHours = 170m,
             FullTime = 180m,
-            WorkloadPercent = 170m / 180m * 100m,
-            WorkloadPercentSource = WorkloadPercentSource.SettingsRatio,
-            WorkloadRatioBasis = new WorkloadRatioBasis(170m, 180m)
+            WorkloadPercent = 100m,
+            WorkloadPercentSource = WorkloadPercentSource.NoContractFullWorkload
         },
         ContractsActiveOnDate = [],
         Settings = new AbsenceHoursSettingsSummary(170m, 180m, 8m, (int)PaymentInterval.Monthly),
-        MacroInput = new MacroData { Hour = 8m, Weekday = 3, GuaranteedHours = 170m, FullTime = 180m, WorkloadPercent = 170m / 180m * 100m, WeekendDay1 = 6, WeekendDay2 = 7 },
+        MacroInput = new MacroData { Hour = 8m, Weekday = 3, GuaranteedHours = 170m, FullTime = 180m, WorkloadPercent = 100m, WeekendDay1 = 6, WeekendDay2 = 7 },
         IsWeekendDay = false,
         MacroExecuted = true,
-        ResultHours = 7.5555m
+        ResultHours = 8m
     };
 
     private GetAbsenceHoursCalculationSkill Sut() => new(_search, _clients, _visibility, _service);
