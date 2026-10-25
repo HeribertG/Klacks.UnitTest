@@ -333,4 +333,70 @@ public class SearchShiftsSkillTests
         result.Message.ShouldContain("AllShift");
         result.Message.ShouldContain("do not invent");
     }
+
+    [Test]
+    public async Task SearchShifts_LocationParameters_ReachTheFilter_AndTheMessageNamesTheOrderLocation()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Result(new ShiftResource { Id = Guid.NewGuid(), Name = "24h Bern" }));
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["status"] = "draft_order",
+            ["city"] = " Bern ",
+            ["state"] = "Bern",
+            ["country"] = "Schweiz",
+            ["zipPrefix"] = "30"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(
+            Arg.Is<GetTruncatedListQuery>(q =>
+                q.Filter.City == "Bern" &&
+                q.Filter.State == "Bern" &&
+                q.Filter.Country == "Schweiz" &&
+                q.Filter.ZipPrefix == "30" &&
+                q.Filter.FilterType == ShiftFilterType.Original &&
+                !q.Filter.IsSealedOrder),
+            Arg.Any<CancellationToken>());
+        result.Message.ShouldContain("whose customer location (workplace, else main address) is in city 'Bern'");
+        result.Message.ShouldContain("state 'Bern'");
+    }
+
+    [Test]
+    public async Task SearchShifts_LocationWithoutHits_SkipsTheFuzzyFallback_AndPointsToStateAndOrderViews()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>()).Returns(Result());
+        var skill = new SearchShiftsSkill(mediator);
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["searchString"] = "24h",
+            ["city"] = "Bern"
+        });
+
+        result.Success.ShouldBeTrue();
+        await mediator.Received(1).Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>());
+        result.Message.ShouldContain("Found 0 shift(s)");
+        result.Message.ShouldContain("A city and a state can share a name");
+        result.Message.ShouldContain("status=draft_order or sealed_order");
+        result.Message.ShouldContain("Never say there are no orders in a place");
+    }
+
+    [Test]
+    public async Task SearchShifts_WithoutLocation_LeavesTheLocationFilterEmpty()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<GetTruncatedListQuery>(), Arg.Any<CancellationToken>()).Returns(Result());
+        var skill = new SearchShiftsSkill(mediator);
+
+        await skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["city"] = "  " });
+
+        await mediator.Received(1).Send(
+            Arg.Is<GetTruncatedListQuery>(q => !q.Filter.HasLocationFilter && q.Filter.City == null),
+            Arg.Any<CancellationToken>());
+    }
 }

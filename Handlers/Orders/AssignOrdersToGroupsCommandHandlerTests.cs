@@ -3,7 +3,8 @@
 /// <summary>
 /// Unit tests for AssignOrdersToGroupsCommandHandler: the target group is derived from the customer's own
 /// group membership, then its address in the fixed precedence city name, state code, nearest coordinates
-/// and finally unassigned; the workplace address outranks the main address; a preview never touches a
+/// and finally unassigned; the workplace address outranks the main address and the invoicing address never places
+/// an order (shared OrderLocationAddressRule, owner decision 2026-10-24); a preview never touches a
 /// repository or the unit of work; an apply writes one link per order; and an order that already holds a
 /// link is skipped, which is the shape a second apply run takes.
 /// </summary>
@@ -184,6 +185,18 @@ public class AssignOrdersToGroupsCommandHandlerTests
 
         result.AssignmentSample[0].GroupId.ShouldBe(workplaceCity.Id);
         result.AssignmentSample[0].MatchReason.ShouldContain("workplace address");
+    }
+
+    [Test]
+    public async Task NeverPlacesAnOrder_ByTheInvoicingAddress()
+    {
+        _groupRepository.List().Returns(new List<Group> { NamedGroup("Bern") });
+        OpenOrders(OrderFor(Customer(Addr(AddressTypeEnum.InvoicingAddress, city: "Bern", state: "BE"))));
+
+        var result = await _handler.Handle(Command(apply: false), CancellationToken.None);
+
+        result.AssignmentSample.ShouldBeEmpty();
+        result.UnassignableCount.ShouldBe(1);
     }
 
     [Test]
