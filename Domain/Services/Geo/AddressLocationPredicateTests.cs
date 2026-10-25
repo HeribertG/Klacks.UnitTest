@@ -44,6 +44,38 @@ public class AddressLocationPredicateTests
     }
 
     [Test]
+    public void CountryList_AcceptsAnyListedCountry_CaseInsensitively()
+    {
+        var criteria = new AddressLocationCriteria(null, [], null, null, ["ch", "DE"]);
+
+        criteria.IsEmpty.ShouldBeFalse();
+        Matches(criteria, Addr(city: "Bern", country: "CH")).ShouldBeTrue();
+        Matches(criteria, Addr(city: "Berlin", country: "de")).ShouldBeTrue();
+        Matches(criteria, Addr(city: "Paris", country: "FR")).ShouldBeFalse();
+        Matches(criteria, Addr(city: "Nowhere", country: "")).ShouldBeFalse();
+    }
+
+    [Test]
+    public void CountryList_AndBoundStatePairs_RejectTheSameCodeOfAnotherCountry()
+    {
+        var criteria = new AddressLocationCriteria(
+            null, [new StateCodeMatch("BE", "CH"), new StateCodeMatch("ZH", "CH")], null, null, ["CH", "DE"]);
+
+        Matches(criteria, Addr(state: "BE", country: "CH")).ShouldBeTrue();
+        Matches(criteria, Addr(state: "ZH", country: "CH")).ShouldBeTrue();
+        Matches(criteria, Addr(state: "BE", country: "DE")).ShouldBeFalse();
+        Matches(criteria, Addr(state: "TI", country: "CH")).ShouldBeFalse();
+    }
+
+    [Test]
+    public void CountryList_IsCombinedWithTheSingleCountry_AndEmptyListMeansAnyCountry()
+    {
+        Matches(new AddressLocationCriteria("CH", [], null, null, ["DE"]), Addr(city: "Bern", country: "CH")).ShouldBeFalse();
+        Matches(new AddressLocationCriteria(null, [], "Bern", null, []), Addr(city: "Bern", country: "FR")).ShouldBeTrue();
+        new AddressLocationCriteria(null, [], null, null, []).IsEmpty.ShouldBeTrue();
+    }
+
+    [Test]
     public void DeletedAddress_NeverMatches()
     {
         var address = Addr(city: "Bern");

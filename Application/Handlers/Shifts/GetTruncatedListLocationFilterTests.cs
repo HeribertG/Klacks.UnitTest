@@ -69,6 +69,40 @@ public class GetTruncatedListLocationFilterTests
             Arg.Any<ShiftFilter>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Is<ShiftLocationFilter?>(l => l == null));
     }
 
+    [Test]
+    public async Task CountryAndStateLists_ReachTheRepositoryAsCriteria_WithTheCallersOwnRestriction()
+    {
+        var filter = SealedOrders();
+        filter.Countries = ["ch", "DE"];
+        filter.States = [new ShiftFilterState { State = "BE", Country = "CH" }, new ShiftFilterState { State = "BE", Country = "DE" }];
+        filter.City = "Bern";
+
+        await _sut.Handle(new GetTruncatedListQuery(filter), CancellationToken.None);
+
+        await _shiftRepository.Received(1).GetFilteredAndPaginatedShifts(
+            Arg.Any<ShiftFilter>(),
+            Arg.Any<IReadOnlyCollection<Guid>?>(),
+            Arg.Is<ShiftLocationFilter?>(l => l != null
+                && l.Criteria.CountryCode == null
+                && l.Criteria.CountryCodes != null && l.Criteria.CountryCodes.SequenceEqual(new[] { "CH", "DE" })
+                && l.Criteria.States.SequenceEqual(new[] { new StateCodeMatch("BE", "CH"), new StateCodeMatch("BE", "DE") })
+                && l.Criteria.City == "Bern"
+                && l.CustomerVisibleGroupIds != null && l.CustomerVisibleGroupIds.Single() == VisibleGroup));
+    }
+
+    [Test]
+    public async Task EmptyLists_AreNoLocationFilter()
+    {
+        var filter = SealedOrders();
+        filter.Countries = [];
+        filter.States = [];
+
+        await _sut.Handle(new GetTruncatedListQuery(filter), CancellationToken.None);
+
+        await _shiftRepository.Received(1).GetFilteredAndPaginatedShifts(
+            Arg.Any<ShiftFilter>(), Arg.Any<IReadOnlyCollection<Guid>?>(), Arg.Is<ShiftLocationFilter?>(l => l == null));
+    }
+
     private static ShiftFilter SealedOrders() => new()
     {
         FilterType = ShiftFilterType.Original,
