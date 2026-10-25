@@ -6,7 +6,8 @@
 /// continuation names arrive already resolved (a confirm_pending_action call named by the skill it replayed, see
 /// AssistantLastAction.ContinuationSkillNames), ordered most recent last, and are separate from the follow-through's
 /// previous-turn names. The class is the curated Effect, only permitted non-always-on skills qualify, the claim is
-/// capped at one (the most recent), its source is FollowThrough and it ranks lowest at truncation.
+/// capped at one (the most recent), its source is FollowThrough and it ranks lowest at truncation. A create_shift of the
+/// preceding turn also keeps cut_shift (workflow pair), so the turn that confirms the cut recipe's seal can force the cut.
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Assistant;
@@ -242,6 +243,37 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
         result.GuaranteedSkills.Count(s => s.Name == UpdateContractSkill).ShouldBe(1);
         result.GuaranteedSources[UpdateContractSkill].ShouldBe(ToolsetSkillSource.Keyword);
         result.LowestRankedSkillNames.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task APreviousCreateShift_KeepsCutShift_ForTheTurnThatConfirmsTheSeal()
+    {
+        List<AgentSkill> skills =
+        [
+            Skill(RecipeConstants.CreateShiftSkill, SkillEffect.Mutate),
+            Skill(RecipeConstants.CutShiftSkill, SkillEffect.Mutate),
+            Skill(RecipeConstants.FindCustomerSkill, SkillEffect.Read)
+        ];
+
+        var result = await Resolve(skills, [RecipeConstants.FindCustomerSkill, RecipeConstants.CreateShiftSkill]);
+
+        Names(result).ShouldContain(RecipeConstants.CutShiftSkill);
+        result.GuaranteedSources[RecipeConstants.CutShiftSkill].ShouldBe(ToolsetSkillSource.Hint);
+    }
+
+    [Test]
+    public async Task APreviousTurnWithoutCreateShift_DoesNotKeepCutShift()
+    {
+        List<AgentSkill> skills =
+        [
+            Skill(RecipeConstants.CreateShiftSkill, SkillEffect.Mutate),
+            Skill(RecipeConstants.CutShiftSkill, SkillEffect.Mutate),
+            Skill(UpdateContractSkill, SkillEffect.Mutate)
+        ];
+
+        var result = await Resolve(skills, [UpdateContractSkill]);
+
+        Names(result).ShouldNotContain(RecipeConstants.CutShiftSkill);
     }
 
     [Test]
