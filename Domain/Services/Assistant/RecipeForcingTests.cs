@@ -6,7 +6,7 @@
 /// are both present (skipping the customer lookup when a GUID is already supplied); the plan advances one step at a
 /// time and only on the current step's success, captures the lone customer and injects it into create_shift, captures
 /// the created order and injects it into seal_shift, and ends at a held seal_shift waiting for the user's confirmation
-/// (a refused seal ends the forcing). The turn that confirms the seal resumes the plan on the confirmed replay of that
+/// (a refused seal ends the forcing; a reused order that is already sealed skips the seal). The turn that confirms the seal resumes the plan on the confirmed replay of that
 /// seal and forces cut_shift on the plannable shift the seal created.
 /// </summary>
 
@@ -119,6 +119,33 @@ public class RecipeForcingTests
 
         plan.Observe([Call(RecipeConstants.CreateShiftSkill, success: true, result: CreatedOrderResult(OrderId))]);
         Assert.That(plan.CurrentSkill, Is.EqualTo(RecipeConstants.SealShiftSkill));
+    }
+
+    [Test]
+    public void Plan_Skips_The_Seal_Of_A_Reused_Order_That_Is_Already_Sealed_And_Cuts_It()
+    {
+        var plan = NewKnownCustomerPlan();
+
+        plan.Observe([Call(RecipeConstants.CreateShiftSkill, success: true, result: ReusedSealedResult(PlannableShiftId))]);
+
+        Assert.That(plan.CurrentSkill, Is.EqualTo(RecipeConstants.CutShiftSkill));
+        Assert.That(plan.GetParameterInjections(RecipeConstants.CutShiftSkill),
+            Does.ContainKey(RecipeConstants.ShiftIdParam).WithValue((object)PlannableShiftId));
+        Assert.That(plan.AwaitsConfirmation, Is.False);
+        Assert.That(plan.IsStoppedAtSeal, Is.False);
+    }
+
+    [Test]
+    public void Plan_Seals_A_Reused_Open_Order()
+    {
+        var plan = NewKnownCustomerPlan();
+
+        plan.Observe([Call(RecipeConstants.CreateShiftSkill, success: true,
+            result: $"Order 'X' already exists as an open order.\nData: {{\"ShiftId\":\"{OrderId}\",\"Reused\":true,\"IsSealed\":false}}")]);
+
+        Assert.That(plan.CurrentSkill, Is.EqualTo(RecipeConstants.SealShiftSkill));
+        Assert.That(plan.GetParameterInjections(RecipeConstants.SealShiftSkill),
+            Does.ContainKey(RecipeConstants.ShiftIdParam).WithValue((object)OrderId));
     }
 
     [Test]
@@ -312,6 +339,9 @@ public class RecipeForcingTests
 
     private static string CreatedOrderResult(string orderId) =>
         $"Order 'X' created as an open order.\nData: {{\"ShiftId\":\"{orderId}\",\"Name\":\"X\"}}";
+
+    private static string ReusedSealedResult(string plannableShiftId) =>
+        $"Order 'X' already exists (not yet split).\nData: {{\"ShiftId\":\"{plannableShiftId}\",\"Name\":\"X\",\"Reused\":true,\"IsSealed\":true}}";
 
     private static string SealResult(string orderId, string plannableShiftId) =>
         $"Order 'X' sealed.\nData: {{\"OrderId\":\"{orderId}\",\"PlannableShiftId\":\"{plannableShiftId}\",\"Name\":\"X\",\"Verified\":true}}";

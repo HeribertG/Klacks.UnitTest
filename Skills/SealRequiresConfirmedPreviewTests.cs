@@ -71,7 +71,7 @@ public class SealRequiresConfirmedPreviewTests
         var shiftRepository = Substitute.For<IShiftRepository>();
         var unitOfWork = Substitute.For<IUnitOfWork>();
         shiftRepository.Get(OrderId).Returns(SealableOrder());
-        var skill = new SealShiftSkill(new OrderSealingService(shiftRepository, unitOfWork, ShiftVisibilityGuards.AllowAll()));
+        var skill = SealShiftSkills.Skill(new OrderSealingService(shiftRepository, unitOfWork, ShiftVisibilityGuards.AllowAll()));
 
         var result = await skill.ExecuteAsync(
             BypassedContext(), new Dictionary<string, object> { ["shiftId"] = OrderId.ToString() });

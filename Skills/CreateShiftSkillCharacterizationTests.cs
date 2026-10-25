@@ -159,10 +159,11 @@ public class CreateShiftSkillCharacterizationTests
             "Order 'Reinigung Mueller' (07:00-15:00, 8h) created as an open order (status OriginalOrder) for customer " +
             "'Mueller AG' with calculation macro 'Standard', with 1 group(s) — NOT sealed, so it has no plannable shift yet " +
             "and cannot be booked or cut. " +
-            "Klacksy never seals an order on create. Once name, abbreviation, fromDate, at least one weekday or holiday, at " +
-            "least one group, quantity>0 and sumEmployees>0 are all set, call seal_shift with " +
-            $"shiftId=\"{PlannableShiftId}\": the user confirms its preview, and only the sealed order gets the plannable shift that " +
-            "can be booked - and split with cut_shift if it should be cut into parts.");
+            "Klacksy never seals an order on create. Once name, abbreviation, fromDate, at least one weekday or holiday, " +
+            "quantity>0 and sumEmployees>0 are all set, call seal_shift with " +
+            $"shiftId=\"{PlannableShiftId}\": the user confirms its preview (an order without a group is placed in the group " +
+            "derived from the customer's address, which the preview names), and only the sealed order gets the plannable shift " +
+            "that can be booked - and split with cut_shift if it should be cut into parts.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
             "{\"ShiftId\":\"" + PlannableShiftId + "\",\"Name\":\"Reinigung Mueller\"," +
             "\"Abbreviation\":\"RM\",\"StartTime\":\"07:00\",\"EndTime\":\"15:00\",\"FromDate\":\"2026-06-01\"," +
@@ -275,7 +276,7 @@ public class CreateShiftSkillCharacterizationTests
             "Do NOT navigate to the cut page and do NOT write manual cutting instructions.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
             "{\"ShiftId\":\"" + ReusableShiftId + "\",\"Name\":\"Existing\"," +
-            "\"Reused\":true,\"ClientId\":\"" + ClientId + "\",\"ClientName\":\"Mueller AG\"}");
+            "\"Reused\":true,\"IsSealed\":true,\"ClientId\":\"" + ClientId + "\",\"ClientName\":\"Mueller AG\"}");
         _calls.ShouldBe(["client-visible", "client-load", "macros", "default-macro", "reuse-lookup"]);
         await _shiftRepository.Received(1).FindReusableUncutOrderAsync(
             Arg.Is<Shift>(s => s.Name == "Reinigung Mueller" && s.ClientId == ClientId && s.Status == ShiftStatus.OriginalOrder),

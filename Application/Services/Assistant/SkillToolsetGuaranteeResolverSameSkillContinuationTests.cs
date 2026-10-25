@@ -30,6 +30,8 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
     private const string ExplainContractSkill = "explain_contract_setup";
     private const string AdviseContractSkill = "evaluate_contract_templates";
     private const string AlwaysOnMutateSkill = "create_employee";
+    private const string ListGroupsSkill = "list_groups";
+    private const string AddShiftToGroupSkill = "add_shift_to_group";
     private const string UserMessage = "Und stell bei dem Vertrag den Feiertagskalender auf Zürich um.";
 
     private SkillToolsetGuaranteeResolver _resolver = null!;
@@ -252,13 +254,22 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
         [
             Skill(RecipeConstants.CreateShiftSkill, SkillEffect.Mutate),
             Skill(RecipeConstants.CutShiftSkill, SkillEffect.Mutate),
-            Skill(RecipeConstants.FindCustomerSkill, SkillEffect.Read)
+            Skill(RecipeConstants.FindCustomerSkill, SkillEffect.Read),
+            Skill(RecipeConstants.SealShiftSkill, SkillEffect.Mutate),
+            Skill(ListGroupsSkill, SkillEffect.Read),
+            Skill(AddShiftToGroupSkill, SkillEffect.Mutate)
         ];
 
         var result = await Resolve(skills, [RecipeConstants.FindCustomerSkill, RecipeConstants.CreateShiftSkill]);
 
         Names(result).ShouldContain(RecipeConstants.CutShiftSkill);
         result.GuaranteedSources[RecipeConstants.CutShiftSkill].ShouldBe(ToolsetSkillSource.Hint);
+        Names(result).ShouldContain(RecipeConstants.SealShiftSkill);
+        result.GuaranteedSources[RecipeConstants.SealShiftSkill].ShouldBe(ToolsetSkillSource.Hint);
+        Names(result).ShouldContain(ListGroupsSkill, "the user's answer to the group question names no skill");
+        Names(result).ShouldContain(AddShiftToGroupSkill);
+        result.LowestRankedSkillNames.ShouldContain(ListGroupsSkill);
+        result.LowestRankedSkillNames.ShouldContain(AddShiftToGroupSkill);
     }
 
     [Test]
@@ -274,6 +285,7 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
         var result = await Resolve(skills, [UpdateContractSkill]);
 
         Names(result).ShouldNotContain(RecipeConstants.CutShiftSkill);
+        Names(result).ShouldNotContain(ListGroupsSkill);
     }
 
     [Test]

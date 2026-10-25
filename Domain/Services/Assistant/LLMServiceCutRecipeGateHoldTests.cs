@@ -247,6 +247,9 @@ public class LLMServiceCutRecipeGateHoldTests
         var requests = Requests(provider);
         requests.Count.ShouldBe(3, "a refused seal is not forced again");
         requests[2].ToolChoice.ShouldNotBe(MutationGuardConstants.ToolChoiceRequired);
+        requests[2].Message.ShouldContain(RecipeConstants.CutRecipeSealStoppedNote.Trim(),
+            customMessage: "the recipe does not end silently: the model is told what is still open and to ask for the group");
+        requests.Count(r => r.Message.Contains(RecipeConstants.CutRecipeSealStoppedNote.Trim())).ShouldBe(1);
         await _recorder.Received(1).AbortAsync(
             Arg.Any<RecipeRunHandle>(), RecipeAbortReasons.CutRecipeStoppedAtSeal, Arg.Any<CancellationToken>());
     }

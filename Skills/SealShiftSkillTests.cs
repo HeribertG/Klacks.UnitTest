@@ -35,7 +35,7 @@ public class SealShiftSkillTests
     {
         _shiftRepository = Substitute.For<IShiftRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
-        _skill = new SealShiftSkill(new OrderSealingService(_shiftRepository, _unitOfWork, ShiftVisibilityGuards.AllowAll()));
+        _skill = SealShiftSkills.Skill(new OrderSealingService(_shiftRepository, _unitOfWork, ShiftVisibilityGuards.AllowAll()));
 
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>())
             .Returns(ci => ci.Arg<Func<Task<Guid>>>()());

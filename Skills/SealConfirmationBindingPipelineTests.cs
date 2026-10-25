@@ -73,7 +73,7 @@ public class SealConfirmationBindingPipelineTests
         var unitOfWork = Substitute.For<IUnitOfWork>();
         unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<Guid>>>()).Returns(ci => ci.Arg<Func<Task<Guid>>>()());
         _orderSealingService = new OrderSealingService(_shiftRepository, unitOfWork, ShiftVisibilityGuards.AllowAll());
-        _sealShift = new SealShiftSkill(_orderSealingService);
+        _sealShift = SealShiftSkills.Skill(_orderSealingService);
     }
 
     private SealOpenOrdersResult Result(SealOpenOrdersCommand command)
@@ -113,7 +113,7 @@ public class SealConfirmationBindingPipelineTests
         var guard = new ConfirmationRedemptionGuard(scope);
         var gate = new AutonomyGateService(
             _preferences, new SkillRiskClassifier(), _store, scope, guard,
-            [new SealOpenOrdersConfirmationPreviewProvider(_planner), new SealShiftConfirmationPreviewProvider(_orderSealingService)],
+            [new SealOpenOrdersConfirmationPreviewProvider(_planner), SealShiftSkills.Preview(_orderSealingService)],
             NullLogger<AutonomyGateService>.Instance);
         var executor = Substitute.For<ISkillExecutor>();
         executor.ExecuteAsync(Arg.Any<SkillInvocation>(), Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>())
