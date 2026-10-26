@@ -143,17 +143,21 @@ public class SealOpenOrdersJobBackgroundServiceTests
             .Returns(visibleOrders.ToList());
 
         var skill = new SealOpenOrdersSkill(
-            groupRepository,
-            TestGroupScopeGuard.Restricted([visibleRoot.Id], visibleRoot.Name),
+            new SealOpenOrdersPlanner(
+                groupRepository,
+                TestGroupScopeGuard.Restricted([visibleRoot.Id], visibleRoot.Name),
+                _mediator,
+                companyClock),
             _mediator,
-            companyClock,
             _sut);
         var supervisor = new SkillExecutionContext
         {
             UserId = Guid.NewGuid(),
             TenantId = Guid.NewGuid(),
             UserName = "supervisor",
-            UserPermissions = Permissions.ExpandRoles([Roles.Authorised])
+            UserPermissions = Permissions.ExpandRoles([Roles.Authorised]),
+            ConfirmedActionBinding = SealOpenOrdersBinding.Of(
+                OpenOrderSealingSelection.Of(visibleOrders.Select(order => order.Id), []))
         };
 
         var accepted = await skill.ExecuteAsync(supervisor, new Dictionary<string, object> { ["apply"] = true });

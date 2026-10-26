@@ -6,7 +6,8 @@
 /// continuation names arrive already resolved (a confirm_pending_action call named by the skill it replayed, see
 /// AssistantLastAction.ContinuationSkillNames), ordered most recent last, and are separate from the follow-through's
 /// previous-turn names. The class is the curated Effect, only permitted non-always-on skills qualify, the claim is
-/// capped at one (the most recent), its source is FollowThrough and it ranks lowest at truncation.
+/// capped at one (the most recent), its source is FollowThrough and it ranks lowest at truncation. A create_shift of the
+/// preceding turn also keeps cut_shift (workflow pair), so the turn that confirms the cut recipe's seal can force the cut.
 /// </summary>
 
 using Klacks.Api.Application.Handlers.Assistant;
@@ -29,6 +30,8 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
     private const string ExplainContractSkill = "explain_contract_setup";
     private const string AdviseContractSkill = "evaluate_contract_templates";
     private const string AlwaysOnMutateSkill = "create_employee";
+    private const string ListGroupsSkill = "list_groups";
+    private const string AddShiftToGroupSkill = "add_shift_to_group";
     private const string UserMessage = "Und stell bei dem Vertrag den Feiertagskalender auf Zürich um.";
 
     private SkillToolsetGuaranteeResolver _resolver = null!;
@@ -242,6 +245,47 @@ public class SkillToolsetGuaranteeResolverSameSkillContinuationTests
         result.GuaranteedSkills.Count(s => s.Name == UpdateContractSkill).ShouldBe(1);
         result.GuaranteedSources[UpdateContractSkill].ShouldBe(ToolsetSkillSource.Keyword);
         result.LowestRankedSkillNames.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task APreviousCreateShift_KeepsCutShift_ForTheTurnThatConfirmsTheSeal()
+    {
+        List<AgentSkill> skills =
+        [
+            Skill(RecipeConstants.CreateShiftSkill, SkillEffect.Mutate),
+            Skill(RecipeConstants.CutShiftSkill, SkillEffect.Mutate),
+            Skill(RecipeConstants.FindCustomerSkill, SkillEffect.Read),
+            Skill(RecipeConstants.SealShiftSkill, SkillEffect.Mutate),
+            Skill(ListGroupsSkill, SkillEffect.Read),
+            Skill(AddShiftToGroupSkill, SkillEffect.Mutate)
+        ];
+
+        var result = await Resolve(skills, [RecipeConstants.FindCustomerSkill, RecipeConstants.CreateShiftSkill]);
+
+        Names(result).ShouldContain(RecipeConstants.CutShiftSkill);
+        result.GuaranteedSources[RecipeConstants.CutShiftSkill].ShouldBe(ToolsetSkillSource.Hint);
+        Names(result).ShouldContain(RecipeConstants.SealShiftSkill);
+        result.GuaranteedSources[RecipeConstants.SealShiftSkill].ShouldBe(ToolsetSkillSource.Hint);
+        Names(result).ShouldContain(ListGroupsSkill, "the user's answer to the group question names no skill");
+        Names(result).ShouldContain(AddShiftToGroupSkill);
+        result.LowestRankedSkillNames.ShouldContain(ListGroupsSkill);
+        result.LowestRankedSkillNames.ShouldContain(AddShiftToGroupSkill);
+    }
+
+    [Test]
+    public async Task APreviousTurnWithoutCreateShift_DoesNotKeepCutShift()
+    {
+        List<AgentSkill> skills =
+        [
+            Skill(RecipeConstants.CreateShiftSkill, SkillEffect.Mutate),
+            Skill(RecipeConstants.CutShiftSkill, SkillEffect.Mutate),
+            Skill(UpdateContractSkill, SkillEffect.Mutate)
+        ];
+
+        var result = await Resolve(skills, [UpdateContractSkill]);
+
+        Names(result).ShouldNotContain(RecipeConstants.CutShiftSkill);
+        Names(result).ShouldNotContain(ListGroupsSkill);
     }
 
     [Test]

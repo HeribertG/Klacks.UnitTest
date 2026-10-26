@@ -4,12 +4,18 @@
 /// Characterization tests for CutShiftSkill.ExecuteAsync, written before its long body was split into private
 /// steps: every refusal text, the success text and serialized result data (part count taken from the facade's
 /// result), every CutOperation handed to the cut facade, the required-parameter order, and the order in which
-/// repository, visibility guard, queries and facade are consulted.
+/// repository, visibility guard, queries and facade are consulted. Since cut_shift runs only as the confirmed replay of its
+/// preview, every call carries a ShiftCut binding; the success cases carry the binding of exactly the cut they expect, and
+/// a call without a binding or with the binding of another cut is refused before anything is cut.
 /// </summary>
 
+using System.Globalization;
 using System.Text.Json;
 using Klacks.Api.Application.Commands.Shifts;
 using Klacks.Api.Application.Common;
+using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Domain.Constants;
+using Klacks.Api.Application.Services.Schedules;
 using Klacks.Api.Application.Skills;
 using Klacks.UnitTest.TestHelpers;
 
@@ -36,6 +42,7 @@ public class CutShiftSkillCharacterizationTests
     private bool _visible;
     private List<CutOperation>? _operations;
     private List<Shift> _facadeResult = null!;
+    private ConfirmationBinding? _binding;
 
     [SetUp]
     public void Setup()
@@ -46,6 +53,7 @@ public class CutShiftSkillCharacterizationTests
         _visible = true;
         _operations = null;
         _facadeResult = [new Shift(), new Shift()];
+        _binding = ConfirmationBinding.Of(ConfirmationBindingKinds.ShiftCut, ["characterization"]);
 
         _shiftRepository = Substitute.For<IShiftRepository>();
         _shiftReader = Substitute.For<IShiftReader>();
@@ -71,7 +79,10 @@ public class CutShiftSkillCharacterizationTests
                 return _facadeResult;
             });
 
-        _skill = new CutShiftSkill(_shiftRepository, _shiftReader, _shiftCutFacade, _visibilityGuard);
+        var expenses = Substitute.For<IShiftExpensesRepository>();
+        expenses.GetByShiftIdsAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>()).Returns(new List<ShiftExpenses>());
+        _skill = new CutShiftSkill(
+            new ShiftTimeCutPlanner(_shiftRepository, _shiftReader, _visibilityGuard, expenses), _shiftCutFacade);
     }
 
     private static Shift Original() => new()
@@ -104,13 +115,32 @@ public class CutShiftSkillCharacterizationTests
         IsSporadic = false
     };
 
-    private static SkillExecutionContext Ctx() => new()
+    private SkillExecutionContext Ctx() => new()
     {
         UserId = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),
         UserName = "tester",
-        UserPermissions = new List<string> { "CanEditShifts" }
+        UserPermissions = new List<string> { "CanEditShifts" },
+        ConfirmedActionBinding = _binding
     };
+
+    private static ConfirmationBinding Bound(params (string Start, string End, string Name)[] parts) =>
+        ShiftTimeCutBinding.Of(new ShiftTimeCutPlan(
+            null,
+            new Shift { Id = OriginalShiftId },
+            SealedOrderId,
+            [],
+            parts.Select((part, index) => new ShiftTimeCutPart(
+                Guid.Empty,
+                index,
+                part.Name,
+                TimeOnly.ParseExact(part.Start, DateTimeFormats.HourMinute, CultureInfo.InvariantCulture),
+                TimeOnly.ParseExact(part.End, DateTimeFormats.HourMinute, CultureInfo.InvariantCulture),
+                0m,
+                false,
+                false)).ToList(),
+            [],
+            []));
 
     private static Dictionary<string, object> Params(Guid shiftId, string parts, string? partNames = null)
     {
@@ -128,6 +158,7 @@ public class CutShiftSkillCharacterizationTests
     [Test]
     public async Task PlannableShift_ExactOperationsMessageDataAndCallOrder()
     {
+        _binding = Bound(("07:00", "15:00", "Early"), ("15:00", "23:00", "Late Shift"), ("23:00", "07:00", "24h Dienst (23:00-07:00)"));
         var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, ThreeParts, " Early , ,Late Shift "));
 
         result.Success.ShouldBeTrue(result.Message);
@@ -171,7 +202,9 @@ public class CutShiftSkillCharacterizationTests
         result.Message.ShouldBe(
             "Cut the plannable shift '24h Dienst' into 2 part(s): Early, Late Shift, 24h Dienst (23:00-07:00). " +
             "The first part reuses the plannable shift (reduced, status -> SplitShift); " +
-            "the order (Bestellung) itself stays unchanged.");
+            "the order (Bestellung) itself stays unchanged. Default expenses booked with every work of a part - " +
+            "'Early': no default expenses; 'Late Shift': no default expenses; " +
+            "'24h Dienst (23:00-07:00)': no default expenses. Tell the user these expenses per part.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
             "{\"SealedOrderId\":\"" + SealedOrderId + "\",\"OrderName\":\"24h Dienst\",\"PartCount\":2,\"GroupCount\":2," +
             "\"Parts\":[" +
@@ -188,6 +221,7 @@ public class CutShiftSkillCharacterizationTests
     {
         _loaded = new Shift { Id = SealedOrderId, Name = "Bestellung 24h", Status = ShiftStatus.SealedOrder };
         _queryRows = [Original()];
+        _binding = Bound(("07:00", "19:00", "24h Dienst (07:00-19:00)"), ("19:00", "07:00", "24h Dienst (19:00-07:00)"));
 
         var result = await _skill.ExecuteAsync(Ctx(), Params(SealedOrderId, "07:00-19:00,19:00-07:00"));
 
@@ -317,5 +351,58 @@ public class CutShiftSkillCharacterizationTests
         result.Message.ShouldBe(
             $"{tilingError} Adjust the parts so they cover the order span exactly, then call cut_shift again.");
         _calls.ShouldBe(["get", "visible", "query"]);
+    }
+
+    [Test]
+    public async Task WithoutABinding_IsRefused_BeforeAnythingIsRead()
+    {
+        _binding = null;
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, ThreeParts));
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(string.Format(CultureInfo.InvariantCulture, ConfirmationBindingMessages.BindingRequired, CutShiftSkill.SkillName));
+        _calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ABindingOfAnotherKind_IsRefused_BeforeAnythingIsRead()
+    {
+        _binding = ConfirmationBinding.Of(ConfirmationBindingKinds.Work, ["x"]);
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, ThreeParts));
+
+        result.Message.ShouldBe(string.Format(CultureInfo.InvariantCulture, ConfirmationBindingMessages.BindingRequired, CutShiftSkill.SkillName));
+        _calls.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ABindingOfAnotherCut_IsRefused_AndNothingIsCut()
+    {
+        _binding = Bound(("07:00", "15:00", "Early"), ("15:00", "07:00", "Late"));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, ThreeParts, "Early,Late Shift"));
+
+        result.Success.ShouldBeFalse();
+        result.Message!.ShouldStartWith("What this confirmation was given for has changed since the preview");
+        _calls.ShouldNotContain("cuts");
+    }
+
+    [Test]
+    public async Task Result_NamesTheDefaultExpensesEveryPartCarries()
+    {
+        _binding = Bound(("07:00", "19:00", "Day"), ("19:00", "07:00", "Night"));
+        _shiftCutFacade.ProcessBatchCutsAsync(Arg.Any<List<CutOperation>>())
+            .Returns(ci => ci.Arg<List<CutOperation>>().Select(op => new Shift
+            {
+                Id = op.Data.Id,
+                ShiftExpenses = [new ShiftExpenses { Description = "Meal", Amount = 12.50m, Taxable = false }]
+            }).ToList());
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params(OriginalShiftId, "07:00-19:00,19:00-07:00", "Day,Night"));
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message!.ShouldContain("'Day': Meal 12.50 (non-taxable expense)");
+        result.Message.ShouldContain("'Night': Meal 12.50 (non-taxable expense)");
     }
 }

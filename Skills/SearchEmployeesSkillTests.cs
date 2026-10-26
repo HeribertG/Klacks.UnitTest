@@ -17,6 +17,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Models.Assistant.Recipes;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -33,7 +34,7 @@ public class SearchEmployeesSkillTests
     public void Setup()
     {
         _searchRepository = Substitute.For<IClientSearchRepository>();
-        _skill = new SearchEmployeesSkill(_searchRepository);
+        _skill = new SearchEmployeesSkill(_searchRepository, TestAddressLocationResolver.SwissAndGerman());
         WireFuzzySearch();
     }
 
@@ -120,6 +121,30 @@ public class SearchEmployeesSkillTests
         Assert.That(result.Success, Is.True);
         await _searchRepository.Received(1).SearchAsync(
             "Anna", "BE", EntityTypeEnum.Customer, null, 10, Arg.Any<CancellationToken>());
+    }
+
+    [TestCase("Bern")]
+    [TestCase("Berne")]
+    [TestCase("be")]
+    public async Task CantonByNameInAnyLanguage_IsResolvedToTheStoredCode(string canton)
+    {
+        WireSearch(1, Item("Anna", "Müller"));
+
+        await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Anna", ["canton"] = canton });
+
+        await _searchRepository.Received(1).SearchAsync(
+            "Anna", "BE", Arg.Any<EntityTypeEnum?>(), null, 10, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task CantonOutsideTheOldSwissList_IsAccepted()
+    {
+        WireSearch(1, Item("Anna", "Müller"));
+
+        await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["searchTerm"] = "Anna", ["canton"] = "Tessin" });
+
+        await _searchRepository.Received(1).SearchAsync(
+            "Anna", "TI", Arg.Any<EntityTypeEnum?>(), null, 10, Arg.Any<CancellationToken>());
     }
 
     [Test]

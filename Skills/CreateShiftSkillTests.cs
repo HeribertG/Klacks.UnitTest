@@ -1,9 +1,9 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Unit tests for CreateShiftSkill's asDraft parameter: a draft order is created with status
-/// OriginalOrder and skips the sealed-order reuse lookup (which only makes sense once an order is
-/// already sealed), while omitting asDraft keeps the pre-existing sealed-on-create behavior unchanged. A macroId
+/// Unit tests for CreateShiftSkill: owner decision 2026-10-24 - Klacksy always creates an open order (status
+/// OriginalOrder) and never seals on create, whatever asDraft says; sealing is a separate step (seal_shift, bound to a
+/// confirmed preview). A structurally identical open order is reused instead of creating a duplicate. A macroId
 /// that points to a macro created by the assistant is refused before anything is stored; other macroIds are used.
 /// </summary>
 
@@ -86,29 +86,34 @@ public class CreateShiftSkillTests
         return parameters;
     }
 
-    [Test]
-    public async Task CreatesDraft_WithOriginalOrderStatus_AndSkipsReuseLookup_WhenAsDraftTrue()
+    [TestCase(null)]
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task AlwaysCreatesAnOpenOrder_AndNeverSealsOnCreate(bool? asDraft)
     {
-        var result = await _skill.ExecuteAsync(Ctx(), Params(asDraft: true));
+        var result = await _skill.ExecuteAsync(Ctx(), Params(asDraft));
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Contain("DRAFT"));
+        Assert.That(result.Message, Does.Contain("open order"));
+        Assert.That(result.Message, Does.Contain("seal_shift"));
         await _shiftRepository.Received(1).AddWithSealedOrderHandling(
             Arg.Is<Shift>(s => s.Status == ShiftStatus.OriginalOrder));
-        await _shiftRepository.DidNotReceive().FindReusableUncutOrderAsync(Arg.Any<Shift>(), Arg.Any<CancellationToken>());
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(
+            Arg.Is<Shift>(s => s.Status == ShiftStatus.SealedOrder));
     }
 
     [Test]
-    public async Task CreatesSealedOrder_AsBefore_WhenAsDraftOmitted()
+    public async Task ReusesAnIdenticalOpenOrder_InsteadOfCreatingADuplicate()
     {
+        var existing = new Shift { Id = Guid.NewGuid(), Name = "Reinigung Müller", Status = ShiftStatus.OriginalOrder };
+        _shiftRepository.FindReusableUncutOrderAsync(Arg.Any<Shift>(), Arg.Any<CancellationToken>()).Returns(existing);
+
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Message, Does.Not.Contain("DRAFT"));
-        Assert.That(result.Message, Does.Contain("NEXT STEP"));
-        await _shiftRepository.Received(1).AddWithSealedOrderHandling(
-            Arg.Is<Shift>(s => s.Status == ShiftStatus.SealedOrder));
-        await _shiftRepository.Received(1).FindReusableUncutOrderAsync(Arg.Any<Shift>(), Arg.Any<CancellationToken>());
+        Assert.That(result.Message, Does.Contain("already exists as an open order"));
+        Assert.That(result.Message, Does.Contain(existing.Id.ToString()));
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
     }
 
     [Test]

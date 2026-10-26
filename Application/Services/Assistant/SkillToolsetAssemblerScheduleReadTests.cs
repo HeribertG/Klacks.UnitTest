@@ -294,6 +294,47 @@ public class SkillToolsetAssemblerScheduleReadTests
         names.ShouldContain(ScheduleReadIntentResolver.ListGroupsSkillName);
     }
 
+    [Test]
+    public async Task OnTheShiftListPage_SearchShiftsIsKept_ForAnyMessage_WhenOnlyShiftStructureSkillsAreRanked()
+    {
+        _skills.Add(CreateSkill(ShiftListReadIntentResolver.SearchShiftsSkillName, SkillEffect.Read));
+        GivenRetrieval(CreateShiftSkillName, AddShiftToGroupSkillName);
+
+        var result = await AssembleAsync("Wie viele Dienste gibt es in Bern?", ProactiveActionRoutes.ShiftList);
+
+        Names(result).ShouldContain(ShiftListReadIntentResolver.SearchShiftsSkillName);
+    }
+
+    [TestCase(ScheduleRoute)]
+    [TestCase(DashboardRoute)]
+    [TestCase(null)]
+    public async Task OutsideTheShiftListPage_SearchShiftsIsNotGuaranteed(string? route)
+    {
+        _skills.Add(CreateSkill(ShiftListReadIntentResolver.SearchShiftsSkillName, SkillEffect.Read));
+        GivenRetrieval(CreateShiftSkillName, AddShiftToGroupSkillName);
+
+        var result = await AssembleAsync("Wie viele Dienste gibt es in Bern?", route);
+
+        Names(result).ShouldNotContain(ShiftListReadIntentResolver.SearchShiftsSkillName);
+    }
+
+    [Test]
+    public async Task UnderTheTinyCap_SearchShiftsStaysAmongTheKeptSkills_OnTheShiftListPage()
+    {
+        _skills.AddRange(Enumerable.Range(0, AlwaysOnFillerCount)
+            .Select(index => CreateSkill($"{AlwaysOnFillerPrefix}{index}", SkillEffect.Read, alwaysOn: true)));
+        _skills.Add(CreateSkill(ShiftListReadIntentResolver.SearchShiftsSkillName, SkillEffect.Read));
+
+        var result = await AssembleAsync(
+            "Welche Orte kommen vor?", ProactiveActionRoutes.ShiftList, maxTools: TinyCap,
+            pinnedSkillNames: [ExtraHintSkillName]);
+
+        var names = Names(result);
+        names.Count.ShouldBeLessThanOrEqualTo(TinyCap);
+        names.ShouldContain(ShiftListReadIntentResolver.SearchShiftsSkillName);
+        names.ShouldContain(ExtraHintSkillName);
+    }
+
     private List<string> AddFillerSkills()
     {
         var fillers = Enumerable.Range(0, FillerSkillCount).Select(index => $"filler_skill_{index:D2}").ToList();
