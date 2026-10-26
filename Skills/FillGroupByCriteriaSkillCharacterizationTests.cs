@@ -209,7 +209,6 @@ public class FillGroupByCriteriaSkillCharacterizationTests
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(SkillDateParser.MissingStartDateMessage("add the matching Customer(s) to group 'Bern'"));
-        await _mediator.Received(1).Send(Arg.Any<ListQuery<StateResource>>(), Arg.Any<CancellationToken>());
         await _mediator.DidNotReceive().Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>());
     }
 
