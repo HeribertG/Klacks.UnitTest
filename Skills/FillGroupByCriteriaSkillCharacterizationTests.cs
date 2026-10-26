@@ -51,7 +51,8 @@ public class FillGroupByCriteriaSkillCharacterizationTests
         companyClock.GetTodayAsync(Arg.Any<CancellationToken>())
             .Returns(new DateTime(2026, 6, 28, 0, 0, 0, DateTimeKind.Utc));
         _skill = new FillGroupByCriteriaSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), _contractRepository, _mediator, companyClock);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), _contractRepository, _mediator, companyClock,
+            TestAddressLocationResolver.SwissAndGerman());
 
         _groupRepository.List().Returns(new List<Group>
         {
