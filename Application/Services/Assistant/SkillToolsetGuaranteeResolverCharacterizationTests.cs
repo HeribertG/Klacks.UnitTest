@@ -88,7 +88,7 @@ public class SkillToolsetGuaranteeResolverCharacterizationTests
             _pendingNotes,
             recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
-            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(),
             phrases,
             relations,
             _turnIntent,
