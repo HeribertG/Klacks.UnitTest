@@ -87,7 +87,7 @@ public class SkillToolsetAssemblerBroadKeywordTests
             Substitute.For<IPendingUserNoteRepository>(),
             CreateRecipeEngine(),
             PendingStoreTestFactory.CreateConfirmationStore(),
-            PendingStoreTestFactory.CreatePlanningProfileDraftStore(),
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(),
             phrases,
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),
