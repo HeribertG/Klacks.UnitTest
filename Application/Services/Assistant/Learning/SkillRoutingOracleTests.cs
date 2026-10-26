@@ -162,7 +162,7 @@ public class SkillRoutingOracleTests
     private void GivenReachable(params string[] names) =>
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult(
                 [.. names.Select(name => new RetrievalCandidate(
                     new KnowledgeEntry
@@ -193,7 +193,8 @@ public class SkillRoutingOracleTests
             KnowledgeIndexConstants.MaxRerankerCandidates,
             null,
             Arg.Any<CancellationToken>(),
-            KnowledgeEntryKind.Skill);
+            KnowledgeEntryKind.Skill,
+            Arg.Any<IReadOnlyCollection<string>?>());
     }
 
     // Degrading to an empty list restores exactly the behaviour this method replaced - the classifier then
@@ -203,7 +204,7 @@ public class SkillRoutingOracleTests
     {
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns<RetrievalResult>(_ => throw new InvalidOperationException("embedding backend down"));
 
         (await _oracle.ListReachableSkillsAsync("kunde erreichbar")).ShouldBeEmpty();

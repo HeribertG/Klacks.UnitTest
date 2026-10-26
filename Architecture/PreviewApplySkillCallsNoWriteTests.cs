@@ -227,7 +227,8 @@ public class PreviewApplySkillCallsNoWriteTests
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<FillGroupByCriteriaCommand>(), ci.Arg<CancellationToken>()));
         var skill = new FillGroupByCriteriaSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), contractRepository, _mediator, _companyClock);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), contractRepository, _mediator, _companyClock,
+            TestAddressLocationResolver.SwissAndGerman());
 
         var result = await RunPreviewAsync(FillGroupByCriteria, skill, Ctx(), FillParameters(applyShape));
 
@@ -476,7 +477,9 @@ public class PreviewApplySkillCallsNoWriteTests
             .Returns(ci => sealHandler.Handle(ci.Arg<SealOpenOrdersCommand>(), ci.Arg<CancellationToken>()));
         var jobQueue = Substitute.For<ISealOpenOrdersJobQueue>();
         var skill = new SealOpenOrdersSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), _mediator, _companyClock, jobQueue);
+            new SealOpenOrdersPlanner(_groupRepository, TestGroupScopeGuard.Unrestricted(), _mediator, _companyClock),
+            _mediator,
+            jobQueue);
         var parameters = WithApply(applyShape, new Dictionary<string, object> { ["autoAssignGroups"] = true });
 
         var result = await RunPreviewAsync(SealOpenOrders, skill, Ctx(), parameters);
@@ -559,7 +562,8 @@ public class PreviewApplySkillCallsNoWriteTests
         _mediator.Send(Arg.Any<FillGroupByCriteriaCommand>(), Arg.Any<CancellationToken>())
             .Returns(ci => handler.Handle(ci.Arg<FillGroupByCriteriaCommand>(), ci.Arg<CancellationToken>()));
         var skill = new FillGroupByCriteriaSkill(
-            _groupRepository, TestGroupScopeGuard.Unrestricted(), Substitute.For<IContractRepository>(), _mediator, _companyClock);
+            _groupRepository, TestGroupScopeGuard.Unrestricted(), Substitute.For<IContractRepository>(), _mediator, _companyClock,
+            TestAddressLocationResolver.SwissAndGerman());
         var parameters = FillParameters(ApplyAbsent);
         parameters[PreviewApplySkillCalls.ApplyParameter] = true;
         parameters["validFrom"] = ApplyValidFrom;

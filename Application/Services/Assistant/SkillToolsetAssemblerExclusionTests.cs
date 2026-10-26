@@ -70,7 +70,7 @@ public class SkillToolsetAssemblerExclusionTests
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([Candidate(WrongSkill, 0.9), Candidate(RightSkill, 0.8)]));
 
         _retrievalQueryBuilder = Substitute.For<IRetrievalQueryBuilder>();

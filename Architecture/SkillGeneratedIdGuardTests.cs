@@ -75,9 +75,9 @@ public class SkillGeneratedIdGuardTests
             [@"Application\Skills\CreateTestEnvironmentSkill.cs"] = 7,
             [@"Application\Skills\UpdateClientSkill.cs"] = 3,
 
-            // Case (2): the cut addresses the new piece by id on a route that keeps it.
+            // Case (2): the cut addresses the new piece by id on a route that keeps it. cut_shift mints its part
+            // ids in ShiftTimeCutPlanner (Application/Services/Schedules) since its planning moved there.
             [@"Application\Skills\CutShiftByDateSkill.cs"] = 1,
-            [@"Application\Skills\CutShiftSkill.cs"] = 1,
 
             // Case (1): a background job handle, never a database row.
             [@"Application\Skills\SealOpenOrdersSkill.cs"] = 1,

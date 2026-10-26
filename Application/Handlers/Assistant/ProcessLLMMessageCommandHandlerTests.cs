@@ -93,7 +93,7 @@ public class ProcessLLMMessageCommandHandlerTests
 
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
 
         _explainDepthResolver = Substitute.For<IExplainDepthResolver>();
@@ -211,7 +211,7 @@ public class ProcessLLMMessageCommandHandlerTests
             .Returns(new List<AgentSkill> { CreateSkill(excludedSkill), CreateSkill(allowedSkill) });
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult(
                 RetrievalHit(excludedSkill).Candidates.Concat(RetrievalHit(allowedSkill).Candidates).ToList()));
         var command = CreateCommand(null);
@@ -233,7 +233,7 @@ public class ProcessLLMMessageCommandHandlerTests
             .Returns(new List<AgentSkill> { CreateSkill(skill) });
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(RetrievalHit(skill));
 
         await CreateHandler().Handle(CreateCommand(null), CancellationToken.None);
@@ -268,7 +268,7 @@ public class ProcessLLMMessageCommandHandlerTests
     {
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(RetrievalHit(DashboardSkillName));
 
         await CreateHandler().Handle(CreateCommand("/workplace/dashboard"), CancellationToken.None);
@@ -287,7 +287,7 @@ public class ProcessLLMMessageCommandHandlerTests
         // now that a GeminiEmbeddingProvider fallback exists that fails loud (e.g. missing/invalid key).
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns<RetrievalResult>(_ => throw new InvalidOperationException("embedding API key missing"));
 
         await CreateHandler().Handle(CreateCommand("/workplace/dashboard"), CancellationToken.None);
@@ -314,7 +314,7 @@ public class ProcessLLMMessageCommandHandlerTests
     {
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(RetrievalHit(DashboardSkillName));
 
         await CreateHandler().Handle(CreateCommand(null), CancellationToken.None);
@@ -338,7 +338,7 @@ public class ProcessLLMMessageCommandHandlerTests
             });
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(),
-                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(RetrievalHit(DashboardSkillName));
         _expander.ExpandAsync(
                 _agent.Id, Arg.Any<IReadOnlyList<AgentSkill>>(), Arg.Any<IReadOnlyList<AgentSkill>>(),

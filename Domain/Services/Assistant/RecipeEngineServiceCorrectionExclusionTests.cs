@@ -121,7 +121,7 @@ public class RecipeEngineServiceCorrectionExclusionTests
     private void StubRetrieval(string message, RetrievalResult result) =>
         _retrieval.RetrieveAsync(
                 message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(result);
 
     [Test]

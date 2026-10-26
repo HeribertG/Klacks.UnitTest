@@ -186,6 +186,8 @@ public class ClientContractDataProviderRangeTests
                 actual.WE1Rate.ShouldBe(expected.WE1Rate, $"WE1Rate on {date:yyyy-MM-dd}");
                 actual.WE2Rate.ShouldBe(expected.WE2Rate, $"WE2Rate on {date:yyyy-MM-dd}");
                 actual.GuaranteedHours.ShouldBe(expected.GuaranteedHours, $"GuaranteedHours on {date:yyyy-MM-dd}");
+                actual.WorkloadPercent.ShouldBe(expected.WorkloadPercent, $"WorkloadPercent on {date:yyyy-MM-dd}");
+                actual.WorkloadPercentSource.ShouldBe(expected.WorkloadPercentSource, $"WorkloadPercentSource on {date:yyyy-MM-dd}");
                 actual.FullTime.ShouldBe(expected.FullTime, $"FullTime on {date:yyyy-MM-dd}");
                 actual.MaximumHours.ShouldBe(expected.MaximumHours, $"MaximumHours on {date:yyyy-MM-dd}");
                 actual.MinimumHours.ShouldBe(expected.MinimumHours, $"MinimumHours on {date:yyyy-MM-dd}");

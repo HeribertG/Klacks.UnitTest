@@ -217,7 +217,7 @@ public class GetGoalCandidatesQueryHandlerTests
         var dto = result.Single();
         dto.TitleKey.ShouldBe(expected.TitleKey);
         dto.RationaleKey.ShouldBe(expected.RationaleKey);
-        dto.ChatPromptKey.ShouldBe(SetupChatPromptKeys.SealOpenOrdersRequest);
+        dto.ChatPromptKey.ShouldBe(SetupChatPromptKeys.OrdersReviewRequest);
     }
 
     [Test]

@@ -121,7 +121,7 @@ public class RecipeEngineServiceSemanticAnchorTests
     private void StubRetrieval(string message, params (string SourceId, double Score)[] candidates) =>
         _retrieval.RetrieveAsync(
                 message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult(candidates
                 .Select(c => new RetrievalCandidate(
                     new KnowledgeEntry { Kind = KnowledgeEntryKind.Recipe, SourceId = c.SourceId, Text = "irrelevant" },
@@ -143,6 +143,22 @@ public class RecipeEngineServiceSemanticAnchorTests
         plan.ShouldBeNull();
         await _retrieval.ReceivedWithAnyArgs(1).RetrieveAsync(
             default!, default!, default, default, default, default);
+    }
+
+    // The guards read only the message, so they run before the retrieval: a recipe they would reject is not handed
+    // to the cross-encoder at all (latency, eval 2026-10-24), while an anchored one is.
+    [TestCase("Lies bitte meine zurückgestellten Notizen vor.", false)]
+    [TestCase("Externe Personen, bitte.", true)]
+    public async Task OnlyAdmissibleRecipes_AreHandedToTheRetrieval(string message, bool externsAdmissible)
+    {
+        StubRetrieval(message, (ExternsRecipe, StrongScore));
+
+        await _service.ResolveAsync(message, German);
+
+        await _retrieval.Received(1).RetrieveAsync(
+            message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(),
+            Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(),
+            Arg.Is<IReadOnlyCollection<string>?>(ids => ids != null && ids.Contains(ExternsRecipe) == externsAdmissible));
     }
 
     [Test]

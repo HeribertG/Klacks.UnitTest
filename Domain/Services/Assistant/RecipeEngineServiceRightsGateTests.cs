@@ -91,7 +91,7 @@ public class RecipeEngineServiceRightsGateTests
         _retrieval = Substitute.For<IKnowledgeRetrievalService>();
         _retrieval.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<bool>(), Arg.Any<int>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([]));
 
         var provider = Substitute.For<IServiceProvider>();
@@ -195,7 +195,7 @@ public class RecipeEngineServiceRightsGateTests
     [Test]
     public async Task ADeniedKeywordRecipe_NeverFallsBackToTheSemanticRanking()
     {
-        _retrieval.RetrieveAsync(OnboardMessage, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(OnboardMessage, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([Candidate("add-absence", 0.90)]));
 
         var plan = await ResolveAsync(OnboardMessage, "de", PlannerFloor);
@@ -210,7 +210,7 @@ public class RecipeEngineServiceRightsGateTests
     public async Task Semantic_DeniedTopCandidate_WinsOverALowerRankedPermittedOne()
     {
         var message = "Ich muss jemanden neu ins System aufnehmen und alles dazu erledigen";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult(
             [
                 Candidate("onboard-employee", 0.91),
@@ -238,7 +238,7 @@ public class RecipeEngineServiceRightsGateTests
         _recipeRepository.GetAllEnabledAsync(Arg.Any<CancellationToken>())
             .Returns(new List<AgentRecipe> { guarded, AbsenceRecipe });
         var message = "Ich muss jemanden neu ins System aufnehmen und alles dazu erledigen";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([Candidate("guarded", 0.91), Candidate("add-absence", 0.60)]));
 
         var plan = await ResolveAsync(message, "de", PlannerFloor);
@@ -251,7 +251,7 @@ public class RecipeEngineServiceRightsGateTests
     public async Task Semantic_OnlyCandidateDenied_ResolvesNothingAndReportsTheDenial()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([Candidate("onboard-employee", 0.82)]));
 
         var plan = await ResolveAsync(message, "de", PlannerFloor);
@@ -358,7 +358,7 @@ public class RecipeEngineServiceRightsGateTests
     public async Task SemanticProposal_IsDeterministicLikeAKeywordProposal()
     {
         var message = "Kannst du bitte einen komplett neuen Mitarbeiter im System anlegen und alles erledigen?";
-        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+        _retrieval.RetrieveAsync(message, Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult([Candidate("onboard-employee", 0.82)]));
 
         var plan = await ResolveAsync(message, "de", new[] { Roles.Admin });

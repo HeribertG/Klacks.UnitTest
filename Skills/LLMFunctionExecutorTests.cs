@@ -10,6 +10,7 @@
 /// the function call for the frontend.
 /// </summary>
 
+using System.Globalization;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -330,7 +331,7 @@ public class LLMFunctionExecutorTests
         SetupBridgeFor("update_branch", new SkillBridgeResult
         {
             Success = true,
-            Message = "Function 'update_branch' will be executed as UI action in the user's browser.",
+            Message = string.Format(CultureInfo.InvariantCulture, UiActionResultMessages.DispatchedFormat, "update_branch"),
             UiActionSteps = bridgeSteps
         });
         var call = new LLMFunctionCall { FunctionName = "update_branch", Parameters = new() { ["name"] = "North" } };

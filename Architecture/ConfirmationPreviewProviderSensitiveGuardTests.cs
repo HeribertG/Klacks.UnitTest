@@ -64,9 +64,12 @@ public class ConfirmationPreviewProviderSensitiveGuardTests
         [
             Klacks.Plugin.Messaging.Application.Constants.MessagingConstants.SkillSendMessage,
             BulkDeleteWorksSkill.SkillName,
+            CutShiftSkill.SkillName,
             MacroAssignmentSkillNames.AssignToShift,
             MacroAssignmentSkillNames.AssignToAbsenceType,
-            MacroAssignmentSkillNames.Revert
+            MacroAssignmentSkillNames.Revert,
+            SealOpenOrdersSkill.SkillName,
+            SealShiftSkill.SkillName
         ];
 
         foreach (var name in bound)

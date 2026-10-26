@@ -12,13 +12,17 @@
 /// ever replaced by the visible "Region North" - both get the "Did the user mean ...?" ask-back and nothing is
 /// sealed - and the resolved group is named in the preview; the default call is a preview that tells the user sealing
 /// cannot be undone, and apply=true either seals inline (sealable count at or below the synchronous
-/// limit) or is handed to the background job queue instead (above it) using the very same preview count.
+/// limit) or is handed to the background job queue instead (above it) using the very same preview count. apply=true runs
+/// only with a confirmed binding of its own kind whose orders still classify exactly as the preview showed, and hands that
+/// selection to the inline command and to the background job.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Orders;
 using Klacks.Api.Application.DTOs.Orders;
+using Klacks.Api.Application.Services.Orders;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
+using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Infrastructure.Mediator;
 
 namespace Klacks.UnitTest.Skills;
@@ -56,7 +60,8 @@ public class SealOpenOrdersSkillTests
                 FailedCount: 0, BlockedOnlyByMissingGroupCount: 2, AutoAssignedCount: 0,
                 AutoAssignRequested: false, SealedSample: [], BlockedSample: [], Failures: []));
 
-        _skill = new SealOpenOrdersSkill(_groupRepository, _groupScopeGuard, _mediator, _companyClock, _jobQueue);
+        _skill = new SealOpenOrdersSkill(
+            new SealOpenOrdersPlanner(_groupRepository, _groupScopeGuard, _mediator, _companyClock), _mediator, _jobQueue);
     }
 
     private static SealOpenOrdersResult PreviewWithSealableCount(int sealableCount) => new(
@@ -65,6 +70,9 @@ public class SealOpenOrdersSkillTests
         AutoAssignRequested: false, SealedSample: [], BlockedSample: [], Failures: []);
 
     private static SkillExecutionContext Ctx() => CtxFor(Roles.Admin);
+
+    private static SkillExecutionContext Confirmed(SkillExecutionContext context) =>
+        context with { ConfirmedActionBinding = SealOpenOrdersBinding.Of(OpenOrderSealingSelection.Empty) };
 
     private static SkillExecutionContext SupervisorCtx() => CtxFor(Roles.Authorised);
 
@@ -195,7 +203,7 @@ public class SealOpenOrdersSkillTests
         SupervisorSeesRegionNorthButNotRegionSouth(regionSouthExists: true);
         var parameters = new Dictionary<string, object> { ["groupName"] = "Region South", ["apply"] = true };
 
-        var hidden = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+        var hidden = await _skill.ExecuteAsync(Confirmed(SupervisorCtx()), parameters);
 
         hidden.Success.ShouldBeFalse();
         hidden.Message.ShouldBe(NameResolutionMessages.SuggestedName("Region North"));
@@ -203,7 +211,7 @@ public class SealOpenOrdersSkillTests
         _jobQueue.DidNotReceive().Enqueue(Arg.Any<SealOpenOrdersJob>());
 
         SupervisorSeesRegionNorthButNotRegionSouth(regionSouthExists: false);
-        var missing = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+        var missing = await _skill.ExecuteAsync(Confirmed(SupervisorCtx()), parameters);
 
         hidden.Message.ShouldBe(missing.Message);
     }
@@ -215,7 +223,7 @@ public class SealOpenOrdersSkillTests
         _groupRepository.List().Returns(new List<Group> { regionNorth, RootGroup("Region South") });
 
         var result = await _skill.ExecuteAsync(
-            Ctx(), new Dictionary<string, object> { ["groupName"] = "Regoin North", ["apply"] = true });
+            Confirmed(Ctx()), new Dictionary<string, object> { ["groupName"] = "Regoin North", ["apply"] = true });
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(NameResolutionMessages.SuggestedName("Region North"));
@@ -232,9 +240,9 @@ public class SealOpenOrdersSkillTests
         var parameters = new Dictionary<string, object> { ["groupName"] = "Gruppenleitung", ["apply"] = true };
 
         _groupRepository.List().Returns(new List<Group> { leitung, hidden });
-        var whenHidden = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+        var whenHidden = await _skill.ExecuteAsync(Confirmed(SupervisorCtx()), parameters);
         _groupRepository.List().Returns(new List<Group> { leitung });
-        var whenMissing = await _skill.ExecuteAsync(SupervisorCtx(), parameters);
+        var whenMissing = await _skill.ExecuteAsync(Confirmed(SupervisorCtx()), parameters);
 
         whenHidden.Success.ShouldBeFalse();
         whenHidden.Message.ShouldBe(whenMissing.Message);
@@ -249,7 +257,7 @@ public class SealOpenOrdersSkillTests
         SupervisorSeesRegionNorthButNotRegionSouth(regionSouthExists: true);
 
         var result = await _skill.ExecuteAsync(
-            SupervisorCtx(), new Dictionary<string, object> { ["groupName"] = "Regio", ["apply"] = true });
+            Confirmed(SupervisorCtx()), new Dictionary<string, object> { ["groupName"] = "Regio", ["apply"] = true });
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldBe(NameResolutionMessages.SuggestedName("Region North"));
@@ -293,7 +301,7 @@ public class SealOpenOrdersSkillTests
         SupervisorSeesOnlyAlpha();
 
         var result = await _skill.ExecuteAsync(
-            SupervisorCtx(), new Dictionary<string, object> { ["autoAssignGroups"] = true, ["apply"] = true });
+            Confirmed(SupervisorCtx()), new Dictionary<string, object> { ["autoAssignGroups"] = true, ["apply"] = true });
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("autoAssignGroups is only available to administrators");
@@ -322,13 +330,13 @@ public class SealOpenOrdersSkillTests
         _mediator.When(m => m.Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>()))
             .Do(ci => commands.Add(ci.Arg<SealOpenOrdersCommand>()));
 
-        await _skill.ExecuteAsync(SupervisorCtx(), new Dictionary<string, object> { ["apply"] = true });
+        await _skill.ExecuteAsync(Confirmed(SupervisorCtx()), new Dictionary<string, object> { ["apply"] = true });
 
         commands.Count.ShouldBe(2);
         commands[0].Apply.ShouldBeFalse();
         commands[1].Apply.ShouldBeTrue();
         commands[1].Scope.ShouldBeSameAs(commands[0].Scope);
-        commands[1].ShouldBe(commands[0] with { Apply = true });
+        commands[1].ShouldBe(commands[0] with { Apply = true, ExpectedSelection = OpenOrderSealingSelection.Empty });
     }
 
     [Test]
@@ -339,7 +347,7 @@ public class SealOpenOrdersSkillTests
             .Returns(PreviewWithSealableCount(SynchronousLimit + 1));
         SealOpenOrdersJob? enqueued = null;
         _jobQueue.Enqueue(Arg.Do<SealOpenOrdersJob>(j => enqueued = j)).Returns(true);
-        var ctx = SupervisorCtx();
+        var ctx = Confirmed(SupervisorCtx());
 
         var result = await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
 
@@ -394,7 +402,7 @@ public class SealOpenOrdersSkillTests
     public async Task ApplyAtOrBelowTheSynchronousLimit_SealsInline_UsingThePreviewCountToDecide()
     {
         // Default mock returns SealableCount=1 for every command, well below the limit.
-        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["apply"] = true });
+        var result = await _skill.ExecuteAsync(Confirmed(Ctx()), new Dictionary<string, object> { ["apply"] = true });
 
         result.Success.ShouldBeTrue();
         result.Message.ShouldContain("Sealed");
@@ -410,7 +418,7 @@ public class SealOpenOrdersSkillTests
     {
         _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => !c.Apply), Arg.Any<CancellationToken>())
             .Returns(PreviewWithSealableCount(SynchronousLimit + 1));
-        var ctx = Ctx();
+        var ctx = Confirmed(Ctx());
 
         var result = await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
 
@@ -435,11 +443,104 @@ public class SealOpenOrdersSkillTests
             .Returns(PreviewWithSealableCount(SynchronousLimit + 1));
         _jobQueue.Enqueue(Arg.Any<SealOpenOrdersJob>()).Returns(false);
 
-        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["apply"] = true });
+        var result = await _skill.ExecuteAsync(Confirmed(Ctx()), new Dictionary<string, object> { ["apply"] = true });
 
         result.Success.ShouldBeFalse();
         result.Message.ShouldContain("queue is currently full");
         await _mediator.DidNotReceive().Send(
             Arg.Is<SealOpenOrdersCommand>(c => c.Apply), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_WithoutAConfirmedBinding_IsRefusedBeforeAnythingIsRead()
+    {
+        var result = await _skill.ExecuteAsync(Ctx(), new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(string.Format(ConfirmationBindingMessages.BindingRequired, SealOpenOrdersSkill.SkillName));
+        await _groupScopeGuard.DidNotReceive().GetAccessAsync(Arg.Any<SkillExecutionContext>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_WithABindingOfAnotherKind_IsRefused()
+    {
+        var ctx = Ctx() with { ConfirmedActionBinding = SealShiftSkill.BindingFor(Guid.NewGuid()) };
+
+        var result = await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe(string.Format(ConfirmationBindingMessages.BindingRequired, SealOpenOrdersSkill.SkillName));
+        await _mediator.DidNotReceive().Send(Arg.Any<SealOpenOrdersCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_WhenAnOrderAppearedSinceThePreview_SealsNothing_AndSaysWhatChanged()
+    {
+        var shown = Guid.NewGuid();
+        var appeared = Guid.NewGuid();
+        _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => !c.Apply), Arg.Any<CancellationToken>())
+            .Returns(PreviewWithSealableCount(2) with { Selection = OpenOrderSealingSelection.Of([shown, appeared], []) });
+        var ctx = Ctx() with
+        {
+            ConfirmedActionBinding = SealOpenOrdersBinding.Of(OpenOrderSealingSelection.Of([shown], []))
+        };
+
+        var result = await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("1 item(s) were shown, 2 apply now (1 new, 0 no longer there)");
+        await _mediator.DidNotReceive().Send(Arg.Is<SealOpenOrdersCommand>(c => c.Apply), Arg.Any<CancellationToken>());
+        _jobQueue.DidNotReceive().Enqueue(Arg.Any<SealOpenOrdersJob>());
+    }
+
+    [Test]
+    public async Task Apply_WhenAShownOrderTurnedFromBlockedToSealable_SealsNothing()
+    {
+        var order = Guid.NewGuid();
+        _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => !c.Apply), Arg.Any<CancellationToken>())
+            .Returns(PreviewWithSealableCount(1) with { Selection = OpenOrderSealingSelection.Of([order], []) });
+        var ctx = Ctx() with
+        {
+            ConfirmedActionBinding = SealOpenOrdersBinding.Of(OpenOrderSealingSelection.Of([], [order]))
+        };
+
+        var result = await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        await _mediator.DidNotReceive().Send(Arg.Is<SealOpenOrdersCommand>(c => c.Apply), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Apply_CarriesTheConfirmedSelection_InlineAndOnTheBackgroundJob()
+    {
+        var selection = OpenOrderSealingSelection.Of([Guid.NewGuid()], [Guid.NewGuid()]);
+        var ctx = Ctx() with { ConfirmedActionBinding = SealOpenOrdersBinding.Of(selection) };
+        _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => !c.Apply), Arg.Any<CancellationToken>())
+            .Returns(PreviewWithSealableCount(1) with { Selection = selection });
+
+        await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
+
+        await _mediator.Received(1).Send(
+            Arg.Is<SealOpenOrdersCommand>(c => c.Apply && c.ExpectedSelection == selection), Arg.Any<CancellationToken>());
+
+        _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => !c.Apply), Arg.Any<CancellationToken>())
+            .Returns(PreviewWithSealableCount(SynchronousLimit + 1) with { Selection = selection });
+
+        await _skill.ExecuteAsync(ctx, new Dictionary<string, object> { ["apply"] = true });
+
+        _jobQueue.Received(1).Enqueue(Arg.Is<SealOpenOrdersJob>(j => j.Command.Apply && j.Command.ExpectedSelection == selection));
+    }
+
+    [Test]
+    public async Task Apply_WhenTheHandlerFindsTheOrdersChanged_ReportsItInsteadOfThrowing()
+    {
+        _mediator.Send(Arg.Is<SealOpenOrdersCommand>(c => c.Apply), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<SealOpenOrdersResult>(new InvalidRequestException("changed since the preview")));
+
+        var result = await _skill.ExecuteAsync(Confirmed(Ctx()), new Dictionary<string, object> { ["apply"] = true });
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldBe("changed since the preview");
     }
 }

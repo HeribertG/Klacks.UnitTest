@@ -5,7 +5,8 @@
 /// Version the learning loop or an administrator raised can no longer hide a newer curated or exported
 /// definition. A row the loader never wrote under this rule is adopted once: behind its seed it is applied in
 /// full as before; otherwise only its description and version columns follow the seed, so an administrator's
-/// switched-off skill stays switched off.
+/// switched-off skill stays switched off. A bumped seed that switches a skill off switches the stored row off too, which is
+/// how a skill is retired from Klacksy on existing installations (seal_open_orders, 2026-10-23).
 /// </summary>
 namespace Klacks.UnitTest.Infrastructure.Seed;
 
@@ -72,6 +73,19 @@ public class SkillSeedLoaderSeedVersionTests
 
         existing.Description.ShouldBe(SeedDescription);
         existing.Version.ShouldBe(5);
+        existing.SeedVersion.ShouldBe(5);
+        await _skillRepository.Received(1).UpdateAsync(existing, Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task ABumpedSeedThatSwitchesTheSkillOff_SwitchesTheStoredRowOff()
+    {
+        var existing = GivenStoredSkill(version: 4, seedVersion: 4, isEnabled: true);
+        WriteSeedFile(version: 5, isEnabled: false);
+
+        await CreateLoader().LoadAsync();
+
+        existing.IsEnabled.ShouldBeFalse();
         existing.SeedVersion.ShouldBe(5);
         await _skillRepository.Received(1).UpdateAsync(existing, Arg.Any<CancellationToken>());
     }
@@ -166,7 +180,7 @@ public class SkillSeedLoaderSeedVersionTests
             NullLogger<SkillSeedLoader>.Instance);
     }
 
-    private void WriteSeedFile(int version)
+    private void WriteSeedFile(int version, bool isEnabled = true)
     {
         var json =
             "{\"version\":1,\"skills\":[{" +
@@ -174,7 +188,7 @@ public class SkillSeedLoaderSeedVersionTests
             $"\"description\":\"{SeedDescription}\"," +
             "\"category\":\"Crud\"," +
             "\"executionType\":\"Skill\"," +
-            "\"isEnabled\":true," +
+            $"\"isEnabled\":{(isEnabled ? "true" : "false")}," +
             $"\"version\":{version}" +
             "}]}";
 

@@ -80,7 +80,7 @@ public class TurnPreparationDeclinedGateRematchTests
         _knowledge = Substitute.For<IKnowledgeRetrievalService>();
         _knowledge.RetrieveAsync(
                 Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), false, Arg.Any<int>(),
-                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>())
+                Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<KnowledgeEntryKind?>(), Arg.Any<IReadOnlyCollection<string>?>())
             .Returns(new RetrievalResult(
             [
                 new RetrievalCandidate(
