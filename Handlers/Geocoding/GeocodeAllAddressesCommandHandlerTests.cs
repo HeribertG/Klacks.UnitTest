@@ -1,16 +1,16 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Tests GeocodeAllAddressesCommandHandler: a disabled geocoder is reported without reading addresses or calling
-/// the geocoder; otherwise every address without coordinates is geocoded with its country name, hits are written
-/// back and the counts add up.
+/// Tests GeocodeAllAddressesCommandHandler (admin batch): a disabled geocoder is reported without reading
+/// addresses; otherwise every address without coordinates goes through the geocoding selection (privacy rule,
+/// completeness) and only the eligible ones are geocoded, unlimited, attributed to the admin batch; the counts are
+/// eligible total, filled and the rest.
 /// </summary>
 
 using Klacks.Api.Application.Commands.Geocoding;
 using Klacks.Api.Application.DTOs.Geocoding;
 using Klacks.Api.Application.Handlers.Geocoding;
-using Klacks.Api.Domain.Interfaces.RouteOptimization;
-using Klacks.Api.Domain.Models.Settings;
+using Klacks.Api.Application.Interfaces.Geocoding;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Klacks.UnitTest.Handlers.Geocoding;
@@ -18,102 +18,62 @@ namespace Klacks.UnitTest.Handlers.Geocoding;
 [TestFixture]
 public class GeocodeAllAddressesCommandHandlerTests
 {
-    private IAddressRepository _addressRepository = null!;
-    private IGeocodingService _geocodingService = null!;
-    private ICountryResolver _countryResolver = null!;
-    private IAddressCoordinateWriter _coordinateWriter = null!;
+    private IAddressGeocodingStateRepository _states = null!;
+    private IAddressGeocodingService _geocoding = null!;
     private GeocodeAllAddressesCommandHandler _handler = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _addressRepository = Substitute.For<IAddressRepository>();
-        _geocodingService = Substitute.For<IGeocodingService>();
-        _geocodingService.IsEnabled.Returns(true);
-        _countryResolver = Substitute.For<ICountryResolver>();
-        _coordinateWriter = Substitute.For<IAddressCoordinateWriter>();
-        _handler = new GeocodeAllAddressesCommandHandler(
-            _addressRepository,
-            _geocodingService,
-            _countryResolver,
-            _coordinateWriter,
-            NullLogger<GeocodeAllAddressesCommandHandler>.Instance);
+        _states = Substitute.For<IAddressGeocodingStateRepository>();
+        _geocoding = Substitute.For<IAddressGeocodingService>();
+        _geocoding.IsGeocodingEnabled.Returns(true);
+        _handler = new GeocodeAllAddressesCommandHandler(_states, _geocoding, NullLogger<GeocodeAllAddressesCommandHandler>.Instance);
     }
 
     [Test]
     public async Task Handle_GeocodingDisabled_ReportsDisabledAndTouchesNothing()
     {
         // Arrange
-        _geocodingService.IsEnabled.Returns(false);
+        _geocoding.IsGeocodingEnabled.Returns(false);
 
         // Act
         var result = await _handler.Handle(new GeocodeAllAddressesCommand(), CancellationToken.None);
 
         // Assert
         result.ShouldBe(GeocodeAllAddressesResult.Disabled);
-        await _addressRepository.DidNotReceiveWithAnyArgs().GetWithoutCoordinatesAsync(default);
-        await _geocodingService.DidNotReceiveWithAnyArgs().GeocodeAddressAsync(default!, default!, default);
-        await _coordinateWriter.DidNotReceiveWithAnyArgs().UpdateCoordinatesAsync(default, default, default, default);
+        await _states.DidNotReceiveWithAnyArgs().GetMissingCoordinatesAsync(default, default);
+        await _geocoding.DidNotReceiveWithAnyArgs().GeocodeAsync(default!, default!, default!, default);
     }
 
     [Test]
-    public async Task Handle_WritesHitsAndCountsMisses()
+    public async Task Handle_GeocodesOnlyEligibleAddressesAndCountsFilledAndRest()
     {
         // Arrange
-        var hit = new AddressWithoutCoordinates(Guid.NewGuid(), "Bahnhofstrasse 1", "8001", "Zürich", "CH");
-        var miss = new AddressWithoutCoordinates(Guid.NewGuid(), "Nowhere 9", "9999", "Nirgendwo", "CH");
-        _addressRepository.GetWithoutCoordinatesAsync(Arg.Any<CancellationToken>()).Returns([hit, miss]);
-        _countryResolver.ResolveAsync("CH", Arg.Any<CancellationToken>()).Returns(Switzerland());
-        _geocodingService.GeocodeAddressAsync("Bahnhofstrasse 1, 8001 Zürich", "Schweiz", Arg.Any<CancellationToken>())
-            .Returns((47.37, 8.54));
-        _geocodingService.GeocodeAddressAsync("Nowhere 9, 9999 Nirgendwo", "Schweiz", Arg.Any<CancellationToken>())
-            .Returns(((double?)null, (double?)null));
+        var hit = Candidate(EntityTypeEnum.Customer);
+        var miss = Candidate(EntityTypeEnum.Customer);
+        var employee = Candidate(EntityTypeEnum.Employee);
+        _states.GetMissingCoordinatesAsync(null, Arg.Any<CancellationToken>()).Returns([hit, miss, employee]);
+        _geocoding.SelectAsync(Arg.Any<IReadOnlyList<AddressGeocodingCandidate>>(), Arg.Any<CancellationToken>())
+            .Returns(new AddressGeocodingSelection([hit, miss], [employee], []));
+        _geocoding.GeocodeAsync(
+                Arg.Any<IReadOnlyList<AddressGeocodingCandidate>>(), Arg.Any<AddressGeocodingAttribution>(),
+                Arg.Any<AddressGeocodingBudget>(), Arg.Any<CancellationToken>())
+            .Returns(new AddressGeocodingRunSummary(
+                false, [new AddressGeocodingFilledAddress(hit, 47.37, 8.54, AddressGeocodingSource.NominatimLocality)], 1, 0, 0, 0));
 
         // Act
         var result = await _handler.Handle(new GeocodeAllAddressesCommand(), CancellationToken.None);
 
         // Assert
         result.ShouldBe(new GeocodeAllAddressesResult(false, 2, 1, 1));
-        await _coordinateWriter.Received(1).UpdateCoordinatesAsync(hit.Id, 47.37, 8.54, Arg.Any<CancellationToken>());
-        await _coordinateWriter.DidNotReceive().UpdateCoordinatesAsync(miss.Id, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>());
-        await _countryResolver.Received(1).ResolveAsync("CH", Arg.Any<CancellationToken>());
+        await _geocoding.Received(1).GeocodeAsync(
+            Arg.Is<IReadOnlyList<AddressGeocodingCandidate>>(list => list.SequenceEqual(new[] { hit, miss })),
+            new AddressGeocodingAttribution(AddressGeocodingTrigger.AdminBatch, null),
+            AddressGeocodingBudget.Unlimited,
+            Arg.Any<CancellationToken>());
     }
 
-    [Test]
-    public async Task Handle_UnknownCountryCode_IsPassedOnUnchanged()
-    {
-        // Arrange
-        var address = new AddressWithoutCoordinates(Guid.NewGuid(), "Main Street 1", "12345", "Springfield", "XX");
-        _addressRepository.GetWithoutCoordinatesAsync(Arg.Any<CancellationToken>()).Returns([address]);
-        _countryResolver.ResolveAsync("XX", Arg.Any<CancellationToken>()).Returns((Countries?)null);
-
-        // Act
-        await _handler.Handle(new GeocodeAllAddressesCommand(), CancellationToken.None);
-
-        // Assert
-        await _geocodingService.Received(1).GeocodeAddressAsync("Main Street 1, 12345 Springfield", "XX", Arg.Any<CancellationToken>());
-        await _countryResolver.DidNotReceiveWithAnyArgs().GetDefaultAsync(default);
-    }
-
-    [Test]
-    public async Task Handle_EmptyCountry_UsesTheDefaultCountry()
-    {
-        // Arrange
-        var address = new AddressWithoutCoordinates(Guid.NewGuid(), "Bahnhofstrasse 1", "8001", "Zürich", string.Empty);
-        _addressRepository.GetWithoutCoordinatesAsync(Arg.Any<CancellationToken>()).Returns([address]);
-        _countryResolver.ResolveAsync(string.Empty, Arg.Any<CancellationToken>()).Returns((Countries?)null);
-        _countryResolver.GetDefaultAsync(Arg.Any<CancellationToken>()).Returns(Switzerland());
-
-        // Act
-        await _handler.Handle(new GeocodeAllAddressesCommand(), CancellationToken.None);
-
-        // Assert
-        await _geocodingService.Received(1).GeocodeAddressAsync("Bahnhofstrasse 1, 8001 Zürich", "Schweiz", Arg.Any<CancellationToken>());
-    }
-
-    private static Countries Switzerland() => new()
-    {
-        Abbreviation = "CH",
-        Name = new MultiLanguage { De = "Schweiz", En = "Switzerland" },
-    };
+    private static AddressGeocodingCandidate Candidate(EntityTypeEnum clientType) =>
+        new(Guid.NewGuid(), Guid.NewGuid(), clientType, "Muster", "8001", "Zürich", "CH", string.Empty);
 }

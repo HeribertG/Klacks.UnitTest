@@ -25,6 +25,7 @@ public class WriteSkillRiskDecisionCoverageTests
 {
     private const string SensitiveListName = "SensitiveSkills";
     private const string ScenarioGatedListName = "ScenarioGatedSkills";
+    private const string FillEmptyOnlyListName = "FillEmptyOnlySkills";
     private const string ReversibleExtrasListName = "ReversibleExtras";
     private const string ReadOnlyExtrasListName = "ReadOnlyExtras";
     private const string IrreversibleListName = "IrreversibleSkills";
@@ -35,6 +36,7 @@ public class WriteSkillRiskDecisionCoverageTests
     [
         (SensitiveListName, SkillRiskClassifier.SensitiveSkills),
         (ScenarioGatedListName, SkillRiskClassifier.ScenarioGatedSkills),
+        (FillEmptyOnlyListName, SkillRiskClassifier.FillEmptyOnlySkills),
         (ReversibleExtrasListName, SkillRiskClassifier.ReversibleExtras),
         (ReadOnlyExtrasListName, SkillRiskClassifier.ReadOnlyExtras),
         (IrreversibleListName, SkillRiskClassifier.IrreversibleSkills)
@@ -57,7 +59,8 @@ public class WriteSkillRiskDecisionCoverageTests
             "SkillRiskClassifier.Classify - nobody decided their risk. Being held for confirmation at " +
             "every autonomy level is the safe outcome, not the intended one. Put each of them into " +
             $"{SensitiveListName} (always confirm), {ScenarioGatedListName} (mutations land in a scenario " +
-            $"a human accepts), {ReversibleExtrasListName} or {InverseRegistryName} (a real inverse " +
+            $"a human accepts), {FillEmptyOnlyListName} (it only fills empty system values and never overwrites), " +
+            $"{ReversibleExtrasListName} or {InverseRegistryName} (a real inverse " +
             $"restores the state), {ReadOnlyExtrasListName} (it does not actually mutate) or " +
             $"{IrreversibleListName} (an ordinary write that may run unconfirmed at the default autonomy " +
             "level). Undecided skills: " + string.Join(", ", undecided));

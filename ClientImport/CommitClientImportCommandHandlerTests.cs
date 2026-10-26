@@ -5,14 +5,16 @@
 /// committed before evaluating (also when the token index trips inside the transaction, while any other
 /// unique violation is not reported as "already committed"), writes the batch and every ready client
 /// inside one transaction with entry and exit date on membership, contract, group and address, skips
-/// duplicate rows, then re-assigns inbox mail and offers the addresses to the geocoding queue without
-/// waiting and without failing the committed import.
+/// duplicate rows, then re-assigns inbox mail and requests the background geocoding of the new addresses
+/// (as an import, the count is what the geocoding service accepted) without failing the committed import.
 /// </summary>
 
 using Klacks.Api.Application.Commands.ClientImport;
+using Klacks.Api.Application.DTOs.Geocoding;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Application.Handlers.ClientImport;
 using Klacks.Api.Application.Interfaces.ClientImport;
+using Klacks.Api.Application.Interfaces.Geocoding;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
 using Klacks.Api.Domain.Interfaces.Email;
@@ -28,7 +30,7 @@ public class CommitClientImportCommandHandlerTests
     private IClientImportBatchRepository _batchRepository = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IEmailClientAssignmentService _emailAssignment = null!;
-    private IAddressGeocodingQueue _queue = null!;
+    private IAddressGeocodingService _geocoding = null!;
     private IClientImportLookupRepository _lookup = null!;
     private CommitClientImportCommandHandler _handler = null!;
     private List<Client> _added = null!;
@@ -40,17 +42,18 @@ public class CommitClientImportCommandHandlerTests
         _batchRepository = Substitute.For<IClientImportBatchRepository>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _emailAssignment = Substitute.For<IEmailClientAssignmentService>();
-        _queue = Substitute.For<IAddressGeocodingQueue>();
+        _geocoding = Substitute.For<IAddressGeocodingService>();
         _added = [];
 
         _clientRepository.Add(Arg.Do<Client>(_added.Add)).Returns(Task.CompletedTask);
         _unitOfWork.ExecuteInTransactionAsync(Arg.Any<Func<Task<bool>>>()).Returns(ci => ci.Arg<Func<Task<bool>>>()());
-        _queue.TryQueue(Arg.Any<Guid>()).Returns(true);
+        _geocoding.RequestAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<IReadOnlyCollection<Guid>>().Count);
 
         var (evaluator, lookup) = ClientImportTestData.Evaluator();
         _lookup = lookup;
         _handler = new CommitClientImportCommandHandler(
-            evaluator, _clientRepository, _batchRepository, _unitOfWork, _emailAssignment, _queue,
+            evaluator, _clientRepository, _batchRepository, _unitOfWork, _emailAssignment, _geocoding,
             NullLogger<CommitClientImportCommandHandler>.Instance);
     }
 
@@ -89,7 +92,10 @@ public class CommitClientImportCommandHandlerTests
         client.Annotations.Single().Note.ShouldBe("Teamleiterin");
 
         await _emailAssignment.Received(1).AssignInboxEmailsToClientsAsync();
-        _queue.Received(1).TryQueue(client.Addresses.Single().Id);
+        await _geocoding.Received(1).RequestAsync(
+            Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { client.Addresses.Single().Id })),
+            new AddressGeocodingAttribution(AddressGeocodingTrigger.Import, null),
+            Arg.Any<CancellationToken>());
     }
 
     [Test]
@@ -198,7 +204,8 @@ public class CommitClientImportCommandHandlerTests
     public async Task FailingFollowUps_DoNotFailTheCommittedImport()
     {
         _emailAssignment.AssignInboxEmailsToClientsAsync().Returns(Task.FromException(new InvalidOperationException("mail down")));
-        _queue.TryQueue(Arg.Any<Guid>()).Returns(_ => throw new InvalidOperationException("queue down"));
+        _geocoding.RequestAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>())
+            .Returns<int>(_ => throw new InvalidOperationException("geocoding down"));
         var request = ClientImportTestData.Request(
             [T.FirstName, T.LastName, T.Gender, T.City, T.Email], ["Anna", "Muster", "w", "Bern", "anna@example.com"]);
 
@@ -209,9 +216,10 @@ public class CommitClientImportCommandHandlerTests
     }
 
     [Test]
-    public async Task DisabledGeocodingQueue_IsReportedAsNothingQueued()
+    public async Task NothingRequestedForGeocoding_IsReportedAsNothingQueued()
     {
-        _queue.TryQueue(Arg.Any<Guid>()).Returns(false);
+        _geocoding.RequestAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<AddressGeocodingAttribution>(), Arg.Any<CancellationToken>())
+            .Returns(0);
         var request = ClientImportTestData.Request([T.FirstName, T.LastName, T.Gender, T.City], ["Anna", "Muster", "w", "Bern"]);
 
         var result = await _handler.Handle(new CommitClientImportCommand(request), CancellationToken.None);
