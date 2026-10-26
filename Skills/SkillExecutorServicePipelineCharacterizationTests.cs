@@ -10,6 +10,7 @@
 /// and the external-content taint carry.
 /// </summary>
 
+using System.Globalization;
 using Klacks.Api.Application.Exceptions;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Exceptions;
@@ -206,7 +207,8 @@ public class SkillExecutorServicePipelineCharacterizationTests
         result.Success.ShouldBeTrue();
         result.UiActionSteps.ShouldBe(expectedSteps);
         result.UiActionParameters.ShouldBeSameAs(_parameters);
-        result.Message.ShouldBe($"Function '{Canonical}' will be executed as UI action in the user's browser.");
+        result.Message.ShouldBe(string.Format(CultureInfo.InvariantCulture, UiActionResultMessages.DispatchedFormat, Canonical));
+        result.Message.ShouldContain("never state what the page or list now shows");
         result.UiActionTrackingId.ShouldNotBeNull();
         recordId.ShouldBe(result.UiActionTrackingId);
         tracked.ShouldBeSameAs(result);
