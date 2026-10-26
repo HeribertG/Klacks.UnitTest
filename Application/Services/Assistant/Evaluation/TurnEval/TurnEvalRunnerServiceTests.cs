@@ -396,6 +396,36 @@ public class TurnEvalRunnerServiceTests
     }
 
     [Test]
+    public async Task RunAsync_PersistsTheContentAndErrorOfEveryStepInTheToolSequence()
+    {
+        const string expectedTool = "delete_contract";
+        const string lookupTool = "list_contracts";
+        const string secondStepText = "Welchen der beiden Verträge soll ich löschen?";
+        const string followUpError = "provider timeout";
+        var item = new TurnGoldsetItem { Id = "seq-row", Message = "Vertrag löschen.", ExpectedTool = expectedTool };
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>())
+            .Returns(new List<TurnGoldsetItem> { item });
+
+        var replay = new TurnReplayResult
+        {
+            Success = true,
+            ChosenTool = lookupTool,
+            AvailableToolNames = [lookupTool, expectedTool],
+            FollowUpAttempted = true
+        };
+        replay.Steps.Add(new TurnReplayStep { Tool = lookupTool });
+        replay.Steps.Add(new TurnReplayStep { Tool = null, Content = secondStepText, Error = followUpError });
+        _replayService.ReplayWithLookupFollowUpAsync(item, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(replay);
+
+        await _service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        var sequence = _persistedItems.Single().ToolSequenceJson;
+        sequence.ShouldContain(secondStepText);
+        sequence.ShouldContain(followUpError);
+    }
+
+    [Test]
     public async Task RunAsync_PersistsTheReachedVerdictArgumentsResponseAndToolSequence()
     {
         const string expectedTool = "delete_client";
