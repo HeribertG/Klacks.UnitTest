@@ -364,7 +364,7 @@ public class ClientImportClientTypeTests
         var (evaluator, _) = ClientImportTestData.Evaluator();
         var handler = new CommitClientImportCommandHandler(
             evaluator, clientRepository, Substitute.For<IClientImportBatchRepository>(), unitOfWork,
-            Substitute.For<IEmailClientAssignmentService>(), Substitute.For<IAddressGeocodingQueue>(),
+            Substitute.For<IEmailClientAssignmentService>(), Substitute.For<Klacks.Api.Application.Interfaces.Geocoding.IAddressGeocodingService>(),
             NullLogger<CommitClientImportCommandHandler>.Instance);
         var request = ClientImportTestData.Request(
             [T.FirstName, T.LastName, T.Gender, T.Type, T.Company, T.Street, T.Zip, T.City],
