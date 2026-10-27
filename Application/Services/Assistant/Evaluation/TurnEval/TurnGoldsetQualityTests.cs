@@ -16,6 +16,17 @@ public class TurnGoldsetQualityTests
     private const string RecipesSeedFileName = "recipe-seeds.json";
     private const string ClientEntityType = "client";
     private const string HonestyGoldsetFileName = "turn-honesty-v1.json";
+
+    // Diagnostic coverage goldsets (one generated request per read or explain skill, German plus translations): they
+    // measure how well the model picks a skill, not how well a message echoes the skill's English vocabulary, so the
+    // keyword-discoverability coverage below does not count them. Every other gate still applies to them.
+    private static readonly HashSet<string> DiagnosticGoldsetFileNames = new(StringComparer.Ordinal)
+    {
+        "turn-selection-reads-v1.json",
+        "turn-selection-reads-v1-i18n.json",
+        "turn-selection-explain-v1.json",
+        "turn-selection-explain-v1-i18n.json",
+    };
     private const string HonestyModeMustAbstain = "must-abstain";
     private const string NoExpectedToolSentinel = " no-tool";
 
@@ -142,6 +153,7 @@ public class TurnGoldsetQualityTests
     {
         var vocabulary = LoadSkillVocabulary();
         var toolItems = LoadGoldsets()
+            .Where(g => !DiagnosticGoldsetFileNames.Contains(g.FileName))
             .SelectMany(g => g.Document.Items)
             .Where(item => item.ExpectedTool != null)
             .ToList();
