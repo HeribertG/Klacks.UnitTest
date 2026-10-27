@@ -654,6 +654,89 @@ public class TurnEvalRunnerServiceTests
             ProviderId = ProviderId
         };
 
+    [Test]
+    public async Task RunAsync_PersistsTheMissKindAndTheToolsetTraceOfEveryRow()
+    {
+        const string expectedTool = "update_contract";
+        const string lookupTool = "list_contracts";
+        const string truncatedTool = "delete_contract";
+        var skillCache = Substitute.For<Klacks.Api.Application.Services.Assistant.ISkillCacheService>();
+        skillCache.GetAllEnabledSkillsAsync(Arg.Any<CancellationToken>()).Returns(new List<Klacks.Api.Domain.Models.Assistant.AgentSkill>
+        {
+            new() { Name = expectedTool, Effect = Klacks.Api.Domain.Enums.SkillEffect.Mutate, ParametersJson = """[{"name":"contractId","required":true}]""" },
+            new() { Name = lookupTool, Effect = Klacks.Api.Domain.Enums.SkillEffect.Read, ParametersJson = "[]" },
+            new() { Name = truncatedTool, Effect = Klacks.Api.Domain.Enums.SkillEffect.Mutate, ParametersJson = "[]" }
+        });
+        var service = new TurnEvalRunnerService(
+            _goldsetLoader, _replayService, _slotEntityResolver, _evalRunRepository,
+            _evalRunItemRepository, _logger, skillCacheService: skillCache);
+
+        var lookupItem = new TurnGoldsetItem { Id = "mk-lookup", Message = "Vertrag aendern.", ExpectedTool = expectedTool };
+        var cutItem = new TurnGoldsetItem { Id = "mk-cut", Message = "Vertrag loeschen.", ExpectedTool = truncatedTool };
+        var missingItem = new TurnGoldsetItem { Id = "mk-missing", Message = "Nachricht senden.", ExpectedTool = "send_message" };
+        var noToolItem = new TurnGoldsetItem { Id = "mk-none", Message = "hello" };
+        var items = new List<TurnGoldsetItem> { lookupItem, cutItem, missingItem, noToolItem };
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(items);
+
+        var lookupReplay = SuccessReplay(lookupTool);
+        lookupReplay.AvailableToolNames = [lookupTool, expectedTool];
+        lookupReplay.ToolsetTrace = new Klacks.Api.Domain.Models.Assistant.SkillToolsetTrace(
+            [expectedTool, lookupTool], [expectedTool, lookupTool], []);
+        var cutReplay = SuccessReplay(lookupTool);
+        cutReplay.AvailableToolNames = [lookupTool];
+        cutReplay.ToolsetTrace = new Klacks.Api.Domain.Models.Assistant.SkillToolsetTrace(
+            [lookupTool, truncatedTool], [lookupTool, truncatedTool], [truncatedTool]);
+        var missingReplay = SuccessReplay(null);
+        missingReplay.AvailableToolNames = [lookupTool];
+        _replayService.ReplayWithLookupFollowUpAsync(lookupItem, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(lookupReplay);
+        _replayService.ReplayWithLookupFollowUpAsync(cutItem, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(cutReplay);
+        _replayService.ReplayWithLookupFollowUpAsync(missingItem, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(missingReplay);
+        _replayService.ReplayWithLookupFollowUpAsync(noToolItem, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(SuccessReplay(null));
+
+        var result = await service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        var rows = _persistedItems.ToDictionary(r => r.ItemId);
+        rows["mk-lookup"].MissKind.ShouldBe(EvalMissKindNames.LookupFirst);
+        rows["mk-lookup"].ToolsetTraceJson.ShouldNotBeNull();
+        rows["mk-lookup"].ToolsetTraceJson!.ShouldContain(lookupTool);
+        rows["mk-cut"].MissKind.ShouldBe(EvalMissKindNames.NotInToolsetTruncated);
+        rows["mk-cut"].ToolsetTraceJson!.ShouldContain(truncatedTool);
+        rows["mk-missing"].MissKind.ShouldBe(EvalMissKindNames.ToolNotRegistered);
+        rows["mk-missing"].ToolsetTraceJson.ShouldBeNull();
+        rows["mk-none"].MissKind.ShouldBe(EvalMissKindNames.NotApplicable);
+
+        var dimensions = JsonSerializer.Deserialize<TurnEvalDimensions>(result.Run.DimensionsJson);
+        dimensions!.MissKindCounts.ShouldNotBeNull();
+        dimensions.MissKindCounts![EvalMissKindNames.LookupFirst].ShouldBe(1);
+        dimensions.MissKindCounts[EvalMissKindNames.NotApplicable].ShouldBe(1);
+        result.Run.ScorerVersion.ShouldBe(6);
+    }
+
+    [Test]
+    public async Task RunAsync_WhenTheSkillCatalogCannotBeLoaded_StillPersistsTheRun()
+    {
+        var skillCache = Substitute.For<Klacks.Api.Application.Services.Assistant.ISkillCacheService>();
+        skillCache.GetAllEnabledSkillsAsync(Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<Klacks.Api.Domain.Models.Assistant.AgentSkill>>>(_ => throw new InvalidOperationException("cache down"));
+        var service = new TurnEvalRunnerService(
+            _goldsetLoader, _replayService, _slotEntityResolver, _evalRunRepository,
+            _evalRunItemRepository, _logger, skillCacheService: skillCache);
+        var item = new TurnGoldsetItem { Id = "mk-nocat", Message = "add a note", ExpectedTool = ToolName };
+        _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>()).Returns(new List<TurnGoldsetItem> { item });
+        var replay = SuccessReplay(ToolName);
+        replay.AvailableToolNames = [ToolName];
+        _replayService.ReplayWithLookupFollowUpAsync(item, ModelId, UserId, UserRights, Arg.Any<CancellationToken>())
+            .Returns(replay);
+
+        await service.RunAsync(GoldsetName, ModelId, null, UserId, UserRights);
+
+        _persistedItems.Single().MissKind.ShouldBe(EvalMissKindNames.Correct);
+    }
+
     private static TurnReplayResult SuccessReplay(string? tool, Dictionary<string, object>? parameters = null)
     {
         return new TurnReplayResult
