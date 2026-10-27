@@ -400,7 +400,7 @@ public class TurnEvalRunnerServiceTests
     {
         const string expectedTool = "delete_contract";
         const string lookupTool = "list_contracts";
-        const string secondStepText = "Welchen der beiden Verträge soll ich löschen?";
+        const string secondStepText = "Which of the two contracts should I delete?";
         const string followUpError = "provider timeout";
         var item = new TurnGoldsetItem { Id = "seq-row", Message = "Vertrag löschen.", ExpectedTool = expectedTool };
         _goldsetLoader.LoadAsync(GoldsetName, Arg.Any<CancellationToken>())
