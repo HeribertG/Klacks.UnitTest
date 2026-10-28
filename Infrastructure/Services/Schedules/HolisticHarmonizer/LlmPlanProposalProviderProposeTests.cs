@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Schedules.HolisticHarmonizer;
 
@@ -48,7 +49,7 @@ public class LlmPlanProposalProviderProposeTests
         });
         var factory = Substitute.For<ILLMProviderFactory>();
         factory.GetProviderForModelAsync(ModelId).Returns(provider);
-        return new LLMProviderOrchestrator(NullLogger<LLMProviderOrchestrator>.Instance, factory, repository);
+        return new LLMProviderOrchestrator(NullLogger<LLMProviderOrchestrator>.Instance, factory, repository, PlaygroundOff.ModelPin());
     }
 
     private static PlanProposalRequest Request() => new(

@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
@@ -31,7 +32,8 @@ public class RetrievalQueryBuilderTests
     {
         _repository = Substitute.For<ILLMRepository>();
         var manager = new LLMConversationManager(
-            Substitute.For<ILogger<LLMConversationManager>>(), _repository);
+            Substitute.For<ILogger<LLMConversationManager>>(), _repository,
+            PlaygroundOff.ConversationStore());
         _builder = new RetrievalQueryBuilder(manager, Substitute.For<ILogger<RetrievalQueryBuilder>>());
     }
 

@@ -61,7 +61,7 @@ public class TurnCompletionRecorderStoppedTests
 
         _recorder = new TurnCompletionRecorder(
             _logger,
-            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository),
+            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository, PlaygroundOff.ConversationStore()),
             _turnPreparation,
             _agentRepository,
             _backgroundTasks,
@@ -319,7 +319,7 @@ public class TurnCompletionRecorderStoppedTests
         erroredState.TrySetOutcome(TurnOutcome.Errored);
         var erroredRecorder = new TurnCompletionRecorder(
             erroredLogger,
-            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository),
+            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository, PlaygroundOff.ConversationStore()),
             _turnPreparation, _agentRepository, _backgroundTasks, erroredState, _cleanup);
 
         await erroredRecorder.RecordErroredAsync(CancellationToken.None);

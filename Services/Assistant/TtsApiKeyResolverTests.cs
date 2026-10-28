@@ -3,6 +3,7 @@
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Interfaces.Playground;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Infrastructure.Services.Assistant;
@@ -25,7 +26,7 @@ public class TtsApiKeyResolverTests
         _settingsRepository = Substitute.For<ISettingsRepository>();
         _encryptionService = Substitute.For<ISettingsEncryptionService>();
         _llmRepository = Substitute.For<ILLMRepository>();
-        _sut = new TtsApiKeyResolver(_settingsRepository, _encryptionService, _llmRepository);
+        _sut = new TtsApiKeyResolver(_settingsRepository, _encryptionService, _llmRepository, Substitute.For<IPlaygroundMode>());
     }
 
     [Test]

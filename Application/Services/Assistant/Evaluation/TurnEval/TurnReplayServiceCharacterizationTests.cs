@@ -24,6 +24,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant.Evaluation.TurnEval;
 
@@ -109,7 +110,8 @@ public class TurnReplayServiceCharacterizationTests
             Substitute.For<IPlanningScopeEnricher>(),
             Substitute.For<IEntityCandidateGrounder>(),
             new LLMProviderOrchestrator(
-                Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, repository),
+                Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, repository,
+                PlaygroundOff.ModelPin()),
             contextAssemblyPipeline: null!,
             new LLMSystemPromptBuilder(
                 new PromptTranslationProvider(

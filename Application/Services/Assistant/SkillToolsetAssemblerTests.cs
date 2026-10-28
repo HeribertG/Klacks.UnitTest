@@ -667,7 +667,8 @@ public class SkillToolsetAssemblerTests
         var providerOrchestrator = new LLMProviderOrchestrator(
             Substitute.For<ILogger<LLMProviderOrchestrator>>(),
             Substitute.For<ILLMProviderFactory>(),
-            Substitute.For<ILLMRepository>());
+            Substitute.For<ILLMRepository>(),
+            PlaygroundOff.ModelPin());
         var budgetPolicy = new ContextBudgetPolicy();
 
         LLMContext? streamingContext = null;

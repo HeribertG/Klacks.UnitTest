@@ -134,7 +134,8 @@ public class ProcessLLMMessageCommandHandlerTests
         var providerOrchestrator = new LLMProviderOrchestrator(
             Substitute.For<ILogger<LLMProviderOrchestrator>>(),
             Substitute.For<ILLMProviderFactory>(),
-            Substitute.For<ILLMRepository>());
+            Substitute.For<ILLMRepository>(),
+            PlaygroundOff.ModelPin());
 
         var correctionTurnPreparer = new CorrectionTurnPreparer(
             Substitute.For<IAssistantLastActionStore>(),
@@ -371,7 +372,8 @@ public class ProcessLLMMessageCommandHandlerTests
         providerFactory.GetProviderForModelAsync("deepseek-v4-pro")
             .Returns(Substitute.For<ILLMProvider>());
         var providerOrchestrator = new LLMProviderOrchestrator(
-            Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, llmRepository);
+            Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, llmRepository,
+            PlaygroundOff.ModelPin());
 
         var correctionTurnPreparer = new CorrectionTurnPreparer(
             Substitute.For<IAssistantLastActionStore>(),

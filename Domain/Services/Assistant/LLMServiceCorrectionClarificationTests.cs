@@ -26,6 +26,7 @@ using NUnit.Framework;
 using Shouldly;
 using RepositoryLLMMessage = Klacks.Api.Domain.Models.Assistant.LLMMessage;
 using RepositoryLLMUsage = Klacks.Api.Domain.Models.Assistant.LLMUsage;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -97,14 +98,16 @@ public class LLMServiceCorrectionClarificationTests
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
 
         var conversationManager = new LLMConversationManager(
-            Substitute.For<ILogger<LLMConversationManager>>(), _repository);
+            Substitute.For<ILogger<LLMConversationManager>>(), _repository,
+            PlaygroundOff.ConversationStore());
 
         var turnState = new TurnRunState();
 
         _service = new LLMService(
             logger: Substitute.For<ILogger<LLMService>>(),
             providerOrchestrator: new LLMProviderOrchestrator(
-                Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository),
+                Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository,
+                PlaygroundOff.ModelPin()),
             conversationManager: conversationManager,
             functionExecutor: new LLMFunctionExecutor(
                 Substitute.For<ILogger<LLMFunctionExecutor>>(),

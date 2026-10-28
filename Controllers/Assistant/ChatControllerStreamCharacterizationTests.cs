@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
 using System.Security.Claims;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Controllers.Assistant;
 
@@ -241,7 +242,8 @@ public class ChatControllerStreamCharacterizationTests
             Substitute.For<IUserActivityTracker>(),
             Substitute.For<INavigationEntityRouteGuard>(),
             new ActiveTurnRegistry(),
-            _finalizer)
+            _finalizer,
+            PlaygroundOff.ConversationStore())
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };

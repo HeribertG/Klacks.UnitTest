@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Controllers.Assistant;
 
@@ -68,7 +69,8 @@ public class ChatControllerFastPathTests
             Substitute.For<IUserActivityTracker>(),
             _entityRouteGuard,
             Substitute.For<IActiveTurnRegistry>(),
-            Substitute.For<IInterruptedTurnFinalizer>())
+            Substitute.For<IInterruptedTurnFinalizer>(),
+            PlaygroundOff.ConversationStore())
         {
             ControllerContext = new ControllerContext
             {

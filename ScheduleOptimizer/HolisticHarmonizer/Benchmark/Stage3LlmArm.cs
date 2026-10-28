@@ -28,6 +28,7 @@ using Klacks.ScheduleOptimizer.HolisticHarmonizer.Mutations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.ScheduleOptimizer.HolisticHarmonizer.Benchmark;
 
@@ -84,7 +85,7 @@ public static class Stage3LlmArm
         var factory = Substitute.For<ILLMProviderFactory>();
         factory.GetProviderForModelAsync(BenchModelId).Returns(counter);
 
-        var orchestrator = new LLMProviderOrchestrator(NullLogger<LLMProviderOrchestrator>.Instance, factory, repository);
+        var orchestrator = new LLMProviderOrchestrator(NullLogger<LLMProviderOrchestrator>.Instance, factory, repository, PlaygroundOff.ModelPin());
         var proposals = new LlmPlanProposalProvider(orchestrator, NullLogger<LlmPlanProposalProvider>.Instance);
         var engine = new HolisticHarmonizerEngine(
             new FixedContextBuilder(input),

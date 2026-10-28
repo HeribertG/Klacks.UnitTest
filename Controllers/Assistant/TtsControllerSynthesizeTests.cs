@@ -8,6 +8,7 @@
 
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Interfaces.Playground;
 using Klacks.Api.Presentation.Controllers.Assistant;
 using Klacks.Api.Presentation.DTOs.Assistant;
 using Microsoft.AspNetCore.Mvc;
@@ -34,7 +35,8 @@ public class TtsControllerSynthesizeTests
 
         _controller = new TtsController(
             Substitute.For<ILogger<TtsController>>(),
-            new[] { _provider });
+            new[] { _provider },
+            Substitute.For<IPlaygroundMode>());
     }
 
     [Test]

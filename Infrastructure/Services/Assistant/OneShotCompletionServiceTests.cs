@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Infrastructure.Services.Assistant;
 
@@ -56,7 +57,8 @@ public class OneShotCompletionServiceTests
         _providerFactory.GetProviderForModelAsync(DefaultModelId).Returns(_provider);
 
         var orchestrator = new LLMProviderOrchestrator(
-            Substitute.For<ILogger<LLMProviderOrchestrator>>(), _providerFactory, _repository);
+            Substitute.For<ILogger<LLMProviderOrchestrator>>(), _providerFactory, _repository,
+            PlaygroundOff.ModelPin());
         _service = new OneShotCompletionService(orchestrator, Substitute.For<ILogger<OneShotCompletionService>>());
     }
 

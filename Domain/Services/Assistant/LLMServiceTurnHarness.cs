@@ -116,7 +116,8 @@ internal sealed class LLMServiceTurnHarness
         BackgroundTasks = Substitute.For<ILLMBackgroundTaskService>();
 
         var conversationManager = new LLMConversationManager(
-            Substitute.For<ILogger<LLMConversationManager>>(), _repository);
+            Substitute.For<ILogger<LLMConversationManager>>(), _repository,
+            PlaygroundOff.ConversationStore());
 
         Recorder = new TurnCompletionRecorder(
             Substitute.For<ILogger<TurnCompletionRecorder>>(),
@@ -125,7 +126,8 @@ internal sealed class LLMServiceTurnHarness
         Service = new LLMService(
             logger: Logger,
             providerOrchestrator: new LLMProviderOrchestrator(
-                Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository),
+                Substitute.For<ILogger<LLMProviderOrchestrator>>(), providerFactory, _repository,
+                PlaygroundOff.ModelPin()),
             conversationManager: conversationManager,
             functionExecutor: new LLMFunctionExecutor(
                 ExecutorLogger,

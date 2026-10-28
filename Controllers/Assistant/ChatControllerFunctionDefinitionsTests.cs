@@ -23,6 +23,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Controllers.Assistant;
 
@@ -84,7 +85,8 @@ public class ChatControllerFunctionDefinitionsTests
             Substitute.For<IUserActivityTracker>(),
             Substitute.For<INavigationEntityRouteGuard>(),
             Substitute.For<IActiveTurnRegistry>(),
-            Substitute.For<IInterruptedTurnFinalizer>())
+            Substitute.For<IInterruptedTurnFinalizer>(),
+            PlaygroundOff.ConversationStore())
         {
             ControllerContext = new ControllerContext
             {

@@ -22,6 +22,7 @@ using Klacks.Api.Domain.Models.Email;
 using Klacks.Api.Domain.Models.Inbound;
 using Klacks.Api.Infrastructure.Mediator;
 using NSubstitute.ExceptionExtensions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -383,6 +384,6 @@ public class InboxEmailSkillTests
         translationService.IsConfiguredAsync().Returns(configured);
         var parameters = P(id);
         parameters["targetLanguage"] = targetLanguage;
-        return await new TranslateEmailSkill(_mediator, translationService).ExecuteAsync(Ctx(), parameters);
+        return await new TranslateEmailSkill(_mediator, translationService, PlaygroundOff.Mode).ExecuteAsync(Ctx(), parameters);
     }
 }

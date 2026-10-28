@@ -24,6 +24,7 @@ using System.Runtime.CompilerServices;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.DeepSeek;
+using Klacks.Api.Infrastructure.Services.Assistant.Providers.Playground;
 using NUnit.Framework;
 using Shouldly;
 
@@ -51,11 +52,13 @@ public class ForcedToolChoiceSupportGuardTests
             ["OpenAIProvider"] = ForcedToolChoiceSupport.NotSupported,
         };
 
+    // The Playground budget decorator declares nothing of its own: it forwards the wrapped provider's answer.
     private static IReadOnlyList<Type> Providers() =>
         typeof(DeepSeekProvider).Assembly
             .GetTypes()
             .Where(type => type is { IsClass: true, IsAbstract: false })
             .Where(type => typeof(ILLMProvider).IsAssignableFrom(type))
+            .Where(type => type != typeof(PlaygroundBudgetedLLMProvider))
             .OrderBy(type => type.Name, StringComparer.Ordinal)
             .ToList();
 

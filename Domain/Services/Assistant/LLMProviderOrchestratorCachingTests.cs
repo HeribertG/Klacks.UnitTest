@@ -11,6 +11,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Microsoft.Extensions.Logging;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -37,7 +38,8 @@ public class LLMProviderOrchestratorCachingTests
         _factory.GetProviderForModelAsync(ModelId).Returns(Substitute.For<ILLMProvider>());
 
         _orchestrator = new LLMProviderOrchestrator(
-            Substitute.For<ILogger<LLMProviderOrchestrator>>(), _factory, _repository);
+            Substitute.For<ILogger<LLMProviderOrchestrator>>(), _factory, _repository,
+            PlaygroundOff.ModelPin());
     }
 
     [Test]

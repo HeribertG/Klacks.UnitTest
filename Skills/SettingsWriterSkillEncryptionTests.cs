@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
 using SettingsConstants = Klacks.Api.Application.Constants.Settings;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Skills;
 
@@ -43,7 +44,7 @@ public class SettingsWriterSkillEncryptionTests
             Substitute.For<ILogger<SettingsEncryptionService>>());
 
         _skill = new UpdateOpenRouteSettingsSkill(
-            repository, Substitute.For<IUnitOfWork>(), encryptionService);
+            repository, Substitute.For<IUnitOfWork>(), encryptionService, PlaygroundOff.Mode);
     }
 
     private static SkillExecutionContext Ctx() => new()

@@ -12,6 +12,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Microsoft.Extensions.Logging.Abstractions;
 using RepositoryLLMMessage = Klacks.Api.Domain.Models.Assistant.LLMMessage;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -60,7 +61,7 @@ public class StoppedTurnLatePersistenceTests
             Substitute.For<IDeterministicRouteProbe>(),
             Substitute.For<ISkillInverseResolver>(),
             NullLogger<TurnPreparationService>.Instance);
-        _conversationManager = new LLMConversationManager(NullLogger<LLMConversationManager>.Instance, _repository);
+        _conversationManager = new LLMConversationManager(NullLogger<LLMConversationManager>.Instance, _repository, PlaygroundOff.ConversationStore());
         _conversation = new LLMConversation { Id = Guid.NewGuid(), ConversationId = ConversationKey, UserId = UserId.ToString() };
         _model = new LLMModel { Id = Guid.NewGuid(), ModelId = "model-1" };
     }

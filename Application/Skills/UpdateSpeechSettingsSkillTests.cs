@@ -11,6 +11,7 @@ using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Skills;
 using SettingKeys = Klacks.Api.Application.Constants.Settings;
 using SettingsModel = Klacks.Api.Domain.Models.Settings.Settings;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Skills;
 
@@ -54,7 +55,7 @@ public class UpdateSpeechSettingsSkillTests
         encryption.ProcessForStorage(Arg.Any<string>(), Arg.Any<string>()).Returns(call => call.ArgAt<string>(1));
         encryption.ProcessForReading(Arg.Any<string>(), Arg.Any<string>()).Returns(call => call.ArgAt<string>(1));
         _resolver = Substitute.For<ICustomSttProviderResolver>();
-        _skill = new UpdateSpeechSettingsSkill(_settingsRepository, _unitOfWork, encryption, _resolver);
+        _skill = new UpdateSpeechSettingsSkill(_settingsRepository, _unitOfWork, encryption, _resolver, PlaygroundOff.Mode);
     }
 
     private void InstallLocalProvider() =>

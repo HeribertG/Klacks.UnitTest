@@ -7,6 +7,7 @@ namespace Klacks.UnitTest.Services.Assistant;
 
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Interfaces.Assistant;
+using Klacks.Api.Domain.Interfaces.Playground;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Infrastructure.Services.Assistant;
 using Microsoft.Extensions.Logging;
@@ -48,6 +49,7 @@ public class TranscriptionEnhancerServiceTests
             _mockDictionaryService,
             _mockSettingsRepository,
             _mockLlmRepository,
+            Substitute.For<IPlaygroundModelPin>(),
             _mockLogger);
     }
 

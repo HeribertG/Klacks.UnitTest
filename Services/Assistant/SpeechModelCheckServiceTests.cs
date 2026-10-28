@@ -10,6 +10,7 @@ using Klacks.Api.Domain.Models.Assistant;
 using Klacks.Api.Domain.Services.Assistant;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Services.Assistant;
 
@@ -29,7 +30,8 @@ public class SpeechModelCheckServiceTests
         _orchestrator = new LLMProviderOrchestrator(
             NullLogger<LLMProviderOrchestrator>.Instance,
             _factory,
-            _repo);
+            _repo,
+            PlaygroundOff.ModelPin());
         _sut = new SpeechModelCheckService(_repo, _orchestrator, NullLogger<SpeechModelCheckService>.Instance);
     }
 

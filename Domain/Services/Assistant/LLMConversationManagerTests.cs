@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -27,7 +28,8 @@ public class LLMConversationManagerTests
     {
         _repository = Substitute.For<ILLMRepository>();
         _manager = new LLMConversationManager(
-            Substitute.For<ILogger<LLMConversationManager>>(), _repository);
+            Substitute.For<ILogger<LLMConversationManager>>(), _repository,
+            PlaygroundOff.ConversationStore());
     }
 
     [Test]

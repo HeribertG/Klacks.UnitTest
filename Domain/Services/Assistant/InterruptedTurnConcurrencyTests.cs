@@ -16,6 +16,7 @@ using Klacks.Api.Domain.Services.Assistant.Providers;
 using Microsoft.Extensions.Logging;
 using RepositoryLLMMessage = Klacks.Api.Domain.Models.Assistant.LLMMessage;
 using RepositoryLLMUsage = Klacks.Api.Domain.Models.Assistant.LLMUsage;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Domain.Services.Assistant;
 
@@ -60,7 +61,7 @@ public class InterruptedTurnConcurrencyTests
 
         _recorder = new TurnCompletionRecorder(
             Substitute.For<ILogger<TurnCompletionRecorder>>(),
-            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository),
+            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository, PlaygroundOff.ConversationStore()),
             _turnPreparation,
             agents,
             _backgroundTasks,

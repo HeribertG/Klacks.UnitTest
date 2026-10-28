@@ -55,7 +55,7 @@ public class TurnCompletionRecorderTests
 
         _recorder = new TurnCompletionRecorder(
             _logger,
-            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository),
+            new LLMConversationManager(Substitute.For<ILogger<LLMConversationManager>>(), _repository, PlaygroundOff.ConversationStore()),
             _turnPreparation,
             _agentRepository,
             _backgroundTasks,

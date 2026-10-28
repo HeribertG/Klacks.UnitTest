@@ -23,6 +23,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
@@ -104,7 +105,8 @@ public class GracefulCorrectionEntryPointWiringTests
         var providerOrchestrator = new LLMProviderOrchestrator(
             Substitute.For<ILogger<LLMProviderOrchestrator>>(),
             Substitute.For<ILLMProviderFactory>(),
-            Substitute.For<ILLMRepository>());
+            Substitute.For<ILLMRepository>(),
+            PlaygroundOff.ModelPin());
 
         return new ProcessLLMMessageCommandHandler(
             _llmService, Substitute.For<IAgentRepository>(), _skillCache, _correctionTurnPreparer,
@@ -122,7 +124,8 @@ public class GracefulCorrectionEntryPointWiringTests
         var providerOrchestrator = new LLMProviderOrchestrator(
             Substitute.For<ILogger<LLMProviderOrchestrator>>(),
             Substitute.For<ILLMProviderFactory>(),
-            Substitute.For<ILLMRepository>());
+            Substitute.For<ILLMRepository>(),
+            PlaygroundOff.ModelPin());
 
         return new LLMStreamingOrchestrator(
             _llmService, _skillCache, _correctionTurnPreparer,

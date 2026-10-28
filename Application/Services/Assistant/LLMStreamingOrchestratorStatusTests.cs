@@ -7,6 +7,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Klacks.UnitTest.TestHelpers;
 
 namespace Klacks.UnitTest.Application.Services.Assistant;
 
@@ -61,7 +62,8 @@ public class LLMStreamingOrchestratorStatusTests
         var providerOrchestrator = new LLMProviderOrchestrator(
             NullLogger<LLMProviderOrchestrator>.Instance,
             Substitute.For<ILLMProviderFactory>(),
-            Substitute.For<ILLMRepository>());
+            Substitute.For<ILLMRepository>(),
+            PlaygroundOff.ModelPin());
 
         var correctionTurnPreparer = new CorrectionTurnPreparer(
             Substitute.For<IAssistantLastActionStore>(),
