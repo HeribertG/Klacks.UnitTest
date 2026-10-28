@@ -40,6 +40,7 @@ public static class SkillFeatureCoverageMap
         ["KlacksyTrainingController"] = Excluded("Klacksy training and knowledge ingestion, assistant infrastructure"),
         ["ModelSyncController"] = Excluded("admin-only LLM model catalog synchronization; day-to-day model management is covered by the llm model skills"),
         ["ModelsController"] = Covered("list_llm_models", "create_llm_model", "update_llm_model", "delete_llm_model"),
+        ["PlaygroundController"] = Excluded("public demo infrastructure: anonymous status and device-token endpoint of the Playground token limit, not a user-facing feature"),
         ["ProactiveConditionsController"] = Excluded("read-only grid decoration: marks which service-grid entities Klacksy's remediation already handled, read off the condition ledger the list_open_findings skill already exposes in chat"),
         ["ProactiveMessagesController"] = Excluded("Klacksy assistant self-feedback: helpful/dismissed reactions on proactive messages are set via the chat bubble actions, not chat-addressable"),
         ["ProactiveStandingApprovalsController"] = Excluded("deliberately NOT skill-addressable: a standing approval grants Klacksy approval-free autonomy for one trigger kind in one scope, so a skill that created one would let the assistant widen its own authority. Granting and revoking must stay a human action in the admin UI"),

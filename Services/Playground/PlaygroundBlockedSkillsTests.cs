@@ -1,15 +1,18 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Tests that the skills which write operator-paid keys or reach configured external servers refuse to run on the
+/// Tests that the skills which write operator-paid keys, reach configured external servers or store visitor text as an
+/// agent plan (create_plan) refuse to run on the
 /// public Playground: with the mode on each answers an English error result before it touches a repository or service,
 /// with the mode off it runs its normal path exactly as before.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
+using Klacks.Api.Application.Services.Assistant.Planning;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.DTOs.Email;
+using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Interfaces.Email;
 using Klacks.Api.Domain.Interfaces.Playground;
 using Klacks.Api.Domain.Interfaces.Translation;
@@ -200,6 +203,59 @@ public class PlaygroundBlockedSkillsTests
         ShouldBeBlocked(result);
         _settings.ReceivedCalls().ShouldBeEmpty();
         smtp.ReceivedCalls().ShouldBeEmpty();
+    }
+
+    private static CreatePlanSkill CreatePlan(
+        IPlaygroundMode mode,
+        IPlanChatService planChatService,
+        IAgentPlanRepository planRepository,
+        IPendingConfirmationStore confirmationStore) =>
+        new(
+            planChatService,
+            planRepository,
+            confirmationStore,
+            Substitute.For<ITurnConfirmationScope>(),
+            Substitute.For<ISkillRegistry>(),
+            Substitute.For<IMcpDelegatedSkillPolicy>(),
+            mode);
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task CreatePlan_ModeOn_IsRefusedWithoutDraftingStoringOrConfirming(bool executeConfirmed)
+    {
+        _mode.IsActive.Returns(true);
+        var planChat = Substitute.For<IPlanChatService>();
+        var plans = Substitute.For<IAgentPlanRepository>();
+        var confirmations = Substitute.For<IPendingConfirmationStore>();
+        var skill = CreatePlan(_mode, planChat, plans, confirmations);
+        var parameters = Params((PlanSkillDefaults.GoalParameter, "visitor free text"));
+        if (executeConfirmed)
+        {
+            parameters[PlanSkillDefaults.ExecuteConfirmedParameter] = PlanSkillDefaults.ExecuteConfirmedValue;
+            parameters[PlanSkillDefaults.PlanIdParameter] = Guid.NewGuid().ToString();
+        }
+
+        var result = await skill.ExecuteAsync(Ctx(), parameters);
+
+        ShouldBeBlocked(result);
+        planChat.ReceivedCalls().ShouldBeEmpty();
+        plans.ReceivedCalls().ShouldBeEmpty();
+        confirmations.ReceivedCalls().ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task CreatePlan_ModeOff_RunsItsNormalPath()
+    {
+        _mode.IsActive.Returns(false);
+        var plans = Substitute.For<IAgentPlanRepository>();
+        var skill = CreatePlan(_mode, Substitute.For<IPlanChatService>(), plans, Substitute.For<IPendingConfirmationStore>());
+
+        var result = await skill.ExecuteAsync(Ctx(), new Dictionary<string, object>());
+
+        ShouldNotBeBlocked(result);
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("'goal' is missing");
+        plans.ReceivedCalls().ShouldBeEmpty();
     }
 
     [Test]

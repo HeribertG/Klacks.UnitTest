@@ -15,6 +15,7 @@ using Klacks.Api.Domain.Constants;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.UnitTest.TestHelpers;
 using NSubstitute;
 using NUnit.Framework;
 using Shouldly;
@@ -52,7 +53,8 @@ public class CreatePlanSkillTests
         _skill = new CreatePlanSkill(
             _planChatService, _planRepository, _confirmationStore, _turnScope, _skillRegistry,
             new McpDelegatedSkillPolicy(
-                new McpSkillExposurePolicy(_riskClassifier), new McpReadModeToolPolicy(_riskClassifier)));
+                new McpSkillExposurePolicy(_riskClassifier), new McpReadModeToolPolicy(_riskClassifier)),
+            PlaygroundOff.Mode);
     }
 
     private static SkillExecutionContext Ctx(Guid userId) => new()
