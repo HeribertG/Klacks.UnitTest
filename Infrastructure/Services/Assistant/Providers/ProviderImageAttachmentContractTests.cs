@@ -9,7 +9,9 @@
 
 using System.Net;
 using System.Text;
+using Klacks.Api.Domain.Interfaces.Playground;
 using Klacks.Api.Domain.Models.Assistant;
+using Klacks.Api.Domain.Models.Playground;
 using Klacks.Api.Domain.Services.Assistant.Providers;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Anthropic;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Azure;
@@ -19,6 +21,7 @@ using Klacks.Api.Infrastructure.Services.Assistant.Providers.Gemini;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Generic;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.Mistral;
 using Klacks.Api.Infrastructure.Services.Assistant.Providers.OpenAI;
+using Klacks.Api.Infrastructure.Services.Assistant.Providers.Playground;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -59,6 +62,7 @@ public class ProviderImageAttachmentContractTests
         typeof(DeepSeekProvider),
         typeof(AnthropicProvider),
         typeof(GeminiProvider),
+        typeof(PlaygroundBudgetedLLMProvider),
     ];
 
     [Test]
@@ -153,6 +157,22 @@ public class ProviderImageAttachmentContractTests
 
         handler.Body.ShouldContain("image/png");
         handler.Body.ShouldContain(PngBase64);
+    }
+
+    [Test]
+    public async Task PlaygroundBudgetedDecorator_ForwardsImageToInnerProviderUnchanged()
+    {
+        var handler = new CapturingHandler(OpenAiCompletion);
+        var inner = new OpenAIProvider(new HttpClient(handler), NullLogger<OpenAIProvider>.Instance, EmptyConfiguration());
+        inner.Configure(Config("openai", "OpenAI", "https://api.openai.test/v1/"));
+        var budget = Substitute.For<IPlaygroundTokenBudget>();
+        budget.TryReserve(Arg.Any<PlaygroundVisitor?>(), Arg.Any<long>())
+            .Returns(new PlaygroundBudgetReservation("2026-10-28", null, null, 0));
+        var sut = new PlaygroundBudgetedLLMProvider(inner, budget);
+
+        await sut.ProcessAsync(Request("gpt-5.4-mini"));
+
+        AssertOpenAiImage(handler.Body);
     }
 
     [Test]
