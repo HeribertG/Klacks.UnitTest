@@ -266,8 +266,8 @@ public class PlaygroundTokenBudgetTests
         var options = new PlaygroundTokenLimitOptions();
 
         options.GlobalDailyTokens.ShouldBe(1_500_000);
-        options.PerIpDailyTokens.ShouldBe(300_000);
-        options.PerDeviceDailyTokens.ShouldBe(150_000);
+        options.PerIpDailyTokens.ShouldBe(150_000);
+        options.PerDeviceDailyTokens.ShouldBe(75_000);
         PlaygroundTokenLimitConstants.DayBoundaryHourUtc.ShouldBe(2);
     }
 
