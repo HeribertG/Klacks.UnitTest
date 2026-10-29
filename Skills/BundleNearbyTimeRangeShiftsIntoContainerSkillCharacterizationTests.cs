@@ -5,6 +5,10 @@
 /// body was split into private steps: every refusal text in its precedence order, the success text and serialized
 /// result data, the container shift, autofill request, lock command and template that are handed on, and the
 /// order of every collaborator call before and inside the transaction (including the lock release on failure).
+/// Updated deliberately for Spitex P2 (2026-10-29): the autofill result now carries a real route (start base, visits,
+/// end base; ContainerAutofillRouteFixture), the template items carry the placed visit windows and travel times, the
+/// template carries the RouteInfo, the confirmation re-read echoes what was posted, and the result reports the stops
+/// and the Route to the container page with a message that names visit and travel times.
 /// </summary>
 
 using System.Text.Json;
@@ -12,6 +16,7 @@ using Klacks.Api.Application.Commands.ContainerTemplates;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.Constants;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries.ContainerTemplates;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
@@ -53,6 +58,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
     private PostContainerTemplatesCommand? _postCommand;
     private int _persistedWeekday;
     private List<Guid> _persistedShiftIds = null!;
+    private Action<ContainerTemplateResource>? _storedChange;
 
     [SetUp]
     public void Setup()
@@ -64,6 +70,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         _postCommand = null;
         _persistedWeekday = 3;
         _persistedShiftIds = [TaskShiftId1, TaskShiftId2];
+        _storedChange = null;
 
         _shiftRepository = Substitute.For<IShiftRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
@@ -136,16 +143,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
             .Returns(_ =>
             {
                 _calls.Add("confirm-read");
-                return new List<ContainerTemplateResource>
-                {
-                    new()
-                    {
-                        Id = Guid.NewGuid(),
-                        Weekday = _persistedWeekday,
-                        ContainerTemplateItems = _persistedShiftIds
-                            .Select(id => new ContainerTemplateItemResource { ShiftId = id }).ToList()
-                    }
-                };
+                return EchoPosted(_persistedWeekday, isHoliday: false);
             });
         _mediator.Send(Arg.Any<ReleaseContainerLockCommand>(), Arg.Any<CancellationToken>())
             .Returns(_ => { _calls.Add("release"); return true; });
@@ -163,11 +161,37 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         openRouteServiceEnabled ? GeoServicesPolicyTestFactory.Default() : GeoServicesPolicyTestFactory.NoOutbound(),
         _groupVisibilityGuard,
         _shiftVisibilityGuard,
-        _defaultShiftMacroResolver);
+        _defaultShiftMacroResolver,
+        new ScheduleMapper());
+
+    private List<ContainerTemplateResource> EchoPosted(int weekday, bool isHoliday)
+    {
+        var posted = _postCommand!.Resources.Single();
+        var stored = new ContainerTemplateResource
+        {
+            Id = Guid.NewGuid(),
+            Weekday = weekday,
+            IsHoliday = isHoliday,
+            RouteInfo = posted.RouteInfo,
+            ContainerTemplateItems = posted.ContainerTemplateItems
+                .Where(i => _persistedShiftIds.Contains(i.ShiftId!.Value))
+                .Select(i => new ContainerTemplateItemResource
+                {
+                    ShiftId = i.ShiftId,
+                    TimeRangeStartItem = i.TimeRangeStartItem,
+                    TimeRangeEndItem = i.TimeRangeEndItem,
+                    TravelTimeBefore = i.TravelTimeBefore,
+                    TravelTimeAfter = i.TravelTimeAfter
+                }).ToList()
+        };
+        _storedChange?.Invoke(stored);
+        return [stored];
+    }
 
     private static Shift TaskShift(Guid id, int hour) => new()
     {
         Id = id,
+        WorkTime = 0.75m,
         ShiftType = ShiftType.IsTask,
         IsTimeRange = true,
         StartShift = new TimeOnly(7 + hour, 0),
@@ -178,23 +202,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         TravelTimeAfter = new TimeOnly(0, hour + 3)
     };
 
-    private static ContainerAutofillResult AutofillResult(List<Guid> selected) => new(
-        OptimizedRoute: new List<Location>(),
-        SelectedShiftIds: selected,
-        TotalDistanceKm: 12.5,
-        EstimatedTravelTime: TimeSpan.FromMinutes(125),
-        TotalWorkTime: TimeSpan.FromHours(2),
-        RemainingTime: TimeSpan.FromMinutes(355),
-        TotalAvailableShifts: 3,
-        SelectedShiftCount: selected.Count,
-        DistanceMatrix: new double[0, 0],
-        DurationMatrix: new double[0, 0],
-        TravelTimeFromStartBase: TimeSpan.Zero,
-        RouteIndices: new List<int>(),
-        DistanceFromStartBaseKm: 0,
-        DistanceToEndBaseKm: 0,
-        TravelTimeToEndBase: TimeSpan.Zero,
-        FullRouteIndices: new List<int>());
+    private static ContainerAutofillResult AutofillResult(List<Guid> selected) =>
+        ContainerAutofillRouteFixture.Route(selected);
 
     private static SkillExecutionContext Ctx() => new()
     {
@@ -236,17 +245,27 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message.ShouldBe(
-            $"Container '{ContainerName}' created for weekday 3 (transportMode=car) and its " +
-            "template was filled with 2 of 3 nearby TimeRange " +
-            "service(s) around 'Bern', confirmed in the database (verified). Estimated route: 12.5 km, " +
-            "02:05 travel+work time, 05:55 of the time budget " +
-            "remaining. Candidates were not limited by a hard distance radius — only by the time budget and route " +
-            "optimization. To fill another weekday, call this skill again with a different weekday.");
+            $"Container '{ContainerName}' created for weekday 3 (transportMode=car). Its " +
+            "template holds 2 of 3 nearby TimeRange " +
+            "service(s) around 'Bern' in route order, each with a planned visit time and the travel time before " +
+            "it, the last one also with the travel time back to the base, plus the route info; all of it is confirmed " +
+            "in the database (verified). " +
+            "Route: 7.5 km, 02:00 travel+work time, 08:00 of the time budget remaining. " +
+            "Candidates were not limited by a hard distance radius — only by the time budget and route " +
+            "optimization. The chat opens the container page, where the user can check the tour on the map and change " +
+            "it. To fill another weekday, call this skill again with a different weekday.");
         JsonSerializer.Serialize(result.Data).ShouldBe(
             "{\"ContainerId\":\"" + ContainerId + "\",\"ContainerName\":\"" + ContainerName + "\",\"Weekday\":3," +
-            "\"TransportMode\":\"car\",\"CandidatesFound\":3,\"ServicesBundled\":2,\"TotalDistanceKm\":12.5," +
-            "\"EstimatedTravelAndWorkTime\":\"02:05\",\"RemainingBudget\":\"05:55\"," +
-            "\"BundledShiftIds\":[\"" + TaskShiftId1 + "\",\"" + TaskShiftId2 + "\"],\"Verified\":true}");
+            "\"TransportMode\":\"car\",\"CandidatesFound\":3,\"ServicesBundled\":2,\"TotalDistanceKm\":7.5," +
+            "\"EstimatedTravelAndWorkTime\":\"02:00\",\"RemainingBudget\":\"08:00\"," +
+            "\"BundledShiftIds\":[\"" + TaskShiftId1 + "\",\"" + TaskShiftId2 + "\"]," +
+            "\"Stops\":[" +
+            "{\"Order\":1,\"ShiftId\":\"" + TaskShiftId1 + "\",\"Name\":\"Client 1\",\"Address\":\"Street 1, 3000 Bern\"," +
+            "\"VisitStart\":\"08:11\",\"VisitEnd\":\"08:56\",\"TravelBefore\":\"00:10\"}," +
+            "{\"Order\":2,\"ShiftId\":\"" + TaskShiftId2 + "\",\"Name\":\"Client 2\",\"Address\":\"Street 2, 3000 Bern\"," +
+            "\"VisitStart\":\"09:10\",\"VisitEnd\":\"09:55\",\"TravelBefore\":\"00:10\"}]," +
+            "\"TravelTimesEstimated\":false," +
+            "\"Route\":\"/workplace/container-template/" + ContainerId + "\",\"Verified\":true}");
         _calls.ShouldBe(FullSequence);
     }
 
@@ -256,7 +275,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
     {
         var result = await Skill().ExecuteAsync(Ctx(), Params());
 
-        result.Message!.ShouldContain("Estimated route: 12,5 km, 02:05 travel+work time, 05:55 of the time budget");
+        result.Message!.ShouldContain("Route: 7,5 km, 02:00 travel+work time, 08:00 of the time budget");
     }
 
     [Test]
@@ -324,12 +343,23 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         item.EndItem.ShouldBe(new TimeOnly(10, 0));
         item.BriefingTime.ShouldBe(new TimeOnly(0, 2));
         item.DebriefingTime.ShouldBe(new TimeOnly(0, 3));
-        item.TravelTimeBefore.ShouldBe(new TimeOnly(0, 4));
-        item.TravelTimeAfter.ShouldBe(new TimeOnly(0, 5));
-        item.TimeRangeStartItem.ShouldBeNull();
-        item.TimeRangeEndItem.ShouldBeNull();
+        item.TravelTimeBefore.ShouldBe(new TimeOnly(0, 10));
+        item.TravelTimeAfter.ShouldBe(new TimeOnly(0, 10));
+        item.TimeRangeStartItem.ShouldBe(new TimeOnly(9, 10));
+        item.TimeRangeEndItem.ShouldBe(new TimeOnly(9, 55));
         item.TransportMode.ShouldBe(TransportMode.ByCar);
-        template.ContainerTemplateItems[0].ShiftId.ShouldBe(TaskShiftId1);
+        var first = template.ContainerTemplateItems[0];
+        first.ShiftId.ShouldBe(TaskShiftId1);
+        first.TimeRangeStartItem.ShouldBe(new TimeOnly(8, 11));
+        first.TimeRangeEndItem.ShouldBe(new TimeOnly(8, 56));
+        first.TravelTimeBefore.ShouldBe(new TimeOnly(0, 10));
+        first.TravelTimeAfter.ShouldBe(new TimeOnly(0, 4));
+        var routeInfo = template.RouteInfo!;
+        routeInfo.StartBase.ShouldBe(Location);
+        routeInfo.EndBase.ShouldBe(Location);
+        routeInfo.TotalDistanceKm.ShouldBe(7.5);
+        routeInfo.OptimizedRoute.Select(l => l.ShiftId)
+            .ShouldBe([Guid.Empty.ToString(), TaskShiftId1.ToString(), TaskShiftId2.ToString(), Guid.Empty.ToString()]);
     }
 
     [Test]
@@ -347,7 +377,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message!.ShouldStartWith(
-            "Container 'Spitex Nord' created for weekday 7 (transportMode=Bicycle) and its template was filled with 2 of 3");
+            "Container 'Spitex Nord' created for weekday 7 (transportMode=Bicycle). Its template holds 2 of 3");
         JsonSerializer.Serialize(result.Data).ShouldContain("\"Weekday\":7,\"TransportMode\":\"Bicycle\"");
         _addedShift!.Abbreviation.ShouldBe("SN");
         new[] { _addedShift.IsMonday, _addedShift.IsTuesday, _addedShift.IsWednesday, _addedShift.IsThursday, _addedShift.IsFriday, _addedShift.IsSaturday, _addedShift.IsSunday }
@@ -480,24 +510,89 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         var result = await Skill().ExecuteAsync(Ctx(), Params());
 
         result.Message.ShouldBe(
-            "Database verification failed: the container template for weekday 3 could not be confirmed in the database " +
-            "after the write — the change was rolled back.");
+            "Database verification failed: the container template for weekday 3 with its visit times, travel times " +
+            "and route info could not be confirmed in the database after the write — the change was rolled back.");
         _calls.ShouldBe(FullSequence);
+    }
+
+    [Test]
+    public async Task StoredWithoutRouteInfo_IsNotConfirmed()
+    {
+        _storedChange = stored => stored.RouteInfo = null;
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldStartWith("Database verification failed");
+        _calls.ShouldBe(FullSequence);
+    }
+
+    [Test]
+    public async Task StoredWithAnotherVisitTime_IsNotConfirmed()
+    {
+        _storedChange = stored => stored.ContainerTemplateItems[1].TimeRangeStartItem = new TimeOnly(9, 11);
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldStartWith("Database verification failed");
+    }
+
+    [Test]
+    public async Task StoredWithAnotherTravelTime_IsNotConfirmed()
+    {
+        _storedChange = stored => stored.ContainerTemplateItems[0].TravelTimeAfter = new TimeOnly(0, 59);
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldStartWith("Database verification failed");
+    }
+
+    [Test]
+    public async Task SelectedVisitMissingFromTheRoute_ExactText_NothingPosted_AndReleasesTheLock()
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(_ =>
+            {
+                _calls.Add("autofill");
+                return ContainerAutofillRouteFixture.Route([TaskShiftId1]) with
+                {
+                    SelectedShiftIds = [TaskShiftId1, TaskShiftId2],
+                    SelectedShiftCount = 2
+                };
+            });
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params());
+
+        result.Message.ShouldBe(
+            "Only 1 of 2 selected services could be placed on the route, so no visit times could be planned — no " +
+            "container was created.");
+        _calls.ShouldBe(["default-macro", "instance-id", "transaction", "add", "complete", "autofill", "filter", "acquire",
+            "task-get:1", "task-get:2", "release"]);
+    }
+
+    [Test]
+    [SetCulture("en-US")]
+    public async Task EstimatedTravelTimes_AreNamedInTheMessageAndData()
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(_ => ContainerAutofillRouteFixture.Route([TaskShiftId1, TaskShiftId2], isEstimated: true));
+
+        var result = await Skill().ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message!.ShouldContain(
+            "08:00 of the time budget remaining. The travel times are straight-line estimates, because the routing " +
+            "service could not be reached. Candidates");
+        JsonSerializer.Serialize(result.Data).ShouldContain("\"TravelTimesEstimated\":true");
     }
 
     [Test]
     public async Task HolidayOnlyTemplateOfTheWeekday_StillConfirmsTheWrite()
     {
         _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ContainerTemplateResource>
-            {
-                new()
-                {
-                    Weekday = 3,
-                    IsHoliday = true,
-                    ContainerTemplateItems = [new() { ShiftId = TaskShiftId1 }, new() { ShiftId = TaskShiftId2 }]
-                }
-            });
+            .Returns(_ => EchoPosted(3, isHoliday: true));
 
         var result = await Skill().ExecuteAsync(Ctx(), Params());
 

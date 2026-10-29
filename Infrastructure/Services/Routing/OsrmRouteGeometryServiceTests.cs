@@ -58,7 +58,7 @@ public class OsrmRouteGeometryServiceTests
     {
         _handler.Respond(HttpStatusCode.OK, OkJson);
 
-        var result = await CreateService().GetRouteGeometryAsync(Waypoints, CancellationToken.None);
+        var result = await CreateService().GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         _httpClientFactory.Received(1).CreateClient(ExternalHttpClientConstants.RoutingClientName);
         result.Status.ShouldBe(RouteGeometryStatus.Ok);
@@ -67,13 +67,28 @@ public class OsrmRouteGeometryServiceTests
             $"{GeoServiceDefaults.OsrmBaseUrl}{GeoServicePaths.OsrmRouteDriving}/8.200000,47.100000;8.300000,47.200000?overview=full&geometries=geojson");
     }
 
+    [TestCase(ContainerTransportMode.ByCar, "driving")]
+    [TestCase(ContainerTransportMode.ByBicycle, "cycling")]
+    [TestCase(ContainerTransportMode.ByFoot, "foot")]
+    [TestCase(ContainerTransportMode.Mix, "driving")]
+    public async Task GetRouteGeometryAsync_TransportMode_RequestsTheOsrmProfileOfTheMode(
+        ContainerTransportMode transportMode, string expectedProfile)
+    {
+        _handler.Respond(HttpStatusCode.OK, OkJson);
+
+        await CreateService().GetRouteGeometryAsync(Waypoints, transportMode, CancellationToken.None);
+
+        _handler.LastRequestUri!.AbsoluteUri.ShouldStartWith(
+            $"{GeoServiceDefaults.OsrmBaseUrl}{GeoServicePaths.OsrmRoute}/{expectedProfile}/8.200000,47.100000;");
+    }
+
     [Test]
     public async Task GetRouteGeometryAsync_OwnInstance_UsesConfiguredBaseUrl()
     {
         _handler.Respond(HttpStatusCode.OK, OkJson);
         var policy = GeoServicesPolicyTestFactory.With(options => options.Routing.BaseUrl = OwnOsrmBaseUrl);
 
-        await CreateService(policy).GetRouteGeometryAsync(Waypoints, CancellationToken.None);
+        await CreateService(policy).GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         _handler.LastRequestUri!.AbsoluteUri.ShouldStartWith($"{OwnOsrmBaseUrl}{GeoServicePaths.OsrmRouteDriving}/");
     }
@@ -87,7 +102,7 @@ public class OsrmRouteGeometryServiceTests
         {
             CultureInfo.CurrentCulture = new CultureInfo("de-DE");
 
-            await CreateService().GetRouteGeometryAsync(Waypoints, CancellationToken.None);
+            await CreateService().GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
         }
         finally
         {
@@ -100,7 +115,7 @@ public class OsrmRouteGeometryServiceTests
     [Test]
     public async Task GetRouteGeometryAsync_RoutingDisabled_ReturnsDisabledWithoutAnyRequest()
     {
-        var result = await CreateService(GeoServicesPolicyTestFactory.NoOutbound()).GetRouteGeometryAsync(Waypoints, CancellationToken.None);
+        var result = await CreateService(GeoServicesPolicyTestFactory.NoOutbound()).GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.Status.ShouldBe(RouteGeometryStatus.Disabled);
         result.Points.ShouldBeEmpty();
@@ -113,7 +128,7 @@ public class OsrmRouteGeometryServiceTests
     {
         _handler.Respond(statusCode, NoRouteJson);
 
-        var result = await CreateService().GetRouteGeometryAsync(Waypoints, CancellationToken.None);
+        var result = await CreateService().GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.Status.ShouldBe(RouteGeometryStatus.NoRoute);
         result.Points.ShouldBeEmpty();
@@ -128,7 +143,7 @@ public class OsrmRouteGeometryServiceTests
     {
         _handler.Respond(statusCode, body);
 
-        var result = await CreateService().GetRouteGeometryAsync(Waypoints, CancellationToken.None);
+        var result = await CreateService().GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.Status.ShouldBe(RouteGeometryStatus.Unavailable);
         result.Points.ShouldBeEmpty();
@@ -139,7 +154,7 @@ public class OsrmRouteGeometryServiceTests
     {
         _handler.Throw(new HttpRequestException("connection refused"));
 
-        var result = await CreateService().GetRouteGeometryAsync(Waypoints, CancellationToken.None);
+        var result = await CreateService().GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.Status.ShouldBe(RouteGeometryStatus.Unavailable);
     }
@@ -151,7 +166,7 @@ public class OsrmRouteGeometryServiceTests
         await cancellation.CancelAsync();
 
         await Should.ThrowAsync<OperationCanceledException>(
-            () => CreateService().GetRouteGeometryAsync(Waypoints, cancellation.Token));
+            () => CreateService().GetRouteGeometryAsync(Waypoints, ContainerTransportMode.ByCar, cancellation.Token));
     }
 
     private sealed class StubHandler : HttpMessageHandler

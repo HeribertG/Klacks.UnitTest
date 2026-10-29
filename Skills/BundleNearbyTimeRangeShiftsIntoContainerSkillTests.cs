@@ -5,13 +5,15 @@
 /// via IContainerAutofillService and its weekday template is written and re-read to confirm the write,
 /// all inside one transaction that rolls back completely when nothing is found or the write cannot be
 /// confirmed; the OpenRouteService key gate blocks non-car transport modes up front, before any write. Autofill picks a
-/// restricted caller may not see are dropped before the write and never reported; when none is left the answer is the
-/// same as when nothing matched.
+/// restricted caller may not see are dropped before the write and never reported - neither in the items nor in the
+/// stored route info or the stops, and the travel times run past the dropped stop; when none is left the answer is the
+/// same as when nothing matched. A successful bundle returns the Route to the container page.
 /// </summary>
 
 using Klacks.Api.Application.Commands.ContainerTemplates;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries.ContainerTemplates;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
@@ -42,6 +44,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
     private IShiftVisibilityGuard _shiftVisibilityGuard = null!;
     private IDefaultShiftMacroResolver _defaultShiftMacroResolver = null!;
     private BundleNearbyTimeRangeShiftsIntoContainerSkill _skill = null!;
+    private PostContainerTemplatesCommand? _posted;
 
     private static readonly Guid DefaultMacroId = Guid.NewGuid();
 
@@ -95,8 +98,13 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             .Returns(new ContainerLockResource { Id = LockId, Acquired = true });
         _mediator.Send(Arg.Any<ReleaseContainerLockCommand>(), Arg.Any<CancellationToken>())
             .Returns(true);
+        _posted = null;
         _mediator.Send(Arg.Any<PostContainerTemplatesCommand>(), Arg.Any<CancellationToken>())
-            .Returns(new List<ContainerTemplateResource>());
+            .Returns(ci =>
+            {
+                _posted = ci.Arg<PostContainerTemplatesCommand>();
+                return new List<ContainerTemplateResource>();
+            });
     }
 
     private BundleNearbyTimeRangeShiftsIntoContainerSkill SkillWith(IShiftVisibilityGuard shiftVisibilityGuard) => new(
@@ -111,7 +119,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         GeoServicesPolicyTestFactory.Default(),
         _groupVisibilityGuard,
         shiftVisibilityGuard,
-        _defaultShiftMacroResolver);
+        _defaultShiftMacroResolver,
+        new ScheduleMapper());
 
     private static Shift TaskShift(Guid id, TimeOnly start, TimeOnly end) => new()
     {
@@ -145,23 +154,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         ["transportMode"] = transportMode
     };
 
-    private static ContainerAutofillResult SuccessfulAutofillResult() => new(
-        OptimizedRoute: new List<Location>(),
-        SelectedShiftIds: new List<Guid> { TaskShiftId1, TaskShiftId2 },
-        TotalDistanceKm: 12.5,
-        EstimatedTravelTime: TimeSpan.FromHours(2),
-        TotalWorkTime: TimeSpan.FromHours(2),
-        RemainingTime: TimeSpan.FromHours(6),
-        TotalAvailableShifts: 3,
-        SelectedShiftCount: 2,
-        DistanceMatrix: new double[0, 0],
-        DurationMatrix: new double[0, 0],
-        TravelTimeFromStartBase: TimeSpan.Zero,
-        RouteIndices: new List<int>(),
-        DistanceFromStartBaseKm: 0,
-        DistanceToEndBaseKm: 0,
-        TravelTimeToEndBase: TimeSpan.Zero,
-        FullRouteIndices: new List<int>());
+    private static ContainerAutofillResult SuccessfulAutofillResult() =>
+        ContainerAutofillRouteFixture.Route([TaskShiftId1, TaskShiftId2]);
 
     private static ContainerAutofillResult EmptyAutofillResult() => new(
         OptimizedRoute: new List<Location>(),
@@ -181,20 +175,26 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         TravelTimeToEndBase: TimeSpan.Zero,
         FullRouteIndices: new List<int>());
 
-    private static List<ContainerTemplateResource> PersistedTemplate(IEnumerable<Guid> shiftIds) => new()
+    private List<ContainerTemplateResource> PersistedTemplate(IEnumerable<Guid> shiftIds)
     {
-        new ContainerTemplateResource
-        {
-            Id = Guid.NewGuid(),
-            ContainerId = ContainerId,
-            Weekday = StorageWeekday,
-            IsHoliday = false,
-            IsWeekdayAndHoliday = false,
-            FromTime = new TimeOnly(8, 0),
-            UntilTime = new TimeOnly(18, 0),
-            ContainerTemplateItems = shiftIds.Select(id => new ContainerTemplateItemResource { ShiftId = id }).ToList()
-        }
-    };
+        var posted = _posted!.Resources.Single();
+        var kept = shiftIds.ToHashSet();
+        return
+        [
+            new ContainerTemplateResource
+            {
+                Id = Guid.NewGuid(),
+                ContainerId = ContainerId,
+                Weekday = StorageWeekday,
+                IsHoliday = false,
+                IsWeekdayAndHoliday = false,
+                FromTime = new TimeOnly(8, 0),
+                UntilTime = new TimeOnly(18, 0),
+                RouteInfo = posted.RouteInfo,
+                ContainerTemplateItems = posted.ContainerTemplateItems.Where(i => kept.Contains(i.ShiftId!.Value)).ToList()
+            }
+        ];
+    }
 
     [Test]
     public async Task CreatesContainerAndTemplate_AndReportsVerified_WhenAutofillFindsCandidatesAndWriteIsConfirmed()
@@ -202,7 +202,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
             .Returns(SuccessfulAutofillResult());
         _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
-            .Returns(PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
@@ -227,7 +227,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
             .Returns(SuccessfulAutofillResult());
         _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
-            .Returns(PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
 
         await _skill.ExecuteAsync(Ctx(), Params());
 
@@ -241,7 +241,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
             .Returns(SuccessfulAutofillResult());
         _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
-            .Returns(PersistedTemplate(new[] { TaskShiftId1 }));
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1 }));
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
@@ -285,7 +285,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             GeoServicesPolicyTestFactory.NoOutbound(),
             _groupVisibilityGuard,
             _shiftVisibilityGuard,
-            _defaultShiftMacroResolver);
+            _defaultShiftMacroResolver,
+            new ScheduleMapper());
 
         var result = await skill.ExecuteAsync(Ctx(), Params("bicycle"));
 
@@ -303,7 +304,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
             .Returns(SuccessfulAutofillResult());
         _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
-            .Returns(PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
 
         var result = await _skill.ExecuteAsync(Ctx(), Params("car"));
 
@@ -347,7 +348,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
             .Returns(SuccessfulAutofillResult());
         _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
-            .Returns(PersistedTemplate(new[] { TaskShiftId1 }));
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1 }));
 
         var result = await SkillWith(ShiftVisibilityGuards.Hiding(TaskShiftId2)).ExecuteAsync(Ctx(), Params());
 
@@ -359,8 +360,17 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             Arg.Any<CancellationToken>());
         await _shiftRepository.DidNotReceive().Get(TaskShiftId2);
         result.Message.ShouldNotContain(TaskShiftId2.ToString());
-        result.Message.ShouldContain("filled with 1 of");
+        result.Message.ShouldContain("holds 1 of");
         JsonSerializer.Serialize(result.Data).ShouldNotContain(TaskShiftId2.ToString());
+
+        var template = _posted!.Resources.Single();
+        var routeInfoJson = JsonSerializer.Serialize(template.RouteInfo);
+        routeInfoJson.ShouldNotContain(TaskShiftId2.ToString());
+        routeInfoJson.ShouldNotContain(ContainerAutofillRouteFixture.VisitName(2));
+        routeInfoJson.ShouldNotContain(ContainerAutofillRouteFixture.VisitAddress(2));
+        template.RouteInfo!.TotalDistanceKm.ShouldBe(2.5 * ContainerAutofillRouteFixture.LegKm);
+        template.ContainerTemplateItems.Single().TravelTimeAfter.ShouldBe(new TimeOnly(0, 15));
+        JsonSerializer.Serialize(result.Data).ShouldNotContain(ContainerAutofillRouteFixture.VisitName(2));
     }
 
     [Test]
@@ -389,13 +399,32 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
             .Returns(SuccessfulAutofillResult());
         _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
-            .Returns(PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
 
         var result = await _skill.ExecuteAsync(Ctx(), Params());
 
         result.Success.ShouldBeTrue(result.Message);
         await _shiftVisibilityGuard.Received(1).FilterVisibleAsync(
             Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Count == 2), Arg.Any<CancellationToken>());
-        result.Message.ShouldContain("filled with 2 of");
+        result.Message.ShouldContain("holds 2 of");
+    }
+
+    [Test]
+    public async Task Success_ReturnsTheRouteToTheContainerPage_AndTheStopsInRouteOrder()
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(SuccessfulAutofillResult());
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        using var data = JsonDocument.Parse(JsonSerializer.Serialize(result.Data));
+        data.RootElement.GetProperty("Route").GetString().ShouldBe($"/workplace/container-template/{ContainerId}");
+        data.RootElement.GetProperty("Stops").EnumerateArray()
+            .Select(stop => stop.GetProperty("ShiftId").GetGuid())
+            .ShouldBe([TaskShiftId1, TaskShiftId2]);
+        result.Message.ShouldNotContain("Klacksy");
     }
 }

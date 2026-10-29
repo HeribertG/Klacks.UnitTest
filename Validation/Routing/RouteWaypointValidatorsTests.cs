@@ -9,6 +9,7 @@
 using Klacks.Api.Application.DTOs.Routing;
 using Klacks.Api.Application.Queries.Routing;
 using Klacks.Api.Application.Validation.Routing;
+using Klacks.Api.Domain.Enums;
 using NUnit.Framework;
 using Shouldly;
 
@@ -47,6 +48,17 @@ public class RouteWaypointValidatorsTests
         {
             validate(coordinates!).ShouldBe(expectedValid);
         }
+    }
+
+    [TestCase(ContainerTransportMode.ByCar, true)]
+    [TestCase(ContainerTransportMode.Mix, true)]
+    [TestCase((ContainerTransportMode)7, false)]
+    public void BothValidators_AcceptOnlyDefinedTransportModes(ContainerTransportMode transportMode, bool expectedValid)
+    {
+        var coordinates = Points(RouteWaypointRules.MinimumWaypoints);
+
+        new GetRouteQueryValidator().Validate(new GetRouteQuery(coordinates, transportMode)).IsValid.ShouldBe(expectedValid);
+        new GetOsrmRouteQueryValidator().Validate(new GetOsrmRouteQuery(coordinates, transportMode)).IsValid.ShouldBe(expectedValid);
     }
 
     [Test]

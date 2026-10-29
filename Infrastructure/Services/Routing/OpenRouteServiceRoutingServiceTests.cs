@@ -9,6 +9,7 @@ using System.Net;
 using System.Text;
 using Klacks.Api.Application.Interfaces;
 using Klacks.Api.Domain.Common;
+using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Settings;
 using Klacks.Api.Infrastructure.Services.Routing;
 using Klacks.UnitTest.TestHelpers;
@@ -58,7 +59,7 @@ public class OpenRouteServiceRoutingServiceTests
     {
         _settingsRepository.GetSetting(SettingsType).Returns((Klacks.Api.Domain.Models.Settings.Settings?)null);
 
-        var result = await _service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await _service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldBeNull();
         _handler.WasCalled.ShouldBeFalse("no key means no outbound call at all");
@@ -72,7 +73,7 @@ public class OpenRouteServiceRoutingServiceTests
             {"features":[{"geometry":{"coordinates":[[8.5417,47.3769],[7.4474,46.9480]]}}]}
             """);
 
-        var result = await _service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await _service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldNotBeNull();
         _handler.WasCalled.ShouldBeTrue();
@@ -90,7 +91,7 @@ public class OpenRouteServiceRoutingServiceTests
             {"features":[{"geometry":{"coordinates":[[8.5417,47.3769],[7.4474,46.9480]]}}]}
             """);
 
-        var result = await _service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await _service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldNotBeNull();
         result!.Count.ShouldBe(2);
@@ -106,7 +107,7 @@ public class OpenRouteServiceRoutingServiceTests
         ArrangeKey();
         ArrangeOrsResponse(HttpStatusCode.Forbidden, "{}");
 
-        var result = await _service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await _service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldBeNull();
     }
@@ -117,7 +118,7 @@ public class OpenRouteServiceRoutingServiceTests
         ArrangeKey();
         ArrangeOrsResponse(HttpStatusCode.OK, """{"features":[]}""");
 
-        var result = await _service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await _service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldBeNull();
     }
@@ -128,7 +129,7 @@ public class OpenRouteServiceRoutingServiceTests
         ArrangeKey();
         _handler.Thrower = () => throw new HttpRequestException("network down");
 
-        var result = await _service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await _service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldBeNull();
     }
@@ -144,7 +145,7 @@ public class OpenRouteServiceRoutingServiceTests
             GeoServicesPolicyTestFactory.NoOutbound(),
             Substitute.For<ILogger<OpenRouteServiceRoutingService>>());
 
-        var result = await service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldBeNull();
         _handler.WasCalled.ShouldBeFalse("a disabled OpenRouteService must not be contacted at all");
@@ -168,10 +169,28 @@ public class OpenRouteServiceRoutingServiceTests
             }),
             Substitute.For<ILogger<OpenRouteServiceRoutingService>>());
 
-        var result = await service.GetRouteAsync(Waypoints, CancellationToken.None);
+        var result = await service.GetRouteAsync(Waypoints, ContainerTransportMode.ByCar, CancellationToken.None);
 
         result.ShouldNotBeNull();
         _handler.LastRequestUri!.AbsoluteUri.ShouldBe("http://ors.internal:8080/ors/v2/directions/driving-car/geojson");
+    }
+
+    [TestCase(ContainerTransportMode.ByCar, "driving-car")]
+    [TestCase(ContainerTransportMode.ByBicycle, "cycling-regular")]
+    [TestCase(ContainerTransportMode.ByFoot, "foot-walking")]
+    [TestCase(ContainerTransportMode.Mix, "driving-car")]
+    public async Task GetRouteAsync_TransportMode_ShouldCallTheDirectionsProfileOfTheMode(
+        ContainerTransportMode transportMode, string expectedProfile)
+    {
+        ArrangeKey();
+        ArrangeOrsResponse(HttpStatusCode.OK, """
+            {"features":[{"geometry":{"coordinates":[[8.5417,47.3769],[7.4474,46.9480]]}}]}
+            """);
+
+        var result = await _service.GetRouteAsync(Waypoints, transportMode, CancellationToken.None);
+
+        result.ShouldNotBeNull();
+        _handler.LastRequestUri!.AbsolutePath.ShouldEndWith($"/directions/{expectedProfile}/geojson");
     }
 
     private void ArrangeKey()

@@ -1,8 +1,9 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// Tests for RoutingController.OsrmRoute: forwards the waypoints to GetOsrmRouteQuery, answers 200 OK with the
-/// status-bearing geometry (also for Disabled, never 204), and is rate limited with the geo-proxy policy.
+/// Tests for RoutingController.OsrmRoute and Directions: forwards the waypoints and the optional transport mode (car
+/// when omitted) to their queries, OsrmRoute answers 200 OK with the status-bearing geometry (also for Disabled, never
+/// 204) and is rate limited with the geo-proxy policy, Directions answers 204 when no route comes back.
 /// </summary>
 namespace Klacks.UnitTest.Controllers.Routing;
 
@@ -45,7 +46,7 @@ public class RoutingControllerOsrmRouteTests
         var expected = new RouteGeometryResource { Status = RouteGeometryStatus.Ok, Points = waypoints };
         _mediator.Send(Arg.Any<GetOsrmRouteQuery>(), Arg.Any<CancellationToken>()).Returns(expected);
 
-        var result = await _controller.OsrmRoute(waypoints, CancellationToken.None);
+        var result = await _controller.OsrmRoute(waypoints, cancellationToken: CancellationToken.None);
 
         result.Result.ShouldBeOfType<OkObjectResult>().Value.ShouldBe(expected);
         await _mediator.Received(1).Send(
@@ -59,10 +60,59 @@ public class RoutingControllerOsrmRouteTests
         _mediator.Send(Arg.Any<GetOsrmRouteQuery>(), Arg.Any<CancellationToken>())
             .Returns(new RouteGeometryResource { Status = RouteGeometryStatus.Disabled });
 
-        var result = await _controller.OsrmRoute(Waypoints(), CancellationToken.None);
+        var result = await _controller.OsrmRoute(Waypoints(), cancellationToken: CancellationToken.None);
 
         result.Result.ShouldBeOfType<OkObjectResult>()
             .Value.ShouldBeOfType<RouteGeometryResource>().Status.ShouldBe(RouteGeometryStatus.Disabled);
+    }
+
+    [Test]
+    public async Task OsrmRoute_PassesTheTransportModeToTheQuery()
+    {
+        _mediator.Send(Arg.Any<GetOsrmRouteQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new RouteGeometryResource { Status = RouteGeometryStatus.Ok });
+
+        await _controller.OsrmRoute(Waypoints(), ContainerTransportMode.ByFoot, CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<GetOsrmRouteQuery>(q => q.TransportMode == ContainerTransportMode.ByFoot),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Directions_WithoutTransportMode_RoutesByCar()
+    {
+        var waypoints = Waypoints();
+        _mediator.Send(Arg.Any<GetRouteQuery>(), Arg.Any<CancellationToken>()).Returns(waypoints);
+
+        var result = await _controller.Directions(waypoints, cancellationToken: CancellationToken.None);
+
+        result.Result.ShouldBeOfType<OkObjectResult>().Value.ShouldBe(waypoints);
+        await _mediator.Received(1).Send(
+            Arg.Is<GetRouteQuery>(q => ReferenceEquals(q.Coordinates, waypoints) && q.TransportMode == ContainerTransportMode.ByCar),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Directions_PassesTheTransportModeToTheQuery()
+    {
+        _mediator.Send(Arg.Any<GetRouteQuery>(), Arg.Any<CancellationToken>()).Returns(Waypoints());
+
+        await _controller.Directions(Waypoints(), ContainerTransportMode.ByBicycle, CancellationToken.None);
+
+        await _mediator.Received(1).Send(
+            Arg.Is<GetRouteQuery>(q => q.TransportMode == ContainerTransportMode.ByBicycle),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Directions_NoRoute_IsNoContent()
+    {
+        _mediator.Send(Arg.Any<GetRouteQuery>(), Arg.Any<CancellationToken>()).Returns((List<RoutePointResource>?)null);
+
+        var result = await _controller.Directions(Waypoints(), cancellationToken: CancellationToken.None);
+
+        result.Result.ShouldBeOfType<NoContentResult>();
     }
 
     [Test]
