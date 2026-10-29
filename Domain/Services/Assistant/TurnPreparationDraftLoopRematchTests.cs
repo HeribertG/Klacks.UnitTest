@@ -6,6 +6,8 @@
 /// fallback offered two unrelated group recipes, because "alle" anchors them and "keine" defeats the leading-affirmation
 /// guard. While a loop is open the match is keyword-only: a semantic candidate is not even retrieved, an explicit trigger
 /// phrase still starts its flow. The live message must also not fire any seeded recipe trigger, or the fix would not hold.
+/// The service only reads LLMContext.DraftLoopOpen and does not know which loop is open; the planning-profile answer cases
+/// pin that a setup answer is treated the same (which loop sets the flag is covered by SkillToolsetAssemblerDraftLoopRecipeTests).
 /// </summary>
 
 using System.Text.Json;
@@ -31,6 +33,7 @@ public class TurnPreparationDraftLoopRematchTests
     private const string GroupRecipeName = "bulk-add-employees-to-group";
     private const string EmployeeRecipeName = "create-employee";
     private const string LoopAnswer = "Passt, übernimm alle Vorschläge, keine Spesen.";
+    private const string PlanningProfileAnswer = "Alle Mitarbeiter mit 8.5 Stunden, Sicherheit zuerst.";
     private const string KeywordRequest = "Erstelle einen neuen Mitarbeiter";
     private const string Language = "de";
     private const double StrongScore = 0.85;
@@ -118,10 +121,11 @@ public class TurnPreparationDraftLoopRematchTests
         DeclineDetector.Reset();
     }
 
-    [Test]
-    public async Task OpenDraftLoop_TheLoopAnswer_StartsNoRecipeBySimilarity()
+    [TestCase(LoopAnswer, TestName = "OpenDraftLoop_TheOrderReviewAnswer_StartsNoRecipeBySimilarity")]
+    [TestCase(PlanningProfileAnswer, TestName = "OpenDraftLoop_ThePlanningProfileAnswer_StartsNoRecipeBySimilarity")]
+    public async Task OpenDraftLoop_TheLoopAnswer_StartsNoRecipeBySimilarity(string answer)
     {
-        var context = Context(LoopAnswer, draftLoopOpen: true);
+        var context = Context(answer, draftLoopOpen: true);
 
         var plan = await Resolve(context);
 
@@ -141,10 +145,11 @@ public class TurnPreparationDraftLoopRematchTests
         plan!.Name.ShouldBe(EmployeeRecipeName);
     }
 
-    [Test]
-    public async Task WithoutADraftLoop_TheSameAnswer_StillReachesTheSemanticFallback()
+    [TestCase(LoopAnswer)]
+    [TestCase(PlanningProfileAnswer)]
+    public async Task WithoutADraftLoop_TheSameAnswer_StillReachesTheSemanticFallback(string answer)
     {
-        var context = Context(LoopAnswer, draftLoopOpen: false);
+        var context = Context(answer, draftLoopOpen: false);
 
         var plan = await Resolve(context);
 
@@ -152,14 +157,15 @@ public class TurnPreparationDraftLoopRematchTests
         plan!.Name.ShouldBe(GroupRecipeName);
     }
 
-    [Test]
-    public void TheLiveLoopAnswer_FiresNoSeededRecipeTrigger()
+    [TestCase(LoopAnswer)]
+    [TestCase(PlanningProfileAnswer)]
+    public void TheLiveLoopAnswer_FiresNoSeededRecipeTrigger(string answer)
     {
         var synonyms = LoadPackFile("recipe-synonyms.json");
         var vetoes = LoadPackFile("recipe-vetoes.json");
         var hits = LoadTriggers()
             .Where(entry => RecipeTriggerMatcher.Matches(
-                entry.Value, synonyms.GetValueOrDefault(entry.Key), LoopAnswer, null, Language, vetoes.GetValueOrDefault(entry.Key)))
+                entry.Value, synonyms.GetValueOrDefault(entry.Key), answer, null, Language, vetoes.GetValueOrDefault(entry.Key)))
             .Select(entry => entry.Key)
             .ToList();
 

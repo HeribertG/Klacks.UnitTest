@@ -1,15 +1,17 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
 /// <summary>
-/// The recipe guarantee of the toolset while an order review is open: it agrees with TurnPreparationService and matches by
+/// The recipe guarantee of the toolset while a draft loop (order review or planning-profile setup) is open: it agrees with TurnPreparationService and matches by
 /// keyword trigger only, so an answer to the review ("Passt, übernimm alle Vorschläge, keine Spesen.") guarantees no step
 /// skill of a recipe the semantic fallback would rank it into, while an explicit trigger phrase still guarantees its
-/// recipe's skills. The toolset carries DraftLoopOpen for the chat entry points. Wires the real SkillToolsetGuaranteeResolver,
-/// DraftLoopToolsetPolicy, order-review draft store and RecipeEngineService into the assembler.
+/// recipe's skills. A planning-profile draft alone ("Alle Mitarbeiter mit 8.5 Stunden, Sicherheit zuerst.") switches the match the same
+/// way. The toolset carries DraftLoopOpen for the chat entry points. Wires the real SkillToolsetGuaranteeResolver,
+/// DraftLoopToolsetPolicy, order-review and planning-profile draft stores and RecipeEngineService into the assembler.
 /// </summary>
 
 using Klacks.Api.Application.Interfaces.Assistant;
 using Klacks.Api.Application.Services.Assistant;
+using Klacks.Api.Application.Skills.PlanningProfile;
 using Klacks.Api.Domain.Enums;
 using Klacks.Api.Domain.Interfaces.Assistant;
 using Klacks.Api.Domain.Models.Assistant;
@@ -35,6 +37,8 @@ public class SkillToolsetAssemblerDraftLoopRecipeTests
     private const string GroupRecipeSkill = "bulk_add_clients_to_group";
     private const string EmployeeRecipeSkill = "create_employee";
     private const string LoopSkill = "set_order_review_decision";
+    private const string PlanningProfileLoopSkill = "set_planning_profile_parameters";
+    private const string PlanningProfileAnswer = "Alle Mitarbeiter mit 8.5 Stunden, Sicherheit zuerst.";
     private const double StrongScore = 0.85;
 
     private static readonly AgentRecipe GroupRecipe = new()
@@ -63,6 +67,7 @@ public class SkillToolsetAssemblerDraftLoopRecipeTests
     private IKnowledgeRetrievalService _skillRetrieval = null!;
     private IKnowledgeRetrievalService _recipeRetrieval = null!;
     private IPendingOrderReviewDraftStore _orderReviewDraftStore = null!;
+    private IPendingPlanningProfileDraftStore _planningProfileDraftStore = null!;
     private Agent _agent = null!;
 
     [SetUp]
@@ -71,7 +76,8 @@ public class SkillToolsetAssemblerDraftLoopRecipeTests
         _agent = new Agent { Id = Guid.NewGuid() };
         _skillCache = Substitute.For<ISkillCacheService>();
         _skillCache.GetEnabledSkillsAsync(_agent.Id, Arg.Any<CancellationToken>())
-            .Returns(new[] { LoopSkill, GroupRecipeSkill, EmployeeRecipeSkill }.Select(CreateSkill).ToList());
+            .Returns(new[] { LoopSkill, PlanningProfileLoopSkill, GroupRecipeSkill, EmployeeRecipeSkill }
+                .Select(CreateSkill).ToList());
 
         _skillRetrieval = Substitute.For<IKnowledgeRetrievalService>();
         _skillRetrieval.RetrieveAsync(
@@ -93,6 +99,7 @@ public class SkillToolsetAssemblerDraftLoopRecipeTests
             ]));
 
         _orderReviewDraftStore = PendingStoreTestFactory.CreateOrderReviewDraftStore();
+        _planningProfileDraftStore = PendingStoreTestFactory.CreatePlanningProfileDraftStore();
     }
 
     [TearDown]
@@ -133,6 +140,49 @@ public class SkillToolsetAssemblerDraftLoopRecipeTests
 
         result.DraftLoopOpen.ShouldBeFalse();
         Names(result).ShouldContain(GroupRecipeSkill);
+    }
+
+    [Test]
+    public async Task OpenPlanningProfileOnly_TheSetupAnswer_GuaranteesNoRecipeBySimilarity()
+    {
+        var userId = OpenPlanningProfileSetup();
+
+        var result = await AssembleAsync(userId, PlanningProfileAnswer);
+
+        result.DraftLoopOpen.ShouldBeTrue();
+        Names(result).ShouldContain(PlanningProfileLoopSkill);
+        Names(result).ShouldNotContain(LoopSkill);
+        Names(result).ShouldNotContain(GroupRecipeSkill);
+        await _recipeRetrieval.DidNotReceiveWithAnyArgs().RetrieveAsync(
+            default!, default!, default, default, default, default, default, default);
+    }
+
+    [Test]
+    public async Task OpenPlanningProfileOnly_AnExplicitTriggerPhrase_StillGuaranteesItsRecipe()
+    {
+        var userId = OpenPlanningProfileSetup();
+
+        var result = await AssembleAsync(userId, KeywordRequest);
+
+        result.DraftLoopOpen.ShouldBeTrue();
+        Names(result).ShouldContain(EmployeeRecipeSkill);
+    }
+
+    [Test]
+    public async Task WithoutPlanningProfile_TheSetupAnswer_StillGuaranteesTheSemanticRecipe()
+    {
+        var result = await AssembleAsync(Guid.NewGuid(), PlanningProfileAnswer);
+
+        result.DraftLoopOpen.ShouldBeFalse();
+        Names(result).ShouldContain(GroupRecipeSkill);
+    }
+
+    private Guid OpenPlanningProfileSetup()
+    {
+        var userId = Guid.NewGuid();
+        _planningProfileDraftStore.Set(
+            userId, PlanningProfileDraftScope.ConversationKey(ConversationId), new PlanningProfileDraft());
+        return userId;
     }
 
     private Guid OpenOrderReview()
@@ -186,7 +236,7 @@ public class SkillToolsetAssemblerDraftLoopRecipeTests
         var resolver = new SkillToolsetGuaranteeResolver(
             notes, recipeEngine,
             PendingStoreTestFactory.CreateConfirmationStore(),
-            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(orderReviewDraftStore: _orderReviewDraftStore),
+            PendingStoreTestFactory.CreateDraftLoopToolsetPolicy(_planningProfileDraftStore, _orderReviewDraftStore),
             skillPhrases,
             Substitute.For<ISkillRelationRepository>(),
             new NoTurnIntentExplainGuarantee(),

@@ -112,7 +112,7 @@ public class OrderReviewNavigationTests
         data.GetProperty("ScheduleGroupName").GetString().ShouldBe("Bern");
         data.GetProperty("ScheduleDate").GetString().ShouldBe("2026-11-01");
         result.Message.ShouldContain("nobody is assigned");
-        result.Message.ShouldContain("open_schedule with groupName 'Bern' and date 2026-11-01");
+        result.Message.ShouldContain("open_schedule with groupName \"Bern\" and date 2026-11-01");
         result.Message.ShouldContain("opened on the new plannable shift(s) of the period 2026-11-01 to 2026-11-30");
         result.Message.ShouldNotContain("switch");
     }
@@ -139,6 +139,17 @@ public class OrderReviewNavigationTests
         var data = Data(result);
         data.GetProperty("ScheduleGroupId").ValueKind.ShouldBe(JsonValueKind.Null);
         result.Message.ShouldContain("open_schedule with date 2026-11-03");
+    }
+
+    [Test]
+    public async Task Execute_AGroupNameWithQuotes_IsWrittenAsAnEscapedLiteral()
+    {
+        var target = Target("Wache A", new DateOnly(2026, 11, 3), new DateOnly(2026, 11, 20), Bern, own: true);
+        target.Item.CurrentGroupName = "Zürich \"Nord\" 'Ost'";
+
+        var result = await ExecuteAsync([target], []);
+
+        result.Message.ShouldContain("open_schedule with groupName \"Zürich \\\"Nord\\\" 'Ost'\" and date 2026-11-03");
     }
 
     [Test]
