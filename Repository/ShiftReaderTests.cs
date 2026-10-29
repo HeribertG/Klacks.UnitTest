@@ -1,5 +1,6 @@
 // Copyright (c) Heribert Gasparoli. SPDX-License-Identifier: AGPL-3.0-only
 
+using Klacks.Api.Application.Services.Orders.Review;
 using Klacks.Api.Domain.Models.Associations;
 using Klacks.UnitTest.TestHelpers;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,8 @@ namespace Klacks.UnitTest.Repository;
 /// the base order versus the from-date order with its cap, the order-lineage lookups, the group read of
 /// find_split_shift_candidates and the visible by-ids read. Orders are asserted only where InMemory and PostgreSQL agree (InMemory sorts a null
 /// original id first and compares Guids like .NET); SQL translation (ILike, NULLS LAST, uuid order) is pinned
-/// by the integration test ShiftReadShapesTests.
+/// by the integration test ShiftReadShapesTests. The full-day scan (UncutFullDayShiftDetector) deliberately keeps
+/// time-range shifts with equal bounds (owner decision 2026-09-27), while the order review's FullDayOrderRule drops them.
 /// </summary>
 [TestFixture]
 public class ShiftReaderTests
@@ -81,6 +83,58 @@ public class ShiftReaderTests
         none.ShouldBeEmpty();
         excluded.ShouldBe(["startsBefore", "openEnded", "ended", "partDay"], ignoreOrder: true);
         noExclusion.Count.ShouldBe(6);
+    }
+
+    [Test]
+    public async Task FullDayScan_KeepsATimeRangeShiftWithEqualBounds_UnlikeTheOrderReviewRule()
+    {
+        var timeRange = Make("timeRange", ShiftStatus.OriginalShift, Day, start: TimeOnly.MinValue);
+        timeRange.IsTimeRange = true;
+        _store.Seed(timeRange);
+
+        var fullDay = await NamesAsync(new RealPlanShiftScan(ShiftStatus.OriginalShift) { FullDayOnly = true });
+
+        fullDay.ShouldBe(["timeRange"]);
+        FullDayOrderRule.IsFullDay(timeRange).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task AvailableTaskCandidates_DropScenarioRows_AndKeepOnlyTasksValidDuringTheContainersPeriod()
+    {
+        var inside = Candidate("inside", Day);
+        var openBefore = Candidate("openBefore", Day.AddDays(-30));
+        var nextMonth = Candidate("nextMonth", Day.AddDays(31));
+        var endedBefore = Candidate("endedBefore", Day.AddDays(-30), untilDate: Day.AddDays(-1));
+        var endsOnFirstDay = Candidate("endsOnFirstDay", Day.AddDays(-30), untilDate: Day);
+        var startsOnLastDay = Candidate("startsOnLastDay", Day.AddDays(30));
+        var scenario = Candidate("scenario", Day);
+        scenario.AnalyseToken = Guid.NewGuid();
+        _store.Seed(inside, openBefore, nextMonth, endedBefore, endsOnFirstDay, startsOnLastDay, scenario);
+
+        var period = await CandidateNamesAsync(Slot() with { ValidFrom = Day, ValidUntil = Day.AddDays(30) });
+        var openEnded = await CandidateNamesAsync(Slot() with { ValidFrom = Day });
+        var unbounded = await CandidateNamesAsync(Slot());
+
+        period.ShouldBe(["inside", "openBefore", "endsOnFirstDay", "startsOnLastDay"], ignoreOrder: true);
+        openEnded.ShouldBe(["inside", "openBefore", "nextMonth", "endsOnFirstDay", "startsOnLastDay"], ignoreOrder: true);
+        unbounded.ShouldBe(
+            ["inside", "openBefore", "nextMonth", "endedBefore", "endsOnFirstDay", "startsOnLastDay"], ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task ValidityPeriod_IsProjectedUntracked_AndNullForAnUnknownOrDeletedShift()
+    {
+        var open = Make("open", ShiftStatus.OriginalShift, Day);
+        var bounded = Make("bounded", ShiftStatus.OriginalShift, Day, untilDate: Day.AddDays(9));
+        var deleted = Make("deleted", ShiftStatus.OriginalShift, Day);
+        deleted.IsDeleted = true;
+        _store.Seed(open, bounded, deleted);
+
+        (await _store.Reader.GetValidityPeriodAsync(open.Id)).ShouldBe(new ShiftValidityPeriod(Day, null));
+        (await _store.Reader.GetValidityPeriodAsync(bounded.Id)).ShouldBe(new ShiftValidityPeriod(Day, Day.AddDays(9)));
+        (await _store.Reader.GetValidityPeriodAsync(deleted.Id)).ShouldBeNull();
+        (await _store.Reader.GetValidityPeriodAsync(Guid.NewGuid())).ShouldBeNull();
+        _store.Context.ChangeTracker.Entries().ShouldBeEmpty();
     }
 
     [Test]
@@ -199,6 +253,20 @@ public class ShiftReaderTests
         Weekday = weekday,
         IsDeleted = isDeleted,
     };
+
+    private async Task<List<string>> CandidateNamesAsync(AvailableTaskCandidateCriteria criteria) =>
+        (await _store.Reader.GetAvailableTaskCandidatesAsync(criteria)).Select(s => s.Name).ToList();
+
+    private static AvailableTaskCandidateCriteria Slot() => new(1, new TimeOnly(7, 0), new TimeOnly(18, 0));
+
+    private static Shift Candidate(string name, DateOnly fromDate, DateOnly? untilDate = null)
+    {
+        var shift = Make(name, ShiftStatus.OriginalShift, fromDate, untilDate, new TimeOnly(8, 0));
+        shift.EndShift = new TimeOnly(17, 0);
+        shift.IsTimeRange = true;
+        shift.IsMonday = true;
+        return shift;
+    }
 
     private static Shift Make(
         string name,

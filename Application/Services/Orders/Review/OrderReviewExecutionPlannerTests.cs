@@ -187,4 +187,17 @@ public class OrderReviewExecutionPlannerTests
 
         Assert.That(before.Binding!.Matches(after.Binding!), Is.False);
     }
+
+    [Test]
+    public async Task ADraftThatTookATimeRangeOrderForFullDay_IsRefusedAsDrifted()
+    {
+        var item = ReadyItem();
+        var order = await _shiftRepository.Get(item.OrderId);
+        order!.IsTimeRange = true;
+        Store(item);
+
+        var plan = await _planner.PlanAsync(Ctx(Roles.Admin), Params(acknowledged: true));
+
+        Assert.That(plan.Refusal, Does.Contain("was edited since the review started"));
+    }
 }

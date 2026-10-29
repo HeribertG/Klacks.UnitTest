@@ -169,4 +169,47 @@ public class OrderReviewAnalyzerTests
         Assert.That(item.ChosenParts, Is.Empty);
         Assert.That(item.SplitVerdict, Is.Null);
     }
+
+    [Test]
+    public void ATimeRangeOrderFromMidnightToMidnight_GetsNeitherTheStartSevenNorASplit()
+    {
+        var orders = Enumerable.Range(2, 3).Select(day =>
+        {
+            var order = FullDayOrder($"Besuch {day}", BernGroupId, day: day);
+            order.IsTimeRange = true;
+            return order;
+        }).ToList();
+
+        var items = OrderReviewAnalyzer.Analyze(Input(orders));
+
+        Assert.That(items.Select(i => i.ReviewKey), Is.All.EqualTo("B1"));
+        var first = items[0];
+        Assert.That(first.IsFullDay, Is.False);
+        Assert.That(first.ProposedStart, Is.Null);
+        Assert.That(first.ChosenStart, Is.EqualTo(Midnight));
+        Assert.That(first.ProposedParts, Is.Empty);
+        Assert.That(first.ChosenParts, Is.Empty);
+        Assert.That(first.SplitVerdict, Is.Null);
+        Assert.That(first.OutlierReason, Is.Null);
+    }
+
+    [Test]
+    public void ATimeRangeOrderAndADutyWithTheSameBounds_DoNotShareABundle()
+    {
+        var duties = Enumerable.Range(2, 3).Select(day => FullDayOrder($"Wache {day}", BernGroupId, day: day)).ToList();
+        var visits = Enumerable.Range(2, 3).Select(day =>
+        {
+            var order = FullDayOrder($"Besuch {day}", BernGroupId, day: day);
+            order.IsTimeRange = true;
+            return order;
+        }).ToList();
+
+        var items = OrderReviewAnalyzer.Analyze(Input([.. duties, .. visits]));
+
+        var dutyKeys = items.Where(i => i.IsFullDay).Select(i => i.ReviewKey).Distinct().ToList();
+        var visitKeys = items.Where(i => !i.IsFullDay).Select(i => i.ReviewKey).Distinct().ToList();
+        Assert.That(dutyKeys, Has.Count.EqualTo(1));
+        Assert.That(visitKeys, Has.Count.EqualTo(1));
+        Assert.That(dutyKeys[0], Is.Not.EqualTo(visitKeys[0]));
+    }
 }

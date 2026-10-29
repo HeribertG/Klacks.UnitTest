@@ -85,4 +85,14 @@ public class FullDayOrderRuleTests
         Assert.That(FullDayOrderRule.IsFullDay(new Shift { StartShift = Seven, EndShift = Seven }), Is.True);
         Assert.That(FullDayOrderRule.IsFullDay(new Shift { StartShift = Seven, EndShift = Eight }), Is.False);
     }
+
+    [Test]
+    public void IsFullDay_ATimeRangeOrderWithEqualBounds_IsNeverFullDay()
+    {
+        var timeRange = new Shift { StartShift = TimeOnly.MinValue, EndShift = TimeOnly.MinValue, IsTimeRange = true };
+        var duty = new Shift { StartShift = TimeOnly.MinValue, EndShift = TimeOnly.MinValue, IsTimeRange = false };
+
+        Assert.That(FullDayOrderRule.IsFullDay(timeRange), Is.False);
+        Assert.That(FullDayOrderRule.IsFullDay(duty), Is.True);
+    }
 }
