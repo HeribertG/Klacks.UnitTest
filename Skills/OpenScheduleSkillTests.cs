@@ -78,6 +78,53 @@ public class OpenScheduleSkillTests
     }
 
     [Test]
+    public async Task GroupName_ContainedInSeveralGroups_OpensTheGroupWithExactlyThatName()
+    {
+        var exactId = Guid.NewGuid();
+        _groupSearch.SearchAsync(Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new GroupSearchResult
+            {
+                Items =
+                [
+                    new GroupSearchItem { Id = Guid.NewGuid(), Name = "Winterthur Nord" },
+                    new GroupSearchItem { Id = exactId, Name = "Winterthur" },
+                    new GroupSearchItem { Id = Guid.NewGuid(), Name = "Kundendienst Winterthur" },
+                ],
+                TotalCount = 3
+            });
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object>
+        {
+            ["groupName"] = "winterthur",
+            ["date"] = "2026-11-02"
+        });
+
+        result.Success.ShouldBeTrue(result.Message);
+        RouteOf(result).ShouldBe($"/workplace/schedule?groupId={exactId}&date=2026-11-02");
+    }
+
+    [Test]
+    public async Task GroupName_ContainedInSeveralGroupsWithoutAnExactMatch_ListsTheCandidates()
+    {
+        _groupSearch.SearchAsync(Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new GroupSearchResult
+            {
+                Items =
+                [
+                    new GroupSearchItem { Id = Guid.NewGuid(), Name = "Winterthur Nord" },
+                    new GroupSearchItem { Id = Guid.NewGuid(), Name = "Kundendienst Winterthur" },
+                ],
+                TotalCount = 2
+            });
+
+        var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["groupName"] = "Winterthur" });
+
+        result.Success.ShouldBeTrue(result.Message);
+        JsonSerializer.SerializeToElement(result.Data).TryGetProperty("Route", out _).ShouldBeFalse();
+        result.Message.ShouldContain("Multiple groups match");
+    }
+
+    [Test]
     public async Task Date_IsWrittenAsTheSameCalendarDay()
     {
         var result = await Skill().ExecuteAsync(Ctx(), new Dictionary<string, object> { ["date"] = "2026-03-31" });
