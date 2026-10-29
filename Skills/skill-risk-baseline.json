@@ -10,6 +10,7 @@
   "add_client_to_group": "Irreversible",
   "add_client_to_group_by_name": "Irreversible",
   "add_client_to_nearest_group": "Irreversible",
+  "add_container_template_break": "Irreversible",
   "add_container_template_task": "Irreversible",
   "add_expense": "Reversible",
   "add_personal_memory": "Irreversible",

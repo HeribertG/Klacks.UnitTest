@@ -230,6 +230,49 @@ public class ContainerRouteWriteServiceTests
         result.Error!.ShouldStartWith("Verification failed");
     }
 
+    [Test]
+    public async Task UnderHeldLock_WritesWithoutAcquiringOrReleasingALock()
+    {
+        // Arrange
+        Optimizer(Route(VisitA, VisitB));
+        var heldLock = await HeldLockScope(acquired: true);
+
+        // Act
+        var result = await _service.OptimizeAndWriteUnderHeldLockAsync(
+            heldLock, ContainerId, StorageThursday, false, CancellationToken.None);
+
+        // Assert
+        result.Success.ShouldBeTrue(result.Error);
+        await _mediator.Received(1).Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<ReleaseContainerLockCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task UnderHeldLock_WithoutTheLock_WritesNothing()
+    {
+        // Arrange
+        Optimizer(Route(VisitA, VisitB));
+        var notHeld = await HeldLockScope(acquired: false);
+
+        // Act
+        var result = await _service.OptimizeAndWriteUnderHeldLockAsync(
+            notHeld, ContainerId, StorageThursday, false, CancellationToken.None);
+
+        // Assert
+        result.Success.ShouldBeFalse();
+        await _mediator.DidNotReceive().Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>());
+        await _mediator.DidNotReceive().Send(Arg.Any<PutContainerTemplatesCommand>(), Arg.Any<CancellationToken>());
+    }
+
+    private static Task<ContainerTemplateLockScope> HeldLockScope(bool acquired)
+    {
+        var lockMediator = Substitute.For<IMediator>();
+        lockMediator.Send(Arg.Any<AcquireContainerLockCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new ContainerLockResource { Id = Guid.NewGuid(), Acquired = acquired, AlreadyHeld = acquired });
+        return ContainerTemplateLockScope.AcquireAsync(lockMediator, ContainerId, "tab-1", CancellationToken.None);
+    }
+
     private Task<ContainerRouteWriteResult> Run() =>
         _service.OptimizeAndWriteAsync(ContainerId, StorageThursday, false, "tab-1", CancellationToken.None);
 
