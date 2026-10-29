@@ -113,6 +113,8 @@ public class OrderReviewNavigationTests
         data.GetProperty("ScheduleDate").GetString().ShouldBe("2026-11-01");
         result.Message.ShouldContain("nobody is assigned");
         result.Message.ShouldContain("open_schedule with groupName 'Bern' and date 2026-11-01");
+        result.Message.ShouldContain("opened on the new plannable shift(s) of the period 2026-11-01 to 2026-11-30");
+        result.Message.ShouldNotContain("switch");
     }
 
     [Test]
