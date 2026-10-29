@@ -12,6 +12,7 @@
 using Klacks.Api.Application.Commands.ContainerTemplates;
 using Klacks.Api.Application.Commands.Schedules;
 using Klacks.Api.Application.DTOs.Schedules;
+using Klacks.Api.Application.Mappers;
 using Klacks.Api.Application.Queries.ContainerTemplates;
 using Klacks.Api.Application.Skills;
 using Klacks.Api.Domain.Interfaces.RouteOptimization;
@@ -97,7 +98,8 @@ public class BundleNearbyTimeRangeShiftsValidityTests
             GeoServicesPolicyTestFactory.Default(),
             TestGroupWriteVisibility.UnrestrictedGroups(),
             ShiftVisibilityGuards.AllowAll(),
-            macroResolver);
+            macroResolver,
+            new ScheduleMapper());
     }
 
     [TearDown]
