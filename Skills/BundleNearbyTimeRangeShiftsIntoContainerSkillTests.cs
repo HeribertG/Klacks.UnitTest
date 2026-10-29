@@ -7,7 +7,10 @@
 /// confirmed; the OpenRouteService key gate blocks non-car transport modes up front, before any write. Autofill picks a
 /// restricted caller may not see are dropped before the write and never reported - neither in the items nor in the
 /// stored route info or the stops, and the travel times run past the dropped stop; when none is left the answer is the
-/// same as when nothing matched. A successful bundle returns the Route to the container page.
+/// same as when nothing matched. A successful bundle returns the Route to the container page. The group filter accepts
+/// a group name (exact name wins, ambiguous and unknown names are refused with the candidates), refuses a groupIds value
+/// that is no GUID and a group without linked services, and the message names the filter or says that none was applied
+/// and states plainly when the travel times are only straight-line estimates.
 /// </summary>
 
 using Klacks.Api.Application.Commands.ContainerTemplates;
@@ -35,6 +38,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
     private IShiftRepository _shiftRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IGroupVisibilityGuard _groupVisibilityGuard = null!;
+    private IGroupItemRepository _groupItemRepository = null!;
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IUserService _userService = null!;
@@ -59,6 +63,9 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _shiftRepository = Substitute.For<IShiftRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupVisibilityGuard = TestGroupWriteVisibility.UnrestrictedGroups();
+        _groupItemRepository = Substitute.For<IGroupItemRepository>();
+        _groupItemRepository.GetShiftIdsByGroupIds(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns([TaskShiftId1, TaskShiftId2]);
         _mediator = Substitute.For<IMediator>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _userService = Substitute.For<IUserService>();
@@ -118,6 +125,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
         _encryptionService,
         GeoServicesPolicyTestFactory.Default(),
         _groupVisibilityGuard,
+        _groupItemRepository,
         shiftVisibilityGuard,
         _defaultShiftMacroResolver,
         new ScheduleMapper());
@@ -284,6 +292,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             _encryptionService,
             GeoServicesPolicyTestFactory.NoOutbound(),
             _groupVisibilityGuard,
+            _groupItemRepository,
             _shiftVisibilityGuard,
             _defaultShiftMacroResolver,
             new ScheduleMapper());
@@ -426,5 +435,176 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillTests
             .Select(stop => stop.GetProperty("ShiftId").GetGuid())
             .ShouldBe([TaskShiftId1, TaskShiftId2]);
         result.Message.ShouldNotContain("Klacksy");
+    }
+
+    private Group StubGroup(string name)
+    {
+        var group = new Group { Id = Guid.NewGuid(), Name = name };
+        _groupRepository.Get(group.Id).Returns(group);
+        return group;
+    }
+
+    private void StubSuccessfulBundle(ContainerAutofillResult? autofillResult = null)
+    {
+        _containerAutofillService.AutofillAsync(Arg.Any<ContainerAutofillRequest>())
+            .Returns(autofillResult ?? SuccessfulAutofillResult());
+        _mediator.Send(Arg.Any<GetContainerTemplatesQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => PersistedTemplate(new[] { TaskShiftId1, TaskShiftId2 }));
+    }
+
+    [Test]
+    public async Task GroupName_ExactNameWins_AndBecomesTheContainersGroupFilter()
+    {
+        var winterthur = StubGroup("Spitex Winterthur");
+        var winterthurSeen = StubGroup("Spitex Winterthur Seen");
+        _groupRepository.List().Returns([winterthur, winterthurSeen]);
+        StubSuccessfulBundle();
+        var parameters = Params();
+        parameters["groupName"] = "Spitex Winterthur";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("Only services of the group 'Spitex Winterthur' were considered.");
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(
+            Arg.Is<Shift>(s => s.GroupItems.Count == 1 && s.GroupItems.Single().GroupId == winterthur.Id));
+        await _groupItemRepository.Received(1).GetShiftIdsByGroupIds(
+            Arg.Is<List<Guid>>(ids => ids.SequenceEqual(new[] { winterthur.Id })), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task GroupName_Ambiguous_ListsTheCandidates_AndNothingIsWritten()
+    {
+        var first = StubGroup("Spitex Nord");
+        var second = StubGroup("Spitex Nordost");
+        _groupRepository.List().Returns([first, second]);
+        var parameters = Params();
+        parameters["groupName"] = "Spitex No";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("ambiguous");
+        result.Message.ShouldContain("Spitex Nord");
+        result.Message.ShouldContain("Spitex Nordost");
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task GroupName_Unknown_ListsTheAvailableGroups_AndNothingIsWritten()
+    {
+        var winterthur = StubGroup("Spitex Winterthur");
+        _groupRepository.List().Returns([winterthur]);
+        var parameters = Params();
+        parameters["groupName"] = "Pflegeheim Basel";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not found");
+        result.Message.ShouldContain("Spitex Winterthur");
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task GroupName_OfAGroupHiddenFromTheCaller_IsNotFound()
+    {
+        var visible = StubGroup("Spitex Zürich");
+        var hidden = StubGroup("Spitex Winterthur");
+        _groupRepository.List().Returns([visible, hidden]);
+        _groupVisibilityGuard.GetScopeAsync(Arg.Any<CancellationToken>())
+            .Returns(GroupVisibilityScope.Restricted([visible.Id], [visible.Id]));
+        var parameters = Params();
+        parameters["groupName"] = "Spitex Winterthur";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("not found");
+        result.Message.ShouldNotContain(hidden.Id.ToString());
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task GroupIds_WithANameInsteadOfAGuid_IsRefused_InsteadOfSilentlyDroppingTheFilter()
+    {
+        var parameters = Params();
+        parameters["groupIds"] = "Spitex Winterthur";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("groupName");
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task GroupWithoutLinkedServices_IsRefused_InsteadOfFallingBackToAllGroups()
+    {
+        var empty = StubGroup("Spitex Leer");
+        _groupRepository.List().Returns([empty]);
+        _groupItemRepository.GetShiftIdsByGroupIds(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+        var parameters = Params();
+        parameters["groupName"] = "Spitex Leer";
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeFalse();
+        result.Message.ShouldContain("no services linked");
+        await _shiftRepository.DidNotReceive().AddWithSealedOrderHandling(Arg.Any<Shift>());
+    }
+
+    [Test]
+    public async Task GroupNameAndGroupIdsOfTheSameGroup_AreLinkedOnce()
+    {
+        var winterthur = StubGroup("Spitex Winterthur");
+        _groupRepository.List().Returns([winterthur]);
+        StubSuccessfulBundle();
+        var parameters = Params();
+        parameters["groupName"] = "Spitex Winterthur";
+        parameters["groupIds"] = winterthur.Id.ToString();
+
+        var result = await _skill.ExecuteAsync(Ctx(), parameters);
+
+        result.Success.ShouldBeTrue(result.Message);
+        await _shiftRepository.Received(1).AddWithSealedOrderHandling(Arg.Is<Shift>(s => s.GroupItems.Count == 1));
+    }
+
+    [Test]
+    public async Task WithoutGroup_TheMessageSaysThatNoGroupFilterWasApplied()
+    {
+        StubSuccessfulBundle();
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("No group filter was applied");
+        await _groupItemRepository.DidNotReceive().GetShiftIdsByGroupIds(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task EstimatedTravelTimes_AreReportedPlainly_WithTheGroupNameHint_WhenNoGroupWasGiven()
+    {
+        StubSuccessfulBundle(SuccessfulAutofillResult() with { IsEstimated = true });
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldContain("straight-line estimates");
+        result.Message.ShouldContain("size limit");
+        result.Message.ShouldContain("only estimates");
+        result.Message.ShouldContain("With groupName");
+    }
+
+    [Test]
+    public async Task ExactTravelTimes_HaveNoEstimationNote()
+    {
+        StubSuccessfulBundle();
+
+        var result = await _skill.ExecuteAsync(Ctx(), Params());
+
+        result.Success.ShouldBeTrue(result.Message);
+        result.Message.ShouldNotContain("straight-line estimates");
     }
 }

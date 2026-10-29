@@ -97,6 +97,7 @@ public class BundleNearbyTimeRangeShiftsValidityTests
             Substitute.For<ISettingsEncryptionService>(),
             GeoServicesPolicyTestFactory.Default(),
             TestGroupWriteVisibility.UnrestrictedGroups(),
+            Substitute.For<IGroupItemRepository>(),
             ShiftVisibilityGuards.AllowAll(),
             macroResolver,
             new ScheduleMapper());

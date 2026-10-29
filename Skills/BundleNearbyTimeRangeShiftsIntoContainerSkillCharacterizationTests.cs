@@ -9,6 +9,9 @@
 /// end base; ContainerAutofillRouteFixture), the template items carry the placed visit windows and travel times, the
 /// template carries the RouteInfo, the confirmation re-read echoes what was posted, and the result reports the stops
 /// and the Route to the container page with a message that names visit and travel times.
+/// Updated deliberately for the group filter fix (2026-10-29): groupIds refuses a value that is no GUID instead of
+/// skipping it, a requested group is checked for linked services ("group-items") before the container is created, and
+/// the success message and data name the group filter (here: none applied).
 /// </summary>
 
 using System.Text.Json;
@@ -43,6 +46,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
     private IShiftRepository _shiftRepository = null!;
     private IGroupRepository _groupRepository = null!;
     private IGroupVisibilityGuard _groupVisibilityGuard = null!;
+    private IGroupItemRepository _groupItemRepository = null!;
     private IMediator _mediator = null!;
     private IUnitOfWork _unitOfWork = null!;
     private IUserService _userService = null!;
@@ -75,6 +79,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         _shiftRepository = Substitute.For<IShiftRepository>();
         _groupRepository = Substitute.For<IGroupRepository>();
         _groupVisibilityGuard = Substitute.For<IGroupVisibilityGuard>();
+        _groupItemRepository = Substitute.For<IGroupItemRepository>();
         _mediator = Substitute.For<IMediator>();
         _unitOfWork = Substitute.For<IUnitOfWork>();
         _userService = Substitute.For<IUserService>();
@@ -95,6 +100,8 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
             .Returns(ci => { _calls.Add("group-get"); return new Group { Id = ci.Arg<Guid>(), Name = "Bern" }; });
         _groupVisibilityGuard.IsGroupVisibleAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(_ => { _calls.Add("group-visible"); return true; });
+        _groupItemRepository.GetShiftIdsByGroupIds(Arg.Any<List<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { _calls.Add("group-items"); return new List<Guid> { TaskShiftId1 }; });
         _defaultShiftMacroResolver.ResolveDefaultMacroIdAsync(Arg.Any<CancellationToken>())
             .Returns(_ => { _calls.Add("default-macro"); return (Guid?)DefaultMacroId; });
         _userService.GetInstanceId().Returns(_ => { _calls.Add("instance-id"); return "instance-1"; });
@@ -160,6 +167,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         _encryptionService,
         openRouteServiceEnabled ? GeoServicesPolicyTestFactory.Default() : GeoServicesPolicyTestFactory.NoOutbound(),
         _groupVisibilityGuard,
+        _groupItemRepository,
         _shiftVisibilityGuard,
         _defaultShiftMacroResolver,
         new ScheduleMapper());
@@ -251,6 +259,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
             "it, the last one also with the travel time back to the base, plus the route info; all of it is confirmed " +
             "in the database (verified). " +
             "Route: 7.5 km, 02:00 travel+work time, 08:00 of the time budget remaining. " +
+            "No group filter was applied: services of all groups were considered. " +
             "Candidates were not limited by a hard distance radius — only by the time budget and route " +
             "optimization. The chat opens the container page, where the user can check the tour on the map and change " +
             "it. To fill another weekday, call this skill again with a different weekday.");
@@ -264,7 +273,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
             "\"VisitStart\":\"08:11\",\"VisitEnd\":\"08:56\",\"TravelBefore\":\"00:10\"}," +
             "{\"Order\":2,\"ShiftId\":\"" + TaskShiftId2 + "\",\"Name\":\"Client 2\",\"Address\":\"Street 2, 3000 Bern\"," +
             "\"VisitStart\":\"09:10\",\"VisitEnd\":\"09:55\",\"TravelBefore\":\"00:10\"}]," +
-            "\"TravelTimesEstimated\":false," +
+            "\"TravelTimesEstimated\":false,\"GroupFilter\":[]," +
             "\"Route\":\"/workplace/container-template/" + ContainerId + "\",\"Verified\":true}");
         _calls.ShouldBe(FullSequence);
     }
@@ -281,7 +290,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
     [Test]
     public async Task Success_HandsOnTheExactShiftRequestLockAndTemplate()
     {
-        await Skill().ExecuteAsync(Ctx(), Params(("groupIds", $"{GroupId}, junk"), ("untilDate", "2026-12-31")));
+        await Skill().ExecuteAsync(Ctx(), Params(("groupIds", $"{GroupId}"), ("untilDate", "2026-12-31")));
 
         var shift = _addedShift!;
         shift.Id.ShouldNotBe(Guid.Empty);
@@ -305,7 +314,7 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
         shift.GroupItems.Single().GroupId.ShouldBe(GroupId);
         shift.GroupItems.Single().ValidFrom.ShouldBe(new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
         shift.CurrentUserCreated.ShouldBe("tester");
-        _calls.Take(3).ShouldBe(["group-get", "group-visible", "default-macro"]);
+        _calls.Take(4).ShouldBe(["group-get", "group-visible", "group-items", "default-macro"]);
 
         var request = _autofillRequest!;
         request.ContainerId.ShouldBe(ContainerId);
@@ -583,8 +592,11 @@ public class BundleNearbyTimeRangeShiftsIntoContainerSkillCharacterizationTests
 
         result.Success.ShouldBeTrue(result.Message);
         result.Message!.ShouldContain(
-            "08:00 of the time budget remaining. The travel times are straight-line estimates, because the routing " +
-            "service could not be reached. Candidates");
+            "08:00 of the time budget remaining. No group filter was applied: services of all groups were considered. " +
+            "The travel times are straight-line estimates: the routing service returned no travel times for the 3 " +
+            "candidate service(s) — it could not be reached or the request exceeded its size limit (too many " +
+            "locations). Tell the user explicitly that the travel times are only estimates. With groupName the " +
+            "candidates can be narrowed to one group, so the routing service can compute real travel times. Candidates");
         JsonSerializer.Serialize(result.Data).ShouldContain("\"TravelTimesEstimated\":true");
     }
 
